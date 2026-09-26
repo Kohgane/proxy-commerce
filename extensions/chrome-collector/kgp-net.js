@@ -20,6 +20,7 @@
   "use strict";
   if (window.__kgpNetBound) return;   // 중복 주입 방지(SPA 재주입)
   window.__kgpNetBound = true;
+  try { document.documentElement.setAttribute("data-kgp-net", "1"); } catch (e) {}   // F49-T 3부: 격리 월드용 표식
 
   var CAP = 12;                // 최근 상품형 응답 최대 보관 수(점수순)
   var MAXLEN = 4000000;        // 4MB 초과 응답은 무시

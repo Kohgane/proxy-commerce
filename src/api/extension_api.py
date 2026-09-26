@@ -847,6 +847,15 @@ def collect_enrich():
         v = data.get(k)
         if isinstance(v, list) and v and not extra.get(k):
             extra[k] = v; changed[k] = len(v)
+    # F49-T 3부: SKU(ICE 컨텍스트) — 목록 카드 수집의 상세 보강으로도 온다. 기존이 비었으면 채움(fill-only).
+    _skus = _clean_skus(data.get("skus"))
+    if _skus and not extra.get("skus"):
+        extra["skus"] = _skus; changed["skus"] = len(_skus)
+        _fs = data.get("field_sources") if isinstance(data.get("field_sources"), dict) else {}
+        if _fs.get("sku"):
+            extra.setdefault("field_sources", {})
+            if isinstance(extra["field_sources"], dict):
+                extra["field_sources"]["sku"] = str(_fs["sku"])[:40]
     # 상세설명: 20자↑ 실텍스트가 오고 기존이 빈약(<20자)하면 채움.
     _desc = str(data.get("description") or "").strip()
     if len(_desc) >= 20 and len(str(extra.get("description") or "").strip()) < 20:

@@ -1940,6 +1940,9 @@
     if (currencySrc !== "tier1" && domCur) {
       if (!currency) { currency = domCur; currencySource = "domain"; }
       else if (currency === domCur) { currencySource = "domain+symbol"; }
+      // F49-T 3부: ¥/￥는 엔·위안 공용 기호다. 기호 표가 JPY로 읽어도 위안 도메인(타오바오·티몰·1688)이면
+      //   **같은 말**이다 — 「표시 통화(JPY)와 사이트 기준 통화(CNY)가 달라요」는 이 도메인에서 거짓 경고였다.
+      else if (currency === "JPY" && domCur === "CNY") { currency = "CNY"; currencySource = "domain+symbol"; }
       else {
         var _symCur = currency;
         currency = domCur; currencySource = "domain";

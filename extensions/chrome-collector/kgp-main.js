@@ -14,6 +14,8 @@
   "use strict";
   if (window.__kgpMainBound) return;   // 중복 주입 방지(SPA 재주입 등)
   window.__kgpMainBound = true;
+  // F49-T 3부: 격리 월드는 이 창의 전역을 못 본다 — DOM 속성으로 「MAIN world가 이 페이지에서 돌았다」를 남긴다.
+  try { document.documentElement.setAttribute("data-kgp-main", "1"); } catch (e) {}
 
   function _run(opts) {
     try {

@@ -129,7 +129,8 @@ def clean_page_diag(raw) -> Dict[str, Any]:
     sel = raw.get("sel") if isinstance(raw.get("sel"), dict) else {}
     out["sel"] = {str(k)[:20]: int(v) for k, v in sel.items()
                   if str(v).lstrip("-").isdigit()}
-    out["errors"] = [str(e)[:200] for e in (raw.get("errors") or [])[:5]]
+    # F49-T 3부: 한 줄에 종류·메시지·위치·스택이 실린다(확장 `_kgpErrLine`) — 200자면 스택이 잘린다.
+    out["errors"] = [str(e)[:600] for e in (raw.get("errors") or [])[:5]]
     return out
 
 
