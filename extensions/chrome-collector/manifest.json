@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "고가수집기",
-  "version": "1.5.154",
+  "version": "1.5.155",
   "description": "지정 소싱처(타오바오·아마존 등)에서 한 클릭에 고가브릿지로 수집 (인페이지 수집 + 리스팅 다중 선택 수집 + 자동 번역)",
   "permissions": [
     "activeTab",
@@ -49,6 +49,7 @@
       ],
       "js": [
         "kgp-sources.js",
+        "kgp-rules.js",
         "kgp-extractor.js",
         "kgp-detect.js",
         "content_script.js"

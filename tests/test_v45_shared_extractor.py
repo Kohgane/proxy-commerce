@@ -52,7 +52,8 @@ def test_shared_between_extension_and_bookmarklet():
     iso = [cs for cs in MF["content_scripts"] if "content_script.js" in cs.get("js", [])][0]
     # v73 STEP2: 감지 순수 모듈 kgp-detect.js가 content_script 앞에 추가 로드(위임 단일 소스).
     # v81 STEP3: 소싱처 매처 kgp-sources.js도 content_script 앞에 로드(팝업과 단일 소스).
-    assert iso["js"] == ["kgp-sources.js", "kgp-extractor.js", "kgp-detect.js", "content_script.js"]
+    # F50: 사이트 규칙 번들 kgp-rules.js도 content_script 앞(규칙 캐시 → 번들 → 코드 기본값).
+    assert iso["js"] == ["kgp-sources.js", "kgp-rules.js", "kgp-extractor.js", "kgp-detect.js", "content_script.js"]
     assert iso["js"].index("kgp-extractor.js") < iso["js"].index("content_script.js")
     assert iso["js"].index("kgp-sources.js") < iso["js"].index("content_script.js")
     assert "window.kgpExtractProduct === \"function\"" in CS

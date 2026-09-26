@@ -92,7 +92,7 @@ def test_console_version_equals_zip_manifest_version(client):
 def test_zip_filename_carries_the_same_version(client):
     r = client.get("/seller/extension/download")
     from src.seller_console.views import _chrome_extension_version
-    assert f"gogasujipgi-v{_chrome_extension_version()}.zip" in r.headers.get(
+    assert f"kgp-ext-{_chrome_extension_version()}.zip" in r.headers.get(
         "Content-Disposition", "")
 
 

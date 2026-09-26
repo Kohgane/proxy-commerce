@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from pathlib import Path
 import os
 import re
 import secrets
@@ -507,6 +508,39 @@ def collect_link_diag():
     out["asked"] = url                 # 무엇을 쟀는지 되비쳐 준다(오타·잘린 주소 확인용)
     # 링크를 못 열었다는 **진단은 성공한 진단**이다 → 항상 200. 실패는 `error`가 말한다.
     return jsonify(out), 200
+
+
+# ---------------------------------------------------------------------------
+# F50 — 확장 갱신: 최신 버전 · 사이트 규칙(데이터). 둘 다 공개 정보라 토큰 없이 읽는다.
+# ---------------------------------------------------------------------------
+
+def _latest_ext_version() -> str:
+    """서버에 올라온 확장 폴더의 manifest 버전 — 설치 페이지·zip 이름과 **같은 소스**(F26 단일 소스)."""
+    try:
+        from src.build_extension import read_version
+        return read_version(Path(__file__).resolve().parents[2] / "extensions" / "chrome-collector")
+    except Exception:
+        return ""
+
+
+@extension_bp.get("/extension/latest")
+def extension_latest():
+    ver = _latest_ext_version()
+    if not ver:
+        return jsonify({"ok": False, "error": "서버에서 확장 버전을 읽지 못했어요"}), 503
+    return jsonify({"ok": True, "version": ver, "zip_name": f"kgp-ext-{ver}.zip",
+                    "download_page": "/seller/extension", "download_url": "/seller/extension/download"})
+
+
+@extension_bp.get("/rules")
+def extension_rules():
+    try:
+        from src.collectors.ext_rules import load
+        got = load()
+    except Exception as exc:
+        logger.warning("[ext-rules] 규칙 파일을 읽지 못함: %s", exc)
+        return jsonify({"ok": False, "error": "규칙을 읽지 못했어요 — 확장은 번들 규칙으로 동작합니다"}), 503
+    return jsonify({"ok": True, **got})
 
 
 @extension_bp.get("/enrich/pending")
