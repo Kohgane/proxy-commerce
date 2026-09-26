@@ -279,28 +279,28 @@ class CoupangUploader(BaseUploader):
             missing = self._missing_shipping_config()
             if missing:
                 # 출고지/반품지 미설정 → 쿠팡이 반드시 거부. 가짜 성공 금지(정직).
+                # M1-1(2026-09-26): 화면 문장에 env 이름을 싣지 않는다 — 셀러가 고칠 수 없는 이름이다.
+                #   env 이름은 로그에만. 문장은 `user_messages` 한 곳이 만든다.
+                from src.seller_console.user_messages import connect_url, coupang_shipping_missing
+                logger.info('쿠팡 배송정보 누락 env=%s', ','.join(missing))
                 return {
                     'success': False,
                     # 전송 전 차단이므로 **보류**다 — 다른 사전 게이트(고시정보·옵션·카테고리)는 전부
                     #   held를 달고 나가는데 여기만 빠져 있었다(대장 누적에서 rejected로 오분류).
                     'held': True,
-                    'error': (
-                        '쿠팡 출고지/반품지 정보 미설정으로 등록 불가. '
-                        '다음 환경변수를 Wing 배송정보 값으로 설정하세요: '
-                        + ', '.join(missing)
-                    ),
+                    'error': coupang_shipping_missing(missing),
+                    'action_url': connect_url('coupang'),
                     'sku': product.get('sku', ''),
                 }
             # 택배사 코드 미확정 → 등록 전 정직 실패(카나리 6차 거부 재발 방지). 유효 코드는 쿠팡 목록이 정본.
             if not self.resolve_delivery_company_code():
                 pfx = self.ACCOUNT_PREFIXES.get(self.account or '') or 'COUPANG'
+                from src.seller_console.user_messages import connect_url, coupang_courier_missing
+                # env 이름·관리자 경로는 **로그에만**(M1-1). 유효 코드 목록: GET /admin/coupang-delivery-companies
+                logger.info('쿠팡 택배사 코드 미설정 — %s_DELIVERY_COMPANY_CODE / _NAME 확인', pfx)
                 return {
                     'success': False, 'held': True, 'sku': product.get('sku', ''),
-                    'error': (
-                        '쿠팡 택배사 코드 미설정으로 등록 불가(유효하지 않은 코드 전송 금지). '
-                        f'{pfx}_DELIVERY_COMPANY_CODE 를 설정하거나 {pfx}_DELIVERY_COMPANY_NAME(예: 우체국)을 '
-                        '설정하세요. 유효 코드 목록은 GET /admin/coupang-delivery-companies 로 확인.'
-                    ),
+                    'error': coupang_courier_missing(), 'action_url': connect_url('coupang'),
                 }
             # SKU 유효성(카나리 8차 근원) — itemName/externalVendorSku로 그대로 나가는 값이다.
             #   URL 파편('…&ref_=pd_hp_…')이 들어오면 쿠팡이 옵션명으로 거부한다. 쓰레기 값 전송 금지.

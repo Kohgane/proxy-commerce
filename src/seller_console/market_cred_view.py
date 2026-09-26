@@ -110,12 +110,13 @@ def coupang_shipping_state(account: str = "") -> dict:
             read_failed = str(read.get("reason") or "사유 미상")
             src = f"저장된 값을 읽지 못했습니다 — {read_failed}"
         else:
-            src = ("마켓 연동 화면에 입력된 값 · 서버 환경변수 둘 다 비어 있음" if not acct
-                   else f"쿠팡 계정 「{acct}」 서버 환경변수 · 마켓 연동 화면 둘 다 비어 있음")
+            src = ("마켓 연동 화면에 입력된 값 · 서버 설정 둘 다 비어 있음" if not acct
+                   else f"쿠팡 계정 「{acct}」 서버 설정 · 마켓 연동 화면 둘 다 비어 있음")
     elif prefixed and acct:
-        src = f"서버 환경변수(계정 접두 COUPANG_{acct.upper()}_*)"
+        # M1-1: 이 문장은 셀러 화면(사전검증 힌트)에 나간다 — env 접두 이름은 싣지 않는다.
+        src = f"서버 설정(쿠팡 계정 「{acct}」)"
     else:
-        src = "마켓 연동 화면에 입력된 값(또는 무접두 환경변수)"
+        src = "마켓 연동 화면에 입력된 값(또는 서버 설정)"
     return {"missing": missing, "present": present, "unknown": False,
             "account": acct, "source": src, "read_failed": read_failed}
 
@@ -176,7 +177,7 @@ def coupang_api_state(account: str = "") -> dict:
     if not vendor:
         missing.append(("COUPANG_VENDOR_ID", "업체코드"))
     return {"missing": missing, "unknown": False, "account": acct,
-            "source": (f"쿠팡 계정 「{acct}」 서버 환경변수"
+            "source": (f"쿠팡 계정 「{acct}」 서버 설정"
                        if acct else "마켓 연동 화면에 입력된 값")}
 
 

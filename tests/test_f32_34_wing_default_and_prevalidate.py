@@ -174,7 +174,8 @@ def test_one_missing_shipping_field_still_blocks(clean_env, tmp_path):
             res = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900},
                                                  ["coupang"])[0]
     assert res.ok is False
-    assert "COUPANG_RETURN_ZIP_CODE(반품지우편번호)" in res.hint
+    assert "반품지 우편번호" in res.hint and "COUPANG_" not in res.hint    # M1-1: 칸 이름(연동 화면 라벨)만
+    assert res.missing_envs == ["COUPANG_RETURN_ZIP_CODE"]
     assert "확인한 곳:" in res.hint, "어느 저장소를 봤는지 말하지 않는다"
 
 

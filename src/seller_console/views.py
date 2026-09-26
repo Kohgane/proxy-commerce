@@ -2055,6 +2055,8 @@ def collect_prevalidate():
                     "reach_detail": r.reach_detail,
                     # F48-d — 전송 전에 잡은 사유 한 줄씩(쿠팡 배송·구매옵션·필수서류)
                     "details": list(getattr(r, "details", None) or []),
+                    # M1-1 — 고치러 갈 화면(마켓 연동 › 그 마켓). env 이름은 싣지 않는다.
+                    "action_url": getattr(r, "action_url", "") or "",
                 }
                 for r in results
             ],

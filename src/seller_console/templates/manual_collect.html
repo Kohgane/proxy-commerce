@@ -205,7 +205,7 @@
             <option value="{{ locale }}">{{ locale }}</option>
             {% endfor %}
           </select>
-          <div class="form-text">Ctrl/Cmd + 클릭으로 여러 locale 선택</div>
+          <div class="form-text d-none d-md-block" data-role="multi-hint">Ctrl/Cmd + 클릭으로 여러 locale 선택</div>
         </div>
         <div class="col-md-4">
           <button
@@ -337,10 +337,12 @@ async function bulkCollect() {
           ? `<div class="small text-muted mt-1">초안 1건 생성 — 제목 담김${r.price ? ' · 가격 ' + escapeHtml(r.price) + ' ' + escapeHtml(r.currency || '') : ''}${left ? ' · ' + escapeHtml(left) + '은 단축어/PC 보강' : ''}</div>`
           : '';
         // F49-T — 타오바오 계열 초안이면 「확장으로 열기」 + 채워지는 상태를 그 자리에서 보여 준다.
-        const ext = r.open_url ? `<div class="mt-1"><button type="button" class="btn btn-sm btn-cta py-0"
+        const ext = !r.open_url ? ''
+          : !KGP_DESKTOP_CHROME ? `<div class="mt-1 text-muted" data-role="ext-mobile-note">${KGP_EXT_MOBILE_NOTE}</div>`
+          : `<div class="mt-1"><button type="button" class="btn btn-sm btn-cta py-0"
             data-ext-open="${escapeHtml(r.open_url)}" data-ext-item="${escapeHtml(r.id)}">
             <i class="bi bi-puzzle"></i> 확장으로 열기</button>
-            <span class="text-muted ms-1" data-ext-state="${escapeHtml(r.id)}">서버가 못 여는 사이트예요 — PC 확장이 채웁니다</span></div>` : '';
+            <span class="text-muted ms-1" data-ext-state="${escapeHtml(r.id)}">서버가 못 여는 사이트예요 — PC 확장이 채웁니다</span></div>`;
         html += `<li class="list-group-item d-flex justify-content-between align-items-start">
           <span><i class="bi bi-check-circle" style="color:var(--success)"></i> ${escapeHtml(r.title)}${note}${ext}</span>
           <a href="${r.preview_url}" class="btn btn-sm btn-ghost py-0"><i class="bi bi-box-arrow-up-right"></i> 확인·등록</a></li>`;
@@ -480,12 +482,27 @@ function selectedTargetLocales() {
 }
 
 // ── F49-T 확장으로 열기 ──────────────────────────────────────────────────────
+// M1-2 — 확장이 설치될 수 있는 곳 = 데스크톱 크로미움. 모바일 UA(안드로이드·iOS 크롬 포함)는 아니다.
+const KGP_DESKTOP_CHROME = (() => {
+  const ua = navigator.userAgent || '';
+  const mobile = (navigator.userAgentData && navigator.userAgentData.mobile)
+    || /Android|iPhone|iPad|iPod|Mobile|CriOS/i.test(ua);
+  return !mobile && /Chrome\//.test(ua);
+})();
+const KGP_EXT_MOBILE_NOTE = 'PC 크롬 확장으로 열면 채워져요 — 지금은 서버가 가져온 값만 담았어요.';
 //   서버는 타오바오·티몰 상품 페이지를 못 연다(로그인 벽). 새 탭에서 열면 PC 확장이 채우고,
 //   이 화면은 그 초안의 **상태만** 들여다본다(4초 간격 · 최대 10분 · 채워지거나 막히면 멈춘다).
 function kgpShowExtOpen(data) {
   const box = document.getElementById('extOpenBox');
   if (!box) return;
   if (!data || !data.open_url || !data.item_id) { box.classList.add('d-none'); box.innerHTML = ''; return; }
+  // M1-2 — 확장은 **데스크톱 크롬**에만 있다. 폰에서 「확장으로 열기 · 기다리는 중 0/5」를 띄우면
+  //   영원히 0/5다. 폰에선 한 줄 안내만 — 서버가 가져온 값은 위 카드에 그대로 둔다.
+  if (!KGP_DESKTOP_CHROME) {
+    box.innerHTML = `<div data-role="ext-mobile-note"><i class="bi bi-info-circle"></i> ${KGP_EXT_MOBILE_NOTE}</div>`;
+    box.classList.remove('d-none');
+    return;
+  }
   box.innerHTML = `<div><i class="bi bi-info-circle"></i> 서버가 못 여는 사이트예요(로그인 벽) — 서버에서 열어 보지 않았어요.</div>
     <div class="mt-1"><button type="button" class="btn btn-sm btn-cta" data-ext-open="${escapeHtml(data.open_url)}"
       data-ext-item="${escapeHtml(data.item_id)}"><i class="bi bi-puzzle"></i> 확장으로 열기</button>
@@ -539,6 +556,18 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+const KGP_LANG_NAMES = {ko: '한국어', en: '영어', ja: '일본어', zh: '중국어'};
+function kgpLocStatus(row) {
+  const st = (row && row.status) || 'translated';
+  if (st === 'unchanged') {
+    const lang = KGP_LANG_NAMES[String(row.language || '').slice(0, 2)];
+    return lang ? `이미 ${lang}라 그대로 뒀어요` : '바꿀 글자가 없어 그대로 뒀어요';
+  }
+  if (st === 'untranslated_not_configured') return '번역 미설정 — 원문 그대로';
+  if (st === 'translated') return '번역됨';
+  return st;
+}
+
 function renderLocalizedPreview() {
   const box = document.getElementById('localizedPreview');
   if (!box) return;
@@ -549,11 +578,14 @@ function renderLocalizedPreview() {
     return;
   }
   box.classList.remove('d-none');
+  // M1-4 — 상태는 내부 코드(`unchanged`)가 아니라 사람 말로. 상세설명이 비어 있으면 빈 칸 대신 그 사실을 적는다.
   box.innerHTML = entries.map(([locale, row]) => `
     <div class="mb-2 pb-2 border-bottom">
-      <div class="fw-semibold">${escapeHtml(locale)} <span class="pc-badge pc-badge-muted">${escapeHtml(row.status || 'translated')}</span></div>
-      <input class="form-control form-control-sm mt-1 localized-title" data-locale="${escapeHtml(locale)}" value="${escapeHtml(row.title || '')}">
-      <textarea class="form-control form-control-sm mt-1 localized-description" data-locale="${escapeHtml(locale)}" rows="2">${escapeHtml(row.description || '')}</textarea>
+      <div class="fw-semibold">${escapeHtml(locale)} <span class="pc-badge pc-badge-muted" data-role="loc-status">${escapeHtml(kgpLocStatus(row))}</span></div>
+      <input class="form-control form-control-sm mt-1 localized-title" data-locale="${escapeHtml(locale)}" value="${escapeHtml(row.title || '')}" aria-label="상품명">
+      ${(row.description || '').trim()
+        ? `<textarea class="form-control form-control-sm mt-1 localized-description" data-locale="${escapeHtml(locale)}" rows="2" aria-label="상세설명">${escapeHtml(row.description)}</textarea>`
+        : `<div class="small text-muted mt-1" data-role="loc-desc-empty">상세설명 — 원문에 설명이 없어 비워 뒀어요</div>`}
     </div>
   `).join('');
 }

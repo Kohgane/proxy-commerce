@@ -129,7 +129,8 @@ class TestUploadLiveFailure:
         item = result["results"][0]
         assert item["success"] is False
         assert item["error_code"] == "api_error"
-        assert "SHOPIFY_AUTO_TOKEN" in (item["hint"] or "")
+        # M1-1: 셀러가 고치는 곳(마켓 연동)을 말한다 — env 이름·관리자 경로는 싣지 않는다.
+        assert "마켓 연동" in (item["hint"] or "") and "SHOPIFY_" not in (item["hint"] or "")
 
     def test_validation_failure_surfaces_error_code(self, client, monkeypatch):
         _patch_shopify_adapter(monkeypatch, validate_ok=False)

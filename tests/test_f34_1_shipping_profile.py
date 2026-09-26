@@ -102,10 +102,12 @@ def test_six_saved_fields_leave_exactly_one_missing(file_store):
     res = _precheck(mc, "seller-f34")
 
     assert res.ok is False, "출고지코드가 없으니 막는 건 맞다"
-    assert MISSING_ONE in res.hint
+    # M1-1: 화면 문장은 칸 이름, env 이름은 `missing_envs`(로그·관리자)에만.
+    assert res.missing_envs == [MISSING_ONE], f"모자란 칸은 하나여야 한다 — {res.missing_envs}"
+    from src.seller_console.user_messages import label_for
+    assert label_for(MISSING_ONE) in res.hint and "COUPANG_" not in res.hint, res.hint
     for env in OWNER_SIX:
-        assert f"{env}(" not in res.hint, f"{env}는 넣었는데 비었다고 말한다"
-    assert res.hint.count("COUPANG_") == 1, f"모자란 칸은 하나여야 한다 — {res.hint}"
+        assert label_for(env) not in res.hint, f"{env}는 넣었는데 비었다고 말한다"
 
 
 def test_the_seventh_field_completes_it(file_store):

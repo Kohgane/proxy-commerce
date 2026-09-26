@@ -1712,6 +1712,13 @@ async function runPrevalidate() {
 
 // F48-c/d — 마켓이 준 사유를 **한 줄씩**. 한 문자열로 뭉치면 사람은 첫 문장만 읽는다.
 //   한 줄이면 요약(message)이 곧 그 문장이다 — 목록을 또 펴면 같은 말이 두 번 나온다.
+// M1-1 — 설정이 비어 막혔을 때 **고치러 갈 화면** 링크(마켓 연동 › 그 마켓). 우리 앱 경로만 받는다.
+//   드로어(iframe) 안에서 눌러도 연동 화면이 드로어에 갇히지 않게 맨 위 창에서 연다(새 창 아님).
+function renderActionLink(url) {
+  if (!url || !/^\/seller\//.test(String(url))) return '';
+  return `<a class="btn btn-sm btn-ghost mt-2" data-role="action-link" target="_top" href="${kgpEscapeForHtml(url)}"><i class="bi bi-plug"></i> 마켓 연동에서 채우기</a>`;
+}
+
 function renderDetailLines(lines, cls) {
   if (!lines || lines.length < 2) return '';
   const esc = (typeof kgpEscapeForHtml === 'function') ? kgpEscapeForHtml
@@ -1746,6 +1753,7 @@ function renderPrevalidateResults(results) {
           <div class="text-muted small">${r.message}</div>
           ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger')}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
+          ${renderActionLink(r.action_url)}
         </div>
       </div>`;
   });
@@ -1869,6 +1877,7 @@ function renderUploadResults(data) {
           <div class="small">${r.message}</div>
           ${renderDetailLines(r.details, 'text-danger')}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> 조치: ${r.hint}</div>` : ''}
+          ${renderActionLink(r.action_url)}
           ${r.error_code ? `<div class="text-muted small">오류코드: ${r.error_code}</div>` : ''}
         </div>`;
     }
