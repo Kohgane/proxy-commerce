@@ -23,7 +23,7 @@ _FIX = glob.glob("fixtures/realpages/diag/kgp-snapshot-search-rakuten*.html")
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.152"
+    assert MANIFEST["version"] == "1.5.153"
 
 
 def test_source_contract():

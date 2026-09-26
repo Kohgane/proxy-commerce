@@ -190,6 +190,7 @@ def compute_collect_status(
         src_label = {
             "tier1": "Tier1(API/상태)", "tier2": "Tier2(DOM)", "tier3": "Tier3(og)",
             "ldjson": "ld+json", "json": "JSON", "dom": "DOM", "server": "서버파싱",
+            "ice_context": "ICE(티몰 상태)",
         }.get(src, ("해당 없음" if na else ("있음" if ok else "없음")))
         fields.append({"key": key, "label": label, "ok": ok, "core": core, "na": na, "source": src_label,
                        # F49-T — 빠진 필드엔 **잰 근거로** 사유를 붙인다(없으면 「사유 미상」).
@@ -210,6 +211,7 @@ def compute_collect_status(
     _t_label = {
         "tier1": "Tier1(API/상태)", "tier2": "Tier2(DOM)", "tier3": "Tier3(og)",
         "ldjson": "ld+json", "json": "JSON", "dom": "DOM", "server": "서버파싱",
+            "ice_context": "ICE(티몰 상태)",
     }.get(_t_src, ("있음" if _t_ok else "없음"))
     fields.insert(0, {"key": "title", "label": "제목", "ok": _t_ok, "core": False, "source": _t_label, "count": False})
     # v49 STEP5: 3단계 — 성공(전 필드)/부분(일부 누락)/실패(핵심 3 전부 미확보=추출 실패).
