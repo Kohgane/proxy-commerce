@@ -108,9 +108,10 @@ def run_upload(
     """
     missing = [key for key in required_envs if not os.getenv(key)]
     if missing:
-        raise ChannelCredentialsMissing(
-            f"{market_label} 자격증명 미설정: {', '.join(missing)}"
-        )
+        # M1-1 — 화면 문장은 칸 이름으로(`user_messages`). env 이름은 로그에만.
+        from src.seller_console.user_messages import credentials_missing
+        logger.info("%s 자격증명 미설정 env=%s", market_label, ",".join(missing))
+        raise ChannelCredentialsMissing(credentials_missing(market_label, missing))
 
     collected = to_collected(product_data)
     if collected["sell_price_krw"] <= 0:
@@ -123,10 +124,15 @@ def run_upload(
 
     if not isinstance(resp, dict) or not resp.get("success"):
         error = resp.get("error") if isinstance(resp, dict) else "알 수 없는 오류"
-        raise ChannelUploadError(
-            f"{market_label} 업로드 실패: {error}",
-            lines=(resp.get("error_lines") if isinstance(resp, dict) else None),
-            held=bool(isinstance(resp, dict) and resp.get("held")))
+        held = bool(isinstance(resp, dict) and resp.get("held"))
+        lines = resp.get("error_lines") if isinstance(resp, dict) else None
+        # M1-1 — 보류(전송 전)는 **그 문장 하나**가 사유다. 예전엔 lines가 비어 「쿠팡 업로드 실패: …」가
+        #   통째로 화면 문장에 붙어, 「전송 전에 보류했습니다 — 쿠팡 업로드 실패: …」처럼 겹쳐 나갔다.
+        if held and not lines and error:
+            lines = [str(error)]
+        exc = ChannelUploadError(f"{market_label} 업로드 실패: {error}", lines=lines, held=held)
+        exc.action_url = resp.get("action_url", "") if isinstance(resp, dict) else ""
+        raise exc
 
     return {
         "product_id": str(resp.get("product_id") or "").strip() or None,

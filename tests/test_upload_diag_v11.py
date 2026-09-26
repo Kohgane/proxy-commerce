@@ -19,7 +19,10 @@ def test_token_missing_message_distinguishes_app_vs_env(monkeypatch):
     r = res[0]
     assert r.error_code == "token_missing"
     assert "마켓 연동" in (r.hint or "") or "markets/connect" in (r.hint or "")
-    assert "환경변수" in (r.hint or "")          # env와 다름을 명시
+    # M1-1(2026-09-26): 예전엔 「서버 환경변수(MARKET_CRED_ENC_KEY …)와 다릅니다」를 붙였다 — 셀러에겐
+    #   모르는 이름만 늘었다. 이제 env 이름 0 + 고칠 화면 주소를 따로 준다.
+    assert "MARKET_CRED_ENC_KEY" not in (r.hint or "") and "COUPANG_" not in (r.hint or "")
+    assert r.action_url == "/seller/markets/connect/coupang"
     assert "환경변수 미설정" not in r.message      # 개발자틱 메시지 폐기
 
 

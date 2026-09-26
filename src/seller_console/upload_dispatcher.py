@@ -298,13 +298,19 @@ _MARKET_REQUIRED_ENVS: Dict[str, List[str]] = {
 }
 
 # 마켓별 업로드 힌트 (토큰/권한 미설정 시 안내)
+# M1-1: 예전엔 「/admin/diagnostics 에서 COUPANG_ACCESS_KEY … 를 설정하세요」였다 — 셀러는 관리자 화면에
+#   못 들어가고 env 이름도 모른다. 셀러가 실제로 고치는 곳(마켓 연동)을 말한다.
 _MARKET_TOKEN_HINTS: Dict[str, str] = {
-    "coupang": "/admin/diagnostics 에서 COUPANG_ACCESS_KEY / SECRET_KEY / VENDOR_ID 를 설정하세요.",
-    "smartstore": "/admin/diagnostics 에서 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 설정하세요.",
-    "elevenst": "/admin/diagnostics 에서 ELEVENST_API_KEY 를 설정하세요.",
-    "woocommerce": "/admin/diagnostics 에서 WC_URL / WC_KEY / WC_SECRET (또는 WOO_BASE_URL / WOO_CK / WOO_CS) 를 설정하세요.",
-    "shopify": "/admin/diagnostics 에서 SHOPIFY_SHOP 및 SHOPIFY_AUTO_TOKEN 을 설정하세요.",
+    m: f"마켓 연동 › {lbl}에서 키를 입력하고 ‘연결 확인’을 눌러 주세요."
+    for m, lbl in (("coupang", "쿠팡"), ("smartstore", "스마트스토어"), ("elevenst", "11번가"),
+                   ("woocommerce", "WooCommerce"), ("shopify", "Shopify"))
 }
+def _connect_url(market: str) -> str:
+    from src.seller_console.user_messages import connect_url
+    return connect_url(market)
+
+
+_RETRY_HINT = "잠시 뒤 다시 시도해 보세요. 계속되면 마켓 연동 화면에서 ‘연결 확인’을 눌러 보세요."
 
 
 @dataclass
@@ -321,6 +327,7 @@ class UploadResult:
     hint: Optional[str] = None                 # 즉시 행동 가이드
     # F48-c — 마켓 거부 문장 **한 줄씩**(쿠팡 `|` 분리 · errorItems[].itemAttributes[].message)
     details: List[str] = field(default_factory=list)
+    action_url: str = ""                       # M1-1 — 고치러 갈 화면(마켓 연동 등)
 
 
 @dataclass
@@ -354,6 +361,7 @@ class DispatchResult:
                     "error_code": r.error_code,
                     "hint": r.hint,
                     "details": list(r.details or []),
+                    "action_url": r.action_url or "",
                 }
                 for r in self.results
             ],
@@ -375,6 +383,9 @@ class PrevalidationResult:
     reach_detail: str = ""
     # F48-d — 전송 전에 잡은 사유 **한 줄씩**(쿠팡 배송·구매옵션·필수서류)
     details: List[str] = field(default_factory=list)
+    # M1-1 — 셀러가 고치러 갈 화면 주소. 빈 칸 이름(env)은 화면 대신 여기(로그·관리자)에만.
+    action_url: str = ""
+    missing_envs: List[str] = field(default_factory=list)
 
 
 def lines_message(prefix: str, lines: List[str]) -> str:
@@ -512,6 +523,7 @@ class UploadDispatcher:
                    else [k for k in required_envs if not os.getenv(k)])
         _cred_source = ""          # F29-5: 어느 저장소를 보고 판정했는지(문장에 싣는다)
         _empty_label = "비어 있는 값: "   # F34-1: 읽지 못했으면 이 말이 바뀐다
+        _cp_api: List[str] = []
 
         # Shopify: SHOPIFY_AUTO_TOKEN 또는 SHOPIFY_ACCESS_TOKEN 중 하나만 있어도 됨
         # (required_envs에는 SHOPIFY_SHOP만 있어서 토큰 별도 체크 필요)
@@ -541,8 +553,9 @@ class UploadDispatcher:
                 coupang_api_state, coupang_shipping_state)
             _api = coupang_api_state()
             _state = coupang_shipping_state(_api.get("account") or "")
-            for env, label in list(_api["missing"]) + list(_state["missing"]):
-                missing.append(f"{env}({label})")
+            for env, _label in list(_api["missing"]) + list(_state["missing"]):
+                missing.append(env)
+            _cp_api = [e for e, _ in _api["missing"]]
             _cred_source = _state["source"]
             # **못 물어본 것을 「없다」고 하지 않는다** — 조회 자체가 실패했으면 그렇게 말한다.
             if _api.get("unknown") or _state.get("unknown"):
@@ -563,16 +576,27 @@ class UploadDispatcher:
 
         if missing:
             # F29-5: 「미입력」만 말하면 셀러는 **이미 넣어 둔 값을 또 넣는다**(오너가 그랬다).
-            #   어느 저장소를 봤는지와 빈 필드를 그대로 싣는다.
+            #   어느 저장소를 봤는지와 빈 칸을 그대로 싣는다.
+            # M1-1(2026-09-26 모바일 실캡처): 빈 칸은 **칸 이름**으로 말한다. env 이름·
+            #   「MARKET_CRED_ENC_KEY」 설명은 셀러가 고칠 수 없는 우리 서버 이름이라 화면에서 뺐다
+            #   (env는 로그와 `missing_envs`에만). 문장은 user_messages 한 곳에서 만든다.
+            from src.seller_console import user_messages as um
             _where = ("확인한 곳: " + _cred_source + ". ") if _cred_source else ""
+            # 칸 이름은 **연동 화면의 라벨 하나**로(업로더 문장과 같은 사전 — 두 벌 금지).
+            _names = um._uniq(um.label_for(e) for e in missing)
+            if market == "coupang" and not _cp_api:
+                _msg = um.coupang_shipping_missing([])
+            else:
+                _msg = um.credentials_missing(MARKET_LABELS.get(market, market), [])
+            logger.info("[사전검증] %s 빈 설정: %s", market, ", ".join(missing))
             return PrevalidationResult(
                 market=market,
                 ok=False,
                 error_code="token_missing",
-                message="이 마켓의 API 키(또는 배송정보)가 아직 입력되지 않았어요.",
-                hint=("‘마켓 연동’ 화면에서 이 마켓의 키를 입력하세요 (/seller/markets/connect/" + market + "). "
-                      "이 키는 앱에 입력하는 ‘내 마켓 키’이며, 서버 환경변수(MARKET_CRED_ENC_KEY 등 인프라 키)와는 다릅니다. "
-                      + _where + _empty_label + ", ".join(missing)),
+                message=_msg,
+                hint=_where + _empty_label + ", ".join(_names),
+                action_url=um.connect_url(market),
+                missing_envs=list(missing),
             )
 
         # 필수 필드 검증
@@ -1034,6 +1058,7 @@ class UploadDispatcher:
                 message=str(exc),
                 error_code="token_missing",
                 hint=_MARKET_TOKEN_HINTS.get("coupang"),
+                action_url=_connect_url("coupang"),
             )
         except ChannelUploadError as exc:
             # F48-c — 거부 문장을 **한 줄씩** 화면에. 보류(전송 전)와 거부(전송 후)를 가른다.
@@ -1048,6 +1073,7 @@ class UploadDispatcher:
                 #   새로 생긴 것은 **전송 전 보류**(`held`) 하나다.
                 error_code="held" if held else "api_error",
                 details=lines,
+                action_url=str(getattr(exc, "action_url", "") or ""),
             )
         except Exception as exc:
             logger.warning("쿠팡 업로드 오류: %s", exc)
@@ -1056,7 +1082,7 @@ class UploadDispatcher:
                 success=False,
                 message=f"오류: {exc}",
                 error_code="api_error",
-                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+                hint=_RETRY_HINT,
             )
 
     def _upload_smartstore(self, product_data: Dict[str, Any]) -> UploadResult:
@@ -1095,6 +1121,7 @@ class UploadDispatcher:
                 message=str(exc),
                 error_code="token_missing",
                 hint=_MARKET_TOKEN_HINTS.get("smartstore"),
+                action_url=_connect_url("smartstore"),
             )
         except Exception as exc:
             logger.warning("스마트스토어 업로드 오류: %s", exc)
@@ -1103,7 +1130,7 @@ class UploadDispatcher:
                 success=False,
                 message=f"오류: {exc}",
                 error_code="api_error",
-                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+                hint=_RETRY_HINT,
             )
 
     def _upload_elevenst(self, product_data: Dict[str, Any]) -> UploadResult:
@@ -1142,6 +1169,7 @@ class UploadDispatcher:
                 message=str(exc),
                 error_code="token_missing",
                 hint=_MARKET_TOKEN_HINTS.get("elevenst"),
+                action_url=_connect_url("elevenst"),
             )
         except Exception as exc:
             logger.warning("11번가 업로드 오류: %s", exc)
@@ -1150,7 +1178,7 @@ class UploadDispatcher:
                 success=False,
                 message=f"오류: {exc}",
                 error_code="api_error",
-                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+                hint=_RETRY_HINT,
             )
 
     def _upload_woocommerce(self, product_data: Dict[str, Any]) -> UploadResult:
@@ -1241,7 +1269,7 @@ class UploadDispatcher:
                 success=False,
                 message=f"오류: {exc}",
                 error_code="api_error",
-                hint="오류 내용을 확인 후 재시도하거나 /admin/diagnostics 에서 자격증명을 점검하세요.",
+                hint=_RETRY_HINT,
             )
 
     def _upload_shopify(self, product_data: Dict[str, Any]) -> UploadResult:
@@ -1322,7 +1350,7 @@ class UploadDispatcher:
                     success=False,
                     message=result.message,
                     error_code="api_error",
-                    hint="SHOPIFY_SHOP / SHOPIFY_AUTO_TOKEN 설정 및 Admin API 권한을 /admin/diagnostics 에서 확인하세요.",
+                    hint=_MARKET_TOKEN_HINTS["shopify"],
                 )
 
             admin_url = str(result.raw.get("admin_url") or "").strip()
@@ -1342,7 +1370,7 @@ class UploadDispatcher:
                 success=False,
                 message="오류: Shopify 업로드 처리 실패",
                 error_code="api_error",
-                hint="SHOPIFY_SHOP / SHOPIFY_AUTO_TOKEN 설정 및 Admin API 권한을 /admin/diagnostics 에서 확인하세요.",
+                hint=_MARKET_TOKEN_HINTS["shopify"],
             )
 
     @staticmethod

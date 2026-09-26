@@ -320,8 +320,10 @@ class TestCoupangUploadProduct:
         with patch.object(u, '_api_request', side_effect=AssertionError('호출 금지')):
             result = u.upload_product(u.prepare_product(SAMPLE_COLLECTED))
         assert result['success'] is False
-        assert 'COUPANG_RETURN_CENTER_CODE' in result['error']
-        assert 'COUPANG_VENDOR_USER_ID' in result['error']
+        # M1-1: 화면 문장은 칸 이름(연동 화면 라벨)으로, env 이름은 0.
+        assert '반품지센터코드' in result['error'] and 'Wing 로그인 ID' in result['error']
+        assert 'COUPANG_' not in result['error']
+        assert result.get('action_url') == '/seller/markets/connect/coupang'
 
     def test_payload_has_required_option_and_return_fields(self, coupang_uploader):
         """페이로드에 옵션·반품지 필수 필드가 null 없이 모두 채워진다."""

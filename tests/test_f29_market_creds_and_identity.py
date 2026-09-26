@@ -201,7 +201,9 @@ def test_missing_message_names_the_store_and_the_fields(clean_env):
     hint = res[0].hint
     assert "확인한 곳:" in hint, hint
     assert "비어 있는 값:" in hint
-    assert "COUPANG_RETURN_CENTER_CODE(반품지센터코드)" in hint
+    # M1-1: 빈 칸은 **칸 이름**으로 말한다 — env 이름은 화면에 싣지 않는다(missing_envs에만).
+    assert "반품지센터코드" in hint and "COUPANG_" not in hint, hint
+    assert "COUPANG_RETURN_CENTER_CODE" in res[0].missing_envs
 
 
 def test_unknown_is_not_reported_as_missing(clean_env):

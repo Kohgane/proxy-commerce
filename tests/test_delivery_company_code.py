@@ -78,8 +78,9 @@ def test_unset_uses_verified_default(monkeypatch):
     assert sent["payload"]["deliveryMethod"] == "AGENT_BUY"        # 구매대행(SEQUENCIAL 폐기)
 
 
-def test_explicitly_cleared_holds_before_send(monkeypatch):
+def test_explicitly_cleared_holds_before_send(monkeypatch, caplog):
     # 명시적으로 비우면(""): 등록 전 정직 실패 — 유효하지 않은 코드 전송 0.
+    caplog.set_level("INFO")
     up = _up(monkeypatch, account="woojoo", COUPANG_WOOJOO_DELIVERY_COMPANY_CODE="")
     up.delivery_company_code = ""
     up.delivery_company_name = ""
@@ -87,7 +88,10 @@ def test_explicitly_cleared_holds_before_send(monkeypatch):
     _wire(monkeypatch, up, sent)
     r = up.upload_product({"title": "케이스", "brand": "B", "origin": "중국", "sku": "B0GS4698H2", "price": 48500, "images": ["u"]})
     assert r["success"] is False and r.get("held") is True
-    assert "COUPANG_WOOJOO_DELIVERY_COMPANY_CODE" in r["error"]   # 계정 접두 키명 안내
+    # M1-1: 계정 접두 키명은 **로그**로(관리자용). 셀러 화면 문장엔 env 이름 0 + 고칠 화면 주소.
+    assert "COUPANG_WOOJOO_DELIVERY_COMPANY_CODE" in caplog.text
+    assert "COUPANG_" not in r["error"] and "택배사" in r["error"]
+    assert r.get("action_url") == "/seller/markets/connect/coupang"
     assert not sent                                               # POST 호출 0
 
 
