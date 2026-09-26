@@ -79,6 +79,17 @@ COLLECT_ENTRY_POINTS = (
 # 셀러 수집 경로가 아닌 곳(관리자 진단·보강 큐)은 목록에 없다 — 같은 코어를 타므로 가드는 받는다.
 
 
+def site_currency(url: str) -> str:
+    """이 **사이트가 값을 매기는 통화** — 타오바오·티몰은 위안(CNY). 모르면 빈 문자열.
+
+    F49-T 2부(오너 실측 2026-09-26): 붙여넣기 초안이 「통화 미상」으로 떴다 — URL에 `price=`가 있을 때만
+    CNY를 적고, 없으면 비워 뒀기 때문이다. 타오바오·티몰 상품 페이지의 가격은 **도메인이 곧 통화**다
+    (확장 공유 추출기도 같은 도메인 규칙으로 CNY를 적는다 — `kgp-extractor.js` `(taobao|tmall)` → CNY).
+    추측이 아니라 도메인 측정이다. 그 밖의 사이트는 **모른다**(빈 문자열).
+    """
+    return "CNY" if is_taobao_family(url) else ""
+
+
 def is_taobao_family(url: str) -> bool:
     """타오바오 계열인가 — **서버가 나가면 안 되는 곳**이다(C-T4'' 실측).
 
