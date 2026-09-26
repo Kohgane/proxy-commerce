@@ -179,9 +179,10 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     if not item_id or not durable:
         return {"ok": False, "url": url, "error": "저장 영속화 실패(재시도 필요)"}
 
-    logger.info("공유 수집 stage=saved item=%s url=%s item_id=%s 가격=%s%s 미수집=%s 게이트=%s",
+    # 가격 없이 통화만 있으면 「가격=-CNY」(음수처럼 읽힘)가 됐다 — 가격·통화를 칸으로 가른다.
+    logger.info("공유 수집 stage=saved item=%s url=%s item_id=%s 가격=%s 통화=%s 미수집=%s 게이트=%s",
                 item_id, url, share.get("item_id") or item_id_site or "-",
-                price or "-", currency or "", ",".join(uncollected) or "-",
+                price or "-", currency or "-", ",".join(uncollected) or "-",
                 "done" if price else "pending")
     # C-F9-1: 갈래 판정과 문장은 **원본 `share`에서 한 번만** 만든다.
     #   호출부가 반환 dict로 다시 판정하면 안 된다 — 여기서 `item_id`는 **이력 행 ID**고
