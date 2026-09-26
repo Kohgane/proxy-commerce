@@ -261,6 +261,30 @@
           <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
         </div>
         <div id="optionRows" class="vstack gap-2"></div>
+        {# F49-T 2부 — 수집된 **SKU 실물**(조합·원가·참고가·재고). 원가 = 优惠前, 참고가 = 平台加补后(원가 계산 미사용).
+           재고 0은 등록 대상에서 빠진다 — 사유를 그 줄에 적는다. #}
+        {% set _skus = (extra.get('skus') if extra else None) or [] %}
+        {% if _skus %}
+        <div class="pc-inset mt-3" data-role="sku-table">
+          <div class="console-kpi-label mb-1">SKU {{ _skus|length }}개
+            {% if (extra.get('field_sources') or {}).get('sku') == 'ice_context' %}<span class="pc-badge pc-badge-muted ms-1">티몰 상태(ICE)</span>{% endif %}</div>
+          <table class="table table-sm mb-0" style="font-size:.82rem">
+            <thead><tr><th>조합</th><th class="text-end">원가</th><th class="text-end">참고가</th><th class="text-end">재고</th></tr></thead>
+            <tbody>
+            {% for k in _skus %}
+              <tr {% if k.stock == 0 %}class="text-muted"{% endif %}>
+                <td>{{ k.spec|join(' / ') }}
+                  {% if k.stock == 0 %}<div class="small" style="color:var(--warn)">등록 제외 — 재고 없음{% if k.stock_text %}({{ k.stock_text }}){% endif %}</div>{% endif %}</td>
+                <td class="text-end">{{ k.price or '—' }} {{ k.currency if k.price else '' }}</td>
+                <td class="text-end">{{ k.reference_price or '—' }}</td>
+                <td class="text-end">{{ k.stock if k.stock is not none else '모름' }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          <div class="small text-muted mt-1">원가 = 할인 전 가격(优惠前) · 참고가 = 플랫폼 보조금 뒤(平台加补后, 원가 계산에 쓰지 않음)</div>
+        </div>
+        {% endif %}
         {# F48-c — 사전검증이 멈춘 쿠팡 옵션을 **여기서 푼다.** 칸은 쿠팡 카테고리 메타(MANDATORY) 그대로,
            값은 상품에서 실제로 찾은 것 또는 오너가 넣은 것만(기본값 채우기 0). 비면 보류가 유지된다. #}
         <div class="pc-inset mt-3" data-role="coupang-options">

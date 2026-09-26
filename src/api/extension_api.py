@@ -738,6 +738,31 @@ def collect_enrich_blocked():
                     "max_attempts": ENRICH_MAX_ATTEMPTS, "state": state})
 
 
+def _clean_skus(raw) -> list:
+    """F49-T 2부 — 확장이 보낸 `skus[]`를 **알려진 키·짧은 값**만 남겨 저장한다(모양·크기 방어).
+
+    `price`는 원가(优惠前), `reference_price`는 참고가(平台加补后 — 원가 계산 미사용), `stock`은 정수 또는 None(모름).
+    """
+    out = []
+    for s in (raw or [])[:300] if isinstance(raw, list) else []:
+        if not isinstance(s, dict):
+            continue
+        spec = [str(v)[:80] for v in (s.get("spec") or []) if str(v or "").strip()][:6]
+        if not spec:
+            continue
+        st = s.get("stock")
+        try:
+            stock = int(st) if st is not None and str(st).strip() != "" else None
+        except (TypeError, ValueError):
+            stock = None
+        out.append({"spec": spec, "sku_id": str(s.get("sku_id") or "")[:40],
+                    "price": str(s.get("price") or "")[:20], "currency": str(s.get("currency") or "")[:8],
+                    "reference_price": str(s.get("reference_price") or "")[:20],
+                    "stock": stock, "stock_text": str(s.get("stock_text") or "")[:40],
+                    "image": str(s.get("image") or "")[:500]})
+    return out
+
+
 def _clean_page_diag(raw):
     """F49-T — 지연 import(이 파일 관례). 모듈 최상단에서 `src.collectors`를 불러오면 테스트 수집 단계에
     수집기 어댑터가 먼저 로드돼 `ADAPTER_DRY_RUN`을 **import 시점에** 읽어 버린다(실측: 순서 오염 4건)."""
@@ -1261,6 +1286,9 @@ def collect_from_extension():
         "tier1_diag": payload.get("tier1_diag") or {},        # v56 STEP4: Tier1 최종 판정(used·원인) 저장
         # F49-T: 확장이 잰 **페이지 상태**(벽·내비·lazy·셀렉터 적중·오류) — 필드별 실패 사유의 유일한 근거.
         "page_diag": _clean_page_diag(payload.get("page_diag")),
+        # F49-T 2부: SKU 실물(티몰 ICE 등) — 조합·SKU별 가격·참고가(보조금 뒤)·재고. 전엔 **저장하지 않았다**.
+        "skus": _clean_skus(payload.get("skus")),
+        "field_sources": payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {},
         "mode": _resolve_collect_mode(payload),   # v81 'core'(북마클릿) / v86-F 'simple'(목록 타일) / 'full'
     }
     _field_status = {}

@@ -358,6 +358,100 @@
     }
     return out;
   }
+  // ── F49-T 2부: 티몰·타오바오 **ICE 컨텍스트**(SKU 실물) ─────────────────────────────
+  //   오너 실측(2026-09-26, 진단 파일): 상세 페이지 상태는 `window.__ICE_APP_CONTEXT__` →
+  //   `loaderData.home.data.res`에 있다. 키 이름은 **그 실물에서만** 가져왔다(tests/fixtures/tmall_1064346880857_ice.json):
+  //     res.item.{title, images[]} · res.skuBase.props[].{pid, name, values[].{vid, name, image}} ·
+  //     res.skuBase.skus[].{propPath "pid:vid;…", skuId} · res.skuCore.sku2info[skuId].{quantity, quantityText,
+  //     price.priceMoney(分), subPrice.priceMoney(分)} — sku2info["0"]는 상품 대표가(「起」).
+  //   읽는 길 둘: ① live 전역(MAIN world·북마클릿) ② 인라인 <script>의 `__ICE_APP_CONTEXT__ = {…}` 텍스트(격리 월드).
+  function _iceRoot() {
+    var ctx = null;
+    try { ctx = global.__ICE_APP_CONTEXT__; } catch (e) { ctx = null; }
+    if (!ctx || typeof ctx !== "object") {
+      try {
+        var ss = document.querySelectorAll("script:not([src])");
+        for (var i = 0; i < ss.length && !ctx; i++) {
+          var t = ss[i].textContent || "";
+          var idx = t.indexOf("__ICE_APP_CONTEXT__");
+          if (idx < 0) continue;
+          var eq = t.indexOf("=", idx);
+          if (eq < 0 || eq - idx > 30) continue;
+          var mb = /[{\[]/.exec(t.slice(eq, eq + 300));
+          if (!mb) continue;
+          var raw = _sliceBalanced(t, eq + mb.index);
+          if (raw) { try { ctx = JSON.parse(raw); } catch (e) { ctx = null; } }
+        }
+      } catch (e) {}
+    }
+    try { return ctx && ctx.loaderData && ctx.loaderData.home && ctx.loaderData.home.data && ctx.loaderData.home.data.res || null; }
+    catch (e) { return null; }
+  }
+  function _fenToYuan(m) {
+    var s = String(m == null ? "" : m).trim();
+    if (!/^\d+$/.test(s)) return "";
+    var n = parseInt(s, 10);
+    return (Math.floor(n / 100)) + "." + ("0" + (n % 100)).slice(-2);   // 17550 → "175.50"(부동소수 오차 없이)
+  }
+  function _absUrl(u) {
+    var s = String(u || "").trim();
+    if (!s) return "";
+    if (s.indexOf("//") === 0) return "https:" + s;
+    return s;
+  }
+  function _iceSku() {
+    var res = _iceRoot();
+    if (!res || typeof res !== "object") return null;
+    var item = res.item || {}, base = res.skuBase || {}, core = res.skuCore || {};
+    var info = core.sku2info || {};
+    var props = Array.isArray(base.props) ? base.props : [];
+    var names = {}, options = [];
+    props.forEach(function (p) {
+      if (!p || !p.name || !Array.isArray(p.values)) return;
+      var vals = [];
+      p.values.forEach(function (v) {
+        if (!v || v.name == null) return;
+        names[String(p.pid) + ":" + String(v.vid)] = { axis: String(p.name), value: String(v.name), image: _absUrl(v.image) };
+        vals.push(String(v.name));
+      });
+      if (vals.length) options.push({ name: String(p.name), values: vals });
+    });
+    var skus = [];
+    (Array.isArray(base.skus) ? base.skus : []).forEach(function (s) {
+      if (!s || !s.skuId) return;
+      var spec = [], image = "", ok = true;
+      String(s.propPath || "").split(";").forEach(function (pv) {
+        pv = pv.trim(); if (!pv) return;
+        var hit = names[pv];
+        if (!hit) { ok = false; return; }
+        spec.push(hit.value); if (!image && hit.image) image = hit.image;
+      });
+      if (!ok || !spec.length) return;              // 모르는 pid:vid — 짝을 지어내지 않는다
+      var si = info[String(s.skuId)] || {};
+      var q = (si.quantity == null || si.quantity === "") ? null : parseInt(si.quantity, 10);
+      skus.push({
+        spec: spec, sku_id: String(s.skuId), image: image,
+        price: _fenToYuan(si.price && si.price.priceMoney), currency: "CNY",
+        // 平台加补后(보조금 뒤) — **참고가**. 원가 계산엔 안 쓴다(오너 2026-09-26).
+        reference_price: _fenToYuan(si.subPrice && si.subPrice.priceMoney),
+        stock: (q === null || isNaN(q)) ? null : q,
+        stock_text: String(si.quantityText || "")
+      });
+    });
+    var d0 = info["0"] || {};
+    var price = _fenToYuan(d0.price && d0.price.priceMoney);
+    if (!price) {
+      var inStock = skus.filter(function (k) { return k.price && k.stock !== 0; });
+      if (inStock.length) price = inStock.map(function (k) { return k.price; }).sort(function (a, b) { return parseFloat(a) - parseFloat(b); })[0];
+    }
+    var imgs = (Array.isArray(item.images) ? item.images : []).map(_absUrl).filter(Boolean);
+    return { ok: !!(skus.length || options.length || item.title), title: String(item.title || ""),
+             images: imgs, options: options, skus: skus, price: price, item_id: String(item.itemId || "") };
+  }
+  function _taobaoHost() {
+    try { return /(^|\.)(taobao|tmall)\.com$/.test((location.hostname || "").toLowerCase()); } catch (e) { return false; }
+  }
+
   function _fromJson() {
     var res = { title: "", price: "", currency: "", currencySrc: "", images: [], detailImages: [], specs: [],
                 options: [], skus: [], reviews: [], rating: "", reviewCount: "", description: "", ok: false,
@@ -1725,12 +1819,16 @@
 
     // v60 STEP1: 타이틀 우선순위 = 어댑터 지정 셀렉터 → ld+json/state name(Tier1) → 본문 h1(우리 UI·패널 제외)
     //   → og:title → document.title(최후). 삽입 UI h1('Chat history' 등) 오염 차단.
+    // F49-T 2부 — ICE 컨텍스트가 있으면 **그게 정본**(제목·이미지·옵션·SKU·가격).
+    var ice = null;
+    try { ice = _iceSku(); } catch (e) { ice = null; }
+    if (ice && !ice.ok) ice = null;
     var at = _adapterTitle();
     var h1t = _cleanH1();
     var ogt = _meta("og:title");
     // v65 STEP1: 순수 사이트/브랜드명("Temu" 등)은 상품명이 아니다 — 후보에서 배제(제목 'Temu' 재발 금지).
-    var _cands = [{ v: at, s: "adapter" }, { v: j.title, s: "tier1" }, { v: h1t, s: "tier2" },
-      { v: ogt, s: "tier3" }, { v: (document.title || ""), s: "tier3" }];
+    var _cands = [{ v: ice && ice.title, s: "ice_context" }, { v: at, s: "adapter" }, { v: j.title, s: "tier1" },
+      { v: h1t, s: "tier2" }, { v: ogt, s: "tier3" }, { v: (document.title || ""), s: "tier3" }];
     var title = "", titleSrc = "none";
     for (var _ti = 0; _ti < _cands.length; _ti++) {
       var _c = String(_cands[_ti].v || "").replace(/\s+/g, " ").trim();
@@ -1746,6 +1844,14 @@
     var priceSrc = j.price ? "tier1" : "";
     var images = (j.images || []).slice(), detailImages = (j.detailImages || []).slice();
     var options = (j.options || []).slice(), skus = (j.skus || []).slice(), specs = _cleanSpecs(j.specs || []);
+    if (ice) {
+      // ICE가 있으면 옵션·SKU는 ICE만 — DOM(tier2)이 만든 「已售/可开专票/送赠品」 류 잡음 그룹을 버린다.
+      options = ice.options.slice(); skus = ice.skus.slice();
+      if (ice.price) { price = ice.price; currency = "CNY"; currencySrc = "tier1"; priceSrc = "ice_context"; }
+      if (ice.images.length) images = ice.images.slice();
+    } else if (_taobaoHost()) {
+      warnings.push("SKU 컨텍스트 없음 — 이 페이지에서 __ICE_APP_CONTEXT__를 찾지 못했어요(SKU 0)");
+    }
     var reviews = (j.reviews || []).slice(), rating = j.rating || "", reviewCount = j.reviewCount || "";
     // v83 STEP2: 알리 옵션 소생 — tier1(state)이 비면 DOM sku-item 어댑터로. 값이 있으면 그 값 각각을 sku로도
     //   등록한다(스와치=실제 선택 가능한 변형. 가격은 미상이라 빈값 — 가짜 가격 금지).
@@ -1767,7 +1873,7 @@
       try {
         if (!price) { var dp = _domPrice(); if (dp) { price = dp.price; currency = dp.currency; if (currency) currencySrc = "symbol"; priceSrc = (dp.scope || dp.src === "buybox") ? "buybox" : "tier2"; } }
         if (images.length === 0) { var di = _domImages(); images = di.images; if (!detailImages.length) detailImages = di.detailImages; }
-        if (!options.length) options = _domOptions();
+        if (!options.length && !ice) options = _domOptions();
         if (!specs.length) specs = _domSpecs();
       } catch (e) { warnings.push("DOM 폴백 중 일부 실패"); }
     }
@@ -1778,7 +1884,7 @@
     if (detailImages.length === 0) {
       try { var di2 = _domImages(); if (di2.detailImages && di2.detailImages.length) detailImages = di2.detailImages; } catch (e) {}
     }
-    if (!options.length) { try { options = _domOptions(); } catch (e) {} }
+    if (!options.length && !ice) { try { options = _domOptions(); } catch (e) {} }
     if (!options.length && _aliHost()) { try { options = _aliOptions(); } catch (e) {} }
     if (!specs.length) { try { specs = _domSpecs(); } catch (e) {} }
     options = _dropNumericColorValues(options);   // v83 STEP3: 색상 축의 순수 숫자값('1') 제거(tier1·tier2 공통)
@@ -1983,6 +2089,14 @@
       detail_images: (j.detailImages && j.detailImages.length) ? "tier1" : (detailImages.length ? "tier2" : "none"),
       reviews: ((j.reviews && j.reviews.length) || j.rating || j.reviewCount) ? "tier1" : (reviews.length ? "tier2" : "none")   // v76 STEP6: DOM 리뷰=tier2
     };
+    // F49-T 2부 — SKU 출처는 **ICE가 있거나 타오바오 계열일 때만** 싣는다(다른 사이트 진단 계약은 불변).
+    if (ice || _taobaoHost()) {
+      fieldSources.sku = ice ? "ice_context" : ((j.skus && j.skus.length) ? "tier1" : (skus.length ? "tier2" : "none"));
+    }
+    if (ice) {
+      if (ice.images.length) fieldSources.images = "ice_context";
+      if (ice.options.length) fieldSources.options = "ice_context";
+    }
 
     var out = {
       url: location.href,
