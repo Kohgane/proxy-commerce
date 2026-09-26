@@ -219,6 +219,138 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# F51 — SKU별 다중 등록(오너 결정 2026-09-26: 연다)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# F48-c는 「색상 값이 13개 — 여러 옵션 등록은 SKU별 가격이 필요합니다」로 **보류**했다. 이제 SKU별 가격이
+# 있으면(ICE 컨텍스트 — F49-T 2부) 그 보류를 풀고 `items[]`를 SKU 수만큼 만든다.
+#
+# 규칙(오너 F51):
+#   1. SKU마다 item — 옵션명은 **용어집으로** 메타 이름에 맞춘다(颜色分类 → 색상). 원가 = 그 SKU 가격,
+#      재고 = quantity, 대표 이미지 = 그 값의 이미지. **재고 0은 뺀다(사유 표시).**
+#   2. 보류 해제는 **SKU가 있고 재고 있는 SKU 전부에 SKU별 판매가가 있을 때만.** 아니면 지금 문구 그대로.
+#   3. 판매가는 SKU 원가로 **각각** 낸다(식은 `calc_sell_price` 하나 — 호출부가 채워 온다).
+#      속성 3개 제한(볼트 지뢰)·색상 값 용어집 규칙(F48-b)은 **SKU마다 그대로** 적용된다.
+#   5. 이 트랙은 쿠팡만.
+
+#: 옵션 **이름** 용어집 — 메타의 attributeTypeName으로. 오너가 지정한 것만(F51, 2026-09-26).
+#:   값(색상 한자 → 한국어)은 여기가 아니라 D3 용어집(`color_ko`)이다(F48-b 규칙 그대로).
+OPTION_NAME_GLOSSARY = {"颜色分类": "색상"}
+
+
+def option_name_for_meta(name: str, meta_names) -> str:
+    """상품 옵션 이름 → 메타 이름. 같으면 그대로, 용어집에 있으면 그 이름, 아니면 빈 문자열."""
+    names = {_norm(n): n for n in meta_names}
+    if _norm(name) in names:
+        return names[_norm(name)]
+    g = OPTION_NAME_GLOSSARY.get(str(name or "").strip())
+    if g and _norm(g) in names:
+        return names[_norm(g)]
+    return ""
+
+
+def _sku_list(product: Dict) -> List[Dict]:
+    return [k for k in (product.get("skus") or []) if isinstance(k, dict) and k.get("spec")]
+
+
+def sku_mode(product: Dict) -> tuple:
+    """`(쓸 수 있나, 재고 있는 SKU, 재고 0 SKU, 사유)` — F51 규칙 2의 판정 한 곳."""
+    skus = _sku_list(product)
+    if not skus:
+        return False, [], [], "SKU 없음"
+    zero = [k for k in skus if k.get("stock") == 0]
+    live = [k for k in skus if k.get("stock") != 0]
+    if not live:
+        return False, [], zero, "재고 있는 SKU가 없습니다"
+    no_price = [k for k in live if not (_as_float(k.get("sell_price_krw")) > 0)]
+    if no_price:
+        return False, live, zero, f"SKU별 판매가가 없는 SKU {len(no_price)}개"
+    return True, live, zero, ""
+
+
+def _as_float(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Dict:
+    """SKU마다 `plan_attributes`를 돌려 item 계획을 만든다 — `{multi, items, holds, notes, search_extra}`."""
+    ok, live, zero, why = sku_mode(product)
+    if not ok:
+        return {"multi": False, "why": why}
+    if not meta_ok:
+        return {"multi": True, "items": [], "holds": ["카테고리 메타를 읽지 못했습니다 — 옵션 규칙을 확인할 수 없어 보류"],
+                "notes": [], "search_extra": []}
+    meta = parse_meta(raw_meta_attrs)
+    meta_names = [m["attributeTypeName"] for m in meta]
+    axes = [o for o in (product.get("options") or []) if isinstance(o, dict) and o.get("name")]
+    holds, notes, search_extra = [], [], []
+    mapped = []
+    for o in axes:
+        m = option_name_for_meta(o["name"], meta_names)
+        if not m:
+            holds.append(f"옵션 「{o['name']}」이 이 카테고리 메타에 없어 SKU별로 나눌 수 없습니다"
+                         " — 옵션 이름 용어집에 정본을 추가해야 합니다")
+        mapped.append(m)
+    if zero:
+        notes.append("재고 0이라 등록에서 뺀 SKU " + str(len(zero)) + "개: "
+                     + ", ".join(" / ".join(k["spec"]) for k in zero))
+    items, unmapped, seen = [], [], {}
+    for k in live:
+        spec = list(k.get("spec") or [])
+        # 이 SKU 하나만 가진 상품으로 바꿔 **기존 규칙 그대로** 돌린다(값 1개 → 「값이 N개」 보류 없음).
+        one = dict(product)
+        one["options"] = [{"name": (mapped[i] or axes[i]["name"]), "values": [spec[i]]}
+                          for i in range(min(len(axes), len(spec)))]
+        one.pop("skus", None)
+        # 축 속성(예: 색상)에 한 값을 쳐 두었으면 SKU 모드에선 쓰지 않는다 — 그 값이 모든 SKU를 덮으면
+        #   10개가 같은 옵션이 된다. 값은 SKU마다 그 SKU의 옵션 값에서 나온다.
+        axis_names = {_norm(n) for n in mapped if n}
+        one["attributes"] = [a for a in (product.get("attributes") or [])
+                             if isinstance(a, dict) and _norm(a.get("attributeTypeName")) not in axis_names]
+        plan = plan_attributes(raw_meta_attrs, one, meta_ok=True)
+        for h in plan["holds"]:
+            if h.startswith("색상 미매핑: "):
+                unmapped.append(h[len("색상 미매핑: "):].split(" — ")[0])
+            elif h not in holds:
+                holds.append(h)
+        for n in plan["notes"]:
+            if n not in notes:
+                notes.append(n)
+        search_extra += [x for x in plan["search_extra"] if x not in search_extra]
+        key = tuple((a["attributeTypeName"], a["attributeValueName"]) for a in plan["attributes"])
+        # 축 값이 안 들어간 SKU(미매핑으로 이미 보류)는 비교하지 않는다 — 공통 속성(수량)만 남아
+        #   전부 같아 보이는 것은 「같은 옵션」이 아니다(캡처에서 발견: 9줄 거짓 보류).
+        has_axis = any(_norm(a["attributeTypeName"]) in axis_names for a in plan["attributes"])
+        if has_axis and key in seen:
+            holds.append(f"SKU 「{' / '.join(spec)}」와 「{seen[key]}」의 옵션 값이 같습니다 — 쿠팡은 같은 옵션을 두 번 받지 않습니다")
+        if has_axis:
+            seen[key] = " / ".join(spec)
+        label = " / ".join(a["attributeValueName"] for a in plan["attributes"]
+                           if _norm(a["attributeTypeName"]) in axis_names)
+        items.append({"sku_id": str(k.get("sku_id") or ""), "spec": spec, "label": label,
+                      "attributes": plan["attributes"], "sell_price_krw": k.get("sell_price_krw"),
+                      "cost": k.get("price"), "currency": k.get("currency") or "",
+                      "stock": k.get("stock"), "image": k.get("image") or ""})
+    if unmapped:
+        holds.append(f"색상 값 {len(unmapped)}개가 용어집에 없습니다 — 정본 한국어가 있어야 보낼 수 있습니다: "
+                     + ", ".join(unmapped))
+    return {"multi": True, "items": items, "holds": holds, "notes": notes, "search_extra": search_extra}
+
+
+def plan_for(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Dict:
+    """**사전검증·등록·편집 블록이 같이 부르는** 계획 — SKU 모드면 `plan_sku_items`, 아니면 `plan_attributes`."""
+    multi = plan_sku_items(raw_meta_attrs, product, meta_ok=meta_ok)
+    if multi.get("multi"):
+        attrs = multi["items"][0]["attributes"] if multi.get("items") else []
+        return {**multi, "attributes": attrs}
+    single = plan_attributes(raw_meta_attrs, product, meta_ok=meta_ok)
+    return {**single, "multi": False, "items": [], "sku_why": multi.get("why", "")}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # F48-c — 쿠팡 거부 문장을 **한 줄씩**
 # ─────────────────────────────────────────────────────────────────────────────
 #
@@ -286,7 +418,7 @@ def apply_choices(product: Dict, attributes=None, pick=None) -> Dict:
                 not in {_norm(t["attributeTypeName"]) for t in typed}]
         out["attributes"] = typed + keep
     if isinstance(pick, dict) and pick:
-        opts = []
+        opts, picked = [], []
         for o in out.get("options") or []:
             if not isinstance(o, dict):
                 opts.append(o)
@@ -296,8 +428,13 @@ def apply_choices(product: Dict, attributes=None, pick=None) -> Dict:
             if chosen and chosen in vals:
                 o = {**o, "values": [chosen]}
                 o.pop("value", None)
+                picked.append(chosen)
             opts.append(o)
         out["options"] = opts
+        # F51: 하나를 골랐으면 **그 SKU만** 남긴다 — 고른 뜻은 단일 SKU다(다중 등록으로 되살아나지 않게).
+        if picked and isinstance(out.get("skus"), list):
+            out["skus"] = [k for k in out["skus"] if isinstance(k, dict)
+                           and all(v in (k.get("spec") or []) for v in picked)]
     return out
 
 
@@ -309,12 +446,18 @@ def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
     — `value`는 **계획이 실제로 찾은 값**(상품 속성·같은 이름 옵션·단일 아이템 수량)뿐이다. 없으면 빈칸.
     `choices`: 값이 2개 이상인 옵션 — 오너가 하나를 고를 목록.
     """
-    plan = plan_attributes(raw_meta_attrs, product, meta_ok=meta_ok)
+    plan = plan_for(raw_meta_attrs, product, meta_ok=meta_ok)
     fields = []
     for m in parse_meta(raw_meta_attrs):
         if not m["required"] or "gtin" in m["attributeTypeName"].lower():
             continue
         value, source, why = _value_for(m, product)
+        if plan.get("multi"):
+            axis = {_norm(option_name_for_meta(o.get("name"), [x["attributeTypeName"] for x in parse_meta(raw_meta_attrs)]))
+                    for o in product.get("options") or [] if isinstance(o, dict)}
+            if _norm(m["attributeTypeName"]) in axis:
+                # F51: 이 칸은 SKU마다 다른 값으로 나간다 — 「값이 N개」 보류 문구를 여기 두지 않는다.
+                value, source, why = f"SKU별 {len(plan.get('items') or [])}개", "SKU", ""
         fields.append({"name": m["attributeTypeName"], "dataType": m["dataType"],
                        "basicUnit": m["basicUnit"], "usableUnits": m["usableUnits"],
                        "group": m["group"], "exposed": m["exposed"],
@@ -327,5 +470,9 @@ def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
             vals = _opt_values(o)
             if len(vals) > 1:
                 choices.append({"name": o["name"], "values": vals, "in_meta": _norm(o["name"]) in names})
+    if plan.get("multi"):
+        # F51: SKU별로 나가면 「하나 고르기」는 필요 없다(고르면 오히려 단일 SKU로 줄어든다).
+        choices = []
     return {"fields": fields, "choices": choices, "holds": plan["holds"], "notes": plan["notes"],
-            "attributes": plan["attributes"], "meta_ok": meta_ok}
+            "attributes": plan["attributes"], "meta_ok": meta_ok,
+            "multi": bool(plan.get("multi")), "items": plan.get("items") or []}
