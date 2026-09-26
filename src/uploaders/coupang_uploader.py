@@ -345,7 +345,7 @@ class CoupangUploader(BaseUploader):
             payload = self._build_product_payload(
                 product, notice_schema=schema, attributes=chk['attributes'],
                 outbound_code=chk['outbound_code'], documents=chk['documents'],
-                search_extra=chk['search_extra'])
+                search_extra=chk['search_extra'], items_plan=chk.get('items_plan') or None)
             path = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
@@ -455,6 +455,10 @@ class CoupangUploader(BaseUploader):
             'options': collected.get('options', {}),
             # F48-c — 오너가 정한 속성(쿠팡 필수 옵션). `plan_attributes`가 가장 먼저 본다.
             'attributes': collected.get('attributes') or [],
+            # F51 — SKU별 판매가는 대표가와 같은 규칙(100원 올림)으로.
+            'skus': [{**k, 'sell_price_krw': (int(math.ceil(float(k['sell_price_krw']) / 100) * 100)
+                                              if k.get('sell_price_krw') else k.get('sell_price_krw'))}
+                     for k in (collected.get('skus') or []) if isinstance(k, dict)],
             'tags': collected.get('tags', []),
             'shipping_fee': 0,
             'delivery_days': '7-14',
@@ -702,10 +706,11 @@ class CoupangUploader(BaseUploader):
         반환: `{ok, holds, notes, category, meta_ok, attributes, outbound_code, documents,
                 search_extra, notice_hold}`
         """
-        from src.uploaders.coupang_options import plan_attributes
+        from src.uploaders.coupang_options import plan_for
         holds, notes = [], []
         out = {'ok': False, 'holds': holds, 'notes': notes, 'category': '', 'meta_ok': False,
-               'attributes': [], 'outbound_code': '', 'documents': [], 'search_extra': []}
+               'attributes': [], 'outbound_code': '', 'documents': [], 'search_extra': [],
+               'items_plan': []}
 
         # a) 배송 — 방법에 맞는 출고지, 그리고 AGENT_BUY면 **정말 해외인가**.
         code, hold = self.outbound_for_delivery()
@@ -736,10 +741,20 @@ class CoupangUploader(BaseUploader):
         if nhold:
             holds.append(nhold)
         self._log_meta_attributes(cat, meta.get('attributes') or [])
-        plan = plan_attributes(meta.get('attributes') or [], product, meta_ok=bool(meta))
+        # F51 — SKU별 판매가가 다 있으면 SKU마다 item(`plan_for`가 판정 한 곳).
+        plan = plan_for(meta.get('attributes') or [], product, meta_ok=bool(meta))
         holds.extend(plan['holds'])
         notes.extend(plan['notes'])
         out.update(attributes=plan['attributes'], search_extra=plan['search_extra'])
+        if plan.get('multi'):
+            out['items_plan'] = list(plan.get('items') or [])
+            low = [it for it in out['items_plan'] if (self._as_int(it.get('sell_price_krw')) or 0) < 10]
+            if low:
+                holds.append('SKU 판매가 미확정: ' + ', '.join(' / '.join(it['spec']) for it in low)
+                             + ' — 쿠팡은 옵션 판매가 10원 이상을 요구합니다')
+            notes.insert(0, f"SKU별 등록 {len(out['items_plan'])}개(옵션마다 판매가·재고·이미지)")
+        elif plan.get('sku_why') and plan['sku_why'] != 'SKU 없음':
+            notes.append(f"SKU별 등록 안 함 — {plan['sku_why']}(대표 1개로 판정)")
         out['ok'] = not holds
         return out
 
@@ -1071,7 +1086,7 @@ class CoupangUploader(BaseUploader):
 
     def _build_product_payload(self, product: dict, notice_schema=None, attr_schema=None,
                                attributes=None, outbound_code=None, documents=None,
-                               search_extra=None) -> dict:
+                               search_extra=None, items_plan=None) -> dict:
         """Coupang Wing API용 상품 페이로드를 구성한다.
 
         쿠팡 createProduct 필수 필드를 모두 채운다(null/누락 시 등록 거부).
@@ -1130,6 +1145,9 @@ class CoupangUploader(BaseUploader):
             'attributes': (attributes if attributes is not None
                            else self.build_attrs(product, attr_schema)),
         }
+        items = [item]
+        if items_plan:
+            items = [self._sku_item(item, it, product) for it in items_plan]
         return {
             'displayCategoryCode': category_code,
             'sellerProductName': title,
@@ -1170,9 +1188,41 @@ class CoupangUploader(BaseUploader):
             'vendorUserId': self.vendor_user_id,            # Wing 로그인 ID
             'requested': True,                              # 자동승인 요청
             'mediumCategoryType': category_code,
-            'items': [item],
+            'items': items,
             # F48-a — 구매대행 필수 서류. 준비가 안 됐으면 precheck가 이미 보류시켰다.
             **({'requiredDocuments': list(documents)} if documents else {}),
+        }
+
+    def _sku_item(self, base: dict, plan_item: dict, product: dict) -> dict:
+        """F51 — 정본 item 하나를 SKU 하나로. 바뀌는 것은 **이름·가격·재고·이미지·속성·SKU 번호**뿐이다.
+
+        - itemName: 그 SKU의 옵션 값(한국어 — 계획이 용어집으로 바꾼 값). 없으면 SKU 번호.
+        - salePrice: 그 SKU 원가로 낸 판매가(100원 올림은 prepare_product가 했다) · originalPrice = 정본 규칙(×1.15).
+        - maximumBuyCount: 재고(quantity). 재고를 모르면 정본 3.
+        - images: 그 SKU 값의 이미지를 대표로, 상품 이미지를 뒤에(중복 제거).
+        """
+        from src.collectors.image_norm import normalize_image_url
+        price = self._as_int(plan_item.get('sell_price_krw')) or 0
+        attrs = list(plan_item.get('attributes') or [])
+        # 옵션(축) 값만 이름으로 — 수량 「1개」 같은 공통 속성은 이름에 넣지 않는다.
+        name = str(plan_item.get('label') or '').strip() or str(plan_item.get('sku_id') or base.get('itemName'))
+        stock = plan_item.get('stock')
+        imgs, seen = [], set()
+        for u in ([plan_item.get('image')] if plan_item.get('image') else []) + list(product.get('images') or []):
+            nu = normalize_image_url(u) if u else ''
+            if nu and nu not in seen:
+                seen.add(nu)
+                imgs.append(nu)
+        return {
+            **base,
+            'itemName': name[:150],
+            'salePrice': price,
+            'originalPrice': int(round(price * 1.15 / 100) * 100) if price else 0,
+            'maximumBuyCount': int(stock) if isinstance(stock, int) and stock > 0 else base.get('maximumBuyCount', 3),
+            'externalVendorSku': str(plan_item.get('sku_id') or base.get('externalVendorSku')),
+            'images': [{'imageOrder': i, 'imageType': 'REPRESENTATION' if i == 0 else 'DETAIL', 'vendorPath': u}
+                       for i, u in enumerate(imgs[:10])],
+            'attributes': attrs,
         }
 
     def _generate_hmac_signature(self, method: str, url_path: str, date: str) -> str:
