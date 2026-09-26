@@ -14,7 +14,7 @@ EXT = Path("src/seller_console/templates/extension_install.html").read_text(enco
 
 def test_tool_named_gogasujipgi():
     assert "고가수집기" in EXT
-    assert "gogasujipgi" in EXT          # 파일명 표기
+    assert "kgp-ext-" in EXT             # 파일명 표기(F50: kgp-ext-<버전>.zip)
 
 
 def test_why_install_why_token_explainer():
@@ -43,5 +43,5 @@ def client(monkeypatch):
 def test_download_filename_is_gogasujipgi(client):
     r = client.get("/seller/extension/download")
     assert r.status_code == 200
-    assert "gogasujipgi-v" in r.headers.get("Content-Disposition", "")
+    assert "kgp-ext-" in r.headers.get("Content-Disposition", "")   # F50: 이름에 버전(kgp-ext-<ver>.zip)
     assert ".zip" in r.headers.get("Content-Disposition", "")

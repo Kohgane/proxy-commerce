@@ -60,6 +60,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleCollectBulk(msg.items, sendResponse, sender && sender.tab && sender.tab.id);
     return true; // 비동기 응답
   }
+  if (msg.action === "kgpCheckUpdate") {   // F50: 팝업이 열릴 때 — 최신 버전·규칙을 다시 본다
+    kgpRefreshRemote("popup").then((st) => sendResponse(st));
+    return true;
+  }
   if (msg.action === "kgpBuildInfo") {   // v83.1 STEP2: 패키징 시 각인된 커밋 해시(진단 파일용)
     _kgpBuildInfo().then((info) => sendResponse(info));
     return true;
@@ -78,6 +82,85 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "enrichPause") { KgpEnrich.paused = !!msg.paused; _kgpBroadcastEnrich(); sendResponse(_kgpEnrichSnapshot()); return false; }
   if (msg.action === "enrichStop") { KgpEnrich.stopped = true; KgpEnrich.queue = []; _kgpBroadcastEnrich(); sendResponse(_kgpEnrichSnapshot()); return false; }
 });
+
+// ── F50 — 확장 갱신: 최신 버전 배너 · 사이트 규칙(데이터) ─────────────────────────────
+//   ① 서버 /api/v1/collect/extension/latest의 버전이 설치 버전보다 **높으면** 툴바 배지 「NEW」 +
+//      kgp_update에 기록(팝업이 배너로 보여 준다). 같거나 낮으면 배지를 지운다(가짜 알림 금지).
+//   ② /api/v1/collect/rules를 받아 **해시를 다시 재서 맞을 때만** kgp_rules에 둔다(깨진 응답을 안 쓴다).
+//      못 받으면 이전 캐시 그대로 — 캐시도 없으면 content script가 번들(kgp-rules.js)을 쓴다.
+//   규칙은 데이터다(셀렉터 문자열·숫자) — 받은 것을 실행하지 않는다(MV3 원격 코드 금지 준수).
+function kgpCmpVer(a, b) {
+  const pa = String(a || "").split(".").map((x) => parseInt(x, 10) || 0);
+  const pb = String(b || "").split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+function kgpCanonical(v) {
+  if (Array.isArray(v)) return "[" + v.map(kgpCanonical).join(",") + "]";
+  if (v && typeof v === "object") {
+    return "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + kgpCanonical(v[k])).join(",") + "}";
+  }
+  return JSON.stringify(v);
+}
+async function kgpSha256Hex(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function kgpRefreshRemote(why) {
+  const settings = await getSettings();
+  const base = settings.serverUrl;
+  let current = "";
+  try { current = chrome.runtime.getManifest().version || ""; } catch (e) {}
+  const st = { current, latest: "", newer: false, rules: "", why: why || "" };
+  try {
+    const r = await fetch(`${base}/api/v1/collect/extension/latest`, { cache: "no-store" });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d && d.ok && d.version) {
+      st.latest = String(d.version);
+      st.newer = kgpCmpVer(st.latest, current) > 0;
+      const upd = { current, latest: st.latest, newer: st.newer, checked_at: new Date().toISOString(),
+                    download_page: base + (d.download_page || "/seller/extension"),
+                    zip_name: d.zip_name || "" };
+      await chrome.storage.local.set({ kgp_update: upd });
+      try {
+        await chrome.action.setBadgeText({ text: st.newer ? "NEW" : "" });
+        if (st.newer) {
+          await chrome.action.setBadgeBackgroundColor({ color: "#f5821f" });
+          await chrome.action.setTitle({ title: `고가수집기 — 새 버전 ${st.latest}이 있어요(설치된 버전 ${current})` });
+        } else {
+          await chrome.action.setTitle({ title: "고가수집기" });
+        }
+      } catch (e) { /* action API 없는 환경 */ }
+    }
+  } catch (e) { /* 네트워크 실패 — 이전 기록 그대로(없는 새 버전을 말하지 않는다) */ }
+  try {
+    const r = await fetch(`${base}/api/v1/collect/rules`, { cache: "no-store" });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d && d.ok && d.rules && typeof d.rules === "object" && d.version && d.hash) {
+      const h = await kgpSha256Hex(kgpCanonical(d.rules));
+      if (h === d.hash) {
+        await chrome.storage.local.set({ kgp_rules: { version: String(d.version), hash: d.hash, rules: d.rules,
+                                                      fetched_at: new Date().toISOString() } });
+        st.rules = String(d.version);
+      } else {
+        st.rules = "hash-mismatch";
+        console.warn("[고가수집기] 규칙 해시 불일치 — 받은 규칙을 쓰지 않음", d.hash, h);
+      }
+    }
+  } catch (e) { /* 번들·이전 캐시로 동작 */ }
+  return st;
+}
+try {
+  chrome.runtime.onStartup && chrome.runtime.onStartup.addListener(() => kgpRefreshRemote("startup"));
+  chrome.runtime.onInstalled && chrome.runtime.onInstalled.addListener(() => kgpRefreshRemote("installed"));
+  if (chrome.alarms && chrome.alarms.create) {
+    chrome.alarms.create("kgp-remote-refresh", { periodInMinutes: 360 });
+    chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === "kgp-remote-refresh") kgpRefreshRemote("alarm"); });
+  }
+} catch (e) { /* noop */ }
 
 // v83.1 STEP2: ZIP 패키징 시 심어진 build-info.json(commit·built_at·branch)을 읽는다.
 //   소스 폴더를 그대로 로드한 개발 설치엔 파일이 없다 → {commit:"", source:"unpacked-dev"}로 **정직 표기**

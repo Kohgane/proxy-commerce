@@ -7,14 +7,20 @@
     <p class="text-muted mb-0">설치하면 쇼핑몰에서 <b>버튼 한 번</b>으로 상품이 담겨요. 한 단계씩 따라오면 1~2분이면 끝나요.</p>
   </div>
 
-  {# v87-W7 item5: 확장 업데이트 채널 안내 — 최신 버전·수동 다운로드 경로. 웹스토어 게시 전까지 수동 로드. #}
-  <div class="pc-status pc-status-info small mb-3 d-flex flex-wrap align-items-center gap-2">
-    <span><i class="bi bi-arrow-repeat"></i> 최신 확장 버전 <strong>{{ version or '1.5.147' }}</strong></span>
-    <span class="text-muted">·</span>
-    <a href="/seller/extension/download" class="fw-semibold text-decoration-none"><i class="bi bi-download"></i> 최신 확장 내려받기</a>
-    <span class="text-muted">— 받은 zip을 <b>압축 풀어 기존 폴더에 덮어쓴 뒤</b>
-      <code>chrome://extensions</code>에서 <b>새로고침(↻)</b>하세요.
-      덮어쓰지 않고 새로고침만 하면 <b>그대로입니다</b>(폴더 내용이 안 바뀌어서요).</span>
+  {# v87-W7 item5 → F50: 최신 버전·zip 이름(버전 박힘)·설치 3줄. 웹스토어 게시 전까지 수동 로드. #}
+  <div class="pc-status pc-status-info small mb-3" data-role="ext-update-guide">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <span><i class="bi bi-arrow-repeat"></i> 최신 확장 버전 <strong>{{ version or '—' }}</strong></span>
+      <span class="text-muted">·</span>
+      <a href="/seller/extension/download" class="fw-semibold text-decoration-none"><i class="bi bi-download"></i>
+        최신 확장 내려받기(<span data-role="zip-name">kgp-ext-{{ version }}.zip</span>)</a>
+    </div>
+    <ol class="mb-0 ps-3">
+      <li>받은 zip을 <b>압축 풀어, 지금 쓰는 고가수집기 폴더에 덮어쓰기</b></li>
+      <li><code>chrome://extensions</code>에서 고가수집기 <b>새로고침(↻)</b> — 열려 있던 쇼핑몰 탭도 새로고침</li>
+      <li>그래도 옛 버전이면 <b>삭제 후 ‘압축해제된 확장 프로그램 로드’로 새 폴더를 다시 불러오기</b></li>
+    </ol>
+    <div class="text-muted mt-1">덮어쓰지 않고 새로고침만 하면 <b>그대로예요</b> — 폴더 내용이 안 바뀌어서요.</div>
   </div>
 
   <!-- v15: 아무것도 모르는 유저를 위한 '왜 설치 / 왜 토큰' 초친절 비유 -->
@@ -99,7 +105,7 @@ const MANAGE_URL = "chrome://extensions";
 // 각 단계: 한 화면 = 한 메시지 + 버튼 1개(주 행동). 다음/이전은 하단 고정.
 const STEPS = [
   { icon: "bi-download", title: "1) 고가수집기 받기",
-    body: "먼저 <b>고가수집기</b> 파일을 내려받아요(<b>gogasujipgi</b> 파일). 받은 파일은 <b>압축을 풀어</b> 두세요.",
+    body: "먼저 <b>고가수집기</b> 파일을 내려받아요(<b>kgp-ext-{{ version }}.zip</b>). 받은 파일은 <b>압축을 풀어</b> 두세요.",
     btn: { label: "고가수집기 다운로드", href: DL } },
   { icon: "bi-file-zip", title: "2) 압축 풀기",
     body: "받은 zip 파일을 <b>마우스 오른쪽 → 압축 풀기</b> 하세요. 폴더 하나가 만들어져요.",

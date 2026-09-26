@@ -28,7 +28,7 @@ MANIFEST = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
 
 def test_manifest_bumped():
     # 오너가 재로딩해야 토글이 보인다 → 버전 bump가 곧 배포 신호.
-    assert MANIFEST["version"] == "1.5.154"
+    assert MANIFEST["version"] == "1.5.155"
 
 
 # ── STEP1: 번역 토글 ─────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ def test_zip_contains_every_declared_script():
         need.add(sw)
     missing = sorted(n for n in need if n not in names)
     assert not missing, f"ZIP에 manifest 선언 스크립트 누락: {missing}"
-    assert fname == f"gogasujipgi-v{mani['version']}.zip"
+    assert fname == f"kgp-ext-{mani['version']}.zip"
     # 아이콘도 함께(툴바 아이콘 없는 확장 방지).
     assert any(n.startswith("icons/") for n in names)
 

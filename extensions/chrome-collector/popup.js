@@ -464,3 +464,36 @@ function showStatus(type, html) {
   statusEl.innerHTML = html;
   statusEl.style.display = "block";
 }
+
+
+// ── F50: 새 버전 배너 ─────────────────────────────────────────────────────────
+//   서버 최신 버전 > 설치 버전일 때만. 압축해제 로드 확장은 **폴더를 덮어써야** 바뀐다(F26 교훈 —
+//   새로고침만 하면 그대로다). 그래서 배너가 그 순서를 말한다.
+function kgpRenderUpdate(upd) {
+  const el = document.getElementById("updBanner");
+  if (!el) return;
+  let current = "";
+  try { current = chrome.runtime.getManifest().version || ""; } catch (e) {}
+  const newer = !!(upd && upd.latest && upd.newer && upd.current === current);
+  if (!newer) { el.style.display = "none"; el.textContent = ""; return; }
+  el.textContent = "";
+  const t = document.createElement("div");
+  t.style.fontWeight = "700";
+  t.textContent = "새 버전 " + upd.latest + " — 다운로드";
+  const a = document.createElement("a");
+  a.href = upd.download_page || "#";
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = "고가수집기 다운로드 페이지 열기";
+  a.style.cssText = "display:inline-block;margin:4px 0;color:#119a8e;font-weight:700";
+  const how = document.createElement("div");
+  how.textContent = "받은 zip을 지금 쓰는 폴더에 덮어쓰고, chrome://extensions에서 새로고침(↻)하세요. (지금 " + current + ")";
+  el.appendChild(t); el.appendChild(a); el.appendChild(how);
+  el.style.display = "block";
+}
+try {
+  chrome.storage.local.get("kgp_update", (r) => kgpRenderUpdate(r && r.kgp_update));
+  chrome.runtime.sendMessage({ action: "kgpCheckUpdate" }, () => {
+    chrome.storage.local.get("kgp_update", (r) => kgpRenderUpdate(r && r.kgp_update));
+  });
+} catch (e) { /* noop */ }

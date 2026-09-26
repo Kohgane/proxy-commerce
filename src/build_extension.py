@@ -33,6 +33,7 @@ INCLUDE_FILES = [
     "manifest.json",
     "background.js",
     "kgp-sources.js",
+    "kgp-rules.js",
     "kgp-net.js",
     "kgp-extractor.js",
     "kgp-detect.js",
@@ -124,7 +125,7 @@ def build_zip_bytes(repo_root: Optional[Path] = None) -> Tuple[bytes, str, dict]
                         z.write(f, arcname=f"{d}/{f.name}")
         # v83.1 STEP2: 빌드 각인(소스 트리는 건드리지 않고 ZIP 안에만 넣는다).
         z.writestr("build-info.json", json.dumps(info, ensure_ascii=False, indent=2))
-    return buf.getvalue(), f"gogasujipgi-v{version}.zip", info
+    return buf.getvalue(), f"kgp-ext-{version}.zip", info
 
 
 def main() -> int:

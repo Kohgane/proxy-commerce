@@ -1,0 +1,24 @@
+{
+  "version": "2026-09-26.1",
+  "note": "확장이 시작할 때 받아 쓰는 **데이터**(코드 아님 — MV3 원격 코드 금지와 무관). 받지 못하면 확장 번들(kgp-rules.js)의 같은 값을 쓴다. 고치면 번들도 같이 고친다(tests/test_f50_ext_update.py가 둘을 대조).",
+  "rules": {
+    "list_cards": {
+      "taobao": {
+        "anchor": "a.item-link, a.tb-pick-content-item",
+        "saved_block": "[class*='mytao-collectitem']"
+      }
+    },
+    "tiles": {
+      "rest_opacity": {"taobao": 0.6},
+      "label": {"taobao": "고가 수집"}
+    },
+    "diag_selectors": {
+      "taobao": {
+        "gallery": "#J_UlThumb img, .tb-thumb img, [class*='thumbnail'] img, [class*='PicGallery'] img, [class*='mainPic'] img, [class*='MainPic'] img, [class*='preview'] img",
+        "detail": "#description img, #J_DivItemDesc img, [class*='desc'] img, [class*='Detail'] img",
+        "options": "#J_isku .tb-prop, [class*='SkuContent'] [class*='valueItemWrapper'], [class*='skuItem']",
+        "title": "[class*='mainTitle'], [class*='ItemTitle'], h1"
+      }
+    }
+  }
+}

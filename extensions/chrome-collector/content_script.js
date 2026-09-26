@@ -272,6 +272,14 @@ function _kgpSitePdp() {
 //   로그인 벽 · 내비게이션(HTTP 상태·리다이렉트) · 아직 안 불러온(lazy) 이미지 · 알려진 셀렉터 적중 수 ·
 //   주입 뒤 페이지 오류. 서버는 이 값으로만 필드별 실패 사유를 말한다(없으면 「사유 미상」).
 const _KGP_PAGE_ERRORS = [];
+// F50: 사이트 규칙(데이터) — 서버에서 받은 캐시 → 번들(kgp-rules.js) → 여기 기본값 순. 재설치 없이 고친다.
+function _kgpRule(path, dflt) {
+  try { return (typeof KGPRules !== "undefined" && KGPRules) ? KGPRules.get(path, dflt) : dflt; } catch (e) { return dflt; }
+}
+function _kgpRulesInfo() {
+  try { return (typeof KGPRules !== "undefined" && KGPRules) ? KGPRules.info() : { version: "", hash: "", source: "none" }; }
+  catch (e) { return { version: "", hash: "", source: "none" }; }
+}
 // F49-T 3부: 예전엔 message가 비면 「error」 한 단어만 남았다(world.taobao 진단 errors 전부 "error").
 //   캡처 단계 리스너라 **리소스 로드 실패**(img·script 404 — message 없음)도 같이 잡히는데, 그걸 가르지
 //   않았던 것이다. 이제 한 줄에 종류·메시지·위치·스택을 담는다(서버는 문자열 목록으로 받는다).
@@ -299,12 +307,16 @@ try {
 //: 타오바오·티몰 셀렉터 — **이 레포에 이미 있던 것만**(새로 지어낸 것 0): 갤러리·상세·옵션은
 //:   이 파일 `_kgpSitePdp` 타오바오 갈래, 제목은 `kgp-extractor.js` `_adapterTitle` 타오바오 줄.
 //:   추출에 쓰지 않는다 — 「이 페이지에 그 자리가 있었나」를 세는 데만 쓴다.
-const _KGP_TB_SELECTORS = {
+const _KGP_TB_SELECTORS_DEFAULT = {
   gallery: "#J_UlThumb img, .tb-thumb img, [class*='thumbnail'] img, [class*='PicGallery'] img, [class*='mainPic'] img, [class*='MainPic'] img, [class*='preview'] img",
   detail: "#description img, #J_DivItemDesc img, [class*='desc'] img, [class*='Detail'] img",
   options: "#J_isku .tb-prop, [class*='SkuContent'] [class*='valueItemWrapper'], [class*='skuItem']",
   title: "[class*='mainTitle'], [class*='ItemTitle'], h1",
 };
+// F50: 진단 셀렉터도 규칙에서(키마다 폴백). 규칙 캐시가 늦게 와도 읽는 시점 값을 쓴다.
+const _KGP_TB_SELECTORS = new Proxy(_KGP_TB_SELECTORS_DEFAULT, {
+  get: function (t, k) { return (typeof k === "string" && k in t) ? _kgpRule("diag_selectors.taobao." + k, t[k]) : t[k]; },
+});
 
 function kgpPageDiag() {
   const out = { at: new Date().toISOString(), url: location.href, wall: "", nav: {}, lazy: {}, sel: {}, errors: [] };
@@ -341,6 +353,8 @@ function kgpPageDiag() {
     }
   } catch (e) { /* noop */ }
   out.errors = _KGP_PAGE_ERRORS.slice(0, 5);
+  out.rules = (typeof _kgpRulesInfo === "function") ? _kgpRulesInfo()   // F50: 어느 규칙 버전으로 읽었나(remote/bundled)
+    : { version: "", hash: "", source: "none" };
   return out;
 }
 
@@ -2341,12 +2355,14 @@ function _kgpTaobaoItemHref(href) {
 }
 // 「내 찜」(mytao-collectitem) — 셀러가 이미 찜한 상품 블록. 피드가 아니라 **제외**한다(사유 표식은 남긴다).
 function _kgpInTaobaoSaved(el) {
-  try { return !!(el && el.closest && el.closest("[class*='mytao-collectitem']")); } catch (e) { return false; }
+  try { return !!(el && el.closest && el.closest(_kgpRule("list_cards.taobao.saved_block", "[class*='mytao-collectitem']"))); } catch (e) { return false; }
 }
 function _kgpTaobaoListCards() {
   const cards = [], seen = {};
   let scanned = 0;
-  document.querySelectorAll("a.item-link, a.tb-pick-content-item").forEach((a) => {
+  let _anchorSel = _kgpRule("list_cards.taobao.anchor", "a.item-link, a.tb-pick-content-item");
+  try { document.querySelector(_anchorSel); } catch (e) { _anchorSel = "a.item-link, a.tb-pick-content-item"; }   // 깨진 규칙 → 기본값
+  document.querySelectorAll(_anchorSel).forEach((a) => {
     try {
       scanned++;
       if (_kgpInTaobaoSaved(a)) { _kgpExcl.region++; _kgpMarkSkip(a, "mytao-saved"); return; }
@@ -2633,11 +2649,15 @@ var KGP_QUICK_REST_OPACITY = 0;
 //   「고가 수집」을 우상단에 두고, 호버하면 불투명으로. 다른 사이트는 v86-C(rest 0) 그대로 — 넓히는 건 오너 결정.
 var KGP_QUICK_REST_OPACITY_TB = 0.6;
 function _kgpQuickRestOpacity() {
-  try { return _kgpIsTaobaoHost(location.hostname) ? KGP_QUICK_REST_OPACITY_TB : KGP_QUICK_REST_OPACITY; }
+  try {
+    if (!_kgpIsTaobaoHost(location.hostname)) return KGP_QUICK_REST_OPACITY;
+    const v = Number(_kgpRule("tiles.rest_opacity.taobao", KGP_QUICK_REST_OPACITY_TB));
+    return (v >= 0 && v <= 1) ? v : KGP_QUICK_REST_OPACITY_TB;
+  }
   catch (e) { return KGP_QUICK_REST_OPACITY; }
 }
 function _kgpQuickLabel() {
-  try { return _kgpIsTaobaoHost(location.hostname) ? "고가 수집" : "수집"; } catch (e) { return "수집"; }
+  try { return _kgpIsTaobaoHost(location.hostname) ? String(_kgpRule("tiles.label.taobao", "고가 수집")).slice(0, 12) : "수집"; } catch (e) { return "수집"; }
 }
 function _kgpMakesStackingContext(el) {
   try {
