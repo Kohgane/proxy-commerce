@@ -229,6 +229,34 @@ def _plates(cv2, np, mask_roi) -> list:
     return out
 
 
+def _plate_interior(cv2, np, img, rect) -> Optional["np.ndarray"]:
+    """박스 안 **판(알약·띠) 내부** 전체 마스크(이미지 크기) — 판 픽셀 + 판이 품은 구멍(글자). 없으면 None.
+
+    F축 링을 여기로 제한한다(D3-7). 판 판정은 `plate_rect`와 같은 문턱(테두리 중앙값 → Otsu → `_plates`).
+    """
+    if rect is None:
+        return None
+    x1, y1, x2, y2 = rect
+    roi = img[y1:y2, x1:x2]
+    if roi.size == 0:
+        return None
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    border = np.concatenate([gray[0, :], gray[-1, :], gray[:, 0], gray[:, -1]])
+    diff = np.abs(gray.astype(np.int16) - float(np.median(border))).astype(np.uint8)
+    if int(diff.max()) < 30:
+        return None
+    _t, m = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    got = _plates(cv2, np, m)
+    if not got:
+        return None
+    inner = np.zeros(m.shape, np.uint8)
+    for _bbox, comp, holes in got:
+        inner = cv2.bitwise_or(inner, cv2.bitwise_or(comp, holes))
+    full = np.zeros(img.shape[:2], np.uint8)
+    full[y1:y2, x1:x2] = inner
+    return full
+
+
 def _find_plate(cv2, np, mask_roi) -> Optional[tuple]:
     """가장 큰 판의 외접 사각형(roi 좌표). 없으면 None."""
     got = _plates(cv2, np, mask_roi)
@@ -548,6 +576,12 @@ def background_score(erased_bytes: bytes, source_bytes: bytes, boxes: List[Dict]
     lum_w = np.array([0.114, 0.587, 0.299], np.float32)          # BGR 휘도
     k = np.ones((F_RING_PX * 2 + 1, F_RING_PX * 2 + 1), np.uint8)
 
+    # D3-7(오너 2026-09-26): 알약 위 글자는 링 16px이 **알약 밖 흰 바탕**까지 걸쳐 F가 무효였다
+    #   (잘 지워도·못 지워도 둘 다 0). 박스 안에 판(알약·띠)이 있으면 링을 **판 안쪽 중 지운 자리 밖**으로
+    #   제한한다. 판이 없으면 종전 링 그대로(회귀 0). 판 판정은 `_plates` 한 자리(지우기와 같은 규칙).
+    plates = [_plate_interior(cv2, np, src, _norm_box(b, w, h)) if _norm_box(b, w, h) else None
+              for b in boxes or []]
+
     # 모든 지운 자리의 합집합 — 한 박스의 링이 **옆 박스의 지운 자리**를 먹지 않게.
     masks = []
     for b in boxes or []:
@@ -560,14 +594,19 @@ def background_score(erased_bytes: bytes, source_bytes: bytes, boxes: List[Dict]
             union = cv2.bitwise_or(union, gm)
 
     hits, fails = [], []
-    for b, gm in zip(boxes or [], masks):
+    for b, gm, plate in zip(boxes or [], masks, plates):
         if gm is None:
             hits.append({"box": b, "score": None, "reason": "원문 글자 마스크를 못 뽑았습니다"})
             continue
         E = gm > 0
         ring = (cv2.dilate(gm, k) > 0) & (union == 0)
+        ring_scope = "dilate"
+        if plate is not None:
+            ring = ring & (plate > 0)
+            ring_scope = "plate"
         if int(E.sum()) < F_MIN_PIXELS or int(ring.sum()) < F_MIN_PIXELS:
-            hits.append({"box": b, "score": None, "reason": "잴 픽셀이 너무 적습니다"})
+            hits.append({"box": b, "score": None, "ring_scope": ring_scope,
+                         "reason": "잴 픽셀이 너무 적습니다" + (" (판 안쪽 링)" if plate is not None else "")})
             continue
         e, r = outf[E], outf[ring]
         mean_d = float(np.linalg.norm(e.mean(0) - r.mean(0)))
@@ -585,7 +624,7 @@ def background_score(erased_bytes: bytes, source_bytes: bytes, boxes: List[Dict]
                        f"{F_TEXTURE_RATIO[0]:g}~{F_TEXTURE_RATIO[1]:g})")
         elif not textured and std_e > F_FLAT_MAX_STD:
             why_box = f"민 배경에 찌꺼기가 남았습니다(지운 자리 거칠기 {std_e:.1f})"
-        hits.append({"box": b, "score": 1 if ok else 0, "reason": why_box,
+        hits.append({"box": b, "score": 1 if ok else 0, "reason": why_box, "ring_scope": ring_scope,
                      "mean_diff": round(mean_d, 2), "ratio": None if ratio is None else round(ratio, 3),
                      "ring_std": round(std_r, 2), "erased_std": round(std_e, 2)})
         if not ok:
