@@ -3057,7 +3057,12 @@ def media_process_image():
         return jsonify({"ok": False, "error": "유효한 이미지 URL이 필요합니다."}), 400
     try:
         from src.media.image_pipeline import process_image
-        res = process_image(image_url, channel=str(data.get("channel") or "default"))
+        from src.media.image_label import make_label, run_stamp
+        # 0-b — 「이미지 정제」 결과도 이름표(CLEAN). 편집 화면이 보낸 상품·장 번호가 있으면 싣는다.
+        _lab = make_label(run_stamp("clean"), str(data.get("item_id") or ""),
+                          data.get("idx") if data.get("idx") is not None else "", "CLEAN",
+                          folder="seller")
+        res = process_image(image_url, channel=str(data.get("channel") or "default"), label=_lab)
         d = res.to_dict()
     except Exception as exc:
         logger.warning("이미지 처리 오류: %s", exc)

@@ -746,7 +746,9 @@ function addImageRow(url) {
     try {
       const resp = await fetch('/seller/media/process-image', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({image_url: v}),
+        // 0-b — 상품·장 번호를 실어 결과 주소에 이름표가 붙게(`…_p<장>_CLEAN`).
+        body: JSON.stringify({image_url: v, item_id: _ITEM_ID,
+                              idx: Array.from(row.parentNode ? row.parentNode.children : []).indexOf(row)}),
       });
       const data = await resp.json();
       if (!data.ok) { pcToast(kgpFriendlyError(data), 'error'); return; }

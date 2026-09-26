@@ -599,7 +599,7 @@ def _cdn_configured() -> bool:
         return False
 
 
-def _copy_one(process_image, url: str, budget_sec: float):
+def _copy_one(process_image, url: str, budget_sec: float, label=None):
     """한 장을 **벽시계 예산 안에서만** 처리한다. 넘기면 버리고 다음 장으로.
 
     내려받기의 `timeout=10`은 **소켓 타임아웃**이지 전송 총량 마감이 아니다 —
@@ -611,7 +611,7 @@ def _copy_one(process_image, url: str, budget_sec: float):
 
     def _run():
         try:
-            box["r"] = process_image(url)
+            box["r"] = process_image(url, label=label) if label else process_image(url)
         except Exception as exc:
             box["e"] = exc
 
@@ -625,7 +625,7 @@ def _copy_one(process_image, url: str, budget_sec: float):
 
 
 def _store_image_copies(images: list, *, already=None,
-                        budget_sec: float = IMAGE_STORE_BUDGET_SEC) -> dict:
+                        budget_sec: float = IMAGE_STORE_BUDGET_SEC, item_id: str = "") -> dict:
     """원본 URL은 **그대로 두고** 서버 저장본을 따로 만든다.
 
     C-F13-3: 원본을 덮어쓰면 D트랙(재번역·재가공)에서 되돌릴 데가 없다 — 원본이 유일한 진본이다.
@@ -650,12 +650,16 @@ def _store_image_copies(images: list, *, already=None,
 
     stored, deadline = [], _t.monotonic() + budget_sec
     stopped_early = False
-    for u in urls:
+    # 0-b — 원본 저장본에도 이름표(ORIGINAL). 한 번의 크론 처리 = 한 run.
+    from src.media.image_label import make_label, run_stamp
+    _run = run_stamp("copy")
+    for _i, u in enumerate(urls):
         left = deadline - _t.monotonic()
         if left <= 0:
             stopped_early = True
             break
-        r = _copy_one(process_image, u, min(left, IMAGE_STORE_PER_IMAGE_SEC))
+        r = _copy_one(process_image, u, min(left, IMAGE_STORE_PER_IMAGE_SEC),
+                      label=make_label(_run, item_id, _i, "ORIGINAL", folder="seller"))
         if r is None:
             continue
         # **업로드가 실제로 됐을 때만** 저장본으로 센다. 파이프라인은 미설정 시 원본 URL을

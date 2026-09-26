@@ -60,17 +60,22 @@ def test_bench_uploads_carry_run_page_and_pipeline(monkeypatch):
 
     def _up(raw, **kw):
         seen.append(kw)
-        pid = kw.get("public_id") or "random"
+        from src.media.image_label import upload_opts
+        pid = upload_opts(kw.get("label")).get("public_id") or "random"
         return {"ok": True, "secure_url": f"https://res.cloudinary.com/x/image/upload/v1/proxy-commerce/bench/{pid}.jpg"}
 
     monkeypatch.setattr("src.media.image_pipeline.upload_bytes", _up)
     import base64
     lab = {"run_id": "bench-20260925-101500-m0-d3g", "item_no": "617129397971",
-           "page": "3", "pipeline": "GEN_REMOVE"}
+           "page": "3", "pipeline": "GEN_REMOVE", "folder": "bench"}
     got = S.store_translated("617129397971", 3, base64.b64encode(b"\xff\xd8\xff" + b"0" * 40).decode(),
                              kind="d3g", label=lab)
-    assert seen[0]["public_id"] == "bench-20260925-101500-m0-d3g_617129397971_p3_GEN_REMOVE"
-    assert seen[0]["context"] == lab and seen[0]["folder"] == "bench"
+    # 0-b: 이름표는 `upload_bytes(label=…)` 한 곳에서 public_id·context로 풀린다(`image_label`).
+    from src.media.image_label import upload_opts
+    opts = upload_opts(seen[0]["label"])
+    assert opts["public_id"] == "bench-20260925-101500-m0-d3g_617129397971_p3_GEN_REMOVE"
+    assert opts["context"] == {k: lab[k] for k in ("run_id", "item_no", "page", "pipeline")}
+    assert opts["folder"] == "bench"
     for part in ("bench-20260925-101500-m0-d3g", "p3", "GEN_REMOVE"):
         assert part in got["url"]
 
@@ -81,7 +86,7 @@ def test_the_label_names_the_inpainter_actually_used():
     from tests._ast_probe import string_constants_in
     from src.services import image_translate_bench as B
     assert bench_label("r", {"item_no": "9"}, 2, "TELEA") == {
-        "run_id": "r", "item_no": "9", "page": "2", "pipeline": "TELEA"}
+        "run_id": "r", "item_no": "9", "page": "2", "pipeline": "TELEA", "folder": "bench"}
     assert {"GEN_REMOVE", "TELEA", "TENCENT"} <= string_constants_in(B._run_d3_stage) | \
         string_constants_in(B._run)
 

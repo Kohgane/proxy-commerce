@@ -31,6 +31,22 @@ logger = logging.getLogger(__name__)
 BATCH = 50
 
 
+#: 0-b — 저장소 kind → 이름표 파이프라인. D3 벤치 렌더본은 실제 인페인터 이름으로.
+_KIND_PIPELINE = {"gallery": "TENCENT", "detail": "TENCENT", "d3": "TELEA", "d3g": "GEN_REMOVE"}
+
+
+def _stamp(prefix: str) -> str:
+    from src.media.image_label import run_stamp
+    return run_stamp(prefix)
+
+
+def _label(run_id: str, item_id, idx, pipeline: str) -> dict:
+    """백필 이름표 — 벤치 렌더본(d3·d3g)은 `bench` 폴더, 나머지는 `seller` 폴더."""
+    from src.media.image_label import make_label
+    folder = "bench" if pipeline in ("TELEA", "GEN_REMOVE") else "seller"
+    return make_label(run_id, item_id, idx, pipeline, folder=folder)
+
+
 def cdn_ready() -> bool:
     """Cloudinary가 붙어 있나. 없으면 백필은 **아무것도 하지 않는다**(할 수가 없다)."""
     try:
@@ -40,7 +56,7 @@ def cdn_ready() -> bool:
         return False
 
 
-def _upload(raw: bytes) -> tuple:
+def _upload(raw: bytes, label=None) -> tuple:
     """`(url, error)` — 하나만 채워진다. 가짜 URL을 만들지 않는다.
 
     F31: 예전엔 `_upload_to_cdn`(반환 `str|None`)을 불러서, 여섯 가지 실패가 전부
@@ -53,7 +69,7 @@ def _upload(raw: bytes) -> tuple:
     except Exception as exc:
         return "", f"이미지 파이프라인 미가용: {type(exc).__name__}"
     try:
-        res = upload_bytes(raw)
+        res = upload_bytes(raw, label=label) if label else upload_bytes(raw)
     except Exception as exc:
         return "", f"{type(exc).__name__}: {str(exc)[:160]}"
     if res.get("ok") and res.get("secure_url"):
@@ -149,6 +165,7 @@ def run_originals(items, limit: int = BATCH) -> dict:
 
     uploaded = failed = 0
     results = []
+    _run_o = _stamp("origin")
     for it in items or []:
         if uploaded + failed >= limit:
             break
@@ -174,7 +191,7 @@ def run_originals(items, limit: int = BATCH) -> dict:
                 results.append({"item_id": item_id, "kind": p["kind"], "idx": p["idx"],
                                 "ok": False, "error": err})
                 continue
-            url, uerr = _upload(raw)
+            url, uerr = _upload(raw, _label(_run_o, item_id, p["idx"], "ORIGINAL"))
             if not url:
                 failed += 1
                 results.append({"item_id": item_id, "kind": p["kind"], "idx": p["idx"],
@@ -237,6 +254,7 @@ def run(limit: int = BATCH) -> dict:
                 "reason": "CDN 미연결 — CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET 확인"}
 
     pending = blobs.pending_cdn(limit=limit)
+    _run_t = _stamp("backfill")
     uploaded = failed = skipped = 0
     # F31-3: 「지금 올리기」가 숫자만 돌려주면 **어느 장이 왜 실패했는지**를 또 모른다.
     #   장별 결과를 그대로 싣는다(화면이 바로 편다).
@@ -256,7 +274,7 @@ def run(limit: int = BATCH) -> dict:
             results.append({"item_id": item_id, "idx": idx, "kind": kind,
                             "ok": False, "error": "바이트가 없습니다"})
             continue
-        url, err = _upload(raw)
+        url, err = _upload(raw, _label(_run_t, item_id, idx, _KIND_PIPELINE.get(kind, "TENCENT")))
         if not url:
             blobs.set_cdn(item_id, idx, "", kind=kind, error=err)
             failed += 1

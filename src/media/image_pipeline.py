@@ -294,7 +294,8 @@ def _cloudinary_configured() -> bool:
 def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
                  eager: Optional[list] = None, folder: str = "",
                  resource_type: str = "image", public_id: str = "",
-                 context: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+                 context: Optional[Dict[str, str]] = None,
+                 label: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """바이트 → Cloudinary. **결과를 dict 그대로** 돌려준다 (F31).
 
     ## 왜 dict인가
@@ -351,6 +352,13 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
             api_secret=os.getenv("CLOUDINARY_API_SECRET"),
             secure=True,
         )
+        # 0-b(오너 2026-09-26): 이름표는 **한 곳**(`image_label`)에서 — 벤치·셀러가 같은 규칙.
+        if label:
+            from src.media.image_label import upload_opts
+            _lo = upload_opts(label)
+            folder = folder or _lo["folder"]
+            public_id = public_id or _lo["public_id"]
+            context = context or _lo["context"]
         base = os.getenv("CLOUDINARY_FOLDER", "proxy-commerce")
         # F48-b — 인보이스 같은 **서류**는 상품 이미지와 다른 폴더(섞이지 않게)·PDF 허용(auto).
         opts: Dict[str, Any] = {"folder": f"{base}/{folder}" if folder else base,
@@ -387,13 +395,14 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
     return out
 
 
-def _upload_to_cdn(image_bytes: bytes, *, prefer_webp: bool = False) -> Optional[str]:
+def _upload_to_cdn(image_bytes: bytes, *, prefer_webp: bool = False,
+                   label: Optional[Dict[str, str]] = None) -> Optional[str]:
     """처리된 이미지 바이트를 Cloudinary에 올리고 보안 URL을 반환(없으면 None).
 
     **얇은 껍데기다** — 진짜 일은 `upload_bytes`가 한다(두 벌 금지). 사유가 필요한 호출부는
     `upload_bytes`를 직접 부른다. 여기는 사유를 담을 칸이 없는 옛 계약이라 그대로 둔다.
     """
-    res = upload_bytes(image_bytes, prefer_webp=prefer_webp)
+    res = upload_bytes(image_bytes, prefer_webp=prefer_webp, label=label)
     return res["secure_url"] if res["ok"] else None
 
 
@@ -406,6 +415,7 @@ def process_image(
     channel: str = "default",
     unify_background: bool = False,
     convert_webp: bool = True,
+    label: Optional[Dict[str, str]] = None,
 ) -> ImageProcessResult:
     """단일 이미지 처리 파이프라인.
 
@@ -471,7 +481,7 @@ def process_image(
         pass
 
     # 처리본을 CDN(Cloudinary)에 업로드해 새 URL 발급. 미설정/실패 시 원본 URL 유지(정직).
-    cdn_url = _upload_to_cdn(image_bytes, prefer_webp=webp_converted)
+    cdn_url = _upload_to_cdn(image_bytes, prefer_webp=webp_converted, label=label)
     processed_url = cdn_url or image_url
     cdn_uploaded = bool(cdn_url)
 

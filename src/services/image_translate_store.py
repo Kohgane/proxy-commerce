@@ -62,11 +62,7 @@ def _store_via_cdn(raw: bytes, label: Optional[Dict[str, str]] = None) -> tuple:
     except Exception as exc:
         return "", f"이미지 파이프라인 미가용: {type(exc).__name__}"
     try:
-        if label:
-            res = upload_bytes(raw, folder="bench", public_id=bench_public_id(label),
-                               context=label)
-        else:
-            res = upload_bytes(raw)
+        res = upload_bytes(raw, label=label) if label else upload_bytes(raw)
     except Exception as exc:
         logger.warning("[이미지번역] CDN 업로드 실패: %s", exc)
         return "", f"{type(exc).__name__}: {str(exc)[:160]}"
@@ -75,19 +71,14 @@ def _store_via_cdn(raw: bytes, label: Optional[Dict[str, str]] = None) -> tuple:
     return "", str(res.get("error") or "")
 
 
-#: 벤치 열 이름 — **주소에 그대로** 박힌다(D3-6 ⓪). 오너 표기(TELEA/GEN_REMOVE)에 공급사 열을 더했다.
+#: 벤치 열 이름 — **주소에 그대로** 박힌다(D3-6 ⓪). 규칙은 `src.media.image_label` 한 곳.
 BENCH_PIPELINES = ("TENCENT", "TELEA", "GEN_REMOVE")
 
 
 def bench_public_id(label: Dict[str, str]) -> str:
-    """`{run_id, item_no, page, pipeline}` → Cloudinary public_id(폴더 `…/bench` 아래).
-
-    예: `bench-20260925-101500-m0-d3g_617129397971_p3_GEN_REMOVE`
-    Cloudinary public_id에 쓸 수 있는 글자(영숫자·`-`·`_`)만 남긴다.
-    """
-    parts = [label.get("run_id", ""), label.get("item_no", ""),
-             f"p{label.get('page', '')}", label.get("pipeline", "")]
-    return "_".join(re.sub(r"[^A-Za-z0-9_-]", "-", str(p)) for p in parts if str(p))
+    """이름표 → public_id. **`image_label.public_id`에 맡긴다**(벤치·셀러 같은 규칙)."""
+    from src.media.image_label import public_id
+    return public_id(label)
 
 
 def storage_backend() -> str:

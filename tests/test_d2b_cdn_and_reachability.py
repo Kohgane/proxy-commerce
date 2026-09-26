@@ -86,7 +86,7 @@ def test_backfill_is_idempotent():
     blobs.put("i1", 0, b"img")
     calls = {"n": 0}
 
-    def once(raw):
+    def once(raw, label=None):  # 0-b: 이름표 인자
         calls["n"] += 1
         return ("https://cdn/x.jpg", "")
 
@@ -119,7 +119,7 @@ def test_one_failure_does_not_stop_the_rest_and_says_why():
     blobs.put("i1", 1, b"b")
     seen = {"n": 0}
 
-    def flaky(raw):
+    def flaky(raw, label=None):  # 0-b: 이름표 인자
         seen["n"] += 1
         return ("", "boom") if seen["n"] == 1 else ("https://cdn/ok.jpg", "")
 
