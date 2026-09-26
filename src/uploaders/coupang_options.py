@@ -258,3 +258,74 @@ def error_lines(body) -> List[str]:
                 _add(ia.get("message"))
         _add(it.get("message"))
     return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# F48-c — 오너가 화면에서 **직접 정한 값**을 계획에 싣는다
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 보류 둘을 사람이 풀 수 있어야 한다(오너 2026-09-26):
+#   · 「필수 옵션: 적용모델」 — 메타의 MANDATORY 칸에 **오너가 넣은 값만** 싣는다(기본값 채우기 0).
+#   · 「색상 값이 13개」 — 목록에서 **하나를 고르면** 그 값만 남겨 단일 SKU로 간다.
+#     고른 값은 **원래 목록에 있던 값**이어야 한다(목록 밖 값은 무시 — 지어낸 값이 옵션이 되지 않게).
+
+def apply_choices(product: Dict, attributes=None, pick=None) -> Dict:
+    """상품 사본에 오너 선택을 반영한다 — `{attributes: 입력값 우선 병합, options: 고른 값만}`."""
+    out = dict(product or {})
+    typed = []
+    for a in attributes or []:
+        if not isinstance(a, dict):
+            continue
+        name = str(a.get("attributeTypeName") or "").strip()
+        value = str(a.get("attributeValueName") or "").strip()
+        if name and value:
+            typed.append({"attributeTypeName": name, "attributeValueName": value})
+    if typed:
+        keep = [a for a in (out.get("attributes") or [])
+                if isinstance(a, dict) and _norm(a.get("attributeTypeName"))
+                not in {_norm(t["attributeTypeName"]) for t in typed}]
+        out["attributes"] = typed + keep
+    if isinstance(pick, dict) and pick:
+        opts = []
+        for o in out.get("options") or []:
+            if not isinstance(o, dict):
+                opts.append(o)
+                continue
+            chosen = str(pick.get(o.get("name")) or "").strip()
+            vals = _opt_values(o)
+            if chosen and chosen in vals:
+                o = {**o, "values": [chosen]}
+                o.pop("value", None)
+            opts.append(o)
+        out["options"] = opts
+    return out
+
+
+def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
+                choices_from: Optional[Dict] = None) -> Dict:
+    """편집 화면 「쿠팡 필수 옵션」 블록의 재료 — 메타 **그대로** + 지금 계획이 보는 값·보류.
+
+    `fields`: MANDATORY 속성마다 `{name, dataType, basicUnit, usableUnits, group, exposed, value, source}`
+    — `value`는 **계획이 실제로 찾은 값**(상품 속성·같은 이름 옵션·단일 아이템 수량)뿐이다. 없으면 빈칸.
+    `choices`: 값이 2개 이상인 옵션 — 오너가 하나를 고를 목록.
+    """
+    plan = plan_attributes(raw_meta_attrs, product, meta_ok=meta_ok)
+    fields = []
+    for m in parse_meta(raw_meta_attrs):
+        if not m["required"] or "gtin" in m["attributeTypeName"].lower():
+            continue
+        value, source, why = _value_for(m, product)
+        fields.append({"name": m["attributeTypeName"], "dataType": m["dataType"],
+                       "basicUnit": m["basicUnit"], "usableUnits": m["usableUnits"],
+                       "group": m["group"], "exposed": m["exposed"],
+                       "value": value, "source": source, "why": why})
+    names = {_norm(m["attributeTypeName"]) for m in parse_meta(raw_meta_attrs)}
+    choices = []
+    # 고를 목록은 **고르기 전** 옵션에서 — 고른 뒤 목록이 사라지면 다시 고를 수가 없다(캡처에서 발견).
+    for o in (choices_from or product).get("options") or []:
+        if isinstance(o, dict) and o.get("name"):
+            vals = _opt_values(o)
+            if len(vals) > 1:
+                choices.append({"name": o["name"], "values": vals, "in_meta": _norm(o["name"]) in names})
+    return {"fields": fields, "choices": choices, "holds": plan["holds"], "notes": plan["notes"],
+            "attributes": plan["attributes"], "meta_ok": meta_ok}
