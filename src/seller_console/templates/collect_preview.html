@@ -1413,6 +1413,9 @@ function buildProductData() {
     // F48-c — 오너가 정한 쿠팡 값(입력한 필수 옵션 · 고른 옵션 값). 넣은 것만 간다.
     coupang_attributes: kgpCoupangAttributes(),
     coupang_option_pick: Object.assign({}, _CP.pick),
+    // F51 — SKU(ICE 컨텍스트). 쿠팡 등록이 SKU마다 item을 만든다(SKU별 판매가는 서버가 원가로 낸다).
+    //   예전엔 이 배열을 안 보내서, SKU가 있어도 등록은 단일 아이템이었다(F48-c 실측).
+    skus: Array.isArray(_EXTRA.skus) ? _EXTRA.skus : [],
   };
 }
 
@@ -1470,6 +1473,16 @@ function kgpRenderCoupangOptions(d) {
   if ((d.attributes || []).length) {
     h += '<div class="mt-2" data-role="cp-send">보낼 값: ' + d.attributes.map(a =>
       `<span class="pc-badge pc-badge-muted me-1">${esc(a.attributeTypeName)} = ${esc(a.attributeValueName)}</span>`).join('') + '</div>';
+  }
+  // F51 — SKU별로 나가면 **SKU마다 판매가**(그 SKU 원가로 낸 값)를 보여 준다. 등록 전에 눈으로 확인한다.
+  if (d.multi && (d.items || []).length) {
+    h += '<div class="mt-2" data-role="cp-sku-prices"><div class="small fw-semibold">SKU별 등록 ' + d.items.length +
+      '개 — 판매가(원가로 각각 계산)</div><table class="table table-sm small mb-0"><tbody>' +
+      d.items.map(it => `<tr><td>${esc((it.label || (it.spec || []).join(' / ')))}</td>` +
+        `<td class="text-end">${esc(it.cost)} ${esc(it.currency)}</td>` +
+        `<td class="text-end fw-semibold">${Number(it.sell_price_krw || 0).toLocaleString('ko-KR')}원</td>` +
+        `<td class="text-end text-muted">재고 ${esc(it.stock == null ? '?' : it.stock)}</td></tr>`).join('') +
+      '</tbody></table></div>';
   }
   if ((d.holds || []).length) {
     h += '<div class="text-danger mt-2" data-role="cp-holds">지금 상태로는 멈춥니다:<ul class="mb-0 ps-3">' +
