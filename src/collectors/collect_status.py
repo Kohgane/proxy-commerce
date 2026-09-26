@@ -131,6 +131,9 @@ def clean_page_diag(raw) -> Dict[str, Any]:
                   if str(v).lstrip("-").isdigit()}
     # F49-T 3부: 한 줄에 종류·메시지·위치·스택이 실린다(확장 `_kgpErrLine`) — 200자면 스택이 잘린다.
     out["errors"] = [str(e)[:600] for e in (raw.get("errors") or [])[:5]]
+    # F49-T 2부-b: __ICE_APP_CONTEXT__는 있는데 파싱 실패 — 그 덩어리 앞 200자와 사유.
+    if raw.get("ice_error"):
+        out["ice_error"] = str(raw.get("ice_error"))[:300]
     # F50: 확장이 어느 규칙 버전으로 읽었나(remote=서버에서 받은 것 / bundled=확장 기본값).
     rl = raw.get("rules") if isinstance(raw.get("rules"), dict) else {}
     if rl:

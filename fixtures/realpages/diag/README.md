@@ -36,3 +36,16 @@
 ## 현재 파일
 - `amazon-dp-sample.html` — 합성 진단 파일(현재 추출기로 생성, 실기기 캡처 아님·정직 표기).
   buybox 현재가 29.99 / field_sources.price=buybox / desc_source=adapter / 옵션 색상×4 / rating 없음(더미 0).
+
+## 기록 자체가 결함일 때 — `<이름>.expected.json` (F49-T 2부-b)
+오너가 「이 결과가 틀렸다」고 보낸 진단 파일은 임베드된 `extracted`가 **버그 기록**이다. 그대로 계약으로 쓰면
+수리를 막는다. 원본 파일은 **증거로 그대로 두고**, 옆에 같은 이름 + `.expected.json`을 둔다:
+
+```json
+{"reason": "무엇이 왜 틀렸는지(오너 기준)",
+ "supersedes_ext_version": "그 진단의 ext_version",
+ "recorded_was": {"요약": "옛 값"},
+ "expected": { "...계약 뷰(_contract_view) 그대로..." }}
+```
+
+계약(`tests/test_v78_diag_contract.py`)은 이유가 비었거나, 대체 대상 버전이 다르거나, 스키마가 계약 뷰와 다르면 실패한다.

@@ -1,0 +1,50 @@
+{
+ "reason": "F49-T 2부-b(오너 2026-09-26): 이 캡처(ext 1.5.155)는 결함 기록이다 — 실페이지의 __ICE_APP_CONTEXT__는 `var b = {...}` 래퍼라 옛 파서가 못 읽어 sku=none·skus 0·price \"\"(needs_check)·DOM 잡음 옵션 4그룹(可开发票/中国段物流…)·이미지 14장(UI 아이콘 9장 포함)이 나왔다. 오너 기준: SKU 10행·颜色分类·29.9/34.9·잡음 0.",
+ "supersedes_ext_version": "1.5.155",
+ "recorded_was": {
+  "price": "",
+  "price_status": "needs_check",
+  "skus_len": 0,
+  "images_len": 14
+ },
+ "expected": {
+  "title": "随行盾(SPORTLINK)适用于苹果手表充电支架applewatch7/9底座S8无线iwatch新款Ultra2手表架Airpods耳机架",
+  "price": "29.90",
+  "currency": "CNY",
+  "price_status": "",
+  "field_sources": {
+   "title": "ice_context",
+   "price": "ice_context",
+   "images": "ice_context",
+   "options": "ice_context",
+   "description": "tier2",
+   "detail_images": "tier2",
+   "reviews": "none",
+   "sku": "ice_context"
+  },
+  "desc_source": "adapter",
+  "options": [
+   {
+    "name": "颜色分类",
+    "values": [
+     "三合一充电支架（白色）",
+     "三合一充电支架（黑色）",
+     "三合一充电支架（粉色）",
+     "三合一充电支架（蓝色）",
+     "三合一充电支架（红色）",
+     "【三合一充电支架】带理线器（黑色）",
+     "【三合一充电支架】带理线器（白色）",
+     "【三合一充电支架】带理线器（蓝色）",
+     "【三合一充电支架】带理线器（粉色）",
+     "【三合一充电支架】带理线器（红色）"
+    ]
+   }
+  ],
+  "skus_len": 10,
+  "images_len": 3,
+  "detail_images_len": 2,
+  "reviews_len": 0,
+  "rating": "",
+  "review_count": ""
+ }
+}

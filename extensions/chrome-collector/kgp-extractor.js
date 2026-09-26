@@ -365,27 +365,65 @@
   //     res.skuBase.skus[].{propPath "pid:vid;…", skuId} · res.skuCore.sku2info[skuId].{quantity, quantityText,
   //     price.priceMoney(分), subPrice.priceMoney(分)} — sku2info["0"]는 상품 대표가(「起」).
   //   읽는 길 둘: ① live 전역(MAIN world·북마클릿) ② 인라인 <script>의 `__ICE_APP_CONTEXT__ = {…}` 텍스트(격리 월드).
-  function _iceRoot() {
-    var ctx = null;
-    try { ctx = global.__ICE_APP_CONTEXT__; } catch (e) { ctx = null; }
-    if (!ctx || typeof ctx !== "object") {
-      try {
-        var ss = document.querySelectorAll("script:not([src])");
-        for (var i = 0; i < ss.length && !ctx; i++) {
-          var t = ss[i].textContent || "";
-          var idx = t.indexOf("__ICE_APP_CONTEXT__");
-          if (idx < 0) continue;
-          var eq = t.indexOf("=", idx);
-          if (eq < 0 || eq - idx > 30) continue;
-          var mb = /[{\[]/.exec(t.slice(eq, eq + 300));
-          if (!mb) continue;
-          var raw = _sliceBalanced(t, eq + mb.index);
-          if (raw) { try { ctx = JSON.parse(raw); } catch (e) { ctx = null; } }
-        }
-      } catch (e) {}
-    }
+  // F49-T 2부-b(오너 실측 617129397971, 2026-09-26 14:15Z): 실페이지는 대입문이 아니라 래퍼다 —
+  //   `!(function(){var a=window.__ICE_APP_CONTEXT__||{};var b={...JSON...};for(var k in a){b[k]=a[k]}window.__ICE_APP_CONTEXT__=b;})();`
+  //   옛 파서는 **첫** `__ICE_APP_CONTEXT__`(=`|| {}` 쪽) 뒤 30자 안의 `=`만 봐서 `var b =`(33자 뒤)를 놓쳤고,
+  //   그 스크립트를 통째로 건너뛰었다 → SKU 0 · 가격 "" · DOM 잡음 옵션 그대로.
+  //   이제 그 스크립트 안의 `{`를 **앞에서부터** 중괄호 매칭으로 잘라 JSON.parse — 변수 이름(`b`)에 기대지 않는다.
+  //   `loaderData.home.data.res`가 있는 첫 덩어리를 쓴다. 파싱이 다 실패하면 `_iceError`에 앞 200자.
+  var _iceError = "";
+  function _iceRes(ctx) {
     try { return ctx && ctx.loaderData && ctx.loaderData.home && ctx.loaderData.home.data && ctx.loaderData.home.data.res || null; }
     catch (e) { return null; }
+  }
+  function _iceFromText(t) {
+    var from = 0, tries = 0, lastErr = "";
+    while (tries++ < 40) {
+      var i = t.indexOf("{", from);
+      if (i < 0) break;
+      var raw = _sliceBalanced(t, i);
+      if (!raw) { lastErr = "중괄호가 닫히지 않음: " + t.slice(i, i + 200); break; }
+      if (raw.length > 20 && raw.indexOf("loaderData") >= 0) {
+        try {
+          var res = _iceRes(JSON.parse(raw));
+          if (res) return { res: res, err: "" };
+          lastErr = "loaderData.home.data.res 없음: " + raw.slice(0, 200);
+          from = i + raw.length;        // JSON인데 res가 없다 — 이 덩어리 안쪽은 다시 볼 필요 없다
+          continue;
+        } catch (e) {
+          // 실측: 첫 `{`는 래퍼 **함수 본문**이라 JS다(파싱 실패). 그 안에 진짜 JSON(`var b = {`)이 있으니
+          //   건너뛰지 말고 **한 칸 안으로** 들어간다.
+          lastErr = "JSON.parse 실패(" + (e && e.message ? String(e.message).slice(0, 80) : "?") + "): " + raw.slice(0, 200);
+        }
+        from = i + 1;
+      } else {
+        from = i + 1;                   // `|| {}` 같은 빈 조각 — 다음 `{`로
+      }
+    }
+    return { res: null, err: lastErr };
+  }
+  function _iceRoot() {
+    _iceError = "";
+    var res = null;
+    // ① 스크립트 **텍스트**(격리 월드 — 확장의 정상 경로). 래퍼 형태를 여기서 읽는다.
+    try {
+      var ss = document.querySelectorAll("script:not([src])");
+      for (var i = 0; i < ss.length && !res; i++) {
+        var t = ss[i].textContent || "";
+        if (t.indexOf("__ICE_APP_CONTEXT__") < 0 || t.indexOf("loaderData") < 0) continue;
+        if (t.indexOf("kgpExtractProduct") >= 0) continue;          // 우리 추출기 자신(북마클릿·테스트 주입)
+        var got = _iceFromText(t);
+        if (got.res) res = got.res; else if (got.err && !_iceError) _iceError = got.err;
+      }
+    } catch (e) {}
+    // ② live 전역(MAIN world·북마클릿) — 텍스트에서 못 찾았을 때만.
+    if (!res) {
+      var ctx = null;
+      try { ctx = global.__ICE_APP_CONTEXT__; } catch (e) { ctx = null; }
+      if (ctx && typeof ctx === "object") res = _iceRes(ctx);
+    }
+    if (res) _iceError = "";
+    return res;
   }
   function _fenToYuan(m) {
     var s = String(m == null ? "" : m).trim();
@@ -440,6 +478,12 @@
     });
     var d0 = info["0"] || {};
     var price = _fenToYuan(d0.price && d0.price.priceMoney);
+    // F49-T 2부-b: 대표가 = sku2info["0"](优惠前) → 없으면 priceVO.price(优惠前). priceVO는 페이지마다 자리가
+    //   다르다(최상위 `priceVO` · `componentsVO.priceVO` — 두 실물 JSON에서 각각 확인).
+    if (!price) {
+      var pvo = res.priceVO || (res.componentsVO && res.componentsVO.priceVO) || null;
+      price = _fenToYuan(pvo && pvo.price && pvo.price.priceMoney);
+    }
     if (!price) {
       var inStock = skus.filter(function (k) { return k.price && k.stock !== 0; });
       if (inStock.length) price = inStock.map(function (k) { return k.price; }).sort(function (a, b) { return parseFloat(a) - parseFloat(b); })[0];
@@ -1850,7 +1894,9 @@
       if (ice.price) { price = ice.price; currency = "CNY"; currencySrc = "tier1"; priceSrc = "ice_context"; }
       if (ice.images.length) images = ice.images.slice();
     } else if (_taobaoHost()) {
-      warnings.push("SKU 컨텍스트 없음 — 이 페이지에서 __ICE_APP_CONTEXT__를 찾지 못했어요(SKU 0)");
+      warnings.push(_iceError
+        ? "SKU 컨텍스트를 읽지 못했어요(SKU 0) — __ICE_APP_CONTEXT__는 있는데 파싱 실패"
+        : "SKU 컨텍스트 없음 — 이 페이지에서 __ICE_APP_CONTEXT__를 찾지 못했어요(SKU 0)");
     }
     var reviews = (j.reviews || []).slice(), rating = j.rating || "", reviewCount = j.reviewCount || "";
     // v83 STEP2: 알리 옵션 소생 — tier1(state)이 비면 DOM sku-item 어댑터로. 값이 있으면 그 값 각각을 sku로도
@@ -2121,6 +2167,8 @@
       reviews: reviews, rating: rating, review_count: reviewCount,
       source: source, partial: partial, warnings: warnings,
       field_sources: fieldSources,
+      // F49-T 2부-b: ICE가 있는데 못 읽었으면 그 덩어리 앞 200자(+사유) — page_diag.ice_error로 올라간다.
+      ice_error: (!ice && _iceError) ? _iceError : undefined,
       // v86-H: 목록 페이지에서 무엇을 왜 비웠는지 — 조용한 오염도, 조용한 공백도 금지.
       //   {reason:"list", fields:[...], images_dropped:N}. 상세 페이지에선 필드 자체를 싣지 않는다.
       page_type: _pageType || undefined,
