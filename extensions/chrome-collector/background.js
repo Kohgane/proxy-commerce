@@ -398,6 +398,10 @@ function _kgpEnrichBody(itemId, meta) {
     currency: meta.currency || "",
     // F49-T: 왜 못 읽었나 — 페이지 진단도 같이(서버가 필드별 사유를 이걸로만 말한다).
     page_diag: meta.page_diag || null,
+    // F49-T 3부: 목록 카드 → 상세(ICE) 보강 경로에도 SKU가 실려야 한다. 전엔 보강 본문에 skus가 없어
+    //   목록에서 누른 수집은 상세를 열고도 SKU 0으로 끝났다(2부는 상세 페이지 직접 수집만 담았다).
+    skus: meta.skus || [],
+    field_sources: meta.field_sources || null,
   };
 }
 

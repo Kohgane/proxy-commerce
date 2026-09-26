@@ -272,12 +272,28 @@ function _kgpSitePdp() {
 //   로그인 벽 · 내비게이션(HTTP 상태·리다이렉트) · 아직 안 불러온(lazy) 이미지 · 알려진 셀렉터 적중 수 ·
 //   주입 뒤 페이지 오류. 서버는 이 값으로만 필드별 실패 사유를 말한다(없으면 「사유 미상」).
 const _KGP_PAGE_ERRORS = [];
-try {
-  window.addEventListener("error", (ev) => {
-    if (_KGP_PAGE_ERRORS.length < 5) {
-      _KGP_PAGE_ERRORS.push(String((ev && (ev.message || (ev.error && ev.error.message))) || "error").slice(0, 200));
+// F49-T 3부: 예전엔 message가 비면 「error」 한 단어만 남았다(world.taobao 진단 errors 전부 "error").
+//   캡처 단계 리스너라 **리소스 로드 실패**(img·script 404 — message 없음)도 같이 잡히는데, 그걸 가르지
+//   않았던 것이다. 이제 한 줄에 종류·메시지·위치·스택을 담는다(서버는 문자열 목록으로 받는다).
+function _kgpErrLine(ev) {
+  try {
+    const t = ev && ev.target;
+    if (t && t !== window && t.tagName) {
+      return "resource: <" + String(t.tagName).toLowerCase() + "> " + String(t.currentSrc || t.src || t.href || "(주소 없음)").slice(0, 200);
     }
-  }, true);
+    const er = ev && (ev.error || ev.reason);
+    let msg = String((ev && ev.message) || (er && er.message) || (typeof er === "string" ? er : "") || "").trim();
+    if (!msg) msg = "(메시지 없음 — 교차 출처 스크립트는 브라우저가 내용을 가린다)";
+    const kind = (ev && ev.type === "unhandledrejection") ? "rejection" : "script";
+    const at = (ev && ev.filename) ? " @ " + String(ev.filename).slice(0, 160) + ":" + (ev.lineno || 0) + ":" + (ev.colno || 0) : "";
+    const stack = (er && er.stack) ? " | stack: " + String(er.stack).replace(/\s+/g, " ").slice(0, 300) : "";
+    return kind + ": " + msg.slice(0, 200) + at + stack;
+  } catch (e) { return "unknown: " + String(e).slice(0, 100); }
+}
+try {
+  const _kgpOnErr = (ev) => { if (_KGP_PAGE_ERRORS.length < 5) _KGP_PAGE_ERRORS.push(_kgpErrLine(ev)); };
+  window.addEventListener("error", _kgpOnErr, true);
+  window.addEventListener("unhandledrejection", _kgpOnErr, true);
 } catch (e) { /* noop */ }
 
 //: 타오바오·티몰 셀렉터 — **이 레포에 이미 있던 것만**(새로 지어낸 것 0): 갤러리·상세·옵션은
@@ -675,9 +691,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             for (var _r = 0; _r < _qs.length; _r++) {
               var _q = _qs[_r];
               if (_q.dataset && _q.dataset.collected === "1") { _rc++; continue; }
-              if (parseFloat(getComputedStyle(_q).opacity || "0") > 0) _rv++;
+              // F49-T 3부: rest가 0이 아닌 사이트(타오바오 계열)는 **그 값보다 진할 때만** 위반이다.
+              if (parseFloat(getComputedStyle(_q).opacity || "0") > _kgpQuickRestOpacity() + 0.01) _rv++;
             }
-            _ui.rest_state = { n: _qs.length, collected: _rc, rest_violations: _rv, rest_opacity: KGP_QUICK_REST_OPACITY };
+            _ui.rest_state = { n: _qs.length, collected: _rc, rest_violations: _rv, rest_opacity: _kgpQuickRestOpacity() };
           } catch (e) {}
           _ui.hover_test = _kgpHoverProbe(_qs[0]);            // 하위호환(기존 판독 스크립트 유지)
           var _idx = [0, Math.floor(_qs.length / 2), _qs.length - 1];
@@ -868,6 +885,11 @@ function kgpToast(message, ok) {
 let _kgpServerUrl = "";
 try { kgpSendMessage({ action: "getSettings" }, (s) => { if (s && s.serverUrl) _kgpServerUrl = s.serverUrl; }); } catch (e) {}
 function _kgpEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+// F49-T 3부: 수집한 초안(편집 화면)으로 바로 — 서버가 준 item_id만 쓴다.
+function kgpOpenDraft(itemId) {
+  const base = _kgpServerUrl || "https://kohganepercentiii.com";
+  window.open(base + "/seller/collect/preview/" + encodeURIComponent(String(itemId || "")), "_blank", "noopener");
+}
 function kgpOpenHistory() {
   const base = _kgpServerUrl || "https://kohganepercentiii.com";
   window.open(base + "/seller/collect/history", "_blank", "noopener");
@@ -1467,12 +1489,57 @@ function _kgpTier1Diag(diag, tier1Source, usedTier1, cause) {
     //   scope는 추천 캐러셀 배제 여부(narrowed / already_pure / scope_lost_signal).
     goods_ids_n: (diag.top && diag.top.goods_ids_n) || 0,
     tier1_scope: diag.scope || null,
+    main_world: _kgpMainWorldState(),        // F49-T 3부: 원인 판정의 근거(관측값 그대로)
   };
 }
 // v86-G: 캡처 0의 원인 갈래를 **관측값으로** 가른다(추측 문구 금지).
+// F49-T 3부: 「인터셉터 미주입(MAIN world 로드 실패 — 확장 재로딩 필요)」는 world.taobao.com에서 **오진**이었다.
+//   네트워크 인터셉터(kgp-net.js)는 manifest상 temu에만 등록돼 있다 — 타오바오엔 원래 없다.
+//   세 갈래를 **관측값으로** 가른다: ① 이 사이트는 등록 대상이 아님 ② 등록됐는데 이 페이지에서 안 돌았음
+//   ③ 확장이 갱신됐는데 이 탭을 새로고침하지 않음(이 격리 월드가 끊긴 상태). 추측 문구 금지.
+function _kgpNetRegistered(host) {
+  try {
+    var cs = (chrome.runtime.getManifest() || {}).content_scripts || [];
+    host = String(host || location.hostname || "").toLowerCase();
+    for (var i = 0; i < cs.length; i++) {
+      if ((cs[i].js || []).indexOf("kgp-net.js") < 0) continue;
+      var ms = cs[i].matches || [];
+      for (var j = 0; j < ms.length; j++) {
+        var m = String(ms[j]).match(/^[^:]+:\/\/([^/]+)\//);
+        if (!m) continue;
+        var hp = m[1].toLowerCase();
+        if (hp === "*") return true;
+        if (hp.indexOf("*.") === 0) { var base = hp.slice(2); if (host === base || host.slice(-(base.length + 1)) === "." + base) return true; }
+        else if (host === hp) return true;
+      }
+    }
+  } catch (e) { return null; }   // 모름(매니페스트를 못 읽음) — 없다고 말하지 않는다
+  return false;
+}
+function _kgpMainWorldState() {
+  // 못 잰 값은 null(모름) — 모르는 걸 false(없음)로 적지 않는다.
+  var de = null;
+  try { de = (typeof document !== "undefined" && document) ? document.documentElement : null; } catch (e) { de = null; }
+  var alive = null;
+  try { alive = (typeof kgpExtAlive === "function") ? !!kgpExtAlive() : null; } catch (e) { alive = null; }
+  var reg = null;
+  try { reg = (typeof chrome !== "undefined" && chrome && chrome.runtime) ? _kgpNetRegistered(location.hostname) : null; } catch (e) { reg = null; }
+  return {
+    ext_alive: alive,                                                      // false = 확장 갱신 뒤 이 탭 미새로고침
+    main_marker: de ? !!(de.getAttribute && de.getAttribute("data-kgp-main")) : null,   // kgp-main.js가 이 페이지에서 돌았나
+    net_marker: de ? !!(de.getAttribute && de.getAttribute("data-kgp-net")) : null,
+    net_registered: reg,
+  };
+}
 function _kgpTier1Cause(diag) {
   var ns = (diag && diag.netStats) || {};
-  if (!diag || !diag.netBound) return "인터셉터 미주입(MAIN world 로드 실패 — 확장 재로딩 필요)";
+  if (!diag || !diag.netBound) {
+    var st = _kgpMainWorldState();
+    if (st.ext_alive === false) return "확장이 갱신됐는데 이 탭을 새로고침하지 않음(격리 월드 끊김) — 새로고침 후 재측정";
+    if (st.net_registered === false) return "인터셉터 대상 아님(이 사이트는 네트워크 가로채기 미등록 — MAIN world " + (diag ? "정상 응답" : "미응답") + ")";
+    if (st.net_registered === null) return "인터셉터 미주입 — 이 사이트 등록 여부를 확인하지 못함(매니페스트 읽기 실패)";
+    return "인터셉터 미주입 — 등록된 사이트인데 이 페이지에서 실행되지 않음(주입 차단/실패 — 새로고침해도 같으면 이 페이지가 막는 것)";
+  }
   if (diag.pageGoodsId && diag.mismatch && diag.captured) {
     return "이 상품의 API 응답 미포착(goods_id " + diag.pageGoodsId + ") — 페이지 새로고침 후 재시도";
   }
@@ -1522,7 +1589,11 @@ function kgpExtractMerged(cb) {
   setTimeout(() => {
     if (done) return; done = true;
     window.removeEventListener("message", onMsg);
-    var tmCause = "MAIN world 미응답(kgp-main 미로드/타임아웃 — 확장 재로딩 권장)";
+    // F49-T 3부: 「미로드」와 「로드됐는데 늦음」과 「확장 갱신 후 미새로고침」을 가른다.
+    var _st = _kgpMainWorldState();
+    var tmCause = _st.ext_alive === false ? "확장이 갱신됐는데 이 탭을 새로고침하지 않음(격리 월드 끊김) — 새로고침 후 재측정"
+      : (_st.main_marker ? "MAIN world 로드됨·응답 지연(900ms 타임아웃)"
+                         : "MAIN world 스크립트가 이 페이지에서 실행되지 않음(주입 차단/실패)");
     try { console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백. 원인: " + tmCause, "color:#c2503c;font-weight:bold"); } catch (_) {}
     // v86-G: 이 경로도 진단을 **반드시** 실어 보낸다. 종전엔 여기서 tier1_diag가 아예 안 붙어,
     //   payload에 tier1 흔적이 없는 것이 곧 '미응답'인지 '진단 미부착'인지 판별 불가였다.
@@ -1848,17 +1919,23 @@ function _kgpMainCount() {
   return Object.keys(_kgpCardByUrl).filter((u) => { const c = _kgpCardByUrl[u]; return c && c.region !== "reco" && !c.sponsored; }).length;
 }
 
+function _kgpIsCnyHost(h) { return /(^|\.)(taobao|tmall|1688)\.com$/i.test(String(h || "")); }
+function _kgpIsTaobaoHost(h) { return /(^|\.)(taobao|tmall)\.com$/i.test(String(h || "")); }
 function _kgpPrice(text) {
   // v87-#597: 라쿠텐 리스트 타일 가격은 '1,706円'(엔 한자 접미) — 종전 정규식이 '원'·'¥'만 잡아 円 누락.
   //   円 접미(→JPY)를 추가해 타일 가격을 채운다. 감지(keep-set)는 불변 — 가격 필드만 채움. 없으면 빈값(날조 0).
-  const m = String(text || "").match(/([\d][\d.,]{1,})\s*(?:원|円)|(?:₩|\$|¥|€|£)\s*([\d][\d.,]{1,})/);
+  // F49-T 3부: 중국 사이트는 전각 ￥를 쓴다 — 그것도 가격 기호로 잡는다.
+  const m = String(text || "").match(/([\d][\d.,]{1,})\s*(?:원|円)|(?:₩|\$|¥|￥|€|£)\s*([\d][\d.,]{1,})/);
   if (!m) return { price: "", currency: "" };
   const raw = (m[1] || m[2] || "").replace(/,/g, "");
   let cur = "";
   if (/円/.test(m[0])) cur = "JPY";
   else if (/원|₩/.test(m[0])) cur = "KRW";
   else if (/\$/.test(m[0])) cur = "USD";
-  else if (/¥/.test(m[0])) cur = "JPY";
+  // F49-T 3부: ¥는 엔과 위안이 같은 기호다. 타오바오·티몰·1688에서는 위안(CNY) — 엔으로 적으면
+  //   목록 수집이 JPY로 저장되고 상세의 「표시 통화(JPY)」 경고로 번진다(오너 실측).
+  else if (/[¥￥]/.test(m[0])) cur = (typeof _kgpIsCnyHost === "function" && typeof location !== "undefined"
+                                    && _kgpIsCnyHost(location.hostname)) ? "CNY" : "JPY";
   else if (/€/.test(m[0])) cur = "EUR";
   else if (/£/.test(m[0])) cur = "GBP";
   return { price: raw, currency: cur };
@@ -2248,6 +2325,53 @@ function _kgpGenericCards() {
   return cards;
 }
 
+// ── F49-T 3부 — 타오바오 목록(world.taobao.com 등) 어댑터 ──────────────────────────────
+//   오너 진단 실측(ext 1.5.152, world.taobao.com): 피드 카드 30장 = `a.item-link`
+//   (class tb-pick-content-item · item-appear), href = item.taobao.com | detail.tmall.com /item.htm?id=.
+//   제네릭은 그중 0장을 잡고 「내 찜」 블록(mytao-collectitem) 4장만 잡았다 → 앵커 기준으로 센다.
+//   셀렉터는 이 실측에서만 왔다(발명 0). 상품 번호는 서버 vendor_sku가 같은 `id=`를 다시 읽는다.
+function _kgpTaobaoItemHref(href) {
+  try {
+    const u = new URL(String(href || ""), location.href);
+    if (!/(^|\.)(item\.taobao|detail\.tmall)\.com$/i.test(u.hostname)) return "";
+    if (!/\/item\.htm$/i.test(u.pathname)) return "";
+    const id = u.searchParams.get("id") || "";
+    return /^\d{6,}$/.test(id) ? ("https://" + u.hostname + "/item.htm?id=" + id) : "";
+  } catch (e) { return ""; }
+}
+// 「내 찜」(mytao-collectitem) — 셀러가 이미 찜한 상품 블록. 피드가 아니라 **제외**한다(사유 표식은 남긴다).
+function _kgpInTaobaoSaved(el) {
+  try { return !!(el && el.closest && el.closest("[class*='mytao-collectitem']")); } catch (e) { return false; }
+}
+function _kgpTaobaoListCards() {
+  const cards = [], seen = {};
+  let scanned = 0;
+  document.querySelectorAll("a.item-link, a.tb-pick-content-item").forEach((a) => {
+    try {
+      scanned++;
+      if (_kgpInTaobaoSaved(a)) { _kgpExcl.region++; _kgpMarkSkip(a, "mytao-saved"); return; }
+      const href = _kgpTaobaoItemHref(a.getAttribute("href") || a.href);
+      if (!href) { _kgpExcl.url++; _kgpMarkSkip(a, "no-item-url"); return; }
+      const img = _kgpCardImage(a) || a.querySelector("img");
+      const titleEl = a.querySelector("[class*='title' i], [class*='name' i]");
+      let title = titleEl ? (titleEl.innerText || titleEl.textContent || "").trim() : "";
+      if (!title && img && img.alt) title = img.alt.trim();
+      if (!title) title = String(a.innerText || a.textContent || "").trim().split("\n")[0];
+      const pr = _kgpPrice(a.innerText || a.textContent || "");
+      const bimg = img ? (_kgpBestImg(img) || img.src || "") : "";
+      _kgpClearSkip(a);
+      cards.push({
+        url: href, title: (title || "(제목 없음)").replace(/\s+/g, " ").slice(0, 200),
+        image: bimg, images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency || (pr.price ? "CNY" : ""),
+        region: "main", el: a, dup_instance: !!seen[href],
+      });
+      seen[href] = 1;
+    } catch (e) { /* noop */ }
+  });
+  _kgpScannedCount = Math.max(_kgpScannedCount || 0, scanned);
+  return cards;
+}
+
 // v63 STEP1: 상품 고유키 — 어댑터/제네릭이 같은 상품을 다른 URL 형태로 잡아도 하나로 묶는다.
 //   아마존 ASIN(/dp/·/gp/product/), 테무·굿즈(goods_id·-g-<n>·/goods/<n>) 우선, 그 외 쿼리/ref 제거 URL.
 function _kgpCardKey(url) {
@@ -2256,6 +2380,8 @@ function _kgpCardKey(url) {
   if (m) return "asin:" + m[1].toUpperCase();
   m = u.match(/[?&]goods_id=(\d+)/i) || u.match(/[/-]g-(\d{4,})/i) || u.match(/\/goods\/(\d+)/i);
   if (m) return "goods:" + m[1];
+  // F49-T 3부: 타오바오·티몰 상품은 `item.htm?id=` — 제네릭과 어댑터가 같은 상품을 하나로 묶게.
+  if (/(taobao|tmall)\.com\/item\.htm/i.test(u)) { m = u.match(/[?&]id=(\d{6,})/); if (m) return "tb:" + m[1]; }
   return u.split("#")[0].split("?")[0].replace(/\/(?:ref|spm|dp)=.*$/i, "").replace(/\/+$/, "").toLowerCase();
 }
 
@@ -2304,9 +2430,17 @@ function kgpFindCards() {
   try { generic = _kgpGenericCards(); gScanned = _kgpScannedCount; } catch (e) { generic = []; }
   let adapter = [];
   try { if (/(^|\.)amazon\.[a-z.]+$/.test(host)) { _kgpScannedCount = 0; adapter = _kgpAmazonCards(); } } catch (e) { adapter = []; }
+  // F49-T 3부: 타오바오·티몰 목록 — 앵커 기준 어댑터. 제네릭이 잡은 「내 찜」 블록은 병합 후 뺀다.
+  try { if ((typeof _kgpIsTaobaoHost === "function" && _kgpIsTaobaoHost(host))) { _kgpScannedCount = 0; adapter = _kgpTaobaoListCards(); } } catch (e) { adapter = []; }
   // 정직 카운트: 어댑터가 스캔한 전체(있으면)와 제네릭 스캔 중 큰 값 유지('전체 N 중 상품 M').
   _kgpScannedCount = Math.max(_kgpScannedCount || 0, gScanned || 0);
-  const merged = _kgpMergeCards(generic, adapter);
+  let merged = _kgpMergeCards(generic, adapter);
+  if ((typeof _kgpIsTaobaoHost === "function" && _kgpIsTaobaoHost(host))) {
+    merged = merged.filter((c) => {
+      if (c && c.el && _kgpInTaobaoSaved(c.el)) { _kgpMarkSkip(c.el, "mytao-saved"); return false; }
+      return true;
+    });
+  }
   _kgpLastDetect = { generic: generic.length, adapter: adapter.length, merged: merged.length, adapterMatched: adapter.length > 0 };
   return merged;
 }
@@ -2415,6 +2549,8 @@ function _kgpAnchorCss(mode) {
   // v65 STEP3: mode='corner'(이미지 못 찾음) → 좌상단 폴백(허공 금지). 그 외 이미지 영역 앵커.
   // v73 STEP1: 앵커 오프셋 전부 !important — all:initial의 auto가 호버 버튼 위치를 덮어써 '일부만' 보이던
   //   회귀 수리(카드 배지는 이미 !important라 생존, 호버 버튼만 앵커 오프셋이 비-!important였음).
+  // F49-T 3부: 타오바오·티몰 목록은 카드 **우상단**(오너 지시) — 이미지를 못 찾아도 같은 자리.
+  if ((typeof _kgpIsTaobaoHost === "function" && _kgpIsTaobaoHost(location.hostname))) return ["top:8px !important", "right:8px !important"];
   if (mode === "corner") return ["top:6px !important", "left:6px !important"];
   if (KGP_TOUCH) return ["top:8px !important", "right:8px !important"];       // 터치: 우상단 상시
   const a = kgpHoverAnchor();
@@ -2492,6 +2628,17 @@ function _kgpCenterHit(el) {
 //   목록 카드 호버 노출 방식. 값은 여기 한 곳에서만 정하고, 적용은 전부 JS setProperty로 한다
 //   (시트 의존 금지 — STEP4 원칙: 인라인 !important는 시트가 못 되돌린다).
 var KGP_QUICK_REST_OPACITY = 0;
+// F49-T 3부(오너 2026-09-26, world.taobao.com 진단): rest 0 방식은 **호버 전이가 끝나지 않으면 영영 안 보인다**
+//   — 진단의 hover_test가 호버 뒤에도 host_opacity "0"이었다. 타오바오·티몰 목록은 평소에도 **반투명 작은**
+//   「고가 수집」을 우상단에 두고, 호버하면 불투명으로. 다른 사이트는 v86-C(rest 0) 그대로 — 넓히는 건 오너 결정.
+var KGP_QUICK_REST_OPACITY_TB = 0.6;
+function _kgpQuickRestOpacity() {
+  try { return _kgpIsTaobaoHost(location.hostname) ? KGP_QUICK_REST_OPACITY_TB : KGP_QUICK_REST_OPACITY; }
+  catch (e) { return KGP_QUICK_REST_OPACITY; }
+}
+function _kgpQuickLabel() {
+  try { return _kgpIsTaobaoHost(location.hostname) ? "고가 수집" : "수집"; } catch (e) { return "수집"; }
+}
 function _kgpMakesStackingContext(el) {
   try {
     var cs = getComputedStyle(el);
@@ -2532,12 +2679,14 @@ function _kgpEnsureContainingBlock(el) {
 function _kgpBindQuickReveal(card, q, badge) {
   var show = function (on) {
     // v86-C: rest=0 — 마우스를 떼면 사라진다(상시 노출 철회). 시트가 아니라 인라인 setProperty로 건다.
-    var rest = String(KGP_QUICK_REST_OPACITY);
+    var rest = String(_kgpQuickRestOpacity());
     if (q.dataset.collected !== "1") q.style.setProperty("opacity", on ? "1" : rest);
     if (badge && !KGP_SELECTED.has(badge.dataset.url)) badge.style.setProperty("opacity", on ? "1" : rest);
   };
   q._kgpReveal = show;                       // 재적용(스타일 리셋) 후에도 현재 상태를 되살릴 수 있게 노출
   if (KGP_TOUCH) {
+    // F49-T 3부: rest가 0이 아니면 이미 보인다 — 「첫 탭은 노출만」 규칙이 필요 없다(보이는 버튼이 한 번 헛돌면 사고).
+    if (_kgpQuickRestOpacity() > 0) { q.dataset.revealed = "1"; show(false); return; }
     // v86-C 터치 폴백: 마우스가 없으니 **첫 탭=노출 · 둘째 탭=실행**. 상시 노출은 화면을 가린다.
     q.dataset.revealed = "0";
     show(false);
@@ -2578,16 +2727,18 @@ function kgpQuickBtnStyle(collected, mode) {
     //   rest 0.85 · hover 1.0 — 질문 자체를 소멸시키는 게 목적이다. 전환은 여전히 JS 단일 토글(시트 의존 0),
     //   상태전환 속성에 인라인 !important 금지(STEP4 명문화 원칙) 유지.
     // v86-C: 수집된 타일('수집됨 ✓')만 상시 표시. 그 외는 터치·데스크톱 모두 rest=0에서 시작한다.
-    "opacity:" + (collected ? "1" : String(KGP_QUICK_REST_OPACITY)), "transition:opacity .12s",
+    "opacity:" + (collected ? "1" : String(_kgpQuickRestOpacity())), "transition:opacity .12s",
   ]).join(";");
 }
 // shadow 안 알약 CSS — 색 토큰: 먹(#1a1714)·금(#c9a24b), 수집됨=청록(#119a8e).
 function _kgpQuickShadowCss() {
-  var fs = KGP_TOUCH ? "13px" : "15px";
-  var pad = KGP_TOUCH ? "5px 11px" : "6px 14px";
+  var small = false;
+  try { small = _kgpIsTaobaoHost(location.hostname); } catch (e) {}   // F49-T 3부: 타오바오 목록은 작게
+  var fs = small ? "13px" : (KGP_TOUCH ? "13px" : "15px");
+  var pad = small ? "4px 10px" : (KGP_TOUCH ? "5px 11px" : "6px 14px");
   return ".p{box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:6px;"
     + "white-space:nowrap;padding:" + pad + ";border-radius:999px;cursor:pointer;"
-    + "min-height:34px;max-height:44px;background:#1a1714;color:#fff;border:1.5px solid #c9a24b;"
+    + (small ? "min-height:28px;" : "min-height:34px;") + "max-height:44px;background:#1a1714;color:#fff;border:1.5px solid #c9a24b;"
     + "font:800 " + fs + "/1 -apple-system,BlinkMacSystemFont,sans-serif;letter-spacing:-.01em;"
     + "box-shadow:0 3px 12px rgba(0,0,0,.34)}"
     + ".p.on{background:#119a8e;border-color:#0f8c80}"
@@ -2653,6 +2804,15 @@ function kgpQuickCollect(card, btn) {
       const _targets = (resp.enrichTargets || []).filter((t) => t && t.item_id && t.url);
       if (_targets.length) { try { kgpSendMessage({ action: "enrichStart", targets: _targets }, () => {}); } catch (e) {} }
       if ((resp.success || 0) > 0) kgpAlertOnce(corr, () => kgpCelebrate(1));   // 실제 새 수집만 축하(건당 1회·중복은 조용)
+      // F49-T 3부: 타오바오·티몰은 목록 카드엔 제목·썸네일·목록가뿐이다 — 상세 페이지(ICE)가 SKU·가격을 채운다.
+      //   만든 초안으로 **바로 가는 링크**를 준다(서버가 돌려준 item_id — 없으면 링크를 만들지 않는다).
+      const _iid = _targets.length ? String(_targets[0].item_id) : "";
+      if (_iid && _kgpIsTaobaoHost(location.hostname)) {
+        const _dup = !((resp.success || 0) > 0);
+        kgpCollectCard((_dup ? "이미 수집한 상품이에요" : "초안을 만들었어요")
+          + " — 상세 페이지에서 SKU·가격을 채우는 중", true,
+          [{ label: "초안 열기", fn: () => kgpOpenDraft(_iid) }]);
+      }
     } else {
       kgpAlertOnce(corr, () => {
         if (lbl) lbl.textContent = prev;
@@ -3001,7 +3161,7 @@ function _kgpEnsureTileQuick(c, badge) {
       if (done) q.dataset.collected = "1";
       // v86 STEP2: 알약은 shadow 안에서 그린다(사이트 span{…!important} 오염은 shadow 경계가 차단).
       q.style.cssText = kgpQuickBtnStyle(done, mode);
-      _kgpBuildQuick(q, done, done ? "수집됨 ✓" : "수집");
+      _kgpBuildQuick(q, done, done ? "수집됨 ✓" : _kgpQuickLabel());
       q.addEventListener("click", (e) => {
         e.preventDefault(); e.stopPropagation();
         // v86-C 터치: 아직 안 보이는 상태의 첫 탭은 **노출만** 한다(보이지 않는 버튼이 수집되면 사고).
