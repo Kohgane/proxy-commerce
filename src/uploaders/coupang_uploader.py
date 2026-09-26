@@ -453,6 +453,8 @@ class CoupangUploader(BaseUploader):
             'weight_kg': collected.get('weight_kg'),
             'stock': 999,
             'options': collected.get('options', {}),
+            # F48-c — 오너가 정한 속성(쿠팡 필수 옵션). `plan_attributes`가 가장 먼저 본다.
+            'attributes': collected.get('attributes') or [],
             'tags': collected.get('tags', []),
             'shipping_fee': 0,
             'delivery_days': '7-14',

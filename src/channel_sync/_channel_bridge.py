@@ -86,6 +86,8 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "weight_kg": pd.get("weight_kg"),
         "options": options if isinstance(options, (dict, list)) else {},
         "tags": tags,
+        # F48-c — 오너가 정한 마켓 속성(쿠팡 필수 옵션). 예전엔 여기서 **떨어져** 입력칸이 있어도 안 갔다.
+        "attributes": pd.get("attributes") if isinstance(pd.get("attributes"), list) else [],
     }
 
 

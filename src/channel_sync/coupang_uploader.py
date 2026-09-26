@@ -34,7 +34,7 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
     return run_upload(
         CoupangUploader(account=account) if account else CoupangUploader(),
-        product_data,
+        with_choices(product_data),     # F48-c — 사전검증과 같은 반영
         required_envs=required,
         market_label=MARKET_LABEL,
     )
@@ -51,5 +51,34 @@ def precheck(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
     account = resolve_upload_account()
     up = CoupangUploader(account=account) if account else CoupangUploader()
-    prepared = up.prepare_product(to_collected(product_data))
+    prepared = up.prepare_product(to_collected(with_choices(product_data)))
     return up.precheck(prepared)
+
+
+def with_choices(product_data: Dict[str, Any]) -> Dict[str, Any]:
+    """F48-c — 편집 화면에서 오너가 정한 쿠팡 값(`coupang_attributes`·`coupang_option_pick`)을 반영.
+
+    사전검증·등록·옵션 블록이 **같은 함수**를 지난다(한 곳에서만 반영 — 셋이 다르게 보면 거짓말이 된다).
+    """
+    from src.uploaders.coupang_options import apply_choices
+    pd = dict(product_data or {})
+    return apply_choices(pd, pd.get("coupang_attributes"), pd.get("coupang_option_pick"))
+
+
+def option_form(product_data: Dict[str, Any]) -> Dict[str, Any]:
+    """F48-c — 「쿠팡 필수 옵션」 블록 재료. 카테고리 예측 → 메타(릴레이 경유·카테고리 캐시) → 계획."""
+    from src.uploaders.coupang_uploader import CoupangUploader
+    from src.uploaders.coupang_options import option_form as _form
+    from src.seller_console.market_cred_view import resolve_upload_account
+    from ._channel_bridge import to_collected
+
+    account = resolve_upload_account()
+    up = CoupangUploader(account=account) if account else CoupangUploader()
+    prepared = up.prepare_product(to_collected(with_choices(product_data)))
+    cat = up.predict_category(prepared.get("title", "")) or str(prepared.get("category_id") or "")
+    if not cat:
+        return {"ok": False, "error": "쿠팡 카테고리를 예측하지 못했습니다 — 제목을 확인해 주세요."}
+    meta = up.get_category_meta(cat)
+    out = _form(meta.get("attributes") or [], prepared, meta_ok=bool(meta),
+                choices_from={"options": (product_data or {}).get("options") or []})
+    return {"ok": True, "category": cat, **out}

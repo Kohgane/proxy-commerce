@@ -261,6 +261,17 @@
           <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
         </div>
         <div id="optionRows" class="vstack gap-2"></div>
+        {# F48-c — 사전검증이 멈춘 쿠팡 옵션을 **여기서 푼다.** 칸은 쿠팡 카테고리 메타(MANDATORY) 그대로,
+           값은 상품에서 실제로 찾은 것 또는 오너가 넣은 것만(기본값 채우기 0). 비면 보류가 유지된다. #}
+        <div class="pc-inset mt-3" data-role="coupang-options">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="console-kpi-label mb-0">쿠팡 필수 옵션</div>
+            <button type="button" class="btn btn-ghost btn-sm py-0" id="btnCoupangOptions" onclick="kgpLoadCoupangOptions()">
+              <i class="bi bi-arrow-repeat"></i> 쿠팡 기준 불러오기</button>
+          </div>
+          <div class="small text-muted mt-1">쿠팡이 이 상품의 카테고리에 요구하는 칸입니다. 비워 두면 등록 전에 멈춥니다.</div>
+          <div id="coupangOptionsBody" class="small mt-2"></div>
+        </div>
       </div>
 
       <!-- [상품명·카테고리] 카테고리 (자동 분류) -->
@@ -1375,7 +1386,85 @@ function buildProductData() {
     gallery_images: images,                 // v39-E2 #2: 갤러리(대표) = 편집된 상품 이미지
     detail_images: detailImgs,              // 상세설명 이미지(본문) 보존
     detail_blocks: dpData,                  // v40-C: 마켓별 상세페이지 블록(공통 + 마켓 오버라이드)
+    // F48-c — 오너가 정한 쿠팡 값(입력한 필수 옵션 · 고른 옵션 값). 넣은 것만 간다.
+    coupang_attributes: kgpCoupangAttributes(),
+    coupang_option_pick: Object.assign({}, _CP.pick),
   };
+}
+
+// ── F48-c 쿠팡 필수 옵션 ────────────────────────────────────────────────────
+const _CP = {
+  attrs: Object.fromEntries((_EXTRA.coupang_attributes || []).map(a => [a.attributeTypeName, a.attributeValueName])),
+  pick: Object.assign({}, _EXTRA.coupang_option_pick || {}),
+};
+function kgpCoupangAttributes() {
+  return Object.entries(_CP.attrs).filter(([k, v]) => k && String(v || '').trim())
+    .map(([k, v]) => ({attributeTypeName: k, attributeValueName: String(v).trim()}));
+}
+async function kgpLoadCoupangOptions() {
+  const body = document.getElementById('coupangOptionsBody');
+  const btn = document.getElementById('btnCoupangOptions');
+  btn.disabled = true;
+  body.innerHTML = '<span class="text-muted">쿠팡에 물어보는 중…</span>';
+  try {
+    const r = await fetch('/seller/collect/coupang/options', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({product: buildProductData()})});
+    const d = await r.json().catch(() => ({ok: false, error: '응답을 읽지 못했습니다.'}));
+    if (!d.ok) { body.innerHTML = `<div class="text-danger">${kgpEscapeForHtml(d.error || '불러오지 못했습니다.')}</div>`; return; }
+    kgpRenderCoupangOptions(d);
+  } catch (e) {
+    body.innerHTML = `<div class="text-danger">${kgpEscapeForHtml(kgpFriendlyError(e))}</div>`;
+  } finally { btn.disabled = false; }
+}
+function kgpRenderCoupangOptions(d) {
+  const esc = kgpEscapeForHtml;
+  const body = document.getElementById('coupangOptionsBody');
+  let h = `<div class="text-muted mb-1">카테고리 ${esc(d.category || '')}</div>`;
+  if (!(d.fields || []).length) h += '<div class="text-muted">이 카테고리는 필수 옵션이 없습니다.</div>';
+  (d.fields || []).forEach(f => {
+    const mine = _CP.attrs[f.name];
+    const val = (mine !== undefined) ? mine : (f.value || '');
+    const units = (f.usableUnits || []).length ? `단위 ${f.usableUnits.join('·')}` : (f.basicUnit ? `단위 ${f.basicUnit}` : '');
+    const hint = [f.dataType === 'NUMBER' ? '숫자' : '', units, f.group ? `그룹 ${f.group} — 하나만` : ''].filter(Boolean).join(' · ');
+    h += `<label class="d-block mb-2"><span class="fw-semibold">${esc(f.name)}</span>
+      ${hint ? `<span class="text-muted ms-1">(${esc(hint)})</span>` : ''}
+      <input type="text" class="form-control form-control-sm mt-1" data-cp-attr="${esc(f.name)}" value="${esc(val)}"
+        placeholder="${f.dataType === 'NUMBER' ? '예: 1' + esc((f.usableUnits || [])[0] || '') : '비우면 등록 전에 멈춥니다'}">
+      ${(mine === undefined && f.value) ? `<span class="text-muted">상품에서 찾은 값(${esc(f.source || '')}) — 고칠 수 있습니다</span>` : ''}
+    </label>`;
+  });
+  (d.choices || []).forEach(c => {
+    const cur = _CP.pick[c.name] || '';
+    h += `<div class="mt-2"><div class="fw-semibold">${esc(c.name)} — 값 ${c.values.length}개 중 하나로 등록</div>
+      <div class="text-muted">여러 값을 한꺼번에 올리려면 값마다 가격이 필요합니다(준비 중). 지금은 하나만 골라 주세요.</div>
+      <div class="d-flex flex-wrap gap-2 mt-1">` +
+      c.values.map(v => `<label class="form-check-label"><input type="radio" class="form-check-input me-1"
+        name="cp-pick-${esc(c.name)}" data-cp-pick="${esc(c.name)}" value="${esc(v)}" ${cur === v ? 'checked' : ''}>${esc(v)}</label>`).join('') +
+      `</div></div>`;
+  });
+  // 실제로 **보낼 값**(용어집·단위 반영 뒤) — 칸에 보이는 원문과 다를 수 있다(예: 黑色 → 블랙).
+  if ((d.attributes || []).length) {
+    h += '<div class="mt-2" data-role="cp-send">보낼 값: ' + d.attributes.map(a =>
+      `<span class="pc-badge pc-badge-muted me-1">${esc(a.attributeTypeName)} = ${esc(a.attributeValueName)}</span>`).join('') + '</div>';
+  }
+  if ((d.holds || []).length) {
+    h += '<div class="text-danger mt-2" data-role="cp-holds">지금 상태로는 멈춥니다:<ul class="mb-0 ps-3">' +
+      d.holds.map(x => `<li>${esc(x)}</li>`).join('') + '</ul></div>';
+  } else {
+    h += '<div class="mt-2" style="color:var(--success)"><i class="bi bi-check-lg"></i> 옵션 규칙 통과 — 「마켓 등록 → 사전검증」으로 진행하세요.</div>';
+  }
+  (d.notes || []).forEach(n => { h += `<div class="text-muted">${esc(n)}</div>`; });
+  h += `<button type="button" class="btn btn-ghost btn-sm mt-2" onclick="kgpLoadCoupangOptions()">
+    <i class="bi bi-check2-circle"></i> 넣은 값으로 다시 확인</button>`;
+  body.innerHTML = h;
+  body.querySelectorAll('[data-cp-attr]').forEach(el => el.addEventListener('input', () => {
+    _CP.attrs[el.dataset.cpAttr] = el.value;
+  }));
+  // 오너가 **직접 친 값만** 오너 값이다. 상품에서 찾은 값은 서버가 매번 다시 찾는다 —
+  //   찾은 값(예: 黑色)을 오너 값으로 굳히면, 나중에 다른 색을 골라도 옛 값이 이긴다.
+  body.querySelectorAll('[data-cp-pick]').forEach(el => el.addEventListener('change', () => {
+    if (el.checked) { _CP.pick[el.dataset.cpPick] = el.value; kgpLoadCoupangOptions(); }   // 고르면 바로 다시 확인
+  }));
 }
 
 // 카테고리 자동 분류 — 상품명·키워드로 추천

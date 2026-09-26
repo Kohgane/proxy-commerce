@@ -1988,6 +1988,31 @@ def _persist_upload_status(item_id, result_dict) -> None:
         logger.warning("업로드 상태 영속 실패(무시): %s", exc)
 
 
+@bp.post("/collect/coupang/options")
+def collect_coupang_options():
+    """F48-c — 편집 화면 「쿠팡 필수 옵션」 블록: 카테고리 메타의 MANDATORY 칸 + 고를 옵션 목록.
+
+    Request: `{product: buildProductData()}` · Response: `{ok, category, fields, choices, holds, notes}`.
+    값은 **계획이 실제로 찾은 것**만 채워 온다(기본값 채우기 0) — 비면 빈칸이고 보류는 그대로다.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(silent=True) or {}
+    product = data.get("product") if isinstance(data.get("product"), dict) else {}
+    if not product:
+        return jsonify({"ok": False, "error": "상품 데이터가 필요합니다."}), 400
+    from . import market_credentials as mc
+    try:
+        from src.channel_sync import coupang_uploader as _cu
+        with mc.seller_market_env(_seller_id(), ["coupang"]):
+            out = _cu.option_form(product)
+    except Exception as exc:
+        logger.warning("[쿠팡 옵션] 조회 실패: %s", exc)
+        return jsonify({"ok": False, "user_message": True,
+                        "error": f"쿠팡 기준을 불러오지 못했습니다 — {type(exc).__name__}"}), 502
+    return jsonify(out), (200 if out.get("ok") else 422)
+
+
 @bp.post("/collect/prevalidate")
 def collect_prevalidate():
     """마켓 업로드 사전검증 (Phase 190).
@@ -7308,6 +7333,18 @@ def collect_preview_save(item_id: str):
         keywords = [str(k).strip() for k in keywords if str(k).strip()]
         extra["keywords"] = keywords
         extra["tags"] = keywords
+
+    # F48-c — 오너가 정한 쿠팡 값(필수 옵션 입력 · 고른 옵션 값). **넣은 것만** 저장한다.
+    if isinstance(data.get("coupang_attributes"), list):
+        extra["coupang_attributes"] = [
+            {"attributeTypeName": str(a.get("attributeTypeName") or "").strip()[:40],
+             "attributeValueName": str(a.get("attributeValueName") or "").strip()[:60]}
+            for a in data["coupang_attributes"]
+            if isinstance(a, dict) and str(a.get("attributeTypeName") or "").strip()
+            and str(a.get("attributeValueName") or "").strip()]
+    if isinstance(data.get("coupang_option_pick"), dict):
+        extra["coupang_option_pick"] = {str(k)[:40]: str(v)[:60]
+                                        for k, v in data["coupang_option_pick"].items() if str(v or "").strip()}
 
     # 카테고리(자동 분류 결과 또는 셀러 선택) 저장 — 각 마켓 업로더가 매핑
     category_code = (data.get("category_code") or data.get("category") or "").strip()
