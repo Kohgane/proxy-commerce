@@ -78,6 +78,8 @@ USER_SCOPED_TABLES = (
     ("image_translate_usage", "user_id", "이미지 번역 사용량", "id", False, "keep"),
     ("image_bench_runs", "user_id", "이미지 번역 채점", "id", False, "keep"),
     ("image_ko_blobs", "seller_id", "번역본 이미지", "", False, "keep"),
+    # D3-8: 이미지 번역 자동 큐(장 단위) — 병합되면 대기 중인 장도 정본 계정으로 옮긴다.
+    ("image_translate_queue", "user_id", "이미지 번역 대기열", "id", False, "keep"),
     ("orders", "user_id", "주문", "id", True, "keep"),
 )
 
