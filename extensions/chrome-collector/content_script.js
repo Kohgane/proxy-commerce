@@ -587,6 +587,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       _kgpRecordEcho(meta, "popup");
       kgpSendMessage({ action: "collect", meta }, function (resp) {
         resp = resp || { ok: false, error: "no-response" };
+        _kgpEchoServer(resp);
         // 팝업 UI가 성공 문구에 쓸 제목/URL 동봉(팝업은 meta를 직접 안 만든다).
         try { resp.collected_title = meta.title || ""; resp.collected_url = meta.url || location.href; } catch (e) {}
         try { sendResponse(resp); } catch (e) {}
@@ -1701,6 +1702,21 @@ function _kgpRecordEcho(meta, path, extra) {
     _kgpMetaStore.echo = e;
   } catch (x) {}
 }
+// F49-T 2부-c: 보낸 것만 남기면 **서버가 어느 행에 무엇을 썼는지**를 모른다(03:21Z 실측 때 그 한 줄이 없었다).
+//   서버 판정(새 행·중복·초안 채움·갱신)과 바뀐/남긴 필드 이름을 echo에 붙인다 — 값은 싣지 않는다.
+function _kgpEchoServer(resp) {
+  try {
+    if (!_kgpMetaStore.echo || !resp) return;
+    var keys = function (o) { return (o && typeof o === "object") ? Object.keys(o) : []; };
+    _kgpMetaStore.echo.server = {
+      ok: resp.ok === true, http: resp.httpStatus || null, item_id: resp.item_id || "",
+      verdict: resp.draft_pending ? "draft" : (resp.enriched ? "draft-filled" : (resp.updated ? "updated"
+        : (resp.duplicate ? "duplicate" : (resp.ok ? "new" : "error")))),
+      changed: keys(resp.changed), kept: keys(resp.kept),
+      message: String(resp.message || resp.error || "").slice(0, 120),
+    };
+  } catch (x) {}
+}
 // 클릭 시점 재독출. tier1이 아직 안 왔으면 **상한 내에서 한 번 더** 읽고, 그래도 없으면
 //   조용히 빈 필드를 보내지 않고 tier1_pending + 간이(simple)로 정직 강등한다(v86-F 계보).
 function kgpAcquireMeta(cb) {
@@ -1762,6 +1778,7 @@ function handleFabClick(btn, opts) {
   _kgpRecordEcho(meta, "fab");
   kgpSendMessage({ action: "collect", meta }, (resp) => {
     setFabState(btn, "idle");
+    _kgpEchoServer(resp);
     if (!resp || resp.ok !== true) {
       kgpAlertOnce(corr, () => {          // 실패 알럿도 건당 1회
         if (resp && resp.authRequired) {
@@ -1775,7 +1792,8 @@ function handleFabClick(btn, opts) {
     }
     // 다시 수집(덮어쓰기) 결과 — 가격·이미지 갱신됨(단일 메시지).
     if (resp.updated === true) {
-      kgpAlertOnce(corr, () => kgpResultToast("다시 수집 완료 — 가격·이미지를 갱신했어요", true,
+      // F49-T 2부-c: 서버가 **무엇을** 갱신했는지 말한다(중복이어도 상위 출처면 갱신된다).
+      kgpAlertOnce(corr, () => kgpResultToast(resp.message || "다시 수집 완료 — 가격·이미지를 갱신했어요", true,
         [{ label: "이력 열기", fn: kgpOpenHistory }]));
       return;
     }

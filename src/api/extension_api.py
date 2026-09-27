@@ -816,6 +816,34 @@ def _awaiting_enrich(row) -> bool:
     return bool(ax.get("is_draft")) and ax.get("enrich_state") != "done"
 
 
+def _was_draft(row) -> bool:
+    """붙여넣기·공유로 만든 초안이었나(보강이 끝났어도) — `enrich_axes.is_draft`."""
+    import json as _json
+    try:
+        ex = _json.loads((row or {}).get("extra_json") or "{}")
+    except Exception:
+        return False
+    from src.collectors.collect_status import enrich_axes
+    return bool(enrich_axes(ex).get("is_draft"))
+
+
+def _recollect_requested(row, minutes: int = 15) -> bool:
+    """드로어 「원본에서 다시 수집」 표시가 살아 있나(요청 시각 이후 아직 갱신 전 · 15분 이내)."""
+    import json as _json
+    import datetime as _dt
+    try:
+        ex = _json.loads((row or {}).get("extra_json") or "{}")
+        req = str(ex.get("recollect_requested_at") or "")
+        if not req:
+            return False
+        if str(ex.get("recollected_at") or "") >= req:
+            return False
+        t = _dt.datetime.strptime(req[:19], "%Y-%m-%dT%H:%M:%S")
+        return (_dt.datetime.utcnow() - t).total_seconds() <= minutes * 60
+    except Exception:
+        return False
+
+
 def draft_alt_url(url: str) -> str:
     """확장이 담은 타오바오 계열 상품 URL → **초안이 저장된 모양**(`canonical_item_url`). 없으면 빈 문자열."""
     from src.collectors.share_text import canonical_item_url, is_taobao_family
@@ -876,6 +904,24 @@ def collect_enrich():
     #   이게 없으면 초안을 채운 뒤에도 드로어·수집 화면이 「진단이 없습니다」라고 말한다.
     if isinstance(data.get("page_diag"), dict):
         extra["page_diag"] = _clean_page_diag(data.get("page_diag"))
+    # F49-T 2부-c: **소스 우선순위 병합**이 먼저다 — 빈 칸만 채우던 규칙으론 ice_context가 tier2 잡음
+    #   옵션을 못 이겼다(실측 617129397971). 상위 출처면 덮고, 오너가 손으로 고친 필드는 그대로 둔다.
+    #   아래 fill-only 블록은 그 뒤에 남은 빈 칸만 본다(옛 동작 그대로).
+    _fs_in = data.get("field_sources") if isinstance(data.get("field_sources"), dict) else {}
+    _pin_m = (str(data.get("price_final") or "").strip() or str(data.get("price_list") or "").strip()
+              or str(data.get("price") or "").strip())
+    from src.collectors.source_merge import incoming_from_payload as _inc, merge_by_source as _msrc, rank as _rank
+    _incoming = _inc({**data, "price": _pin_m, "skus": _clean_skus(data.get("skus"))})
+    extra, _mchg, _mkept = _msrc(extra, _incoming, _fs_in, path="enrich")
+    for _f in _mchg:
+        _k = "skus" if _f == "sku" else _f
+        _v = extra.get(_k)
+        changed[_k] = len(_v) if isinstance(_v, list) else 1
+    if "price" in _mchg:
+        extra["price_basis"] = ("보조금 후" if str(data.get("price_final") or "").strip() else
+                                ("할인 전" if str(data.get("price_list") or "").strip() else "단일 표기"))
+    _stored_fs = extra.get("field_sources") if isinstance(extra.get("field_sources"), dict) else {}
+    _img_lower = _rank(_fs_in.get("images")) < _rank(_stored_fs.get("images"))
     # 옵션·리뷰: 리스트가 오고 기존이 비었으면 채움.
     for k in ("options", "reviews"):
         v = data.get(k)
@@ -927,7 +973,7 @@ def collect_enrich():
             extra["detail_images"] = merged; changed["detail_images"] = len(merged)
     gi = data.get("gallery") or data.get("gallery_images") or data.get("images")
     rep = ""
-    if isinstance(gi, list) and gi:
+    if isinstance(gi, list) and gi and not _img_lower:
         # v66 STEP3: 상세 페이지 고해상 갤러리를 **대표로** — 검색결과 저해상 썸네일을 대표로 쓰지 않는다.
         #   보강 갤러리(hi-res)를 앞에 두어 union → 대표(images[0])가 고해상이 되게.
         merged = _union(gi, extra.get("images"))
@@ -1202,12 +1248,19 @@ def collect_from_extension():
             _alt = draft_alt_url(url)
             if _alt:
                 _cand = _find_dup(_alt, seller_ids=_dedup_ids)
-                if _cand and _awaiting_enrich(_cand):
+                # F49-T 2부-c: **채우기가 끝난 초안도** 같은 상품이다. 예전엔 기다리는 초안만 이어서, 한 번
+                #   보강된 초안(item.taobao.com 키)에 티몰 페이지로 다시 누르면 **새 행**이 생겼다 — 좋은 값은
+                #   새 행에, 오너가 보는 초안은 잡음 그대로(실측 617129397971 03:21Z를 그대로 재현하면 이렇다).
+                if _cand and (_awaiting_enrich(_cand) or _was_draft(_cand)):
                     _dup = _cand
     except Exception:
         _dup = None
     if _dup and _dup.get("id"):
         _dup_id = _dup.get("id")
+        # F49-T 2부-c: 드로어 「원본에서 다시 수집」을 누른 지 15분 안이면 이 수집은 **재수집**이다.
+        if not _force and _recollect_requested(_dup):
+            _force = True
+            logger.info("[collect %s] 드로어 다시 수집 요청 → 재수집 규칙 id=%s", _corr, _dup_id)
         if not _force and _awaiting_enrich(_dup):
             # F49-T — **채우기를 기다리는 초안**이다(붙여넣기·공유로 담은 것). 「이미 수집한 상품」으로
             #   돌려보내면 사람이 페이지를 열고 눌러도 초안은 영원히 비어 있다. 확장에게 **보강으로 채우라**고
@@ -1218,77 +1271,97 @@ def collect_from_extension():
                 "preview_url": f"/seller/collect/preview/{_dup_id}",
                 "message": "담아 둔 초안이 있어요 — 이 페이지로 채웁니다.",
             })
-        if _force:
-            # 다시 수집(덮어쓰기): 기존 항목의 가격·이미지·제목을 새 수집값으로 갱신(중복 행 안 만듦).
+        # F49-T 2부-c: 이미 있는 행이어도 **더 정확한 출처**가 왔으면 그 필드는 갱신한다(소스 우선순위).
+        #   예전엔 「이미 수집한 상품」으로 돌려보내며 아무것도 안 썼다 — ice_context 페이로드(SKU 10·가격
+        #   29.90)가 통째로 버려지고 초안은 tier2 잡음 옵션·가격 없음으로 남았다(실측 617129397971 03:21Z).
+        #   재수집(`force`)은 같은 순위도 덮는다. 오너가 손으로 고친 필드는 어느 쪽이든 그대로.
+        _mkept = {}
+        try:
+            import json as _json
             try:
-                import json as _json
-                try:
-                    _merged = _json.loads(_dup.get("extra_json") or "{}")
-                except Exception:
-                    _merged = {}
-                _merged.update({
-                    "title_ko": title_ko, "title_en": title, "title": title,
-                    "price": payload.get("price", ""), "currency": payload.get("currency") or "",
-                    "price_original": payload.get("price", ""),
-                    "price_status": payload.get("price_status", ""),
-                    "warnings": payload.get("warnings", []),
-                    "images": images,
-                    "gallery_images": _bucket_filter(payload.get("gallery_images"), images),
-                    "detail_images": _bucket_filter(payload.get("detail_images"), []),
-                    "options": payload.get("options", []),
-                    "description": payload.get("description", ""),
-                    "description_ko": tr.get("description_ko", ""),
-                    "recollected": True,
-                })
-                # v87-W4: 재수집이 리뷰·평점(및 상세 스펙)을 **갱신**한다. 종전 _merged.update는 이 키들을
-                #   빠뜨려, 최초수집(리뷰 없음) 행을 리뷰 담긴 새 수집으로 덮어써도 _merged엔 옛 빈 값이 남고
-                #   그걸로 collect_status를 재계산 → '리뷰·평점 누락(4/5)' 고정이었다(오너 실기기 결함).
-                #   정직 규칙: 새 수집이 값을 주면 그 값으로 갱신, 안 주면(빈값) 기존 값 보존(재수집 누락으로
-                #   기존 리뷰를 지우지 않음 = 비파괴). 최근 갱신 시각도 남긴다(참고 칩: 최초/최근 분리 표시).
+                _merged = _json.loads(_dup.get("extra_json") or "{}")
+            except Exception:
+                _merged = {}
+            if not isinstance(_merged, dict):
+                _merged = {}
+            from src.collectors.source_merge import incoming_from_payload as _inc, merge_by_source as _msrc
+            _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
+            _incoming = _inc({**payload, "skus": _clean_skus(payload.get("skus"))}, images=images)
+            _merged, _mchg, _mkept = _msrc(_merged, _incoming, _cfs, force=_force,
+                                           path=("recollect" if _force else "collect-duplicate"))
+            if "title" in _mchg:
+                _merged["title_ko"] = title_ko
+                _merged["title_en"] = title
+            if "description" in _mchg:
+                _merged["description_ko"] = tr.get("description_ko", "") or _merged.get("description", "")
+            if "price" in _mchg:
+                _merged["price_original"] = _merged.get("price", "")
+                _merged["price_status"] = payload.get("price_status", "")
+                _p_now = str(_merged.get("price") or "").strip()
+                if _p_now and _p_now not in ("0", "0.0", "0.00"):
+                    _merged["gate_ready"] = True
+                    _merged["uncollected"] = [f for f in (_merged.get("uncollected") or []) if f != "price"]
+            if isinstance(payload.get("page_diag"), dict):
+                _merged["page_diag"] = _clean_page_diag(payload.get("page_diag"))
+            if _force:
+                _merged["recollected"] = True
+                _merged["warnings"] = payload.get("warnings", [])
+                # v87-W4: 재수집이 리뷰·평점(및 상세 스펙)을 **갱신**한다 — 새 값이 있으면 갱신, 빈값이면 보존.
                 def _fresh(_key, _new):
                     return _new if _nonempty_w4(_new) else _merged.get(_key)
                 _merged["reviews"] = _fresh("reviews", payload.get("reviews", []))
                 _merged["rating"] = _fresh("rating", payload.get("rating", ""))
                 _merged["review_count"] = _fresh("review_count", payload.get("review_count", ""))
                 _merged["detail_specs"] = _fresh("detail_specs", payload.get("detail_specs", []))
-                _merged["recollected_at"] = _now_iso_w4()
-                # v87-W6: 재수집=번역 재시도이기도 하다 — 번역 상태(성공/실패 사유)를 갱신(조용한 실패 고착 방지).
+                # v87-W6: 재수집=번역 재시도이기도 하다 — 번역 상태(성공/실패 사유)를 갱신.
                 _merged["translation_provider"] = tr.get("provider", "none")
                 _merged["translated"] = (str(tr.get("provider") or "") in ("mymemory", "openai", "deepl")) and not tr.get("translate_error")
                 _merged["translate_error"] = tr.get("translate_error", "")
                 _merged["translate_requested"] = bool(translate)
                 _merged["translation_attempts"] = tr.get("attempts") or []
+            if _force or _mchg:
+                _merged["recollected_at"] = _now_iso_w4()
                 try:
                     from src.collectors.collect_status import compute_collect_status as _ccs
-                    _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
-                    _merged["collect_status"] = _ccs(_merged, title_fallback=title_ko, sources={**_srv_src, **_cfs})
+                    _fs_now = _merged.get("field_sources") if isinstance(_merged.get("field_sources"), dict) else {}
+                    _merged["collect_status"] = _ccs(_merged, title_fallback=title_ko, sources={**_srv_src, **_fs_now})
                 except Exception:
                     pass
                 from src.seller_console.collect_history_store import update as _hist_update
-                _ok = _hist_update(
-                    _dup_id, seller_ids=_dedup_ids,
-                    title=title_ko,
-                    image_url=(images[0] if images else payload.get("image", "")),
-                    price=payload.get("price", ""),
-                    currency=payload.get("currency") or "",
-                    extra_json=_json.dumps(_merged, ensure_ascii=False),
-                )
-                logger.info("[collect %s] 다시수집(덮어쓰기) id=%s ok=%s price=%s %s",
-                            _corr, _dup_id, _ok, payload.get("price", ""), payload.get("currency") or "")
+                _row = {"extra_json": _json.dumps(_merged, ensure_ascii=False)}
+                if "title" in _mchg:
+                    _row["title"] = title_ko
+                if "images" in _mchg and _merged.get("images"):
+                    _row["image_url"] = _merged["images"][0]
+                if "price" in _mchg:
+                    _row["price"] = str(_merged.get("price") or "")
+                    _row["currency"] = str(_merged.get("currency") or "")
+                    _row["status"] = "ok"
+                _ok = _hist_update(_dup_id, seller_ids=_dedup_ids, **_row)
+                logger.info("[collect %s] %s id=%s ok=%s 갱신=%s 유지=%s", _corr,
+                            "다시수집" if _force else "중복→상위 출처 갱신", _dup_id, _ok,
+                            _mchg, _mkept)
                 if _ok:
+                    _n = len(_mchg)
                     return jsonify({
-                        "ok": True, "updated": True, "item_id": _dup_id,
+                        "ok": True, "duplicate": not _force, "updated": True, "item_id": _dup_id,
+                        "changed": _mchg, "kept": _mkept,
                         "preview_url": f"/seller/collect/preview/{_dup_id}",
-                        "message": "다시 수집해 가격·이미지를 갱신했어요.",
+                        "message": (f"이미 담은 상품 — 더 정확한 값으로 {_n}개 필드를 갱신했어요"
+                                    if not _force else
+                                    (f"다시 수집해 {_n}개 필드를 갱신했어요" if _n else
+                                     "다시 수집했어요 — 바꿀 값이 없었어요")),
                     })
-            except Exception as _exc:
-                logger.exception("[collect %s] 다시수집 갱신 실패: %s", _corr, _exc)
+        except Exception as _exc:
+            logger.exception("[collect %s] 기존 항목 갱신 실패: %s", _corr, _exc)
             # 갱신 실패 시 정직: 아래 일반 중복 응답(가짜 성공 금지)
         logger.info("[collect %s] 중복 수집 감지 → 기존 항목 안내: id=%s url=%s", _corr, _dup_id, url[:80])
         return jsonify({
             "ok": True, "duplicate": True, "item_id": _dup_id,
             "preview_url": f"/seller/collect/preview/{_dup_id}",
             "message": "이미 수집한 상품입니다.",
+            # F49-T 2부-c: 받은 값을 왜 안 썼는지(낮은 출처·직접 수정) — 조용히 버리지 않는다.
+            **({"kept": _mkept} if _mkept else {}),
         })
 
     # v47 STEP2: 수집 필드 상태(성공/부분)를 단일 판정해 extra에 심는다 — 목록 상태 컬럼·드로어

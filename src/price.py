@@ -116,6 +116,45 @@ def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, fx_cnykrw=No
     }
 
 
+_FX_KEYS = ('USD', 'JPY', 'EUR', 'CNY')
+
+
+def sell_fx_rates():
+    """판매가 산정 환율 — `(rates, info)`. **드로어 원화 미리보기와 같은 환율**을 쓴다(F51-b 6).
+
+    예전엔 드로어가 실시간(`FXProvider`)을 보여 주는 동안 판매가 식은 `FX_USE_LIVE`가 켜져야만
+    실시간을 읽고, 아니면 서버 설정값·앱 고정값(CNY 185)으로 냈다 — 화면과 값이 다른 환율이었다.
+
+    - `FX_USE_LIVE=0`이 **명시**되면 예전 그대로(설정값 → 고정값). 테스트·오프라인용.
+    - 아니면 `get_fx_rates()`(실시간 · 10분 캐시)가 실값을 주면 그것, 못 주면 설정값 → 고정값.
+    `info[통화] = {rate, source: live|env|default, label, updated_at}` — 옵션 블록 표가 그대로 싣는다.
+    """
+    base = _build_fx_rates(use_live=False)
+    info = {}
+    live = None
+    if os.getenv('FX_USE_LIVE', '') != '0':
+        try:
+            from src.seller_console.data_aggregator import get_fx_rates
+            d = get_fx_rates()
+            if d and not d.get('is_mock'):
+                live = d
+        except Exception:
+            live = None
+    for cur in _FX_KEYS:
+        key = f'{cur}KRW'
+        if live and live.get(cur):
+            base[key] = Decimal(str(live[cur]))
+            info[cur] = {'rate': float(base[key]), 'source': 'live', 'label': '실시간 환율',
+                         'provider': str(live.get('source') or ''), 'updated_at': str(live.get('updated_at') or '')}
+        elif os.getenv(f'FX_{key}'):
+            info[cur] = {'rate': float(base[key]), 'source': 'env', 'label': '서버 설정값(고정)',
+                         'provider': '', 'updated_at': ''}
+        else:
+            info[cur] = {'rate': float(base[key]), 'source': 'default', 'label': '앱 기본값(고정)',
+                         'provider': '', 'updated_at': ''}
+    return base, info
+
+
 def _to_krw(amount, currency, fx_rates):
     """임의 통화를 KRW로 환산한다."""
     if currency == 'KRW':
