@@ -34,7 +34,7 @@ _URL = "https://search.rakuten.co.jp/search/mall/x/"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.156"
+    assert MANIFEST["version"] == "1.5.157"
 
 
 def _pw_ok():

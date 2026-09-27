@@ -283,19 +283,32 @@ function _kgpRulesInfo() {
 // F49-T 3부: 예전엔 message가 비면 「error」 한 단어만 남았다(world.taobao 진단 errors 전부 "error").
 //   캡처 단계 리스너라 **리소스 로드 실패**(img·script 404 — message 없음)도 같이 잡히는데, 그걸 가르지
 //   않았던 것이다. 이제 한 줄에 종류·메시지·위치·스택을 담는다(서버는 문자열 목록으로 받는다).
+// SEC-1: 진단에 싣는 주소·문장은 kgp-scrub.js로 비밀을 지운다(주소는 경로까지만). 미로드면 쿼리만 잘라 낸다.
+function _kgpSafeUrl(u) {
+  try { if (typeof kgpScrubUrl === "function") return kgpScrubUrl(u); } catch (e) { /* noop */ }
+  return String(u || "").split("#")[0].split("?")[0];
+}
+function _kgpSafeLine(s) {
+  try { if (typeof kgpScrubLine === "function") return kgpScrubLine(s); } catch (e) { /* noop */ }
+  return String(s || "").replace(/(https?:\/\/[^\s?#"'<>]+)[?#][^\s"'<>]*/g, "$1");
+}
+function _kgpSafeHtml(h) {
+  try { if (typeof kgpScrubText === "function") return kgpScrubText(h); } catch (e) { /* noop */ }
+  return h;
+}
 function _kgpErrLine(ev) {
   try {
     const t = ev && ev.target;
     if (t && t !== window && t.tagName) {
-      return "resource: <" + String(t.tagName).toLowerCase() + "> " + String(t.currentSrc || t.src || t.href || "(주소 없음)").slice(0, 200);
+      return "resource: <" + String(t.tagName).toLowerCase() + "> " + _kgpSafeUrl(t.currentSrc || t.src || t.href || "(주소 없음)").slice(0, 200);
     }
     const er = ev && (ev.error || ev.reason);
     let msg = String((ev && ev.message) || (er && er.message) || (typeof er === "string" ? er : "") || "").trim();
     if (!msg) msg = "(메시지 없음 — 교차 출처 스크립트는 브라우저가 내용을 가린다)";
     const kind = (ev && ev.type === "unhandledrejection") ? "rejection" : "script";
-    const at = (ev && ev.filename) ? " @ " + String(ev.filename).slice(0, 160) + ":" + (ev.lineno || 0) + ":" + (ev.colno || 0) : "";
+    const at = (ev && ev.filename) ? " @ " + _kgpSafeUrl(ev.filename).slice(0, 160) + ":" + (ev.lineno || 0) + ":" + (ev.colno || 0) : "";
     const stack = (er && er.stack) ? " | stack: " + String(er.stack).replace(/\s+/g, " ").slice(0, 300) : "";
-    return kind + ": " + msg.slice(0, 200) + at + stack;
+    return _kgpSafeLine(kind + ": " + msg.slice(0, 200) + at + stack);
   } catch (e) { return "unknown: " + String(e).slice(0, 100); }
 }
 try {
@@ -319,7 +332,7 @@ const _KGP_TB_SELECTORS = new Proxy(_KGP_TB_SELECTORS_DEFAULT, {
 });
 
 function kgpPageDiag() {
-  const out = { at: new Date().toISOString(), url: location.href, wall: "", nav: {}, lazy: {}, sel: {}, errors: [] };
+  const out = { at: new Date().toISOString(), url: _kgpSafeUrl(location.href), wall: "", nav: {}, lazy: {}, sel: {}, errors: [] };
   try { out.wall = _kgpDetectWall(); } catch (e) { /* noop */ }
   try {
     const nav = (performance.getEntriesByType && performance.getEntriesByType("navigation") || [])[0];
@@ -329,7 +342,7 @@ function kgpPageDiag() {
         status: (typeof nav.responseStatus === "number") ? nav.responseStatus : null,
         redirects: nav.redirectCount || 0,
         type: nav.type || "",
-        requested: String(nav.name || "").slice(0, 300),
+        requested: _kgpSafeUrl(nav.name || "").slice(0, 300),
       };
     }
   } catch (e) { /* noop */ }
@@ -352,7 +365,7 @@ function kgpPageDiag() {
       });
     }
   } catch (e) { /* noop */ }
-  out.errors = _KGP_PAGE_ERRORS.slice(0, 5);
+  out.errors = _KGP_PAGE_ERRORS.slice(0, 5).map(_kgpSafeLine);
   out.rules = (typeof _kgpRulesInfo === "function") ? _kgpRulesInfo()   // F50: 어느 규칙 버전으로 읽었나(remote/bundled)
     : { version: "", hash: "", source: "none" };
   return out;
@@ -637,7 +650,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   //   실페이지 하네스 픽스처로 커밋(오너 1회). 서버측 직접 크롤 없이 렌더된 DOM 그대로.
   if (msg.action === "kgpSnapshot") {
     let html = "";
-    try { html = "<!doctype html>\n" + document.documentElement.outerHTML; } catch (e) { html = ""; }
+    try { html = _kgpSafeHtml("<!doctype html>\n" + document.documentElement.outerHTML); } catch (e) { html = ""; }
     sendResponse({ ok: !!html, html: html, host: (location.hostname || ""), url: (location.href || ""), title: (document.title || "") });
     return true;
   }
@@ -645,7 +658,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   //   오너/유저가 파일 하나만 전달하면 하네스가 그대로 재현(HTML=픽스처, extracted=실제 추출 결과 대조).
   if (msg.action === "kgpDiagBundle") {
     let html = "", extracted = null, detection = null, extVer = "";
-    try { html = "<!doctype html>\n" + document.documentElement.outerHTML; } catch (e) { html = ""; }
+    try { html = _kgpSafeHtml("<!doctype html>\n" + document.documentElement.outerHTML); } catch (e) { html = ""; }
     // v86-I: 진단 export와 수집 payload는 **같은 권위 스토어**를 읽는다(별도 스냅샷 경로 금지).
     //   아래 kgpAcquireMeta 콜백에서 extracted가 채워진다 — 여기서 따로 추출하지 않는다.
     try {

@@ -114,15 +114,17 @@ def clean_page_diag(raw) -> Dict[str, Any]:
     """확장이 보낸 `page_diag`를 **알려진 키·짧은 값**만 남겨 저장한다(크기·모양 방어)."""
     if not isinstance(raw, dict):
         return {}
+    # SEC-1: 옛 확장(1.5.156 이하)은 주소에 로그인 쿠키를 그대로 실었다 — 서버도 경로까지만 저장한다.
+    from src.collectors.secret_scrub import scrub_line, scrub_text, scrub_url
     out: Dict[str, Any] = {"at": str(raw.get("at") or "")[:40],
-                           "url": str(raw.get("url") or "")[:300],
+                           "url": scrub_url(raw.get("url") or "")[:300],
                            "wall": str(raw.get("wall") or "")[:120]}
     nav = raw.get("nav") if isinstance(raw.get("nav"), dict) else {}
     st = nav.get("status")
     out["nav"] = {"status": st if isinstance(st, int) else None,
                   "redirects": int(nav.get("redirects") or 0) if str(nav.get("redirects") or "0").isdigit() else 0,
                   "type": str(nav.get("type") or "")[:20],
-                  "requested": str(nav.get("requested") or "")[:300]}
+                  "requested": scrub_url(nav.get("requested") or "")[:300]}
     lz = raw.get("lazy") if isinstance(raw.get("lazy"), dict) else {}
     out["lazy"] = {k: int(lz.get(k) or 0) for k in ("total", "pending")
                    if str(lz.get(k) or "0").lstrip("-").isdigit()}
@@ -130,10 +132,10 @@ def clean_page_diag(raw) -> Dict[str, Any]:
     out["sel"] = {str(k)[:20]: int(v) for k, v in sel.items()
                   if str(v).lstrip("-").isdigit()}
     # F49-T 3부: 한 줄에 종류·메시지·위치·스택이 실린다(확장 `_kgpErrLine`) — 200자면 스택이 잘린다.
-    out["errors"] = [str(e)[:600] for e in (raw.get("errors") or [])[:5]]
+    out["errors"] = [scrub_line(e)[:600] for e in (raw.get("errors") or [])[:5]]
     # F49-T 2부-b: __ICE_APP_CONTEXT__는 있는데 파싱 실패 — 그 덩어리 앞 200자와 사유.
     if raw.get("ice_error"):
-        out["ice_error"] = str(raw.get("ice_error"))[:300]
+        out["ice_error"] = scrub_text(str(raw.get("ice_error")))[:300]
     # F50: 확장이 어느 규칙 버전으로 읽었나(remote=서버에서 받은 것 / bundled=확장 기본값).
     rl = raw.get("rules") if isinstance(raw.get("rules"), dict) else {}
     if rl:
