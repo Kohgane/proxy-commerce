@@ -79,7 +79,7 @@ def test_an_unmapped_chinese_pick_can_be_overridden_by_a_typed_value():
     """고른 값이 용어집에 없는 한자면 보류 — 오너가 **색상 칸에 한국어를 넣으면** 그 값이 이긴다."""
     picked = O.apply_choices(dict(PRODUCT), [{"attributeTypeName": "적용모델", "attributeValueName": "X"}],
                              {"색상": "卡其色"})
-    assert any("색상 미매핑: 卡其色" in h for h in O.plan_attributes(META["attributes"], picked)["holds"])
+    assert any("옵션 값 미해석: 卡其色" in h for h in O.plan_attributes(META["attributes"], picked)["holds"])
     typed = O.apply_choices(picked, [{"attributeTypeName": "색상", "attributeValueName": "카키"}])
     assert O.plan_attributes(META["attributes"], typed)["holds"] == []
 

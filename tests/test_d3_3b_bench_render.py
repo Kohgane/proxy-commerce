@@ -395,6 +395,9 @@ def test_the_registration_pipeline_still_does_not_see_the_renderer():
     from src.uploaders import coupang_options
     from tests._ast_probe import calls_in, imports_in
     glossary = {n for n in imports_in(coupang_options) if "image_text_glossary" in n}
+    # F51-b(오너 2026-09-27): 옵션 **값** 섹션(정확 일치 · 조각 치환)이 같은 파일에 생겼다 — 여전히 **표**만
+    #   읽는다(렌더·번역 파이프 연결 0). 여는 자리는 그대로 `coupang_options.py` 하나.
     assert glossary == {"src.services.image_text_glossary",
-                        "src.services.image_text_glossary.glossary_line"}
-    assert "glossary_line" in calls_in(coupang_options.color_ko)
+                        "src.services.image_text_glossary.option_value_line",
+                        "src.services.image_text_glossary.option_value_tokens"}
+    assert "option_value_line" in calls_in(coupang_options.color_ko)

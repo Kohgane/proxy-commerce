@@ -359,7 +359,12 @@ btnCollect.addEventListener("click", async () => {
     if (delegated) {
       if (delegated.ok) {
         const label = delegated.collected_title || delegated.collected_url || tab.url || "";
-        showStatus("success", `수집 완료!<br><small>${label}</small>`);
+        // F49-T 2부-c: 서버가 한 일을 그대로 — 중복인데 「수집 완료!」라고 하면 아무것도 안 쓴 것을 성공으로 본다
+        //   (03:21Z 실측: 팝업은 성공, 초안은 그대로). 서버 문구(새 행·중복·갱신·초안 채움)를 그대로 싣는다.
+        const _esc = (x) => String(x || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        const head = delegated.message ? _esc(delegated.message) : "수집 완료!";
+        showStatus(delegated.duplicate && !delegated.updated ? "info" : "success",
+                   `${head}<br><small>${_esc(label)}</small>`);
         if (delegated.preview_url) {
           const settings = await getSettings();
           const serverUrl = settings.serverUrl || "https://kohganepercentiii.com";

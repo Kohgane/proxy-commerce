@@ -75,6 +75,15 @@ def with_sku_prices(product_data: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(skus, list) or not skus:
         return pd
     from src.seller_console.upload_dispatcher import UploadDispatcher
+    # F51-b 6: 이 판매가들에 쓴 환율(값·출처·갱신 시각)을 같이 싣는다 — 옵션 블록 표가 그대로 보인다.
+    try:
+        from src.price import sell_fx_rates
+        _fx_info = sell_fx_rates()[1]
+        _curs = {str(k.get("currency") or pd.get("currency") or "").strip().upper()
+                 for k in skus if isinstance(k, dict)}
+        pd["fx_info"] = [{"currency": c, **_fx_info[c]} for c in sorted(_curs) if c in _fx_info]
+    except Exception:
+        pd["fx_info"] = []
     out = []
     for k in skus:
         if not isinstance(k, dict):
@@ -115,7 +124,9 @@ def option_form(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
     account = resolve_upload_account()
     up = CoupangUploader(account=account) if account else CoupangUploader()
-    prepared = up.prepare_product(to_collected(prepared_input(product_data)))
+    _pi = prepared_input(product_data)
+    prepared = up.prepare_product(to_collected(_pi))
+    prepared["fx_info"] = _pi.get("fx_info") or []      # F51-b 6: SKU별 판매가에 쓴 환율(표에 싣는다)
     cat = up.predict_category(prepared.get("title", "")) or str(prepared.get("category_id") or "")
     if not cat:
         return {"ok": False, "error": "쿠팡 카테고리를 예측하지 못했습니다 — 제목을 확인해 주세요."}

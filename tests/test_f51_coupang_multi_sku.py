@@ -122,8 +122,9 @@ def test_unmapped_values_are_held_with_the_list():
     """실제 용어집(黑色만)으로 돌린다 — 10개 값이 전부 복합어라 **하나도 안 맞는다**. 짐작 번역 금지."""
     plan = O.plan_for(META["attributes"], _product(_skus()))
     assert plan["multi"] is True
-    [h] = [h for h in plan["holds"] if h.startswith("색상 값")]
-    assert h.startswith("색상 값 10개가 용어집에 없습니다") and "三合一充电支架（白色）" in h
+    # F51-b: 번역기 값(values_ko)도 없으면 여전히 보류 — 사유는 「옮기지 못했다」(짐작 번역 금지).
+    [h] = [h for h in plan["holds"] if h.startswith("옵션 값")]
+    assert h.startswith("옵션 값 10개를 한국어로 옮기지 못했습니다") and "三合一充电支架（白色）" in h
     # 미매핑 SKU끼리 「같은 옵션」이라고 하지 않는다(공통 속성 수량만 남은 것 — 캡처에서 찾은 거짓 보류).
     assert not [x for x in plan["holds"] if "옵션 값이 같습니다" in x], plan["holds"]
     assert len(plan["holds"]) == 1
@@ -141,7 +142,8 @@ def test_unknown_option_name_is_held():
 def test_two_skus_mapping_to_the_same_value_are_held(monkeypatch):
     monkeypatch.setattr(O, "color_ko", lambda v: "화이트" if "白色" in v else (FAKE_KO.get(v, "")))
     plan = O.plan_for(META["attributes"], _product(_skus()))
-    assert any("옵션 값이 같습니다" in h for h in plan["holds"])
+    # F51-b 3: 원문 차이(三合一充电支架 ↔ 【…】带理线器)를 한국어로 못 옮기면 그때 보류.
+    assert any("옵션 값이 같아집니다" in h for h in plan["holds"])
 
 
 def test_a_typed_axis_value_does_not_flatten_every_sku(ko):

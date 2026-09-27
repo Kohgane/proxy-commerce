@@ -90,6 +90,10 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "attributes": pd.get("attributes") if isinstance(pd.get("attributes"), list) else [],
         # F51 — SKU(ICE 컨텍스트)와 SKU별 판매가. 여기서 떨어지면 다중 등록이 조용히 단일로 돌아간다.
         "skus": [k for k in (pd.get("skus") or []) if isinstance(k, dict)] if isinstance(pd.get("skus"), list) else [],
+        # F51-b — 옵션 값 해석 재료(번역기 값 · 오너 수정). 떨어지면 전부 「미해석」 보류로 돌아간다.
+        "_values_ko": pd.get("option_values_ko") if isinstance(pd.get("option_values_ko"), dict) else {},
+        "option_value_overrides": (pd.get("option_value_overrides")
+                                   if isinstance(pd.get("option_value_overrides"), dict) else {}),
     }
 
 

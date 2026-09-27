@@ -459,6 +459,9 @@ class CoupangUploader(BaseUploader):
             'skus': [{**k, 'sell_price_krw': (int(math.ceil(float(k['sell_price_krw']) / 100) * 100)
                                               if k.get('sell_price_krw') else k.get('sell_price_krw'))}
                      for k in (collected.get('skus') or []) if isinstance(k, dict)],
+            # F51-b — 옵션 값 해석 재료(번역기 값 · 오너가 고친 값).
+            '_values_ko': collected.get('_values_ko') or {},
+            'option_value_overrides': collected.get('option_value_overrides') or {},
             'tags': collected.get('tags', []),
             'shipping_fee': 0,
             'delivery_days': '7-14',

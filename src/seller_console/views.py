@@ -7135,10 +7135,25 @@ def collect_preview_by_id(item_id: str):
     except Exception:
         imgko_plan, imgko_detail_plan, imgko_storage = [], [], ""
 
+    # F49-T 2부-c: 드로어 각 필드 옆에 **출처**(ICE·페이지 데이터·화면 읽기·직접 수정…)를 적는다.
+    field_src = {}
+    try:
+        from src.collectors.source_merge import FIELD_KEYS as _FK, label as _slabel
+        _fs0 = extra.get("field_sources") if isinstance(extra.get("field_sources"), dict) else {}
+        _man0 = extra.get("manual_fields") if isinstance(extra.get("manual_fields"), dict) else {}
+        for _f, _keys in _FK.items():
+            if _f in _man0:
+                field_src[_f] = {"label": "직접 수정", "src": "manual"}
+            elif extra.get(_keys[0]) not in (None, "", [], {}):
+                field_src[_f] = {"label": _slabel(_fs0.get(_f)), "src": str(_fs0.get(_f) or "")}
+    except Exception:
+        field_src = {}
+
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
         "collect_preview.html",
+        field_src=field_src,
         page="collect_history",
         item=item,
         extra=extra,
@@ -7284,6 +7299,18 @@ def collect_preview_save(item_id: str):
         options = norm_opts
     else:
         options = None
+
+    # F49-T 2부-c: **값이 실제로 바뀐** 필드만 「직접 수정」으로 적는다 — 이후 재수집·보강이 그 필드는
+    #   덮지 않는다(소스 우선순위 병합의 유일한 예외). 폼은 통째로 오므로 비교해서 가린다.
+    try:
+        from src.collectors.source_merge import mark_manual_edits as _mark_manual
+        _mark_manual(extra, {"title": title or None,
+                             "price": price or None,
+                             "options": options,
+                             "description": description,
+                             "images": images})
+    except Exception:
+        pass
 
     # extra_json 머지 (수정된 값으로 갱신, 미수정 항목은 보존)
     if title:
@@ -11492,9 +11519,105 @@ def collect_item_state(item_id: str):
         "enrich_state": ax.get("enrich_state") or "", "reason": ax.get("reason") or "",
         "filled": st.get("filled"), "total": st.get("total"),
         "images": len(ex.get("images") or []),
+        # F49-T 2부-c: 드로어 「원본에서 다시 수집」이 들여다본다 — 요청 뒤에 갱신됐는지·무엇이 바뀌었는지.
+        "recollect_requested_at": ex.get("recollect_requested_at") or "",
+        "recollected_at": ex.get("recollected_at") or "",
+        "last_merge": (list(ex.get("merge_log") or [])[-1:] or [None])[0],
         "missing": [{"label": f["label"], "reason": f.get("reason") or ""}
                     for f in st.get("fields") or [] if f.get("count", True) and not f.get("ok") and not f.get("na")],
     })
+
+
+@bp.post("/collect/preview/<item_id>/option-value")
+def collect_option_value_fix(item_id: str):
+    """F51-b: 옵션 블록 「번역기 값 — 확인」 칸에서 오너가 고친 값.
+
+    ① 이 상품에 **바로** 쓴다(`option_value_overrides[원문] = 값` — 해석 순서 0번).
+    ② 용어집에는 **자동으로 넣지 않는다** — 후보(`glossary_candidates`)로만 쌓고, 목록은
+       `/seller/listing/glossary-candidates`에서 본다. 용어집은 사람이 한 줄씩 넣는다.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    orig = str(data.get("orig") or "").strip()[:80]
+    value = str(data.get("value") or "").strip()[:28]
+    if not orig or not value:
+        return jsonify({"ok": False, "error": "원문과 고칠 값이 둘 다 필요합니다."}), 400
+    import datetime as _dt
+    try:
+        ex = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        ex = {}
+    ov = dict(ex.get("option_value_overrides") or {})
+    ov[orig] = value
+    ex["option_value_overrides"] = ov
+    cands = [c for c in (ex.get("glossary_candidates") or []) if isinstance(c, dict) and c.get("orig") != orig]
+    cands.append({"orig": orig, "value": value, "at": _dt.datetime.now(_dt.timezone.utc).isoformat()})
+    ex["glossary_candidates"] = cands[-50:]
+    from . import collect_history_store
+    ok = collect_history_store.update(item_id, seller_id=item.get("seller_id") or _seller_id(),
+                                      extra_json=json.dumps(ex, ensure_ascii=False))
+    if not ok:
+        return jsonify({"ok": False, "error": "저장하지 못했어요 — 잠시 뒤 다시 넣어 주세요."}), 502
+    return jsonify({"ok": True, "overrides": ov, "candidate": {"orig": orig, "value": value}})
+
+
+@bp.get("/listing/glossary-candidates")
+def glossary_candidates():
+    """F51-b: 오너가 옵션 블록에서 고친 값 — **용어집 후보 목록**(자동 반영 없음, 읽기만)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import collect_history_store
+    # 용어집 모듈은 등록 경로에서 `coupang_options` 한 곳만 연다(D3 계약) — 여기선 그 창구로 읽는다.
+    from src.uploaders.coupang_options import color_ko as option_value_line, glossary_line_count
+    out = []
+    for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=3650, limit=1000) or []:
+        try:
+            ex = json.loads(row.get("extra_json") or "{}")
+        except Exception:
+            continue
+        for c in ex.get("glossary_candidates") or []:
+            if isinstance(c, dict) and c.get("orig"):
+                out.append({"orig": c["orig"], "value": c.get("value") or "", "at": c.get("at") or "",
+                            "item_id": row.get("id"), "in_glossary": bool(option_value_line(c["orig"]))})
+    out.sort(key=lambda c: c["at"], reverse=True)
+    return jsonify({"ok": True, "candidates": out, "glossary_lines": glossary_line_count()})
+
+
+@bp.post("/collect/<item_id>/recollect")
+def collect_item_recollect(item_id: str):
+    """F49-T 2부-c: 드로어 「원본에서 다시 수집」 — **서버는 원본을 열지 않는다**(티몰·타오바오 로그인 벽).
+
+    이 항목에 「다시 수집 요청」 표시(15분)만 남기고 원본 주소를 돌려준다. 새 탭에서 고가수집기로 누르면
+    수집 라우트가 그 표시를 보고 **재수집 규칙**(같은 출처 순위도 덮음 · 직접 수정한 필드는 유지)으로 병합한다.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    import json as _json
+    import datetime as _dt
+    try:
+        ex = _json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        ex = {}
+    url = str(item.get("url") or ex.get("url") or "").strip()
+    if not url.startswith("http"):
+        return jsonify({"ok": False, "error": "원본 주소가 없어 다시 수집할 수 없어요."}), 400
+    # 수집 라우트의 `recollected_at`과 **같은 형식**(UTC isoformat) — 문자열 비교로 선후를 가린다.
+    ex["recollect_requested_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    from . import collect_history_store
+    ok = collect_history_store.update(item_id, seller_id=item.get("seller_id") or _seller_id(),
+                                      extra_json=_json.dumps(ex, ensure_ascii=False))
+    if not ok:
+        return jsonify({"ok": False, "error": "요청을 저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요."}), 502
+    return jsonify({"ok": True, "item_id": item_id, "open_url": url,
+                    "requested_at": ex["recollect_requested_at"],
+                    "message": "새 탭에서 고가수집기 버튼을 누르면 이 항목이 갱신됩니다(15분 안)."})
 
 
 @bp.post("/collect/<item_id>/enrich-retry")
