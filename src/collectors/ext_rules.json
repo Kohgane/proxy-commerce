@@ -1,6 +1,6 @@
 {
-  "version": "2026-09-26.1",
-  "note": "확장이 시작할 때 받아 쓰는 **데이터**(코드 아님 — MV3 원격 코드 금지와 무관). 받지 못하면 확장 번들(kgp-rules.js)의 같은 값을 쓴다. 고치면 번들도 같이 고친다(tests/test_f50_ext_update.py가 둘을 대조).",
+  "version": "2026-09-27.1",
+  "note": "확장이 시작할 때 받아 쓰는 **데이터**(코드 아님 — MV3 원격 코드 금지와 무관). 받지 못하면 확장 번들(kgp-rules.js)의 같은 값을 쓴다. 고치면 번들도 같이 고친다(tests/test_f50_ext_update.py가 둘을 대조). list_watch.container.<사이트>(taobao·tmall·1688·amazon·rakuten·aliexpress·temu·generic) = 카드 컨테이너 CSS 셀렉터 — 비우면 탐지된 카드의 공통 부모를 쓴다(F49-T 4부).",
   "rules": {
     "list_cards": {
       "taobao": {
@@ -9,8 +9,12 @@
       }
     },
     "tiles": {
-      "rest_opacity": {"taobao": 0.6},
-      "label": {"taobao": "고가 수집"}
+      "rest_opacity": {
+        "taobao": 0.6
+      },
+      "label": {
+        "taobao": "고가 수집"
+      }
     },
     "diag_selectors": {
       "taobao": {
@@ -19,6 +23,12 @@
         "options": "#J_isku .tb-prop, [class*='SkuContent'] [class*='valueItemWrapper'], [class*='skuItem']",
         "title": "[class*='mainTitle'], [class*='ItemTitle'], h1"
       }
+    },
+    "list_watch": {
+      "debounce_ms": 300,
+      "lazy_after": 150,
+      "lazy_margin_px": 900,
+      "container": {}
     }
   }
 }

@@ -370,6 +370,12 @@ function kgpPageDiag() {
     }
   } catch (e) { /* noop */ }
   out.errors = _KGP_PAGE_ERRORS.slice(0, 5).map(_kgpSafeLine);
+  // F49-T 4부: 목록 감시 상태 — 「이 페이지 수집이 이상해요」가 **스크롤 뒤** 상태를 담는다.
+  try {
+    if (typeof KGP_WATCH === "object" && KGP_WATCH.scan_count) {
+      out.watch = Object.assign({}, KGP_WATCH, { cards_tiled: document.querySelectorAll(".kgp-card-quick").length });
+    }
+  } catch (e) { /* noop */ }
   out.rules = (typeof _kgpRulesInfo === "function") ? _kgpRulesInfo()   // F50: 어느 규칙 버전으로 읽었나(remote/bundled)
     : { version: "", hash: "", source: "none" };
   return out;
@@ -1258,6 +1264,7 @@ function _kgpSweepStaleTiles() {
     if (n) { try { console.warn("[고가수집기] 구버전 잔재 정리", n); } catch (e) {} }
   } catch (e) {}
 }
+var _KGP_SHEETS = {};
 function _kgpShadowHost(host, css, html) {
   var root = host._kgpShadow;
   if (root === undefined) {
@@ -1269,7 +1276,11 @@ function _kgpShadowHost(host, css, html) {
   var adopted = false;
   try {
     if (("adoptedStyleSheets" in root) && typeof CSSStyleSheet === "function") {
-      var sh = new CSSStyleSheet(); sh.replaceSync(full); root.adoptedStyleSheets = [sh]; adopted = true;
+      // F49-T 4부(성능): 같은 CSS면 **시트 하나를 공유**한다 — 타일마다 새로 파싱하던 것이 300장 첫 스캔
+      //   230ms의 큰 몫이었다(측정). 내용이 같으므로 공유해도 격리는 그대로다(shadow 경계는 root마다).
+      var sh = _KGP_SHEETS[full];
+      if (!sh) { sh = new CSSStyleSheet(); sh.replaceSync(full); _KGP_SHEETS[full] = sh; }
+      root.adoptedStyleSheets = [sh]; adopted = true;
     }
   } catch (e) { adopted = false; }
   var st = document.createElement("style"); st.textContent = full; root.appendChild(st);   // 인라인 폴백 항상
@@ -1935,6 +1946,113 @@ let _kgpCards = [];
 let _kgpCardByUrl = {};           // url → 카드 데이터(el 포함) — 재스캔 시 '병합'(절대 비우지 않음)
 let _kgpScannedCount = 0;         // 마지막 스캔에서 본 후보 카드 총수(상품 M개 / 전체 N개 표기용)
 let _kgpClosed = false;           // 사용자가 툴바를 닫았으면 자동 재생성 안 함(같은 URL 동안)
+
+// ── F49-T 4부: 목록 **지속 감시** 엔진(전 소싱처 공통 — 사이트 어댑터가 아니라 여기) ──────────────
+//   오너 실측(world.taobao): 스크롤로 붙은 카드엔 hover 버튼이 없고 「전체 선택」이 안 먹었다. 「전체 선택」은
+//   DOM에 이미 있는 체크박스만 돌았다 — 탐지는 됐는데 체크박스가 아직 없는 카드는 영영 선택되지 않았다.
+//   선택은 이제 **상품 키**(_kgpCardKey — ASIN·goods·tb id) 기준이라 재렌더(가상 스크롤)돼도 유지된다.
+const _kgpSelKeys = new Set();
+const KGP_WATCH = { scan_count: 0, last_scan_at: "", last_scan_ms: 0, max_scan_ms: 0, cards_total: 0,
+                    cards_tiled: 0, observer_alive: false, containers: 0, new_cards: 0, lazy: false, lazy_pending: 0 };
+let _kgpInitialKeys = null;       // 첫 목록 스캔에서 본 상품 키 — 「새 상품 +N」의 기준
+let _kgpWatchContainersEls = [];  // 지금 감시 중인 카드 컨테이너
+let _kgpRescanHook = null;        // 재스캔(디바운스) — 컨테이너 옵저버가 부른다
+let _kgpBodyObserved = false;
+const _kgpContainerMO = { mo: null, els: [] };
+// 컨테이너 전용 MutationObserver(childList+subtree) — 컨테이너가 통째로 교체되면(가상 스크롤·SPA) 다시 잡는다.
+function _kgpWatchObserveContainers() {
+  try {
+    const els = _kgpWatchContainersEls.filter((e) => e && e.isConnected);
+    const same = els.length === _kgpContainerMO.els.length && els.every((e, i) => e === _kgpContainerMO.els[i]);
+    if (!same) {
+      if (_kgpContainerMO.mo) _kgpContainerMO.mo.disconnect();
+      _kgpContainerMO.mo = new MutationObserver(() => { if (_kgpRescanHook) _kgpRescanHook(); });
+      els.forEach((e) => _kgpContainerMO.mo.observe(e, { childList: true, subtree: true }));
+      _kgpContainerMO.els = els;
+    }
+    KGP_WATCH.observer_alive = !!(_kgpContainerMO.mo && els.length) || _kgpBodyObserved;
+  } catch (e) { KGP_WATCH.observer_alive = _kgpBodyObserved; }
+}
+function _kgpIsSel(url) {
+  if (KGP_SELECTED.has(url)) return true;
+  try { return _kgpSelKeys.has(_kgpCardKey(url)); } catch (e) { return false; }
+}
+function _kgpDetectedKeys() {
+  const keys = new Set();
+  Object.keys(_kgpCardByUrl).forEach((u) => { try { keys.add(_kgpCardKey(u)); } catch (e) {} });
+  return keys;
+}
+function _kgpWatchSite() {
+  const h = (location.hostname || "").toLowerCase();
+  const m = h.match(/(taobao|tmall|1688|amazon|rakuten|aliexpress|temu|yoshidakaban|iherb|qoo10|mercari)/);
+  return m ? m[1] : "generic";
+}
+// 카드 컨테이너 — ① 원격 규칙(list_watch.container.<사이트>, 셀렉터 드리프트는 재설치 없이) ② 없으면
+//   탐지된 메인 카드들의 **공통 부모**(카드 3장 이상 품은 것, 많은 순 최대 3개).
+function _kgpResolveContainers(cards) {
+  let out = [];
+  const sel = String(_kgpRule("list_watch.container." + _kgpWatchSite(), "") || "");
+  if (sel) { try { document.querySelectorAll(sel).forEach((el) => out.push(el)); } catch (e) { out = []; } }
+  if (!out.length) {
+    const cnt = new Map();
+    (cards || []).forEach((c) => {
+      if (!c || !c.el || c.region === "reco") return;
+      const p = c.el.parentElement;
+      if (p) cnt.set(p, (cnt.get(p) || 0) + 1);
+    });
+    out = Array.from(cnt.entries()).filter((e) => e[1] >= 3).sort((a, b) => b[1] - a[1]).slice(0, 3).map((e) => e[0]);
+  }
+  return out;
+}
+function _kgpSig(el) {
+  try {
+    const cls = String((el.className && el.className.baseVal !== undefined) ? el.className.baseVal : (el.className || ""))
+      .split(/\s+/).filter((t) => t && !/\d{3,}/.test(t)).sort().join(".");
+    return el.tagName + "|" + cls;
+  } catch (e) { return ""; }
+}
+// 컨테이너의 새 자식 중 **이미 탐지된 카드와 같은 모양**(태그+클래스 서명)이고 상품 링크·이미지가 있는 것 —
+//   어댑터 셀렉터가 새로 붙은 카드의 마크업을 놓쳐도(무한 스크롤 뒤 클래스 변형) 여기서 잡는다.
+function _kgpContainerSiblingCards(merged, containers) {
+  const extra = [];
+  if (!containers.length) return extra;
+  const known = new Set((merged || []).map((c) => c && c.el).filter(Boolean));
+  const keys = new Set((merged || []).map((c) => { try { return _kgpCardKey(c.url); } catch (e) { return ""; } }));
+  const tb = (typeof _kgpIsTaobaoHost === "function") && _kgpIsTaobaoHost((location.hostname || "").toLowerCase());
+  containers.forEach((box) => {
+    const sigCount = {};
+    let n = 0;
+    Array.prototype.forEach.call(box.children, (ch) => { if (known.has(ch)) { const s = _kgpSig(ch); sigCount[s] = (sigCount[s] || 0) + 1; n++; } });
+    if (n < 3) return;
+    const okSig = Object.keys(sigCount).filter((s) => sigCount[s] / n >= 0.6);
+    if (!okSig.length) return;
+    Array.prototype.forEach.call(box.children, (ch) => {
+      try {
+        if (known.has(ch) || okSig.indexOf(_kgpSig(ch)) < 0) return;
+        if (ch.querySelector && ch.querySelector(".kgp-card-chk")) return;
+        const a = (ch.tagName === "A") ? ch : ch.querySelector("a[href]");
+        if (!a) return;
+        const raw = a.getAttribute("href") || a.href || "";
+        const url = tb ? _kgpTaobaoItemHref(raw) : (_kgpIsProductHref(raw) ? new URL(raw, location.href).href : "");
+        if (!url) return;
+        const k = _kgpCardKey(url);
+        if (keys.has(k)) return;
+        const img = _kgpCardImage(ch) || ch.querySelector("img");
+        if (!img) return;
+        const titleEl = ch.querySelector("[class*='title' i], [class*='name' i], h2, h3");
+        let title = titleEl ? (titleEl.innerText || titleEl.textContent || "").trim() : "";
+        if (!title && img.alt) title = img.alt.trim();
+        const pr = _kgpPrice(ch.innerText || ch.textContent || "");
+        const bimg = _kgpBestImg(img) || img.src || "";
+        keys.add(k);
+        extra.push({ url: url, title: (title || "(제목 없음)").replace(/\s+/g, " ").slice(0, 200), image: bimg,
+                     images: bimg ? [bimg] : [], price: pr.price, currency: pr.currency || "", region: "main",
+                     el: ch, via: "container" });
+      } catch (e) { /* noop */ }
+    });
+  });
+  return extra;
+}
 // v65 STEP2: 제외 사유별 분해 카운트('제외 (광고 등)' 뭉뚱그림 금지). 스캔마다 초기화.
 //   ad=광고(스폰서, 태깅만·전체선택 제외) · region=비상품영역(추천/푸터) · parse=카드 파싱 실패(제목/ASIN 등)
 //   · url=URL 추출 실패(앵커 없음) · dup=중복(같은 상품).
@@ -1961,10 +2079,15 @@ function _kgpInclAds() { return kgpLSget("kgp_incl_ads", "0") === "1"; }
 function _kgpInclReco() { return kgpLSget("kgp_incl_reco", "0") === "1"; }
 function _kgpSelectableUrls() {
   const inclAds = _kgpInclAds(), inclReco = _kgpInclReco();
+  const seen = new Set();
   return Object.keys(_kgpCardByUrl).filter((u) => {
     const c = _kgpCardByUrl[u];
     if (c && c.sponsored && !inclAds) return false;
     if (c && c.region === "reco" && !inclReco) return false;
+    let k = u;
+    try { k = _kgpCardKey(u); } catch (e) {}
+    if (seen.has(k)) return false;          // F49-T 4부: 같은 상품 한 번만(재스캔 URL 변형)
+    seen.add(k);
     return true;
   });
 }
@@ -1975,7 +2098,13 @@ function _kgpRecoCount() {
   return Object.keys(_kgpCardByUrl).filter((u) => _kgpCardByUrl[u] && _kgpCardByUrl[u].region === "reco").length;
 }
 function _kgpMainCount() {
-  return Object.keys(_kgpCardByUrl).filter((u) => { const c = _kgpCardByUrl[u]; return c && c.region !== "reco" && !c.sponsored; }).length;
+  // F49-T 4부: 같은 상품이 재스캔마다 다른 URL 형태로 잡혀도 한 번만 센다(상품 키).
+  const keys = new Set();
+  Object.keys(_kgpCardByUrl).forEach((u) => {
+    const c = _kgpCardByUrl[u];
+    if (c && c.region !== "reco" && !c.sponsored) { try { keys.add(_kgpCardKey(u)); } catch (e) { keys.add(u); } }
+  });
+  return keys.size;
 }
 
 function _kgpIsCnyHost(h) { return /(^|\.)(taobao|tmall|1688)\.com$/i.test(String(h || "")); }
@@ -2502,7 +2631,16 @@ function kgpFindCards() {
       return true;
     });
   }
-  _kgpLastDetect = { generic: generic.length, adapter: adapter.length, merged: merged.length, adapterMatched: adapter.length > 0 };
+  // F49-T 4부: 컨테이너 감시 — 같은 모양의 새 카드(어댑터·제네릭이 놓친 것)를 더한다.
+  let viaContainer = 0;
+  try {
+    _kgpWatchContainersEls = _kgpResolveContainers(merged);
+    const extra = _kgpContainerSiblingCards(merged, _kgpWatchContainersEls);
+    viaContainer = extra.length;
+    if (extra.length) merged = merged.concat(extra);
+  } catch (e) { /* noop */ }
+  _kgpLastDetect = { generic: generic.length, adapter: adapter.length, merged: merged.length, adapterMatched: adapter.length > 0,
+                     container: viaContainer };
   return merged;
 }
 
@@ -2541,7 +2679,9 @@ function _kgpBuildCheckbox(host, selected) {
       var adopted = false;
       try {
         if (("adoptedStyleSheets" in root) && typeof CSSStyleSheet === "function") {
-          var sh = new CSSStyleSheet(); sh.replaceSync(css); root.adoptedStyleSheets = [sh]; adopted = true;
+          var sh = _KGP_SHEETS["chk:" + css];      // F49-T 4부: 체크박스 시트도 공유
+          if (!sh) { sh = new CSSStyleSheet(); sh.replaceSync(css); _KGP_SHEETS["chk:" + css] = sh; }
+          root.adoptedStyleSheets = [sh]; adopted = true;
         }
       } catch (e) { adopted = false; }
       var st = document.createElement("style"); st.textContent = css; root.appendChild(st);   // 인라인 폴백(항상 주입)
@@ -2557,12 +2697,19 @@ function _kgpBuildCheckbox(host, selected) {
 }
 
 function kgpSetCardSelected(url, badge, el, selected) {
+  let _k = "";
+  try { _k = _kgpCardKey(url); } catch (e) {}
   if (selected) {
     KGP_SELECTED.add(url);
+    if (_k) _kgpSelKeys.add(_k);
     if (badge) { badge.style.cssText = kgpCardBadgeStyle(true); _kgpBuildCheckbox(badge, true); badge.setAttribute("aria-checked", "true"); }
     if (el) { el.style.outline = "3px solid #119a8e"; el.style.outlineOffset = "-3px"; el.setAttribute("data-kgp-outline", "1"); }
   } else {
     KGP_SELECTED.delete(url);
+    if (_k) {                       // 같은 상품의 다른 URL 형태도 같이 해제(키 기준 선택)
+      _kgpSelKeys.delete(_k);
+      Array.from(KGP_SELECTED).forEach((u) => { try { if (_kgpCardKey(u) === _k) KGP_SELECTED.delete(u); } catch (e) {} });
+    }
     if (badge) { badge.style.cssText = kgpCardBadgeStyle(false); _kgpBuildCheckbox(badge, false); badge.setAttribute("aria-checked", "false"); }   // v80 STEP1: shadow 체크박스 토글
     if (el) { el.style.outline = ""; el.removeAttribute("data-kgp-outline"); }
   }
@@ -2908,10 +3055,14 @@ function kgpUpdateToolbar() {
   const ads = _kgpAdCount(), reco = _kgpRecoCount(), main = _kgpMainCount();
   const recoTxt = reco ? ` · 추천 ${reco}` : "";
   const adTxt = ads ? ` · 광고 ${ads}` : "";
-  c.textContent = `메인 ${main}${recoTxt}${adTxt} · ${KGP_SELECTED.size}개 선택`;
+  // F49-T 4부: 스크롤로 새로 붙은 상품 수(첫 스캔 이후) · 선택 수는 **상품 키** 기준(같은 상품 URL 변형 1개로).
+  const newTxt = KGP_WATCH.new_cards ? ` · 새 상품 +${KGP_WATCH.new_cards}` : "";
+  c.textContent = `메인 ${main}${recoTxt}${adTxt}${newTxt} · ${_kgpSelKeys.size || KGP_SELECTED.size}개 선택`;
 }
 
 function kgpCollect(urls, opts) {
+  const _seenK = new Set();
+  urls = (urls || []).filter((u) => { let k = u; try { k = _kgpCardKey(u); } catch (e) {} if (_seenK.has(k)) return false; _seenK.add(k); return true; });
   const items = (urls || []).map(u => _kgpCardByUrl[u]).filter(Boolean).map(c => (
     _kgpTileMeta(c)
   ));
@@ -3044,12 +3195,13 @@ function kgpBuildToolbar() {
     const act = t.dataset.act;
     if (act === "all-sel") {
       // v64 STEP2: 전체선택 = 실상품 전체(광고 제외, '광고 포함' 켜면 전부).
-      const pick = new Set(_kgpSelectableUrls());
-      document.querySelectorAll(".kgp-card-chk").forEach((b) => {
-        const url = b.dataset.url;
-        if (!pick.has(url)) return;
+      // F49-T 4부: 「전체 선택」 = **지금까지 탐지된 전부**(체크박스가 아직 안 붙은 카드 포함). 예전엔 DOM의
+      //   체크박스만 돌아서 스크롤로 붙은 카드는 선택되지 않았다(오너 world.taobao 실측).
+      const pick = _kgpSelectableUrls();
+      pick.forEach((url) => {
         const c = _kgpCardByUrl[url];
-        kgpSetCardSelected(url, b, c && c.el, true);
+        const b = (c && c.el && c.el.querySelector) ? c.el.querySelector(":scope > .kgp-card-chk") : null;
+        kgpSetCardSelected(url, b, b ? (c && c.el) : null, true);
       });
       kgpUpdateToolbar();
     } else if (act === "incl-ads") {
@@ -3069,6 +3221,7 @@ function kgpBuildToolbar() {
         kgpSetCardSelected(url, b, c && c.el, false);
       });
       KGP_SELECTED.clear();
+      _kgpSelKeys.clear();
       kgpUpdateToolbar();
     } else if (act === "collect-sel") {
       kgpCollect([...KGP_SELECTED]);
@@ -3245,41 +3398,108 @@ function _kgpEnsureTileQuick(c, badge) {
   } catch (e) { /* noop */ }
 }
 
+// F49-T 4부: 스캔 한 번 = 탐지 + 부착. 시간·개수를 재서 page_diag(watch)에 싣는다(측정 없이 「된다」 금지).
 function kgpInjectListing() {
-  if (window.top !== window.self || !document.body) return;
-  if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
-  const cards = kgpFindCards();
-  if (cards.length < 3) {                        // 리스팅 아님 → 정리(배지/바/배지펄스 제거)
-    const ex = document.getElementById(KGP_TOOLBAR_ID);
-    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove()); }
-    const _pill = document.getElementById(KGP_REOPEN_ID);
-    if (_pill) _pill.remove();
-    return;
+  const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  try { _kgpInjectListingInner(); } finally {
+    try {
+      const ms = ((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - t0;
+      KGP_WATCH.scan_count += 1;
+      KGP_WATCH.last_scan_ms = Math.round(ms * 10) / 10;
+      KGP_WATCH.max_scan_ms = Math.max(KGP_WATCH.max_scan_ms, KGP_WATCH.last_scan_ms);
+      KGP_WATCH.last_scan_at = new Date().toISOString();
+      const keys = _kgpDetectedKeys();
+      KGP_WATCH.cards_total = keys.size;
+      if (_kgpInitialKeys === null && keys.size >= 3) _kgpInitialKeys = new Set(keys);
+      KGP_WATCH.new_cards = _kgpInitialKeys ? Array.from(keys).filter((k) => !_kgpInitialKeys.has(k)).length : 0;
+      KGP_WATCH.cards_tiled = document.querySelectorAll(".kgp-card-quick").length;
+      KGP_WATCH.containers = _kgpWatchContainersEls.length;
+      _kgpWatchObserveContainers();
+      kgpUpdateToolbar();
+    } catch (e) { /* noop */ }
   }
-  // '수동' 설정이면 새 목록 페이지를 접힌(배지) 상태로 시작(v7 팝업 on/off).
-  if (!_kgpAutoApplied) {
-    _kgpAutoApplied = true;
-    if (kgpLSget("kgp_bar_auto", "1") === "0") _kgpClosed = true;
+}
+
+// F49-T 4부(성능): 타일 하나 붙이는 데 약 2.5ms(shadow·레이아웃 읽기 — 300장 합성 실측). 큰 목록에서 한 번에
+//   붙이면 첫 스캔이 200ms+ 메인 스레드를 잡는다 → **12ms 조각**으로 나눠 다음 태스크로 넘긴다.
+const _kgpAttachQ = { items: [], fn: null, timer: null };
+function _kgpAttachBudgeted(list, fn) {
+  _kgpAttachQ.items = _kgpAttachQ.items.concat(list || []);
+  _kgpAttachQ.fn = fn;
+  if (!_kgpAttachQ.timer) _kgpAttachQ.timer = setTimeout(_kgpAttachChunk, 0);   // 스캔 태스크 밖에서
+}
+function _kgpAttachChunk() {
+  _kgpAttachQ.timer = null;
+  const t0 = performance.now();
+  while (_kgpAttachQ.items.length && performance.now() - t0 < 12) {
+    const c = _kgpAttachQ.items.shift();
+    try { if (c && c.el && c.el.isConnected) _kgpAttachQ.fn(c); } catch (e) { /* noop */ }
   }
-  // 재스캔(무한스크롤/동적로딩)에도 선택을 지우지 않는다.
-  // ★중요★ 카드맵을 비우지 않고 '병합'한다 — 비우면 선택된 url의 카드 데이터가 사라져
-  //   '선택 수집/전체 수집'이 '선택된 상품 없음'으로 실패하던 버그(오너 리포트) 방지.
-  _kgpCards = cards;
-  cards.forEach((c) => { _kgpCardByUrl[c.url] = c; });
-  if (_kgpClosed) {                              // 접힘 → 구석 배지(개수·펄스)만 유지
-    const ex = document.getElementById(KGP_TOOLBAR_ID);
-    // v86-C: 닫으면 **체크박스만** 걷는다. 호버 수집버튼은 바와 무관하게 살아 있어야 한다(오너 확정 UX).
-    if (ex) ex.remove();
-    document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
-    cards.forEach((c) => _kgpEnsureTileQuick(c, null));
-    kgpMarkExisting(cards);
-    kgpShowReopenPill();
-    return;
-  }
+  KGP_WATCH.max_chunk_ms = Math.max(KGP_WATCH.max_chunk_ms || 0, Math.round((performance.now() - t0) * 10) / 10);
+  KGP_WATCH.cards_tiled = document.querySelectorAll(".kgp-card-quick").length;
+  if (_kgpAttachQ.items.length) _kgpAttachQ.timer = setTimeout(_kgpAttachChunk, 0);
+}
+// 읽기(레이아웃) 먼저 전부 → 쓰기(지연 표식·옵저버) 나중. 카드마다 읽고 쓰면 매번 스타일 재계산이 돈다.
+function _kgpPartitionNear(cards) {
+  const lazyAfter = Number(_kgpRule("list_watch.lazy_after", 150)) || 150;
+  const lazy = (cards.length > lazyAfter) && (typeof IntersectionObserver === "function");
+  KGP_WATCH.lazy = lazy;
+  if (!lazy) return cards.slice();
+  const margin = Number(_kgpRule("list_watch.lazy_margin_px", 900)) || 900;
+  const vh = window.innerHeight || 800;
+  const near = [], far = [];
   cards.forEach((c) => {
+    let r = null;
+    try { r = c.el.getBoundingClientRect(); } catch (e) { r = null; }
+    if (!r || (r.bottom > -margin && r.top < vh + margin)) near.push(c); else far.push(c);
+  });
+  far.forEach((c) => { _kgpShouldAttachNow(c, true); });
+  return near;
+}
+const _kgpLazyIO = { io: null, margin: 0 };
+function _kgpShouldAttachNow(c, knownFar) {
+  const margin = Number(_kgpRule("list_watch.lazy_margin_px", 900)) || 900;
+  if (!knownFar) {
+    const lazyAfter = Number(_kgpRule("list_watch.lazy_after", 150)) || 150;
+    const lazy = (_kgpCards.length > lazyAfter) && (typeof IntersectionObserver === "function");
+    KGP_WATCH.lazy = lazy;
+    if (!lazy) return true;
+    try {
+      const r = c.el.getBoundingClientRect();
+      if (r.bottom > -margin && r.top < (window.innerHeight || 800) + margin) return true;
+    } catch (e) { return true; }
+  }
+  if (!_kgpLazyIO.io || _kgpLazyIO.margin !== margin) {
+    try { if (_kgpLazyIO.io) _kgpLazyIO.io.disconnect(); } catch (e) {}
+    _kgpLazyIO.margin = margin;
+    _kgpLazyIO.io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        try { _kgpLazyIO.io.unobserve(en.target); } catch (e) {}
+        const url = en.target.getAttribute("data-kgp-lazy") || "";
+        en.target.removeAttribute("data-kgp-lazy");
+        const card = _kgpCardByUrl[url];
+        if (card && card.el === en.target) {
+          _kgpAttachBudgeted([card], _kgpClosed ? ((c) => _kgpEnsureTileQuick(c, null)) : _kgpAttachCard);
+        }
+      });
+      KGP_WATCH.lazy_pending = document.querySelectorAll("[data-kgp-lazy]").length;
+      KGP_WATCH.cards_tiled = document.querySelectorAll(".kgp-card-quick").length;
+    }, { rootMargin: margin + "px 0px" });
+  }
+  if (!c.el.hasAttribute("data-kgp-lazy")) {
+    c.el.setAttribute("data-kgp-lazy", c.url);
+    try { _kgpLazyIO.io.observe(c.el); } catch (e) { return true; }
+    KGP_WATCH.lazy_pending = (KGP_WATCH.lazy_pending || 0) + 1;
+  }
+  return false;
+}
+
+function _kgpAttachCard(c) {
     try {
       const existing = c.el.querySelector(":scope > .kgp-card-chk");
-      const sel = KGP_SELECTED.has(c.url);
+      const sel = _kgpIsSel(c.url);
+      if (sel && !KGP_SELECTED.has(c.url)) KGP_SELECTED.add(c.url);   // F49-T 4부: 키로 선택된 상품의 새 URL 형태
       if (existing) {
         // v71 STEP4: 가상화(재사용 노드) 대응 — 이 카드 요소가 스크롤로 다른 상품에 재사용됐으면 배지 url 갱신.
         existing.dataset.url = c.url;
@@ -3324,11 +3544,53 @@ function kgpInjectListing() {
 
       _kgpEnsureTileQuick(c, badge);
     } catch (e) { /* noop */ }
-  });
+}
+
+function _kgpInjectListingInner() {
+  if (window.top !== window.self || !document.body) return;
+  if (!kgpHostAllowed() && !kgpEntrySession()) { kgpTeardown(); return; }   // 지정 소싱처 또는 앱 진입(v10/v17)
+  const cards = kgpFindCards();
+  if (cards.length < 3) {                        // 리스팅 아님 → 정리(배지/바/배지펄스 제거)
+    const ex = document.getElementById(KGP_TOOLBAR_ID);
+    if (ex) { ex.remove(); document.querySelectorAll(".kgp-card-chk, .kgp-card-quick").forEach((b) => b.remove()); }
+    const _pill = document.getElementById(KGP_REOPEN_ID);
+    if (_pill) _pill.remove();
+    return;
+  }
+  // '수동' 설정이면 새 목록 페이지를 접힌(배지) 상태로 시작(v7 팝업 on/off).
+  if (!_kgpAutoApplied) {
+    _kgpAutoApplied = true;
+    if (kgpLSget("kgp_bar_auto", "1") === "0") _kgpClosed = true;
+  }
+  // 재스캔(무한스크롤/동적로딩)에도 선택을 지우지 않는다.
+  // ★중요★ 카드맵을 비우지 않고 '병합'한다 — 비우면 선택된 url의 카드 데이터가 사라져
+  //   '선택 수집/전체 수집'이 '선택된 상품 없음'으로 실패하던 버그(오너 리포트) 방지.
+  _kgpCards = cards;
+  cards.forEach((c) => { _kgpCardByUrl[c.url] = c; });
+  if (_kgpClosed) {                              // 접힘 → 구석 배지(개수·펄스)만 유지
+    const ex = document.getElementById(KGP_TOOLBAR_ID);
+    // v86-C: 닫으면 **체크박스만** 걷는다. 호버 수집버튼은 바와 무관하게 살아 있어야 한다(오너 확정 UX).
+    if (ex) ex.remove();
+    document.querySelectorAll(".kgp-card-chk").forEach((b) => b.remove());
+    const _nowQ = _kgpPartitionNear(cards);
+    _kgpAttachBudgeted(_nowQ, (c) => _kgpEnsureTileQuick(c, null));
+    kgpMarkExisting(cards);
+    kgpShowReopenPill();
+    return;
+  }
+  // F49-T 4부: 카드가 많으면(규칙 list_watch.lazy_after, 기본 150) **뷰포트 근처만** 지금 붙이고 나머지는
+  //   IntersectionObserver로 들어올 때 붙인다(나간 카드는 상태만 — 선택·데이터는 _kgpCardByUrl에 남는다).
+  const _now = _kgpPartitionNear(cards);
+  _kgpAttachBudgeted(_now, _kgpAttachCard);   // 12ms 조각으로(메인 스레드 한 태스크 50ms 이하 — 전 사이트)
   kgpMarkExisting(cards);   // v42 E-3: 이미 수집된 카드 '수집됨 ✓' 선표시
   const _pill = document.getElementById(KGP_REOPEN_ID);
   if (_pill) _pill.remove();                     // 펼침 → 구석 배지 제거
-  if (!document.getElementById(KGP_TOOLBAR_ID)) { kgpBuildToolbar(); kgpMaybeCoach(); }
+  // F49-T 4부(성능): 코치마크는 위치를 읽느라(레이아웃 강제) 첫 스캔을 무겁게 한다 → 다음 태스크로.
+  if (!document.getElementById(KGP_TOOLBAR_ID)) {
+    if (KGP_WATCH.lazy) {                        // 큰 목록: 툴바 첫 생성(shadow·CSS)도 다음 태스크로
+      setTimeout(() => { if (!document.getElementById(KGP_TOOLBAR_ID) && !_kgpClosed) { kgpBuildToolbar(); kgpUpdateToolbar(); kgpMaybeCoach(); } }, 0);
+    } else { kgpBuildToolbar(); setTimeout(kgpMaybeCoach, 0); }
+  }
   kgpUpdateToolbar();
 }
 
@@ -3574,6 +3836,9 @@ setInterval(() => {
     _kgpClosed = false;
     _kgpAutoApplied = false;
     KGP_SELECTED.clear();
+    _kgpSelKeys.clear();
+    _kgpInitialKeys = null;
+    KGP_WATCH.new_cards = 0;
     _kgpCardByUrl = {};
     const _pill = document.getElementById(KGP_REOPEN_ID);
     if (_pill) _pill.remove();
@@ -3624,8 +3889,10 @@ setInterval(() => {
 //   카드 스킵 + 가상화 재사용 노드 url 갱신). kgpPageType 캐시 사용 = 재판정 아님(v55 점멸 방지 원칙 유지).
 (function () {
   let _rt = null;
+  // F49-T 4부: **진짜 디바운스**(마지막 변이 뒤 300ms — 규칙 list_watch.debounce_ms). 예전엔 첫 변이 뒤 300ms에
+  //   한 번 돌고 끝나(스로틀) 그 뒤에 붙은 카드는 다음 변이가 올 때까지 기다렸다.
   function kgpRescanTiles() {
-    if (_rt) return;
+    if (_rt) clearTimeout(_rt);
     _rt = setTimeout(() => {
       _rt = null;
       try {
@@ -3636,11 +3903,12 @@ setInterval(() => {
         if (window.top !== window.self) return;
         kgpInjectListing();                              // 멱등 재부착
       } catch (e) {}
-    }, 300);
+    }, Number(_kgpRule("list_watch.debounce_ms", 300)) || 300);
   }
+  _kgpRescanHook = kgpRescanTiles;
   try {
     const mo = new MutationObserver(kgpRescanTiles);
-    const start = () => { if (document.body) mo.observe(document.body, { childList: true, subtree: true }); else setTimeout(start, 300); };
+    const start = () => { if (document.body) { mo.observe(document.body, { childList: true, subtree: true }); _kgpBodyObserved = true; } else setTimeout(start, 300); };
     start();
     window.addEventListener("scroll", kgpRescanTiles, { passive: true });   // 가상화(childList 무변이) 대응
     window.addEventListener("resize", kgpRescanTiles, { passive: true });

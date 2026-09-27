@@ -34,7 +34,7 @@ _URL = "https://search.rakuten.co.jp/search/mall/x/"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.159"
+    assert MANIFEST["version"] == "1.5.160"
 
 
 def _pw_ok():
@@ -120,7 +120,7 @@ def test_injection_decoupled_from_bar_source():
 
 def test_rescan_not_gated_by_bar_source():
     """재스캔 옵저버가 바 상태로 막히지 않는다(지연 타일이 바 때문에 버튼을 못 받으면 안 된다)."""
-    seg = CS.split("function kgpRescanTiles()")[1].split("}, 300);")[0]
+    seg = CS.split("function kgpRescanTiles()")[1].split("}, Number(_kgpRule(\"list_watch.debounce_ms\", 300)) || 300);")[0]
     assert "_kgpClosed" not in seg, "재스캔이 여전히 바 상태에 묶여 있다"
     assert "kgpInjectListing()" in seg
 
@@ -232,7 +232,8 @@ def test_lazy_tiles_get_buttons():
 def test_contract_fails_when_injection_recoupled_to_bar():
     """인위회귀 — 주입을 다시 바 오픈에 결합하면 계약①이 실패해야 한다."""
     code = _isolated_code()
-    anchor = "    cards.forEach((c) => _kgpEnsureTileQuick(c, null));"
+    # F49-T 4부: 닫힘 경로도 지연 부착(뷰포트 근처만 지금) 판정을 지난다 — 주입 지점 문자열만 바뀌었다.
+    anchor = "    _kgpAttachBudgeted(_nowQ, (c) => _kgpEnsureTileQuick(c, null));"
     assert anchor in code, "회귀 주입 지점을 찾지 못했다"
     broken = code.replace(anchor, '    document.querySelectorAll(".kgp-card-quick").forEach((b) => b.remove());', 1)
     got = _run(COUNT_PROBE, code=broken, bar_closed=True)
