@@ -32,6 +32,7 @@ EXT_DIRNAME = Path("extensions/chrome-collector")
 INCLUDE_FILES = [
     "manifest.json",
     "background.js",
+    "kgp-scrub.js",       # SEC-1: 진단·스냅샷 비밀 지우기(manifest content_scripts·popup이 로드)
     "kgp-sources.js",
     "kgp-rules.js",
     "kgp-net.js",
