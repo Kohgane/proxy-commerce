@@ -1462,22 +1462,30 @@ function kgpCoupangAttributes() {
   return Object.entries(_CP.attrs).filter(([k, v]) => k && String(v || '').trim())
     .map(([k, v]) => ({attributeTypeName: k, attributeValueName: String(v).trim()}));
 }
+function kgpCpFail(body, msg, status, raw) {
+  // seller.js가 없는 문맥(드로어 계약 하네스·오프라인)에서도 죽지 않게 로컬 이스케이프.
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  body.innerHTML = '<div class="text-danger" data-role="cp-error">쿠팡 기준을 불러오지 못했어요 — ' + esc(msg) +
+    '<details class="mt-1"><summary class="text-muted">원문 보기</summary><pre class="small mb-0" style="white-space:pre-wrap">' +
+    esc((status ? 'status ' + status + '\n' : '') + String(raw || '').slice(0, 600)) + '</pre></details></div>';
+}
 async function kgpLoadCoupangOptions() {
   const body = document.getElementById('coupangOptionsBody');
   const btn = document.getElementById('btnCoupangOptions');
+  if (!body || !btn) return;
   btn.disabled = true;
   body.innerHTML = '<span class="text-muted">쿠팡에 물어보는 중…</span>';
   try {
     const r = await fetch('/seller/collect/coupang/options', {method: 'POST',
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify({product: buildProductData()})});
-    const raw = await r.text();
+    const rawBody = await r.text();
     let d;
-    try { d = JSON.parse(raw); } catch (e) { d = {ok: false, error: `HTTP ${r.status} — ${raw.slice(0, 200)}`}; }
-    // F48-d: 실패는 **원문 그대로**(서버 문구 · HTTP 상태) — 칸 0개인 채로 조용히 두지 않는다.
-    if (!d.ok) { body.innerHTML = `<div class="text-danger" data-role="cp-error">쿠팡 기준을 불러오지 못했어요 — ${kgpEscapeForHtml(d.error || ('HTTP ' + r.status))}</div>`; return; }
+    try { d = JSON.parse(rawBody); } catch (e) { d = {ok: false, error: ''}; }
+    // F48-d: 실패는 칸 0개로 조용히 두지 않는다 — 한 줄 사유 + **원문은 접힌 「원문 보기」 안에**(상태코드·본문).
+    if (!d.ok) { kgpCpFail(body, d.error || '쿠팡이 응답하지 않았습니다', r.status, rawBody); return; }
     kgpRenderCoupangOptions(d);
   } catch (e) {
-    body.innerHTML = `<div class="text-danger" data-role="cp-error">쿠팡 기준을 불러오지 못했어요 — ${kgpEscapeForHtml(String((e && e.message) || e))}</div>`;
+    kgpCpFail(body, '네트워크 오류로 쿠팡에 묻지 못했습니다', 0, String((e && e.message) || e));
   } finally { btn.disabled = false; }
 }
 function kgpRenderCoupangOptions(d) {

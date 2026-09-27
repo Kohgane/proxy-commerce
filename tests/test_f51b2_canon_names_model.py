@@ -195,7 +195,7 @@ def test_option_block_auto_loads_and_renders_badges():
     assert "DOMContentLoaded" in auto and "kgpLoadCoupangOptions();" in auto and "editCategory" in auto
     assert '<i class="bi bi-arrow-repeat"></i> 다시 불러오기</button>' in html
     assert '> 쿠팡 기준 불러오기</button>' not in html
-    assert 'data-role="cp-error"' in html and "HTTP ' + r.status" in html
+    assert 'data-role="cp-error"' in html and "원문 보기</summary>" in html and "kgpCpFail(body" in html
     assert 'data-role="cp-model">제목에서 추출 — 확인' in html
     assert 'data-role="cp-name-pick"' in html and "data-cp-name" in html
     assert 'data-role="cp-glossary"' in html
