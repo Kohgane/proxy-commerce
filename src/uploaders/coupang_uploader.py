@@ -443,6 +443,8 @@ class CoupangUploader(BaseUploader):
         return {
             'sku': collected.get('sku', ''),
             'title': title,
+            # F48-d: 자르기 전 원제목 — 적용모델 선채움은 여기서 모델 토큰을 뽑는다(50자 자르기에 Ultra2가 잘렸다).
+            'title_original': collected.get('title_original') or collected.get('title_ko') or '',
             'description_html': collected.get('description_html', ''),
             'price': price,
             'original_price': collected.get('price_krw', price),
@@ -462,6 +464,8 @@ class CoupangUploader(BaseUploader):
             # F51-b — 옵션 값 해석 재료(번역기 값 · 오너가 고친 값).
             '_values_ko': collected.get('_values_ko') or {},
             'option_value_overrides': collected.get('option_value_overrides') or {},
+            '_names_ko': collected.get('_names_ko') or {},
+            'option_name_overrides': collected.get('option_name_overrides') or {},
             'tags': collected.get('tags', []),
             'shipping_fee': 0,
             'delivery_days': '7-14',

@@ -136,7 +136,8 @@ def sell_fx_rates():
         try:
             from src.seller_console.data_aggregator import get_fx_rates
             d = get_fx_rates()
-            if d and not d.get('is_mock'):
+            # 실시간 = 실제 API 응답일 때만. FXProvider의 `env` 폴백(고정값)은 실시간이 아니다.
+            if d and not d.get('is_mock') and str(d.get('source') or '') not in ('env', 'default', ''):
                 live = d
         except Exception:
             live = None

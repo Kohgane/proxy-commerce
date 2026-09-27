@@ -11565,6 +11565,42 @@ def collect_option_value_fix(item_id: str):
     return jsonify({"ok": True, "overrides": ov, "candidate": {"orig": orig, "value": value}})
 
 
+@bp.post("/collect/preview/<item_id>/option-name")
+def collect_option_name_pick(item_id: str):
+    """F51-b-3: 메타에 없는 옵션 축 이름 — 오너가 **이 카테고리 메타 속성명** 중에서 고른 것.
+
+    `option_name_overrides[원문 이름] = 메타 이름`(해석 순서 0번). 용어집엔 넣지 않는다(후보만).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    orig = str(data.get("orig") or "").strip()[:40]
+    name = str(data.get("name") or "").strip()[:40]
+    if not orig or not name:
+        return jsonify({"ok": False, "error": "원래 이름과 고른 이름이 둘 다 필요합니다."}), 400
+    import datetime as _dt
+    try:
+        ex = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        ex = {}
+    ov = dict(ex.get("option_name_overrides") or {})
+    ov[orig] = name
+    ex["option_name_overrides"] = ov
+    cands = [c for c in (ex.get("glossary_candidates") or []) if isinstance(c, dict) and c.get("orig") != orig]
+    cands.append({"orig": orig, "value": name, "kind": "name",
+                  "at": _dt.datetime.now(_dt.timezone.utc).isoformat()})
+    ex["glossary_candidates"] = cands[-50:]
+    from . import collect_history_store
+    ok = collect_history_store.update(item_id, seller_id=item.get("seller_id") or _seller_id(),
+                                      extra_json=json.dumps(ex, ensure_ascii=False))
+    if not ok:
+        return jsonify({"ok": False, "error": "저장하지 못했어요 — 잠시 뒤 다시 골라 주세요."}), 502
+    return jsonify({"ok": True, "overrides": ov})
+
+
 @bp.get("/listing/glossary-candidates")
 def glossary_candidates():
     """F51-b: 오너가 옵션 블록에서 고친 값 — **용어집 후보 목록**(자동 반영 없음, 읽기만)."""

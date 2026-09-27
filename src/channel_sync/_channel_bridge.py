@@ -94,6 +94,10 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "_values_ko": pd.get("option_values_ko") if isinstance(pd.get("option_values_ko"), dict) else {},
         "option_value_overrides": (pd.get("option_value_overrides")
                                    if isinstance(pd.get("option_value_overrides"), dict) else {}),
+        # F51-b-3 — 옵션 **이름** 해석 재료(번역기 name_ko · 오너가 고른 메타 이름).
+        "_names_ko": pd.get("option_names_ko") if isinstance(pd.get("option_names_ko"), dict) else {},
+        "option_name_overrides": (pd.get("option_name_overrides")
+                                  if isinstance(pd.get("option_name_overrides"), dict) else {}),
     }
 
 

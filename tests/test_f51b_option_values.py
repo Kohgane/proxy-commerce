@@ -7,8 +7,8 @@
 SKU끼리 같아지면 원문 차이를 붙여 가르고(「블랙」 vs 「블랙 선정리형」), 그래도 같으면 보류.
 SKU별 판매가에 쓴 환율(값·출처·갱신)을 옵션 블록 표에.
 
-★ 수행방패 **정본 10줄**은 브리프 메시지에 실려 오지 않았다 — 용어집 자리(`OPTION_VALUE_LINES`)는 비어 있고,
-  여기서 그 자리를 채우는 값은 **테스트 전용 가정값**이다(`STAND_IN`, 오너 정본 아님).
+★ 수행방패 정본 10줄은 F51-b-2(오너 09-27)로 들어왔다 — 여기 `STAND_IN`은 「10줄이 들어오면」 메커니즘만 재는
+  테스트 전용 대체값이고, 실제 정본 통과는 `test_f51b2_canon_names_model`이 잰다.
 """
 from __future__ import annotations
 
@@ -39,44 +39,31 @@ def test_resolution_order():
     assert tr["how"] == "translator" and tr["confirm"] is True                               # 3) 번역기
     lost = r("PD20W快充（白色款）", values_ko="고속 충전 화이트")
     assert lost["value"] == "" and "PD20W" in lost["why"]                                     # 영문 토큰 보존
-    assert r("粉色", values_ko="분홍색")["value"] == "분홍색"
-    assert r("粉色")["value"] == "" and "직접 넣어" in r("粉色")["why"]                       # 4) 보류
-    assert r("粉色", values_ko="粉色")["value"] == ""                                         # 원문 그대로 = 번역 안 됨
+    assert r("紫色", values_ko="퍼플")["value"] == "퍼플"
+    assert r("紫色")["value"] == "" and "직접 넣어" in r("紫色")["why"]                       # 4) 보류
+    assert r("紫色", values_ko="紫色")["value"] == ""                                         # 원문 그대로 = 번역 안 됨
 
 
-def test_owner_canon_slot_is_empty_until_the_ten_lines_arrive():
-    """「위 10줄」은 메시지에 없었다 — 지어 넣지 않는다."""
+def test_owner_canon_lines_and_tokens_are_the_owner_list():
+    """F51-b-2(오너 2026-09-27): 수행방패 정본 10줄 + 조각 치환 토큰 — 오너가 준 그대로."""
     from src.services.image_text_glossary import OPTION_VALUE_LINES, OPTION_VALUE_TOKENS
-    assert OPTION_VALUE_LINES == {}
-    assert OPTION_VALUE_TOKENS == {"白色": "화이트", "带理线器": "선정리형", "黑色": "블랙"}
+    assert len(OPTION_VALUE_LINES) == 10 and OPTION_VALUE_LINES["【三合一充电支架】带理线器（红色）"] == "레드 선정리형"
+    assert OPTION_VALUE_TOKENS == {"白色": "화이트", "黑色": "블랙", "粉色": "핑크", "蓝色": "블루", "红色": "레드",
+                                   "带理线器": "선정리형", "三合一": "3in1"}
 
 
-# ── 수행방패 10 SKU ────────────────────────────────────────────────────────────
-
-STAND_IN = {v: f"정본{i}" for i, v in enumerate(FAKE_KO)}      # 테스트 전용 — 오너 정본 자리만 흉내
-
-
-def test_with_the_ten_lines_the_shield_passes_with_zero_holds_and_canon_item_names(monkeypatch):
+def test_without_the_lines_translator_values_pass_with_a_badge(monkeypatch):
     from src.services import image_text_glossary as G
-    monkeypatch.setattr(G, "OPTION_VALUE_LINES", dict(STAND_IN))
-    plan = O.plan_for(META["attributes"], _product(_skus()))
-    assert plan["multi"] and plan["holds"] == [] and len(plan["items"]) == 10
-    assert sorted(i["label"] for i in plan["items"]) == sorted(STAND_IN.values())
-    assert not any(i["confirm"] for i in plan["items"])                  # 용어집 정확 일치 = 배지 없음
-    from src.uploaders.coupang_uploader import CoupangUploader
-    up = CoupangUploader(access_key="a", secret_key="b", vendor_id="v")
-    item = up._sku_item({}, plan["items"][0], _product(_skus()))
-    assert item["itemName"] == plan["items"][0]["label"]
-
-
-def test_without_the_lines_translator_values_pass_with_a_badge():
+    monkeypatch.setattr(G, "OPTION_VALUE_LINES", {})
     plan = O.plan_for(META["attributes"], _with_ko(_product(_skus())))
     assert plan["multi"] and plan["holds"] == [] and len(plan["items"]) == 10
     assert all(i["confirm"] for i in plan["items"])
     assert {i["label"] for i in plan["items"]} == set(FAKE_KO.values())
 
 
-def test_without_any_korean_the_shield_is_still_held():
+def test_without_any_korean_the_shield_is_still_held(monkeypatch):
+    from src.services import image_text_glossary as G
+    monkeypatch.setattr(G, "OPTION_VALUE_LINES", {})
     plan = O.plan_for(META["attributes"], _product(_skus()))
     assert any(h.startswith("옵션 값 10개를 한국어로 옮기지 못했습니다") for h in plan["holds"])
 
@@ -141,13 +128,13 @@ def test_fixing_a_value_stores_an_override_and_only_a_candidate(monkeypatch):
     with c.session_transaction() as s:
         s["user_id"] = seller
     r = c.post(f"/seller/collect/preview/{iid}/option-value",
-               json={"orig": "三合一充电支架（粉色）", "value": "3-in-1 거치대 핑크"}).get_json()
-    assert r["ok"] and r["overrides"] == {"三合一充电支架（粉色）": "3-in-1 거치대 핑크"}
+               json={"orig": "四合一支架（紫色）", "value": "4in1 거치대 퍼플"}).get_json()
+    assert r["ok"] and r["overrides"] == {"四合一支架（紫色）": "4in1 거치대 퍼플"}
     ex = json.loads(S.get(iid, seller_id=seller)["extra_json"])
-    assert ex["option_value_overrides"]["三合一充电支架（粉色）"] == "3-in-1 거치대 핑크"
+    assert ex["option_value_overrides"]["四合一支架（紫色）"] == "4in1 거치대 퍼플"
     cands = c.get("/seller/listing/glossary-candidates").get_json()
-    assert any(x["orig"] == "三合一充电支架（粉色）" and not x["in_glossary"] for x in cands["candidates"])
-    assert "三合一充电支架（粉色）" not in G.OPTION_VALUE_LINES                        # 자동 반영 0
+    assert any(x["orig"] == "四合一支架（紫色）" and not x["in_glossary"] for x in cands["candidates"])
+    assert "四合一支架（紫色）" not in G.OPTION_VALUE_LINES                            # 자동 반영 0
 
 
 def test_overrides_and_translator_values_reach_the_uploader():
