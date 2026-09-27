@@ -792,10 +792,11 @@ def test_collected_tile_is_the_only_rest_visible_state():
     """
     assert AMAZON_HOME_FIXTURE.exists(), "아마존 홈 픽스처 미커밋"
     code = _isolated_code() + """
-      ;(function () {
+      ;setTimeout(function () {
+        // F49-T 4부: 타일은 12ms 조각으로 **다음 태스크에** 붙는다(메인 스레드 한 태스크 ≤50ms) — 붙은 뒤 표식.
         var q = document.querySelector('.kgp-card-quick');
         if (q && typeof kgpMarkQuickCollected === 'function') kgpMarkQuickCollected(q);
-      })();
+      }, 200);
     """
     got = _measure_site(code, "https://www.amazon.com/",
                         AMAZON_HOME_FIXTURE.read_text(encoding="utf-8"), REST_BY_STATE_PROBE)

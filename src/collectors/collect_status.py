@@ -136,6 +136,24 @@ def clean_page_diag(raw) -> Dict[str, Any]:
     # F49-T 2부-b: __ICE_APP_CONTEXT__는 있는데 파싱 실패 — 그 덩어리 앞 200자와 사유.
     if raw.get("ice_error"):
         out["ice_error"] = scrub_text(str(raw.get("ice_error")))[:300]
+    # F49-T 4부: 목록 지속 감시 상태(스크롤 뒤) — 숫자·불리언·시각만.
+    wt = raw.get("watch") if isinstance(raw.get("watch"), dict) else {}
+    if wt:
+        w = {}
+        for k in ("scan_count", "cards_total", "cards_tiled", "containers", "new_cards", "lazy_pending"):
+            try:
+                w[k] = int(wt.get(k) or 0)
+            except (TypeError, ValueError):
+                w[k] = 0
+        for k in ("last_scan_ms", "max_scan_ms"):
+            try:
+                w[k] = float(wt.get(k) or 0)
+            except (TypeError, ValueError):
+                w[k] = 0.0
+        w["observer_alive"] = bool(wt.get("observer_alive"))
+        w["lazy"] = bool(wt.get("lazy"))
+        w["last_scan_at"] = str(wt.get("last_scan_at") or "")[:40]
+        out["watch"] = w
     # F50: 확장이 어느 규칙 버전으로 읽었나(remote=서버에서 받은 것 / bundled=확장 기본값).
     rl = raw.get("rules") if isinstance(raw.get("rules"), dict) else {}
     if rl:
