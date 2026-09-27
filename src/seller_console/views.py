@@ -11568,6 +11568,37 @@ def collect_option_value_fix(item_id: str):
     return jsonify({"ok": True, "overrides": ov, "candidate": {"orig": orig, "value": value}})
 
 
+@bp.get("/image-translate/auto")
+def image_translate_auto_status():
+    """D3-8 — 이미지 번역 자동 큐 상태(드로어·설정 화면): 오늘 N/상한 · 대기 · 일시정지 · 소싱처 토글."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from src.services import image_translate_auto as auto
+    out = auto.status(str(request.args.get("item") or ""))
+    out["settings"] = auto.settings(_seller_id())
+    return jsonify(out)
+
+
+@bp.post("/image-translate/auto/resume")
+def image_translate_auto_resume():
+    """D3-8 — 실패 누적으로 멈춘 큐를 **오너가** 다시 켠다(실패 카운트는 이 시각부터 새로 센다)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from src.services import image_translate_auto as auto
+    auto.resume()
+    return jsonify({"ok": True, **auto.status()})
+
+
+@bp.post("/image-translate/auto/settings")
+def image_translate_auto_settings():
+    """D3-8 — 소싱처별 자동 번역 켜기/끄기(기본 켬)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from src.services import image_translate_auto as auto
+    data = request.get_json(force=True, silent=True) or {}
+    return jsonify({"ok": True, "settings": auto.save_settings(_seller_id(), data)})
+
+
 @bp.get("/collect/image-audit")
 def collect_image_audit():
     """F49-T 5부 ① — 「전체 수집했는데 이미지 1장」을 **실데이터로 가른다**(원인 실측).

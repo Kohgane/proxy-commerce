@@ -381,7 +381,8 @@ def init_schema():
                   "schema_stage10.sql",  # F24: sourcing_rules(소싱 원칙) + 봇별 기본 등록 계정
                   "schema_stage11.sql",  # F25b: api_rate_slots(서버 전역 호출 차례표)
                   "schema_stage12.sql",  # D2: image_ko_blobs(번역본 바이트 — 로컬 파일 폐기)
-                  "schema_stage13.sql"): # D2b: 번역본의 외부 주소(cdn_url) — 마켓이 가져갈 수 있게
+                  "schema_stage13.sql",  # D2b: 번역본의 외부 주소(cdn_url) — 마켓이 가져갈 수 있게
+                  "schema_stage14.sql"): # D3-8: 이미지 번역 자동 큐 + 전역 작은 상태(app_state)
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))

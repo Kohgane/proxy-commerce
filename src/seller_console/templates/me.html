@@ -117,6 +117,65 @@
   </div>
 </div>
 
+<!-- D3-8: 이미지 자동 번역(중국 소싱처 · 보강 완료 뒤) -->
+<div class="op-card border-0 shadow-sm mb-4">
+  <div class="op-card-body">
+    <div class="console-kpi-label">이미지 자동 번역</div>
+    <p class="small mb-2" style="color:var(--text-muted);">타오바오·티몰·1688 초안의 상세 보강이 끝나면 갤러리·상세 이미지를 한국어로 번역해 둡니다.
+      번역본은 따로 저장되고 원본은 그대로 남아요.</p>
+    <div class="pc-inset mb-2" data-role="imgko-auto" data-item="">
+  <div class="d-flex flex-wrap align-items-center gap-2 small">
+    <span class="console-kpi-label mb-0">자동 번역</span>
+    <span data-role="imgko-auto-today" class="fw-semibold">오늘 -/-</span>
+    <span data-role="imgko-auto-wait" class="text-muted"></span>
+  </div>
+  <div data-role="imgko-auto-paused" class="small mt-1 d-none" style="color:var(--danger)"></div>
+  <div data-role="imgko-auto-toggles" class="small mt-1 d-none"></div>
+</div>
+<script>
+/* D3-8: 이미지 번역 자동 큐 — 오늘 N/상한 · 번역 대기 · 실패 누적 일시정지(「재개」는 오너만). */
+(function () {
+  const box = document.currentScript.previousElementSibling;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const item = box.getAttribute('data-item') || '';
+  const withToggles = true;
+  async function load() {
+    let d;
+    try { d = await (await fetch('/seller/image-translate/auto' + (item ? ('?item=' + encodeURIComponent(item)) : ''))).json(); }
+    catch (e) { return; }
+    if (!d || !d.ok) return;
+    box.querySelector('[data-role="imgko-auto-today"]').textContent = `오늘 ${d.today}/${d.cap}장`;
+    const it = d.item || {};
+    const wait = item ? ((it.queued || 0) + (it.running || 0)) : ((d.queued || 0) + (d.running || 0));
+    let w = wait ? `번역 대기 ${wait}장` : '';
+    if (d.waiting_cap) w += (w ? ' · ' : '') + '오늘 상한에 닿아 KST 자정 뒤 이어서 번역해요';
+    box.querySelector('[data-role="imgko-auto-wait"]').textContent = w;
+    const p = box.querySelector('[data-role="imgko-auto-paused"]');
+    if (d.paused) {
+      p.classList.remove('d-none');
+      p.innerHTML = '<i class="bi bi-pause-circle"></i> 자동 번역이 멈췄어요 — ' + esc(d.pause_reason) +
+        ' <button type="button" class="btn btn-sm btn-ghost ms-1" data-role="imgko-auto-resume">재개</button>';
+      p.querySelector('[data-role="imgko-auto-resume"]').addEventListener('click', async () => {
+        await fetch('/seller/image-translate/auto/resume', {method: 'POST'}); load();
+      });
+    } else { p.classList.add('d-none'); p.innerHTML = ''; }
+    if (withToggles && d.settings) {
+      const t = box.querySelector('[data-role="imgko-auto-toggles"]');
+      t.classList.remove('d-none');
+      t.innerHTML = '소싱처별 자동 번역: ' + Object.keys(d.settings).map(k =>
+        `<label class="form-check form-check-inline mb-0"><input type="checkbox" class="form-check-input" data-imgko-src="${esc(k)}" ${d.settings[k] ? 'checked' : ''}> ${esc({taobao:'타오바오',tmall:'티몰','1688':'1688'}[k] || k)}</label>`).join('');
+      t.querySelectorAll('[data-imgko-src]').forEach(el => el.addEventListener('change', async () => {
+        await fetch('/seller/image-translate/auto/settings', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({[el.dataset.imgkoSrc]: el.checked})});
+      }));
+    }
+  }
+  load();
+})();
+</script>
+  </div>
+</div>
+
 <!-- 연결된 소셜 계정 -->
 <div class="op-card border-0 shadow-sm mb-3">
   <div class="op-card-body">
