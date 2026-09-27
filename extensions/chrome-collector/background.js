@@ -206,18 +206,22 @@ const KgpEnrich = {
   queue: [], done: 0, total: 0, failed: 0, ok: 0, blocked: 0,
   paused: false, stopped: false, running: false, current: "",
   queued: new Set(),                        // 같은 항목을 두 번 큐에 넣지 않게(폴링이 반복되므로)
+  failures: [],                             // F49-T 5부: 실패 항목과 사유(툴바 「다시」 버튼이 쓴다)
 };
 function _kgpEnrichSnapshot() {
   return { done: KgpEnrich.done, total: KgpEnrich.total, failed: KgpEnrich.failed,
     ok: KgpEnrich.ok, blocked: KgpEnrich.blocked, paused: KgpEnrich.paused,
-    stopped: KgpEnrich.stopped, running: KgpEnrich.running, current: KgpEnrich.current };
+    stopped: KgpEnrich.stopped, running: KgpEnrich.running, current: KgpEnrich.current,
+    failures: KgpEnrich.failures.slice(-30) };
 }
 // 항목당 대기(3~8초 랜덤 · 오너 지정). rng 주입 가능(테스트).
 //   봇 판정 회피는 **상식 범위**다 — 사람이 상세를 넘겨보는 속도. 그 이상의 우회는 하지 않는다.
 const KGP_ENRICH_MAX_RETRIES = 3;          // 서버 상한(ENRICH_MAX_ATTEMPTS)과 같은 수
+// F49-T 5부(오너 2026-09-27): 간격 **2~3초**(동시 1탭). 예전 3~8초는 30장 전체 수집이 10분을 넘겨 MV3 워커가
+//   중간에 내려가며 큐가 사라지는 일이 잦았다(남은 항목은 서버 대기열 폴링이 다시 집는다 — 아래 폴러).
 function _kgpEnrichDelayMs(rng) {
   const r = (typeof rng === "function") ? rng() : Math.random();
-  return 3000 + Math.floor(r * 5000);
+  return 2000 + Math.floor(r * 1000);
 }
 function _kgpSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 function _kgpWaitTabComplete(tabId, timeoutMs) {
@@ -337,6 +341,7 @@ async function _kgpEnrichLoop() {
       if (wall) {
         await _kgpReportBlocked(item, reason, settings);
         KgpEnrich.blocked++;
+        KgpEnrich.failures.push({ item_id: item.item_id, url: item.url, reason: reason });
       } else if ((item.retries || 0) + 1 < KGP_ENRICH_MAX_RETRIES) {
         item.retries = (item.retries || 0) + 1;
         KgpEnrich.queue.push(item);
@@ -346,6 +351,7 @@ async function _kgpEnrichLoop() {
       } else {
         await _kgpReportBlocked(item, `${KGP_ENRICH_MAX_RETRIES}회 시도 실패 — ${reason}`, settings);
         KgpEnrich.failed++;                     // 재시도도 실패 → '보강 실패' 정직 집계
+        KgpEnrich.failures.push({ item_id: item.item_id, url: item.url, reason: reason });
       }
     }
     KgpEnrich.done++;
@@ -435,7 +441,7 @@ function handleEnrichStart(targets, sendResponse) {
     .map((t) => ({ item_id: String(t.item_id), url: String(t.url), retries: 0 }));
   if (!items.length) { if (sendResponse) sendResponse({ ok: false, error: "보강할 항목이 없습니다." }); return; }
   // 새 배치: 카운터 초기화(진행 중이면 이어붙임).
-  if (!KgpEnrich.running) { KgpEnrich.done = 0; KgpEnrich.failed = 0; KgpEnrich.ok = 0; KgpEnrich.stopped = false; KgpEnrich.paused = false; KgpEnrich.total = 0; }
+  if (!KgpEnrich.running) { KgpEnrich.done = 0; KgpEnrich.failed = 0; KgpEnrich.ok = 0; KgpEnrich.stopped = false; KgpEnrich.paused = false; KgpEnrich.total = 0; KgpEnrich.failures = []; }
   KgpEnrich.queue.push(...items);
   KgpEnrich.total += items.length;
   if (sendResponse) sendResponse({ ok: true, total: KgpEnrich.total });
@@ -485,6 +491,9 @@ function _kgpEnrichBody(itemId, meta) {
     //   목록에서 누른 수집은 상세를 열고도 SKU 0으로 끝났다(2부는 상세 페이지 직접 수집만 담았다).
     skus: meta.skus || [],
     field_sources: meta.field_sources || null,
+    // F49-T 5부: 원본 갤러리 장 수(ICE item.images) — 서버가 「갤러리 ≥ 원본」 완료 기준을 잰다.
+    gallery_expected: (meta.field_sources && meta.field_sources.images === "ice_context")
+      ? (meta.gallery_images || meta.images || []).length : 0,
   };
 }
 

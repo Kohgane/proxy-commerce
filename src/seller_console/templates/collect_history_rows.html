@@ -107,6 +107,10 @@
     {% else %}
       <span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)">{{ it.status }}</span>
     {% endif %}
+    {# F49-T 5부: 이미지 완료 기준 미달 — 사유(갤러리 n/원본 · 상세 0장)와 함께. #}
+    {% if it.image_short %}
+      <span class="pc-badge pc-badge-danger mt-1" data-role="image-short" title="상세 보강 뒤에도 이미지가 원본보다 적어요 — {{ it.image_short }}"><i class="bi bi-images"></i> 이미지 부족 · {{ it.image_short }}</span>
+    {% endif %}
     {# v65 STEP4: 보강(2단 수집) 상태 — 대기(스피너)/완료. 단건은 배지 없음(보강 불필요). #}
     {% if it.enrich_status == "pending" %}
       <span class="badge d-inline-flex align-items-center gap-1 mt-1 kgp-badge-quiet" 

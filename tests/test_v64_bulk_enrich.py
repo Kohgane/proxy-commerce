@@ -20,7 +20,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.160"
+    assert MANIFEST["version"] == "1.5.161"
 
 
 def test_enrich_endpoint_source_contract():
@@ -130,5 +130,6 @@ def test_enrich_delay_and_retry_node():
         out = json.loads(r.stdout.strip().splitlines()[-1])
     finally:
         Path(f.name).unlink()
-    assert out["min"] == 3000                     # 최소 3초
-    assert 5900 <= out["max"] <= 8000              # 최대 ~6초(3~6초 랜덤)
+    # F49-T 5부(오너 2026-09-27): 간격 2~3초로 바뀌었다(동시 1탭 그대로).
+    assert out["min"] == 2000                     # 최소 2초
+    assert 2900 <= out["max"] <= 3000              # 최대 ~3초
