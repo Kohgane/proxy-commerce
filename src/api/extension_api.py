@@ -826,6 +826,15 @@ def _is_cn_source(url: str) -> bool:
     return bool(re.search(r"(^|\.)(taobao|tmall|1688)\.com$", h))
 
 
+def _auto_translate(seller_id: str, item_id: str, url: str, extra: dict) -> None:
+    """D3-8 — 설정(소싱처 토글)이 켜져 있으면 갤러리+상세를 번역 큐에. 실패해도 수집 응답은 막지 않는다."""
+    try:
+        from src.services import image_translate_auto as _auto
+        _auto.enqueue_after_enrich(seller_id, item_id, url, extra)
+    except Exception as exc:
+        logger.warning("[이미지번역·자동] 접수 실패 item=%s: %s", item_id, exc)
+
+
 def _image_check(extra: dict, data: dict) -> dict:
     """F49-T 5부 완료 기준 — 갤러리 ≥ 원본 갤러리 수(ICE item.images) · 상세 이미지 ≥ 1.
 
@@ -1078,6 +1087,9 @@ def collect_enrich():
         _upd["status"] = "ok"       # '보강 대기' 해제
 
     ok = _update(item_id, seller_ids=ids, **_upd)
+    # D3-8: 중국 소싱처 초안의 보강이 끝났으면 이미지 번역 자동 큐(저장 **뒤** — 워커는 저장된 행을 읽는다).
+    if ok and str(extra.get("enrich_state") or "") == "done":
+        _auto_translate(seller_id_val, item_id, item.get("url") or "", extra)
     st = extra.get("collect_status") or {}
     # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
     logger.info("[enrich] item=%s changed=%s status=%s rep=%s", item_id, changed, st.get("status"), bool(rep))
@@ -1373,6 +1385,9 @@ def collect_from_extension():
                     _row["currency"] = str(_merged.get("currency") or "")
                     _row["status"] = "ok"
                 _ok = _hist_update(_dup_id, seller_ids=_dedup_ids, **_row)
+                # D3-8: 상세 페이지 재수집(= 보강 완료) → 이미지 번역 자동 큐(저장 뒤).
+                if _ok and ("images" in _mchg or _force):
+                    _auto_translate(seller_id_val, _dup_id, _dup.get("url") or url, _merged)
                 logger.info("[collect %s] %s id=%s ok=%s 갱신=%s 유지=%s", _corr,
                             "다시수집" if _force else "중복→상위 출처 갱신", _dup_id, _ok,
                             _mchg, _mkept)
