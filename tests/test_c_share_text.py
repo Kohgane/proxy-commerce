@@ -1799,9 +1799,9 @@ def test_the_extension_actually_polls_the_pending_queue():
     assert "KgpEnrich.queued" in bg, "같은 항목 중복 투입을 막지 않는다"
     # 막힘 보고 경로
     assert "enrich/blocked" in bg and "_kgpReportBlocked" in bg
-    # 오너 지정: 동시 1탭 · 3~8초 · 재시도 3회
+    # 오너 지정: 동시 1탭 · 재시도 3회 · 간격은 F49-T 5부(2026-09-27)로 **2~3초**(최신 지시 우선)
     assert "KGP_ENRICH_MAX_RETRIES = 3" in bg
-    assert "3000 + Math.floor(r * 5000)" in bg, "항목 간 간격이 3~8초가 아니다"
+    assert "2000 + Math.floor(r * 1000)" in bg, "항목 간 간격이 2~3초가 아니다"
     # alarms 권한이 실제로 선언돼 있어야 주기 폴링이 돈다
     import json
     mani = json.loads(Path("extensions/chrome-collector/manifest.json").read_text(encoding="utf-8"))
