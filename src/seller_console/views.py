@@ -6683,6 +6683,9 @@ def _shape_collect_items(items, current_lang):
             it["gate_ready"] = _ax["gate_ready"]
         except Exception:
             it["enrich_badge"] = None
+        # F49-T 5부: 이미지 완료 기준 미달(갤러리 < 원본 · 상세 0) — 사유와 함께 배지.
+        _ic = ex.get("image_check") if isinstance(ex.get("image_check"), dict) else None
+        it["image_short"] = (_ic.get("reason") or "이미지 부족") if (_ic and not _ic.get("ok")) else ""
         # F24: 소싱 판정 뱃지 — 봇이 담을 때 원칙으로 재서 적어 둔 값. 판정이 없으면 뱃지도 없다
         #   (없는 뱃지를 만들지 않는다 — 「판정 없음」이라는 뱃지가 제일 쓸모없다).
         try:
@@ -11563,6 +11566,60 @@ def collect_option_value_fix(item_id: str):
     if not ok:
         return jsonify({"ok": False, "error": "저장하지 못했어요 — 잠시 뒤 다시 넣어 주세요."}), 502
     return jsonify({"ok": True, "overrides": ov, "candidate": {"orig": orig, "value": value}})
+
+
+@bp.get("/collect/image-audit")
+def collect_image_audit():
+    """F49-T 5부 ① — 「전체 수집했는데 이미지 1장」을 **실데이터로 가른다**(원인 실측).
+
+    내 중국 소싱처(타오바오·티몰·1688) 수집 항목을 네 경우로 센다(값은 저장된 그대로):
+      A 목록 카드만 — 상세 보강이 한 번도 안 돌았다(`enriched` 없음)
+      B 보강 막힘·재시도 소진 — `enrich_state=blocked` 또는 시도 ≥ 상한
+      C 보강은 돌았는데 갤러리 ≤ 1 — 상세에서 갤러리를 못 잡았다(필드 출처 함께)
+      D 정상 — 갤러리 ≥ 2
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    import re as _re
+    from . import collect_history_store
+    from src.collectors.collect_status import enrich_axes as _eax
+    try:
+        days = max(1, min(int(request.args.get("days") or 30), 365))
+    except Exception:
+        days = 30
+    cases = {"A": [], "B": [], "C": [], "D": []}
+    src_count: dict = {}
+    for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000) or []:
+        url = str(row.get("url") or "")
+        if not _re.search(r"(taobao|tmall|1688)\.com", url):
+            continue
+        try:
+            ex = json.loads(row.get("extra_json") or "{}")
+        except Exception:
+            continue
+        imgs = [u for u in (ex.get("images") or []) if u]
+        fs = ex.get("field_sources") if isinstance(ex.get("field_sources"), dict) else {}
+        src = str(fs.get("images") or "(기록 없음)")
+        src_count[src] = src_count.get(src, 0) + 1
+        ax = _eax(ex)
+        att = int(ex.get("enrich_attempts") or 0)
+        rec = {"item_id": row.get("id"), "images_n": len(imgs), "images_source": src, "mode": ex.get("mode") or "",
+               "enrich_state": ax.get("enrich_state") or "", "attempts": att,
+               "reason": ax.get("reason") or "", "image_check": ex.get("image_check") or None}
+        if len(imgs) >= 2:
+            cases["D"].append(rec)
+        elif ax.get("enrich_state") == "blocked" or att >= 3:
+            cases["B"].append(rec)
+        elif not ex.get("enriched"):
+            cases["A"].append(rec)
+        else:
+            cases["C"].append(rec)
+    label = {"A": "목록 카드만 — 상세 보강이 안 돌았다", "B": "보강 막힘·재시도 소진",
+             "C": "보강은 돌았는데 갤러리 ≤ 1", "D": "정상(갤러리 ≥ 2)"}
+    return jsonify({"ok": True, "days": days,
+                    "summary": {k: {"label": label[k], "count": len(v)} for k, v in cases.items()},
+                    "images_source": src_count,
+                    "samples": {k: v[:10] for k, v in cases.items()}})
 
 
 @bp.post("/collect/preview/<item_id>/option-name")

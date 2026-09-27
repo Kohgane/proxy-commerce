@@ -3114,11 +3114,33 @@ try {
         if (s.paused) t += " · 일시정지";
         else if (!s.running && s.done >= s.total) t += " · 완료";
         kgpSetStatus(t);
+        kgpRenderEnrichRetry(s.failures || []);   // F49-T 5부: 실패 항목(사유) + 「다시」
       }
     }
     return false;
   });
 } catch (e) { /* noop */ }
+
+// F49-T 5부: 상세 보강 실패 항목 — 사유를 보이고(title) 「보강 다시」로 같은 큐에 다시 넣는다.
+function kgpRenderEnrichRetry(failures) {
+  const old = _kgpTbQ("#kgp-tb-enrich-retry");
+  if (old) old.remove();
+  if (!failures || !failures.length) return;
+  const tb = document.getElementById(KGP_TOOLBAR_ID);
+  if (!tb) return;
+  const b = document.createElement("button");
+  b.id = "kgp-tb-enrich-retry";
+  b.className = "kgp-tb-btn";
+  b.textContent = `보강 실패 ${failures.length}건 다시`;
+  b.title = failures.slice(0, 8).map((f) => "· " + (f.reason || "사유 없음")).join("\n");
+  b.setAttribute("style", "background:#f5821f;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;font-size:15px;cursor:pointer;min-height:40px;display:inline-flex;align-items:center");
+  b.addEventListener("click", () => {
+    const targets = failures.map((f) => ({ item_id: f.item_id, url: f.url }));
+    kgpSendMessage({ action: "enrichStart", targets }, () => {});
+    b.remove();
+  });
+  (_kgpTbRoot() || tb).appendChild(b);
+}
 
 // 실패 항목 재시도 버튼(정직: 조용한 누락 금지 — 실패 N건을 눈에 보이게).
 function kgpRenderRetry(failedItems) {

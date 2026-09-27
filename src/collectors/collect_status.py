@@ -360,7 +360,10 @@ def enrich_axes(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if state == "done" and n_images < 1:
         state = "pending"                        # 이미지가 없으면 보강은 안 끝났다
     elif state == "pending" and n_images >= 1:
-        state = "done"
+        # F49-T 5부: **목록 타일**은 썸네일 1장을 이미 갖고 온다 — 그건 보강이 아니다. 상세 보강(`enriched`)이
+        #   실제로 돌기 전엔 대기로 둔다(예전엔 여기서 done이 돼 대기열에서 영영 빠졌다 → 「이미지 1장만」).
+        if not (str(ex.get("mode") or "") == "simple" and not ex.get("enriched")):
+            state = "done"
 
     return {
         "gate_ready": bool(gate_ready),

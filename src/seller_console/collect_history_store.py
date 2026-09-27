@@ -165,6 +165,8 @@ def list_items(
                 "enrich_attempts": _ex.get("enrich_attempts"), "mode": _ex.get("mode"),
                 "images_count": len(_imgs),      # lean은 첫 장만 싣는다 → 개수는 따로
                 "price": _ex.get("price"),       # 등록 가능 판정에 쓰인다
+                # F49-T 5부: 목록 타일 보강 여부(enrich_axes가 읽는다) · 이미지 완료 기준(「이미지 부족」 배지).
+                "enriched": _ex.get("enriched"), "image_check": _ex.get("image_check"),
             }, ensure_ascii=False)
     return result
 

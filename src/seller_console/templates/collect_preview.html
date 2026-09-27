@@ -413,6 +413,9 @@
         {% if enrich and enrich.is_draft %}
           {% if enrich.enrich_state == "blocked" %}
             <span style="color:var(--warn)"><i class="bi bi-exclamation-triangle"></i> 보강 막힘{% if enrich.reason %} — {{ enrich.reason }}{% endif %}</span>
+          {% elif enrich.enrich_state == "done" and extra.get('image_check') and not extra.get('image_check').get('ok') %}
+            {# F49-T 5부: 보강은 끝났지만 이미지 완료 기준(갤러리 ≥ 원본 · 상세 ≥ 1) 미달 #}
+            <span style="color:var(--danger)" data-role="image-short"><i class="bi bi-images"></i> 이미지 부족 — {{ extra.get('image_check').get('reason') }}</span>
           {% elif enrich.enrich_state == "done" %}
             <span style="color:var(--success)"><i class="bi bi-check-circle"></i> 보강 완료</span>
           {% else %}

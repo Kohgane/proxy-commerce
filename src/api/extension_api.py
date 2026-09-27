@@ -816,6 +816,36 @@ def _awaiting_enrich(row) -> bool:
     return bool(ax.get("is_draft")) and ax.get("enrich_state") != "done"
 
 
+def _is_cn_source(url: str) -> bool:
+    """타오바오·티몰·1688 — 목록 카드가 썸네일 한 장뿐인 소싱처(상세 보강이 갤러리를 채운다)."""
+    try:
+        from urllib.parse import urlparse
+        h = (urlparse(str(url or "")).hostname or "").lower()
+    except Exception:
+        return False
+    return bool(re.search(r"(^|\.)(taobao|tmall|1688)\.com$", h))
+
+
+def _image_check(extra: dict, data: dict) -> dict:
+    """F49-T 5부 완료 기준 — 갤러리 ≥ 원본 갤러리 수(ICE item.images) · 상세 이미지 ≥ 1.
+
+    원본 갤러리 수를 모르면(ICE 없음) 그 항목은 재지 않는다고 적는다(지어낸 기준으로 부족 판정 금지).
+    """
+    try:
+        expected = int(data.get("gallery_expected") or 0)
+    except (TypeError, ValueError):
+        expected = 0
+    g = len([u for u in (extra.get("images") or []) if u])
+    d = len([u for u in (extra.get("detail_images") or []) if u])
+    why = []
+    if expected and g < expected:
+        why.append(f"갤러리 {g}/{expected}장")
+    if d < 1:
+        why.append("상세 이미지 0장")
+    return {"ok": not why, "gallery": g, "expected": expected, "detail": d,
+            "reason": " · ".join(why), "expected_known": bool(expected), "at": _now_iso_w4()}
+
+
 def _was_draft(row) -> bool:
     """붙여넣기·공유로 만든 초안이었나(보강이 끝났어도) — `enrich_axes.is_draft`."""
     import json as _json
@@ -1025,6 +1055,11 @@ def collect_enrich():
                 changed["enrich_state"] = 1
         else:
             extra["enrich_state"] = "pending"
+    # F49-T 5부: 중국 소싱처는 **이미지 완료 기준**을 잰다 — 미달이면 「이미지 부족」 + 사유(목록·드로어 배지).
+    if _is_cn_source(item.get("url") or ""):
+        extra["image_check"] = _image_check(extra, data)
+        if not extra["image_check"]["ok"]:
+            logger.info("[enrich] item=%s 이미지 부족 — %s", item_id, extra["image_check"]["reason"])
     # 상태 배지 재계산(부분→성공).
     try:
         from src.collectors.collect_status import compute_collect_status as _ccs
@@ -1407,6 +1442,10 @@ def collect_from_extension():
         "field_sources": payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {},
         "mode": _resolve_collect_mode(payload),   # v81 'core'(북마클릿) / v86-F 'simple'(목록 타일) / 'full'
     }
+    # F49-T 5부: 중국 소싱처 **목록 타일** 수집 = 「초안 + 상세 보강 대기」. 목록 카드엔 썸네일 1장뿐이다 —
+    #   보강 축을 달아 두어야 확장 워커가 중간에 내려가도 서버 대기열(/enrich/pending)이 다시 집는다.
+    if _extra.get("mode") == "simple" and _is_cn_source(url):
+        _extra["enrich_state"] = "pending"
     _field_status = {}
     try:
         from src.collectors.collect_status import compute_collect_status
