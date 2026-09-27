@@ -21,7 +21,7 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.157"
+    assert MANIFEST["version"] == "1.5.158"
 
 
 # ── source-contract: 벌크바 [다시 수집] 버튼 + force 배선 ──
@@ -44,7 +44,8 @@ def test_server_force_overwrites_not_creates_source():
     assert "if _force:" in EXT_API
     assert '"updated": True' in EXT_API
     # 갱신은 update(신규 append 아님).
-    seg = EXT_API.split("if _force:")[1].split('"ok": True, "updated": True')[0]
+    # F49-T 2부-c: 갱신 한 곳이 중복·재수집을 같이 받는다(소스 우선순위 병합) — 응답은 `"updated": True`.
+    seg = EXT_API.split("if _force:")[1].split('"updated": True')[0]
     assert "_hist_update" in seg and "append" not in seg
 
 

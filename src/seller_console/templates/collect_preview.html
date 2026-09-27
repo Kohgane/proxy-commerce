@@ -2,6 +2,7 @@
 {% block title %}상품 편집 — {{ item.title or item.id }}{% endblock %}
 {% block body_class %}{% if request.args.get('drawer') %} kgp-editor{% endif %}{% endblock %}
 {% block content %}
+{% macro src_badge(f) %}{% set _s = (field_src or {}).get(f) %}{% if _s %}<span class="pc-badge {{ 'pc-badge-on' if _s.src == 'manual' else 'pc-badge-muted' }} ms-1 fw-normal" data-role="field-src" data-field="{{ f }}" title="이 값이 어디서 왔는지 — 더 정확한 출처가 오면 다시 수집 때 바뀌고, 직접 수정한 값은 그대로 둡니다">{{ _s.label }}</span>{% endif %}{% endmacro %}
 {# v39 C: 편집 드로어(iframe) 임베드 모드 — ?drawer=1이면 콘솔 chrome을 감춘다.
    6-c: 그 CSS는 app.css `.kgp-editor` 슬라이스로 옮겼다. 여기선 body에 스위치만 건다
    (전역 CSS에 무스코프로 두면 모든 화면의 사이드바가 사라진다). #}
@@ -65,7 +66,7 @@
       <!-- [상품명·카테고리] 제목 -->
       <div class="kgp-esec mb-3" data-etab="basic">
         <div class="d-flex justify-content-between align-items-center">
-          <label class="form-label small fw-semibold mb-1" for="editTitle">제목</label>
+          <label class="form-label small fw-semibold mb-1" for="editTitle">제목{{ src_badge('title') }}</label>
           {# v39 D: 제목·상세 한국어 번역(온디맨드). 키 미설정이면 정직 안내(원문 유지). 무료 카운터 연동. #}
           <button type="button" class="btn btn-ghost btn-sm py-0" id="btnTranslateKo" onclick="translateToKo()">
             <i class="bi bi-translate"></i> 한국어로 번역
@@ -99,7 +100,7 @@
       <div class="kgp-esec kgp-etab-hide" data-etab="price">
         <div class="row g-2 mb-2">
           <div class="col-7">
-            <label class="form-label small fw-semibold" for="editPrice">가격(원가)</label>
+            <label class="form-label small fw-semibold" for="editPrice">가격(원가){{ src_badge('price') }}</label>
             <input type="number" step="0.01" min="0" class="form-control" id="editPrice" placeholder="0.00" oninput="updateKrwPreview()">
             <div id="priceNeedsCheck" class="form-text small text-warning d-none"><i class="bi bi-exclamation-triangle"></i> 페이지에서 가격을 자동으로 읽지 못했어요. <b>가격 확인 필요</b> — 실제 가격을 입력해 주세요.</div>
           </div>
@@ -145,7 +146,7 @@
           {% endif %}
         </div>
         <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
-          <label class="form-label small fw-semibold mb-0" for="editDescription">상세 설명
+          <label class="form-label small fw-semibold mb-0" for="editDescription">상세 설명{{ src_badge('description') }}
             <span id="aiDraftBadge" class="badge" style="display:none;background:color-mix(in srgb,var(--teal) 16%,transparent);color:var(--teal);font-size:.68rem;"><i class="bi bi-stars"></i> AI 초안 · 검토·편집 후 저장</span>
           </label>
           <div class="d-flex align-items-center gap-2">
@@ -179,7 +180,7 @@
 
       <!-- [썸네일] 이미지 관리 — v55 STEP3: 갤러리 hover 삭제/대표/드래그 + 이미지 추가 1급 + 라이트박스 -->
       <div class="kgp-esec mb-3 kgp-etab-hide" data-etab="thumb">
-        <label class="form-label small fw-semibold mb-2 d-block">상품 이미지 <span class="text-muted">(맨 앞이 대표 · 마우스 올리면 삭제·대표지정 · 드래그로 순서변경 · 클릭하면 크게)</span></label>
+        <label class="form-label small fw-semibold mb-2 d-block">상품 이미지{{ src_badge('images') }} <span class="text-muted">(맨 앞이 대표 · 마우스 올리면 삭제·대표지정 · 드래그로 순서변경 · 클릭하면 크게)</span></label>
         <div id="imageGallery" class="d-flex flex-wrap gap-2 mb-2"></div>
         <!-- v55 STEP3: '이미지 추가' 1급(URL 입력 + 미리보기 검증 후 추가) -->
         <div class="d-flex align-items-center gap-2 mb-2 kgp-w-md">
@@ -257,7 +258,7 @@
       <!-- [옵션] 옵션 목록 -->
       <div class="kgp-esec mb-2 kgp-etab-hide" data-etab="options">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <label class="form-label small fw-semibold mb-0">옵션 (예: 색상, 사이즈 — 값은 쉼표로 구분)</label>
+          <label class="form-label small fw-semibold mb-0">옵션{{ src_badge('options') }} <span class="text-muted fw-normal">(예: 색상, 사이즈 — 값은 쉼표로 구분)</span></label>
           <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
         </div>
         <div id="optionRows" class="vstack gap-2"></div>
@@ -267,7 +268,7 @@
         {% if _skus %}
         <div class="pc-inset mt-3" data-role="sku-table">
           <div class="console-kpi-label mb-1">SKU {{ _skus|length }}개
-            {% if (extra.get('field_sources') or {}).get('sku') == 'ice_context' %}<span class="pc-badge pc-badge-muted ms-1">티몰 상태(ICE)</span>{% endif %}</div>
+            {{ src_badge('sku') }}</div>
           <table class="table table-sm mb-0" style="font-size:.82rem">
             <thead><tr><th>조합</th><th class="text-end">원가</th><th class="text-end">참고가</th><th class="text-end">재고</th></tr></thead>
             <tbody>
@@ -380,6 +381,24 @@
         <div class="form-text mt-2">저장은 아래 <b>변경사항 저장</b>으로 언제든 가능해요. 등록 결과는 저장된 마켓별로 목록에 <b>등록됨</b> 뱃지로 남습니다.</div>
       </div>
     </div>
+
+    {# F49-T 2부-c: 원본에서 다시 수집 — 서버는 원본을 열지 않는다. 새 탭 + 고가수집기 버튼 → 소스 우선순위 병합.
+       마지막 병합 결과(무엇이 바뀌고 무엇을 남겼는지)를 그대로 보여 준다. #}
+    {% if item.url %}
+    {% set _ml = ((extra.get('merge_log') or [])[-1:] or [None])[0] if extra else None %}
+    <div class="mx-3 mb-2 small kgp-inset" data-role="recollect">
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnRecollect" data-item="{{ item.id }}">
+          <i class="bi bi-arrow-repeat"></i> 원본에서 다시 수집</button>
+        <span class="text-muted" id="recollectState">새 탭에서 고가수집기 버튼을 누르면 더 정확한 출처의 값으로 바뀝니다 · 직접 고친 칸은 그대로</span>
+      </div>
+      <div class="mt-1" data-role="merge-log" id="mergeLog">{% if _ml %}
+        <span class="text-muted">마지막 갱신 {{ (_ml.at or '')[:16]|replace('T',' ') }}:</span>
+        {% for f, why in (_ml.changed or {}).items() %}<span class="me-2">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} {{ why }}</span>{% endfor %}
+        {% for f, why in (_ml.kept or {}).items() %}<span class="me-2 text-muted">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} 유지 — {{ why }}</span>{% endfor %}
+      {% endif %}</div>
+    </div>
+    {% endif %}
 
     {# v47 STEP2: 수집 로그 — 어느 소스(JSON/DOM/없음)가 어느 필드를 줬는지 정직 표기. 전 탭 하단 접이식. #}
     {% if collect_status %}
@@ -1416,7 +1435,18 @@ function buildProductData() {
     // F51 — SKU(ICE 컨텍스트). 쿠팡 등록이 SKU마다 item을 만든다(SKU별 판매가는 서버가 원가로 낸다).
     //   예전엔 이 배열을 안 보내서, SKU가 있어도 등록은 단일 아이템이었다(F48-c 실측).
     skus: Array.isArray(_EXTRA.skus) ? _EXTRA.skus : [],
+    // F51-b — 옵션 값 해석 재료: 번역기 값(원문 → values_ko)과 오너가 이 상품에서 고친 값.
+    option_values_ko: kgpValuesKoMap(),
+    option_value_overrides: Object.assign({}, _EXTRA.option_value_overrides || {}),
   };
+}
+function kgpValuesKoMap() {
+  const out = {};
+  (Array.isArray(_EXTRA.options) ? _EXTRA.options : []).forEach(o => {
+    const vs = (o && o.values) || [], ks = (o && o.values_ko) || [];
+    vs.forEach((v, i) => { const k = (v && v.name) || v; if (k && ks[i]) out[String(k)] = String(ks[i]); });
+  });
+  return out;
 }
 
 // ── F48-c 쿠팡 필수 옵션 ────────────────────────────────────────────────────
@@ -1478,11 +1508,15 @@ function kgpRenderCoupangOptions(d) {
   if (d.multi && (d.items || []).length) {
     h += '<div class="mt-2" data-role="cp-sku-prices"><div class="small fw-semibold">SKU별 등록 ' + d.items.length +
       '개 — 판매가(원가로 각각 계산)</div><table class="table table-sm small mb-0"><tbody>' +
-      d.items.map(it => `<tr><td>${esc((it.label || (it.spec || []).join(' / ')))}</td>` +
-        `<td class="text-end">${esc(it.cost)} ${esc(it.currency)}</td>` +
-        `<td class="text-end fw-semibold">${Number(it.sell_price_krw || 0).toLocaleString('ko-KR')}원</td>` +
-        `<td class="text-end text-muted">재고 ${esc(it.stock == null ? '?' : it.stock)}</td></tr>`).join('') +
-      '</tbody></table></div>';
+      d.items.map(it => `<tr><td>${esc((it.label || (it.spec || []).join(' / ')))}${kgpCpConfirm(it.resolved)}` +
+        `<div class="text-muted" style="font-size:.72rem">${esc((it.spec || []).join(' / '))}</div></td>` +
+        `<td class="text-end text-nowrap">${esc(it.cost)} ${esc(it.currency)}</td>` +
+        `<td class="text-end text-nowrap fw-semibold">${Number(it.sell_price_krw || 0).toLocaleString('ko-KR')}원</td>` +
+        `<td class="text-end text-nowrap text-muted">재고 ${esc(it.stock == null ? '?' : it.stock)}</td></tr>`).join('') +
+      '</tbody></table>' + kgpCpFx(d.fx) + '</div>';
+  } else if ((d.resolved || []).some(r => r.confirm)) {
+    h += '<div class="mt-2" data-role="cp-resolved">' + d.resolved.map(r =>
+      `<div>${esc(r.orig)} → <b>${esc(r.value)}</b>${kgpCpConfirm([r])}</div>`).join('') + '</div>';
   }
   if ((d.holds || []).length) {
     h += '<div class="text-danger mt-2" data-role="cp-holds">지금 상태로는 멈춥니다:<ul class="mb-0 ps-3">' +
@@ -1494,6 +1528,21 @@ function kgpRenderCoupangOptions(d) {
   h += `<button type="button" class="btn btn-ghost btn-sm mt-2" onclick="kgpLoadCoupangOptions()">
     <i class="bi bi-check2-circle"></i> 넣은 값으로 다시 확인</button>`;
   body.innerHTML = h;
+  // F51-b: 「번역기 값 — 확인」 칸 — 고치면 이 상품에 바로 쓰고, 용어집에는 **후보로만** 남는다.
+  body.querySelectorAll('[data-cp-fix]').forEach(el => el.addEventListener('change', async () => {
+    const v = el.value.trim();
+    if (!v) return;
+    el.disabled = true;
+    try {
+      const r = await fetch(`/seller/collect/preview/${encodeURIComponent(_ITEM_ID)}/option-value`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({orig: el.dataset.cpFix, value: v})});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { el.disabled = false; pcToast && pcToast(j.error || '저장하지 못했어요', 'danger'); return; }
+      _EXTRA.option_value_overrides = j.overrides || {};
+      kgpLoadCoupangOptions();
+    } catch (e) { el.disabled = false; }
+  }));
   body.querySelectorAll('[data-cp-attr]').forEach(el => el.addEventListener('input', () => {
     _CP.attrs[el.dataset.cpAttr] = el.value;
   }));
@@ -1502,6 +1551,23 @@ function kgpRenderCoupangOptions(d) {
   body.querySelectorAll('[data-cp-pick]').forEach(el => el.addEventListener('change', () => {
     if (el.checked) { _CP.pick[el.dataset.cpPick] = el.value; kgpLoadCoupangOptions(); }   // 고르면 바로 다시 확인
   }));
+}
+
+// F51-b — 용어집 정확 일치가 아닌 값(조각 치환·번역기·원문 차이 붙임)에 배지 + 고칠 칸.
+function kgpCpConfirm(resolved) {
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return (resolved || []).filter(r => r && r.confirm).map(r =>
+    ` <span class="pc-badge pc-badge-muted" data-role="cp-confirm" title="${esc(r.how_label)} — 원문: ${esc(r.orig)}">번역기 값 — 확인</span>` +
+    `<input class="form-control form-control-sm d-inline-block ms-1" style="width:9rem" data-cp-fix="${esc(r.orig)}"` +
+    ` placeholder="고칠 값" aria-label="${esc(r.orig)} 한국어 값 고치기">`).join('');
+}
+// F51-b 6 — SKU별 판매가에 쓴 환율(값·출처·갱신 시각). 고정값이면 그렇다고 적는다.
+function kgpCpFx(fx) {
+  if (!Array.isArray(fx) || !fx.length) return '';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return '<div class="text-muted mt-1" data-role="cp-fx" style="font-size:.76rem">' + fx.map(f =>
+    `환율 1 ${esc(f.currency)} = ${Number(f.rate).toLocaleString('ko-KR')}원 · ${esc(f.label)}` +
+    (f.updated_at ? ` · ${esc(String(f.updated_at).slice(0, 16).replace('T', ' '))} 갱신` : ' · 갱신 없음(고정값)')).join('<br>') + '</div>';
 }
 
 // 카테고리 자동 분류 — 상품명·키워드로 추천
@@ -2168,5 +2234,40 @@ function kgpEnrichRetry() {
     });
 }
 
+</script>
+
+<script>
+/* F49-T 2부-c: 원본에서 다시 수집 — 요청 표시 → 새 탭 → 갱신될 때까지 상태만 들여다본다(4초·최대 15분). */
+(function () {
+  var b = document.getElementById('btnRecollect');
+  if (!b) return;
+  var st = document.getElementById('recollectState');
+  var say = function (h) { if (st) st.innerHTML = h; };
+  b.addEventListener('click', async function () {
+    var id = b.getAttribute('data-item');
+    b.disabled = true;
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(id) + '/recollect', {method: 'POST'});
+      var d = await r.json().catch(function () { return {}; });
+      if (!r.ok || !d.ok) { say('<span style="color:var(--danger)">' + (d.error || '요청하지 못했어요') + '</span>'); b.disabled = false; return; }
+      window.open(d.open_url, '_blank', 'noopener');
+      say('<i class="bi bi-hourglass-split"></i> 새 탭에서 고가수집기 버튼을 눌러 주세요 — 기다리는 중');
+      var req = d.requested_at, n = 0;
+      var t = setInterval(async function () {
+        n += 1;
+        try {
+          var s = await (await fetch('/seller/collect/' + encodeURIComponent(id) + '/state')).json();
+          if (s && s.ok && s.recollected_at && s.recollected_at >= req) {
+            clearInterval(t);
+            var ch = (s.last_merge && s.last_merge.changed) ? Object.keys(s.last_merge.changed).length : 0;
+            say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> 갱신됐어요 · ' + ch + '개 필드</span> — 새로고침하면 반영된 값이 보입니다');
+            b.disabled = false; return;
+          }
+        } catch (e) { /* 다음 틱 */ }
+        if (n >= 225) { clearInterval(t); say('15분 동안 갱신되지 않았어요 — 다시 눌러 주세요'); b.disabled = false; }
+      }, 4000);
+    } catch (e) { say('<span style="color:var(--danger)">네트워크 오류 — 다시 눌러 주세요</span>'); b.disabled = false; }
+  });
+})();
 </script>
 {% endblock %}

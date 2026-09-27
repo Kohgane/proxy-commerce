@@ -754,10 +754,11 @@ class UploadDispatcher:
         except (TypeError, ValueError):
             margin = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
         try:
-            from src.price import _build_fx_rates, calc_sell_price, reference_market
+            from src.price import calc_sell_price, reference_market, sell_fx_rates
+            # F51-b 6: 드로어 미리보기와 **같은 환율**(실시간 우선) — 무엇을 썼는지는 `sell_fx_rates` info.
             val = calc_sell_price(buy_price=cost, buy_currency=cur,
                                   market=market or reference_market(),
-                                  margin_pct=margin, fx_rates=_build_fx_rates())
+                                  margin_pct=margin, fx_rates=sell_fx_rates()[0])
             return float(val), ""
         except Exception as exc:
             logger.warning("[등록] 판매가 산정 실패(%s %s %s): %s", cost, cur, market, exc)

@@ -367,3 +367,56 @@ def summarize(rows: List[Dict]) -> Dict:
         # 정본 용어집이 받아 낸 줄 — 번역기를 안 부른 수(D3-4 ④).
         "glossary": sum(1 for r in rows if r.get("glossary_hit")),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 옵션 값 섹션 (F51-b, 오너 2026-09-27) — 쿠팡 옵션 값(색상 등) 한국어
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 해석 순서는 `src/uploaders/coupang_options.resolve_option_value` 한 곳이다:
+#   ① 용어집 정확 일치(아래 OPTION_VALUE_LINES + 위 LINE_GLOSSARY) → ② 용어집 토큰 치환(OPTION_VALUE_TOKENS
+#   + 관용구) → ③ 번역기 `values_ko`(브랜드·영문 토큰 보존) → ④ 그래도 비면 보류.
+# ②·③으로 나온 값은 옵션 블록에 「번역기 값 — 확인」 배지가 붙는다. 오너가 고친 값은 **후보 목록**에만
+# 쌓이고 여기 자동으로 들어오지 않는다 — 이 표는 사람이 한 줄씩 넣는다.
+
+#: 값 한 줄 전체 → 정본. **오너가 준 줄만.**
+#:   ★ 수행방패(티몰 617129397971) 정본 10줄 자리 — 2026-09-27 브리프의 「위 10줄」은 메시지에 실려 오지 않았다.
+#:   받으면 `"原文": "정본",` 으로 한 줄씩 넣는다(지어 넣지 않는다).
+OPTION_VALUE_LINES: Dict[str, str] = {}
+
+#: 값 안의 **부분 일치** 치환 — 오너 예시(白色·带理线器)와 기존 정본(黑色)만.
+OPTION_VALUE_TOKENS: Dict[str, str] = {
+    "白色": "화이트",
+    "带理线器": "선정리형",
+    "黑色": "블랙",
+}
+
+_HAN = re.compile(r"[㐀-鿿豈-﫿]")
+_FW = str.maketrans({"（": "(", "）": ")", "，": ",", "、": ",", "／": "/", "＋": "+", "　": " "})
+
+
+def option_value_line(value: str) -> str:
+    """① 값 전체 정확 일치 — 옵션 값 섹션 먼저, 없으면 D3 줄 용어집(`黑色` → `블랙`)."""
+    v = _norm_line(value)
+    for src, ko in OPTION_VALUE_LINES.items():
+        if _norm_line(src) == v:
+            return ko
+    return glossary_line(value)
+
+
+def option_value_tokens(value: str) -> str:
+    """② 토큰 치환 — 표에 있는 조각만 바꾸고, **한자가 하나라도 남으면 빈 문자열**(모르는 말은 안 만든다)."""
+    out = str(value or "").translate(_FW)
+    table = dict(OPTION_VALUE_TOKENS)
+    for src, ko in IDIOM_CANON:
+        table.setdefault(src, ko)
+    hit = False
+    for src in sorted(table, key=len, reverse=True):
+        if src in out:
+            out = out.replace(src, f" {table[src]} ")
+            hit = True
+    if not hit or _HAN.search(out):
+        return ""
+    out = re.sub(r"\s+", " ", out)
+    out = re.sub(r"\(\s+", "(", re.sub(r"\s+\)", ")", out)).strip()
+    return out

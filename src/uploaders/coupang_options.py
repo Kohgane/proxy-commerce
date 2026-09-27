@@ -85,9 +85,67 @@ def parse_meta(raw_attrs) -> List[Dict]:
 
 
 def color_ko(value: str) -> str:
-    """한자 색상값 → 정본 한국어. **D3 용어집만** 본다. 없으면 빈 문자열(= 보류)."""
-    from src.services.image_text_glossary import glossary_line
-    return glossary_line(value)
+    """한자 색상값 → 정본 한국어(용어집 정확 일치만). 없으면 빈 문자열."""
+    from src.services.image_text_glossary import option_value_line
+    return option_value_line(value)
+
+
+# F51-b(오너 2026-09-27): **「색상은 용어집만」(F48-b)은 폐기.** 하루 10건 목표에 상품마다 값 10개를
+#   손으로 용어집에 넣는 건 못 버틴다. 대신 순서를 정하고, 사람이 볼 값에는 배지를 단다:
+#     0) 오너가 이 상품에서 고친 값(`option_value_overrides`) — 그대로
+#     1) 용어집 정확 일치                       — 배지 없음
+#     2) 용어집 토큰 치환(白色→화이트 …)         — 「번역기 값 — 확인」
+#     3) 번역기 `values_ko`(브랜드·영문 토큰 보존) — 「번역기 값 — 확인」
+#     4) 그래도 비면 보류(사유)
+HOW_LABEL = {"override": "직접 수정", "glossary": "용어집", "token": "용어집 조각 치환",
+             "translator": "번역기"}
+_ASCII_TOK = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+\-]*")
+
+
+def value_ko_map(product: Dict) -> Dict[str, str]:
+    """상품 옵션의 번역기 값 — `{원문 값: values_ko}`(번역 안 된 값은 빠진다)."""
+    out: Dict[str, str] = {}
+    for o in product.get("options") or []:
+        if not isinstance(o, dict):
+            continue
+        vals, kos = list(o.get("values") or []), list(o.get("values_ko") or [])
+        for i, v in enumerate(vals):
+            sv = str(v.get("name") if isinstance(v, dict) else v or "").strip()
+            if i < len(kos) and sv:
+                out[sv] = str(kos[i] or "").strip()
+    for key in ("option_values_ko", "_values_ko"):      # 편집 화면 본문 / 등록 경로(to_collected)
+        extra = product.get(key)
+        if isinstance(extra, dict):
+            out.update({str(k): str(v) for k, v in extra.items() if str(v or "").strip()})
+    return out
+
+
+def resolve_option_value(value: str, *, values_ko: str = "", override: str = "") -> Dict:
+    """한 값의 한국어 — `{value, how, confirm, why}`. `value`가 비면 보류(`why`가 사유)."""
+    from src.services.image_text_glossary import option_value_tokens
+    v = str(value or "").strip()
+    if str(override or "").strip():
+        return {"value": str(override).strip(), "how": "override", "confirm": False, "why": ""}
+    if not _CJK.search(v):
+        return {"value": v, "how": "", "confirm": False, "why": ""}
+    g = color_ko(v)
+    if g:
+        return {"value": g, "how": "glossary", "confirm": False, "why": ""}
+    t = option_value_tokens(v)
+    if t:
+        return {"value": t, "how": "token", "confirm": True, "why": ""}
+    ko = str(values_ko or "").strip()
+    if ko and ko != v and not _CJK.search(ko):
+        lost = [tok for tok in _ASCII_TOK.findall(v) if tok.lower() not in ko.lower()]
+        if not lost:
+            return {"value": ko, "how": "translator", "confirm": True, "why": ""}
+        return {"value": "", "how": "", "confirm": False,
+                "why": f"번역기 값이 원문의 영문·숫자({', '.join(lost)})를 잃었습니다"}
+    if ko and _CJK.search(ko):
+        why = "번역기 값에 한자가 남았습니다"
+    else:
+        why = "용어집에도 번역기 값에도 없습니다 — 한국어 번역을 먼저 돌리거나 값을 직접 넣어 주세요"
+    return {"value": "", "how": "", "confirm": False, "why": why}
 
 
 def _number_value(raw: str, entry: Dict) -> tuple:
@@ -185,7 +243,7 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
         else:
             chosen.append(pick)
 
-    attributes, missing = [], []
+    attributes, missing, resolved = [], [], []
     for m, (value, source, why) in chosen:
         name = m["attributeTypeName"]
         if why:
@@ -194,12 +252,18 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
         if not value:
             missing.append(name)
             continue
-        if "색상" in name and _CJK.search(value):
-            ko = color_ko(value)
-            if not ko:
-                holds.append(f"색상 미매핑: {value} — D3 용어집에 정본을 추가해야 보낼 수 있습니다")
+        if _CJK.search(value) and ("색상" in name or source == "옵션"):
+            # F51-b: 해석 순서(오너 수정 → 용어집 → 조각 치환 → 번역기) — 한 곳(`resolve_option_value`).
+            _ov = product.get("option_value_overrides") if isinstance(product.get("option_value_overrides"), dict) else {}
+            r = resolve_option_value(value, values_ko=value_ko_map(product).get(value, ""),
+                                     override=_ov.get(value, ""))
+            if not r["value"]:
+                holds.append(f"옵션 값 미해석: {value} — {r['why']}")
                 continue
-            value = ko
+            if r["how"]:
+                resolved.append({"name": name, "orig": value, "value": r["value"][:28], "how": r["how"],
+                                 "how_label": HOW_LABEL.get(r["how"], r["how"]), "confirm": r["confirm"]})
+            value = r["value"]
         if m["dataType"] == "NUMBER" or _PURE_NUMBER.match(value):
             if m["dataType"] == "NUMBER" or m["basicUnit"] or m["usableUnits"]:
                 value, why_n = _number_value(value, m)
@@ -215,7 +279,8 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
     if len(attributes) > MAX_ATTRIBUTES:
         holds.append(f"옵션 속성이 {len(attributes)}개입니다 — 쿠팡은 {MAX_ATTRIBUTES}개까지만 받습니다"
                      "(볼트 실측: 카테고리 78293)")
-    return {"attributes": attributes, "holds": holds, "notes": notes, "search_extra": search_extra}
+    return {"attributes": attributes, "holds": holds, "notes": notes, "search_extra": search_extra,
+            "resolved": resolved}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -305,6 +370,8 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
         one["options"] = [{"name": (mapped[i] or axes[i]["name"]), "values": [spec[i]]}
                           for i in range(min(len(axes), len(spec)))]
         one.pop("skus", None)
+        # F51-b: 번역기 값·오너 수정은 **원 옵션**에 붙어 있다 — 값 1개짜리로 줄인 뒤에도 찾게 넘긴다.
+        one["_values_ko"] = value_ko_map(product)
         # 축 속성(예: 색상)에 한 값을 쳐 두었으면 SKU 모드에선 쓰지 않는다 — 그 값이 모든 SKU를 덮으면
         #   10개가 같은 옵션이 된다. 값은 SKU마다 그 SKU의 옵션 값에서 나온다.
         axis_names = {_norm(n) for n in mapped if n}
@@ -312,32 +379,87 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
                              if isinstance(a, dict) and _norm(a.get("attributeTypeName")) not in axis_names]
         plan = plan_attributes(raw_meta_attrs, one, meta_ok=True)
         for h in plan["holds"]:
-            if h.startswith("색상 미매핑: "):
-                unmapped.append(h[len("색상 미매핑: "):].split(" — ")[0])
+            if h.startswith("옵션 값 미해석: "):
+                unmapped.append(h[len("옵션 값 미해석: "):].split(" — ")[0])
             elif h not in holds:
                 holds.append(h)
         for n in plan["notes"]:
             if n not in notes:
                 notes.append(n)
         search_extra += [x for x in plan["search_extra"] if x not in search_extra]
-        key = tuple((a["attributeTypeName"], a["attributeValueName"]) for a in plan["attributes"])
-        # 축 값이 안 들어간 SKU(미매핑으로 이미 보류)는 비교하지 않는다 — 공통 속성(수량)만 남아
-        #   전부 같아 보이는 것은 「같은 옵션」이 아니다(캡처에서 발견: 9줄 거짓 보류).
-        has_axis = any(_norm(a["attributeTypeName"]) in axis_names for a in plan["attributes"])
-        if has_axis and key in seen:
-            holds.append(f"SKU 「{' / '.join(spec)}」와 「{seen[key]}」의 옵션 값이 같습니다 — 쿠팡은 같은 옵션을 두 번 받지 않습니다")
-        if has_axis:
-            seen[key] = " / ".join(spec)
         label = " / ".join(a["attributeValueName"] for a in plan["attributes"]
                            if _norm(a["attributeTypeName"]) in axis_names)
         items.append({"sku_id": str(k.get("sku_id") or ""), "spec": spec, "label": label,
                       "attributes": plan["attributes"], "sell_price_krw": k.get("sell_price_krw"),
                       "cost": k.get("price"), "currency": k.get("currency") or "",
-                      "stock": k.get("stock"), "image": k.get("image") or ""})
+                      "stock": k.get("stock"), "image": k.get("image") or "",
+                      "resolved": plan.get("resolved") or [],
+                      "confirm": any(r.get("confirm") for r in (plan.get("resolved") or []))})
+    # F51-b 3: 번역 결과가 SKU끼리 같아지면 **원문 차이 부분**을 옮겨 붙여 유일하게(「블랙」 vs 「블랙 선정리형」).
+    #   그래도 같으면 보류 + 사유. 축 값이 안 들어간 SKU(미해석으로 이미 보류)는 비교하지 않는다 —
+    #   공통 속성(수량)만 남아 전부 같아 보이는 것은 「같은 옵션」이 아니다(F51 캡처: 9줄 거짓 보류).
+    holds += _dedupe_axis_values(items, axis_names)
     if unmapped:
-        holds.append(f"색상 값 {len(unmapped)}개가 용어집에 없습니다 — 정본 한국어가 있어야 보낼 수 있습니다: "
+        holds.append(f"옵션 값 {len(unmapped)}개를 한국어로 옮기지 못했습니다 — 값을 직접 넣거나 번역을 먼저 돌려 주세요: "
                      + ", ".join(unmapped))
     return {"multi": True, "items": items, "holds": holds, "notes": notes, "search_extra": search_extra}
+
+
+def _common_affix(strs: List[str]) -> tuple:
+    a = min(len(x) for x in strs)
+    p = 0
+    while p < a and all(x[p] == strs[0][p] for x in strs):
+        p += 1
+    q = 0
+    while q < a - p and all(x[len(x) - 1 - q] == strs[0][len(strs[0]) - 1 - q] for x in strs):
+        q += 1
+    return p, q
+
+
+def _dedupe_axis_values(items: List[Dict], axis_names: set) -> List[str]:
+    """같은 축 값이 된 SKU들 — 원문 차이를 한국어로 붙여 가른다. 못 가르면 보류 문장을 돌려준다."""
+    from src.services.image_text_glossary import option_value_line, option_value_tokens
+    holds: List[str] = []
+
+    def _key(it):
+        return tuple((a["attributeTypeName"], a["attributeValueName"]) for a in it["attributes"])
+
+    def _has_axis(it):
+        return any(_norm(a["attributeTypeName"]) in axis_names for a in it["attributes"])
+
+    groups: Dict[tuple, List[Dict]] = {}
+    for it in items:
+        if _has_axis(it):
+            groups.setdefault(_key(it), []).append(it)
+    for key, grp in groups.items():
+        if len(grp) < 2:
+            continue
+        origs = ["".join(it["spec"]) for it in grp]
+        p, q = _common_affix(origs)
+        fixed = True
+        for it, o in zip(grp, origs):
+            diff = o[p:len(o) - q].strip("（）() ")
+            if not diff:
+                continue
+            ko = option_value_line(diff) or option_value_tokens(diff)
+            if not ko:
+                fixed = False
+                break
+            for a in it["attributes"]:
+                if _norm(a["attributeTypeName"]) in axis_names:
+                    a["attributeValueName"] = (a["attributeValueName"] + " " + ko)[:28]
+                    break
+            it["label"] = " / ".join(a["attributeValueName"] for a in it["attributes"]
+                                     if _norm(a["attributeTypeName"]) in axis_names)
+            it["confirm"] = True
+            it.setdefault("resolved", []).append({"orig": diff, "value": ko, "how": "token",
+                                                  "how_label": "원문 차이 붙임", "confirm": True})
+        keys = [_key(it) for it in grp]
+        if not fixed or len(set(keys)) < len(keys):
+            specs = " · ".join("「" + " / ".join(it["spec"]) + "」" for it in grp)
+            holds.append(f"옵션 값이 같아집니다({grp[0]['label']}): {specs}"
+                         " — 원문 차이를 한국어로 옮기지 못해 보류합니다(값을 직접 고쳐 주세요)")
+    return holds
 
 
 def plan_for(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Dict:
@@ -475,4 +597,8 @@ def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
         choices = []
     return {"fields": fields, "choices": choices, "holds": plan["holds"], "notes": plan["notes"],
             "attributes": plan["attributes"], "meta_ok": meta_ok,
-            "multi": bool(plan.get("multi")), "items": plan.get("items") or []}
+            "multi": bool(plan.get("multi")), "items": plan.get("items") or [],
+            # F51-b: 단일 등록에서도 해석된 값(배지·인라인 수정 재료)
+            "resolved": plan.get("resolved") or [],
+            # F51-b 6: SKU별 판매가에 쓴 환율(값·출처·갱신 시각) — `with_sku_prices`가 붙인다.
+            "fx": product.get("fx_info") or None}

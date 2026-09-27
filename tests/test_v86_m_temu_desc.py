@@ -22,7 +22,7 @@ FIX = Path("fixtures/realpages")
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.157"
+    assert MANIFEST["version"] == "1.5.158"
 
 
 def test_goodsproperty_spec_case_in_walker():

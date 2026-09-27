@@ -268,16 +268,21 @@ def test_taobao_option_names_not_in_meta_go_to_search_only():
 
 
 def test_a_chinese_colour_uses_the_d3_glossary():
+    """F51-b(오너 2026-09-27): 「색상은 용어집만」은 폐기 — 용어집 → 조각 치환 → 번역기 → 그래도 없으면 보류."""
     attrs = [{"attributeTypeName": "색상", "required": "MANDATORY", "exposed": "EXPOSED"}]
     ok = O.plan_attributes(attrs, {**PRODUCT, "options": [{"name": "색상", "values": ["黑色"]}]})
     assert ok["attributes"][0]["attributeValueName"] == "블랙" and not ok["holds"]
-    bad = O.plan_attributes(attrs, {**PRODUCT, "options": [{"name": "색상", "values": ["白色"]}]})
-    assert bad["holds"] and "색상 미매핑: 白色" in bad["holds"][0]
+    tok = O.plan_attributes(attrs, {**PRODUCT, "options": [{"name": "색상", "values": ["白色"]}]})
+    assert tok["attributes"][0]["attributeValueName"] == "화이트" and tok["resolved"][0]["confirm"] is True
+    bad = O.plan_attributes(attrs, {**PRODUCT, "options": [{"name": "색상", "values": ["玫瑰金"]}]})
+    assert bad["holds"] and "옵션 값 미해석: 玫瑰金" in bad["holds"][0]
 
 
 def test_the_colour_table_is_the_d3_glossary_not_a_second_one():
     """★ 「D3 용어집 재사용」 — 새 표를 만들지 않는다(생성과 판정이 같은 표를 본다)."""
-    assert "glossary_line" in calls_in(O.color_ko)
+    # F51-b: 옵션 값 섹션을 먼저 보고, 없으면 **같은 D3 줄 용어집**(glossary_line) — 표는 한 파일이다.
+    from src.services import image_text_glossary as G
+    assert "option_value_line" in calls_in(O.color_ko) and "glossary_line" in calls_in(G.option_value_line)
 
 
 def test_a_multi_value_option_waits_for_per_sku_prices():
