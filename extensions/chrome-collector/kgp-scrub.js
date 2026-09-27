@@ -20,7 +20,9 @@
   ];
   // 로그인 계정을 가리키는 값(닉네임·회원번호) — 주소 밖(내비바 닉네임, JSON)에도 찍히므로 값 자체를 모아
   //   문서 전체에서 가린다.
-  var _IDENT_PAIR = { lid: 1, lgc: 1, tracknick: 1, dnk: 1, _nk_: 1, nick: 1, unb: 1 };
+  var _IDENT_PAIR = { lid: 1, lgc: 1, tracknick: 1, dnk: 1, _nk_: 1, nick: 1, unb: 1, usernick: 1, nickname: 1, loginid: 1 };
+  // SEC-1-c: 목록·홈 내비바는 클래스에 nick이 든 **요소 텍스트**로 닉네임을 찍는다(site-nav-login-info-nick 등).
+  var _IDENT_TAG_RE = /<[a-zA-Z][^>]*\bclass="[^"]*nick[^"]*"[^>]*>\s*([^<\s][^<]{3,62}?)\s*</gi;
   var _IDENT_JSON_RE = /"(nick|displayNick|userNumId|userNick|tracknick|loginId)"\s*:\s*"?([^",}\s]{5,64})/g;
   var _SET = {};
   KGP_SECRET_KEYS.forEach(function (k) { _SET[k] = 1; });
@@ -44,6 +46,8 @@
     }
     _IDENT_JSON_RE.lastIndex = 0;
     while ((m = _IDENT_JSON_RE.exec(s))) vals[m[2]] = 1;
+    _IDENT_TAG_RE.lastIndex = 0;
+    while ((m = _IDENT_TAG_RE.exec(s))) vals[String(m[1]).trim()] = 1;
     return Object.keys(vals).filter(function (v) { return v.length >= 5 && v.indexOf("*") < 0; })
       .sort(function (a, b) { return b.length - a.length; });
   }
