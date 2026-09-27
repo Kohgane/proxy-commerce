@@ -22,6 +22,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 셀러 콘솔 인증 강제는 운영 기본 ON(SELLER_CONSOLE_AUTH 미설정 시 "1"). 단 테스트는
 # 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+# F51-b: 판매가 환율(`price.sell_fx_rates`)은 FX_USE_LIVE가 **명시적 0**일 때만 실시간을 안 본다(운영 = 실시간).
+#   테스트는 네트워크·앞 테스트의 환율 캐시에 따라 값이 바뀌면 안 되므로 0으로 고정한다.
+#   옛 `_build_fx_rates`는 미설정 = 0이었으므로 기존 경로엔 변화가 없다.
+os.environ.setdefault("FX_USE_LIVE", "0")
 
 # C-F11: 수집 경로가 단축 링크를 **직접 펴려고 밖으로 나간다**(운영 기본 ON).
 #   테스트에서 그대로 켜 두면 계약마다 실 HTTP를 시도하다 타임아웃까지 멈춘다 —

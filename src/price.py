@@ -142,6 +142,8 @@ def sell_fx_rates():
             live = None
     for cur in _FX_KEYS:
         key = f'{cur}KRW'
+        if key not in base:
+            continue
         if live and live.get(cur):
             base[key] = Decimal(str(live[cur]))
             info[cur] = {'rate': float(base[key]), 'source': 'live', 'label': '실시간 환율',
