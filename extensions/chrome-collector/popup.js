@@ -142,7 +142,9 @@ if (btnSnapshot) {
         try {
           const host = (res.host || "page").replace(/[^a-z0-9.-]/gi, "_");
           const slug = (res.url || "").replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").slice(0, 60) || host;
-          const blob = new Blob([res.html], { type: "text/html" });
+          // SEC-1: 파일로 나가기 직전 한 번 더 — 로그인 쿠키·토큰 값은 `***`(content_script도 이미 지웠다).
+          const safe = (typeof kgpScrubText === "function") ? kgpScrubText(res.html) : res.html;
+          const blob = new Blob([safe], { type: "text/html" });
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url; a.download = "kgp-snapshot-" + slug + ".html";
@@ -183,7 +185,8 @@ if (btnDiagBundle) {
           Object.keys(res || {}).forEach((k) => { if (k !== "html" && k !== "ok") diag[k] = res[k]; });
           const embed = '\n<script type="application/json" id="kgp-diagnostic">'
             + JSON.stringify(diag).replace(/<\/script>/gi, "<\\/script>") + "<\/script>\n";
-          const bundle = res.html + embed;
+          // SEC-1: 스냅샷 + 임베드 JSON 전체를 저장 직전에 한 번 더 지운다(page_diag.errors의 주소 포함).
+          const bundle = (typeof kgpScrubText === "function") ? kgpScrubText(res.html + embed) : (res.html + embed);
           const blob = new Blob([bundle], { type: "text/html" });
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
