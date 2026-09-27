@@ -292,7 +292,7 @@
           <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="console-kpi-label mb-0">쿠팡 필수 옵션</div>
             <button type="button" class="btn btn-ghost btn-sm py-0" id="btnCoupangOptions" onclick="kgpLoadCoupangOptions()">
-              <i class="bi bi-arrow-repeat"></i> 쿠팡 기준 불러오기</button>
+              <i class="bi bi-arrow-repeat"></i> 다시 불러오기</button>
           </div>
           <div class="small text-muted mt-1">쿠팡이 이 상품의 카테고리에 요구하는 칸입니다. 비워 두면 등록 전에 멈춥니다.</div>
           <div id="coupangOptionsBody" class="small mt-2"></div>
@@ -1438,6 +1438,10 @@ function buildProductData() {
     // F51-b — 옵션 값 해석 재료: 번역기 값(원문 → values_ko)과 오너가 이 상품에서 고친 값.
     option_values_ko: kgpValuesKoMap(),
     option_value_overrides: Object.assign({}, _EXTRA.option_value_overrides || {}),
+    // F51-b-3 — 옵션 이름 해석 재료(번역기 name_ko · 오너가 고른 메타 이름).
+    option_names_ko: Object.fromEntries((Array.isArray(_EXTRA.options) ? _EXTRA.options : [])
+      .filter(o => o && o.name && o.name_ko).map(o => [String(o.name), String(o.name_ko)])),
+    option_name_overrides: Object.assign({}, _EXTRA.option_name_overrides || {}),
   };
 }
 function kgpValuesKoMap() {
@@ -1458,19 +1462,30 @@ function kgpCoupangAttributes() {
   return Object.entries(_CP.attrs).filter(([k, v]) => k && String(v || '').trim())
     .map(([k, v]) => ({attributeTypeName: k, attributeValueName: String(v).trim()}));
 }
+function kgpCpFail(body, msg, status, raw) {
+  // seller.js가 없는 문맥(드로어 계약 하네스·오프라인)에서도 죽지 않게 로컬 이스케이프.
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  body.innerHTML = '<div class="text-danger" data-role="cp-error">쿠팡 기준을 불러오지 못했어요 — ' + esc(msg) +
+    '<details class="mt-1"><summary class="text-muted">원문 보기</summary><pre class="small mb-0" style="white-space:pre-wrap">' +
+    esc((status ? 'status ' + status + '\n' : '') + String(raw || '').slice(0, 600)) + '</pre></details></div>';
+}
 async function kgpLoadCoupangOptions() {
   const body = document.getElementById('coupangOptionsBody');
   const btn = document.getElementById('btnCoupangOptions');
+  if (!body || !btn) return;
   btn.disabled = true;
   body.innerHTML = '<span class="text-muted">쿠팡에 물어보는 중…</span>';
   try {
     const r = await fetch('/seller/collect/coupang/options', {method: 'POST',
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify({product: buildProductData()})});
-    const d = await r.json().catch(() => ({ok: false, error: '응답을 읽지 못했습니다.'}));
-    if (!d.ok) { body.innerHTML = `<div class="text-danger">${kgpEscapeForHtml(d.error || '불러오지 못했습니다.')}</div>`; return; }
+    const rawBody = await r.text();
+    let d;
+    try { d = JSON.parse(rawBody); } catch (e) { d = {ok: false, error: ''}; }
+    // F48-d: 실패는 칸 0개로 조용히 두지 않는다 — 한 줄 사유 + **원문은 접힌 「원문 보기」 안에**(상태코드·본문).
+    if (!d.ok) { kgpCpFail(body, d.error || '쿠팡이 응답하지 않았습니다', r.status, rawBody); return; }
     kgpRenderCoupangOptions(d);
   } catch (e) {
-    body.innerHTML = `<div class="text-danger">${kgpEscapeForHtml(kgpFriendlyError(e))}</div>`;
+    kgpCpFail(body, '네트워크 오류로 쿠팡에 묻지 못했습니다', 0, String((e && e.message) || e));
   } finally { btn.disabled = false; }
 }
 function kgpRenderCoupangOptions(d) {
@@ -1487,7 +1502,9 @@ function kgpRenderCoupangOptions(d) {
       ${hint ? `<span class="text-muted ms-1">(${esc(hint)})</span>` : ''}
       <input type="text" class="form-control form-control-sm mt-1" data-cp-attr="${esc(f.name)}" value="${esc(val)}"
         placeholder="${f.dataType === 'NUMBER' ? '예: 1' + esc((f.usableUnits || [])[0] || '') : '비우면 등록 전에 멈춥니다'}">
-      ${(mine === undefined && f.value) ? `<span class="text-muted">상품에서 찾은 값(${esc(f.source || '')}) — 고칠 수 있습니다</span>` : ''}
+      ${(mine === undefined && f.value && f.source === '제목에서 추출')
+        ? `<span class="pc-badge pc-badge-muted" data-role="cp-model">제목에서 추출 — 확인</span> <span class="text-muted">틀리면 칸에서 고쳐 주세요</span>`
+        : ((mine === undefined && f.value) ? `<span class="text-muted">상품에서 찾은 값(${esc(f.source || '')}) — 고칠 수 있습니다</span>` : '')}
     </label>`;
   });
   (d.choices || []).forEach(c => {
@@ -1514,13 +1531,21 @@ function kgpRenderCoupangOptions(d) {
         `<td class="text-end text-nowrap fw-semibold">${Number(it.sell_price_krw || 0).toLocaleString('ko-KR')}원</td>` +
         `<td class="text-end text-nowrap text-muted">재고 ${esc(it.stock == null ? '?' : it.stock)}</td></tr>`).join('') +
       '</tbody></table>' + kgpCpFx(d.fx) + '</div>';
-  } else if ((d.resolved || []).some(r => r.confirm)) {
+  } else if ((d.resolved || []).some(r => r.confirm || r.how === 'glossary')) {
     h += '<div class="mt-2" data-role="cp-resolved">' + d.resolved.map(r =>
       `<div>${esc(r.orig)} → <b>${esc(r.value)}</b>${kgpCpConfirm([r])}</div>`).join('') + '</div>';
   }
   if ((d.holds || []).length) {
     h += '<div class="text-danger mt-2" data-role="cp-holds">지금 상태로는 멈춥니다:<ul class="mb-0 ps-3">' +
       d.holds.map(x => `<li>${esc(x)}</li>`).join('') + '</ul></div>';
+    // F51-b-3: 메타에 없는 축 이름 → 이 카테고리 메타 속성명에서 고른다(고른 값은 이 상품에만, 용어집엔 후보로).
+    (d.name_picks || []).forEach(p => {
+      h += `<label class="d-block mt-1" data-role="cp-name-pick"><span class="fw-semibold">「${esc(p.orig)}」</span>` +
+        (p.candidate ? `<span class="text-muted">(→${esc(p.candidate)})</span>` : '') + ' 을(를) 어느 쪽으로 보낼까요? ' +
+        `<select class="form-select form-select-sm d-inline-block w-auto ms-1" data-cp-name="${esc(p.orig)}">` +
+        '<option value="">메타 속성 고르기</option>' +
+        (p.choices || []).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('') + '</select></label>';
+    });
   } else {
     h += '<div class="mt-2" style="color:var(--success)"><i class="bi bi-check-lg"></i> 옵션 규칙 통과 — 「마켓 등록 → 사전검증」으로 진행하세요.</div>';
   }
@@ -1528,6 +1553,19 @@ function kgpRenderCoupangOptions(d) {
   h += `<button type="button" class="btn btn-ghost btn-sm mt-2" onclick="kgpLoadCoupangOptions()">
     <i class="bi bi-check2-circle"></i> 넣은 값으로 다시 확인</button>`;
   body.innerHTML = h;
+  body.querySelectorAll('[data-cp-name]').forEach(el => el.addEventListener('change', async () => {
+    if (!el.value) return;
+    el.disabled = true;
+    try {
+      const r = await fetch(`/seller/collect/preview/${encodeURIComponent(_ITEM_ID)}/option-name`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({orig: el.dataset.cpName, name: el.value})});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { el.disabled = false; return; }
+      _EXTRA.option_name_overrides = j.overrides || {};
+      kgpLoadCoupangOptions();
+    } catch (e) { el.disabled = false; }
+  }));
   // F51-b: 「번역기 값 — 확인」 칸 — 고치면 이 상품에 바로 쓰고, 용어집에는 **후보로만** 남는다.
   body.querySelectorAll('[data-cp-fix]').forEach(el => el.addEventListener('change', async () => {
     const v = el.value.trim();
@@ -1553,10 +1591,22 @@ function kgpRenderCoupangOptions(d) {
   }));
 }
 
+// F48-d — 쿠팡 필수 옵션은 **자동으로** 불러온다: 드로어 열 때 · 카테고리 바뀔 때(재수집 뒤는 위 폴링에서).
+//   예전엔 「쿠팡 기준 불러오기」를 누르기 전엔 칸이 0개라 적용모델을 넣을 곳이 없었다(오너 09-27 캡처).
+document.addEventListener('DOMContentLoaded', function () {
+  if (!document.getElementById('coupangOptionsBody')) return;
+  kgpLoadCoupangOptions();
+  const cat = document.getElementById('editCategory');
+  if (cat) cat.addEventListener('change', () => kgpLoadCoupangOptions());
+});
+
 // F51-b — 용어집 정확 일치가 아닌 값(조각 치환·번역기·원문 차이 붙임)에 배지 + 고칠 칸.
 function kgpCpConfirm(resolved) {
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  return (resolved || []).filter(r => r && r.confirm).map(r =>
+  // F51-b-2: 용어집 정확 일치는 「용어집」 배지(확인 칸 없음) — 어디서 온 값인지는 늘 보인다.
+  const g = (resolved || []).filter(r => r && r.how === 'glossary').map(r =>
+    ` <span class="pc-badge pc-badge-on" data-role="cp-glossary" title="원문: ${esc(r.orig)}">용어집</span>`).join('');
+  return g + (resolved || []).filter(r => r && r.confirm).map(r =>
     ` <span class="pc-badge pc-badge-muted" data-role="cp-confirm" title="${esc(r.how_label)} — 원문: ${esc(r.orig)}">번역기 값 — 확인</span>` +
     `<input class="form-control form-control-sm d-inline-block ms-1" style="width:9rem" data-cp-fix="${esc(r.orig)}"` +
     ` placeholder="고칠 값" aria-label="${esc(r.orig)} 한국어 값 고치기">`).join('');
@@ -2261,6 +2311,8 @@ function kgpEnrichRetry() {
             clearInterval(t);
             var ch = (s.last_merge && s.last_merge.changed) ? Object.keys(s.last_merge.changed).length : 0;
             say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> 갱신됐어요 · ' + ch + '개 필드</span> — 새로고침하면 반영된 값이 보입니다');
+            // F48-d: 재수집 뒤 쿠팡 필수 옵션을 바로 다시 불러온다(칸 0개로 남지 않게).
+            if (typeof kgpLoadCoupangOptions === 'function') kgpLoadCoupangOptions();
             b.disabled = false; return;
           }
         } catch (e) { /* 다음 틱 */ }

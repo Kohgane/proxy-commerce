@@ -148,3 +148,27 @@ def test_real_browser_page_diag_and_snapshot_carry_no_cookie():
     assert all("?" not in e for e in d["errors"] if "pass.tmall.com" in e)
     assert d["url"] == "https://detail.tmall.com/item.htm?id=617129397971"
     assert find_secrets(snap) == []
+
+
+# SEC-1-c — 목록·홈 마크업의 닉네임(오너 1.5.158 world.taobao 진단: 5곳 미마스킹)
+LIST_NICK = "tb000099998888"
+LIST_PAGE = ('<div class="site-nav-bd"><a class="site-nav-login-info-nick " href="//i.taobao.com/">' + LIST_NICK
+             + '</a><p class="site-nav-user-nick">' + LIST_NICK + '</p>'
+             + '<img src="https://wwc.alicdn.com/avatar/getAvatar.do?userNick=' + LIST_NICK + '&width=40&height=40">'
+             + '<span class="nick-count">12</span></div>'
+             + '<script>var t="' + LIST_NICK + '";</script>')
+
+
+def test_list_page_nickname_is_masked_everywhere():
+    """상세 JSON(`"nick":`)이 없는 목록 페이지 — 내비바 요소 텍스트·`userNick=`에서 값을 모아 문서 전체에서 가린다."""
+    assert find_secrets(LIST_PAGE)
+    out = scrub_text(LIST_PAGE)
+    assert LIST_NICK not in out and out.count("***") == 4 and find_secrets(out) == []
+    assert '<span class="nick-count">12</span>' in out                       # 짧은 값은 계정이 아니다
+
+
+def test_list_page_nickname_same_in_extension():
+    node = ("const S=require('./extensions/chrome-collector/kgp-scrub.js');"
+            "process.stdout.write(S.kgpScrubText(process.argv[1]));")
+    got = subprocess.run(["node", "-e", node, LIST_PAGE], capture_output=True, text=True, check=True).stdout
+    assert got == scrub_text(LIST_PAGE)

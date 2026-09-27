@@ -118,15 +118,17 @@ def test_one_sku_without_price_keeps_it_single():
 
 # ── 3' 용어집 밖 색상 값 ───────────────────────────────────────────────────────
 
-def test_unmapped_values_are_held_with_the_list():
-    """실제 용어집(黑色만)으로 돌린다 — 10개 값이 전부 복합어라 **하나도 안 맞는다**. 짐작 번역 금지."""
+def test_unmapped_values_are_held_with_the_list(monkeypatch):
+    """용어집·번역기 어디에도 없는 값은 보류(짐작 번역 금지). F51-b-2로 수행방패 10줄은 용어집에 들어갔으므로,
+    그 줄을 비운 상태로 잰다(정본 10줄 통과는 test_f51b2_canon_names_model이 잰다)."""
+    from src.services import image_text_glossary as G
+    monkeypatch.setattr(G, "OPTION_VALUE_LINES", {})
     plan = O.plan_for(META["attributes"], _product(_skus()))
     assert plan["multi"] is True
-    # F51-b: 번역기 값(values_ko)도 없으면 여전히 보류 — 사유는 「옮기지 못했다」(짐작 번역 금지).
     [h] = [h for h in plan["holds"] if h.startswith("옵션 값")]
     assert h.startswith("옵션 값 10개를 한국어로 옮기지 못했습니다") and "三合一充电支架（白色）" in h
     # 미매핑 SKU끼리 「같은 옵션」이라고 하지 않는다(공통 속성 수량만 남은 것 — 캡처에서 찾은 거짓 보류).
-    assert not [x for x in plan["holds"] if "옵션 값이 같습니다" in x], plan["holds"]
+    assert not [x for x in plan["holds"] if "옵션 값이 같" in x], plan["holds"]
     assert len(plan["holds"]) == 1
 
 
@@ -134,7 +136,9 @@ def test_unknown_option_name_is_held():
     p = _product(_skus())
     p["options"] = [{"name": "尺码", "values": p["options"][0]["values"]}]
     plan = O.plan_for(META["attributes"], p)
-    assert any("옵션 「尺码」이 이 카테고리 메타에 없어 SKU별로 나눌 수 없습니다" in h for h in plan["holds"])
+    # F51-b-3: 이름도 용어집(尺码→사이즈)을 거친다 — 메타에 「사이즈」가 없으면 후보와 함께 보류 + 고를 목록.
+    assert any(h.startswith("옵션 「尺码」(→사이즈)이 이 카테고리 메타 속성에 없어") for h in plan["holds"])
+    assert plan["name_picks"] == [{"orig": "尺码", "candidate": "사이즈", "choices": ["색상", "수량"]}]
 
 
 # ── 4 같은 값 두 번 ────────────────────────────────────────────────────────────

@@ -198,7 +198,27 @@ def _value_for(entry: Dict, product: Dict) -> tuple:
     # ③ 수량 — 단일 아이템이면 사실이다(1개)
     if "수량" in name or "개수" in name:
         return "1", "단일 아이템", ""
+    # ④ F48-d: 적용모델(자유 텍스트) — 제목의 **영문+숫자 모델 토큰**(applewatch7/9·S8·Ultra2)으로 선채움.
+    #   화면이 「제목에서 추출 — 확인」 배지를 단다. 토큰이 없으면 빈칸(= 보류) 그대로.
+    if key.replace(" ", "") == "적용모델" and entry.get("dataType") != "NUMBER":
+        toks = model_tokens(product.get("title_original") or product.get("title") or "")
+        if toks:
+            return ", ".join(toks)[:28], MODEL_SOURCE, ""
     return "", "", ""
+
+
+MODEL_SOURCE = "제목에서 추출"
+_MODEL_TOK = re.compile(r"[A-Za-z0-9][A-Za-z0-9/.\-]*")
+
+
+def model_tokens(title: str) -> List[str]:
+    """제목의 모델 토큰 — 영문과 숫자가 **둘 다** 든 ASCII 토큰만(브랜드·일반 영단어는 제외)."""
+    out: List[str] = []
+    for t in _MODEL_TOK.findall(str(title or "")):
+        t = t.strip("/.-")
+        if re.search(r"[A-Za-z]", t) and re.search(r"\d", t) and t not in out:
+            out.append(t)
+    return out
 
 
 def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Dict:
@@ -214,6 +234,8 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
                 "notes": [], "search_extra": []}
     meta = parse_meta(raw_meta_attrs)
     names = {_norm(m["attributeTypeName"]) for m in meta}
+    # F51-b-3: 옵션 이름도 해석 순서(오너 수정 → 용어집 → 번역기)로 메타 이름표를 단 사본으로 본다.
+    product = with_meta_names(product, [m["attributeTypeName"] for m in meta])
 
     # 메타에 없는 옵션 이름 → 옵션으로 보내지 않는다(자유옵션은 노출 제한). 값은 검색어로만.
     for o in product.get("options") or []:
@@ -306,18 +328,71 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
 
 #: 옵션 **이름** 용어집 — 메타의 attributeTypeName으로. 오너가 지정한 것만(F51, 2026-09-26).
 #:   값(색상 한자 → 한국어)은 여기가 아니라 D3 용어집(`color_ko`)이다(F48-b 규칙 그대로).
-OPTION_NAME_GLOSSARY = {"颜色分类": "색상"}
+OPTION_NAME_GLOSSARY = {"颜色分类": "색상", "商品规格": "규격", "尺码": "사이즈", "款式": "종류"}   # F51-b-3
 
 
-def option_name_for_meta(name: str, meta_names) -> str:
-    """상품 옵션 이름 → 메타 이름. 같으면 그대로, 용어집에 있으면 그 이름, 아니면 빈 문자열."""
+def names_ko_map(product: Dict) -> Dict[str, str]:
+    """옵션 이름의 번역기 값 — `{원문 이름: name_ko}`(번역기 `translate_options`가 남긴 것)."""
+    out: Dict[str, str] = {}
+    for o in product.get("options") or []:
+        if isinstance(o, dict) and o.get("name") and str(o.get("name_ko") or "").strip():
+            out[str(o["name"]).strip()] = str(o["name_ko"]).strip()
+    for key in ("option_names_ko", "_names_ko"):
+        extra = product.get(key)
+        if isinstance(extra, dict):
+            out.update({str(k): str(v) for k, v in extra.items() if str(v or "").strip()})
+    return out
+
+
+def resolve_option_name(name: str, meta_names, *, name_ko: str = "", override: str = "") -> Dict:
+    """F51-b-3: 옵션 **이름** → 카테고리 메타 속성명. 순서 = 오너 수정 → 같은 이름 → 용어집 → 번역기 → 보류.
+
+    `{meta, how, candidate, why}` — `meta`가 비면 보류. `candidate`는 용어집·번역기가 낸 한국어(메타엔 없음).
+    """
     names = {_norm(n): n for n in meta_names}
-    if _norm(name) in names:
-        return names[_norm(name)]
-    g = OPTION_NAME_GLOSSARY.get(str(name or "").strip())
+    nm = str(name or "").strip()
+    ov = str(override or "").strip()
+    if ov:
+        if _norm(ov) in names:
+            return {"meta": names[_norm(ov)], "how": "override", "candidate": ov, "why": ""}
+    if _norm(nm) in names:
+        return {"meta": names[_norm(nm)], "how": "", "candidate": nm, "why": ""}
+    g = OPTION_NAME_GLOSSARY.get(nm, "")
     if g and _norm(g) in names:
-        return names[_norm(g)]
-    return ""
+        return {"meta": names[_norm(g)], "how": "glossary", "candidate": g, "why": ""}
+    ko = str(name_ko or "").strip()
+    if ko and ko != nm and _norm(ko) in names:
+        return {"meta": names[_norm(ko)], "how": "translator", "candidate": ko, "why": ""}
+    cand = g or (ko if ko != nm else "")
+    return {"meta": "", "how": "", "candidate": cand,
+            "why": (f"옵션 「{nm}」" + (f"(→{cand})" if cand else "")
+                    + "이 이 카테고리 메타 속성에 없어 SKU별로 나눌 수 없습니다 — 메타 속성 중에서 골라 주세요")}
+
+
+def _name_ctx(product: Dict) -> tuple:
+    ov = product.get("option_name_overrides") if isinstance(product.get("option_name_overrides"), dict) else {}
+    return names_ko_map(product), ov
+
+
+def option_name_for_meta(name: str, meta_names, product: Optional[Dict] = None) -> str:
+    """상품 옵션 이름 → 메타 이름(해석 순서 `resolve_option_name`). 못 찾으면 빈 문자열."""
+    kos, ov = _name_ctx(product or {})
+    nm = str(name or "").strip()
+    return resolve_option_name(nm, meta_names, name_ko=kos.get(nm, ""), override=ov.get(nm, ""))["meta"]
+
+
+def with_meta_names(product: Dict, meta_names) -> Dict:
+    """옵션 이름을 해석된 메타 이름으로 바꾼 사본 — 단일 등록 계획이 같은 이름표를 본다."""
+    out = dict(product)
+    opts = []
+    for o in product.get("options") or []:
+        if isinstance(o, dict) and o.get("name"):
+            m = option_name_for_meta(o["name"], meta_names, product)
+            opts.append({**o, "name": m} if m else o)
+        else:
+            opts.append(o)
+    out["options"] = opts
+    return out
 
 
 def _sku_list(product: Dict) -> List[Dict]:
@@ -358,13 +433,16 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
     meta_names = [m["attributeTypeName"] for m in meta]
     axes = [o for o in (product.get("options") or []) if isinstance(o, dict) and o.get("name")]
     holds, notes, search_extra = [], [], []
-    mapped = []
+    mapped, name_picks = [], []
+    kos, ov = _name_ctx(product)
     for o in axes:
-        m = option_name_for_meta(o["name"], meta_names)
-        if not m:
-            holds.append(f"옵션 「{o['name']}」이 이 카테고리 메타에 없어 SKU별로 나눌 수 없습니다"
-                         " — 옵션 이름 용어집에 정본을 추가해야 합니다")
-        mapped.append(m)
+        nm = str(o["name"]).strip()
+        r = resolve_option_name(nm, meta_names, name_ko=kos.get(nm, ""), override=ov.get(nm, ""))
+        if not r["meta"]:
+            holds.append(r["why"])
+            # 오너가 고를 목록 — 이 카테고리 메타 속성명 전부(드롭다운).
+            name_picks.append({"orig": nm, "candidate": r["candidate"], "choices": list(meta_names)})
+        mapped.append(r["meta"])
     if zero:
         notes.append("재고 0이라 등록에서 뺀 SKU " + str(len(zero)) + "개: "
                      + ", ".join(" / ".join(k["spec"]) for k in zero))
@@ -408,7 +486,9 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
     if unmapped:
         holds.append(f"옵션 값 {len(unmapped)}개를 한국어로 옮기지 못했습니다 — 값을 직접 넣거나 번역을 먼저 돌려 주세요: "
                      + ", ".join(unmapped))
-    return {"multi": True, "items": items, "holds": holds, "notes": notes, "search_extra": search_extra}
+    return {"multi": True, "items": items, "holds": holds, "notes": notes, "search_extra": search_extra,
+            "name_picks": name_picks,
+            "axis_names": [{"orig": o["name"], "meta": mapped[i]} for i, o in enumerate(axes)]}
 
 
 def _common_affix(strs: List[str]) -> tuple:
@@ -575,13 +655,15 @@ def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
     `choices`: 값이 2개 이상인 옵션 — 오너가 하나를 고를 목록.
     """
     plan = plan_for(raw_meta_attrs, product, meta_ok=meta_ok)
+    _meta_names = [x["attributeTypeName"] for x in parse_meta(raw_meta_attrs)]
+    named = with_meta_names(product, _meta_names)
     fields = []
     for m in parse_meta(raw_meta_attrs):
         if not m["required"] or "gtin" in m["attributeTypeName"].lower():
             continue
-        value, source, why = _value_for(m, product)
+        value, source, why = _value_for(m, named)
         if plan.get("multi"):
-            axis = {_norm(option_name_for_meta(o.get("name"), [x["attributeTypeName"] for x in parse_meta(raw_meta_attrs)]))
+            axis = {_norm(option_name_for_meta(o.get("name"), _meta_names, product))
                     for o in product.get("options") or [] if isinstance(o, dict)}
             if _norm(m["attributeTypeName"]) in axis:
                 # F51: 이 칸은 SKU마다 다른 값으로 나간다 — 「값이 N개」 보류 문구를 여기 두지 않는다.
@@ -604,6 +686,8 @@ def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
     return {"fields": fields, "choices": choices, "holds": plan["holds"], "notes": plan["notes"],
             "attributes": plan["attributes"], "meta_ok": meta_ok,
             "multi": bool(plan.get("multi")), "items": plan.get("items") or [],
+            # F51-b-3: 메타에 없는 축 이름 — 오너가 메타 속성명에서 고를 목록(드롭다운).
+            "name_picks": plan.get("name_picks") or [],
             # F51-b: 단일 등록에서도 해석된 값(배지·인라인 수정 재료)
             "resolved": plan.get("resolved") or [],
             # F51-b 6: SKU별 판매가에 쓴 환율(값·출처·갱신 시각) — `with_sku_prices`가 붙인다.

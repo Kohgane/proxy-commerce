@@ -22,8 +22,11 @@ SECRET_KEYS = (
 )
 # 로그인 계정을 가리키는 값(닉네임·회원번호) — 이 값은 주소 밖(내비바 「닉네임」, JSON)에도 찍힌다.
 #   그래서 값 자체를 모아 **문서 전체에서** 가린다.
-_IDENT_PAIR_KEYS = frozenset({"lid", "lgc", "tracknick", "dnk", "_nk_", "nick", "unb"})
+_IDENT_PAIR_KEYS = frozenset({"lid", "lgc", "tracknick", "dnk", "_nk_", "nick", "unb", "usernick", "nickname", "loginid"})
 _IDENT_JSON_RE = re.compile(r'"(nick|displayNick|userNumId|userNick|tracknick|loginId)"\s*:\s*"?([^",}\s]{5,64})')
+# SEC-1-c(오너 1.5.158 world.taobao 진단): 목록·홈 마크업은 JSON이 아니라 **내비바 요소 텍스트**로 닉네임을 찍는다
+#   (`site-nav-login-info-nick`, `site-nav-user-nick`). 클래스에 nick이 든 요소의 텍스트도 계정 값으로 모은다.
+_IDENT_TAG_RE = re.compile(r'<[a-zA-Z][^>]*\bclass="[^"]*nick[^"]*"[^>]*>\s*([^<\s][^<]{3,62}?)\s*<', re.I)
 _SET = frozenset(SECRET_KEYS)
 _NAME_RE = re.compile(r"(cookie|token|session|passw)", re.I)
 _PAIR_RE = re.compile(r"([?&]|&amp;|%26|\\u0026|;\s?)([A-Za-z0-9_\-]{1,40})=([^&;#\"'<>\s\\]*)")
@@ -53,6 +56,8 @@ def identity_values(text) -> List[str]:
             vals.update({m.group(3), _unq(m.group(3))})
     for m in _IDENT_JSON_RE.finditer(s):
         vals.add(m.group(2))
+    for m in _IDENT_TAG_RE.finditer(s):
+        vals.add(m.group(1).strip())
     return sorted((v for v in vals if len(v) >= 5 and "*" not in v), key=len, reverse=True)
 
 

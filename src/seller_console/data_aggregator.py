@@ -311,6 +311,11 @@ def _compute_fx_rates() -> Dict[str, Any]:
             result["updated_at"] = rates.get("fetched_at", datetime.now(timezone.utc).isoformat())
             result["source"] = rates.get("provider", "realtime")
             result["is_mock"] = False
+            # F51-b 6(09-27 실측): FXProvider는 API가 다 실패하면 `env` 폴백(설정값·고정값)을 **fetched_at=지금**으로
+            #   돌려준다. 그걸 실시간이라 부르면 화면이 「실시간 · 방금」이라 거짓말을 한다 → 고정값으로 표기.
+            if str(rates.get("provider") or "") == "env":
+                result["is_mock"] = True
+                result["updated_at"] = ""
             return result
     except Exception as exc:
         logger.debug("FXProvider 환율 조회 실패 (mock 사용): %s", exc)
