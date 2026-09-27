@@ -11571,7 +11571,8 @@ def glossary_candidates():
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     from . import collect_history_store
-    from src.services.image_text_glossary import OPTION_VALUE_LINES, option_value_line
+    # 용어집 모듈은 등록 경로에서 `coupang_options` 한 곳만 연다(D3 계약) — 여기선 그 창구로 읽는다.
+    from src.uploaders.coupang_options import color_ko as option_value_line, glossary_line_count
     out = []
     for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=3650, limit=1000) or []:
         try:
@@ -11583,7 +11584,7 @@ def glossary_candidates():
                 out.append({"orig": c["orig"], "value": c.get("value") or "", "at": c.get("at") or "",
                             "item_id": row.get("id"), "in_glossary": bool(option_value_line(c["orig"]))})
     out.sort(key=lambda c: c["at"], reverse=True)
-    return jsonify({"ok": True, "candidates": out, "glossary_lines": len(OPTION_VALUE_LINES)})
+    return jsonify({"ok": True, "candidates": out, "glossary_lines": glossary_line_count()})
 
 
 @bp.post("/collect/<item_id>/recollect")

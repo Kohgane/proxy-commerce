@@ -90,6 +90,12 @@ def color_ko(value: str) -> str:
     return option_value_line(value)
 
 
+def glossary_line_count() -> int:
+    """옵션 값 섹션 정본 줄 수(후보 목록 화면이 「용어집 N줄」로 쓴다)."""
+    from src.services import image_text_glossary as _g
+    return len(_g.OPTION_VALUE_LINES)
+
+
 # F51-b(오너 2026-09-27): **「색상은 용어집만」(F48-b)은 폐기.** 하루 10건 목표에 상품마다 값 10개를
 #   손으로 용어집에 넣는 건 못 버틴다. 대신 순서를 정하고, 사람이 볼 값에는 배지를 단다:
 #     0) 오너가 이 상품에서 고친 값(`option_value_overrides`) — 그대로
