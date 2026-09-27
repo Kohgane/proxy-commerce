@@ -286,7 +286,11 @@ function _kgpRulesInfo() {
 // SEC-1: 진단에 싣는 주소·문장은 kgp-scrub.js로 비밀을 지운다(주소는 경로까지만). 미로드면 쿼리만 잘라 낸다.
 function _kgpSafeUrl(u) {
   try { if (typeof kgpScrubUrl === "function") return kgpScrubUrl(u); } catch (e) { /* noop */ }
-  return String(u || "").split("#")[0].split("?")[0];
+  // 폴백도 kgp-scrub.js와 같은 규칙 — 경로 + 상품 id 계열 키만(어느 상품이었는지는 남긴다).
+  const s = String(u || "").split("#")[0], q = s.indexOf("?");
+  if (q < 0) return s;
+  const keep = s.slice(q + 1).split("&").filter((p) => /^(id|itemid|item_id|goods_id|offerid|asin)=/i.test(p));
+  return s.slice(0, q) + (keep.length ? "?" + keep.join("&") : "");
 }
 function _kgpSafeLine(s) {
   try { if (typeof kgpScrubLine === "function") return kgpScrubLine(s); } catch (e) { /* noop */ }
