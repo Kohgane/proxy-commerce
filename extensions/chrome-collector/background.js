@@ -5,22 +5,6 @@
 
 const DEFAULT_SERVER_URL = "https://kohganepercentiii.com";
 
-// F49-T 5부-c: 저장 쓰기 실패를 **삼키지 않는다** — 바깥 catch(「네트워크 실패」)로 흘러가면 원인이 바뀐다.
-//   전부 storage.local이다(sync는 옵션 화면의 서버 주소·토큰뿐 — 계약이 지킨다). 실패는 횟수·마지막 사유를 남긴다.
-const KgpStorageErr = { count: 0, last: null };
-async function kgpLocalSet(obj) {
-  try {
-    await chrome.storage.local.set(obj);
-    return true;
-  } catch (e) {
-    KgpStorageErr.count += 1;
-    KgpStorageErr.last = { keys: Object.keys(obj || {}).join(",").slice(0, 80),
-                           msg: String((e && e.message) || e).slice(0, 160), at: new Date().toISOString() };
-    try { console.warn("[고가수집기] 저장 실패:", KgpStorageErr.last.keys, KgpStorageErr.last.msg); } catch (e2) {}
-    return false;
-  }
-}
-
 async function getSettings() {
   let syncData = {};
   let localData = {};
@@ -125,6 +109,22 @@ async function kgpSha256Hex(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+// F49-T 5부-c: 저장 쓰기 실패를 **삼키지 않는다** — 바깥 catch(「네트워크 실패」)로 흘러가면 원인이 바뀐다.
+//   전부 storage.local이다(sync는 옵션 화면의 서버 주소·토큰뿐 — 계약이 지킨다). 실패는 횟수·마지막 사유를 남긴다.
+const KgpStorageErr = { count: 0, last: null };
+async function kgpLocalSet(obj) {
+  try {
+    await chrome.storage.local.set(obj);
+    return true;
+  } catch (e) {
+    KgpStorageErr.count += 1;
+    KgpStorageErr.last = { keys: Object.keys(obj || {}).join(",").slice(0, 80),
+                           msg: String((e && e.message) || e).slice(0, 160), at: new Date().toISOString() };
+    try { console.warn("[고가수집기] 저장 실패:", KgpStorageErr.last.keys, KgpStorageErr.last.msg); } catch (e2) {}
+    return false;
+  }
+}
+
 async function kgpRefreshRemote(why) {
   const settings = await getSettings();
   const base = settings.serverUrl;

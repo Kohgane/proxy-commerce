@@ -692,3 +692,20 @@ def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
             "resolved": plan.get("resolved") or [],
             # F51-b 6: SKU별 판매가에 쓴 환율(값·출처·갱신 시각) — `with_sku_prices`가 붙인다.
             "fx": product.get("fx_info") or None}
+
+
+def common_value_tokens(values) -> list:
+    """F53 — 옵션 원문 **전부에 공통**인 용어집 토큰의 한국어 표기(값이 2개 이상일 때만).
+
+    쿠팡 상품명의 「핵심 속성」 재료다(三合一 → 3in1). 색상처럼 SKU마다 갈리는 값은 공통이 아니라 안 온다.
+    D3 용어집은 **이 파일 한 곳에서만** 표로 읽는다(`test_d3_3b` — 렌더·번역 파이프 연결 0).
+    """
+    vals = [str(v) for v in (values or []) if str(v).strip()]
+    if len(vals) < 2:
+        return []
+    from src.services import image_text_glossary as _g
+    out = []
+    for src, ko in _g.OPTION_VALUE_TOKENS.items():
+        if all(src in v for v in vals) and ko not in out:
+            out.append(ko)
+    return out

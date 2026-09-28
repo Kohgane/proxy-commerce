@@ -133,15 +133,9 @@ def _option_texts(product: Dict[str, Any]) -> List[str]:
 
 def common_attrs(product: Dict[str, Any]) -> List[str]:
     """옵션 원문 **전부에 공통**인 용어집 토큰(2개 이상 값일 때만). 색상처럼 갈리는 값은 여기 안 온다."""
-    vals = _option_texts(product)
-    if len(vals) < 2:
-        return []
-    from src.services.image_text_glossary import OPTION_VALUE_TOKENS
-    out = []
-    for src, ko in OPTION_VALUE_TOKENS.items():
-        if all(src in v for v in vals) and ko not in out:
-            out.append(ko)
-    return out
+    # 용어집은 `coupang_options` 한 곳에서만 읽는다(D3 격리 계약).
+    from src.uploaders.coupang_options import common_value_tokens
+    return common_value_tokens(_option_texts(product))
 
 
 def compat_of(product: Dict[str, Any], exclude: Iterable[str] = ()) -> List[str]:
