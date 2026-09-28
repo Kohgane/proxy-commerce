@@ -1,0 +1,55 @@
+{% extends "_base.html" %}
+{% block title %}단축어 만들기(오너){% endblock %}
+{% block content %}
+{# 화면 C — 오너용(관리자만). 문구는 오너 원문 그대로. iOS 화면 이름은 오너 실기기 캡처로 확정. #}
+<div class="container-fluid py-4" style="max-width:720px">
+  <div class="console-kpi-label mb-1">도움말 · 오너용</div>
+  <h1 class="h4 fw-bold mb-1">단축어 만들기 (한 번)</h1>
+  <p class="text-muted small mb-0">만든 단축어의 iCloud 링크를 아래에 붙여넣으면 유저용 <a href="/seller/guide/iphone">설치하기</a> 화면의 파란 버튼이 그 링크로 열립니다.</p>
+  <hr class="pc-hairline mt-2 mb-4">
+
+  <ol class="make-steps">
+    <li>「단축어」 앱 열기 → 오른쪽 위 「+」.</li>
+    <li>「동작 추가」 → 검색창에 「URL 열기」 → 선택.</li>
+    <li>「URL」 칸을 눌러 아래를 그대로 입력:
+      <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}</code>
+      그 뒤에 커서를 두고 키보드 위 파란 「단축어 입력」 토큰을 누르면 뒤에 붙습니다.</li>
+    <li>위쪽 단축어 이름 옆 「∨」 → 「세부사항」 → 「공유 시트에 표시」 켬 → 「공유 시트 유형」에서 「URL」과 「텍스트」만 체크.</li>
+    <li>이름을 「고가브릿지로 수집」으로 바꾸고 「완료」.</li>
+    <li>배포: 단축어 목록에서 이 단축어 길게 누르기 → 「공유」 → 「iCloud 링크 복사」. 이 링크를 아래 칸에 붙여넣고 저장.</li>
+    <li>오너 폰에서 「사용하기」 순서로 1회 실측 → 각 단계 캡처 → 설치하기·사용하기 화면에 삽입(아래 캡처 자리).</li>
+  </ol>
+
+  <div class="op-card mb-4">
+    <div class="op-card-body">
+      <form method="post" action="/seller/guide/iphone/make" class="d-flex flex-column gap-2">
+        <label for="shortcutUrl" class="fw-semibold small">단축어 설치 링크(iCloud)</label>
+        <input id="shortcutUrl" name="shortcut_url" type="url" class="form-control" value="{{ shortcut_link }}"
+               placeholder="https://www.icloud.com/shortcuts/…" data-role="shortcut-input">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <button class="btn btn-primary btn-sm" type="submit">저장</button>
+          <span class="small text-muted">비우고 저장하면 설치 화면은 「준비 중」으로 돌아가요.</span>
+        </div>
+        {% if msg %}<div class="pc-status pc-status-info small mb-0" data-role="make-msg">{{ msg }}</div>{% endif %}
+        {% if err %}<div class="pc-status pc-status-danger small mb-0" data-role="make-err">{{ err }}</div>{% endif %}
+      </form>
+    </div>
+  </div>
+
+  <div class="op-card">
+    <div class="op-card-body small">
+      <div class="fw-semibold mb-2">캡처 자리 6개</div>
+      <p class="mb-2">파일을 <code>src/seller_console/static/help/iphone/</code>에 <code>a1~a3</code>(설치하기)·<code>b1~b3</code>(사용하기) 이름으로 넣으면(.png/.jpg/.webp) 그 자리에 뜹니다.</p>
+      <div class="d-flex flex-wrap gap-2">
+        {% for k in ["a1", "a2", "a3", "b1", "b2", "b3"] %}
+        <span class="pc-badge {{ 'pc-badge-on' if shots.get(k) else 'pc-badge-muted' }}" data-role="shot-state-{{ k }}">{{ k|upper }} {{ "있음" if shots.get(k) else "비어 있음" }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .make-steps { font-size: 1rem; line-height: 1.7; padding-left: 1.2rem; margin-bottom: 1.5rem; }
+  .make-steps li { margin-bottom: .6rem; }
+</style>
+{% endblock %}

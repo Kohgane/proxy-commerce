@@ -1896,6 +1896,13 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> d
         title = _fin_title(getattr(result, "title", "") or "", url=url)
         images = list(getattr(result, "images", []) or [])
         price = str(getattr(result, "price", "") or "")
+        # M3-iOS 보충(2026-09-28 실측): 페이지를 **못 읽어도** 수집기는 빈 결과(제목 ''·사진 0·가격 없음)를 돌려주고,
+        #   여기서 그걸 그대로 저장해 `ok=True`가 났다 — 빈 상품이 「수집됨」으로 앉는 **가짜 성공**(일괄·단축어·
+        #   텔레그램·공유 시트 공통). 셋 다 비었으면 저장하지 않고 어느 사이트라 안 되는지 말한다.
+        if not title.strip() and not images and not price.strip():
+            from src.collectors.fail_reason import fail_message
+            logger.info("수집 코어: 빈 결과 — 저장 안 함 (%s)", url[:80])
+            return {"url": url, "ok": False, "error": fail_message(url)}
         currency = getattr(result, "currency", "USD")
         # C-F1 회귀 수리: **정본 가격 단일 소스(v72b)를 여기서 건다.**
         #   전엔 벌크 라우트만 `_canon_price`를 불렀다 — 단건·모바일·텔레그램은 안 걸렸다는 뜻이다.

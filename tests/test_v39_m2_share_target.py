@@ -46,7 +46,8 @@ def test_share_success_shows_result_with_editor_link(client, monkeypatch):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert 'data-state="collected"' in body and "티" in body
-    assert "/seller/collect/preview/shareitem1?drawer=1&from=share" in body
+    # 오너 보충(2026-09-28): 결과 화면은 버튼 2개(목록 보기 · 하나 더 담기)만 — 편집은 목록에서.
+    assert "목록 보기" in body and "하나 더 담기" in body
 
 
 def test_share_failure_is_honest_not_fake(client, monkeypatch):

@@ -1310,25 +1310,10 @@ def manual_collect_alias():
     return redirect(url_for("seller_console.collect"))
 
 
-# M4(오너 2026-09-28 「미리보기가 안 된다」): 실패는 **어느 사이트라 안 되는지** 말한다 — 일반 문장 하나로
-#   뭉개면 오너는 「고장」인지 「그 사이트가 원래 안 되는지」 모른다. 봇 차단이 실측된 곳만 차단이라 부른다.
-_PREVIEW_SITE_NAMES = (("temu.com", "테무"), ("amazon.", "아마존"), ("aliexpress.", "알리익스프레스"),
-                       ("coupang.com", "쿠팡"), ("rakuten.co.jp", "라쿠텐"), ("shein.", "쉬인"),
-                       ("yoshidakaban.com", "요시다카반"))
-_PREVIEW_BOT_WALL = ("temu.com", "amazon.", "aliexpress.")
-
-
 def preview_fail_message(url: str) -> str:
-    """미리보기 실패 사유 한 문장(사이트 이름 + 이유 + 다음 행동)."""
-    from urllib.parse import urlparse
-    host = (urlparse(str(url or "")).hostname or "").lower()
-    name = next((n for key, n in _PREVIEW_SITE_NAMES if key in host), "")
-    who = f"{name}({host})" if name else (host or "이 주소")
-    if any(k in host for k in _PREVIEW_BOT_WALL):
-        return (f"{who}는 서버에서 상품 페이지를 읽을 수 없어요(봇 차단) — "
-                "그 페이지를 PC 크롬에서 열고 고가수집기로 담아 주세요.")
-    return (f"{who}에서 상품 정보를 읽지 못했어요 — 로그인·봇 차단이거나 상품 정보(메타)가 없는 페이지예요. "
-            "제목·가격·이미지를 직접 넣거나 PC 고가수집기로 담아 주세요.")
+    """M4 — 미리보기 실패 사유(사이트 이름 + 이유 + 다음 행동). 수집 코어와 **같은 문장**(`fail_reason`)."""
+    from src.collectors.fail_reason import fail_message
+    return fail_message(url)
 
 
 @bp.post("/collect/preview")
@@ -1700,13 +1685,62 @@ def collect_item_timeline(item_id: str):
 
 @bp.get("/guide/phone")
 def guide_phone():
-    """M3 — 폰에서 1탭 수집: 아이폰 단축어 만들기 · 안드로이드 설치형 앱 · 텔레그램 봇(대안)."""
+    """옛 주소(#799) — M3-iOS 보충(오너 2026-09-28)부터 「아이폰에서 수집하기」(공개)로 옮겼다."""
+    return redirect(url_for("seller_console.guide_iphone"))
+
+
+# M3-iOS 보충 — 캡처 자리 6개(A1~A3 설치 · B1~B3 사용). 오너 실기기 캡처를 이 폴더에 넣으면 그 자리에 뜬다.
+_IPHONE_SHOTS_DIR = os.path.join(os.path.dirname(__file__), "static", "help", "iphone")
+
+
+def _iphone_shots(keys) -> dict:
+    out = {}
+    for k in keys:
+        for ext in ("png", "jpg", "webp"):
+            if os.path.exists(os.path.join(_IPHONE_SHOTS_DIR, f"{k}.{ext}")):
+                out[k] = f"/seller/static/help/iphone/{k}.{ext}"
+                break
+    return out
+
+
+def _share_base() -> str:
+    # 단축어에 넣을 주소는 **운영 주소**다(개발 서버의 localhost를 안내하면 폰에서 안 열린다).
+    return (os.getenv("APP_BASE_URL", "") or "https://kohganepercentiii.com").strip().rstrip("/")
+
+
+@bp.get("/guide/iphone")
+def guide_iphone():
+    """화면 A — 「설치하기」(유저용 · **로그인 없이** 본다: 설치 전에 보는 화면이다)."""
+    from .help_settings import ios_shortcut_url
+    return render_template("guide_iphone.html", screen="install", shots=_iphone_shots(("a1", "a2", "a3")),
+                           shortcut_link=ios_shortcut_url(), host=_share_base().split("://", 1)[-1])
+
+
+@bp.get("/guide/iphone/use")
+def guide_iphone_use():
+    """화면 B — 「사용하기」(유저용 · 공개)."""
+    return render_template("guide_iphone.html", screen="use", shots=_iphone_shots(("b1", "b2", "b3")),
+                           shortcut_link="", host=_share_base().split("://", 1)[-1])
+
+
+@bp.route("/guide/iphone/make", methods=["GET", "POST"])
+def guide_iphone_make():
+    """화면 C — 오너용 「단축어 만들기」 + iCloud 설치 링크 붙여넣기(관리자만)."""
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.full_path))
-    # 단축어에 넣을 주소는 **운영 주소**다(개발 서버의 localhost를 안내하면 폰에서 안 열린다).
-    base = (os.getenv("APP_BASE_URL", "") or "https://kohganepercentiii.com").strip().rstrip("/")
-    return render_template("guide_phone.html", share_url=f"{base}/seller/collect/share?text=",
-                           shortcut_link=os.getenv("IOS_SHORTCUT_URL", "").strip())
+    if not _is_admin_user():
+        abort(403)
+    from .help_settings import ios_shortcut_url, save_ios_shortcut_url
+    msg, err = "", ""
+    if request.method == "POST":
+        try:
+            saved = save_ios_shortcut_url(request.form.get("shortcut_url", ""))
+            msg = "저장했어요 — 설치 화면의 버튼이 이 링크로 열립니다." if saved else "지웠어요 — 설치 화면은 「준비 중」으로 보입니다."
+        except ValueError as exc:
+            err = str(exc)
+    return render_template("guide_iphone_make.html", share_url=f"{_share_base()}/seller/collect/share?text=",
+                           shortcut_link=ios_shortcut_url(), msg=msg, err=err,
+                           shots=_iphone_shots(("a1", "a2", "a3", "b1", "b2", "b3")))
 
 
 def _extract_reviews(html: str, limit: int = 20) -> list[dict]:
