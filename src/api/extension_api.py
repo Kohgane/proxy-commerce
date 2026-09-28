@@ -1702,51 +1702,14 @@ def collect_one():
                         "timings": _timings}), 400
 
     seller_id = str(user.get("user_id") or "")
-    # 중복 수집 방지 — 기존 정규화 키(v42 1-3)를 그대로 쓴다(새 규칙 만들지 않는다).
-    try:
-        from src.seller_console.collect_history_store import find_by_product_key
-        dup = find_by_product_key(url, seller_ids={seller_id} if seller_id else None)
-        if not dup and final_url:
-            # C-F7: 폰이 편 링크로 왔을 때, **같은 상품의 단축 링크 초안**이 이미 있는지 본다.
-            #   편 링크가 `short_name`에 단축 토큰을 싣고 오므로 그 키로 한 번 더 조회한다 —
-            #   안 그러면 같은 상품이 `tbshare:…`와 `taobao:item:…` 두 행으로 쌓인다(실측).
-            _sn = parse_share_text("", final_url=final_url).get("short_name", "")
-            _tk2 = parse_share_text("", final_url=final_url).get("tk", "")
-            if _sn:
-                _alt = f"https://e.tb.cn/{_sn}" + (f"?tk={_tk2}" if _tk2 else "")
-                dup = find_by_product_key(_alt, seller_ids={seller_id} if seller_id else None)
-        if dup:
-            return jsonify({"ok": True, "duplicate": True, "item_id": dup.get("id"),
-                            "title": dup.get("title", ""),
-                            "message": "이미 수집한 상품입니다."})
-    except Exception as exc:                       # 중복 조회 실패가 수집을 막지 않게
-        logger.warning("단건 수집 중복 조회 실패: %s", exc)
-
-    # C-F1: 갈래 판단은 **한 곳**(`collect_input`)에서만 — 입구마다 제 나름대로 하면 갈라진다.
-    from src.collectors.share_collect import collect_input
-    res = collect_input(raw, seller_id=seller_id, source="mobile", final_url=final_url)
+    out, res = share_collect_core(raw, url=url, seller_id=seller_id,
+                                  seller_ids={seller_id} if seller_id else None,
+                                  final_url=final_url, source="mobile")
+    if out.get("duplicate"):
+        return jsonify(out)
     if res.get("ok"):
-        _partial = res.get("kind") == "share_draft"
-        out = {"ok": True, "duplicate": False, "item_id": res.get("item_id"),
-               "url": res.get("url", ""),
-               "title": res.get("title_ko") or res.get("title") or "",
-               "message": "수집됐습니다."}
-        if _partial:
-            # C-F9-1: 문구는 `gap_message` 한 곳에서만 만든다. 서버는 **자기가 본 것만** 말한다 —
-            #   최종 URL이 왔는지·상품번호가 있었는지·가격이 있었는지. VPN 상태는 서버가 모른다
-            #   (오너 실측: VPN 꺼진 채로 같은 결과 → 「전체 모드면…」 단정이 그대로 오진이 됐다).
-            out.update({
-                "partial": True, "price": res.get("price", ""), "currency": res.get("currency", ""),
-                "item_id_taobao": res.get("item_id_taobao", ""),
-                "uncollected": res.get("uncollected", []),
-                "enrich_state": res.get("enrich_state", ""),
-                "resolve_gap": res.get("resolve_gap", ""),
-                "message": res.get("message") or "수집됐습니다.",
-            })
-            # 문구가 「링크 진단」을 가리키면 **거기로 가는 길도 준다** — 폰에서는 사이드바를 못 쓴다.
-            #   가리키기만 하고 길이 없으면 그 문장은 안내가 아니라 막다른 골목이다.
-            if res.get("resolve_gap") in ("no_final_url", "final_url_without_id"):
-                out["diag_url"] = request.url_root.rstrip("/") + "/seller/collect/link-diag"
+        if out.get("resolve_gap") in ("no_final_url", "final_url_without_id"):
+            out["diag_url"] = request.url_root.rstrip("/") + "/seller/collect/link-diag"
         # C-F15-A1: **어느 계정에 담겼는지** 한 줄로 말한다. 실측(오너): 단축어 토큰이 PC 세션과
         #   다른 계정이라 담긴 것이 PC 목록에 안 보였는데, 응답은 그냥 "담았어요"라고만 했다.
         #   담은 곳을 말해 주면 사람이 바로 알아챈다.
@@ -1775,6 +1738,51 @@ def collect_one():
                     "error": res.get("error") or "수집 실패",
                     "timings": _timings,
                     "message": "수집하지 못했습니다. 봇 차단 사이트는 PC 확장을 권합니다."}), 502
+
+
+def share_collect_core(raw: str, *, url: str, seller_id: str, seller_ids, final_url: str = "",
+                       source: str = "mobile"):
+    """폰 입구 공용 코어 — **중복 확인 → `collect_input` → 응답 모양**(단축어 API·공유 시트 라우트).
+
+    M3(2026-09-28): 공유 시트 라우트(`/seller/collect/share`)가 같은 일을 따로 하고 있었다(서버 수집 먼저 →
+    실패하면 공유 글 폴백). 입구마다 판단이 다르면 같은 공유 글이 입구에 따라 다르게 담긴다(C-F1) —
+    그래서 한 벌만 둔다. 반환 `(out, res)`: `out`은 화면·JSON이 쓰는 모양, `res`는 `collect_input` 원 결과.
+    """
+    from src.collectors.share_text import parse_share_text
+    try:
+        from src.seller_console.collect_history_store import find_by_product_key
+        dup = find_by_product_key(url, seller_ids=seller_ids)
+        if not dup and final_url:
+            # C-F7: 폰이 편 링크로 왔을 때, **같은 상품의 단축 링크 초안**이 이미 있는지 본다.
+            _sn = parse_share_text("", final_url=final_url).get("short_name", "")
+            _tk2 = parse_share_text("", final_url=final_url).get("tk", "")
+            if _sn:
+                _alt = f"https://e.tb.cn/{_sn}" + (f"?tk={_tk2}" if _tk2 else "")
+                dup = find_by_product_key(_alt, seller_ids=seller_ids)
+        if dup:
+            return ({"ok": True, "duplicate": True, "item_id": dup.get("id"),
+                     "title": dup.get("title", ""), "message": "이미 수집한 상품입니다."}, {"ok": True})
+    except Exception as exc:                       # 중복 조회 실패가 수집을 막지 않게
+        logger.warning("단건 수집 중복 조회 실패: %s", exc)
+    # C-F1: 갈래 판단은 **한 곳**(`collect_input`)에서만 — 입구마다 제 나름대로 하면 갈라진다.
+    from src.collectors.share_collect import collect_input
+    res = collect_input(raw, seller_id=seller_id, source=source, final_url=final_url)
+    if not res.get("ok"):
+        return ({"ok": False, "duplicate": False, "url": res.get("url", ""),
+                 "error": res.get("error") or "수집 실패"}, res)
+    out = {"ok": True, "duplicate": False, "item_id": res.get("item_id"), "url": res.get("url", ""),
+           "title": res.get("title_ko") or res.get("title") or "", "message": "수집됐습니다."}
+    if res.get("kind") == "share_draft":
+        # C-F9-1: 문구는 `gap_message` 한 곳에서만 만든다. 서버는 **자기가 본 것만** 말한다.
+        out.update({
+            "partial": True, "price": res.get("price", ""), "currency": res.get("currency", ""),
+            "item_id_taobao": res.get("item_id_taobao", ""),
+            "uncollected": res.get("uncollected", []),
+            "enrich_state": res.get("enrich_state", ""),
+            "resolve_gap": res.get("resolve_gap", ""),
+            "message": res.get("message") or "수집됐습니다.",
+        })
+    return out, res
 
 
 def _wants_review() -> bool:

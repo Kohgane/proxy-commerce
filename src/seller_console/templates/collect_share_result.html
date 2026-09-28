@@ -1,0 +1,63 @@
+{% extends "_base.html" %}
+{% block title %}공유로 담기{% endblock %}
+{% block content %}
+{# M3 모바일 1탭 수집 — 공유 시트 결과 화면. 무엇을 담았고 무엇이 남았는지를 폰 한 화면에 말한다.
+   가짜 성공 금지: 못 읽은 칸은 「보강 때 채워요」로 비워 둔다(0·임의값으로 채우지 않는다). #}
+<div class="container-fluid py-3 share-result" style="max-width:560px">
+  <div class="console-kpi-label mb-1">공유로 담기</div>
+  {% if out.ok and out.duplicate %}
+  <h1 class="h5 fw-bold mb-2" data-role="share-state" data-state="duplicate">이미 담은 상품이에요</h1>
+  {% elif out.ok and out.partial %}
+  <h1 class="h5 fw-bold mb-2" data-role="share-state" data-state="draft">담았어요 — 상세는 보강 대기</h1>
+  {% elif out.ok %}
+  <h1 class="h5 fw-bold mb-2" data-role="share-state" data-state="collected">담았어요</h1>
+  {% else %}
+  <h1 class="h5 fw-bold mb-2" data-role="share-state" data-state="failed">담지 못했어요</h1>
+  {% endif %}
+  <hr class="pc-hairline mt-1 mb-3">
+
+  <div class="op-card console-card mb-3">
+    <div class="op-card-body">
+      {% if out.ok %}
+      <div class="fw-semibold share-title" data-role="share-title">{{ out.title or "(제목 없음)" }}</div>
+      {% if out.partial %}
+      <div class="small mt-2" data-role="share-price">
+        {% if out.price %}공유한 순간 가격 <strong>{{ out.price }} {{ out.currency }}</strong>
+        <span class="text-muted">— 실시간 시세가 아니에요</span>
+        {% else %}가격 <span class="text-muted">— 보강 때 채워요</span>{% if out.currency %} · 통화 <strong>{{ out.currency }}</strong>{% endif %}{% endif %}
+      </div>
+      <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+        <span class="pc-badge pc-badge-off" data-role="share-enrich">보강 대기</span>
+        <span class="small">PC 고가수집기가 켜지면 이미지·옵션·상세를 채워요.</span>
+      </div>
+      {% if out.message %}<div class="small text-muted mt-2" data-role="share-message">{{ out.message }}</div>{% endif %}
+      {% elif out.duplicate %}
+      <div class="small text-muted mt-1">같은 상품이 수집 이력에 있어요 — 새로 만들지 않았어요.</div>
+      {% else %}
+      <div class="small text-muted mt-1">{{ out.message }}</div>
+      {% endif %}
+      {% else %}
+      <div class="small" data-role="share-error">{{ out.error }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="d-grid gap-2">
+    {% if out.ok and out.item_id %}
+    <a class="btn btn-primary share-btn" href="/seller/collect/preview/{{ out.item_id }}?drawer=1&from=share">편집 열기</a>
+    {% endif %}
+    {% if not out.ok and raw %}
+    <a class="btn btn-primary share-btn" href="/seller/collect?url={{ raw|urlencode }}">붙여넣기 화면에서 다시</a>
+    {% endif %}
+    <a class="btn btn-ghost share-btn" href="/seller/collect/history">수집 이력</a>
+  </div>
+  <p class="small text-muted mt-3 mb-0">
+    {% if not out.ok %}폰에서 서버에 닿지 않을 때는 텔레그램 봇으로 보내도 같은 계정에 담겨요. {% endif %}
+    <a href="/seller/guide/phone">폰에서 1탭으로 담는 법(아이폰 단축어 · 텔레그램)</a>
+  </p>
+</div>
+<style>
+  .share-result .share-title { font-size: 1.02rem; line-height: 1.45; word-break: break-word; }
+  .share-result .share-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+</style>
+{% endblock %}

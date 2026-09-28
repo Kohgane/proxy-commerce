@@ -29,11 +29,12 @@
   ],
   "share_target": {
     "action": "/seller/collect/share",
-    "method": "GET",
+    "method": "POST",
+    "enctype": "application/x-www-form-urlencoded",
     "params": {
       "title": "title",
       "text": "text",
-      "url": "u"
+      "url": "url"
     }
   },
   "shortcuts": [
