@@ -1644,6 +1644,60 @@ def collect_share():
     return render_template("collect_share_result.html", out=out, raw=raw)
 
 
+def item_timeline(item: dict) -> dict:
+    """캐너리 측정(오너 2026-09-28 「쿠팡 성공률」) — **저장된 시각만으로** 단계별 소요를 낸다.
+
+    수집(행 생성) → 보강 완료(`image_check.at`, 중국 소싱처) → 자동 번역 첫·마지막 장(`images_ko[].at`) →
+    등록 성공(`uploaded[].at`, 마켓별). 기록이 없는 단계는 **없음**으로 둔다(지어낸 시각 0).
+    오너 클릭 수는 서버가 모른다 — 측정표에 사람이 적는다.
+    """
+    from datetime import datetime as _dt
+
+    def _p(s):
+        s = str(s or "").strip().replace("Z", "+00:00")
+        if not s:
+            return None
+        try:
+            d = _dt.fromisoformat(s)
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    try:
+        ex = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        ex = {}
+    steps = [("수집", _p(item.get("collected_at")))]
+    ic = ex.get("image_check") if isinstance(ex.get("image_check"), dict) else {}
+    steps.append(("보강 완료", _p(ic.get("at"))))
+    ko = [x for x in (ex.get("images_ko") or []) + (ex.get("detail_images_ko") or []) if isinstance(x, dict)]
+    ts = sorted(t for t in (_p(x.get("at")) for x in ko if x.get("status") == "done") if t)
+    steps.append(("번역 첫 장", ts[0] if ts else None))
+    steps.append(("번역 마지막 장", ts[-1] if ts else None))
+    for u in ex.get("uploaded") or []:
+        if isinstance(u, dict) and u.get("market"):
+            steps.append((f"등록 성공 · {u.get('label') or u.get('market')}", _p(u.get("at"))))
+    base = steps[0][1]
+    out, prev = [], base
+    for name, t in steps:
+        out.append({"step": name, "at": t.isoformat() if t else "",
+                    "since_collect_s": int((t - base).total_seconds()) if (t and base) else None,
+                    "since_prev_s": int((t - prev).total_seconds()) if (t and prev) else None})
+        if t:
+            prev = t
+    return {"item_id": item.get("id"), "steps": out}
+
+
+@bp.get("/collect/preview/<item_id>/timeline")
+def collect_item_timeline(item_id: str):
+    """캐너리 측정용 — 이 상품의 단계별 시각·소요(저장된 값만)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True, **item_timeline(item)})
+
+
 @bp.get("/guide/phone")
 def guide_phone():
     """M3 — 폰에서 1탭 수집: 아이폰 단축어 만들기 · 안드로이드 설치형 앱 · 텔레그램 봇(대안)."""
