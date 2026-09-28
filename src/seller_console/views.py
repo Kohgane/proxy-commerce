@@ -1310,6 +1310,27 @@ def manual_collect_alias():
     return redirect(url_for("seller_console.collect"))
 
 
+# M4(오너 2026-09-28 「미리보기가 안 된다」): 실패는 **어느 사이트라 안 되는지** 말한다 — 일반 문장 하나로
+#   뭉개면 오너는 「고장」인지 「그 사이트가 원래 안 되는지」 모른다. 봇 차단이 실측된 곳만 차단이라 부른다.
+_PREVIEW_SITE_NAMES = (("temu.com", "테무"), ("amazon.", "아마존"), ("aliexpress.", "알리익스프레스"),
+                       ("coupang.com", "쿠팡"), ("rakuten.co.jp", "라쿠텐"), ("shein.", "쉬인"),
+                       ("yoshidakaban.com", "요시다카반"))
+_PREVIEW_BOT_WALL = ("temu.com", "amazon.", "aliexpress.")
+
+
+def preview_fail_message(url: str) -> str:
+    """미리보기 실패 사유 한 문장(사이트 이름 + 이유 + 다음 행동)."""
+    from urllib.parse import urlparse
+    host = (urlparse(str(url or "")).hostname or "").lower()
+    name = next((n for key, n in _PREVIEW_SITE_NAMES if key in host), "")
+    who = f"{name}({host})" if name else (host or "이 주소")
+    if any(k in host for k in _PREVIEW_BOT_WALL):
+        return (f"{who}는 서버에서 상품 페이지를 읽을 수 없어요(봇 차단) — "
+                "그 페이지를 PC 크롬에서 열고 고가수집기로 담아 주세요.")
+    return (f"{who}에서 상품 정보를 읽지 못했어요 — 로그인·봇 차단이거나 상품 정보(메타)가 없는 페이지예요. "
+            "제목·가격·이미지를 직접 넣거나 PC 고가수집기로 담아 주세요.")
+
+
 @bp.post("/collect/preview")
 def collect_preview():
     """URL → 메타데이터 추출 결과 (JSON).
@@ -1365,26 +1386,22 @@ def collect_preview():
                 "message": _r.get("message") or "담았어요.",
                 "warnings": [],
             })
-        return jsonify({"ok": False, "manual_entry": True,
+        return jsonify({"ok": False, "manual_entry": True, "user_message": True,
                         "error": _r.get("error") or "상품 정보를 담지 못했습니다."}), 200
 
     try:
         draft = _collect_real_draft(url, translate=translate)
     except Exception as exc:
         logger.warning("수집 파이프라인 오류: %s", exc)
-        return jsonify({"ok": False, "error": "추출 중 오류가 발생했습니다."}), 500
+        from urllib.parse import urlparse as _up
+        return jsonify({"ok": False, "user_message": True,
+                        "error": f"{_up(url).hostname or '이 주소'}를 읽다가 오류가 났어요 — 다시 눌러 주세요. "
+                                 "같은 오류가 반복되면 PC 고가수집기로 담아 주세요."}), 500
 
     if draft is None:
-        # 목업 대신 정직한 안내 (로그인/봇 차단·비표준 페이지 등)
-        return jsonify({
-            "ok": False,
-            "manual_entry": True,
-            "error": (
-                "이 URL에서 상품 정보를 자동으로 추출하지 못했습니다. "
-                "페이지가 로그인·봇 차단이거나 표준 상품 메타(JSON-LD/OpenGraph)가 "
-                "없을 수 있습니다. 제목·가격·이미지를 직접 입력해 진행하세요."
-            ),
-        }), 200
+        # 목업 대신 정직한 안내 — M4: **어느 사이트라 안 되는지**까지(표식이 있어야 화면이 덮어쓰지 않는다).
+        return jsonify({"ok": False, "manual_entry": True, "user_message": True,
+                        "error": preview_fail_message(url)}), 200
 
     _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
 
@@ -1563,32 +1580,133 @@ def collect_quick():
     ), res["status"]
 
 
-@bp.get("/collect/share")
-def collect_share():
-    """v39-M M2: 모바일 PWA 공유(Web Share Target) 수집 → 성공 시 편집 드로어로 바로 진입.
+_SHARE_KEYS = ("text", "title", "url", "u", "final_url")
 
-    manifest share_target.action = 이 라우트. 공유된 title/text/url에서 상품 URL을 뽑아 수집하고,
-    성공하면 편집 화면(드로어 모드)으로 redirect — 한 손으로 공유→수집→편집까지.
-    (북마클릿 /collect/quick은 '수집됨' 확인만 표시하던 흐름 유지.)
+
+def _share_raw_from_request() -> tuple:
+    """공유 시트가 넘긴 글 → `(raw, final_url)`.
+
+    · 아이폰 단축어(M3-iOS): `?text=<공유 입력>` 하나. 단축어가 **URL 인코딩 없이** 붙이면 공유 글 속 `&`
+      뒤가 다른 쿼리 키로 갈라진다 → 모르는 키가 섞여 있으면 원 쿼리에서 `text=` 뒤 전체를 되살린다.
+    · 안드로이드 PWA(share_target POST): `title`·`text`·`url` 폼. 타오바오 앱은 **text에 제목+링크**를 담는다 —
+      text가 주인이고, url이 text에 없을 때만 뒤에 붙인다(제목 앞에 url을 끼우면 파서가 제목을 잘못 읽는다).
     """
+    from urllib.parse import unquote_plus
+    v = request.values
+    text = str(v.get("text") or "")
+    if request.method == "GET" and "text" in request.args:
+        extra = [k for k in request.args.keys() if k not in _SHARE_KEYS]
+        qs = request.query_string.decode("utf-8", "replace")
+        if extra and "text=" in qs:
+            text = unquote_plus(qs.split("text=", 1)[1])
+    link = str(v.get("url") or v.get("u") or "")
+    raw = text.strip()
+    if link and link not in raw:
+        raw = f"{raw} {link}".strip()
+    if not raw:
+        raw = str(v.get("title") or "").strip()
+    return raw, str(v.get("final_url") or "").strip()
+
+
+@bp.route("/collect/share", methods=["GET", "POST"])
+def collect_share():
+    """M3 모바일 1탭 수집 — 공유 시트(아이폰 단축어 `GET ?text=` · 안드로이드 PWA share_target `POST`).
+
+    공유 글 → **붙여넣기와 같은 판단점**(`collect_input`, 공용 코어 `share_collect_core`) → 결과 화면.
+    타오바오 계열은 초안(제목·공유 시점 가격·CNY) + 「PC 고가수집기가 켜지면 상세 보강」(5부 큐).
+    v39-M2는 성공하면 편집 드로어로 보냈다 — 폰에서 제목만 있는 초안을 편집 화면에 던지면 할 일이 없다.
+    오너 지시(2026-09-28): **결과 화면**(무엇을 담았고 무엇이 남았나) → 편집은 버튼 하나.
+    """
+    # 다른 사이트가 폼으로 쏘는 POST(위조)는 받지 않는다 — 공유 시트 진입은 `none`(브라우저 밖에서 시작).
+    if request.method == "POST" and request.headers.get("Sec-Fetch-Site", "") in ("cross-site", "same-site"):
+        return render_template("collect_share_result.html", out={"ok": False,
+                               "error": "다른 사이트에서 보낸 요청은 받지 않아요 — 앱 공유 시트에서 다시 보내 주세요."},
+                               raw=""), 403
+    raw, final_url = _share_raw_from_request()
+    if not _check_auth():
+        # 로그인하고 **같은 주소로** 돌아온다(POST도 GET 주소로 바꿔 싣는다 — 로그인 뒤엔 GET으로 온다).
+        q = {"text": raw}
+        if final_url:
+            q["final_url"] = final_url
+        from urllib.parse import urlencode
+        return redirect(url_for("auth.login", next="/seller/collect/share?" + urlencode(q)))
+
+    from src.collectors.share_text import link_failure_reason, parse_share_text
+    url = parse_share_text(raw, final_url=final_url).get("url", "")
+    if not url:
+        return render_template("collect_share_result.html", raw=raw,
+                               out={"ok": False, "error": link_failure_reason(raw, final_url)})
+    from src.api.extension_api import share_collect_core
+    out, _res = share_collect_core(raw, url=url, seller_id=_seller_id(), seller_ids=_seller_identities(),
+                                   final_url=final_url, source="share")
+    logger.info("[share] method=%s ok=%s dup=%s partial=%s item=%s", request.method, out.get("ok"),
+                out.get("duplicate"), out.get("partial"), out.get("item_id"))
+    return render_template("collect_share_result.html", out=out, raw=raw)
+
+
+def item_timeline(item: dict) -> dict:
+    """캐너리 측정(오너 2026-09-28 「쿠팡 성공률」) — **저장된 시각만으로** 단계별 소요를 낸다.
+
+    수집(행 생성) → 보강 완료(`image_check.at`, 중국 소싱처) → 자동 번역 첫·마지막 장(`images_ko[].at`) →
+    등록 성공(`uploaded[].at`, 마켓별). 기록이 없는 단계는 **없음**으로 둔다(지어낸 시각 0).
+    오너 클릭 수는 서버가 모른다 — 측정표에 사람이 적는다.
+    """
+    from datetime import datetime as _dt
+
+    def _p(s):
+        s = str(s or "").strip().replace("Z", "+00:00")
+        if not s:
+            return None
+        try:
+            d = _dt.fromisoformat(s)
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    try:
+        ex = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        ex = {}
+    steps = [("수집", _p(item.get("collected_at")))]
+    ic = ex.get("image_check") if isinstance(ex.get("image_check"), dict) else {}
+    steps.append(("보강 완료", _p(ic.get("at"))))
+    ko = [x for x in (ex.get("images_ko") or []) + (ex.get("detail_images_ko") or []) if isinstance(x, dict)]
+    ts = sorted(t for t in (_p(x.get("at")) for x in ko if x.get("status") == "done") if t)
+    steps.append(("번역 첫 장", ts[0] if ts else None))
+    steps.append(("번역 마지막 장", ts[-1] if ts else None))
+    for u in ex.get("uploaded") or []:
+        if isinstance(u, dict) and u.get("market"):
+            steps.append((f"등록 성공 · {u.get('label') or u.get('market')}", _p(u.get("at"))))
+    base = steps[0][1]
+    out, prev = [], base
+    for name, t in steps:
+        out.append({"step": name, "at": t.isoformat() if t else "",
+                    "since_collect_s": int((t - base).total_seconds()) if (t and base) else None,
+                    "since_prev_s": int((t - prev).total_seconds()) if (t and prev) else None})
+        if t:
+            prev = t
+    return {"item_id": item.get("id"), "steps": out}
+
+
+@bp.get("/collect/preview/<item_id>/timeline")
+def collect_item_timeline(item_id: str):
+    """캐너리 측정용 — 이 상품의 단계별 시각·소요(저장된 값만)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True, **item_timeline(item)})
+
+
+@bp.get("/guide/phone")
+def guide_phone():
+    """M3 — 폰에서 1탭 수집: 아이폰 단축어 만들기 · 안드로이드 설치형 앱 · 텔레그램 봇(대안)."""
     if not _check_auth():
         return redirect(url_for("auth.login", next=request.full_path))
-
-    # C-T1: 공유 시트가 title·text만 주는 경우가 흔하다 — 셋 다 같은 파서에 넣는다.
-    from src.collectors.share_text import parse_share_text
-    _raw = (request.args.get("url") or request.args.get("u")
-            or request.args.get("text") or request.args.get("title") or "")
-    url = parse_share_text(_raw).get("url", "")
-
-    res = _quick_collect(url, source="share", share_raw=_raw)
-    if res["ok"] and res.get("item_id"):
-        # 성공 → 편집 화면(모바일 풀스크린 드로어 모드)으로 바로 진입
-        return redirect(url_for("seller_console.collect_preview_by_id",
-                                item_id=res["item_id"]) + "?drawer=1&from=share")
-    # 실패 → 정직한 안내(모바일: 확장 권장 등)
-    return render_template(
-        "collect_quick_result.html", ok=False, message=res["message"], url=url,
-    ), res["status"]
+    # 단축어에 넣을 주소는 **운영 주소**다(개발 서버의 localhost를 안내하면 폰에서 안 열린다).
+    base = (os.getenv("APP_BASE_URL", "") or "https://kohganepercentiii.com").strip().rstrip("/")
+    return render_template("guide_phone.html", share_url=f"{base}/seller/collect/share?text=",
+                           shortcut_link=os.getenv("IOS_SHORTCUT_URL", "").strip())
 
 
 def _extract_reviews(html: str, limit: int = 20) -> list[dict]:

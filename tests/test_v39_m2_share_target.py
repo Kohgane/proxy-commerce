@@ -27,27 +27,26 @@ def test_manifest_share_target_points_to_share_route(fn):
     m = json.loads((STATIC / fn).read_text(encoding="utf-8"))
     st = m["share_target"]
     assert st["action"] == "/seller/collect/share"
-    assert st["method"] == "GET"
-    # 공유 url → 쿼리 u, text/title도 매핑
-    assert st["params"]["url"] == "u"
-    assert "text" in st["params"] and "title" in st["params"]
+    # M3(오너 2026-09-28): 안드로이드 공유 시트는 **POST 폼**(title·text·url). 아이폰 단축어는 같은 라우트에 GET ?text=.
+    assert st["method"] == "POST" and st["enctype"] == "application/x-www-form-urlencoded"
+    assert st["params"] == {"title": "title", "text": "text", "url": "url"}
 
 
-def test_share_success_redirects_to_editor_drawer(client, monkeypatch):
-    import src.seller_console.views as views
-    # 수집 성공 모사
-    monkeypatch.setattr(views, "_collect_real_draft",
-                        lambda url, translate=True: {"title": "T", "title_ko": "티", "price": "1",
-                                                     "currency": "USD", "images": [], "source": "share"})
-    monkeypatch.setattr(views, "_register_discovery_candidate_from_collection", lambda *a, **k: None)
-    import src.seller_console.collect_history_store as _chs; monkeypatch.setattr(_chs, "append", lambda **k: "shareitem1")
+def test_share_success_shows_result_with_editor_link(client, monkeypatch):
+    """M3(오너 2026-09-28): 성공하면 편집 드로어로 튕기지 않고 **결과 화면** — 편집은 버튼 하나.
+    (수집은 붙여넣기와 같은 판단점 `collect_input` → 정상 수집이면 `collect_one_url`.)"""
+    import src.api.extension_api as ext
+    import src.seller_console.collect_history_store as _chs
+    monkeypatch.setattr(_chs, "find_by_product_key", lambda *a, **k: None)
+    monkeypatch.setattr(ext, "collect_one_url", lambda url, seller_id="", source="": {
+        "ok": True, "url": url, "item_id": "shareitem1", "title": "티"})
     with client.session_transaction() as s:
         s["user_id"] = "u1"
     r = client.get("/seller/collect/share?u=https://temu.com/p/abc", follow_redirects=False)
-    assert r.status_code in (301, 302)
-    loc = r.headers["Location"]
-    assert "/seller/collect/preview/shareitem1" in loc
-    assert "drawer=1" in loc and "from=share" in loc
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'data-state="collected"' in body and "티" in body
+    assert "/seller/collect/preview/shareitem1?drawer=1&from=share" in body
 
 
 def test_share_failure_is_honest_not_fake(client, monkeypatch):

@@ -123,6 +123,16 @@
     <button class="btn btn-primary" id="extractBtn" onclick="extractProduct()">미리보기</button>
   </div>
 </section>
+{# M4(오너 「미리보기가 안 된다」 2026-09-28): 로딩·오류·안내가 **일괄 수집 칸 아래**에 있어, 미리보기를 누르면
+   화면 밖에서 떴다 — 누른 사람 눈엔 아무 반응이 없었다. 버튼 바로 아래로 옮긴다. #}
+<div id="loadingSpinner" class="text-center py-4 d-none" aria-live="polite">
+  <div class="spinner-border text-teal" role="status"></div>
+  <div class="mt-2 text-muted">상품 정보를 수집하고 있습니다...</div>
+</div>
+
+<div id="errorAlert" class="pc-status pc-status-danger small d-none" role="alert"></div>
+{# F49-T — 서버가 못 여는 사이트(타오바오·티몰)는 **확장으로 연다.** 서버 fetch는 시도하지 않는다. #}
+<div id="extOpenBox" class="pc-status pc-status-info small d-none" data-role="ext-open"></div>
 
 <!-- 여러 URL 일괄 수집 -->
 <section class="op-card">
@@ -142,14 +152,6 @@
   </div>
 </section>
 
-<div id="loadingSpinner" class="text-center py-4 d-none" aria-live="polite">
-  <div class="spinner-border text-teal" role="status"></div>
-  <div class="mt-2 text-muted">상품 정보를 수집하고 있습니다...</div>
-</div>
-
-<div id="errorAlert" class="pc-status pc-status-danger small d-none" role="alert"></div>
-{# F49-T — 서버가 못 여는 사이트(타오바오·티몰)는 **확장으로 연다.** 서버 fetch는 시도하지 않는다. #}
-<div id="extOpenBox" class="pc-status pc-status-info small d-none" data-role="ext-open"></div>
 
 <div id="previewCard" class="d-none">
   <section class="op-card">
@@ -370,27 +372,59 @@ function extractProduct() {
   document.getElementById('previewCard').classList.add('d-none');
   document.getElementById('errorAlert').classList.add('d-none');
 
+  // M4(오너 「미리보기가 안 된다」): 눌렀는데 **아무 반응 없음**이 없도록 — 결과 카드 아니면 사유 문장.
+  //   ① 서버가 JSON 대신 HTML(로그인 만료·프록시 502)을 주면 파싱 오류로 떨어져 일반 문장만 떴다
+  //   ② 오래 걸리면 스피너만 돌았다 ③ 서버가 쓴 사유(어느 사이트라 안 되는지)가 일반 문장에 덮였다.
+  const _why = (msg) => { const e = new Error(msg); e.user_message = true; return e; };
+  const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), 90000) : null;
   fetch('/seller/collect/preview', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({url})
+    body: JSON.stringify({url}),
+    signal: ctl ? ctl.signal : undefined,
   })
-    .then((r) => r.json())
+    .then(async (r) => {
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      if (!ct.includes('json')) {
+        if (r.status === 401 || /\/auth\/login/.test(r.url || '')) throw _why('로그인이 풀렸어요 — 새로고침하고 다시 로그인한 뒤 눌러 주세요.');
+        throw _why(`서버가 답을 제대로 주지 못했어요(응답 ${r.status}) — 잠시 뒤 다시 눌러 주세요.`);
+      }
+      return r.json();
+    })
     .then((data) => {
       if (!data.ok) {
-        throw new Error(data.error || '미리보기 실패');
+        const e = new Error(data.error || '미리보기를 만들지 못했어요.');
+        e.user_message = !!data.user_message;
+        throw e;
       }
       currentDraft = data.draft || {};
       renderPreview(currentDraft, data.source || currentDraft.source || currentDraft.adapter_used || 'unknown');
       kgpShowExtOpen(data);
       setStep(2);
       showToast('미리보기 완료', '상품 정보를 확인하고 마켓을 선택하세요.');
+      kgpRevealEl('previewCard');                       // M4: 결과가 화면 밖에 생기지 않게
     })
     .catch((err) => {
       // v19: 실패 그 자리에 쉬운 안내 + 재시도(개발 메시지 비노출)
+      if (err && err.name === 'AbortError') {
+        let host = ''; try { host = new URL(url).hostname; } catch (e) {}
+        err = _why(`90초 동안 답이 없었어요${host ? ' — ' + host + '가 느리거나 막혀 있어요' : ''}. PC 고가수집기로 열어 보세요.`);
+      }
       kgpInlineError('errorAlert', err, { retry: () => extractProduct(), help: '/seller/extension' });
+      kgpRevealEl('errorAlert');
     })
-    .finally(() => setLoading(false));
+    .finally(() => { if (timer) clearTimeout(timer); setLoading(false); });
+}
+
+// M4: 방금 생긴 결과·사유를 **눈앞으로** — 화면 밖에 생기면 누른 사람에겐 무반응과 같다.
+function kgpRevealEl(id) {
+  const el = document.getElementById(id);
+  if (!el || el.classList.contains('d-none')) return;
+  const r = el.getBoundingClientRect();
+  if (r.top >= 0 && r.bottom <= (window.innerHeight || document.documentElement.clientHeight)) return;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  try { el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' }); } catch (e) { el.scrollIntoView(); }
 }
 
 function renderPreview(draft, source) {
