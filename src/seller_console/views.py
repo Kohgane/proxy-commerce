@@ -7324,6 +7324,14 @@ def collect_preview_save(item_id: str):
         extra["description_ko"] = description
     if images is not None:
         extra["images"] = images
+    # Shopify 캐너리 사전 점검: 드로어 「영문 상품명」 칸(해외 마켓 제목). 비우면 손으로 넣은 값만 걷는다.
+    if "title_en_input" in data:
+        _ten = str(data.get("title_en_input") or "").strip()[:255]
+        if _ten:
+            extra["title_en"] = _ten
+            extra["title_en_manual"] = True
+        elif extra.pop("title_en_manual", None):
+            extra.pop("title_en", None)
     # v39-E2 #2: 갤러리(대표)·상세설명 이미지 버킷 보존(분리 저장).
     _gi = data.get("gallery_images")
     if isinstance(_gi, list):

@@ -24,9 +24,9 @@ DRAFT_URL_KEYS = ("url", "final_url", "source_url", "product_url")
 
 # F42d: 한글이 섞여 있으면 영문 제목이 아니다 — 글자로 재는 판정(짐작 0).
 _HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
-# Shopify \uce90\ub108\ub9ac \uc0ac\uc804 \uc810\uac80(2026-09-28): \uc601\ubb38 \uc81c\ubaa9 \ud310\uc815\uc774 **\ud55c\uae00\ub9cc** \ubd24\ub2e4 \u2014 \uc218\ud589\ubc29\ud328\ucc98\ub7fc \uc6d0\ubb38\uc774 \uc911\uad6d\uc5b4\uba74
-#   `title_en`(\ubc88\uc5ed \uc2e4\ud328 \uc2dc \uc6d0\ubb38\uc774 \ub4e4\uc5b4\uac04\ub2e4)\uc774 \ud55c\uae00 \uac80\uc0ac\ub97c \ud1b5\uacfc\ud574 **\uc911\uad6d\uc5b4 \uc81c\ubaa9\uc774 US \uc2a4\ud1a0\uc5b4\ub85c** \uac14\ub2e4.
-#   F42d\uc640 \uac19\uc740 \uacb0\ud568\uc774\ub2e4(\ubbf8\uad6d \uc190\ub2d8\uc740 \ubabb \uc77d\ub294\ub2e4). \ud55c\u00b7\uc911\u00b7\uc77c \uae00\uc790\uac00 \ud558\ub098\ub77c\ub3c4 \uc788\uc73c\uba74 \uc601\ubb38 \uc81c\ubaa9\uc774 \uc544\ub2c8\ub2e4.
+# Shopify 캐너리 사전 점검(2026-09-28): 영문 제목 판정이 **한글만** 봤다 — 수행방패처럼 원문이 중국어면
+#   `title_en`(번역 실패 시 원문이 들어간다)이 한글 검사를 통과해 **중국어 제목이 US 스토어로** 갔다.
+#   F42d와 같은 결함이다(미국 손님은 못 읽는다). 한·중·일 글자가 하나라도 있으면 영문 제목이 아니다.
 _CJK_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 
@@ -35,7 +35,7 @@ SHOPIFY_TITLE_HINT = "편집 화면에서 영문 상품명을 채우거나 번�
 
 
 def shopify_title(product_data: Dict[str, Any]) -> str:
-    """Shopify(US)\uc5d0 \uc62c\ub9b4 \uc81c\ubaa9 \u2014 \ud55c\u00b7\uc911\u00b7\uc77c \uae00\uc790\uac00 \uc5c6\ub294 \uac83\ub9cc. \uc5c6\uc73c\uba74 \ube48 \ubb38\uc790\uc5f4(\ub4f1\ub85d\ud558\uc9c0 \uc54a\ub294\ub2e4)."""
+    """Shopify(US)에 올릴 제목 — 한·중·일 글자가 없는 것만. 없으면 빈 문자열(등록하지 않는다)."""
     for key in ("title_en", "title_original", "title", "title_ko"):
         t = str(product_data.get(key) or "").strip()
         if t and not _CJK_RE.search(t):
@@ -686,7 +686,8 @@ class UploadDispatcher:
         if market == "shopify":
             if not shopify_title(product_data):
                 return PrevalidationResult(market=market, ok=False, error_code="title_not_english",
-                                           message=SHOPIFY_TITLE_MSG, hint=SHOPIFY_TITLE_HINT)
+                                           message=SHOPIFY_TITLE_MSG.replace("등록하지 않았습니다", "올리지 않습니다"),
+                                           hint=SHOPIFY_TITLE_HINT)
             _cur = (os.getenv("SHOPIFY_STORE_CURRENCY", "").strip().upper() or "USD")
             try:
                 _p, _why = self.sell_price_in(product_data, _cur, market="shopify")

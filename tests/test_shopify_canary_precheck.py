@@ -90,3 +90,40 @@ def test_adapter_internal_error_names_the_kind(monkeypatch):
     monkeypatch.setattr(ShopifyAdapter, "_shop_profile", boom)
     r = a.upload_product(ListingPayload(title="T", description="", price=1.0, currency="USD", sku="", qty=0, options={}))
     assert r.ok is False and r.raw["status"] == "internal_error" and r.raw["error"].startswith("KeyError")
+
+
+# ④ 채울 칸이 없었다 — 멈춤 안내는 「영문 상품명을 채우라」인데 드로어에 그 칸이 없었고,
+#    등록은 수집 때 들어온 `title_en`(중국어 원문)을 먼저 썼다. 오너가 할 수 있는 일이 없었다.
+def test_drawer_has_english_title_field_and_it_wins():
+    from pathlib import Path
+    t = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
+    assert 'id="editTitleEn"' in t and "영문 상품명" in t and "Shopify 등 해외 마켓용" in t
+    assert "title_en: _ten || _EXTRA.title_en || title, title_en_input: _ten" in t
+    assert "!_KGP_CJK.test(v)" in t          # 중국어 원문을 「영문」 칸에 채워 보이지 않는다
+
+
+def test_save_stores_and_clears_the_english_title(monkeypatch):
+    import json
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as S
+    seller = "u-shopify-en"
+    iid = S.append(source="extension", seller_id=seller, url="https://detail.tmall.com/item.htm?id=617129397971",
+                   title=SHIELD_ZH, price="29.90", currency="CNY",
+                   extra={"title_en": SHIELD_ZH, "title": SHIELD_ZH})
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = seller
+    r = c.post(f"/seller/collect/preview/{iid}/save", json={"title": "수행방패 애플워치 거치대",
+                                                             "title_en_input": "Apple Watch Charging Stand"})
+    assert r.get_json()["ok"], r.get_json()
+    ex = json.loads(S.get(iid, seller_id=seller)["extra_json"])
+    assert ex["title_en"] == "Apple Watch Charging Stand" and ex["title_en_manual"] is True
+    assert U.shopify_title({**ex, "title": ex.get("title")}) == "Apple Watch Charging Stand"
+    c.post(f"/seller/collect/preview/{iid}/save", json={"title": "수행방패 애플워치 거치대", "title_en_input": ""})
+    ex = json.loads(S.get(iid, seller_id=seller)["extra_json"])
+    assert "title_en" not in ex and "title_en_manual" not in ex
+    # 칸을 안 보낸 저장(옛 화면)은 수집값을 건드리지 않는다.
+    S.update(iid, seller_id=seller, extra_json=json.dumps({**ex, "title_en": SHIELD_ZH}, ensure_ascii=False))
+    c.post(f"/seller/collect/preview/{iid}/save", json={"title": "수행방패"})
+    assert json.loads(S.get(iid, seller_id=seller)["extra_json"])["title_en"] == SHIELD_ZH
