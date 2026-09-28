@@ -24,6 +24,23 @@ DRAFT_URL_KEYS = ("url", "final_url", "source_url", "product_url")
 
 # F42d: 한글이 섞여 있으면 영문 제목이 아니다 — 글자로 재는 판정(짐작 0).
 _HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
+# Shopify \uce90\ub108\ub9ac \uc0ac\uc804 \uc810\uac80(2026-09-28): \uc601\ubb38 \uc81c\ubaa9 \ud310\uc815\uc774 **\ud55c\uae00\ub9cc** \ubd24\ub2e4 \u2014 \uc218\ud589\ubc29\ud328\ucc98\ub7fc \uc6d0\ubb38\uc774 \uc911\uad6d\uc5b4\uba74
+#   `title_en`(\ubc88\uc5ed \uc2e4\ud328 \uc2dc \uc6d0\ubb38\uc774 \ub4e4\uc5b4\uac04\ub2e4)\uc774 \ud55c\uae00 \uac80\uc0ac\ub97c \ud1b5\uacfc\ud574 **\uc911\uad6d\uc5b4 \uc81c\ubaa9\uc774 US \uc2a4\ud1a0\uc5b4\ub85c** \uac14\ub2e4.
+#   F42d\uc640 \uac19\uc740 \uacb0\ud568\uc774\ub2e4(\ubbf8\uad6d \uc190\ub2d8\uc740 \ubabb \uc77d\ub294\ub2e4). \ud55c\u00b7\uc911\u00b7\uc77c \uae00\uc790\uac00 \ud558\ub098\ub77c\ub3c4 \uc788\uc73c\uba74 \uc601\ubb38 \uc81c\ubaa9\uc774 \uc544\ub2c8\ub2e4.
+_CJK_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+
+SHOPIFY_TITLE_MSG = "영문 제목이 없어 등록하지 않았습니다(한국어·중국어·일본어 제목을 그대로 올리지 않습니다)."
+SHOPIFY_TITLE_HINT = "편집 화면에서 영문 상품명을 채우거나 번역을 돌린 뒤 다시 등록하세요."
+
+
+def shopify_title(product_data: Dict[str, Any]) -> str:
+    """Shopify(US)\uc5d0 \uc62c\ub9b4 \uc81c\ubaa9 \u2014 \ud55c\u00b7\uc911\u00b7\uc77c \uae00\uc790\uac00 \uc5c6\ub294 \uac83\ub9cc. \uc5c6\uc73c\uba74 \ube48 \ubb38\uc790\uc5f4(\ub4f1\ub85d\ud558\uc9c0 \uc54a\ub294\ub2e4)."""
+    for key in ("title_en", "title_original", "title", "title_ko"):
+        t = str(product_data.get(key) or "").strip()
+        if t and not _CJK_RE.search(t):
+            return t
+    return ""
 
 
 def draft_url(product_data: Dict[str, Any]) -> str:
@@ -664,6 +681,22 @@ class UploadDispatcher:
                 return PrevalidationResult(market=market, ok=True, message="사전검증 통과",
                                            hint=" · ".join(chk["notes"]))
 
+        # Shopify 캐너리 사전 점검: 등록에서 멈출 이유(영문 제목·판매가)는 **사전검증이 먼저** 말한다.
+        #   예전엔 사전검증 「통과」 뒤 등록에서 title_not_english로 멈췄다 — 두 화면이 다른 말을 한다.
+        if market == "shopify":
+            if not shopify_title(product_data):
+                return PrevalidationResult(market=market, ok=False, error_code="title_not_english",
+                                           message=SHOPIFY_TITLE_MSG, hint=SHOPIFY_TITLE_HINT)
+            _cur = (os.getenv("SHOPIFY_STORE_CURRENCY", "").strip().upper() or "USD")
+            try:
+                _p, _why = self.sell_price_in(product_data, _cur, market="shopify")
+            except Exception as exc:        # 판정 실패는 통과로 치지 않는다 — 등록이 같은 함수로 다시 잰다
+                _p, _why = None, f"판매가 계산 오류 {type(exc).__name__}"
+            if _p is None:
+                return PrevalidationResult(market=market, ok=False, error_code="price_unresolved",
+                                           message=f"판매가를 정하지 못해 등록하지 않습니다 — {_why}",
+                                           hint="원가·통화·환율을 확인하세요.")
+
         # F35-2: **등록 직전에 한 번** 두드려 본다 — 「키가 있다」를 「닿는다」로 읽지 않는다.
         if market in ("woocommerce", "elevenst", "shopify"):
             reach = market_reach(market)
@@ -1295,19 +1328,12 @@ class UploadDispatcher:
             #   미국 손님은 그 제목을 못 읽는다 — 「원문 사용」은 답이 아니다(오너).
             #   영문 제목이 없으면 **등록하지 않는다.** 한글이 섞여 있으면 영문 제목이 아니다
             #   (호스트별 짐작이 아니라 **글자로 재는** 판정이다).
-            _title = str(product_data.get("title_en")
-                         or product_data.get("title_original") or "").strip()
-            if not _title or _HANGUL_RE.search(_title):
-                _title = ""
-            if not _title:
-                _ko = str(product_data.get("title") or product_data.get("title_ko") or "").strip()
-                if _ko and not _HANGUL_RE.search(_ko):
-                    _title = _ko        # 애초에 영문 제목이면 그대로 쓴다
+            #   2026-09-28: 한·중·일 글자 전체로 넓혔다(`shopify_title` — 사전검증과 같은 함수).
+            _title = shopify_title(product_data)
             if not _title:
                 return UploadResult(
                     market="shopify", success=False, error_code="title_not_english",
-                    message="영문 제목이 없어 등록하지 않았습니다(한국어 제목을 그대로 올리지 않습니다).",
-                    hint="편집 화면에서 영문 상품명을 채우거나 번역을 돌린 뒤 다시 등록하세요.")
+                    message=SHOPIFY_TITLE_MSG, hint=SHOPIFY_TITLE_HINT)
 
             payload = ListingPayload(
                 title=_title,
@@ -1346,12 +1372,21 @@ class UploadDispatcher:
 
             result = adapter.upload_product(payload)
             if not result.ok:
+                # 캐너리는 **응답 원문**이 근거다 — 요약 한 줄로 뭉개지 않고 마켓이 준 사유를 그대로 싣는다.
+                _raw = result.raw if isinstance(result.raw, dict) else {}
+                _det = [x for x in (
+                    f"HTTP {_raw['http_status']}" if _raw.get("http_status") else "",
+                    str(_raw.get("reason") or "").strip()[:500],
+                    f"상태 {_raw['status']}" if _raw.get("status") and not _raw.get("http_status") else "",
+                    str(_raw.get("error") or "").strip()[:300],
+                ) if x]
                 return UploadResult(
                     market="shopify",
                     success=False,
                     message=result.message,
                     error_code="api_error",
                     hint=_MARKET_TOKEN_HINTS["shopify"],
+                    details=_det,
                 )
 
             admin_url = str(result.raw.get("admin_url") or "").strip()
@@ -1372,6 +1407,7 @@ class UploadDispatcher:
                 message="오류: Shopify 업로드 처리 실패",
                 error_code="api_error",
                 hint=_MARKET_TOKEN_HINTS["shopify"],
+                details=[type(exc).__name__],
             )
 
     @staticmethod
