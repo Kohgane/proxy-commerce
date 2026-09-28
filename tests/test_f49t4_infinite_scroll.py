@@ -232,6 +232,61 @@ def test_real_snapshots_detect_cards_appended_later(snap, url):
     assert sel == main                                                          # 전체 선택 = 탐지 전부(선택 대상)
 
 
+WT_FEED_APPEND = """(n) => {
+  // 실제 피드처럼 **상품 칸**(div.tb-pick-content-item)을 피드 컨테이너에 붙인다 — 상품 번호만 새로.
+  const feed = document.querySelector('.tb-pick-feeds-container');
+  const unit = feed && feed.querySelector('.tb-pick-content-item');
+  if (!unit) return 0;
+  const a = unit.querySelector('a.item-link');
+  const id = ((a && a.getAttribute('href') || '').match(/[?&]id=(\\d{6,})/) || [])[1];
+  if (!id) return -1;
+  for (let i = 0; i < n; i++) {
+    window.__wtSeq = (window.__wtSeq || 0) + 1;
+    const nid = '9' + String(100000000000 + window.__wtSeq).slice(1);
+    const el = unit.cloneNode(true);
+    el.querySelectorAll('.kgp-card-chk, .kgp-card-quick').forEach(x => x.remove());
+    el.querySelectorAll('[data-kgp],[data-kgp-outline]').forEach(x => { x.removeAttribute('data-kgp'); x.removeAttribute('data-kgp-outline'); x.style.outline = ''; });
+    el.querySelectorAll('*').forEach(x => x.getAttributeNames().forEach(k => { const v = x.getAttribute(k); if (v && v.indexOf(id) >= 0) x.setAttribute(k, v.split(id).join(nid)); }));
+    feed.appendChild(el);
+  }
+  return n;
+}"""
+
+
+def test_world_taobao_real_feed_grows_after_scroll_and_promos_are_not_products():
+    """오너 검증 기준 — world.taobao 스크롤 후 툴바 N 증가(재업로드 스냅샷 2026-09-28, ext 1.5.161).
+
+    실측: 제네릭이 피드 위 행사 입구 4개(huodong·web.m.taobao)를 상품으로 셌다(34 = 30 + 4) → 뺀다.
+    피드 칸 10개씩 3번 붙이면 30 → 60, 「새 상품」 30, 붙은 칸마다 선택 배지, 전체 선택 = 60.
+    """
+    _need_pw()
+    hits = sorted(Path("fixtures/realpages/diag").glob("kgp-snapshot-world-taobao-com*.html"))
+    assert hits, "world-taobao 스냅샷이 main에 있어야 한다(오너 업로드 52dda872)"
+    body = hits[0].read_text(encoding="utf-8", errors="ignore")
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        b, page = _open(pw, "https://world.taobao.com/", body)
+        page.wait_for_timeout(1500)
+        before = page.evaluate(PROBE)
+        kinds = page.evaluate("() => (_kgpCards || []).map(c => _kgpCardKey(c.url).slice(0, 3))")
+        promo_skip = page.evaluate("() => document.querySelectorAll('[data-kgp-skip=\"taobao-promo\"]').length")
+        steps = []
+        for _ in range(3):
+            page.evaluate(WT_FEED_APPEND, 10)
+            page.wait_for_timeout(800)
+            steps.append(page.evaluate(PROBE))
+        tiled = page.evaluate("() => Array.from(document.querySelectorAll('.tb-pick-feeds-container > .tb-pick-content-item')).filter(u => u.querySelector('.kgp-card-chk, .kgp-card-quick')).length")
+        _click_all(page)
+        sel = page.evaluate("() => _kgpSelKeys.size")
+        b.close()
+    assert before["total"] == 30 and set(kinds) == {"tb:"}, (before, kinds)     # 행사 입구 제외
+    assert promo_skip == 4
+    assert [s["total"] for s in steps] == [40, 50, 60], steps                   # 스크롤마다 N 증가
+    assert steps[-1]["newN"] >= 30 and steps[-1]["alive"] is True
+    assert "60" in steps[-1]["count"], steps[-1]["count"]                      # 툴바 숫자도 따라온다
+    assert tiled == 60 and sel == 60
+
+
 # ⑥ 원격 규칙
 def test_container_selectors_are_remote_rule_data():
     from src.collectors.ext_rules import load

@@ -146,6 +146,32 @@ def test_extension_queue_interval_failures_and_retry():
 
 
 def test_world_taobao_sample_five(monkeypatch):
+    """실 스냅샷(오너 재업로드 2026-09-28)의 피드 카드 30장 중 5장 — 목록 수집 = 초안 + 상세 보강 대기."""
     hits = sorted(Path("fixtures/realpages/diag").glob("kgp-snapshot-world-taobao-com*.html"))
-    if not hits:
-        pytest.skip("world-taobao 스냅샷 미커밋 — 오너 업로드 후 30장 중 5개 표본으로 돈다")
+    assert hits, "world-taobao 스냅샷이 main에 있어야 한다(오너 업로드 52dda872)"
+    pytest.importorskip("playwright.sync_api")
+    from tests import _pw
+    if not _pw.chromium_hits():
+        pytest.skip("chromium 없음")
+    from tests.test_f49t4_infinite_scroll import _open
+    from playwright.sync_api import sync_playwright
+    body = hits[0].read_text(encoding="utf-8", errors="ignore")
+    with sync_playwright() as pw:
+        b, page = _open(pw, "https://world.taobao.com/", body)
+        page.wait_for_timeout(1200)
+        cards = page.evaluate("() => (_kgpCards || []).map(c => ({url: c.url, title: c.title, image: c.image, price: c.price, currency: c.currency}))")
+        b.close()
+    assert len(cards) == 30 and all("item.htm?id=" in c["url"] for c in cards)
+    seller = "u-5-wt"
+    c = _client(monkeypatch, seller)
+    picks = [cards[i] for i in (0, 7, 14, 21, 29)]
+    ids = []
+    for k in picks:
+        d = c.post("/api/v1/collect/extension", json={**k, "images": [k["image"]] if k["image"] else [],
+                                                      "mode": "simple", "translate": False}).get_json()
+        assert d["ok"], d
+        ids.append(d["item_id"])
+    pend = {p["item_id"] for p in c.get("/api/v1/collect/enrich/pending").get_json()["items"]}
+    for iid in ids:
+        ex = _extra(iid, seller)
+        assert ex["mode"] == "simple" and ex["enrich_state"] == "pending" and iid in pend
