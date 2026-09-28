@@ -1573,8 +1573,11 @@ def _share_raw_from_request() -> tuple:
 
     · 아이폰 단축어(M3-iOS): `?text=<공유 입력>` 하나. 단축어가 **URL 인코딩 없이** 붙이면 공유 글 속 `&`
       뒤가 다른 쿼리 키로 갈라진다 → 모르는 키가 섞여 있으면 원 쿼리에서 `text=` 뒤 전체를 되살린다.
-    · 안드로이드 PWA(share_target POST): `title`·`text`·`url` 폼. 타오바오 앱은 **text에 제목+링크**를 담는다 —
-      text가 주인이고, url이 text에 없을 때만 뒤에 붙인다(제목 앞에 url을 끼우면 파서가 제목을 잘못 읽는다).
+    · 안드로이드 PWA(share_target POST): `title`·`text`·`url` 폼. 타오바오 앱은 **text에 제목+링크**를 담는다.
+    · M3-iOS 실측(오너 2026-09-28): 타오바오 앱의 iOS 공유 입력은 **제목 텍스트 + URL 두 조각**이다.
+      단축어가 그중 텍스트만 `text=`로 보내면 서버엔 제목 3자만 온다 → 단축어가 URL을 `url=`로 따로
+      보내도 받도록 **셋(title·text·url)을 합쳐** 파싱한다. 순서는 제목 → 본문 → 링크, 이미 든 조각은
+      다시 붙이지 않는다(제목 앞에 url을 끼우면 파서가 제목을 잘못 읽는다).
     """
     from urllib.parse import unquote_plus
     v = request.values
@@ -1584,13 +1587,24 @@ def _share_raw_from_request() -> tuple:
         qs = request.query_string.decode("utf-8", "replace")
         if extra and "text=" in qs:
             text = unquote_plus(qs.split("text=", 1)[1])
-    link = str(v.get("url") or v.get("u") or "")
-    raw = text.strip()
-    if link and link not in raw:
-        raw = f"{raw} {link}".strip()
-    if not raw:
-        raw = str(v.get("title") or "").strip()
+    title, text = str(v.get("title") or "").strip(), text.strip()
+    link = str(v.get("url") or v.get("u") or "").strip()
+    raw = "" if (not title or title in text) else title
+    for part in (text, link):
+        if part and part not in raw:
+            raw = f"{raw} {part}".strip()
     return raw, str(v.get("final_url") or "").strip()
+
+
+def share_raw_preview(raw: str, limit: int = 60) -> str:
+    """실패 화면·로그에 싣는 **받은 원문**(M3-iOS 실측 결함) — 스크럽 **먼저**, 자르기는 그 뒤.
+
+    「길이 3자」만으로는 무엇이 왔는지 알 수 없었다. 주소는 경로+상품 id만 남긴다
+    (`tk`·쿠키·계정 값은 지운다 — 자르기를 먼저 하면 잘린 비밀 조각이 스크럽을 빠져나간다).
+    """
+    from src.collectors.secret_scrub import scrub_line
+    s = " ".join(scrub_line(str(raw or "")).split())
+    return s if len(s) <= limit else s[:limit] + "…"
 
 
 @bp.route("/collect/share", methods=["GET", "POST"])
@@ -1616,17 +1630,25 @@ def collect_share():
         from urllib.parse import urlencode
         return redirect(url_for("auth.login", next="/seller/collect/share?" + urlencode(q)))
 
+    # M3-iOS 실측 결함: 단축어가 **무엇을 어떤 키로** 보냈는지 로그로 가른다(원 쿼리·폼 키 — 스크럽 후).
+    from urllib.parse import unquote_plus
+    _got = (unquote_plus(request.query_string.decode("utf-8", "replace")) if request.method == "GET"
+            else "&".join(f"{k}={request.form.get(k, '')}" for k in request.form.keys()))
+    logger.info("[share] in method=%s keys=%s len=%d q=%s", request.method,
+                ",".join(sorted(request.values.keys())), len(raw), share_raw_preview(_got, 300))
+
     from src.collectors.share_text import link_failure_reason, parse_share_text
+    preview = share_raw_preview(raw)
     url = parse_share_text(raw, final_url=final_url).get("url", "")
     if not url:
-        return render_template("collect_share_result.html", raw=raw,
+        return render_template("collect_share_result.html", raw=raw, raw_preview=preview,
                                out={"ok": False, "error": link_failure_reason(raw, final_url)})
     from src.api.extension_api import share_collect_core
     out, _res = share_collect_core(raw, url=url, seller_id=_seller_id(), seller_ids=_seller_identities(),
                                    final_url=final_url, source="share")
     logger.info("[share] method=%s ok=%s dup=%s partial=%s item=%s", request.method, out.get("ok"),
                 out.get("duplicate"), out.get("partial"), out.get("item_id"))
-    return render_template("collect_share_result.html", out=out, raw=raw)
+    return render_template("collect_share_result.html", out=out, raw=raw, raw_preview=preview)
 
 
 def item_timeline(item: dict) -> dict:

@@ -31,4 +31,5 @@ exec gunicorn src.order_webhook:app \
     --timeout "${GUNICORN_TIMEOUT:-120}" \
     --log-level "${GUNICORN_LOG_LEVEL:-info}" \
     --access-logfile - \
+    --access-logformat '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms "%(a)s"' \
     --error-logfile -

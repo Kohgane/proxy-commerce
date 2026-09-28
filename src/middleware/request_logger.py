@@ -73,6 +73,28 @@ def _mask_dict(data: Any, mask_fields: Optional[Set[str]] = None) -> Any:
     return data
 
 
+def _safe_query(raw_qs: str) -> str:
+    """쿼리 원문을 로그에 싣기 전에 비밀을 지운다(M3-iOS 실측 결함 2026-09-28).
+
+    공유 시트(`/seller/collect/share?url=https://e.tb.cn/…?tk=…`)의 `tk`가 이 로그에 **인코딩된 채 그대로**
+    남고 있었다. 풀어서(`unquote_plus`) 스크럽한다 — 안에 든 주소는 경로+상품 id만, `token=` 같은 키는 `***`.
+    """
+    if not raw_qs:
+        return ""
+    try:
+        from urllib.parse import unquote_plus
+        from src.collectors.secret_scrub import scrub_line
+        s = raw_qs
+        for _ in range(3):              # 로그인 복귀 `next=`는 한 번 더 인코딩돼 있다 — 풀릴 때까지(최대 3번)
+            u = unquote_plus(s)
+            if u == s:
+                break
+            s = u
+        return scrub_line("?" + s)[1:]
+    except Exception:
+        return "(query 생략 — 스크럽 실패)"
+
+
 def _mask_headers(headers: Dict[str, str]) -> Dict[str, str]:
     """요청 헤더에서 민감 값을 마스킹한다."""
     return {
@@ -207,7 +229,7 @@ class RequestLogger:
             "request_id": request_id,
             "method": request.method,
             "path": request.path,
-            "query": request.query_string.decode("utf-8", errors="replace"),
+            "query": _safe_query(request.query_string.decode("utf-8", errors="replace")),
             "remote_addr": request.remote_addr,
             "status_code": response.status_code,
             "elapsed_ms": elapsed_ms,

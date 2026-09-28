@@ -431,6 +431,8 @@ def link_failure_reason(raw: str, final_url: str = "") -> str:
 
     **원문은 싣지 않는다.** 길이와 판정만 말한다: 내용에 상품명·계정 정보가 섞여 올 수 있고,
     그게 로그·스크린샷으로 새면 우리가 만든 구멍이다.
+    (M3-iOS 실측 결함 2026-09-28: 결과 화면은 이 문장과 **따로** 받은 원문 앞 60자를 싣는다 —
+     `views.share_raw_preview`, 스크럽 먼저·자르기 나중. 이 함수는 여전히 원문을 싣지 않는다.)
     """
     text = str(raw or "")
     n = len(text.strip())
