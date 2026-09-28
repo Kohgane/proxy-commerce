@@ -1310,6 +1310,27 @@ def manual_collect_alias():
     return redirect(url_for("seller_console.collect"))
 
 
+# M4(오너 2026-09-28 「미리보기가 안 된다」): 실패는 **어느 사이트라 안 되는지** 말한다 — 일반 문장 하나로
+#   뭉개면 오너는 「고장」인지 「그 사이트가 원래 안 되는지」 모른다. 봇 차단이 실측된 곳만 차단이라 부른다.
+_PREVIEW_SITE_NAMES = (("temu.com", "테무"), ("amazon.", "아마존"), ("aliexpress.", "알리익스프레스"),
+                       ("coupang.com", "쿠팡"), ("rakuten.co.jp", "라쿠텐"), ("shein.", "쉬인"),
+                       ("yoshidakaban.com", "요시다카반"))
+_PREVIEW_BOT_WALL = ("temu.com", "amazon.", "aliexpress.")
+
+
+def preview_fail_message(url: str) -> str:
+    """미리보기 실패 사유 한 문장(사이트 이름 + 이유 + 다음 행동)."""
+    from urllib.parse import urlparse
+    host = (urlparse(str(url or "")).hostname or "").lower()
+    name = next((n for key, n in _PREVIEW_SITE_NAMES if key in host), "")
+    who = f"{name}({host})" if name else (host or "이 주소")
+    if any(k in host for k in _PREVIEW_BOT_WALL):
+        return (f"{who}는 서버에서 상품 페이지를 읽을 수 없어요(봇 차단) — "
+                "그 페이지를 PC 크롬에서 열고 고가수집기로 담아 주세요.")
+    return (f"{who}에서 상품 정보를 읽지 못했어요 — 로그인·봇 차단이거나 상품 정보(메타)가 없는 페이지예요. "
+            "제목·가격·이미지를 직접 넣거나 PC 고가수집기로 담아 주세요.")
+
+
 @bp.post("/collect/preview")
 def collect_preview():
     """URL → 메타데이터 추출 결과 (JSON).
@@ -1365,26 +1386,22 @@ def collect_preview():
                 "message": _r.get("message") or "담았어요.",
                 "warnings": [],
             })
-        return jsonify({"ok": False, "manual_entry": True,
+        return jsonify({"ok": False, "manual_entry": True, "user_message": True,
                         "error": _r.get("error") or "상품 정보를 담지 못했습니다."}), 200
 
     try:
         draft = _collect_real_draft(url, translate=translate)
     except Exception as exc:
         logger.warning("수집 파이프라인 오류: %s", exc)
-        return jsonify({"ok": False, "error": "추출 중 오류가 발생했습니다."}), 500
+        from urllib.parse import urlparse as _up
+        return jsonify({"ok": False, "user_message": True,
+                        "error": f"{_up(url).hostname or '이 주소'}를 읽다가 오류가 났어요 — 다시 눌러 주세요. "
+                                 "같은 오류가 반복되면 PC 고가수집기로 담아 주세요."}), 500
 
     if draft is None:
-        # 목업 대신 정직한 안내 (로그인/봇 차단·비표준 페이지 등)
-        return jsonify({
-            "ok": False,
-            "manual_entry": True,
-            "error": (
-                "이 URL에서 상품 정보를 자동으로 추출하지 못했습니다. "
-                "페이지가 로그인·봇 차단이거나 표준 상품 메타(JSON-LD/OpenGraph)가 "
-                "없을 수 있습니다. 제목·가격·이미지를 직접 입력해 진행하세요."
-            ),
-        }), 200
+        # 목업 대신 정직한 안내 — M4: **어느 사이트라 안 되는지**까지(표식이 있어야 화면이 덮어쓰지 않는다).
+        return jsonify({"ok": False, "manual_entry": True, "user_message": True,
+                        "error": preview_fail_message(url)}), 200
 
     _register_discovery_candidate_from_collection(url, keyword_hint=keyword_hint)
 
