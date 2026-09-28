@@ -94,6 +94,12 @@
         <input type="text" class="form-control" id="editTitle" placeholder="상품 제목">
         <div id="origTitleWrap" class="form-text small d-none">원문: <span id="origTitle" class="text-muted"></span>
           <a href="javascript:void(0)" onclick="restoreOrigTitle()" class="ms-1">원문으로 되돌리기</a></div>
+        {# Shopify 캐너리 사전 점검: Shopify가 「영문 상품명을 채우라」고 멈추는데 채울 칸이 없었다.
+           해외 마켓만 이 값을 쓴다 — 국내 마켓 제목(위 칸)은 그대로다. #}
+        <label for="editTitleEn" class="form-label small text-muted mt-2 mb-1">영문 상품명 <span class="text-muted">— Shopify 등 해외 마켓용</span></label>
+        <input type="text" class="form-control form-control-sm" id="editTitleEn" data-role="title-en"
+               placeholder="예: Apple Watch Charging Stand, Aluminum" autocomplete="off">
+        <div class="form-text small" id="titleEnNote">한국어·중국어·일본어 글자가 섞이면 해외 마켓에 올리지 않아요.</div>
       </div>
 
       <!-- [가격] 가격/통화 + 원화 환산 -->
@@ -1337,6 +1343,18 @@ async function translateToKo() {
     btn.disabled = false; btn.innerHTML = _old;
   }
 }
+// 영문 상품명 칸 — 수집값이 **실제로 영문일 때만** 채운다(중국어 원문을 「영문」 칸에 보여 주지 않는다).
+const _KGP_CJK = /[가-힣ᄀ-ᇿ㄰-㆏぀-ヿ㐀-䶿一-鿿豈-﫿]/;
+function kgpInitTitleEn() {
+  const el = document.getElementById('editTitleEn');
+  if (!el) return;
+  const cand = [_EXTRA.title_en, _EXTRA.title_original].map(v => String(v || '').trim()).find(v => v && !_KGP_CJK.test(v));
+  if (cand) el.value = cand;
+  const note = document.getElementById('titleEnNote');
+  const check = () => { if (note) note.classList.toggle('text-danger', _KGP_CJK.test(el.value)); };
+  el.addEventListener('input', check); check();
+}
+document.addEventListener('DOMContentLoaded', kgpInitTitleEn);
 function restoreOrigTitle() {
   const orig = _firstNonEmpty(_EXTRA.title_en, _EXTRA.title, _ITEM.title);
   if (orig) document.getElementById('editTitle').value = orig;
@@ -1465,8 +1483,10 @@ function buildProductData() {
 
   const categoryCode = (document.getElementById('editCategory') || {}).value || _EXTRA.category_code || '';
 
+  const _ten = ((document.getElementById('editTitleEn') || {}).value || '').trim();
   return {
-    title, title_ko: title, title_en: _EXTRA.title_en || title,
+    // 영문 상품명 칸이 있으면 그 값이 해외 마켓 제목이다(수집 때 들어온 원문보다 앞).
+    title, title_ko: title, title_en: _ten || _EXTRA.title_en || title, title_en_input: _ten,
     price, price_original: price, currency,
     description, description_ko: description,
     images, options,

@@ -2531,6 +2531,14 @@ function _kgpTaobaoItemHref(href) {
 function _kgpInTaobaoSaved(el) {
   try { return !!(el && el.closest && el.closest(_kgpRule("list_cards.taobao.saved_block", "[class*='mytao-collectitem']"))); } catch (e) { return false; }
 }
+// 타오바오·티몰 도메인의 **상품이 아닌** 링크(행사·앱 입구). 1688은 상품 URL 모양이 달라 여기서 판정하지 않는다.
+function _kgpIsTaobaoPromoUrl(url) {
+  try {
+    const u = new URL(String(url || ""), location.href);
+    if (!/(^|\.)(taobao|tmall)\.com$/i.test(u.hostname)) return false;
+    return !_kgpTaobaoItemHref(u.href);
+  } catch (e) { return false; }
+}
 function _kgpTaobaoListCards() {
   const cards = [], seen = {};
   let scanned = 0;
@@ -2628,6 +2636,10 @@ function kgpFindCards() {
   if ((typeof _kgpIsTaobaoHost === "function" && _kgpIsTaobaoHost(host))) {
     merged = merged.filter((c) => {
       if (c && c.el && _kgpInTaobaoSaved(c.el)) { _kgpMarkSkip(c.el, "mytao-saved"); return false; }
+      // F49-T 4부-b: 오너 재업로드 스냅샷(2026-09-28) 실측 — 제네릭이 피드 위 **행사 입구**
+      //   (business-entry · huodong.taobao.com·web.m.taobao.com) 4개를 상품으로 셌다. 타오바오·티몰 도메인인데
+      //   상품 링크(item.htm?id=)가 아니면 상품이 아니다 → 「메인 N」·「전체 선택」에서 뺀다(사유 표식은 남김).
+      if (c && c.url && _kgpIsTaobaoPromoUrl(c.url)) { if (c.el) _kgpMarkSkip(c.el, "taobao-promo"); _kgpExcl.url++; return false; }
       return true;
     });
   }

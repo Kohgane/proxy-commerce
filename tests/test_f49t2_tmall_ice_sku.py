@@ -164,8 +164,9 @@ def test_real_snapshot_617129397971():
     assert [o["name"] for o in out["options"]] == ["颜色分类"]
     flat = [v for o in out["options"] for v in o["values"]]
     assert not [j for j in JUNK if any(j in x for x in flat)]
-    # 옛 결과의 이미지 14장 중 9장은 UI 아이콘(tps-48/56/96)이었다 — ICE 본 이미지 3장만.
-    assert len(out["images"]) == 3 and not [u for u in out["images"] if "-tps-" in u]
+    # 옛 결과의 이미지 14장 중 9장은 UI 아이콘(tps-48/56/96)이었다 — ICE 본 이미지만.
+    #   2026-09-28 오너 재업로드 스냅샷은 ICE item.images가 5장(예전 3장) — 정답값을 새 실측으로.
+    assert len(out["images"]) == 5 and not [u for u in out["images"] if "-tps-" in u]
 
 
 # ── 4 priceVO 폴백 ────────────────────────────────────────────────────────────

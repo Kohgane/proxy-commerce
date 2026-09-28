@@ -675,12 +675,13 @@ class ShopifyAdapter(MarketAdapter):
                 message="Shopify API 요청이 실패했습니다. 네트워크 상태를 확인 후 다시 시도하세요.",
                 raw={"status": "network_error"},
             )
-        except Exception:
+        except Exception as exc:
+            # 캐너리 사전 점검: 무엇이 터졌는지 **종류와 첫 줄**은 남긴다(자격 값은 예외 문장에 실리지 않는다).
             return ListingResult(
                 ok=False,
                 market=self.market,
                 message="Shopify 업로드 처리 중 오류가 발생했습니다.",
-                raw={"status": "internal_error"},
+                raw={"status": "internal_error", "error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:200] if str(exc) else ''}"},
             )
 
     def create_listing(self, payload: ListingPayload) -> ListingResult:

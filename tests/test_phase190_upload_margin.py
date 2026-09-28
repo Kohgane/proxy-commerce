@@ -184,7 +184,8 @@ class TestPrevalidate:
         monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_xxx")
         monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
 
-        product = {"title": "test", "price": 100}
+        # 캐너리 사전 점검(2026-09-28): 사전검증이 판매가도 잰다 — 통화 없는 원가는 판매가를 못 낸다.
+        product = {"title": "test", "price": 100, "currency": "USD"}
         results = self._dispatcher().prevalidate(product, ["shopify"])
         assert results[0].ok is True
 
@@ -205,7 +206,7 @@ class TestPrevalidate:
         monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_ok")
         monkeypatch.delenv("COUPANG_ACCESS_KEY", raising=False)
 
-        product = {"title": "테스트", "title_en": "Umbrella", "price": 5000}
+        product = {"title": "테스트", "title_en": "Umbrella", "price": 5000, "currency": "KRW"}
         results = self._dispatcher().prevalidate(product, ["shopify", "coupang"])
         assert len(results) == 2
         shopify_r = next(r for r in results if r.market == "shopify")

@@ -220,6 +220,6 @@ def test_shield_recollect_triggers_translation_of_gallery_and_detail(monkeypatch
     assert r.get("updated"), r
     ex = _extra(iid, seller)
     n_detail = len([u for u in (ex.get("detail_images") or []) if u])
-    assert len(ex.get("images_ko") or []) == 3
+    assert len(ex.get("images_ko") or []) == len(e["images"]) == 5          # 재업로드 진단: 갤러리 5장
     assert len(ex.get("detail_images_ko") or []) == n_detail
     assert all(x["status"] == "done" for x in (ex.get("images_ko") or []) + (ex.get("detail_images_ko") or []))

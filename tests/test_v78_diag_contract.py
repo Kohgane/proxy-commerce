@@ -70,7 +70,7 @@ def _contract_view(e):
 
 def test_manifest_version_pinned():
     # STEP5는 확장 런타임 무변경(하네스·픽스처만) → 버전 유지(1.5.120).
-    assert MANIFEST["version"] == "1.5.161"
+    assert MANIFEST["version"] == "1.5.162"
 
 
 def test_diag_dir_and_readme():
@@ -104,7 +104,7 @@ def _playwright_ok():
     return bool(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
 
 
-def _reextract(url, body):
+def _reextract(url, body, opts=None):
     from playwright.sync_api import sync_playwright
     exe = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")[0]
     with sync_playwright() as pw:
@@ -122,7 +122,8 @@ def _reextract(url, body):
                 r.abort()
         page.route("**/*", h)
         page.goto(url, wait_until="domcontentloaded")
-        res = page.evaluate("(ex)=>{ (0,eval)(ex); return window.kgpExtractProduct(); }", EX)
+        res = page.evaluate("([ex, o])=>{ (0,eval)(ex); return o ? window.kgpExtractProduct(o) : window.kgpExtractProduct(); }",
+                            [EX, opts])
         b.close()
     return res
 
@@ -137,7 +138,13 @@ def test_diag_bundle_is_regression_contract(path):
     # 진단 임베드(우리 메타)는 페이지 콘텐츠가 아니다 → 재-추출 전에 제거(추출기의 application/json 워크가
     #   임베드 blob을 페이지 데이터로 오인하지 않도록). 남는 건 오너가 캡처한 스냅샷 HTML 그대로.
     snapshot = _EMBED_RE.sub("", full)
-    reextracted = _reextract(url, snapshot)
+    # F49-T 4부-b(2026-09-28): 페이지 종류는 **기록된 판정을 그대로** 넘긴다. 실확장은 content_script가
+    #   카드 수(3부 타오바오 어댑터 등)로 목록을 판정해 추출기에 넘기는데, 이 하네스는 추출기만 재생한다 —
+    #   world.taobao 홈 피드는 판정기 단독으론 목록이 안 된다(실측: kgp-detect를 실어도 불명).
+    #   기록에 목록 억제(`suppressed.reason == "list"`)가 있으면 같은 종류로 재생해 **추출 규칙**만 잰다.
+    #   기록이 없는 옛 진단(1.5.127 이전 목록 등)은 그대로(재생 입력 무변 — 기존 계약 보존).
+    _sup = recorded.get("suppressed") if isinstance(recorded.get("suppressed"), dict) else {}
+    reextracted = _reextract(url, snapshot, {"pageType": "list"} if _sup.get("reason") == "list" else None)
     got = _contract_view(reextracted)
     want = _contract_view(recorded)
     # F49-T 2부-b: **기록 자체가 결함**인 진단 파일(오너가 「이게 틀렸다」고 보낸 캡처)은 원본을 고치지 않고
