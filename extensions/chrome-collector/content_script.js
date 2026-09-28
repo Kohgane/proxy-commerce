@@ -335,6 +335,23 @@ const _KGP_TB_SELECTORS = new Proxy(_KGP_TB_SELECTORS_DEFAULT, {
   get: function (t, k) { return (typeof k === "string" && k in t) ? _kgpRule("diag_selectors.taobao." + k, t[k]) : t[k]; },
 });
 
+// F49-T 5부-c(오너 캡처 2026-09-28 · `kQuotaBytesPerItem`): 확장 저장소 쓰기는 **전부 local**이다
+//   (sync는 옵션 화면의 서버 주소·토큰 두 값뿐 — 계약이 지킨다). local엔 항목당 한도가 없지만, 쓰기 실패를
+//   `lastError`로 잡지 않으면 콘솔에 「Unchecked」로만 뜨고 진단엔 남지 않는다 → 잡아서 진단에 싣는다.
+const KGP_STORAGE_ERR = { count: 0, last: null };
+function kgpStoreLocal(obj) {
+  try {
+    if (!(chrome && chrome.storage && chrome.storage.local)) return;
+    chrome.storage.local.set(obj, () => {
+      const err = chrome.runtime && chrome.runtime.lastError;
+      if (!err) return;
+      KGP_STORAGE_ERR.count += 1;
+      KGP_STORAGE_ERR.last = { keys: Object.keys(obj || {}).join(",").slice(0, 80),
+                               msg: String(err.message || err).slice(0, 160), at: new Date().toISOString() };
+      try { console.warn("[고가수집기] 저장 실패:", KGP_STORAGE_ERR.last.keys, KGP_STORAGE_ERR.last.msg); } catch (e) {}
+    });
+  } catch (e) { /* noop */ }
+}
 function kgpPageDiag() {
   const out = { at: new Date().toISOString(), url: _kgpSafeUrl(location.href), wall: "", nav: {}, lazy: {}, sel: {}, errors: [] };
   try { out.wall = _kgpDetectWall(); } catch (e) { /* noop */ }
@@ -376,6 +393,7 @@ function kgpPageDiag() {
       out.watch = Object.assign({}, KGP_WATCH, { cards_tiled: document.querySelectorAll(".kgp-card-quick").length });
     }
   } catch (e) { /* noop */ }
+  if (KGP_STORAGE_ERR.count) out.storage_err = { count: KGP_STORAGE_ERR.count, last: KGP_STORAGE_ERR.last };
   out.rules = (typeof _kgpRulesInfo === "function") ? _kgpRulesInfo()   // F50: 어느 규칙 버전으로 읽었나(remote/bundled)
     : { version: "", hash: "", source: "none" };
   return out;
@@ -1089,7 +1107,7 @@ function kgpCollectCard(message, ok, actions) {
     if (optInput) {
       optInput.addEventListener("change", () => {
         KGP_TRANSLATE = !!optInput.checked;
-        try { chrome.storage.local.set({ kgp_translate: KGP_TRANSLATE }); } catch (e) {}
+        kgpStoreLocal({ kgp_translate: KGP_TRANSLATE });
         kgpApplyTranslateCopy();
         kgpRenderCardTranslate();
       });
@@ -1624,7 +1642,7 @@ function kgpExtractMerged(cb) {
       var cause = "";
       if (usedTier1) {
         console.log("%c[고가수집기] Tier1 동작 ✓ — 채택 " + (merged.tier1_source || "(API 응답)") + " (최고점 " + (diag.topScore || 0) + "/4)", "color:#119a8e;font-weight:bold");
-        try { if (diag.topUrl) chrome.storage && chrome.storage.local && chrome.storage.local.set({ ["kgp_api_pat:" + location.hostname]: diag.topUrl }); } catch (_) {}
+        if (diag.topUrl) kgpStoreLocal({ ["kgp_api_pat:" + location.hostname]: diag.topUrl });
       } else {
         cause = _kgpTier1Cause(diag);
         console.warn("%c[고가수집기] Tier1 무동작 → DOM 폴백 사용. 원인: " + cause, "color:#c2503c;font-weight:bold");

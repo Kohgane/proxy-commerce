@@ -34,7 +34,11 @@
       // v54 STEP2: 진단 모드 — 격리월드가 __kgpDiagReq 를 보내면 캡처·채점된 후보를 콘솔 표로 출력.
       if (e.data.__kgpDiagReq) {
         try {
-          var rows = (typeof window.__kgpDiagRows === "function") ? window.__kgpDiagRows() : [];
+          // F49-T 5부-c(오너 캡처 2026-09-28): 응답 가로채기(kgp-net)는 **tier1 대상(테무)에만** 주입된다.
+          //   그 밖의 사이트(타오바오·티몰 보강 탭 등)에선 채점할 게 원래 없다 — 「아직 없음」을 4초마다
+          //   찍으면 고장처럼 읽힌다. 가로채기가 없는 페이지에선 **침묵**한다.
+          if (typeof window.__kgpDiagRows !== "function") return;
+          var rows = window.__kgpDiagRows();
           if (rows.length && console.table) {
             console.log("%c[고가수집기] 자가진단 — 가로챈 JSON 응답 채점(최고점=상품 소스 자동 채택)", "font-weight:bold;color:#119a8e");
             console.table(rows);

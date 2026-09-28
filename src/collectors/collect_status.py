@@ -154,6 +154,16 @@ def clean_page_diag(raw) -> Dict[str, Any]:
         w["lazy"] = bool(wt.get("lazy"))
         w["last_scan_at"] = str(wt.get("last_scan_at") or "")[:40]
         out["watch"] = w
+    # F49-T 5부-c: 확장 저장소 쓰기 실패(lastError) — 횟수와 마지막 한 건(키 이름·문장·시각)만.
+    se = raw.get("storage_err") if isinstance(raw.get("storage_err"), dict) else {}
+    if se:
+        try:
+            n = int(se.get("count") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        last = se.get("last") if isinstance(se.get("last"), dict) else {}
+        out["storage_err"] = {"count": n, "last": {k: scrub_text(str(last.get(k) or ""))[:160]
+                                                   for k in ("keys", "msg", "at")} if last else None}
     # F50: 확장이 어느 규칙 버전으로 읽었나(remote=서버에서 받은 것 / bundled=확장 기본값).
     rl = raw.get("rules") if isinstance(raw.get("rules"), dict) else {}
     if rl:
