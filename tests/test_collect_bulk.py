@@ -51,7 +51,11 @@ def test_bulk_collects_and_saves_to_history(client):
 
 
 def test_bulk_rejects_non_http_and_dedupes(client):
-    with patch("src.seller_console.views._collect_real_draft", side_effect=lambda url, **k: _fake_draft(url=url)), \
+    # M3-iOS 보충(2026-09-28): 이 계약은 **가짜 성공 덕에** 초록이었다 — 벌크는 C-F1부터 공용 코어
+    #   (`collect_one_url`)를 타는데 옛 이음매(`_collect_real_draft`)를 흉내 내고 있었고, 실제로는 ok.com 읽기가
+    #   실패한 빈 결과가 저장돼 ok=True가 났다. 코어가 빈 결과를 막자 드러났다 → 이음매를 코어로 옮긴다.
+    with patch("src.api.extension_api.collect_one_url",
+               side_effect=lambda url, **k: {"url": url, "ok": True, "item_id": "x", "title": "T"}), \
          patch("src.seller_console.collect_history_store.append", return_value="x"):
         resp = client.post("/seller/collect/bulk", json={
             "urls": "ftp://bad\nhttps://ok.com/a\nhttps://ok.com/a"})  # 비http + 중복

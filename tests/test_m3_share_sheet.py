@@ -48,7 +48,9 @@ def test_iphone_shortcut_get_makes_one_cny_draft_waiting_for_enrich(client, monk
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert 'data-state="draft"' in body and "新中式双人书桌" in body
-    assert 'data-role="share-enrich"' in body and "PC 고가수집기가 켜지면" in body
+    assert 'data-role="share-enrich"' in body and "컴퓨터에서 고가수집기를 켜면" in body
+    # 오너 보충: 큰 글자 · 버튼 2개(목록 보기 · 하나 더 담기)만
+    assert body.count('sd-btn"') == 2 and 'data-role="btn-list"' in body and 'data-role="btn-more"' in body
     rows = _rows(seller)
     assert len(rows) == 1
     ex = json.loads(rows[0]["extra_json"])
@@ -122,18 +124,6 @@ def test_manifest_share_target_is_post_form():
                       "params": {"title": "title", "text": "text", "url": "url"}}
 
 
-def test_phone_guide_page(client, monkeypatch):
-    _login(client, "u-m3-guide")
-    monkeypatch.delenv("APP_BASE_URL", raising=False)
-    monkeypatch.delenv("IOS_SHORTCUT_URL", raising=False)
-    html = client.get("/seller/guide/phone").get_data(as_text=True)
-    assert "https://kohganepercentiii.com/seller/collect/share?text=[단축어 입력]" in html
-    for s in ("공유 시트에 표시", "URL · 텍스트", "URL 열기", "고가브릿지로 수집", "iCloud 링크 복사",
-              "앱 설치", "@gogaBridz_bot", "/link 토큰"):
-        assert s in html, s
-    assert html.count('data-role="guide-step-') == 3 and 'data-role="shortcut-link"' not in html
-    monkeypatch.setenv("IOS_SHORTCUT_URL", "https://www.icloud.com/shortcuts/abc")
-    assert 'href="https://www.icloud.com/shortcuts/abc"' in client.get("/seller/guide/phone").get_data(as_text=True)
-    for tpl in ("guide_phone.html", "collect_share_result.html"):
-        t = Path("src/seller_console/templates/" + tpl).read_text(encoding="utf-8")
-        assert not re.search(r"#[0-9a-fA-F]{3,6}\b", t) and not re.search(r"[\U0001F300-\U0001FAFF]", t)
+def test_old_phone_guide_moves_to_iphone_page(client):
+    r = client.get("/seller/guide/phone", follow_redirects=False)
+    assert r.status_code in (301, 302) and r.headers["Location"].endswith("/seller/guide/iphone")
