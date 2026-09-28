@@ -20,6 +20,10 @@
   {% endif %}
   {% else %}
   <p class="sd-line" data-role="share-error">{{ out.error }}</p>
+  {# M3-iOS 실측 결함: 「길이 3자」만으론 무엇이 왔는지 모른다 — 받은 원문 앞 60자(스크럽 후: 주소는 경로+상품 id만). #}
+  {% if raw_preview is defined %}
+  <p class="sd-raw" data-role="share-raw">받은 내용: {% if raw_preview %}「{{ raw_preview }}」{% else %}(비어 있음){% endif %}</p>
+  {% endif %}
   <p class="sd-note">컴퓨터의 고가수집기로는 담을 수 있어요.</p>
   {% endif %}
 
@@ -33,6 +37,8 @@
   .sd-big { font-family: var(--font-display); font-weight: 800; font-size: 2.1rem; margin: 16px 0 18px; }
   .sd-title { font-size: 1.15rem; font-weight: 700; line-height: 1.5; word-break: break-word; margin: 0 0 10px; }
   .sd-line { font-size: 1.08rem; margin: 0 0 8px; }
+  .sd-raw { font-size: .98rem; line-height: 1.5; word-break: break-all; background: var(--surface-2, var(--bg));
+            border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 4px 0 12px; }
   .sd-note { color: var(--text-muted); font-size: 1rem; line-height: 1.55; margin: 0 0 8px; }
   .sd-btns { display: grid; gap: 12px; margin-top: 28px; }
   .sd-btn { min-height: 56px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; border-radius: 16px; }

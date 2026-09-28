@@ -9,6 +9,10 @@ timeout = int(os.getenv('GUNICORN_TIMEOUT', '120'))
 graceful_timeout = int(os.getenv('GUNICORN_GRACEFUL_TIMEOUT', '30'))
 keepalive = int(os.getenv('GUNICORN_KEEPALIVE', '5'))
 accesslog = '-'
+# M3-iOS 실측 결함(2026-09-28): 기본 형식의 `%(r)s`(요청 줄)·`%(f)s`(Referer)는 **쿼리를 통째로** 남긴다 —
+#   공유 시트 `/seller/collect/share?url=…?tk=…`의 `tk`가 접근 로그에 새고 있었다. 경로(`%(U)s`)만 남긴다.
+#   쿼리는 앱 요청 로그(`request_logger._safe_query`)가 스크럽해서 남긴다. start_render.sh와 같은 값.
+access_log_format = '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms "%(a)s"'
 errorlog = '-'
 loglevel = os.getenv('GUNICORN_LOG_LEVEL', 'info')
 preload_app = True

@@ -8,13 +8,24 @@
   <p class="text-muted small mb-0">만든 단축어의 iCloud 링크를 아래에 붙여넣으면 유저용 <a href="/seller/guide/iphone">설치하기</a> 화면의 파란 버튼이 그 링크로 열립니다.</p>
   <hr class="pc-hairline mt-2 mb-4">
 
+  {# M3-iOS 실측 결함(오너 2026-09-28): 「URL 열기」에 「단축어 입력」을 바로 넣으면 서버엔 제목 3자만 왔다 —
+     타오바오 앱의 공유 입력은 **제목 텍스트 + URL 두 조각**이고, 그대로 넣으면 첫 조각(제목)만 들어간다.
+     그래서 **URL만 골라 인코딩해서** 보낸다. 동작 라벨은 오너 실기기 캡처로 확정(여기서 지어내지 않는다). #}
   <ol class="make-steps">
     <li>「단축어」 앱 열기 → 오른쪽 위 「+」.</li>
-    <li>「동작 추가」 → 검색창에 「URL 열기」 → 선택.</li>
-    <li>「URL」 칸을 눌러 아래를 그대로 입력:
-      <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}</code>
-      그 뒤에 커서를 두고 키보드 위 파란 「단축어 입력」 토큰을 누르면 뒤에 붙습니다.</li>
     <li>위쪽 단축어 이름 옆 「∨」 → 「세부사항」 → 「공유 시트에 표시」 켬 → 「공유 시트 유형」에서 「URL」과 「텍스트」만 체크.</li>
+    <li>동작 4개를 이 순서로 둡니다(「동작 추가」 → 검색창에 이름):
+      <ol class="make-acts" data-role="make-actions">
+        <li data-role="act-1"><strong>공유 시트 받기</strong> — 위에서 공유 시트를 켜면 맨 위에 저절로 생깁니다.</li>
+        <li data-role="act-2"><strong>「입력에서 URL 가져오기」</strong> — 입력은 「단축어 입력」.
+          <span class="text-muted">「텍스트 가져오기」가 아닙니다: 타오바오 공유는 제목 글 + 링크 두 조각이라, 텍스트로 가져오면 제목만 집힙니다.</span></li>
+        <li data-role="act-3"><strong>「URL 인코딩」</strong> — 입력은 바로 위의 「URL」.</li>
+        <li data-role="act-4"><strong>「URL 열기」</strong> — 「URL」 칸을 눌러 아래를 그대로 입력:
+          <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}</code>
+          그 뒤에 커서를 두고 키보드 위 파란 「URL 인코딩된 텍스트」 토큰을 누르면 뒤에 붙습니다.</li>
+      </ol>
+      <div class="small text-muted" data-role="make-label-note">동작 이름은 iOS 버전마다 조금 다를 수 있어요 — 오너 실기기 캡처로 확정합니다.
+        링크만 보내므로 제목은 타오바오 링크에서 읽히는 만큼만 들어가고, 나머지는 PC 고가수집기 보강 때 채워집니다.</div></li>
     <li>이름을 「고가브릿지로 수집」으로 바꾸고 「완료」.</li>
     <li>배포: 단축어 목록에서 이 단축어 길게 누르기 → 「공유」 → 「iCloud 링크 복사」. 이 링크를 아래 칸에 붙여넣고 저장.</li>
     <li>오너 폰에서 「사용하기」 순서로 1회 실측 → 각 단계 캡처 → 설치하기·사용하기 화면에 삽입(아래 캡처 자리).</li>
@@ -51,5 +62,6 @@
 <style>
   .make-steps { font-size: 1rem; line-height: 1.7; padding-left: 1.2rem; margin-bottom: 1.5rem; }
   .make-steps li { margin-bottom: .6rem; }
+  .make-acts { padding-left: 1.2rem; margin: .5rem 0; }
 </style>
 {% endblock %}
