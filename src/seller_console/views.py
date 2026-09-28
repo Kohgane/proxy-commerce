@@ -7332,6 +7332,16 @@ def collect_preview_save(item_id: str):
             extra["title_en_manual"] = True
         elif extra.pop("title_en_manual", None):
             extra.pop("title_en", None)
+    # F53: 쿠팡 상품명 — 오너가 고쳤거나(manual) AI 다듬기를 받아들인(llm) 값만 저장한다.
+    #   자동 규칙안은 저장하지 않는다(규칙이 나아지면 다음에 새로 만든다 — 굳은 옛 안을 보내지 않게).
+    if "coupang_name" in data:
+        _cn = str(data.get("coupang_name") or "").strip()[:100]
+        _cs = str(data.get("coupang_name_source") or "")
+        if _cn and _cs in ("manual", "llm"):
+            extra["coupang_name"], extra["coupang_name_source"] = _cn, _cs
+        else:
+            extra.pop("coupang_name", None)
+            extra.pop("coupang_name_source", None)
     # v39-E2 #2: 갤러리(대표)·상세설명 이미지 버킷 보존(분리 저장).
     _gi = data.get("gallery_images")
     if isinstance(_gi, list):
@@ -11770,6 +11780,60 @@ def collect_image_audit_requeue():
     msg = (f"{len(done)}건을 보강 대기로 되돌렸어요 — PC 고가수집기가 차례로 엽니다." if done else
            "되돌릴 항목이 없어요." if not todo else "저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요.")
     return jsonify({"ok": ok, "requeued": done, "failed": failed, "left": left, "message": msg}), (200 if ok else 502)
+
+
+def _coupang_name_input(item: dict, ex: dict) -> dict:
+    """F53 — 쿠팡 상품명 재료(저장된 값 그대로): 번역 제목 · 원문 제목 · 브랜드 · 옵션 원문 · SKU."""
+    return {"title_ko": str(ex.get("title_ko") or ex.get("title") or item.get("title") or ""),
+            "title_original": str(ex.get("title_original") or ex.get("title_en") or ""),
+            "brand": str(ex.get("brand") or ""),
+            "options": ex.get("options") if isinstance(ex.get("options"), list) else [],
+            "skus": ex.get("skus") if isinstance(ex.get("skus"), list) else []}
+
+
+@bp.get("/collect/preview/<item_id>/coupang-name")
+def collect_coupang_name(item_id: str):
+    """F53 — 쿠팡 전용 상품명 규칙안(`?llm=1`이면 AI로 다듬기 — 규칙 검사를 통과한 결과만 채택).
+
+    `pos`(front|back|omit)를 주면 그 위치로, 없으면 이 카테고리의 오너 설정. `check`를 주면 그 이름의 규칙 경고도.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    from src.uploaders import coupang_title as ct
+    try:
+        ex = json.loads(item.get("extra_json") or "{}")
+    except Exception:
+        ex = {}
+    pos = str(request.args.get("pos") or "")
+    if pos not in ct.BRAND_POS:
+        pos = ct.brand_pos_for(_seller_id(), str(ex.get("category_code") or ""))
+    src = _coupang_name_input(item, ex)
+    res = ct.build_name(src, pos)
+    if str(request.args.get("llm") or "") == "1" and res.get("name"):
+        res = ct.llm_rewrite(src, res)
+    out = {"ok": True, "name": res.get("name") or "", "source": res.get("source") if res.get("name") else "fallback",
+           "parts": res.get("parts") or {}, "warnings": res.get("warnings") or [], "note": res.get("note") or "",
+           "brand_pos": pos, "title_warnings": ct.check_name(src["title_ko"])}
+    if request.args.get("check") is not None:
+        out["check_warnings"] = ct.check_name(str(request.args.get("check") or ""))
+    return jsonify(out)
+
+
+@bp.post("/coupang/brand-pos")
+def coupang_brand_pos_save():
+    """F53 — 카테고리별 브랜드 위치(앞/뒤/빼기) 저장. 카테고리가 비면 기본값(`*`)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from src.uploaders import coupang_title as ct
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        prefs = ct.save_brand_pos(_seller_id(), str(data.get("category") or "*"), str(data.get("pos") or ""))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "prefs": prefs})
 
 
 @bp.post("/collect/preview/<item_id>/option-name")

@@ -430,10 +430,21 @@ class CoupangUploader(BaseUploader):
         """수집된 상품을 Coupang 업로드 형식으로 변환한다."""
         if not collected:
             return {}
-        title = collected.get('title_ko') or collected.get('title_original', '')
-        title = '[해외직구] ' + title
-        if len(title) > 50:
-            title = title[:50]
+        # F53(오너 2026-09-28): 쿠팡 전용 상품명 — 「브랜드 + 제품 유형 + 핵심 속성」(조사·나열·중복 없음, 100자).
+        #   캐너리 16397045086엔 `[해외직구] ` + 번역 문장 앞 50자가 갔다(문장형·검색어 나열·말 중간 절단).
+        #   오너가 드로어에서 확인·수정한 `coupang_name`이 먼저, 없으면 규칙안. 규칙안도 못 만들면(제품 유형
+        #   못 찾음) 예전 모양 그대로 — 사전검증이 경고와 함께 직접 적으라고 말한다.
+        from src.uploaders.coupang_title import effective_name
+        _nm = effective_name(collected)
+        coupang_name_source = _nm.get('source') or ''
+        title = _nm.get('name') or ''
+        if not title:
+            title = collected.get('title_ko') or collected.get('title_original', '')
+            title = '[해외직구] ' + title
+            if len(title) > 50:
+                title = title[:50]
+            coupang_name_source = 'fallback'
+
         category_code = collected.get('category_code', 'GEN')
         category_id = self.CATEGORY_MAP.get(category_code, '76001')
         sell_price = collected.get('sell_price_krw', 0) or 0
@@ -443,6 +454,8 @@ class CoupangUploader(BaseUploader):
         return {
             'sku': collected.get('sku', ''),
             'title': title,
+            'coupang_name_source': coupang_name_source,          # F53: manual|auto|rule|llm|fallback
+            'title_ko': collected.get('title_ko') or '',
             # F48-d: 자르기 전 원제목 — 적용모델 선채움은 여기서 모델 토큰을 뽑는다(50자 자르기에 Ultra2가 잘렸다).
             'title_original': collected.get('title_original') or collected.get('title_ko') or '',
             'description_html': collected.get('description_html', ''),
@@ -762,6 +775,21 @@ class CoupangUploader(BaseUploader):
             notes.insert(0, f"SKU별 등록 {len(out['items_plan'])}개(옵션마다 판매가·재고·이미지)")
         elif plan.get('sku_why') and plan['sku_why'] != 'SKU 없음':
             notes.append(f"SKU별 등록 안 함 — {plan['sku_why']}(대표 1개로 판정)")
+        # F53 — 상품명 규칙(문장형·나열·중복·길이)은 **보류가 아니라 경고 + 자동안**이다.
+        try:
+            from src.uploaders.coupang_title import build_name, check_name
+            _name = str(product.get('title') or '')
+            _warn = check_name(_name)
+            _src = str(product.get('coupang_name_source') or '')
+            out['name'] = {'value': _name, 'source': _src, 'warnings': _warn}
+            if _warn:
+                _auto = build_name(product).get('name') or ''
+                notes.append('상품명 규칙: ' + ' · '.join(_warn)
+                             + (f' → 자동안 「{_auto}」' if _auto and _auto != _name else ''))
+            elif _src in ('rule', 'auto', 'llm'):
+                notes.append(f'상품명 자동 생성 — 확인: 「{_name}」')
+        except Exception as exc:                      # 이름 검사가 등록을 막지 않는다(경고 자리)
+            logger.warning('[precheck] 상품명 검사 실패: %s', exc)
         out['ok'] = not holds
         return out
 

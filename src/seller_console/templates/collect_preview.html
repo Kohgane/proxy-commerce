@@ -100,6 +100,27 @@
         <input type="text" class="form-control form-control-sm" id="editTitleEn" data-role="title-en"
                placeholder="예: Apple Watch Charging Stand, Aluminum" autocomplete="off">
         <div class="form-text small" id="titleEnNote">한국어·중국어·일본어 글자가 섞이면 해외 마켓에 올리지 않아요.</div>
+        {# F53 — 쿠팡 전용 상품명. 번역 제목(문장·검색어 나열)이 그대로 가던 자리 — 「브랜드 + 제품 유형 + 핵심 속성」.
+           자동 생성이면 「자동 생성 — 확인」, 오너가 고치면 그 값이 간다. 다른 마켓 제목은 건드리지 않는다. #}
+        <div class="pc-inset mt-3" data-role="coupang-name">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="console-kpi-label mb-0">쿠팡 상품명</div>
+            <span id="cpNameBadge"></span>
+          </div>
+          <input type="text" class="form-control form-control-sm mt-1" id="cpName" maxlength="100" data-source=""
+                 placeholder="브랜드 + 제품 유형 + 핵심 속성" autocomplete="off">
+          <div class="d-flex flex-wrap gap-2 align-items-center mt-1 small">
+            <label class="d-flex align-items-center gap-1 mb-0">브랜드 위치
+              <select id="cpBrandPos" class="form-select form-select-sm w-auto">
+                <option value="front">앞</option><option value="back">뒤</option><option value="omit">빼기</option>
+              </select></label>
+            <button type="button" class="btn btn-ghost btn-sm py-0" onclick="kgpCpNameLoad(false, true)">다시 만들기</button>
+            <button type="button" class="btn btn-ghost btn-sm py-0" onclick="kgpCpNameLoad(true, true)">AI로 다듬기</button>
+            <span class="text-muted ms-auto" id="cpNameCount"></span>
+          </div>
+          <div id="cpNameWarn" class="small mt-1" aria-live="polite"></div>
+          <div class="small text-muted mt-1">쿠팡에만 쓰입니다 — 다른 마켓 제목은 그대로예요. 브랜드 위치는 이 카테고리에 기억돼요.</div>
+        </div>
       </div>
 
       <!-- [가격] 가격/통화 + 원화 환산 -->
@@ -1487,6 +1508,10 @@ function buildProductData() {
   return {
     // 영문 상품명 칸이 있으면 그 값이 해외 마켓 제목이다(수집 때 들어온 원문보다 앞).
     title, title_ko: title, title_en: _ten || _EXTRA.title_en || title, title_en_input: _ten,
+    // F53 — 쿠팡에만 가는 이름(자동 생성이든 오너 수정이든 **보이는 그 값**).
+    coupang_name: ((document.getElementById('cpName') || {}).value || '').trim(),
+    coupang_name_source: ((document.getElementById('cpName') || {}).dataset || {}).source || '',
+    coupang_brand_pos: ((document.getElementById('cpBrandPos') || {}).value || ''),
     price, price_original: price, currency,
     description, description_ko: description,
     images, options,
@@ -1685,6 +1710,55 @@ function kgpCpConfirm(resolved) {
     ` placeholder="고칠 값" aria-label="${esc(r.orig)} 한국어 값 고치기">`).join('');
 }
 // F51-b 6 — SKU별 판매가에 쓴 환율(값·출처·갱신 시각). 고정값이면 그렇다고 적는다.
+// ── F53 쿠팡 상품명 ──────────────────────────────────────────────────
+const _KGP_CP_NAME_LABEL = { rule: '자동 생성 — 확인', auto: '자동 생성 — 확인', llm: 'AI 다듬기 — 확인',
+                             manual: '직접 입력', fallback: '자동 생성 실패 — 직접 적어 주세요' };
+function kgpCpNameRender(d) {
+  const el = document.getElementById('cpName');
+  if (!el) return;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  if (d.name !== undefined) { el.value = d.name || ''; el.dataset.source = d.source || ''; }
+  if (d.brand_pos) document.getElementById('cpBrandPos').value = d.brand_pos;
+  const src = el.dataset.source || '';
+  const badge = document.getElementById('cpNameBadge');
+  badge.innerHTML = src ? `<span class="pc-badge ${src === 'manual' ? 'pc-badge-on' : 'pc-badge-muted'}" data-role="cp-name-badge">${esc(_KGP_CP_NAME_LABEL[src] || src)}</span>` : '';
+  document.getElementById('cpNameCount').textContent = el.value.length + ' / 100자';
+  const w = (d.warnings || []);
+  let h = w.length ? '<div class="text-danger" data-role="cp-name-warn">' + w.map(esc).join('<br>') + '</div>' : '';
+  if (d.note) h += '<div class="text-muted">' + esc(d.note) + '</div>';
+  if (d.title_warnings && d.title_warnings.length && src !== 'manual')
+    h += '<div class="text-muted" data-role="cp-title-was">번역 제목 그대로였다면: ' + d.title_warnings.map(esc).join(' · ') + '</div>';
+  document.getElementById('cpNameWarn').innerHTML = h;
+}
+async function kgpCpNameLoad(llm, regenerate) {
+  const el = document.getElementById('cpName');
+  if (!el) return;
+  if (!regenerate && _EXTRA.coupang_name) {
+    el.value = _EXTRA.coupang_name; el.dataset.source = _EXTRA.coupang_name_source || 'manual';
+  }
+  const q = new URLSearchParams({ llm: llm ? '1' : '0', pos: document.getElementById('cpBrandPos').value || '' });
+  if (!regenerate && _EXTRA.coupang_name) q.set('check', el.value);
+  try {
+    const r = await fetch(`/seller/collect/preview/${_ITEM_ID}/coupang-name?` + q.toString());
+    const d = await r.json();
+    if (!r.ok || !d.ok) { kgpCpNameRender({ warnings: [d.error || '쿠팡 상품명을 만들지 못했어요'] }); return; }
+    if (!regenerate && _EXTRA.coupang_name) { kgpCpNameRender({ warnings: d.check_warnings, brand_pos: d.brand_pos }); return; }
+    kgpCpNameRender(d);
+  } catch (e) { kgpCpNameRender({ warnings: ['연결이 끊겨 쿠팡 상품명을 만들지 못했어요'] }); }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('cpName');
+  if (!el) return;
+  el.addEventListener('input', () => { el.dataset.source = 'manual'; kgpCpNameRender({}); });
+  document.getElementById('cpBrandPos').addEventListener('change', async (ev) => {
+    try {
+      await fetch('/seller/coupang/brand-pos', { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ category: (document.getElementById('editCategory') || {}).value || _EXTRA.category_code || '', pos: ev.target.value }) });
+    } catch (e) {}
+    if (el.dataset.source !== 'manual') kgpCpNameLoad(false, true);
+  });
+  kgpCpNameLoad(false, false);
+});
 function kgpCpFx(fx) {
   if (!Array.isArray(fx) || !fx.length) return '';
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
