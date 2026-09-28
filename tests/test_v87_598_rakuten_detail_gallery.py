@@ -29,7 +29,7 @@ _URL = "https://item.rakuten.co.jp/receno/tsumugi-tama-s/"
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.162"
+    assert MANIFEST["version"] == "1.5.163"
 
 
 def test_source_contract():

@@ -141,7 +141,11 @@ class TestCoupangUploaderInit:
 class TestCoupangPrepareProduct:
     def test_title_prefix(self, coupang_uploader):
         result = coupang_uploader.prepare_product(SAMPLE_COLLECTED)
-        assert result['title'].startswith('[해외직구]')
+        # F53(오너 2026-09-28): 쿠팡 전용 상품명 — 브랜드 + 제품 유형(+핵심 속성), 접두·문장 없음.
+        #   예전 계약은 `[해외직구]` 접두였다. 규칙안을 못 만들 때만 예전 모양(아래 50자 계약)으로 간다.
+        #   네이버(아래 TestNaverPrepareProduct)는 그대로 — 다른 마켓 제목 영향 0.
+        assert result['title'] == 'SomeBrand 무선 블루투스 이어폰'
+        assert result['coupang_name_source'] == 'rule'
 
     def test_title_max_50_chars(self, coupang_uploader):
         long_collected = dict(SAMPLE_COLLECTED)

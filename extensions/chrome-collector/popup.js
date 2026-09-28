@@ -1,3 +1,12 @@
+// F49-T 5부-c: 팝업의 설정 쓰기도 실패를 「Unchecked」로 흘리지 않는다(작은 값뿐이지만 이유는 남긴다).
+function kgpPopupSet(obj) {
+  try {
+    chrome.storage.local.set(obj, () => {
+      const err = chrome.runtime && chrome.runtime.lastError;
+      if (err) { try { console.warn("[고가수집기] 설정 저장 실패:", Object.keys(obj || {}).join(","), err.message || err); } catch (e) {} }
+    });
+  } catch (e) { /* noop */ }
+}
 /**
  * popup.js — 팝업 UI 로직
  * 고가수집기
@@ -91,7 +100,7 @@ if (translateToggle) {
     _kgpRenderTranslateNote(on);
   });
   translateToggle.addEventListener("change", () => {
-    chrome.storage.local.set({ kgp_translate: translateToggle.checked });
+    kgpPopupSet({ kgp_translate: translateToggle.checked });
     _kgpRenderTranslateNote(translateToggle.checked);
   });
   // 인페이지 카드에서 껐다 켜면 팝업도 따라 바뀐다(양방향 동기).
@@ -112,7 +121,7 @@ if (fabToggle) {
     fabToggle.checked = !(r && r.kgp_fab_enabled === false);
   });
   fabToggle.addEventListener("change", () => {
-    chrome.storage.local.set({ kgp_fab_enabled: fabToggle.checked });   // content_script가 onChanged로 즉시 반영
+    kgpPopupSet({ kgp_fab_enabled: fabToggle.checked });   // content_script가 onChanged로 즉시 반영
   });
 }
 
@@ -121,7 +130,7 @@ const diagToggle = document.getElementById("diagToggle");
 if (diagToggle) {
   chrome.storage.local.get("kgp_diag", (r) => { diagToggle.checked = !!(r && r.kgp_diag); });
   diagToggle.addEventListener("change", () => {
-    chrome.storage.local.set({ kgp_diag: diagToggle.checked });   // content_script가 onChanged로 즉시 반영
+    kgpPopupSet({ kgp_diag: diagToggle.checked });   // content_script가 onChanged로 즉시 반영
   });
 }
 
@@ -240,7 +249,7 @@ if (btnDiagBundle) {
 const enrichMode = document.getElementById("enrichMode");
 if (enrichMode) {
   chrome.storage.local.get("kgp_enrich_mode", (r) => { enrichMode.value = (r && r.kgp_enrich_mode) || "window"; });
-  enrichMode.addEventListener("change", () => { chrome.storage.local.set({ kgp_enrich_mode: enrichMode.value }); });
+  enrichMode.addEventListener("change", () => { kgpPopupSet({ kgp_enrich_mode: enrichMode.value }); });
 }
 
 // v64 STEP3: 호버 수집 버튼 위치(이미지 영역 앵커) — 사이트 무관 chrome.storage.local, content_script가 즉시 반영.
@@ -248,7 +257,7 @@ const hoverAnchor = document.getElementById("hoverAnchor");
 if (hoverAnchor) {
   chrome.storage.local.get("kgp_hover_anchor", (r) => { hoverAnchor.value = (r && r.kgp_hover_anchor) || "center"; });
   hoverAnchor.addEventListener("change", () => {
-    chrome.storage.local.set({ kgp_hover_anchor: hoverAnchor.value });   // onChanged로 즉시 반영
+    kgpPopupSet({ kgp_hover_anchor: hoverAnchor.value });   // onChanged로 즉시 반영
   });
 }
 
