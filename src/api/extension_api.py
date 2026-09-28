@@ -1036,6 +1036,9 @@ def collect_enrich():
             extra["images_stored_note"] = "CDN 미설정 — 원본 URL만 보관(저장본 없음)"
 
     extra["enriched"] = True
+    # F49-T 5부-b: 「다시 보강」 표시는 **보강이 실제로 한 번 돈 지금** 내린다(아래 완료 판정이 제 기준으로 돈다).
+    if extra.pop("enrich_rerun", None):
+        extra["enrich_rerun_done_at"] = _now_iso_w4()
     # v86-F: 보강으로 상세가 실제로 채워졌으면 '간이'를 해제한다. 안 그러면 타일 수집분에 뱃지가
     #   영구히 남아 경고가 소음이 되고, 정작 진짜 간이 항목이 묻힌다. 단 **실제로 채워졌을 때만**
     #   (changed가 비면 그대로 간이 — 큐만 돌고 못 채운 것을 성공으로 위장하지 않는다).

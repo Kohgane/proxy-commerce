@@ -29,7 +29,8 @@ def _real_payload() -> dict:
     t = DIAG.read_text(encoding="utf-8")
     d = json.loads(re.search(r'<script type="application/json" id="kgp-diagnostic">(.*?)</script>', t, re.S).group(1))
     e = d["extracted"]
-    assert d["ext_version"] == "1.5.156" and len(e["skus"]) == 10 and e["price"] == "29.90"
+    # 오너 재업로드(2026-09-28, 1.5.161)가 정본 — 같은 상품·SKU 10·29.90, 갤러리는 5장으로 늘었다.
+    assert d["ext_version"] == "1.5.161" and len(e["skus"]) == 10 and e["price"] == "29.90"
     return {k: e.get(k) for k in ("title", "price", "currency", "images", "gallery_images", "options", "skus",
                                   "description", "detail_images", "field_sources", "page_diag")}
 

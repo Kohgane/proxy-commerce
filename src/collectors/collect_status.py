@@ -362,7 +362,9 @@ def enrich_axes(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     elif state == "pending" and n_images >= 1:
         # F49-T 5부: **목록 타일**은 썸네일 1장을 이미 갖고 온다 — 그건 보강이 아니다. 상세 보강(`enriched`)이
         #   실제로 돌기 전엔 대기로 둔다(예전엔 여기서 done이 돼 대기열에서 영영 빠졌다 → 「이미지 1장만」).
-        if not (str(ex.get("mode") or "") == "simple" and not ex.get("enriched")):
+        # F49-T 5부-b: 오너가 감사 화면에서 「상세 보강 다시 실행」으로 되돌린 행(`enrich_rerun`)도
+        #   보강이 **실제로 다시 돌 때까지** 대기다 — 옛 보강이 남긴 1장 때문에 곧장 완료로 돌아가면 큐가 못 집는다.
+        if not ((str(ex.get("mode") or "") == "simple" and not ex.get("enriched")) or ex.get("enrich_rerun")):
             state = "done"
 
     return {

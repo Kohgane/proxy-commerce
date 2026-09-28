@@ -81,13 +81,13 @@ def test_enrich_with_ice_gallery_and_detail_passes(monkeypatch):
     c = _client(monkeypatch, seller)
     iid = _tile(c)
     e = _ice()
-    assert len(e["images"]) == 3
+    assert len(e["images"]) == 5            # 2026-09-28 재업로드: ICE 갤러리 5장
     r = c.post("/api/v1/collect/enrich", json={
         "item_id": iid, "gallery": e["images"], "detail_images": ["https://img.alicdn.com/d1.jpg"],
-        "field_sources": e["field_sources"], "gallery_expected": 3, "price": e["price"], "currency": "CNY"}).get_json()
+        "field_sources": e["field_sources"], "gallery_expected": 5, "price": e["price"], "currency": "CNY"}).get_json()
     assert r["ok"]
     ex = _extra(iid, seller)
-    assert ex["image_check"]["ok"] is True and ex["image_check"]["gallery"] >= 3
+    assert ex["image_check"]["ok"] is True and ex["image_check"]["gallery"] >= 5
     assert enrich_axes(ex)["enrich_state"] == "done"
 
 
@@ -128,7 +128,7 @@ def test_image_audit_classifies_cases(monkeypatch):
     cc = _tile(c, url="https://item.taobao.com/item.htm?id=500000000003")
     c.post("/api/v1/collect/enrich", json={"item_id": cc, "detail_images": ["https://img.alicdn.com/d.jpg"]})
     d = _tile(c, url="https://item.taobao.com/item.htm?id=500000000004", n=3)
-    got = c.get("/seller/collect/image-audit").get_json()
+    got = c.get("/seller/collect/image-audit?format=json").get_json()   # 5부-b: 기본은 화면, JSON은 명시
     ids = {k: {x["item_id"] for x in v} for k, v in got["samples"].items()}
     assert a in ids["A"] and b in ids["B"] and cc in ids["C"] and d in ids["D"], got
     assert set(got["summary"]) == {"A", "B", "C", "D"} and got["images_source"]

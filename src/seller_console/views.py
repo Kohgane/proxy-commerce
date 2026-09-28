@@ -11608,18 +11608,49 @@ def collect_image_audit():
       B 보강 막힘·재시도 소진 — `enrich_state=blocked` 또는 시도 ≥ 상한
       C 보강은 돌았는데 갤러리 ≤ 1 — 상세에서 갤러리를 못 잡았다(필드 출처 함께)
       D 정상 — 갤러리 ≥ 2
+
+    F49-T 5부-b: 오너가 JSON을 손으로 읽지 않게 **화면**이 기본이다(요약 4칸 + 표 + 「상세 보강 다시 실행」).
+    JSON은 `?format=json`으로 그대로 남긴다(볼트·스크립트가 읽는 자리).
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
-    import re as _re
-    from . import collect_history_store
-    from src.collectors.collect_status import enrich_axes as _eax
     try:
         days = max(1, min(int(request.args.get("days") or 30), 365))
     except Exception:
         days = 30
+    got = _image_audit(days)
+    if str(request.args.get("format") or "").lower() == "json":
+        cases = got["cases"]
+        return jsonify({"ok": True, "days": days,
+                        "summary": {k: {"label": _IMAGE_AUDIT_LABEL[k], "count": len(v)} for k, v in cases.items()},
+                        "images_source": got["images_source"],
+                        "requeued": got["requeued"],
+                        "samples": {k: v[:10] for k, v in cases.items()}})
+    rows = [r for k in ("A", "C", "B", "D") for r in got["cases"][k]]
+    return render_template("image_audit.html", days=days, got=got, rows=rows,
+                           labels=_IMAGE_AUDIT_LABEL, batch=_IMAGE_REQUEUE_DEFAULT,
+                           rerunnable=sum(1 for k in ("A", "C") for r in got["cases"][k] if not r["rerun_waiting"]))
+
+
+_IMAGE_AUDIT_LABEL = {"A": "목록 카드만 — 상세 보강이 안 돌았다", "B": "보강 막힘·재시도 소진",
+                      "C": "보강은 돌았는데 갤러리 ≤ 1", "D": "정상(갤러리 ≥ 2)"}
+# 한 번에 되돌리는 건수. 확장은 동시 1탭 · 2~3초 간격이라 20건이면 1~2분이다 — 한꺼번에 34건을 걸면
+#   그동안 타오바오에 같은 패턴 요청이 몰린다(봇 신호). 오너가 남은 건 다시 누르면 된다.
+_IMAGE_REQUEUE_DEFAULT = 20
+_IMAGE_REQUEUE_MAX = 50
+
+
+def _image_audit(days: int) -> dict:
+    """내 중국 소싱처 수집 항목을 A·B·C·D로 가른다(저장된 값 그대로 — 추정 없음).
+
+    `requeued`는 **「다시 실행」으로 되돌린 행이 지금 어디 있나**다(진행률의 분모·분자 — 서버가 센다).
+    """
+    import re as _re
+    from . import collect_history_store
+    from src.collectors.collect_status import enrich_axes as _eax
     cases = {"A": [], "B": [], "C": [], "D": []}
     src_count: dict = {}
+    requeued = {"total": 0, "A": 0, "B": 0, "C": 0, "D": 0, "waiting": 0, "still_short": 0}
     for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000) or []:
         url = str(row.get("url") or "")
         if not _re.search(r"(taobao|tmall|1688)\.com", url):
@@ -11634,23 +11665,103 @@ def collect_image_audit():
         src_count[src] = src_count.get(src, 0) + 1
         ax = _eax(ex)
         att = int(ex.get("enrich_attempts") or 0)
-        rec = {"item_id": row.get("id"), "images_n": len(imgs), "images_source": src, "mode": ex.get("mode") or "",
+        rec = {"item_id": row.get("id"), "title": str(row.get("title") or ex.get("title") or "")[:80],
+               "url": url, "images_n": len(imgs), "images_source": src, "mode": ex.get("mode") or "",
                "enrich_state": ax.get("enrich_state") or "", "attempts": att,
-               "reason": ax.get("reason") or "", "image_check": ex.get("image_check") or None}
+               "reason": ax.get("reason") or "", "image_check": ex.get("image_check") or None,
+               "requeued_at": str(ex.get("enrich_requeued_at") or ""),
+               "rerun_waiting": bool(ex.get("enrich_rerun"))}
         if len(imgs) >= 2:
-            cases["D"].append(rec)
+            case = "D"
         elif ax.get("enrich_state") == "blocked" or att >= 3:
-            cases["B"].append(rec)
+            case = "B"
         elif not ex.get("enriched"):
-            cases["A"].append(rec)
+            case = "A"
         else:
-            cases["C"].append(rec)
-    label = {"A": "목록 카드만 — 상세 보강이 안 돌았다", "B": "보강 막힘·재시도 소진",
-             "C": "보강은 돌았는데 갤러리 ≤ 1", "D": "정상(갤러리 ≥ 2)"}
-    return jsonify({"ok": True, "days": days,
-                    "summary": {k: {"label": label[k], "count": len(v)} for k, v in cases.items()},
-                    "images_source": src_count,
-                    "samples": {k: v[:10] for k, v in cases.items()}})
+            case = "C"
+        rec["case"] = case
+        rec["why"] = _image_audit_why(case, rec, ex)
+        cases[case].append(rec)
+        if rec["requeued_at"]:
+            requeued["total"] += 1
+            requeued[case] += 1
+            if rec["rerun_waiting"] and case != "D":
+                requeued["waiting"] += 1
+            elif case == "C":
+                requeued["still_short"] += 1          # 다시 돌았는데도 갤러리 ≤ 1
+    return {"cases": cases, "images_source": src_count, "requeued": requeued}
+
+
+def _image_audit_why(case: str, rec: dict, ex: dict) -> str:
+    """표의 「사유」 칸 — 저장된 값에서 **읽은 것만** 적는다."""
+    if rec["rerun_waiting"]:
+        return "보강 다시 실행 대기 — PC 고가수집기가 차례로 엽니다"
+    ic = rec.get("image_check") or {}
+    if case == "D":
+        return ("이미지 부족 · " + ic["reason"]) if ic and not ic.get("ok") and ic.get("reason") else ""
+    if case == "B":
+        return rec["reason"] or f"{rec['attempts']}회 시도 후 멈춤"
+    if case == "A":
+        return ("목록 카드로만 담김 — 상세 보강 기록 없음" if not rec["attempts"]
+                else f"보강 {rec['attempts']}회 시도 · 완료 기록 없음")
+    return (ic.get("reason") if ic and ic.get("reason") else
+            f"상세에서 갤러리를 {rec['images_n']}장만 읽음 (출처 {rec['images_source']})")
+
+
+@bp.post("/collect/image-audit/requeue")
+def collect_image_audit_requeue():
+    """F49-T 5부-b 「상세 보강 다시 실행」 — A·C 행을 **보강 대기로 되돌린다**(한 번에 최대 N건).
+
+    서버가 하는 일은 표시뿐이다: `enrich_state=pending` · 시도 0 · `enrich_rerun`. 실제로 상세를 여는 건
+    확장이다(`/api/v1/collect/enrich/pending` 폴러 — 콘솔 탭이 열릴 때 + 5분마다). 저장이 **실제로 된 행만**
+    되돌렸다고 센다(가짜 성공 금지).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        limit = max(1, min(int(data.get("limit") or _IMAGE_REQUEUE_DEFAULT), _IMAGE_REQUEUE_MAX))
+    except Exception:
+        limit = _IMAGE_REQUEUE_DEFAULT
+    want = {str(c).upper() for c in (data.get("cases") or ["A", "C"])} & {"A", "C"}
+    if not want:
+        return jsonify({"ok": False, "error": "되돌릴 수 있는 건 A(목록 카드만)·C(갤러리 ≤ 1)뿐이에요."}), 400
+    only = {str(x) for x in (data.get("item_ids") or []) if x}
+    try:
+        days = max(1, min(int(data.get("days") or 30), 365))
+    except Exception:
+        days = 30
+    from . import collect_history_store
+    got = _image_audit(days)
+    todo = [r for k in ("A", "C") if k in want for r in got["cases"][k]
+            if not r["rerun_waiting"] and (not only or r["item_id"] in only)]
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    done, failed = [], []
+    for r in todo[:limit]:
+        item = collect_history_store.get(r["item_id"], seller_ids=_seller_identities())
+        if not item:
+            failed.append(r["item_id"])
+            continue
+        try:
+            ex = json.loads(item.get("extra_json") or "{}")
+        except Exception:
+            ex = {}
+        ex["enrich_state"] = "pending"
+        ex["enrich_attempts"] = 0
+        ex.pop("enrich_blocked_reason", None)
+        ex["enrich_rerun"] = True
+        ex["enrich_requeued_at"] = now
+        ex["enrich_requeue_case"] = r["case"]
+        ok = collect_history_store.update(r["item_id"], seller_id=item.get("seller_id") or _seller_id(),
+                                          extra_json=json.dumps(ex, ensure_ascii=False))
+        (done if ok else failed).append(r["item_id"])
+    left = max(0, len(todo) - len(done) - len(failed))
+    logger.info("[image-audit] 보강 다시 실행 seller=%s 되돌림 %s · 실패 %s · 남음 %s",
+                _seller_id(), len(done), len(failed), left)
+    ok = bool(done) or not todo
+    msg = (f"{len(done)}건을 보강 대기로 되돌렸어요 — PC 고가수집기가 차례로 엽니다." if done else
+           "되돌릴 항목이 없어요." if not todo else "저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요.")
+    return jsonify({"ok": ok, "requeued": done, "failed": failed, "left": left, "message": msg}), (200 if ok else 502)
 
 
 @bp.post("/collect/preview/<item_id>/option-name")

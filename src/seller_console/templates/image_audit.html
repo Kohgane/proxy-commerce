@@ -1,0 +1,156 @@
+{% extends "_base.html" %}
+{% block title %}이미지 수집 점검{% endblock %}
+{% block content %}
+{# F49-T 5부-b: 「전체 수집했는데 이미지 1장」을 **화면이** 말한다. 원인 네 갈래 + 되돌리기 버튼.
+   서버는 표시만 바꾼다 — 실제로 상세를 여는 건 PC 고가수집기(보강 대기 폴러)다. #}
+<div class="container-fluid py-4">
+  <div class="console-kpi-label mb-1">수집</div>
+  <h1 class="h4 fw-bold mb-1"><i class="bi bi-images"></i> 이미지 수집 점검</h1>
+  <p class="text-muted small mb-0">
+    최근 {{ days }}일 동안 타오바오·티몰·1688에서 담은 상품이 <strong>이미지를 몇 장 가져왔는지</strong>,
+    모자라면 <strong>왜</strong> 모자란지 가릅니다.
+  </p>
+  <hr class="pc-hairline mt-2 mb-4">
+
+  <div class="row g-3 mb-3" data-role="audit-summary">
+    {% set kpi = {"A": "console-kpi-warning", "B": "console-kpi-danger", "C": "console-kpi-warning", "D": "console-kpi-success"} %}
+    {% for k in ["A", "B", "C", "D"] %}
+    <div class="col-6 col-lg-3">
+      <div class="op-card console-card console-kpi-card {{ kpi[k] }} h-100" data-case="{{ k }}">
+        <div class="op-card-body">
+          <div class="console-kpi-label mb-1">{{ k }} · {{ labels[k] }}</div>
+          <div class="console-stat-value" data-role="count-{{ k }}">{{ got.cases[k]|length }}<span class="audit-unit">건</span></div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="op-card mb-3 audit-toolbar" data-role="audit-toolbar">
+    <div class="op-card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+      <div class="small" style="max-width:60ch;">
+        <strong>상세 보강 다시 실행</strong> — A·C 상품을 <strong>보강 대기</strong>로 되돌립니다.
+        로그인된 PC의 고가수집기가 한 번에 한 개씩, 2~3초 간격으로 상세 페이지를 열어 이미지를 채웁니다.
+        <span class="text-muted">한 번에 최대 {{ batch }}건 · 남은 건 다시 누르면 이어집니다.</span>
+      </div>
+      <button type="button" class="btn btn-cta" id="auditRequeueBtn" data-limit="{{ batch }}"
+              {% if not rerunnable %}disabled{% endif %}>
+        <i class="bi bi-arrow-repeat"></i> 상세 보강 다시 실행
+        <span class="audit-btn-count">({{ [rerunnable, batch]|min }}건)</span>
+      </button>
+    </div>
+    <div class="op-card-body pt-0" data-role="audit-progress" {% if not got.requeued.total %}hidden{% endif %}>
+      <div class="d-flex justify-content-between small mb-1">
+        <span>되돌린 <strong data-role="rq-total">{{ got.requeued.total }}</strong>건 진행</span>
+        <span class="text-muted">
+          정상 <strong data-role="rq-D">{{ got.requeued.D }}</strong>
+          · 대기 <strong data-role="rq-waiting">{{ got.requeued.waiting }}</strong>
+          · 여전히 부족 <strong data-role="rq-short">{{ got.requeued.still_short }}</strong>
+          · 막힘 <strong data-role="rq-B">{{ got.requeued.B }}</strong>
+        </span>
+      </div>
+      {% set pct = ((got.requeued.total - got.requeued.waiting) * 100 // got.requeued.total) if got.requeued.total else 0 %}
+      <div class="audit-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ pct }}">
+        <span data-role="rq-bar" style="width: {{ pct }}%"></span>
+      </div>
+      <div class="small text-muted mt-1" data-role="rq-note">
+        {% if got.requeued.waiting %}PC에서 고가수집기가 켜져 있고 타오바오에 로그인돼 있어야 진행됩니다. 이 화면은 15초마다 새로 셉니다.{% else %}되돌린 항목의 보강이 모두 한 번씩 돌았습니다.{% endif %}
+      </div>
+    </div>
+  </div>
+  <div id="auditMsg" class="mb-3" aria-live="polite"></div>
+
+  {% if not rows %}
+  <div class="op-empty">최근 {{ days }}일 동안 중국 소싱처에서 담은 상품이 없습니다.</div>
+  {% else %}
+  <div class="op-card">
+    <div class="op-card-body p-0">
+      <table class="table table-hover align-middle mb-0 table-cards" data-role="audit-table">
+        <thead class="table-light">
+          <tr><th>상품</th><th>이미지 출처</th><th class="text-end">이미지</th><th>상태</th><th>사유</th></tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr data-case="{{ r.case }}" data-id="{{ r.item_id }}">
+            <td class="cardcell-title" data-label="상품">
+              <a href="/seller/collect/preview/{{ r.item_id }}" class="text-truncate d-inline-block audit-title" title="{{ r.title }}">{{ r.title or r.item_id }}</a>
+            </td>
+            <td data-label="이미지 출처"><span class="small">{{ r.images_source }}</span></td>
+            <td class="text-end" data-label="이미지"><strong>{{ r.images_n }}</strong>장</td>
+            <td data-label="상태">
+              {% if r.rerun_waiting %}<span class="pc-badge pc-badge-on">보강 대기</span>
+              {% elif r.case == "D" %}<span class="pc-badge pc-badge-on">D 정상</span>
+              {% elif r.case == "B" %}<span class="pc-badge pc-badge-danger">B 막힘</span>
+              {% else %}<span class="pc-badge pc-badge-off">{{ r.case }} {{ "카드만" if r.case == "A" else "갤러리 ≤ 1" }}</span>{% endif %}
+            </td>
+            <td data-label="사유"><span class="small">{{ r.why or "—" }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  <p class="small text-muted mt-3 mb-0">
+    B(막힘)는 여기서 되돌리지 않습니다 — 같은 벽에 다시 부딪히기만 합니다. 사유를 보고 로그인·차단부터 풀어 주세요.
+  </p>
+</div>
+
+<style>
+  .audit-unit { font-size: 1.1rem; color: var(--text-muted); font-family: var(--font-ui); margin-left: .15em; }
+  .audit-title { max-width: 32ch; }
+  .audit-bar { height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--teal) 14%, transparent); overflow: hidden; }
+  .audit-bar > span { display: block; height: 100%; background: var(--teal); transition: width var(--dur-2, .3s) var(--ease, ease); }
+  @media (prefers-reduced-motion: reduce) { .audit-bar > span { transition: none; } }
+  @media (max-width: 767.98px) { .audit-toolbar .btn-cta { width: 100%; min-height: 44px; } .audit-title { max-width: 100%; } }
+</style>
+<script>
+(function () {
+  var btn = document.getElementById("auditRequeueBtn");
+  var msg = document.getElementById("auditMsg");
+  function say(kind, text) {
+    msg.innerHTML = "";
+    var d = document.createElement("div");
+    d.className = "pc-status pc-status-" + kind + " small";
+    d.textContent = text;
+    msg.appendChild(d);
+  }
+  if (btn) btn.addEventListener("click", function () {
+    btn.disabled = true;
+    fetch("/seller/collect/image-audit/requeue", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({cases: ["A", "C"], limit: Number(btn.dataset.limit) || 20, days: {{ days }}})
+    }).then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+      .then(function (res) {
+        var d = res[1] || {};
+        if (!res[0] || !d.ok) { say("danger", d.message || d.error || "되돌리지 못했어요 — 잠시 뒤 다시 눌러 주세요."); btn.disabled = false; return; }
+        say("info", d.message + (d.left ? " 남은 " + d.left + "건은 한 번 더 누르면 이어집니다." : ""));
+        // 새로 불러오면 콘솔 탭이 다시 열린 것으로 잡혀 고가수집기가 대기 목록을 곧바로 가져간다.
+        setTimeout(function () { location.reload(); }, 1200);
+      })
+      .catch(function () { say("danger", "연결이 끊겼어요 — 잠시 뒤 다시 눌러 주세요."); btn.disabled = false; });
+  });
+
+  var prog = document.querySelector('[data-role="audit-progress"]');
+  function set(role, v) { var el = document.querySelector('[data-role="' + role + '"]'); if (el) el.textContent = v; }
+  function poll() {
+    fetch("/seller/collect/image-audit?format=json&days={{ days }}", {headers: {"Accept": "application/json"}})
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.ok) return;
+        ["A", "B", "C", "D"].forEach(function (k) { var el = document.querySelector('[data-role="count-' + k + '"]'); if (el && el.firstChild) el.firstChild.nodeValue = d.summary[k].count; });
+        var q = d.requeued || {};
+        if (!q.total) return;
+        prog.hidden = false;
+        set("rq-total", q.total); set("rq-D", q.D); set("rq-waiting", q.waiting); set("rq-B", q.B);
+        set("rq-short", q.still_short || 0);
+        var pct = Math.floor((q.total - q.waiting) * 100 / q.total);
+        var bar = document.querySelector('[data-role="rq-bar"]'); if (bar) bar.style.width = pct + "%";
+        if (!q.waiting) { set("rq-note", "되돌린 항목의 보강이 모두 한 번씩 돌았습니다."); return; }
+        setTimeout(poll, 15000);
+      }).catch(function () { setTimeout(poll, 30000); });
+  }
+  {% if got.requeued.waiting %}setTimeout(poll, 15000);{% endif %}
+})();
+</script>
+{% endblock %}
