@@ -116,8 +116,10 @@ def test_translate_options_no_40_cap_and_batch_isolation(monkeypatch):
 
 
 def test_worker_translates_options_too():
-    src = Path("src/seller_console/translate_worker.py").read_text(encoding="utf-8")
-    assert "translator.translate_options(extra[\"options\"])" in src and "options_translated" in src
+    """워커가 옵션 번역을 **부른다**(전엔 버튼 경로만) — 문자열이 아니라 호출 구조로 잰다(메타 계약)."""
+    from tests._ast_probe import calls_in
+    from src.seller_console import translate_worker as W
+    assert "translate_options" in calls_in(W.drain_once)
 
 
 def test_rules_override_without_redeploy():
