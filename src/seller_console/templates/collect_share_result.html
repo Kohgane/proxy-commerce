@@ -12,6 +12,12 @@
   <h1 class="sd-big" data-role="share-state" data-state="failed">담지 못했어요</h1>
   {% endif %}
 
+  {# T5(2026-09-30-H): 옛 단축어(판단 로직이 든 것·v<2)면 다시 설치하게 — 담기 결과와 상관없이 늘 보인다. #}
+  {% if old_shortcut is defined and old_shortcut %}
+  <div class="sd-oldver" data-role="share-oldver">단축어가 구버전입니다 — 새 단축어로 다시 설치해 주세요.
+    <a class="btn btn-primary sd-reinstall" href="{{ reinstall_url }}" data-role="share-reinstall">단축어 다시 설치</a></div>
+  {% endif %}
+
   {% if out.ok and m5 is defined %}
   {# M5(2026-09-30): 담은 그 자리에서 미리보기 → 마켓 선택 → 사전검증 → 등록. #}
   <p class="sd-title" data-role="share-title">{{ out.title or m5.title or "(제목 없음)" }}</p>
@@ -49,6 +55,9 @@
   .sd-line { font-size: 1.08rem; margin: 0 0 8px; }
   .sd-raw { font-size: .98rem; line-height: 1.5; word-break: break-all; background: var(--surface-2, var(--bg));
             border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 4px 0 12px; }
+  .sd-oldver { border: 1px solid var(--warn); border-radius: 12px; padding: 10px 12px; margin: 0 0 14px;
+               background: var(--bg); font-size: 1rem; line-height: 1.5; }
+  .sd-reinstall { display: block; margin-top: 8px; min-height: 48px; line-height: 32px; border-radius: 12px; }
   .sd-src { display: block; margin-top: 6px; color: var(--text-muted); font-size: .92rem; }
   .sd-note { color: var(--text-muted); font-size: 1rem; line-height: 1.55; margin: 0 0 8px; }
   .sd-btns { display: grid; gap: 12px; margin-top: 28px; }

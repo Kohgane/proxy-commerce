@@ -35,18 +35,18 @@ def _clean_state():
 
 
 def test_install_page_is_public_and_verbatim(anon, monkeypatch):
+    """T5(오너 2026-09-30-H)로 설치하기 화면을 다시 썼다 — 중국 유저 초보 기준 4단계 + 안 될 때 3줄."""
     monkeypatch.delenv("IOS_SHORTCUT_URL", raising=False)
     r = anon.get("/seller/guide/iphone")
     assert r.status_code == 200
     h = r.get_data(as_text=True)
-    for s in ("아이폰으로 상품 담기 — 처음 한 번만 설정", "아래 파란 버튼을 누르세요.",
-              "화면에 「고가브릿지로 수집」이 뜨면 맨 아래 「단축어 추가」를 누르세요.",
-              "이 단축어는 상품 주소를 고가브릿지에 보내는 일만 합니다.",
-              "사파리(나침반 모양 앱)를 열고", "kohganepercentiii.com", "크롬 앱이 아니라 꼭 사파리여야 합니다.",
-              "끝. 이제 아래 「사용하기」대로 하면 됩니다."):
+    for s in ("아이폰으로 상품 담기 — 처음 한 번만 설정", "「단축어 추가」", "「허용」", "「分享(공유)」 → 「复制链接(링크 복사)」",
+              "홈 화면의 「고가브릿지로 수집」", "안 될 때", "단축어가 구버전입니다"):
         assert s in h, s
     assert 'data-role="install-soon"' in h and 'data-role="install-link"' not in h   # 링크 없으면 준비 중
-    assert all(f'data-role="shot-{k}"' in h for k in ("a1", "a2", "a3"))
+    assert all(f'data-role="shot-{k}"' in h for k in ("a1", "a2", "a3", "a4"))
+    # 추측 금지: 붙여넣기 거부 시 설정 경로는 실기기 캡처 뒤에만 적는다
+    assert "실제 아이폰 화면을 확인한 뒤" in h
 
 
 def test_use_page_is_public_and_verbatim(anon):
@@ -67,8 +67,9 @@ def test_install_link_is_an_admin_setting(monkeypatch):
         s["user_id"], s["user_role"] = "owner", "admin"
     page = c.get("/seller/guide/iphone/make").get_data(as_text=True)
     # M3-iOS-3(2026-09-30): 두 갈래(공유 시트·클립보드)가 src로 길을 싣는다.
-    assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?src=share&amp;text=" in page
-    assert "https://kohganepercentiii.com/seller/collect/share?src=clip&amp;text=" in page
+    # T5(2026-09-30-H): 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`.
+    assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?v=2&amp;text=" in page
+    assert "&amp;clip=<b>[클립보드]</b>" in page and "「클립보드 가져오기」" in page
     assert "「공유 시트 유형」에서 「URL」과 「텍스트」만 체크." in page and "「iCloud 링크 복사」" in page
     bad = c.post("/seller/guide/iphone/make", data={"shortcut_url": "https://evil.example/x"}).get_data(as_text=True)
     assert 'data-role="make-err"' in bad and ios_shortcut_url() == ""

@@ -104,11 +104,12 @@ def test_server_log_records_scrubbed_query(client, caplog):
     assert all(TK not in r.getMessage() for r in caplog.records)
 
 
-def test_make_page_is_four_actions():
+def test_make_page_is_three_actions():
+    """T5(2026-09-30-H)가 4동작(URL 가져오기·인코딩)을 **동작 셋**으로 바꿨다 — 판단은 서버가 한다."""
     t = Path("src/seller_console/templates/guide_iphone_make.html").read_text(encoding="utf-8")
-    acts = [t.index(f'data-role="act-{i}"') for i in (1, 2, 3, 4)]
+    acts = [t.index(f'data-role="act-{i}"') for i in (1, 2, 3)]
     assert acts == sorted(acts)
-    for s in ("공유 시트 받기", "「입력에서 URL 가져오기」", "「URL 인코딩」", "「URL 열기」", "「URL 인코딩된 텍스트」"):
+    for s in ("공유 시트 받기", "「클립보드 가져오기」", "「URL 열기」", "[단축어 입력]", "[클립보드]"):
         assert s in t, s
     # 「단축어 입력」을 URL 열기에 바로 넣던 옛 순서는 없다(그게 제목 3자만 보냈다)
     assert "「단축어 입력」 토큰을 누르면" not in t

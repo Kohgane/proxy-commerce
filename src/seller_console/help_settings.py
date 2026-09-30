@@ -34,3 +34,35 @@ def save_ios_shortcut_url(url: str) -> str:
         raise ValueError("iCloud 단축어 링크(https://www.icloud.com/shortcuts/…)만 넣을 수 있어요.")
     _st().state_set(_KEY, {"url": u})
     return u
+
+
+# T5(오너 2026-09-30-H): 단축어 버전별 도착 수 — 중국 유저가 새 단축어(v=2)로 옮겨 갔는지 화면 C에서 본다.
+_VKEY = "help:share_version_counts"
+SHORTCUT_VERSION = 2
+
+
+def bump_share_version(v: int) -> None:
+    """`v`별 도착 수 +1(PG면 한 문장으로 올려 워커 둘이 동시에 와도 안 잃는다). 실패는 조용히 — 수집을 막지 않는다."""
+    key = f"v{int(v) if int(v) > 0 else 0}"
+    try:
+        from src.db import pg
+        if pg.pg_enabled():
+            with pg.tx() as cur:
+                cur.execute(
+                    "INSERT INTO app_state (key, value, updated_at) VALUES (%s, jsonb_build_object(%s, 1), now()) "
+                    "ON CONFLICT (key) DO UPDATE SET value = jsonb_set(app_state.value, ARRAY[%s], "
+                    "to_jsonb(COALESCE((app_state.value->>%s)::int, 0) + 1)), updated_at = now()",
+                    (_VKEY, key, key, key))
+            return
+        cur_v = _st().state_get(_VKEY) or {}
+        cur_v[key] = int(cur_v.get(key) or 0) + 1
+        _st().state_set(_VKEY, cur_v)
+    except Exception:
+        pass
+
+
+def share_version_counts() -> dict:
+    try:
+        return {k: int(v) for k, v in (_st().state_get(_VKEY) or {}).items()}
+    except Exception:
+        return {}

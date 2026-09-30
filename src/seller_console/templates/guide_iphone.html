@@ -17,49 +17,52 @@
   </nav>
 
   {% if screen == "install" %}
+  {# T5(오너 2026-09-30-H): 중국에서 쓰는 유저 기준 — 단축어는 한 번 설치하면 다시 바꿀 일이 없다(판단은 서버가 한다). #}
   <h1 class="ig-title">아이폰으로 상품 담기 — 처음 한 번만 설정</h1>
 
   <section class="ig-step" data-role="step-a1">
     <div class="ig-num">1</div>
     <div class="ig-body">
-      <p>아래 파란 버튼을 누르세요.</p>
+      <p>아래 파란 버튼을 누르고, 뜨는 화면 맨 아래 「단축어 추가」를 누르세요.</p>
       {% if shortcut_link %}
       <a class="btn btn-primary ig-btn" href="{{ shortcut_link }}" data-role="install-link">단축어 설치하기</a>
       {% else %}
       <div class="ig-soon" data-role="install-soon">설치 버튼 준비 중이에요 — 곧 열립니다.</div>
       {% endif %}
-      <p>화면에 「고가브릿지로 수집」이 뜨면 맨 아래 「단축어 추가」를 누르세요.</p>
-      <p class="ig-note">(「신뢰할 수 없는 단축어」 같은 안내가 나오면 「추가」를 눌러도 됩니다. 이 단축어는 상품 주소를 고가브릿지에 보내는 일만 합니다.)</p>
+      <p class="ig-note">(이 단축어는 상품 주소를 고가브릿지에 보내는 일만 합니다.)</p>
       {{ shot("a1") }}
     </div>
   </section>
   <section class="ig-step" data-role="step-a2">
     <div class="ig-num">2</div>
     <div class="ig-body">
-      <p>사파리(나침반 모양 앱)를 열고 <strong>{{ host }}</strong> 에 한 번 로그인해 두세요.</p>
-      <p class="ig-note">※ 크롬 앱이 아니라 꼭 사파리여야 합니다. 단축어는 사파리로 열립니다.</p>
+      <p>처음 한 번, 「붙여넣기를 허용하겠습니까」 같은 창이 뜨면 「허용」을 누르세요.</p>
+      <p class="ig-note">복사해 둔 상품 링크를 단축어가 읽어 가려면 필요합니다.</p>
       {{ shot("a2") }}
     </div>
   </section>
-  <section class="ig-step" data-role="step-a4">
+  <section class="ig-step" data-role="step-a3">
     <div class="ig-num">3</div>
     <div class="ig-body">
-      {# M3-iOS-3(오너 2026-09-30): 타오바오 「复制链接(링크 복사)」은 공유 목록을 거치지 않는다 → 단축어를 직접 눌러
-         클립보드에서 가져온다. 이 길을 기본으로 안내한다. #}
-      <p><strong>링크 복사로 담기(기본)</strong> — 타오바오 앱에서 「分享(공유)」 → 「复制链接(링크 복사)」을 누른 뒤,
-        「단축어」 앱에서 「고가브릿지로 수집」을 한 번 누르세요. 복사한 링크를 가져와 담습니다.</p>
-      <p class="ig-note">※ 단축어는 처음 한 번 「붙여넣기 허용」을 물을 수 있어요 — 「허용」을 누르세요.
-        자주 쓰면 단축어를 길게 눌러 「홈 화면에 추가」해 두면 편합니다.</p>
+      <p>타오바오 앱에서 담을 상품을 열고 「分享(공유)」 → 「复制链接(링크 복사)」을 누르세요.</p>
+      {{ shot("a3") }}
+    </div>
+  </section>
+  <section class="ig-step" data-role="step-a4">
+    <div class="ig-num">4</div>
+    <div class="ig-body">
+      <p>홈 화면의 「고가브릿지로 수집」을 한 번 누르세요. 사파리가 열리고 「담았어요」가 나오면 끝입니다.</p>
+      <p class="ig-note">처음엔 로그인 화면이 나올 수 있어요 — 로그인(또는 가입)하면 그 결과 화면으로 이어집니다.</p>
       {{ shot("a4") }}
     </div>
   </section>
-  <section class="ig-step" data-role="step-a3">
-    <div class="ig-num">4</div>
-    <div class="ig-body">
-      <p>끝. 이제 아래 「사용하기」대로 하면 됩니다.</p>
-      <a class="btn btn-ghost ig-btn" href="/seller/guide/iphone/use">사용하기 보기</a>
-      {{ shot("a3") }}
-    </div>
+  <section class="ig-help" data-role="install-trouble">
+    <h2 class="ig-sub">안 될 때</h2>
+    <ul>
+      <li>「단축어가 구버전입니다」가 나오면 → 위 1번 버튼으로 다시 설치하세요.</li>
+      <li>「공유 내용도 클립보드도 비어 있어요」가 나오면 → 3번(링크 복사)부터 다시 하세요.</li>
+      <li data-role="install-paste-denied">붙여넣기 창에서 「허용 안 함」을 눌렀다면 → 설정 방법은 실제 아이폰 화면을 확인한 뒤 여기에 적습니다.</li>
+    </ul>
   </section>
 
   {% else %}
