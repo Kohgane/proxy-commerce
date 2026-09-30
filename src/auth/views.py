@@ -550,7 +550,9 @@ def _why(exc: Exception) -> str:
         msg = scrub_line(str(exc).splitlines()[0] if str(exc) else "")
     except Exception:
         msg = ""
-    msg = msg.split("postgresql://")[0].split("postgres://")[0][:160]
+    import re as _re
+    # 접속 문자열(자격 포함 주소)은 통째로 가린다 — 스킴을 가리지 않고 `xxx://…` 전부.
+    msg = _re.sub(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+", "<주소 생략>", msg)[:160]
     return f"{type(exc).__name__}: {msg}".strip().rstrip(":")
 
 
