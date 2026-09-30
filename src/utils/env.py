@@ -34,6 +34,8 @@ def env_mask(name: str) -> str:
 _BOOT_CHECK_KEYS = (
     "OPENAI_API_KEY", "DEEPL_API_KEY", "OPENAI_MODEL",
     "CLOUDINARY_CLOUD_NAME", "GOOGLE_SHEET_ID", "SECRET_KEY",
+    # AUTH-1(2026-09-30): 인증·재설정 메일(Resend)이 나가는지 — 없으면 send_email이 조용히 False다.
+    "RESEND_API_KEY", "RESEND_FROM_EMAIL",
 )
 
 # v45 P8: 부팅 시 in-place로 정제해 둘 키 — 이후 모듈들이 raw os.getenv로 읽어도 깨끗한 값을

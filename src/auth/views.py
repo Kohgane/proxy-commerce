@@ -496,18 +496,13 @@ def _provider_status(provider: str) -> dict:
 # 라우트
 # ---------------------------------------------------------------------------
 
-@auth_bp.get("/login")
-def login():
-    """로그인 페이지."""
-    if session.get("user_id"):
-        return redirect("/seller/dashboard")
-    next_url = _safe_next_url(request.args.get("next", ""))
-    kakao_status = _provider_status("kakao")
-    google_status = _provider_status("google")
-    naver_status = _provider_status("naver")
-    apple_status = _provider_status("apple")
-    # 운영자용 OAuth 진단(콜백 URI/client_id)은 일반 사용자 첫 화면에 노출하지 않는다
-    # (gogabridj 브리프 §2.4). 관리자 세션이거나 ?diag=1 일 때만 렌더한다.
+def _login_page(*, status: int = 200, error: str = "", error_code: str = "", notice: str = "",
+                email: str = "", next_url: str = "", resend: bool = False):
+    """로그인 화면 — 오류는 **이 응답 안에** 적는다(AUTH-1).
+
+    전엔 오류를 flash에 싣고 302로 되돌렸다. flash는 세션 쿠키를 타므로 쿠키가 어긋나면
+    오류까지 사라져 「그냥 새로고침」처럼 보인다. 이제 POST 실패는 같은 응답에서 원인 코드와 함께 보인다.
+    """
     show_diag = request.args.get("diag") == "1"
     if not show_diag:
         try:
@@ -525,139 +520,258 @@ def login():
     return render_template(
         "auth/login.html",
         next_url=next_url,
-        kakao_status=kakao_status,
-        google_status=google_status,
-        naver_status=naver_status,
-        apple_status=apple_status,
+        kakao_status=_provider_status("kakao"),
+        google_status=_provider_status("google"),
+        naver_status=_provider_status("naver"),
+        apple_status=_provider_status("apple"),
         oauth_runtime=oauth_runtime,
-    )
+        auth_error=error, auth_error_code=error_code, auth_notice=notice,
+        auth_email_value=email, auth_resend=resend,
+    ), status
+
+
+def _signup_page(*, status: int = 200, error: str = "", error_code: str = "", email: str = "",
+                 name: str = "", next_url: str = ""):
+    return render_template(
+        "auth/signup.html",
+        kakao_status=_provider_status("kakao"),
+        google_status=_provider_status("google"),
+        naver_status=_provider_status("naver"),
+        next_url=next_url,
+        auth_error=error, auth_error_code=error_code,
+        auth_email_value=email, auth_name_value=name,
+    ), status
+
+
+def _why(exc: Exception) -> str:
+    """저장소 예외 한 줄 — 비밀(접속 문자열·토큰)은 빼고 종류와 첫 줄만."""
+    try:
+        from src.collectors.secret_scrub import scrub_line
+        msg = scrub_line(str(exc).splitlines()[0] if str(exc) else "")
+    except Exception:
+        msg = ""
+    import re as _re
+    # 접속 문자열(자격 포함 주소)은 통째로 가린다 — 스킴을 가리지 않고 `xxx://…` 전부.
+    msg = _re.sub(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+", "<주소 생략>", msg)[:160]
+    return f"{type(exc).__name__}: {msg}".strip().rstrip(":")
+
+
+_SOCIAL_NAMES = {"google": "구글", "kakao": "카카오", "naver": "네이버", "apple": "애플"}
+
+
+def _social_provider_for(email: str) -> str:
+    """이 이메일이 **소셜로만** 등록돼 있으면 그 프로바이더 이름(한국어), 아니면 빈 문자열."""
+    try:
+        from src.db import user_identities_pg as ident
+        for prov in ("google", "kakao", "naver", "apple"):
+            if ident.resolve(prov, email):
+                return _SOCIAL_NAMES[prov]
+    except Exception:
+        pass
+    return ""
+
+
+@auth_bp.get("/login")
+def login():
+    """로그인 페이지."""
+    if session.get("user_id"):
+        return redirect(_safe_next_url(request.args.get("next", "")))
+    return _login_page(next_url=_safe_next_url(request.args.get("next", "")))
 
 
 @auth_bp.get("/signup")
 def signup():
     """회원가입 페이지."""
     if session.get("user_id"):
-        return redirect("/seller/dashboard")
-    kakao_status = _provider_status("kakao")
-    google_status = _provider_status("google")
-    naver_status = _provider_status("naver")
-    return render_template(
-        "auth/signup.html",
-        kakao_status=kakao_status,
-        google_status=google_status,
-        naver_status=naver_status,
-    )
+        return redirect(_safe_next_url(request.args.get("next", "")))
+    return _signup_page(next_url=_safe_next_url(request.args.get("next", "")))
 
 
 @auth_bp.post("/signup")
 def signup_post():
-    """이메일 + 비밀번호 회원가입 처리."""
+    """이메일 + 비밀번호 회원가입 → **바로 로그인**(오너 결정 ㊼, 2026-09-30).
+
+    계정은 PG `password_accounts`에 적고 **다시 읽어 확인한 뒤에만** 로그인시킨다.
+    실패는 삼키지 않는다 — 원인 코드와 한국어 원문을 이 응답에 적는다.
+    """
+    from . import password_accounts as accounts
     email = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
     name = request.form.get("name", "").strip() or email.split("@")[0]
+    next_url = _safe_next_url(request.form.get("next", ""))
+    page = dict(email=email, name=request.form.get("name", "").strip(), next_url=next_url)
 
-    if not email or not password:
-        flash("이메일과 비밀번호를 입력해주세요.", "danger")
-        return redirect(url_for("auth.signup"))
-
+    if not email or "@" not in email or not password:
+        return _signup_page(status=400, error_code="AUTH-SIGNUP-EMPTY",
+                            error="이메일과 비밀번호를 입력해 주세요.", **page)
     if len(password) < 8:
-        flash("비밀번호는 8자 이상이어야 합니다.", "danger")
-        return redirect(url_for("auth.signup"))
+        return _signup_page(status=400, error_code="AUTH-SIGNUP-SHORT",
+                            error="비밀번호는 8자 이상이어야 합니다.", **page)
 
     try:
-        from .user_store import get_store
-        from .models import User
-        store = get_store()
+        existing = accounts.find(email)
+    except accounts.StoreDown as exc:
+        logger.warning("[auth] signup store-down: %s", exc)
+        return _signup_page(status=503, error_code="AUTH-STORE-DOWN",
+                            error=f"계정 저장소에 연결하지 못했어요 — {_why(exc)}", **page)
+    if existing:
+        return _login_page(status=409, error_code="AUTH-SIGNUP-EXISTS", email=email, next_url=next_url,
+                           error="이미 가입된 이메일입니다 — 아래에서 비밀번호로 로그인해 주세요.")
+    social = _social_provider_for(email)
+    if social:
+        return _login_page(status=409, error_code="AUTH-SIGNUP-SOCIAL", email=email, next_url=next_url,
+                           error=f"이 이메일은 {social}로 가입돼 있어요 — 위의 「{social}로 로그인」을 눌러 주세요.")
 
-        existing = store.find_by_email(email)
-        if existing is None:
-            # C-F19: 시트 조회가 실패해도 **표가 알고 있으면** 이미 있는 사람이다.
-            from .identity import resolve_user_id as _rid
-            if _rid("password", email):
-                existing = True
-        if existing:
-            flash("이미 등록된 이메일입니다. 로그인하세요.", "warning")
-            return redirect(url_for("auth.login"))
-
-        role = "admin" if _is_admin_email(email) else "seller"
-        user = User.new(email=email, name=name, role=role)
-        user.password_hash = _hash_password(password)
-
-        # 이메일 인증 토큰
-        verify_token = secrets.token_urlsafe(32)
-        user.reset_token = verify_token  # 인증 전까지 재사용
-        user.reset_token_exp = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
-
-        store.create(user)
-
-        # 인증 메일 발송
-        try:
-            from src.notifications.email_resend import send_email
-            verify_url = f"{os.getenv('APP_BASE_URL', 'https://kohganepercentiii.com')}/auth/verify-email?token={verify_token}"
-            send_email(
-                to=email,
-                subject="[고가브릿지] 이메일 인증",
-                html=f"<p>안녕하세요, {name}님!</p>"
-                     f"<p>아래 링크를 클릭하여 이메일을 인증해주세요:</p>"
-                     f"<p><a href='{verify_url}'>이메일 인증하기</a></p>",
-                text=f"이메일 인증: {verify_url}",
-            )
-        except Exception as mail_exc:
-            logger.warning("인증 메일 발송 실패 (가입은 완료됨): %s", mail_exc)
-
-        # C-F19: 표에 적고, **처음 보는 이메일일 때만** 알린다.
-        from .identity import known_email as _known, register_login as _reg
-        was_known = _known(email)
-        _reg("password", email, user.user_id, display_name=name)
-
-        if not was_known:
-            try:
-                from src.notifications.telegram import send_telegram
-                _async_notify(
-                    send_telegram,
-                    f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입",
-                    urgency="info",
-                )
-            except Exception:
-                pass
-
-        flash("가입이 완료되었습니다. 이메일 인증 후 로그인해주세요.", "success")
-        return redirect(url_for("auth.login"))
+    # 정본 user_id: 정체성 표가 이 (password, email)을 이미 알면 그 값(옛 가입이 계정 행만 잃은 경우).
+    #   그 user_id가 **데이터를 쥐고 있으면** 비밀번호만으로 넘겨주지 않는다(남의 데이터로 들어가는 길).
+    from .models import User
+    user_id = ""
+    try:
+        from .identity import _counts_for
+        from src.db import user_identities_pg as ident
+        prior = ident.resolve("password", email)
+        if prior:
+            held = any(int(v or 0) != 0 for v in (_counts_for(prior) or {}).values())   # -1(못 셈)도 있다고 본다
+            if held:
+                logger.warning("[auth] signup orphan-identity with data uid=%s…", prior[:8])
+                return _signup_page(status=409, error_code="AUTH-SIGNUP-ORPHAN",
+                                    error="이 이메일로 만든 데이터가 있는데 계정 기록이 없어요 — "
+                                          "운영자에게 이 코드를 알려 주세요.", **page)
+            user_id = prior
     except Exception as exc:
-        logger.warning("signup_post 오류: %s", exc)
-        flash("가입 중 오류가 발생했습니다.", "danger")
-        return redirect(url_for("auth.signup"))
+        logger.warning("[auth] signup 정체성 확인 실패(새 계정으로 진행): %s", exc)
+    role = "admin" if _is_admin_email(email) else "seller"
+    user = User.new(email=email, name=name, role=role)
+    if user_id:
+        user.user_id = user_id
+    verify_token = secrets.token_urlsafe(32)
+    try:
+        acct = accounts.create(user_id=user.user_id, email=email, password_hash=_hash_password(password),
+                               name=name, role=role, verify_token=verify_token)
+    except accounts.AccountExists:
+        return _login_page(status=409, error_code="AUTH-SIGNUP-EXISTS", email=email, next_url=next_url,
+                           error="이미 가입된 이메일입니다 — 아래에서 비밀번호로 로그인해 주세요.")
+    except Exception as exc:
+        logger.warning("[auth] signup 저장 실패: %s", exc)
+        return _signup_page(status=503, error_code="AUTH-SIGNUP-SAVE",
+                            error=f"계정을 저장하지 못했어요 — {_why(exc)}", **page)
+
+    from .identity import known_email as _known, register_login as _reg
+    was_known = _known(email)
+    _reg("password", email, acct["user_id"], display_name=name)
+
+    if accounts.require_email_verify():
+        logger.info("[auth] signup 인증 메일: %s", _send_verify_mail(email, name, verify_token))
+
+    if not was_known:
+        try:
+            from src.notifications.telegram import send_telegram
+            _async_notify(
+                send_telegram,
+                f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입",
+                urgency="info",
+            )
+        except Exception:
+            pass
+
+    user.user_id, user.email, user.name, user.role = acct["user_id"], email, name, role
+    establish_session(user, role=role, remember=True)
+    logger.info("[auth] signup ok uid=%s… → %s", acct["user_id"][:8], next_url)
+    # flash는 싣지 않는다 — 콘솔 화면은 flash를 그리지 않아, 남은 「가입 완료」가 나중 로그인 화면에 뜬다.
+    #   대시보드에 들어간 것 자체가 결과다.
+    return redirect(next_url)
+
+
+def _send_verify_mail(email: str, name: str, token: str) -> str:
+    """인증 메일 — 보낸 결과를 **한 문장으로** 돌려준다(무음 실패 금지)."""
+    try:
+        from src.notifications.email_resend import send_email
+        verify_url = f"{os.getenv('APP_BASE_URL', 'https://kohganepercentiii.com')}/auth/verify-email?token={token}"
+        ok = send_email(
+            to=email,
+            subject="[고가브릿지] 이메일 인증",
+            html=f"<p>안녕하세요, {name}님!</p>"
+                 f"<p>아래 링크를 클릭하여 이메일을 인증해주세요:</p>"
+                 f"<p><a href='{verify_url}'>이메일 인증하기</a></p>",
+            text=f"이메일 인증: {verify_url}",
+        )
+    except Exception as exc:
+        logger.warning("[auth] 인증 메일 발송 예외: %s", exc)
+        return f"인증 메일을 보내지 못했어요(AUTH-MAIL-FAIL: {type(exc).__name__})."
+    if not ok:
+        return "인증 메일을 보내지 못했어요(AUTH-MAIL-OFF: 메일 발송 설정이 꺼져 있거나 거절됨)."
+    return "인증 메일을 보냈어요."
 
 
 @auth_bp.post("/login")
 def login_post():
-    """이메일 + 비밀번호 로그인 처리."""
+    """이메일 + 비밀번호 로그인 — 오류를 **셋으로 가른다**(오너 2026-09-30).
+
+    등록되지 않은 이메일 / 비밀번호 틀림 / (플래그 켜진 경우만) 이메일 인증 필요.
+    한 문구로 뭉개면 「가입은 됐는데 로그인이 안 된다」를 아무도 가르지 못한다.
+    """
+    from . import password_accounts as accounts
     email = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
     next_url = _safe_next_url(request.form.get("next", ""))
 
     if not email or not password:
-        flash("이메일과 비밀번호를 입력해주세요.", "auth_email")
-        return redirect(url_for("auth.login"))
-
+        return _login_page(status=400, error_code="AUTH-LOGIN-EMPTY", email=email, next_url=next_url,
+                           error="이메일과 비밀번호를 입력해 주세요.")
     try:
-        from .user_store import get_store
-        store = get_store()
-        user = store.find_by_email(email)
+        acct = accounts.find(email)
+    except accounts.StoreDown as exc:
+        logger.warning("[auth] login store-down: %s", exc)
+        return _login_page(status=503, error_code="AUTH-STORE-DOWN", email=email, next_url=next_url,
+                           error=f"계정 저장소에 연결하지 못했어요 — {_why(exc)}")
+    if not acct:
+        social = _social_provider_for(email)
+        if social:
+            return _login_page(status=401, error_code="AUTH-LOGIN-SOCIAL", email=email, next_url=next_url,
+                               error=f"이 이메일은 {social}로 가입돼 있어요 — 위의 「{social}로 로그인」을 눌러 주세요.")
+        return _login_page(status=401, error_code="AUTH-LOGIN-NO-ACCOUNT", email=email, next_url=next_url,
+                           error="등록되지 않은 이메일입니다 — 아래 「회원가입」에서 먼저 가입해 주세요.")
+    if not _verify_password(password, acct.get("password_hash", "")):
+        return _login_page(status=401, error_code="AUTH-LOGIN-BAD-PASSWORD", email=email, next_url=next_url,
+                           error="비밀번호가 틀립니다 — 잊으셨으면 아래 「비밀번호 재설정」을 눌러 주세요.")
+    if accounts.require_email_verify() and not acct.get("email_verified"):
+        return _login_page(status=403, error_code="AUTH-LOGIN-UNVERIFIED", email=email, next_url=next_url,
+                           resend=True, error="이메일 인증이 필요합니다 — 받은 메일의 링크를 눌러 주세요.")
 
-        if not user or not _verify_password(password, user.password_hash):
-            flash("이메일 또는 비밀번호가 올바르지 않습니다.", "auth_email")
-            return redirect(url_for("auth.login"))
+    from .models import User
+    # 정본 user_id는 정체성 표 먼저(C-F19) — 계정 행의 값과 다르면 표가 이긴다.
+    uid = acct["user_id"]
+    try:
+        from src.db import user_identities_pg as ident
+        uid = ident.resolve("password", email) or uid
+    except Exception:
+        pass
+    user = User(user_id=uid, email=email, name=acct.get("name", ""), role=acct.get("role") or "seller",
+                email_verified=bool(acct.get("email_verified")))
+    role = "admin" if (acct.get("role") == "admin" or _is_admin_email(email)) else (acct.get("role") or "seller")
+    remember = str(request.form.get("remember", "")).lower() in ("1", "on", "true", "yes")
+    establish_session(user, role=role, remember=remember)
+    accounts.touch_login(email)
+    logger.info("[auth] login ok uid=%s… → %s", uid[:8], next_url)
+    return redirect(next_url)
 
-        remember = str(request.form.get("remember", "")).lower() in ("1", "on", "true", "yes")
-        establish_session(user, remember=remember)
 
-        store.update_last_login(user.user_id)
-        return redirect(next_url)
-    except Exception as exc:
-        logger.warning("login_post 오류: %s", exc)
-        flash("로그인 중 오류가 발생했습니다.", "auth_email")
-        return redirect(url_for("auth.login"))
+@auth_bp.post("/verify-email/resend")
+def verify_email_resend():
+    """인증 메일 다시 보내기 — 플래그가 켜진 경우에만 로그인 화면이 이 버튼을 보인다."""
+    from . import password_accounts as accounts
+    email = request.form.get("email", "").strip().lower()
+    try:
+        acct = accounts.find(email)
+    except accounts.StoreDown as exc:
+        return _login_page(status=503, error_code="AUTH-STORE-DOWN", email=email,
+                           error=f"계정 저장소에 연결하지 못했어요 — {_why(exc)}")
+    if not acct:
+        return _login_page(status=404, error_code="AUTH-LOGIN-NO-ACCOUNT", email=email,
+                           error="등록되지 않은 이메일입니다.")
+    token = secrets.token_urlsafe(32)
+    accounts.update(email, verify_token=token)
+    return _login_page(email=email, notice=_send_verify_mail(email, acct.get("name", ""), token))
 
 
 _OAUTH_PROVIDERS = ("kakao", "google", "naver", "apple")
@@ -897,70 +1011,59 @@ def logout_get():
 
 @auth_bp.get("/verify-email")
 def verify_email():
-    """이메일 인증 처리."""
+    """이메일 인증 처리(AUTH-1: 비밀번호 계정 저장소 기준)."""
+    from . import password_accounts as accounts
     token = request.args.get("token", "")
     if not token:
-        flash("유효하지 않은 인증 링크입니다.", "danger")
-        return redirect(url_for("auth.login"))
-
+        return _login_page(status=400, error_code="AUTH-VERIFY-EMPTY", error="유효하지 않은 인증 링크입니다.")
     try:
-        from .user_store import get_store
-        store = get_store()
-        user = store.find_by_reset_token(token)
-
-        if not user:
-            flash("유효하지 않거나 만료된 인증 링크입니다.", "danger")
-            return redirect(url_for("auth.login"))
-
-        user.email_verified = True
-        user.reset_token = ""
-        user.reset_token_exp = ""
-        store.update(user)
-
-        flash("이메일 인증이 완료되었습니다. 로그인해주세요.", "success")
-        return redirect(url_for("auth.login"))
-    except Exception as exc:
-        logger.warning("verify_email 오류: %s", exc)
-        flash("이메일 인증 중 오류가 발생했습니다.", "danger")
-        return redirect(url_for("auth.login"))
+        acct = accounts.by_token("verify", token)
+    except accounts.StoreDown as exc:
+        return _login_page(status=503, error_code="AUTH-STORE-DOWN",
+                           error=f"계정 저장소에 연결하지 못했어요 — {_why(exc)}")
+    if not acct:
+        return _login_page(status=400, error_code="AUTH-VERIFY-INVALID",
+                           error="유효하지 않거나 이미 쓴 인증 링크입니다.")
+    accounts.update(acct["email"], email_verified=True, verify_token="")
+    return _login_page(email=acct["email"], notice="이메일 인증이 완료되었습니다. 로그인해 주세요.")
 
 
 @auth_bp.post("/forgot")
 def forgot():
     """비밀번호 재설정 메일 발송."""
+    from . import password_accounts as accounts
     email = request.form.get("email", "").strip().lower()
     if not email:
-        flash("이메일을 입력해주세요.", "danger")
-        return redirect(url_for("auth.login"))
-
+        return _login_page(status=400, error_code="AUTH-FORGOT-EMPTY", error="이메일을 입력해 주세요.")
     try:
-        from .user_store import get_store
+        acct = accounts.find(email)
+    except accounts.StoreDown as exc:
+        return _login_page(status=503, error_code="AUTH-STORE-DOWN", email=email,
+                           error=f"계정 저장소에 연결하지 못했어요 — {_why(exc)}")
+    if not acct:
+        return _login_page(status=404, error_code="AUTH-LOGIN-NO-ACCOUNT", email=email,
+                           error="등록되지 않은 이메일입니다 — 먼저 가입해 주세요.")
+    token = secrets.token_urlsafe(32)
+    accounts.update(email, reset_token=token,
+                    reset_token_exp=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
+    try:
         from src.notifications.email_resend import send_email
-        store = get_store()
-        user = store.find_by_email(email)
-
-        if user:
-            token = secrets.token_urlsafe(32)
-            user.reset_token = token
-            user.reset_token_exp = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-            store.update(user)
-
-            reset_url = f"{os.getenv('APP_BASE_URL', 'https://kohganepercentiii.com')}/auth/reset?token={token}"
-            send_email(
-                to=email,
-                subject="[고가브릿지] 비밀번호 재설정",
-                html=f"<p>비밀번호 재설정 링크입니다 (1시간 유효):</p>"
-                     f"<p><a href='{reset_url}'>비밀번호 재설정하기</a></p>",
-                text=f"비밀번호 재설정: {reset_url}",
-            )
-
-        # 사용자 존재 여부와 무관하게 동일한 메시지 (보안)
-        flash("이메일이 등록되어 있다면 재설정 링크를 발송했습니다.", "info")
+        reset_url = f"{os.getenv('APP_BASE_URL', 'https://kohganepercentiii.com')}/auth/reset?token={token}"
+        sent = send_email(
+            to=email,
+            subject="[고가브릿지] 비밀번호 재설정",
+            html=f"<p>비밀번호 재설정 링크입니다 (1시간 유효):</p>"
+                 f"<p><a href='{reset_url}'>비밀번호 재설정하기</a></p>",
+            text=f"비밀번호 재설정: {reset_url}",
+        )
     except Exception as exc:
-        logger.warning("forgot 오류: %s", exc)
-        flash("요청 처리 중 오류가 발생했습니다.", "danger")
-
-    return redirect(url_for("auth.login"))
+        logger.warning("[auth] 재설정 메일 예외: %s", exc)
+        sent = False
+    if not sent:
+        return _login_page(status=503, error_code="AUTH-MAIL-OFF", email=email,
+                           error="재설정 메일을 보내지 못했어요 — 메일 발송 설정이 꺼져 있거나 거절됐어요. "
+                                 "운영자에게 이 코드를 알려 주세요.")
+    return _login_page(email=email, notice="재설정 링크를 메일로 보냈어요(1시간 유효).")
 
 
 @auth_bp.get("/reset")
@@ -972,52 +1075,29 @@ def reset():
 
 @auth_bp.post("/reset")
 def reset_post():
-    """새 비밀번호 저장."""
+    """새 비밀번호 저장(AUTH-1: 비밀번호 계정 저장소 기준)."""
+    from . import password_accounts as accounts
     token = request.form.get("token", "")
     password = request.form.get("password", "")
     confirm = request.form.get("confirm", "")
-
     if not token:
-        flash("유효하지 않은 요청입니다.", "danger")
-        return redirect(url_for("auth.login"))
-
-    if len(password) < 8:
-        flash("비밀번호는 8자 이상이어야 합니다.", "danger")
+        return _login_page(status=400, error_code="AUTH-RESET-EMPTY", error="유효하지 않은 요청입니다.")
+    if len(password) < 8 or password != confirm:
+        flash("비밀번호는 8자 이상이고 두 칸이 같아야 합니다.", "danger")
         return redirect(url_for("auth.reset", token=token))
-
-    if password != confirm:
-        flash("비밀번호가 일치하지 않습니다.", "danger")
-        return redirect(url_for("auth.reset", token=token))
-
     try:
-        from .user_store import get_store
-        store = get_store()
-        user = store.find_by_reset_token(token)
-
-        if not user:
-            flash("유효하지 않거나 만료된 링크입니다.", "danger")
-            return redirect(url_for("auth.login"))
-
-        # 토큰 만료 확인
-        exp_str = user.reset_token_exp
-        if exp_str:
-            try:
-                exp_dt = datetime.fromisoformat(exp_str.replace("Z", "+00:00"))
-                now_aware = datetime.now(timezone.utc)
-                if now_aware > exp_dt:
-                    flash("링크가 만료되었습니다. 다시 요청해주세요.", "danger")
-                    return redirect(url_for("auth.login"))
-            except Exception:
-                pass
-
-        user.password_hash = _hash_password(password)
-        user.reset_token = ""
-        user.reset_token_exp = ""
-        store.update(user)
-
-        flash("비밀번호가 변경되었습니다. 로그인해주세요.", "success")
-        return redirect(url_for("auth.login"))
-    except Exception as exc:
-        logger.warning("reset_post 오류: %s", exc)
-        flash("비밀번호 변경 중 오류가 발생했습니다.", "danger")
-        return redirect(url_for("auth.login"))
+        acct = accounts.by_token("reset", token)
+    except accounts.StoreDown as exc:
+        return _login_page(status=503, error_code="AUTH-STORE-DOWN",
+                           error=f"계정 저장소에 연결하지 못했어요 — {_why(exc)}")
+    if not acct:
+        return _login_page(status=400, error_code="AUTH-RESET-INVALID", error="유효하지 않거나 이미 쓴 링크입니다.")
+    exp = acct.get("reset_token_exp") or ""
+    try:
+        if exp and datetime.now(timezone.utc) > datetime.fromisoformat(str(exp).replace("Z", "+00:00")):
+            return _login_page(status=400, error_code="AUTH-RESET-EXPIRED", email=acct["email"],
+                               error="링크가 만료되었습니다(1시간) — 다시 요청해 주세요.")
+    except ValueError:
+        pass
+    accounts.update(acct["email"], password_hash=_hash_password(password), reset_token="", reset_token_exp="")
+    return _login_page(email=acct["email"], notice="비밀번호가 변경되었습니다. 로그인해 주세요.")

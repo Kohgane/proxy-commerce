@@ -86,7 +86,9 @@ USER_SCOPED_TABLES = (
 # `user_identities`는 **스코프 컬럼이 있어도 옮기지 않는다** — 이 표가 「어느 로그인이 누구인가」의
 #   정본이다. 여기의 user_id를 정본으로 덮으면 고아를 가리키던 줄까지 정본을 가리켜,
 #   **무엇이 고아였는지 알 수 없게 된다**(되돌림도 같이 죽는다).
-NEVER_MERGE = ("user_identities", "identity_merge_backup")
+#   AUTH-1: `password_accounts`(비밀번호 계정)도 같다 — 로그인은 정체성 표로 정본을 찾으므로
+#   계정 행의 user_id는 옮길 이유가 없고, 자격 증명을 병합 대상에 넣지 않는다.
+NEVER_MERGE = ("user_identities", "identity_merge_backup", "password_accounts")
 
 # 하위 호환 — 옛 이름으로 부르는 자리가 남아 있다. 이제 **전수**를 가리킨다.
 MERGE_TABLES = tuple((t, c, label) for t, c, label, _pk, _soft, _pol in USER_SCOPED_TABLES)

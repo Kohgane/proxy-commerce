@@ -1565,7 +1565,16 @@ def collect_quick():
     ), res["status"]
 
 
-_SHARE_KEYS = ("text", "title", "url", "u", "final_url")
+_SHARE_KEYS = ("text", "title", "url", "u", "final_url", "src")
+
+# M3-iOS-3(오너 2026-09-30): 단축어가 어느 길로 받았는지 — 공유 시트(앱이 넘긴 것) / 클립보드(复制链接 뒤 실행).
+#   「공유 내용이 비어서 왔습니다」가 **앱이 안 넘긴 것**인지 **클립보드가 빈 것**인지 가르려고 단축어가 싣는다.
+_SHARE_SRC = {"share": "공유 시트", "clip": "클립보드"}
+
+
+def _share_src() -> str:
+    v = str(request.values.get("src") or "").strip().lower()
+    return v if v in _SHARE_SRC else ""
 
 
 def _share_raw_from_request() -> tuple:
@@ -1622,11 +1631,14 @@ def collect_share():
                                "error": "다른 사이트에서 보낸 요청은 받지 않아요 — 앱 공유 시트에서 다시 보내 주세요."},
                                raw=""), 403
     raw, final_url = _share_raw_from_request()
+    src = _share_src()
     if not _check_auth():
         # 로그인하고 **같은 주소로** 돌아온다(POST도 GET 주소로 바꿔 싣는다 — 로그인 뒤엔 GET으로 온다).
         q = {"text": raw}
         if final_url:
             q["final_url"] = final_url
+        if src:
+            q["src"] = src
         from urllib.parse import urlencode
         return redirect(url_for("auth.login", next="/seller/collect/share?" + urlencode(q)))
 
@@ -1636,19 +1648,153 @@ def collect_share():
             else "&".join(f"{k}={request.form.get(k, '')}" for k in request.form.keys()))
     logger.info("[share] in method=%s keys=%s len=%d q=%s", request.method,
                 ",".join(sorted(request.values.keys())), len(raw), share_raw_preview(_got, 300))
+    # M3-iOS-3: 키마다 원문 길이 + 앞 60자(스크럽 후) — 공유 시트로 왔는데 셋 다 0이면 **앱이 안 넘긴 것**이다.
+    _parts = " ".join(
+        f"{k}(len={len(str(request.values.get(k) or ''))},q={share_raw_preview(request.values.get(k) or '')!r})"
+        for k in ("title", "text", "url"))
+    logger.info("[share] parts src=%s %s", src or "-", _parts)
 
     from src.collectors.share_text import link_failure_reason, parse_share_text
     preview = share_raw_preview(raw)
+    ctx = {"raw": raw, "raw_preview": preview, "share_src": _SHARE_SRC.get(src, "")}
     url = parse_share_text(raw, final_url=final_url).get("url", "")
     if not url:
-        return render_template("collect_share_result.html", raw=raw, raw_preview=preview,
-                               out={"ok": False, "error": link_failure_reason(raw, final_url)})
+        return render_template("collect_share_result.html",
+                               out={"ok": False, "error": _share_empty_reason(src, raw) or
+                                    link_failure_reason(raw, final_url)}, **ctx)
     from src.api.extension_api import share_collect_core
     out, _res = share_collect_core(raw, url=url, seller_id=_seller_id(), seller_ids=_seller_identities(),
                                    final_url=final_url, source="share")
     logger.info("[share] method=%s ok=%s dup=%s partial=%s item=%s", request.method, out.get("ok"),
                 out.get("duplicate"), out.get("partial"), out.get("item_id"))
-    return render_template("collect_share_result.html", out=out, raw=raw, raw_preview=preview)
+    # M5: 담은 그 자리에서 미리보기 → 마켓 선택 → 사전검증 → 등록.
+    if out.get("ok") and out.get("item_id"):
+        try:
+            _it = _get_owned_item(str(out["item_id"]))
+            if _it:
+                ctx["m5"] = mobile_list_ctx(_it)
+        except Exception as exc:
+            logger.warning("[M5] 결과 화면 등록 흐름 준비 실패(담기는 됨): %s", exc)
+    return render_template("collect_share_result.html", out=out, **ctx)
+
+
+def _share_empty_reason(src: str, raw: str) -> str:
+    """받은 게 **비었을 때** 길을 아는 경우의 사유 — 누가 안 넘겼는지가 다르다."""
+    if raw.strip():
+        return ""
+    if src == "share":
+        return ("공유 시트로 왔는데 내용이 비어 있어요 — 이 앱이 공유에 내용을 넘기지 않았어요. "
+                "앱에서 「复制链接(링크 복사)」을 누른 뒤 단축어 앱에서 「고가브릿지로 수집」을 눌러 주세요.")
+    if src == "clip":
+        return ("클립보드가 비어 있어요 — 앱에서 「复制链接(링크 복사)」을 먼저 누른 뒤 "
+                "「고가브릿지로 수집」을 눌러 주세요.")
+    return ""
+
+
+_M5_MARKETS = ("coupang", "smartstore", "elevenst", "shopify", "woocommerce")
+
+
+def _sku_label(sku) -> str:
+    if not isinstance(sku, dict):
+        return str(sku or "")
+    spec = sku.get("spec")
+    if isinstance(spec, list) and spec:
+        return " / ".join(str(x) for x in spec if str(x).strip())
+    props = sku.get("props") or sku.get("options")
+    if isinstance(props, list) and props:
+        return " / ".join(str((p or {}).get("value") or (p or {}).get("name") or p) for p in props)
+    return str(sku.get("name") or sku.get("title") or sku.get("sku_id") or "")
+
+
+def mobile_list_ctx(item: dict) -> dict:
+    """M5(오너 2026-09-30) — 폰에서 **미리보기 → 마켓 선택 → 사전검증 → 등록** 한 흐름의 재료.
+
+    등록 요청은 데스크톱 서랍과 **같은 두 입구**(`/collect/prevalidate`·`/collect/upload`)로 간다 —
+    캐너리 등록 경로를 두 벌로 만들지 않는다. 다른 점은 상품 몸통을 폼이 아니라 **저장된 값**에서
+    만든다는 것뿐(일괄 등록과 같은 방식) — 폰에서 편집할 칸이 없으니까.
+    못 읽은 칸은 비워 둔다(0·임의값 금지) — 부족한 건 「PC 확장에서 보강 필요」로 말한다.
+    """
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from src.collectors.collect_status import enrich_axes
+    from src.collectors.share_text import is_taobao_family
+    product = dict(ex)
+    product.setdefault("title", item.get("title") or "")
+    product["title"] = str(ex.get("title_ko") or product.get("title") or item.get("title") or "")
+    product.setdefault("title_ko", product["title"])
+    for k in ("url", "price", "currency", "source"):
+        if not product.get(k) and item.get(k):
+            product[k] = item.get(k)
+    images = [u for u in (ex.get("images") or []) if isinstance(u, str) and u]
+    product["images"] = images
+    product["gallery_images"] = images
+    product["thumbnail"] = images[0] if images else ""
+    product.setdefault("description_ko", ex.get("description_ko") or ex.get("description") or "")
+
+    # F53 — 쿠팡에만 가는 이름. 저장된 오너 수정이 있으면 그것, 없으면 규칙안.
+    cp_name, cp_warn = "", []
+    try:
+        from src.uploaders import coupang_title as ct
+        pos = ct.brand_pos_for(_seller_id(), str(ex.get("category_code") or ""))
+        res = ct.build_name(_coupang_name_input(item, ex), pos)
+        cp_name = str(ex.get("coupang_name") or res.get("name") or "")
+        cp_warn = list(res.get("warnings") or [])[:3]
+        product["coupang_name"] = cp_name
+        product["coupang_name_source"] = "saved" if ex.get("coupang_name") else (res.get("source") or "")
+        product["coupang_brand_pos"] = pos
+    except Exception as exc:
+        logger.warning("[M5] 쿠팡 상품명 규칙안 실패(빈칸): %s", exc)
+
+    skus = ex.get("skus") if isinstance(ex.get("skus"), list) else []
+    sku_rows = [{"label": _sku_label(s) or "(이름 없음)",
+                 "price": str((s or {}).get("price") or "") if isinstance(s, dict) else "",
+                 "currency": str((s or {}).get("currency") or ex.get("currency") or "") if isinstance(s, dict) else ""}
+                for s in skus[:5]]
+
+    ax = enrich_axes(ex)
+    has_price = bool(str(product.get("price") or "").strip() not in ("", "0", "0.0", "0.00"))
+    missing = []
+    if not has_price:
+        missing.append("가격")
+    taobao = is_taobao_family(str(product.get("url") or ""))
+    if taobao and len(images) < 2:
+        missing.append(f"사진(지금 {len(images)}장)")
+    if taobao and not skus:
+        missing.append("SKU(옵션별 가격)")
+    blocked = ""
+    if ax["is_draft"] and not ax["gate_ready"]:
+        blocked = "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다."
+
+    connected = {}
+    try:
+        from . import market_credentials as mc
+        connected = mc.connected_markets(_seller_id(), _M5_MARKETS)
+    except Exception as exc:
+        logger.warning("[M5] 마켓 연결 상태 조회 실패: %s", exc)
+    from .upload_dispatcher import MARKET_LABELS
+    markets = [{"code": m, "label": MARKET_LABELS.get(m, m), "connected": bool(connected.get(m)),
+                "checked": m == "coupang"} for m in _M5_MARKETS]
+    return {"item_id": str(item.get("id") or ""), "title": product["title"] or "(제목 없음)",
+            "thumb": product["thumbnail"], "images_count": len(images),
+            "price": str(product.get("price") or "") if has_price else "",
+            "currency": str(product.get("currency") or ""),
+            "coupang_name": cp_name, "coupang_warnings": cp_warn,
+            "sku_rows": sku_rows, "sku_count": len(skus), "missing": missing,
+            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product}
+
+
+@bp.get("/m/item/<item_id>")
+def mobile_list_flow(item_id: str):
+    """M5 — 폰에서 담은 상품 하나를 미리보고 바로 마켓에 등록하는 화면(로그인 뒤 원래 자리로 복귀)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path.rstrip("?")))
+    item = _get_owned_item(item_id)
+    if item is None:
+        return render_template("collect_share_result.html", out={
+            "ok": False, "error": "이 상품을 찾을 수 없어요 — 목록에서 다시 골라 주세요."}), 404
+    return render_template("mobile_list_flow.html", m5=mobile_list_ctx(item))
 
 
 def item_timeline(item: dict) -> dict:
@@ -1734,7 +1880,7 @@ def _share_base() -> str:
 def guide_iphone():
     """화면 A — 「설치하기」(유저용 · **로그인 없이** 본다: 설치 전에 보는 화면이다)."""
     from .help_settings import ios_shortcut_url
-    return render_template("guide_iphone.html", screen="install", shots=_iphone_shots(("a1", "a2", "a3")),
+    return render_template("guide_iphone.html", screen="install", shots=_iphone_shots(("a1", "a2", "a3", "a4")),
                            shortcut_link=ios_shortcut_url(), host=_share_base().split("://", 1)[-1])
 
 
@@ -1760,9 +1906,11 @@ def guide_iphone_make():
             msg = "저장했어요 — 설치 화면의 버튼이 이 링크로 열립니다." if saved else "지웠어요 — 설치 화면은 「준비 중」으로 보입니다."
         except ValueError as exc:
             err = str(exc)
-    return render_template("guide_iphone_make.html", share_url=f"{_share_base()}/seller/collect/share?text=",
+    base = f"{_share_base()}/seller/collect/share"
+    return render_template("guide_iphone_make.html", share_url=f"{base}?src=share&text=",
+                           clip_url=f"{base}?src=clip&text=",
                            shortcut_link=ios_shortcut_url(), msg=msg, err=err,
-                           shots=_iphone_shots(("a1", "a2", "a3", "b1", "b2", "b3")))
+                           shots=_iphone_shots(("a1", "a2", "a3", "a4", "b1", "b2", "b3")))
 
 
 def _extract_reviews(html: str, limit: int = 20) -> list[dict]:

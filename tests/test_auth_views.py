@@ -74,9 +74,13 @@ class TestAuthRoutes:
         assert resp.status_code == 200
 
     def test_verify_email_without_token(self, client):
-        """이메일 인증 — 토큰 없으면 리다이렉트."""
+        """이메일 인증 — 토큰 없으면 거절.
+
+        AUTH-1(2026-09-30): 전엔 flash + 302였다. flash는 세션 쿠키를 타서, 쿠키가 어긋나면 오류까지 사라져
+        「그냥 새로고침」처럼 보였다 — 이제 같은 응답에 원인 코드와 함께 적는다.
+        """
         resp = client.get("/auth/verify-email")
-        assert resp.status_code in (302, 301)
+        assert resp.status_code == 400 and 'data-code="AUTH-VERIFY-EMPTY"' in resp.get_data(as_text=True)
 
 
 class TestOAuthStart:
@@ -119,9 +123,9 @@ class TestOAuthCallback:
 
 class TestLoginLogout:
     def test_login_post_missing_credentials(self, client):
-        """이메일/비밀번호 없이 로그인 시도 → 리다이렉트."""
+        """이메일/비밀번호 없이 로그인 시도 → 거절(AUTH-1: 같은 응답에 원인 코드)."""
         resp = client.post("/auth/login", data={})
-        assert resp.status_code in (302, 301)
+        assert resp.status_code == 400 and 'data-code="AUTH-LOGIN-EMPTY"' in resp.get_data(as_text=True)
 
     def test_logout_post_clears_session(self, client):
         """로그아웃 POST → 세션 클리어 + 리다이렉트."""

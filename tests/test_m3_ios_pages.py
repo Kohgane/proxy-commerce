@@ -66,7 +66,9 @@ def test_install_link_is_an_admin_setting(monkeypatch):
     with c.session_transaction() as s:
         s["user_id"], s["user_role"] = "owner", "admin"
     page = c.get("/seller/guide/iphone/make").get_data(as_text=True)
-    assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?text=" in page
+    # M3-iOS-3(2026-09-30): 두 갈래(공유 시트·클립보드)가 src로 길을 싣는다.
+    assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?src=share&amp;text=" in page
+    assert "https://kohganepercentiii.com/seller/collect/share?src=clip&amp;text=" in page
     assert "「공유 시트 유형」에서 「URL」과 「텍스트」만 체크." in page and "「iCloud 링크 복사」" in page
     bad = c.post("/seller/guide/iphone/make", data={"shortcut_url": "https://evil.example/x"}).get_data(as_text=True)
     assert 'data-role="make-err"' in bad and ios_shortcut_url() == ""
