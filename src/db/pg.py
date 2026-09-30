@@ -383,7 +383,8 @@ def init_schema():
                   "schema_stage12.sql",  # D2: image_ko_blobs(번역본 바이트 — 로컬 파일 폐기)
                   "schema_stage13.sql",  # D2b: 번역본의 외부 주소(cdn_url) — 마켓이 가져갈 수 있게
                   "schema_stage14.sql",  # D3-8: 이미지 번역 자동 큐 + 전역 작은 상태(app_state)
-                  "schema_stage15.sql"): # AUTH-1: 이메일+비밀번호 계정(password_accounts) — 시트 대신 커밋 확인
+                  "schema_stage15.sql",  # AUTH-1: 이메일+비밀번호 계정(password_accounts) — 시트 대신 커밋 확인
+                  "schema_stage16.sql"): # J1: 옵션 값·상품명 번역기 큐(수집하면 자동)
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))

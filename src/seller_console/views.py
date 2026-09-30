@@ -1733,7 +1733,7 @@ def _share_empty_reason(src: str, raw: str, ver: int = 0) -> str:
         return ""
     if ver >= 2:
         return ("공유 내용도 클립보드도 비어 있어요 — 타오바오 앱에서 「分享(공유)」 → 「复制链接(링크 복사)」을 "
-                "누른 뒤 홈 화면의 「고가브릿지로 수집」을 눌러 주세요.")
+                "누른 뒤 홈 화면(또는 「단축어」 앱)의 「고가브릿지로 수집」을 눌러 주세요.")
     if src == "share":
         return ("공유 시트로 왔는데 내용이 비어 있어요 — 이 앱이 공유에 내용을 넘기지 않았어요. "
                 "앱에서 「复制链接(링크 복사)」을 누른 뒤 단축어 앱에서 「고가브릿지로 수집」을 눌러 주세요.")
@@ -1840,6 +1840,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "coupang_name": cp_name, "coupang_warnings": cp_warn,
             "sku_rows": sku_rows, "sku_count": len(skus), "missing": missing,
             "unresolved": sorted(unresolved),
+            "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product}
 
 
@@ -1867,12 +1868,25 @@ def coupang_preview_data(item: dict) -> dict:
     from .upload_dispatcher import UploadDispatcher
     out["ad_claims"] = UploadDispatcher._ad_claim_hits(product, "coupang")
     form = None
+    _why = ""
     try:
         from src.channel_sync import coupang_uploader as _cu
         with mc.seller_market_env(_seller_id(), ["coupang"]):
             form = _cu.option_form(product)
     except Exception as exc:
+        _why = type(exc).__name__
         logger.warning("[쿠팡 미리보기] 카테고리 기준 조회 실패(예상 모습): %s", exc)
+    if not _why and not (form and form.get("ok")):
+        _why = "카테고리 예측 실패" if (form or {}).get("error") else "option_form 실패"
+    # J4: 카테고리는 잡았는데 메타(속성 스키마)를 못 받은 경우도 「예상 모습」이다 — 계획이 메타 없이 짠 것.
+    _meta_missing = bool(form and form.get("ok") and not form.get("meta_ok"))
+    if _meta_missing:
+        _why = "카테고리 메타 빈 응답"
+    try:                                                     # J4: 「예상 모습」 발생률(24h) — 메타 캐시 판단 근거
+        from src.services import preview_stats as _ps
+        _ps.record(bool(_why), _why)
+    except Exception:
+        pass
     if form and form.get("ok"):
         out.update(category=str(form.get("category") or ""), meta_ok=bool(form.get("meta_ok")),
                    holds=list(form.get("holds") or []), notes=list(form.get("notes") or []))
@@ -1880,6 +1894,9 @@ def coupang_preview_data(item: dict) -> dict:
         out["items"] = [{"label": str(i.get("label") or " / ".join(i.get("spec") or []) or "(이름 없음)"),
                          "price": i.get("sell_price_krw"), "stock": i.get("stock"),
                          "confirm": bool(i.get("confirm"))} for i in items]
+        if _meta_missing:
+            out["estimated"] = True
+            out["notes"] = ["쿠팡 카테고리 기준(속성 스키마)을 받지 못해 예상 모습입니다 — 사전검증에서 다시 확인합니다."] + out["notes"]
     else:
         out["estimated"] = True
         out["notes"] = ["쿠팡 카테고리 기준을 불러오지 못해 예상 모습입니다 — 사전검증에서 다시 확인합니다."]
@@ -3249,10 +3266,15 @@ def collect_bulk_translate():
             item_err = ""            # v66 STEP4: 항목별 실패 사유(실패 항목 사유 명시)
             if allow and translator is not None and (title or desc):
                 try:
-                    from src.collectors.ko_polish import polish_ko as _polish, strip_cn as _strip_cn
-                    out = translator.translate_product({"title": _strip_cn(title) or title, "description": desc})
+                    from src.collectors.ko_polish import attach_brand as _attach, polish_ko as _polish
+                    from src.collectors.ko_polish import title_for_translator as _t4t
+                    _src_title, _brand = _t4t(title, extra)          # J0: 브랜드 한자는 번역기에 안 보낸다
+                    out = translator.translate_product({"title": _src_title or title, "description": desc})
                     title_ko = (out.get("title_ko") or "").strip() or title
                     title_ko = _polish(title_ko) or title_ko          # T1: 판촉 직역 제거
+                    if _brand and title_ko != title:
+                        title_ko = _attach(title_ko, _brand)
+                        extra["brand_romanized"] = {k: _brand[k] for k in ("han", "latin", "field")}
                     desc_ko = (out.get("description_ko") or "").strip() or desc
                     provider = out.get("provider", "stub")
                     if out.get("error"):
@@ -12177,7 +12199,9 @@ def collect_image_audit():
                         "requeued": got["requeued"],
                         "samples": {k: v[:10] for k, v in cases.items()}})
     rows = [r for k in ("A", "C", "B", "D") for r in got["cases"][k]]
+    from src.services import option_translate_auto as _optauto
     return render_template("image_audit.html", days=days, got=got, rows=rows,
+                           geo=_image_geometry(days), optq=_optauto.status(), is_admin=_is_admin_user(),
                            labels=_IMAGE_AUDIT_LABEL, batch=_IMAGE_REQUEUE_DEFAULT,
                            rerunnable=sum(1 for k in ("A", "C") for r in got["cases"][k] if not r["rerun_waiting"]))
 
@@ -12312,6 +12336,125 @@ def collect_image_audit_requeue():
     msg = (f"{len(done)}건을 보강 대기로 되돌렸어요 — PC 고가수집기가 차례로 엽니다." if done else
            "되돌릴 항목이 없어요." if not todo else "저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요.")
     return jsonify({"ok": ok, "requeued": done, "failed": failed, "left": left, "message": msg}), (200 if ok else 502)
+
+
+def _image_geometry(days: int) -> dict:
+    """J5(오너 2026-09-30-J) — 번역된 이미지의 **배너 모양** 기록(글자 면적비·위치 띠)을 표로.
+
+    T3부터 새로 번역되는 장에 `text_area`·`band`가 적힌다. 50장이 쌓이면 판촉/일반을 가르는 임계값을 제안한다 —
+    그 전엔 기준을 박지 않는다(21장 실측에서 줄 수로는 안 갈렸다).
+    """
+    import re as _re
+    from . import collect_history_store
+    from src.services import image_translate_store as its
+    rows = []
+    for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000) or []:
+        if not _re.search(r"(taobao|tmall|1688)\.com", str(row.get("url") or "")):
+            continue
+        try:
+            ex = json.loads(row.get("extra_json") or "{}")
+        except Exception:
+            continue
+        for key, kind in (("images_ko", "갤러리"), ("detail_images_ko", "상세")):
+            for e in ex.get(key) or []:
+                if not isinstance(e, dict) or e.get("text_area") is None:
+                    continue
+                hits = its.promo_of(e)
+                rows.append({"item_id": row.get("id"), "title": str(row.get("title") or "")[:40], "kind": kind,
+                             "idx": int(e.get("idx", -1)), "text_area": e.get("text_area"), "band": e.get("band") or "",
+                             "lines": int(e.get("lines") or 0) if isinstance(e.get("lines"), int) else 0,
+                             "promo": hits, "excluded": its.promo_excluded(e)})
+    return {"rows": rows, "n": len(rows), "need": 50}
+
+
+@bp.get("/collect/translate-audit")
+def collect_translate_audit():
+    """J2(오너 2026-09-30-J) — 번역 정리 **실측 보고** 화면. 저장된 값 그대로 센다(고유 옵션 값 기준):
+    규칙 해결 · 번역기 해결 · 외국어 잔존 + 번역기 결과 표본 20 + 상품명 전후 + 번역기 큐 상태.
+    백필(규칙 즉시 + 남은 값 큐)은 관리자만 누른다 — 번역기 무료 한도를 쓰는 결정은 오너 몫.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import collect_history_store
+    from src.services import option_translate_auto as optauto
+    from src.services import preview_stats
+    try:
+        days = max(1, min(int(request.args.get("days") or 90), 365))
+    except Exception:
+        days = 90
+    rows = collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000) or []
+    got = optauto.audit(rows)
+    q = optauto.status()
+    pv = preview_stats.window(24)
+    if str(request.args.get("format") or "").lower() == "json":
+        return jsonify({"ok": True, "days": days, "audit": got, "queue": q, "coupang_preview_24h": pv})
+    return render_template("translate_audit.html", days=days, got=got, q=q, pv=pv, is_admin=_is_admin_user())
+
+
+@bp.post("/collect/translate-audit/backfill")
+def collect_translate_audit_backfill():
+    """J1 백필 — 기존 수집 상품(옵션 값·상품명)을 **규칙 단계 즉시** + 남은 외국어는 번역기 큐로.
+
+    **관리자만**(번역기 무료 한도를 쓰는 결정은 오너). CC는 누르지 않는다 — 버튼만 둔다.
+    상품명은 번역본에 정리 규칙을 한 번 더 걸고 바뀌면 전 값을 `title_polish_before`에 남긴다(전후 표).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 실행할 수 있어요 — 번역기 무료 한도를 씁니다."}), 403
+    from . import collect_history_store
+    from src.collectors.ko_polish import polish_ko
+    from src.services import option_translate_auto as optauto
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        days = max(1, min(int(data.get("days") or 90), 365))
+    except Exception:
+        days = 90
+    touched, queued, titles = 0, 0, 0
+    for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000) or []:
+        try:
+            ex = json.loads(row.get("extra_json") or "{}") or {}
+        except Exception:
+            continue
+        src = str(ex.get("title_en") or ex.get("title") or "")
+        has_opts = bool(ex.get("options"))
+        if not (optauto.foreign(src) or has_opts):
+            continue
+        st = optauto.rule_pass(ex)
+        fields = {}
+        ko = str(ex.get("title_ko") or "")
+        if ko and ko != src:
+            new = polish_ko(ko) or ko
+            if new != ko:
+                ex.setdefault("title_polish_before", ko)
+                ex["title_ko"] = new
+                fields["title"] = new
+                titles += 1
+        if st["changed"] or fields:
+            ok = collect_history_store.update(row.get("id"), seller_id=row.get("seller_id") or _seller_id(),
+                                              extra_json=json.dumps(ex, ensure_ascii=False), **fields)
+            touched += 1 if ok else 0
+        if optauto.enqueue_if_pending(str(row.get("seller_id") or _seller_id()), str(row.get("id")), ex,
+                                      kick_worker=False):
+            queued += 1
+    if queued:
+        optauto.kick()
+    logger.info("[translate-audit] 백필 seller=%s 규칙 반영 %s · 상품명 정리 %s · 큐 %s", _seller_id(), touched, titles, queued)
+    return jsonify({"ok": True, "touched": touched, "titles": titles, "queued": queued,
+                    "message": f"규칙으로 {touched}건 정리 · 상품명 {titles}건 다듬음 · 번역기 큐 {queued}건 — "
+                               f"하루 상한 {optauto.daily_cap()}개 안에서 차례로 옮깁니다.", **optauto.status()})
+
+
+@bp.post("/collect/option-translate/resume")
+def option_translate_resume():
+    """J1 — 실패 20회로 멈춘 옵션·상품명 번역 큐를 **오너가** 다시 켠다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 재개할 수 있어요."}), 403
+    from src.services import option_translate_auto as optauto
+    optauto.resume()
+    return jsonify(optauto.status())
 
 
 def _coupang_name_input(item: dict, ex: dict) -> dict:

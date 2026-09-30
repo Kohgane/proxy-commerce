@@ -60,6 +60,18 @@
   </div>
   <div id="auditMsg" class="mb-3" aria-live="polite"></div>
 
+  {# J1(오너 2026-09-30-J): 옵션 값·상품명 번역 백필은 이 자리(이미지 백필 옆). 실행은 관리자 — 무료 한도를 쓴다. #}
+  <div class="op-card mb-3" data-role="audit-translate">
+    <div class="op-card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+      <div class="small audit-lead">
+        <strong>옵션 값·상품명 번역</strong> — 수집하면 규칙표로 바로 옮기고, 남은 외국어 값만 번역기가 옮깁니다.
+        <span class="text-muted">오늘 보낸 값 {{ optq.today }} / {{ optq.cap }} · 대기 {{ optq.queued }}{% if optq.paused %} · <strong>멈춤</strong>{% endif %}</span>
+      </div>
+      <a class="btn btn-ghost" href="/seller/collect/translate-audit" data-role="audit-translate-link">
+        <i class="bi bi-translate"></i> {{ "기존 상품 번역 정리(백필) · 점검" if is_admin else "번역 정리 점검" }}</a>
+    </div>
+  </div>
+
   {% if not rows %}
   <div class="op-empty">최근 {{ days }}일 동안 중국 소싱처에서 담은 상품이 없습니다.</div>
   {% else %}
@@ -91,6 +103,30 @@
     </div>
   </div>
   {% endif %}
+  {# J5: 번역된 이미지의 배너 모양 — T3부터 새 장에 기록. 50장이 쌓이면 판촉/일반 임계값을 제안한다. #}
+  <div class="op-card mt-3" data-role="audit-geometry">
+    <div class="op-card-body">
+      <div class="console-kpi-label mb-1">번역 이미지 글자 모양 — 기록 {{ geo.n }}장 / 기준 제안까지 {{ geo.need }}장</div>
+      <p class="small text-muted mb-2">글자 면적비 = 글자 상자 넓이 ÷ 이미지 넓이. 위치 띠 = 글자의 60% 이상이 위 ¼(위)·아래 ¼(아래)에 있음.
+        {% if geo.n < geo.need %}아직 기준을 정하지 않습니다 — 판촉 여부는 지금은 글자(어휘)로만 가릅니다.{% endif %}</p>
+      {% if geo.rows %}
+      <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0 table-cards" data-role="geo-table">
+        <thead><tr><th>상품</th><th>장</th><th class="text-end">글자 면적비</th><th>위치 띠</th><th class="text-end">줄</th><th>판촉 어휘</th></tr></thead>
+        <tbody>{% for g in geo.rows %}
+          <tr><td data-label="상품"><a href="/seller/collect/preview/{{ g.item_id }}" class="small">{{ g.title or g.item_id }}</a></td>
+            <td data-label="장" class="small">{{ g.kind }} {{ g.idx + 1 }}</td>
+            <td data-label="글자 면적비" class="text-end">{{ "%.1f"|format(g.text_area * 100) }}%</td>
+            <td data-label="위치 띠" class="small">{{ {"top": "위", "bottom": "아래"}.get(g.band, "—") }}</td>
+            <td data-label="줄" class="text-end">{{ g.lines }}</td>
+            <td data-label="판촉 어휘" class="small">{% if g.promo %}<span class="pc-badge {{ 'pc-badge-danger' if g.excluded else 'pc-badge-muted' }}">{{ g.promo|join(" · ") }}</span>{% else %}—{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+      </div>
+      {% else %}<div class="op-empty small">아직 기록된 장이 없습니다 — 새로 번역되는 이미지부터 쌓입니다.</div>{% endif %}
+    </div>
+  </div>
+
   <p class="small text-muted mt-3 mb-0">
     B(막힘)는 여기서 되돌리지 않습니다 — 같은 벽에 다시 부딪히기만 합니다. 사유를 보고 로그인·차단부터 풀어 주세요.
   </p>
@@ -99,6 +135,7 @@
 <style>
   .audit-unit { font-size: 1.1rem; color: var(--text-muted); font-family: var(--font-ui); margin-left: .15em; }
   .audit-title { max-width: 32ch; }
+  .audit-lead { max-width: 64ch; }
   .audit-bar { height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--teal) 14%, transparent); overflow: hidden; }
   .audit-bar > span { display: block; height: 100%; background: var(--teal); transition: width var(--dur-2, .3s) var(--ease, ease); }
   @media (prefers-reduced-motion: reduce) { .audit-bar > span { transition: none; } }

@@ -9,6 +9,8 @@
     <div class="m5-thumb m5-thumb-empty" data-role="m5-no-thumb">사진 없음</div>
     {% endif %}
     <div class="m5-title" data-role="m5-title">{{ m5.title }}</div>
+    {% if m5.brand_romanized %}<div class="m5-warn" data-role="m5-brand-romanized"><span class="pc-badge pc-badge-off">브랜드 표기 — 확인</span>
+      {{ m5.brand_romanized.han }} → {{ m5.brand_romanized.latin }}</div>{% endif %}
     <div class="m5-meta">{% if m5.price %}<strong>{{ m5.price }} {{ m5.currency }}</strong>{% else %}가격 없음{% endif %}
       · 사진 {{ m5.images_count }}장 · SKU {{ m5.sku_count }}개</div>
     <div class="m5-row" data-role="m5-coupang-name"><span class="m5-k">쿠팡 상품명</span>

@@ -230,9 +230,14 @@ def _translate_payload(payload: dict) -> dict:
         from src.seller_console.ai.translator import AITranslator
 
         # T1(2026-09-30-H): 번역 **전** 판촉어·가격을 지우고(现货→「재고 있음」 직역 방지), **후** 한 번 더 정리.
-        from src.collectors.ko_polish import strip_cn as _strip_cn
-        tr = AITranslator().translate_product({"title": _strip_cn(title) or title, "description": description})
+        # J0: 제목 맨 앞이 브랜드·가게 필드와 같은 한자면 떼고 보낸다 → 병음 대문자로 앞에 붙인다.
+        from src.collectors.ko_polish import attach_brand as _attach_brand, title_for_translator as _t4t
+        _src_title, _brand = _t4t(title, payload)
+        tr = AITranslator().translate_product({"title": _src_title or title, "description": description})
         out["title_ko"] = (tr.get("title_ko") or "").strip() or title
+        if _brand and out["title_ko"] != title:
+            out["title_ko"] = _attach_brand(out["title_ko"], _brand)
+            out["brand_romanized"] = {k: _brand[k] for k in ("han", "latin", "field")}
         out["description_ko"] = (tr.get("description_ko") or "").strip() or description
         out["provider"] = tr.get("provider", "stub")
         # v66 STEP4: 키가 있는데 호출 실패(fallback)면 실제 원인을 서버 로그에 남긴다(무음 금지·오귀인 금지).
@@ -842,6 +847,15 @@ def _auto_translate(seller_id: str, item_id: str, url: str, extra: dict) -> None
         logger.warning("[이미지번역·자동] 접수 실패 item=%s: %s", item_id, exc)
 
 
+def _auto_translate_options(seller_id: str, item_id: str, extra: dict) -> None:
+    """J1 — 규칙으로 안 풀린 옵션 값·상품명이 있으면 번역기 큐에(저장 **뒤**). 실패해도 수집 응답은 막지 않는다."""
+    try:
+        from src.services import option_translate_auto as _optauto
+        _optauto.enqueue_if_pending(seller_id, item_id, extra)
+    except Exception as exc:
+        logger.warning("[옵션번역·자동] 접수 실패 item=%s: %s", item_id, exc)
+
+
 def _image_check(extra: dict, data: dict) -> dict:
     """F49-T 5부 완료 기준 — 갤러리 ≥ 원본 갤러리 수(ICE item.images) · 상세 이미지 ≥ 1.
 
@@ -1085,6 +1099,12 @@ def collect_enrich():
         extra["collect_status"] = _ccs(extra, title_fallback=item.get("title") or "")
     except Exception:
         pass
+    # J1: 보강이 옵션을 채웠을 수 있다 — 정리 규칙으로 지금 옮긴다(비용 0).
+    try:
+        from src.services import option_translate_auto as _optauto
+        _optauto.rule_pass(extra)
+    except Exception as _oe:
+        logger.warning("[enrich] item=%s 옵션 규칙 단계 실패(원문 유지): %s", item_id, _oe)
     _upd = {"extra_json": _json.dumps(extra, ensure_ascii=False)}
     if rep:
         _upd["image_url"] = rep     # 목록 대표 썸네일도 고해상으로 교체
@@ -1100,6 +1120,8 @@ def collect_enrich():
     # D3-8: 중국 소싱처 초안의 보강이 끝났으면 이미지 번역 자동 큐(저장 **뒤** — 워커는 저장된 행을 읽는다).
     if ok and str(extra.get("enrich_state") or "") == "done":
         _auto_translate(seller_id_val, item_id, item.get("url") or "", extra)
+    if ok:
+        _auto_translate_options(seller_id_val, item_id, extra)      # J1: 남은 외국어 값 → 번역기 큐(저장 뒤)
     st = extra.get("collect_status") or {}
     # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
     logger.info("[enrich] item=%s changed=%s status=%s rep=%s", item_id, changed, st.get("status"), bool(rep))
@@ -1442,6 +1464,7 @@ def collect_from_extension():
         "price_original": payload.get("price", ""),
         "currency": payload.get("currency") or "",   # v42 1-1: USD 기본값 금지
         "brand": payload.get("brand", ""),
+        **({"brand_romanized": tr["brand_romanized"]} if tr.get("brand_romanized") else {}),
         "options": payload.get("options", []),
         "reviews": payload.get("reviews", []),
         "detail_specs": payload.get("detail_specs", []),
@@ -1512,6 +1535,14 @@ def collect_from_extension():
     except Exception as _he:
         logger.warning("[collect %s] 유입 봉인 판별 실패: %s", _corr, _he)
 
+    # J1: 옵션 값·이름은 정리 규칙으로 **지금** 옮긴다(비용 0) — 남은 외국어 값만 저장 뒤 번역기 큐로.
+    try:
+        from src.services import option_translate_auto as _optauto
+        if _extra.get("translate_requested") is not False and translate:
+            _optauto.rule_pass(_extra)
+    except Exception as _oe:
+        logger.warning("[collect %s] 옵션 규칙 단계 실패(원문 유지): %s", _corr, _oe)
+
     item_id = None
     saved = False
     durable = True
@@ -1576,6 +1607,8 @@ def collect_from_extension():
                         "corr": _corr}), 502
 
     preview_url = f"/seller/collect/preview/{item_id}"
+    if translate:
+        _auto_translate_options(seller_id_val, item_id, _extra)
 
     # 텔레그램 알림
     msg = f"🛒 [확장] {title or url} 수집됨 (by {user.get('user_id', '?')})"

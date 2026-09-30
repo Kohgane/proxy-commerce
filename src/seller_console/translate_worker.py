@@ -122,8 +122,9 @@ def drain_once(limit: int = 10, *, worker_id: str = "", time_budget_sec: float =
             continue
         # 실제 체인 호출(W10 요청 예산 캡은 translate_product 내부에서 그대로 적용 — 이중 안전망).
         try:
-            from src.collectors.ko_polish import strip_cn as _strip_cn
-            out = translator.translate_product({"title": _strip_cn(title) or title, "description": desc})
+            from src.collectors.ko_polish import title_for_translator as _t4t
+            _src_title, _brand = _t4t(title, extra)             # J0: 브랜드 한자는 번역기에 안 보낸다
+            out = translator.translate_product({"title": _src_title or title, "description": desc})
         except Exception as exc:
             cause = classify_translate_error(exc)
             state = jobs.fail(jid, cause=cause, error=str(exc), retryable=_retryable(cause))
@@ -142,6 +143,10 @@ def drain_once(limit: int = 10, *, worker_id: str = "", time_budget_sec: float =
         try:
             from src.collectors.ko_polish import polish_ko as _polish
             title_ko = _polish(title_ko) or title_ko           # T1: 판촉 직역(「재고 있음」 …) 제거
+            if _brand and title_ko != title:
+                from src.collectors.ko_polish import attach_brand as _attach
+                title_ko = _attach(title_ko, _brand)
+                extra["brand_romanized"] = {k: _brand[k] for k in ("han", "latin", "field")}
         except Exception:
             pass
         desc_ko = (out.get("description_ko") or "").strip() or desc
