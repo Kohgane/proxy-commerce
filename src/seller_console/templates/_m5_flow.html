@@ -103,6 +103,8 @@
   .m5-cp-sel { width: 100%; min-height: 48px; border: 1px solid var(--border); border-radius: 12px; padding: 0 10px;
                background: var(--surface); font-size: 1rem; }
   .m5-cp-ship { color: var(--text-muted); font-size: .92rem; margin: 8px 0; }
+  .m5-cp-dlabel { margin-top: 10px; }
+  .m5-cp-notes { margin: 10px 0 0; padding-left: 1.1rem; }
   .m5-cp-det { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
   .m5-cp-det img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; background: var(--bg); }
   .m5-res { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
@@ -162,7 +164,7 @@
               return '<option>' + esc(it.label) + (it.price ? ' — ' + won(it.price) : '') + (it.unresolved ? ' (미해석)' : '') + '</option>'; }).join('') + '</select>'
           : '';
         var det = (d.detail_images || []).length
-          ? '<div class="m5-note" style="margin-top:10px">상세 이미지(순서대로)</div><div class="m5-cp-det" data-role="m5-cp-detail">' +
+          ? '<div class="m5-note m5-cp-dlabel">상세 이미지(순서대로)</div><div class="m5-cp-det" data-role="m5-cp-detail">' +
             d.detail_images.map(function (u) { return '<img src="' + esc(u) + '" alt="상세" referrerpolicy="no-referrer" loading="lazy">'; }).join('') + '</div>'
           : '';
         var notes = (d.holds || []).concat(d.notes || []).concat(d.ad_claims || []);
@@ -171,7 +173,7 @@
           '<div class="m5-cp-name" data-role="m5-cp-name">' + esc(d.name) + '</div>' +
           '<div class="m5-cp-price" data-role="m5-cp-price">' + price + '</div>' + sel +
           '<div class="m5-cp-ship" data-role="m5-cp-ship">' + esc(d.shipping) + '</div>' + det +
-          (notes.length ? '<ul class="m5-note" style="margin:10px 0 0;padding-left:1.1rem">' +
+          (notes.length ? '<ul class="m5-note m5-cp-notes">' +
             notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>' : '');
       })
       .catch(function (e) { cpBody.textContent = '네트워크 오류 — ' + ((e && e.message) || e); });
