@@ -1,0 +1,18 @@
+{% extends "_base_app.html" %}
+{% block title %}등록하기 — 고가브릿지{% endblock %}
+{% block content %}
+{# M5 — 폰에서 담은 상품 하나: 미리보기 → 마켓 선택 → 사전검증 → 등록. 로그인 뒤엔 이 주소로 돌아온다. #}
+<div class="share-done mx-auto">
+  <h1 class="sd-big" data-role="m5-page">등록하기</h1>
+  {% include "_m5_flow.html" %}
+  <div class="sd-btns">
+    <a class="btn btn-ghost sd-btn" href="/seller/collect/history" data-role="btn-list">목록 보기</a>
+  </div>
+</div>
+<style>
+  .share-done { max-width: 520px; padding: 24px var(--space-2, 16px) 40px; }
+  .sd-big { font-family: var(--font-display); font-weight: 800; font-size: 2rem; margin: 12px 0 14px; text-align: center; }
+  .sd-btns { display: grid; gap: 12px; margin-top: 24px; }
+  .sd-btn { min-height: 52px; display: flex; align-items: center; justify-content: center; font-size: 1.08rem; border-radius: 14px; }
+</style>
+{% endblock %}

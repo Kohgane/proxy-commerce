@@ -1,0 +1,170 @@
+{# M5(오너 2026-09-30) — 폰에서 담은 상품: 미리보기 카드 → 마켓 선택(쿠팡 기본·여럿 가능) → 사전검증 → 등록.
+   등록은 데스크톱과 같은 두 입구(/collect/prevalidate · /collect/upload)로 간다 — 등록 경로를 두 벌 만들지 않는다.
+   390px 폭에서 가로 스크롤 0 · 토큰 색만 · 이모지 0. 못 읽은 칸은 비워 두고 「PC 확장에서 보강 필요」로 말한다. #}
+<section class="m5" data-role="m5" data-item="{{ m5.item_id }}" data-blocked="{{ '1' if m5.blocked else '0' }}">
+  <div class="m5-card" data-role="m5-card">
+    {% if m5.thumb %}
+    <img class="m5-thumb" src="{{ m5.thumb }}" alt="대표 이미지" referrerpolicy="no-referrer" loading="lazy">
+    {% else %}
+    <div class="m5-thumb m5-thumb-empty" data-role="m5-no-thumb">사진 없음</div>
+    {% endif %}
+    <div class="m5-title" data-role="m5-title">{{ m5.title }}</div>
+    <div class="m5-meta">{% if m5.price %}<strong>{{ m5.price }} {{ m5.currency }}</strong>{% else %}가격 없음{% endif %}
+      · 사진 {{ m5.images_count }}장 · SKU {{ m5.sku_count }}개</div>
+    <div class="m5-row" data-role="m5-coupang-name"><span class="m5-k">쿠팡 상품명</span>
+      <span class="m5-v">{{ m5.coupang_name or "(규칙안을 만들 재료가 없어요)" }}</span></div>
+    {% for w in m5.coupang_warnings %}<div class="m5-warn">{{ w }}</div>{% endfor %}
+    {% if m5.sku_rows %}
+    <table class="m5-sku" data-role="m5-sku">
+      <thead><tr><th>옵션</th><th class="m5-num">가격</th></tr></thead>
+      <tbody>
+      {% for r in m5.sku_rows %}<tr><td>{{ r.label }}</td><td class="m5-num">{{ r.price or "—" }} {{ r.currency if r.price }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% if m5.sku_count > m5.sku_rows|length %}<div class="m5-note">외 {{ m5.sku_count - m5.sku_rows|length }}개</div>{% endif %}
+    {% endif %}
+    {% if m5.needs_pc %}
+    <div class="m5-needs" data-role="m5-needs-pc">PC 확장에서 보강 필요 — {{ m5.missing|join(", ") }}.
+      컴퓨터에서 고가수집기를 켜면 자동으로 채워집니다.</div>
+    {% endif %}
+  </div>
+
+  <fieldset class="m5-markets" data-role="m5-markets">
+    <legend class="m5-legend">등록할 마켓</legend>
+    {% for m in m5.markets %}
+    <label class="m5-mk">
+      <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked %}checked{% endif %}>
+      <span>{{ m.label }}</span>
+      {% if not m.connected %}<span class="m5-off" data-role="m5-unconnected">연동 안 됨</span>{% endif %}
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  {% if m5.blocked %}<p class="m5-block" data-role="m5-blocked">{{ m5.blocked }}</p>{% endif %}
+  <button type="button" class="btn btn-ghost m5-btn" id="m5Check" data-role="m5-check">사전검증</button>
+  <div id="m5Checks" class="m5-checks" data-role="m5-checks" aria-live="polite"></div>
+  <button type="button" class="btn btn-primary m5-btn" id="m5Go" data-role="m5-register" disabled>등록</button>
+  <div id="m5Done" class="m5-done" data-role="m5-done" aria-live="polite" hidden></div>
+  <script type="application/json" id="m5Product">{{ m5.product|tojson }}</script>
+</section>
+<style>
+  .m5 { text-align: left; margin-top: 8px; }
+  .m5-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 16px);
+             padding: 14px; box-shadow: var(--shadow-sm); }
+  .m5-thumb { display: block; width: 100%; max-height: 300px; object-fit: contain; background: var(--bg);
+              border-radius: 12px; margin-bottom: 10px; }
+  .m5-thumb-empty { display: flex; align-items: center; justify-content: center; height: 120px; color: var(--text-muted); }
+  .m5-title { font-size: 1.1rem; font-weight: 700; line-height: 1.45; word-break: break-word; }
+  .m5-meta { color: var(--text-muted); margin: 4px 0 10px; }
+  .m5-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 6px 0; }
+  .m5-k { color: var(--text-muted); font-size: .9rem; flex: 0 0 auto; }
+  .m5-v { font-weight: 600; word-break: break-word; min-width: 0; }
+  .m5-warn { color: var(--warn); font-size: .9rem; }
+  .m5-sku { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; font-size: .95rem; }
+  .m5-sku th, .m5-sku td { border-top: 1px solid var(--border); padding: 6px 4px; word-break: break-word; }
+  .m5-sku th { color: var(--text-muted); font-weight: 600; }
+  .m5-num { text-align: right; width: 38%; }
+  .m5-note { color: var(--text-muted); font-size: .9rem; margin-top: 4px; }
+  .m5-needs { margin-top: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--warn);
+              color: var(--text); background: var(--bg); }
+  .m5-markets { border: 0; padding: 0; margin: 16px 0 4px; }
+  .m5-legend { font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
+  .m5-mk { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; margin-bottom: 8px;
+           border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  .m5-mk input { width: 22px; height: 22px; flex: 0 0 auto; }
+  .m5-off { margin-left: auto; color: var(--text-muted); font-size: .88rem; }
+  .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
+  .m5-btn.btn-ghost { border: 1px solid var(--border); background: var(--surface); font-weight: 600; }
+  .m5-fix { display: inline-block; margin-top: 4px; }
+  .m5-block { color: var(--danger); margin: 8px 0 0; }
+  .m5-checks, .m5-done { margin-top: 10px; }
+  .m5-res { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+            background: var(--surface); word-break: break-word; }
+  .m5-res.is-ok { border-color: var(--success); }
+  .m5-res.is-bad { border-color: var(--danger); }
+  .m5-res b { display: block; margin-bottom: 2px; }
+  .m5-res ul { margin: 4px 0 0; padding-left: 1.1rem; }
+</style>
+<script>
+(function () {
+  var root = document.querySelector('[data-role=m5]');
+  if (!root) return;
+  var product = JSON.parse(document.getElementById('m5Product').textContent || '{}');
+  var itemId = root.getAttribute('data-item');
+  var blocked = root.getAttribute('data-blocked') === '1';
+  var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go');
+  var checksEl = document.getElementById('m5Checks'), doneEl = document.getElementById('m5Done');
+  var okMarkets = [];
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  function picked() { return Array.prototype.map.call(root.querySelectorAll('input[name=m5-market]:checked'),
+    function (i) { return i.value; }); }
+  function post(url, body) {
+    return fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                       body: JSON.stringify(body)})
+      .then(function (r) { return r.text().then(function (t) {
+        var d; try { d = JSON.parse(t); } catch (e) { d = {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }
+        d._status = r.status; return d; }); })
+      .catch(function (e) { return {ok: false, error: '네트워크 오류 — ' + ((e && e.message) || e)}; });
+  }
+  function resetGo() { okMarkets = []; goBtn.disabled = true; goBtn.textContent = '등록'; }
+  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; } });
+
+  checkBtn.addEventListener('click', function () {
+    var markets = picked();
+    if (!markets.length) { checksEl.innerHTML = '<div class="m5-res is-bad">등록할 마켓을 하나 이상 골라 주세요.</div>'; return; }
+    checkBtn.disabled = true; checksEl.innerHTML = '<div class="m5-note">마켓 조건을 확인하는 중…</div>'; resetGo();
+    post('/seller/collect/prevalidate', {product: product, markets: markets}).then(function (d) {
+      checkBtn.disabled = false;
+      if (!d.ok) { checksEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-check-error">' + esc(d.error || '사전검증을 하지 못했어요') + '</div>'; return; }
+      var h = '';
+      (d.results || []).forEach(function (r) {
+        if (r.ok) okMarkets.push(r.market);
+        h += '<div class="m5-res ' + (r.ok ? 'is-ok' : 'is-bad') + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '">' +
+             '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : '막힘') + '</b>' +
+             (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '')) +
+             ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+             (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') + '</div>';
+      });
+      checksEl.innerHTML = h;
+      goBtn.disabled = blocked || !okMarkets.length;
+      goBtn.textContent = okMarkets.length ? '등록 (' + okMarkets.length + '곳)' : '등록할 수 있는 마켓이 없어요';
+    });
+  });
+
+  function register(confirmWarn) {
+    if (!okMarkets.length) return;
+    goBtn.disabled = true; checkBtn.disabled = true;
+    doneEl.hidden = false; doneEl.innerHTML = '<div class="m5-note">등록하는 중… 쿠팡은 SKU마다 따로 올라가 조금 걸릴 수 있어요.</div>';
+    post('/seller/collect/upload', {product: product, markets: okMarkets, item_id: itemId, confirm_warn: !!confirmWarn}).then(function (d) {
+      checkBtn.disabled = false;
+      if (d.needs_confirm) {
+        doneEl.innerHTML = '<div class="m5-res is-bad">' + esc(d.error) + '</div>' +
+          '<button type="button" class="btn btn-ghost m5-btn" data-role="m5-confirm">확인했어요 — 그대로 등록</button>';
+        doneEl.querySelector('[data-role=m5-confirm]').addEventListener('click', function () { register(true); });
+        return;
+      }
+      if (!d.ok) {
+        var bad = (d.unreachable || []).map(function (u) { return '<li>' + esc(u.label || u.url) + ' — ' + esc(u.reason || u.status) + '</li>'; }).join('');
+        doneEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-register-error">' + esc(d.error || '등록하지 못했어요') +
+          (d.message ? '<div class="m5-note">' + esc(d.message) + '</div>' : '') + (bad ? '<ul>' + bad + '</ul>' : '') + '</div>';
+        goBtn.disabled = false; return;
+      }
+      var rs = ((d.result || {}).results || []), h = '';
+      rs.forEach(function (r) {
+        h += '<div class="m5-res ' + (r.success ? 'is-ok' : 'is-bad') + '" data-role="m5-result" data-market="' + esc(r.market) + '">' +
+             '<b>' + esc(r.market_label) + ' — ' + (r.success ? '등록됨' : (r.queued ? '대기열에 들어감' : '실패')) + '</b>' +
+             (r.success ? '마켓 상품 ID: <strong data-role="m5-ext-id">' + esc(r.external_product_id || '(마켓이 번호를 돌려주지 않았어요)') + '</strong>' +
+                (r.external_url ? '<div><a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">마켓에서 보기</a></div>' : '') +
+                '<div><a href="/seller/dashboard#rp-ledger" data-role="m5-review-link">검토 상태 보기(등록 대장)</a></div>'
+              : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
+                (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '')) + '</div>';
+      });
+      doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
+      if (rs.some(function (r) { return r.success; })) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; }
+      else { goBtn.disabled = false; }
+    });
+  }
+  goBtn.addEventListener('click', function () { register(false); });
+})();
+</script>
