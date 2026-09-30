@@ -82,6 +82,10 @@ def test_brand_badge_on_drawer_and_phone_card():
     assert 'data-role="brand-romanized"' in d and "브랜드 표기 — 확인" in d and "LANXIAOJIE" in d
     m = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
     assert 'data-role="m5-brand-romanized"' in m
+    from src.seller_console.views import _coupang_name_input
+    from src.uploaders import coupang_title as ct
+    ex = {"title_ko": "LANXIAOJIE 빈백 소파", "brand_romanized": {"latin": "LANXIAOJIE"}}
+    assert ct.build_name(_coupang_name_input({}, ex), "front")["name"].startswith("LANXIAOJIE")  # 쿠팡명에서 안 빠짐
 
 
 # ② 수집 순간 규칙 단계 + 큐 ───────────────────────────────────────────────

@@ -119,7 +119,7 @@
             <td data-label="글자 면적비" class="text-end">{{ "%.1f"|format(g.text_area * 100) }}%</td>
             <td data-label="위치 띠" class="small">{{ {"top": "위", "bottom": "아래"}.get(g.band, "—") }}</td>
             <td data-label="줄" class="text-end">{{ g.lines }}</td>
-            <td data-label="판촉 어휘" class="small">{% if g.promo %}<span class="pc-badge {{ 'pc-badge-danger' if g.excluded else 'pc-badge-muted' }}">{{ g.promo|join(" · ") }}</span>{% else %}—{% endif %}</td></tr>
+            <td data-label="판촉 어휘" class="small">{% if g.promo %}<span class="pc-badge audit-promo {{ 'pc-badge-danger' if g.excluded else 'pc-badge-muted' }}" title="{{ g.promo|join(' · ') }}">{{ g.promo[:4]|join(" · ") }}{% if g.promo|length > 4 %} 외 {{ g.promo|length - 4 }}{% endif %}</span>{% else %}—{% endif %}</td></tr>
         {% endfor %}</tbody>
       </table>
       </div>
@@ -136,6 +136,7 @@
   .audit-unit { font-size: 1.1rem; color: var(--text-muted); font-family: var(--font-ui); margin-left: .15em; }
   .audit-title { max-width: 32ch; }
   .audit-lead { max-width: 64ch; }
+  .audit-promo { white-space: normal; text-align: left; }
   .audit-bar { height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--teal) 14%, transparent); overflow: hidden; }
   .audit-bar > span { display: block; height: 100%; background: var(--teal); transition: width var(--dur-2, .3s) var(--ease, ease); }
   @media (prefers-reduced-motion: reduce) { .audit-bar > span { transition: none; } }

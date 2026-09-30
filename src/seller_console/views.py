@@ -12463,7 +12463,8 @@ def _coupang_name_input(item: dict, ex: dict) -> dict:
     _tk = str(ex.get("title_ko") or ex.get("title") or item.get("title") or "")
     return {"title_ko": _polish(_tk) or _tk,
             "title_original": str(ex.get("title_original") or ex.get("title_en") or ""),
-            "brand": str(ex.get("brand") or ""),
+            # J0: 브랜드 필드가 비어도 제목 앞 병음 브랜드(LANXIAOJIE)가 판정됐으면 그걸 브랜드로 — 쿠팡명에서 빠지지 않게.
+            "brand": str(ex.get("brand") or (ex.get("brand_romanized") or {}).get("latin") or ""),
             "options": ex.get("options") if isinstance(ex.get("options"), list) else [],
             "skus": ex.get("skus") if isinstance(ex.get("skus"), list) else []}
 
