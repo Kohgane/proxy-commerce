@@ -2,7 +2,7 @@
 
 오너 화면 원문(2026-09-26):
   - 「필수 옵션: 적용모델」
-  - 「「색상」 값이 13개입니다 — 여러 옵션 등록은 SKU별 가격이 필요합니다(지금은 한 값만 남겨 주세요)」
+  - 「「색상」 값이 14개입니다 — 여러 옵션 등록은 SKU별 가격이 필요합니다(지금은 한 값만 남겨 주세요)」
   - 「옵션 「옵션」은 이 카테고리 메타에 없어 옵션으로 보내지 않습니다(검색어로만)」
 
 계약:
@@ -20,7 +20,7 @@ from src.uploaders import coupang_options as O
 
 pytestmark = pytest.mark.coupang_precheck
 
-COLORS = ["黑色", "白色", "红色", "蓝色", "绿色", "黄色", "粉色", "紫色", "灰色", "棕色", "橙色", "米色", "卡其色"]
+COLORS = ["黑色", "白色", "红色", "蓝色", "绿色", "黄色", "粉色", "紫色", "灰色", "棕色", "橙色", "米色", "卡其色", "莫奈色"]
 META = {
     "attributes": [
         {"attributeTypeName": "적용모델", "required": "MANDATORY", "dataType": "STRING", "exposed": "EXPOSED",
@@ -40,7 +40,7 @@ PRODUCT = {"title": "수행방패 케이스", "price": 24000, "currency": "KRW",
 def test_the_screen_shows_the_three_holds_verbatim_before_anything_is_entered():
     plan = O.plan_attributes(META["attributes"], dict(PRODUCT))
     assert plan["holds"][0] == "필수 옵션: 적용모델"
-    assert any("「색상」 값이 13개입니다" in h and "SKU별 가격" in h for h in plan["holds"])
+    assert any("「색상」 값이 14개입니다" in h and "SKU별 가격" in h for h in plan["holds"])
     assert any("옵션 「옵션」은 이 카테고리 메타에 없어" in n for n in plan["notes"])
 
 
@@ -78,9 +78,9 @@ def test_a_pick_outside_the_list_is_ignored():
 def test_an_unmapped_chinese_pick_can_be_overridden_by_a_typed_value():
     """고른 값이 용어집에 없는 한자면 보류 — 오너가 **색상 칸에 한국어를 넣으면** 그 값이 이긴다."""
     picked = O.apply_choices(dict(PRODUCT), [{"attributeTypeName": "적용모델", "attributeValueName": "X"}],
-                             {"색상": "卡其色"})
-    assert any("옵션 값 미해석: 卡其色" in h for h in O.plan_attributes(META["attributes"], picked)["holds"])
-    typed = O.apply_choices(picked, [{"attributeTypeName": "색상", "attributeValueName": "카키"}])
+                             {"색상": "莫奈色"})           # 표에 없는 말(T1 이후 卡其色는 규칙이 「카키」로 옮긴다)
+    assert any("옵션 값 미해석: 莫奈色" in h for h in O.plan_attributes(META["attributes"], picked)["holds"])
+    typed = O.apply_choices(picked, [{"attributeTypeName": "색상", "attributeValueName": "모네"}])
     assert O.plan_attributes(META["attributes"], typed)["holds"] == []
 
 

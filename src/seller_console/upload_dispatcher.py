@@ -505,12 +505,44 @@ class UploadDispatcher:
             results.append(self._prevalidate_market(product_data, market))
         return results
 
+    @staticmethod
+    def _ad_claim_hits(product_data: Dict[str, Any], market: str) -> List[str]:
+        """T1-c(오너 2026-09-30-H): 표시광고 위험 문구 — 할인율·기간·쿠폰 금액·「1위」「최저가」.
+
+        그 마켓에 **실제로 나갈 이름**(쿠팡이면 F53 쿠팡 상품명, 없으면 번역 제목)과 옵션 값을 본다.
+        정리 규칙이 지우는 판촉어(재고 있음·국경절 …)와 달리 이건 **사람이 고쳐야** 한다 — 그래서 막는다.
+        """
+        try:
+            from src.collectors.ko_polish import ban_hits
+        except Exception:
+            return []
+        name = (str(product_data.get("coupang_name") or "").strip() if market == "coupang" else "") \
+            or str(product_data.get("title_ko") or product_data.get("title") or "")
+        texts = [("상품명", name)]
+        for o in product_data.get("options") or []:
+            if isinstance(o, dict):
+                for v in (o.get("values_ko") or []):
+                    texts.append(("옵션 값", str(v or "")))
+        out: List[str] = []
+        for label, t in texts:
+            for frag in ban_hits(t):
+                line = f"{label}에 표시광고 위험 문구 「{frag}」 — 빼고 등록해 주세요"
+                if line not in out:
+                    out.append(line)
+        return out
+
     def _prevalidate_market(
         self,
         product_data: Dict[str, Any],
         market: str,
     ) -> PrevalidationResult:
         """단일 마켓 사전검증."""
+        _ad = self._ad_claim_hits(product_data, market) if market in SUPPORTED_MARKETS else []
+        if _ad:
+            return PrevalidationResult(
+                market=market, ok=False, error_code="ad_claim_risk",
+                message="할인율·기간·순위 같은 표시광고 위험 문구가 있어요 — 고친 뒤 등록해 주세요.",
+                hint="이름은 편집 화면(쿠팡은 「쿠팡 상품명」)에서 고칠 수 있어요.", details=_ad)
         if market not in SUPPORTED_MARKETS:
             return PrevalidationResult(
                 market=market,
@@ -746,6 +778,15 @@ class UploadDispatcher:
                         message=f"지원하지 않는 마켓: {market}",
                     )
                 )
+                result.failed += 1
+                continue
+
+            # T1-c: 표시광고 위험 문구 — 사전검증과 **같은 판정**으로 전송도 막는다(직접 호출 우회 0).
+            _ad = self._ad_claim_hits(product_data, market)
+            if _ad:
+                result.results.append(UploadResult(market=market, success=False, error_code="ad_claim_risk",
+                                                   message="표시광고 위험 문구가 있어 보내지 않았어요.",
+                                                   details=_ad))
                 result.failed += 1
                 continue
 

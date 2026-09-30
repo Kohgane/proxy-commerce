@@ -1772,35 +1772,40 @@ def mobile_list_ctx(item: dict) -> dict:
         ex = {}
     from src.collectors.collect_status import enrich_axes
     from src.collectors.share_text import is_taobao_family
-    product = dict(ex)
-    product.setdefault("title", item.get("title") or "")
-    product["title"] = str(ex.get("title_ko") or product.get("title") or item.get("title") or "")
-    product.setdefault("title_ko", product["title"])
-    for k in ("url", "price", "currency", "source"):
-        if not product.get(k) and item.get(k):
-            product[k] = item.get(k)
-    images = [u for u in (ex.get("images") or []) if isinstance(u, str) and u]
-    product["images"] = images
-    product["gallery_images"] = images
-    product["thumbnail"] = images[0] if images else ""
-    product.setdefault("description_ko", ex.get("description_ko") or ex.get("description") or "")
-
-    # F53 — 쿠팡에만 가는 이름. 저장된 오너 수정이 있으면 그것, 없으면 규칙안.
-    cp_name, cp_warn = "", []
+    # T4: 등록 몸통은 **서버 빌더 하나**(`product_builder.build_product`) — 데스크톱 등록도 같은 빌더를 지난다.
+    from .product_builder import build_product
+    product = build_product(item, seller_id=_seller_id())
+    images = list(product.get("images") or [])
+    cp_name, cp_warn = product.get("coupang_name") or "", []
     try:
         from src.uploaders import coupang_title as ct
-        pos = ct.brand_pos_for(_seller_id(), str(ex.get("category_code") or ""))
-        res = ct.build_name(_coupang_name_input(item, ex), pos)
-        cp_name = str(ex.get("coupang_name") or res.get("name") or "")
-        cp_warn = list(res.get("warnings") or [])[:3]
-        product["coupang_name"] = cp_name
-        product["coupang_name_source"] = "saved" if ex.get("coupang_name") else (res.get("source") or "")
-        product["coupang_brand_pos"] = pos
+        cp_warn = list(ct.build_name(_coupang_name_input(item, ex), product.get("coupang_brand_pos") or "front")
+                       .get("warnings") or [])[:3] if not ex.get("coupang_name") else []
     except Exception as exc:
-        logger.warning("[M5] 쿠팡 상품명 규칙안 실패(빈칸): %s", exc)
+        logger.warning("[M5] 쿠팡 상품명 규칙 경고 실패: %s", exc)
 
     skus = ex.get("skus") if isinstance(ex.get("skus"), list) else []
-    sku_rows = [{"label": _sku_label(s) or "(이름 없음)",
+    # T2: 옵션 값은 등록 계획과 **같은 해석 체인**(오너 수정 → 용어집 → 정리 규칙 → 번역기)으로 보여 준다.
+    from src.uploaders.coupang_options import resolve_option_value, value_ko_map
+    _vko = value_ko_map(product)
+    _ov = ex.get("option_value_overrides") if isinstance(ex.get("option_value_overrides"), dict) else {}
+    unresolved = set()
+
+    def _ko_label(sku) -> str:
+        spec = (sku or {}).get("spec") if isinstance(sku, dict) else None
+        if not isinstance(spec, list) or not spec:
+            return _sku_label(sku)
+        parts = []
+        for v in spec:
+            r = resolve_option_value(str(v), values_ko=_vko.get(str(v), ""), override=_ov.get(str(v), ""))
+            if not r["value"]:
+                unresolved.add(str(v))
+            parts.append(r["value"] or str(v))
+        return " / ".join(parts)
+
+    for _s in skus:
+        _ko_label(_s)                                   # 16개 전부 세되, 표는 5줄만
+    sku_rows = [{"label": _ko_label(s) or "(이름 없음)",
                  "price": str((s or {}).get("price") or "") if isinstance(s, dict) else "",
                  "currency": str((s or {}).get("currency") or ex.get("currency") or "") if isinstance(s, dict) else ""}
                 for s in skus[:5]]
@@ -1834,7 +1839,87 @@ def mobile_list_ctx(item: dict) -> dict:
             "currency": str(product.get("currency") or ""),
             "coupang_name": cp_name, "coupang_warnings": cp_warn,
             "sku_rows": sku_rows, "sku_count": len(skus), "missing": missing,
+            "unresolved": sorted(unresolved),
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product}
+
+
+def coupang_preview_data(item: dict) -> dict:
+    """T4(오너 2026-09-30-H) — 「쿠팡에서 보이는 모습」 재료. **전송 0회.**
+
+    등록과 같은 사슬을 지난다: 서버 빌더(`build_product`) → `coupang_uploader.option_form`
+    (= prepared_input → prepare_product → 카테고리 메타 → SKU 계획). 카테고리 메타를 못 받으면(자격·네트워크)
+    **예상 모습**으로 보여 주고 그렇다고 적는다 — SKU 이름은 등록과 같은 해석 체인, 판매가는 같은 식(`with_sku_prices`).
+    할인 전 가격은 보여 주지 않는다(오너 결정 대기 — 할인율 표시는 표시광고 금칙과 겹친다).
+    """
+    from .product_builder import build_product
+    from . import market_credentials as mc
+    from src.services import image_translate_store as its
+    product = build_product(item, seller_id=_seller_id())
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    out = {"ok": True, "name": product.get("coupang_name") or product.get("title") or "",
+           "images": list(product.get("images_effective") or [])[:10],
+           "detail_images": its.effective_images(ex, kind="detail",
+                                                 originals=product.get("detail_images") or [])[:12],
+           "shipping": "해외구매대행 · 주문 후 출고까지 7일 · 개인통관고유부호 필요",
+           "items": [], "holds": [], "notes": [], "category": "", "meta_ok": False, "estimated": False}
+    summ = its.effective_summary(ex)
+    out["promo_excluded"] = len(summ.get("promo_excluded") or [])
+    from .upload_dispatcher import UploadDispatcher
+    out["ad_claims"] = UploadDispatcher._ad_claim_hits(product, "coupang")
+    form = None
+    try:
+        from src.channel_sync import coupang_uploader as _cu
+        with mc.seller_market_env(_seller_id(), ["coupang"]):
+            form = _cu.option_form(product)
+    except Exception as exc:
+        logger.warning("[쿠팡 미리보기] 카테고리 기준 조회 실패(예상 모습): %s", exc)
+    if form and form.get("ok"):
+        out.update(category=str(form.get("category") or ""), meta_ok=bool(form.get("meta_ok")),
+                   holds=list(form.get("holds") or []), notes=list(form.get("notes") or []))
+        items = form.get("items") or []
+        out["items"] = [{"label": str(i.get("label") or " / ".join(i.get("spec") or []) or "(이름 없음)"),
+                         "price": i.get("sell_price_krw"), "stock": i.get("stock"),
+                         "confirm": bool(i.get("confirm"))} for i in items]
+    else:
+        out["estimated"] = True
+        out["notes"] = ["쿠팡 카테고리 기준을 불러오지 못해 예상 모습입니다 — 사전검증에서 다시 확인합니다."]
+        try:
+            from src.channel_sync.coupang_uploader import prepared_input
+            pi = prepared_input(product)
+        except Exception:
+            pi = product
+        from src.uploaders.coupang_options import resolve_option_value, value_ko_map
+        vko = value_ko_map(product)
+        ov = product.get("option_value_overrides") or {}
+        for k in pi.get("skus") or []:
+            if not isinstance(k, dict):
+                continue
+            parts, ok = [], True
+            for v in k.get("spec") or []:
+                r = resolve_option_value(str(v), values_ko=vko.get(str(v), ""), override=ov.get(str(v), ""))
+                ok = ok and bool(r["value"])
+                parts.append(r["value"] or str(v))
+            out["items"].append({"label": " / ".join(parts) or "(이름 없음)", "price": k.get("sell_price_krw"),
+                                 "stock": k.get("stock"), "confirm": True, "unresolved": not ok})
+    out["unresolved"] = sum(1 for h in out["holds"] if "미해석" in h or "옮기지 못했습니다" in h) or \
+        sum(1 for i in out["items"] if i.get("unresolved"))
+    prices = [int(i["price"]) for i in out["items"] if isinstance(i.get("price"), (int, float)) and i["price"]]
+    out["price_min"], out["price_max"] = (min(prices), max(prices)) if prices else (None, None)
+    return out
+
+
+@bp.get("/m/item/<item_id>/coupang-preview")
+def mobile_coupang_preview(item_id: str):
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        return jsonify(coupang_preview_data(item))
+    except Exception as exc:
+        logger.warning("[쿠팡 미리보기] 실패: %s", exc)
+        return jsonify({"ok": False, "error": f"미리보기를 만들지 못했어요 — {type(exc).__name__}"}), 500
 
 
 @bp.get("/m/item/<item_id>")
@@ -1941,6 +2026,43 @@ def guide_iphone_use():
     """화면 B — 「사용하기」(유저용 · 공개)."""
     return render_template("guide_iphone.html", screen="use", shots=_iphone_shots(("b1", "b2", "b3")),
                            shortcut_link="", host=_share_base().split("://", 1)[-1])
+
+
+@bp.route("/admin/ko-polish", methods=["GET", "POST"])
+def admin_ko_polish():
+    """T1(오너 2026-09-30-H) — 번역 정리 규칙표(판촉어 삭제·용어 치환·표시광고 금칙) — **재배포 없이** 고친다.
+
+    기본표는 `src/collectors/ko_polish_rules.json`, 여기서 저장한 JSON이 있으면 그것이 이긴다(app_state).
+    「확인」은 입력한 문장 한 줄을 규칙에 돌려 결과를 바로 보여 준다.
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+    if not _is_admin_user():
+        abort(403)
+    from src.collectors import ko_polish as kp
+    msg, err, trial = "", "", None
+    if request.method == "POST":
+        if request.form.get("action") == "reset":
+            kp.save_rules_override(None)
+            msg = "기본표로 되돌렸어요."
+        elif request.form.get("action") == "try":
+            t = request.form.get("sample", "")
+            ov = kp.option_value(t)
+            trial = {"in": t, "option": kp.shorten(ov["value"] or ov["draft"]), "left": ov["left"],
+                     "cn": kp.strip_cn(t), "title": kp.polish_ko(t), "ban": kp.ban_hits(t)}
+        else:
+            try:
+                data = json.loads(request.form.get("rules", "") or "{}")
+                if not isinstance(data, dict):
+                    raise ValueError("JSON 객체({ … })여야 합니다")
+                kp.save_rules_override(data)
+                msg = "저장했어요 — 1분 안에 모든 워커가 새 표를 씁니다."
+            except (ValueError, json.JSONDecodeError) as exc:
+                err = f"저장하지 못했어요 — {exc}"
+    cur = kp.rules()
+    return render_template("admin_ko_polish.html", rules_json=json.dumps(cur, ensure_ascii=False, indent=1),
+                           version=cur.get("version", ""), rules_hash=kp.rules_hash(cur), msg=msg, err=err,
+                           trial=trial)
 
 
 @bp.route("/guide/iphone/make", methods=["GET", "POST"])
@@ -2183,7 +2305,13 @@ def collect_upload():
     #   예전엔 그 블록 안에 있었는데 블록의 except가 모든 예외를 삼켜, 앞쪽에서 무엇 하나
     #   터지면 **주소 채우기가 조용히 건너뛰어졌다**(카나리 4차 실측: 뽑힌 값 '').
     from .upload_dispatcher import build_dispatch_payload as _build_payload
-    product_data = _build_payload(product_data, _get_owned_item(data.get("item_id") or ""))
+    _owned = _get_owned_item(data.get("item_id") or "")
+    # T4: 몸통의 기준은 **서버 빌더 하나** — 폼이 보낸 값은 오너가 방금 고친 값으로 얹는다(키 집합이 같아
+    #   데스크톱 결과는 그대로, 폰·미리보기와 같은 빌더를 지난다).
+    if _owned:
+        from .product_builder import build_product as _build_product
+        product_data = _build_product(_owned, edits=product_data, seller_id=_seller_id())
+    product_data = _build_payload(product_data, _owned)
 
     # D2: 마켓에 나가는 이미지는 **번역본 사용 토글을 반영한 배열**이다.
     #   폼이 보낸 목록(사람이 방금 고친 원본 순서)을 기준으로, 저장된 토글을 서버가 매핑한다 —
@@ -3121,8 +3249,10 @@ def collect_bulk_translate():
             item_err = ""            # v66 STEP4: 항목별 실패 사유(실패 항목 사유 명시)
             if allow and translator is not None and (title or desc):
                 try:
-                    out = translator.translate_product({"title": title, "description": desc})
+                    from src.collectors.ko_polish import polish_ko as _polish, strip_cn as _strip_cn
+                    out = translator.translate_product({"title": _strip_cn(title) or title, "description": desc})
                     title_ko = (out.get("title_ko") or "").strip() or title
+                    title_ko = _polish(title_ko) or title_ko          # T1: 판촉 직역 제거
                     desc_ko = (out.get("description_ko") or "").strip() or desc
                     provider = out.get("provider", "stub")
                     if out.get("error"):
@@ -11852,6 +11982,32 @@ def collect_image_use(item_id: str):
                     "summary": store.effective_summary(extra)})
 
 
+@bp.post("/collect/<item_id>/image-promo")
+def collect_image_promo(item_id: str):
+    """T3: 프로모션 의심 장 「그래도 넣기」 토글 — `{kind, idx, include}` → 갱신된 plan·요약."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(silent=True) or {}
+    kind = "detail" if str(data.get("kind") or "") == "detail" else "gallery"
+    try:
+        idx = int(data.get("idx"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "몇 번째 장인지 알 수 없습니다."}), 400
+    from src.services import image_translate_store as store
+    extra = store.load_extra(item)
+    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    extra[ko_key] = store.set_promo_include(extra, idx, bool(data.get("include")), kind=kind)
+    from . import collect_history_store
+    if not collect_history_store.update(item_id, seller_ids=_seller_identities(),
+                                        extra_json=json.dumps(extra, ensure_ascii=False)):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    return jsonify({"ok": True, "kind": kind, "plan": store.effective_plan(extra, kind=kind),
+                    "summary": store.effective_summary(extra)})
+
+
 @bp.post("/collect/<item_id>/translate-images")
 def collect_translate_images(item_id: str):
     """편집 서랍 「이미지 번역」 — **접수만** 하고 202. 실제 번역은 요청 밖에서 돈다.
@@ -12160,7 +12316,9 @@ def collect_image_audit_requeue():
 
 def _coupang_name_input(item: dict, ex: dict) -> dict:
     """F53 — 쿠팡 상품명 재료(저장된 값 그대로): 번역 제목 · 원문 제목 · 브랜드 · 옵션 원문 · SKU."""
-    return {"title_ko": str(ex.get("title_ko") or ex.get("title") or item.get("title") or ""),
+    from src.collectors.ko_polish import polish_ko as _polish   # T1: 옛 행의 「재고 있음」 같은 판촉 직역도 여기서 걷힌다
+    _tk = str(ex.get("title_ko") or ex.get("title") or item.get("title") or "")
+    return {"title_ko": _polish(_tk) or _tk,
             "title_original": str(ex.get("title_original") or ex.get("title_en") or ""),
             "brand": str(ex.get("brand") or ""),
             "options": ex.get("options") if isinstance(ex.get("options"), list) else [],

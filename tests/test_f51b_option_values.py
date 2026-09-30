@@ -39,9 +39,11 @@ def test_resolution_order():
     assert tr["how"] == "translator" and tr["confirm"] is True                               # 3) 번역기
     lost = r("PD20W快充（白色款）", values_ko="고속 충전 화이트")
     assert lost["value"] == "" and "PD20W" in lost["why"]                                     # 영문 토큰 보존
-    assert r("紫色", values_ko="퍼플")["value"] == "퍼플"
-    assert r("紫色")["value"] == "" and "직접 넣어" in r("紫色")["why"]                       # 4) 보류
-    assert r("紫色", values_ko="紫色")["value"] == ""                                         # 원문 그대로 = 번역 안 됨
+    # (T1 2026-09-30-H: 紫色 같은 기본 색은 이제 정리 규칙이 옮긴다 — 표에 없는 말로 보류를 잰다)
+    assert r("莫奈色", values_ko="모네 컬러")["value"] == "모네 컬러"
+    assert r("莫奈色")["value"] == "" and "직접 넣어" in r("莫奈色")["why"]                   # 4) 보류
+    assert r("莫奈色", values_ko="莫奈色")["value"] == ""                                     # 원문 그대로 = 번역 안 됨
+    assert (r("紫色")["value"], r("紫色")["how"]) == ("퍼플", "polish")                       # 정리 규칙(원격 표)
 
 
 def test_owner_canon_lines_and_tokens_are_the_owner_list():

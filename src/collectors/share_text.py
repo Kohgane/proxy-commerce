@@ -119,9 +119,15 @@ def finalize_title(title: str, *, url: str = "") -> str:
         return ""
     try:
         from src.pipeline.coupang_replicate import clean_title_ko
-        return clean_title_ko(raw, url=url).get("title") or raw
+        out = clean_title_ko(raw, url=url).get("title") or raw
     except Exception:                       # 정제기가 못 돌면 원문 그대로(제목을 잃지 않는다)
-        return raw
+        out = raw
+    try:                                    # T1(2026-09-30-H): 판촉 직역(「재고 있음」 …)·가격 문구 — 모든 입구 공통
+        from src.collectors.ko_polish import polish_ko
+        out = polish_ko(out) or out
+    except Exception:
+        pass
+    return out
 
 
 def is_short_link(url: str) -> bool:

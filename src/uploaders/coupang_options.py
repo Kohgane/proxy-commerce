@@ -104,7 +104,7 @@ def glossary_line_count() -> int:
 #     3) 번역기 `values_ko`(브랜드·영문 토큰 보존) — 「번역기 값 — 확인」
 #     4) 그래도 비면 보류(사유)
 HOW_LABEL = {"override": "직접 수정", "glossary": "용어집", "token": "용어집 조각 치환",
-             "translator": "번역기"}
+             "polish": "정리 규칙", "translator": "번역기"}
 _ASCII_TOK = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+\-]*")
 
 
@@ -140,7 +140,15 @@ def resolve_option_value(value: str, *, values_ko: str = "", override: str = "")
     t = option_value_tokens(v)
     if t:
         return {"value": t, "how": "token", "confirm": True, "why": ""}
-    ko = str(values_ko or "").strip()
+    # T1/T2(오너 2026-09-30-H): 복합 값 `색상[소재]부속 접미사`를 조각별로 — 판촉 접미사(海外特供)는 지우고,
+    #   소재·부속·색상은 규칙표(원격 JSON)로 옮긴 뒤 **쿠팡 28자에 맞춰 소재부터** 줄인다. 한자가 남으면 다음 단계.
+    from src.collectors import ko_polish as _kp
+    p = _kp.option_value(v)
+    if p["value"]:
+        return {"value": _kp.shorten(p["value"]), "how": "polish", "confirm": True, "why": ""}
+    ko = _kp.polish_ko(str(values_ko or "").strip())
+    if ko and len(ko) > _kp.MAX_OPTION_VALUE:
+        ko = _kp.shorten(ko)
     if ko and ko != v and not _CJK.search(ko):
         lost = [tok for tok in _ASCII_TOK.findall(v) if tok.lower() not in ko.lower()]
         if not lost:

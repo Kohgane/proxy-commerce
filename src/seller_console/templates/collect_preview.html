@@ -2218,6 +2218,17 @@ function kgpImgkoRender() {
     // D2-4: 글자가 빽빽했던 장은 줄바꿈이 원본과 달라질 수 있다 — 사람이 한 번 보게.
     var dense = (e && e.dense)
       ? '<span class="pc-badge pc-badge-off ms-1" title="번역 후 줄바꿈이 달라질 수 있어요">레이아웃 확인</span>' : '';
+    // T3(오너 2026-09-30-H): 판촉 글(88VIP·쿠폰·기간 할인·TOP1 …)이 든 장 — 등록에서 **기본으로 뺀다**.
+    //   오너가 「그래도 넣기」를 켜면 넣는다. 판정은 서버(plan.promo)와 같은 표.
+    var promoHits = (plan && plan.promo && plan.promo.length) ? plan.promo : [];
+    var promo = promoHits.length
+      ? '<span class="pc-badge pc-badge-danger ms-1" data-role="imgko-promo" title="' + promoHits.join(' · ') + '">프로모션 의심</span>' +
+        '<label class="small d-inline-flex align-items-center gap-1 ms-2"><input class="form-check-input" type="checkbox"' +
+        ((plan && plan.promo_include) ? ' checked' : '') + ' onchange="kgpImgPromo(' + i + ', this.checked)">' +
+        '<span>그래도 넣기</span></label>' +
+        '<div class="small" style="color:var(--text-muted)">' +
+        ((plan && plan.promo_include) ? '등록에 넣습니다' : '등록에서 뺍니다') + ' — ' + promoHits.join(' · ') + '</div>'
+      : '';
     // D2b: 마켓이 가져갈 수 있는 주소인가. 우리 서버 주소(/seller/…)는 로그인 게이트 뒤라
     //   등록 직전에 막힌다 — 그 사실을 **막히기 전에** 보여 준다.
     var reach = '';
@@ -2247,7 +2258,7 @@ function kgpImgkoRender() {
       '<img src="' + u + '" alt="원본" referrerpolicy="no-referrer" class="kgp-imgko-thumb" ' +
         'onclick="kgpImgkoZoom(\'' + u + '\')" title="클릭하면 크게 보기">' +
       shot +
-      '<div class="flex-grow-1 small"><strong>' + (i + 1) + '번째</strong>' + badge + warn + dense + reach +
+      '<div class="flex-grow-1 small"><strong>' + (i + 1) + '번째</strong>' + badge + warn + dense + promo + reach +
       (e && e.ms ? '<span class="console-kpi-label ms-2">' + e.ms + ' ms</span>' : '') +
       use + why +
       (goneNow ? '<div class="small" style="color:var(--danger)">저장된 번역본이 없습니다 — ' +
@@ -2324,6 +2335,29 @@ function kgpImgkoSendUse(flags) {
       if (msg) { msg.textContent = '저장하지 못했습니다.'; msg.style.color = 'var(--danger)'; }
       console.warn('[번역본 사용]', e);
     });
+}
+function kgpImgPromo(idx, on) {
+  var msg = document.getElementById('imgkoUseMsg');
+  if (msg) { msg.textContent = '저장 중…'; msg.style.color = ''; }
+  fetch(window.location.pathname.replace('/preview/', '/') + '/image-promo', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({kind: 'gallery', idx: idx, include: !!on})
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok) {
+      if (msg) { msg.textContent = (d && d.error) || '저장하지 못했습니다.'; msg.style.color = 'var(--danger)'; }
+      return;
+    }
+    if (Array.isArray(d.plan)) { KGP_IMGKO_PLAN = d.plan; }     // 서버 plan 그대로(화면이 따로 판단하지 않는다)
+    kgpImgkoRender();
+    var sm = d.summary || {};
+    if (msg) {
+      msg.textContent = '프로모션 의심 ' + ((sm.promo_excluded || []).length) + '장 제외 · ' +
+        ((sm.promo_included || []).length) + '장 넣음';
+      msg.style.color = 'var(--teal)';
+    }
+  }).catch(function () {
+    if (msg) { msg.textContent = '저장하지 못했습니다.'; msg.style.color = 'var(--danger)'; }
+  });
 }
 function kgpImgkoUseOne(idx, on) {
   var f = {}; f[idx] = !!on;

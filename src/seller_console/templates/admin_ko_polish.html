@@ -1,0 +1,41 @@
+{% extends "_base.html" %}
+{% block title %}번역 정리 규칙(관리자){% endblock %}
+{% block content %}
+{# T1(오너 2026-09-30-H) — 판촉어 삭제·용어 치환·표시광고 금칙표. 재배포 없이 저장(app_state), 1분 안에 반영. #}
+<div class="container-fluid py-4" style="max-width:860px">
+  <div class="console-kpi-label mb-1">관리자 · 번역</div>
+  <h1 class="h4 fw-bold mb-1">번역 정리 규칙</h1>
+  <p class="text-muted small mb-0">상품명·옵션 값 번역 전후에 지울 말(海外特供·재고 있음 …), 옮길 말(半皮→반가죽 …), 등록을 막을 말(할인율·기간·1위 …).
+    표 버전 <code data-role="kp-version">{{ version }}</code> · 해시 <code data-role="kp-hash">{{ rules_hash }}</code></p>
+  <hr class="pc-hairline mt-2 mb-3">
+
+  <form method="post" class="op-card mb-3"><div class="op-card-body">
+    <input type="hidden" name="action" value="try">
+    <label class="fw-semibold small" for="kpSample">한 줄 확인</label>
+    <div class="d-flex gap-2 flex-wrap mt-1">
+      <input id="kpSample" name="sample" class="form-control" style="flex:1 1 280px" placeholder="예: 棕红[Oilwaxed防水油蜡半皮]带踏 海外特供"
+             value="{{ trial.in if trial else '' }}">
+      <button class="btn btn-ghost btn-sm" type="submit">확인</button>
+    </div>
+    {% if trial %}
+    <dl class="small mt-2 mb-0" data-role="kp-trial">
+      <dt>옵션 값으로(쿠팡 ≤28자)</dt><dd>{{ trial.option or "(비었음)" }}{% if trial.left %} — 남은 한자 {{ trial.left }} → 번역기로{% endif %}</dd>
+      <dt>번역기에 보낼 원문(지우기만)</dt><dd>{{ trial.cn }}</dd>
+      <dt>번역 뒤 정리(한국어로 넣었을 때)</dt><dd>{{ trial.title }}</dd>
+      <dt>표시광고 위험</dt><dd>{{ trial.ban|join(", ") if trial.ban else "없음" }}</dd>
+    </dl>
+    {% endif %}
+  </div></form>
+
+  <form method="post" class="op-card"><div class="op-card-body">
+    <label class="fw-semibold small" for="kpRules">규칙표(JSON)</label>
+    <textarea id="kpRules" name="rules" class="form-control font-monospace small mt-1" rows="22" spellcheck="false">{{ rules_json }}</textarea>
+    <div class="d-flex gap-2 align-items-center mt-2 flex-wrap">
+      <button class="btn btn-primary btn-sm" type="submit">저장</button>
+      <button class="btn btn-ghost btn-sm" type="submit" name="action" value="reset">기본표로 되돌리기</button>
+    </div>
+    {% if msg %}<div class="pc-status pc-status-info small mt-2 mb-0" data-role="kp-msg">{{ msg }}</div>{% endif %}
+    {% if err %}<div class="pc-status pc-status-danger small mt-2 mb-0" data-role="kp-err">{{ err }}</div>{% endif %}
+  </div></form>
+</div>
+{% endblock %}

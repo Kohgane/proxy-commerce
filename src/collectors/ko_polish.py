@@ -1,0 +1,237 @@
+"""T1 ko_polish — 번역 공통 후처리(오너 2026-09-30-H): 중국식 워딩·판촉 문구 제거 + 옵션 값 해석.
+
+## 실측(코드·운영 데이터)
+
+- 옵션 값 번역(`translate_options`)은 **「한국어 번역」 버튼 경로에서만** 불렸다 — 수집·백그라운드 번역 워커는
+  부르지 않았다. 운영 최근 48건: 옵션 39개·값 438개 중 `values_ko`가 붙은 옵션 **0개**.
+- 번역기는 원문을 그대로 옮긴다 — `现货`→「재고 있음」, `海外特供`→「해외 특공」, 판촉 이미지의
+  `国庆狂欢`→「국경절 축제」가 그대로 남는다(VRSUK 의자, 캡처).
+
+## 무엇을 하나
+
+- `preclean_cn` — 번역 **전** 원문에서 판촉어(`delete_cn`)·가격 문구를 지우고, 소재·부속 용어(`replace`)와
+  색상(`colors`)을 한국어로 먼저 박는다(번역기가 「반피」 같은 직역을 못 하게).
+- `polish_ko` — 번역 **후** 한국어에서 판촉어(`delete_ko`)·가격 문구를 지우고 기호를 정리한다.
+- `option_value` — 복합 값 `색상[소재]부속 접미사`를 조각별로 치환해 「브라운레드 / 오일왁스 반가죽 / 발받침 포함」.
+  한자가 남으면 남은 것을 돌려준다(값 단위 — 한 값이 막혀도 다른 값은 간다).
+- `shorten` — 쿠팡 옵션 값 28자(정본 `attr_safe`) 초과 시 **소재 조각부터** 줄인다(핵심 가죽 종류는 남김).
+- `ban_hits` — 표시광고 위험(할인율·기간·쿠폰 금액·「1위」「최저가」) → 등록 보류 사유.
+
+표는 `ko_polish_rules.json`(기본) + `app_state` `ko_polish:rules`(관리자 덮어쓰기 — 재배포 없이).
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import threading
+import time
+from pathlib import Path
+from typing import Dict, List
+
+_RULES_FILE = Path(__file__).with_name("ko_polish_rules.json")
+_STATE_KEY = "ko_polish:rules"
+_HAN = re.compile("[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")   # 이스케이프로 — 호환 한자를 글자로 적으면 정규화돼 범위가 한글까지 먹는다
+_FW = str.maketrans({"（": "(", "）": ")", "，": ",", "、": ",", "／": "/", "＋": "+", "　": " ", "｜": "|",
+                     "：": ":", "【": "[", "】": "]", "〔": "[", "〕": "]", "《": "[", "》": "]", "｛": "{", "｝": "}"})
+_TTL = 60.0
+_cache: dict = {"at": 0.0, "rules": None}
+_lock = threading.Lock()
+
+# 쿠팡 옵션 값 한도 — 정본 `attr_safe`(볼트 「등록 파이프 이식」): `str(av)[:28]`.
+MAX_OPTION_VALUE = 28
+# 줄일 때 **남길** 소재 낱말(값끼리 구분하는 핵심) — 나머지 소재 조각은 버린다.
+_KEY_MATERIAL = ("오일왁스", "풀가죽", "반가죽", "소가죽", "에코 가죽", "천연 가죽", "아닐린 가죽", "세미아닐린 가죽",
+                 "스크래치 방지 가죽", "리치 가죽", "실리콘 가죽", "셔닐", "스노우 벨벳", "테크 패브릭", "양털")
+
+
+def _default_rules() -> dict:
+    return json.loads(_RULES_FILE.read_text(encoding="utf-8"))
+
+
+def rules() -> dict:
+    """표 — 관리자 덮어쓰기(app_state)가 있으면 그것, 없으면 기본 JSON. 60초 캐시."""
+    now = time.monotonic()
+    with _lock:
+        if _cache["rules"] is not None and now - _cache["at"] < _TTL:
+            return _cache["rules"]
+    r = _default_rules()
+    try:
+        from src.db import image_translate_queue_pg as st
+        over = (st.state_get(_STATE_KEY) or {}).get("rules")
+        if isinstance(over, dict) and over:
+            r = dict(r, **over)
+    except Exception:
+        pass
+    with _lock:
+        _cache.update(at=now, rules=r)
+    return r
+
+
+def rules_hash(r: dict | None = None) -> str:
+    raw = json.dumps(r or rules(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def save_rules_override(r: dict | None) -> None:
+    """관리자 덮어쓰기(빈 값이면 기본으로). 모양이 틀리면 ValueError."""
+    if r:
+        for k in ("delete_cn", "delete_ko", "price_re", "ban_ko", "ban_cn", "promo_img"):
+            if k in r and not all(isinstance(x, str) for x in r[k]):
+                raise ValueError(f"{k}는 문자열 목록이어야 합니다")
+        for k in ("replace", "colors", "replace_ko"):
+            if k in r and not all(isinstance(x, list) and len(x) == 2 for x in r[k]):
+                raise ValueError(f"{k}는 [원문, 한국어] 쌍 목록이어야 합니다")
+        for k in ("price_re", "ban_ko", "ban_cn", "promo_img"):
+            for p in r.get(k) or []:
+                try:
+                    re.compile(p)
+                except re.error as exc:
+                    raise ValueError(f"{k}의 정규식 {p!r}이 틀렸습니다({exc})") from exc
+    from src.db import image_translate_queue_pg as st
+    st.state_set(_STATE_KEY, {"rules": r or {}})
+    with _lock:
+        _cache.update(at=0.0, rules=None)
+
+
+def reset_cache() -> None:
+    with _lock:
+        _cache.update(at=0.0, rules=None)
+
+
+def has_han(text) -> bool:
+    return bool(_HAN.search(str(text or "")))
+
+
+def _tidy(s: str) -> str:
+    s = re.sub(r"\[\s*\]|\(\s*\)|\{\s*\}", " ", s)
+    s = re.sub(r"\s+([,)\]}])", r"\1", s)                      # 지운 자리 뒤 「 ,」
+    s = re.sub(r"([(\[{])\s+", r"\1", s)
+    s = re.sub(r",\s*,+", ",", s)
+    s = re.sub(r"\s*([,|/+·])\s*(?=[,|/+·]|$)", " ", s)          # 지운 자리에 남은 연속 구분자
+    s = re.sub(r"^[\s,|/+·\-]+|[\s,|/+·\-]+$", "", s)
+    s = re.sub(r"\s{2,}", " ", s)
+    return s.strip()
+
+
+def preclean_cn(text: str, *, hits: dict | None = None) -> str:
+    """번역 **전** 원문 정리 — 판촉어·가격 삭제, 용어·색상은 한국어로 먼저."""
+    r = rules()
+    s = str(text or "").translate(_FW)
+    for w in sorted(r.get("delete_cn") or [], key=len, reverse=True):
+        if w and w in s:
+            s = s.replace(w, " ")
+            if hits is not None:
+                hits.setdefault("delete", []).append(w)
+    for p in r.get("price_re") or []:
+        s, n = re.subn(p, " ", s)
+        if n and hits is not None:
+            hits.setdefault("delete", []).append(f"가격문구×{n}")
+    table = list(r.get("replace") or []) + list(r.get("colors") or [])
+    for src, ko in sorted(table, key=lambda x: len(x[0]), reverse=True):
+        if src and src in s:
+            s = s.replace(src, f" {ko} " if ko else " ")
+            if hits is not None:
+                hits.setdefault("replace", []).append(f"{src}→{ko or '(삭제)'}")
+    return _tidy(s)
+
+
+def strip_cn(text: str, *, hits: dict | None = None) -> str:
+    """번역기에 보낼 원문 — **지우기만**(판촉어·가격). 한국어를 끼워 넣지 않는다:
+    섞인 글은 언어 판별이 「한국어」로 봐서 번역기가 손대지 않고 돌려준다(실측)."""
+    r = rules()
+    s = str(text or "").translate(_FW)
+    for w in sorted(r.get("delete_cn") or [], key=len, reverse=True):
+        if w and w in s:
+            s = s.replace(w, " ")
+            if hits is not None:
+                hits.setdefault("delete", []).append(w)
+    for p in r.get("price_re") or []:
+        s = re.sub(p, " ", s)
+    return _tidy(s)
+
+
+def polish_ko(text: str, *, hits: dict | None = None) -> str:
+    """번역 **후** 한국어 정리 — 판촉어·가격 문구 삭제, 빈 괄호·겹친 구분자 정리."""
+    r = rules()
+    s = str(text or "").translate(_FW)
+    for w in sorted(r.get("delete_ko") or [], key=len, reverse=True):
+        if w and w in s:
+            s = s.replace(w, " ")
+            if hits is not None:
+                hits.setdefault("delete", []).append(w)
+    for p in r.get("price_re") or []:
+        s, n = re.subn(p, " ", s)
+        if n and hits is not None:
+            hits.setdefault("delete", []).append(f"가격문구×{n}")
+    # 번역기 직역 바로잡기(懒人沙发 → 「게으른 사람 소파」 → 빈백 소파) — 긴 것부터
+    for src, ko in sorted(r.get("replace_ko") or [], key=lambda x: len(x[0]), reverse=True):
+        if src and src in s:
+            s = s.replace(src, ko)
+            if hits is not None:
+                hits.setdefault("replace", []).append(f"{src}→{ko}")
+    return _tidy(s)
+
+
+def ban_hits(text: str) -> List[str]:
+    """표시광고 위험 문구(등록 보류 사유) — 찾은 조각 그대로."""
+    r = rules()
+    s = str(text or "")
+    out: List[str] = []
+    for p in list(r.get("ban_ko") or []) + list(r.get("ban_cn") or []):
+        for m in re.finditer(p, s):
+            frag = m.group(0).strip()
+            if frag and frag not in out:
+                out.append(frag)
+    return out
+
+
+def promo_hits(text: str) -> List[str]:
+    """T3: 이미지 OCR 글(원문·번역문)의 판촉 어휘 — 찾은 조각 그대로(프로모션 의심 판정)."""
+    r = rules()
+    s = str(text or "")
+    out: List[str] = []
+    for p in r.get("promo_img") or []:
+        for m in re.finditer(p, s):
+            frag = m.group(0).strip()
+            if frag and frag not in out:
+                out.append(frag)
+    return out
+
+
+def option_value(value: str) -> Dict:
+    """복합 옵션 값 → `{value, left, hits}`. `left`가 비어야 한국어로 다 옮긴 것이다.
+
+    `色[소재]부속 접미사` 모양은 괄호를 조각 경계(` / `)로 바꿔 조각별로 치환한다.
+    """
+    hits: dict = {}
+    s = str(value or "").translate(_FW)
+    s = re.sub(r"\s*[\[{]\s*", " / ", s)
+    s = re.sub(r"\s*[\]}]\s*", " / ", s)
+    s = re.sub(r"\s*[|丨]\s*", " / ", s)
+    parts = [preclean_cn(p, hits=hits) for p in s.split(" / ")]
+    parts = [polish_ko(p, hits=hits) for p in parts]
+    parts = [p for p in parts if p]
+    out = " / ".join(parts)
+    left = "".join(_HAN.findall(out))
+    return {"value": out if not left else "", "draft": out, "left": left, "hits": hits}
+
+
+def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
+    """쿠팡 옵션 값 길이 맞춤 — **소재 조각부터** 줄인다(핵심 가죽·원단 종류는 색상 조각에 붙여 남김)."""
+    v = re.sub(r"\s{2,}", " ", str(value or "")).strip()
+    if len(v) <= limit:
+        return v
+    parts = [p.strip() for p in v.split(" / ") if p.strip()]
+    if len(parts) >= 3:
+        head, mats, tail = parts[0], parts[1:-1], parts[-1]
+        keys = [k for k in _KEY_MATERIAL if any(k in m for m in mats) and k not in head]
+        # 「오일왁스 풀가죽」처럼 겹치는 낱말은 긴 것만
+        keys = [k for k in keys if not any(k != o and k in o for o in keys)]
+        cand = " / ".join(x for x in (" ".join([head] + keys[:2]).strip(), tail) if x)
+        if len(cand) <= limit:
+            return cand
+        cand = " / ".join(x for x in (head, tail) if x)
+        if len(cand) <= limit:
+            return cand
+    return v[:limit].rstrip(" /")

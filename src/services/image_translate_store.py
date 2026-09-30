@@ -162,6 +162,65 @@ def read_translated(item_id: str, idx: int, *, kind: str = "gallery") -> bytes:
 DENSE_TEXT_LINES = 8
 
 
+def promo_of(e: dict) -> list:
+    """T3(오너 2026-09-30-H): 이 장의 OCR 글(원문·번역문)에 걸린 판촉 어휘 — 88VIP·쿠폰·기간 할인·TOP1 …
+
+    판정은 **어휘**로 한다. 배너 모양(글자 면적·상하 띠)은 이번부터 `text_area`·`band`로 적어 두고
+    기준은 실측이 쌓인 뒤 잡는다(운영 21장 실측: 줄 수만으로는 판촉/일반이 안 갈린다 — 일반 중앙값 9줄).
+    """
+    if not isinstance(e, dict):
+        return []
+    try:
+        from src.collectors.ko_polish import promo_hits
+    except Exception:
+        return []
+    out = []
+    for t in (e.get("source_text"), e.get("target_text")):
+        for h in promo_hits(str(t or "")):
+            if h not in out:
+                out.append(h)
+    return out
+
+
+def promo_excluded(e: dict) -> bool:
+    """프로모션 의심 장은 **기본 제외** — 오너가 「그래도 넣기」(`promo_include`)를 켜면 넣는다."""
+    return bool(promo_of(e)) and not bool((e or {}).get("promo_include"))
+
+
+def text_geometry(result: dict) -> dict:
+    """글자 면적 비율·위치 띠 — 공급사가 준 줄 상자와 이미지 크기로. 못 재면 빈 dict(추정 0)."""
+    lines = [l for l in (result.get("lines") or []) if isinstance(l, dict) and isinstance(l.get("box"), dict)]
+    b64 = result.get("image_b64") or ""
+    if not lines or not b64:
+        return {}
+    try:
+        import base64
+        import io
+        from PIL import Image
+        W, H = Image.open(io.BytesIO(base64.b64decode(b64))).size
+    except Exception:
+        return {}
+    if not (W and H):
+        return {}
+    area, top, bottom = 0.0, 0.0, 0.0
+    for l in lines:
+        b = l["box"]
+        try:
+            x, y, w, h = float(b.get("x") or 0), float(b.get("y") or 0), float(b.get("w") or 0), float(b.get("h") or 0)
+        except (TypeError, ValueError):
+            continue
+        a = max(w, 0) * max(h, 0)
+        area += a
+        cy = y + h / 2
+        if cy <= H * 0.25:
+            top += a
+        elif cy >= H * 0.75:
+            bottom += a
+    ratio = round(min(area / (W * H), 1.0), 3)
+    band = "top" if area and top / area >= 0.6 else ("bottom" if area and bottom / area >= 0.6 else "")
+    return {"text_area": ratio, "band": band}
+
+
 def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "",
                 kind: str = "gallery", label: Optional[Dict[str, str]] = None) -> dict:
     """공급사 결과 1장 → `images_ko` 한 줄. **이 모양을 만드는 자리는 여기 하나다.**
@@ -201,6 +260,10 @@ def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "
         "use": bool(placed.get("url")),
         "dense": n_lines >= DENSE_TEXT_LINES,
     })
+    entry.update(text_geometry(result))            # T3: 배너 판정 기준을 잡을 실측(이번부터 적는다)
+    _ph = promo_of(entry)
+    if _ph:
+        entry["promo"] = _ph
     if not placed.get("url"):
         entry.update({"error_class": "NotStored", "error_code": "",
                       "error_message": placed.get("note") or "번역본을 저장하지 못했습니다"})
@@ -334,6 +397,11 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
             out.append(_origin_or_cdn(orig, cdn_map, i) if gone else url)
         else:
             out.append(_origin_or_cdn(orig, cdn_map, i))
+    # T3: 프로모션 의심 장은 기본 제외(오너가 「그래도 넣기」를 켠 장은 넣는다). 전부 빠지면 대표 이미지가
+    #   없어 등록이 막히므로 그땐 빼지 않는다(요약에 그대로 보인다).
+    drop = {i for i in range(len(originals)) if promo_excluded(by_idx.get(i) or {})}
+    if drop and len(drop) < len(out):
+        out = [u for i, u in enumerate(out) if i not in drop]
     return out
 
 
@@ -463,6 +531,9 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
             "status": e.get("status", ""),
             "warn": list(e.get("warn") or []),
             "dense": bool(e.get("dense")),
+            "promo": promo_of(e),
+            "promo_include": bool(e.get("promo_include")),
+            "promo_excluded": promo_excluded(e),
             "stored_by": e.get("stored_by", ""),
             # F27: 「번역했다고 적혀 있는데 바이트가 없다」 — 사라진 것이다. 그렇게 말한다.
             "gone": gone,
@@ -486,6 +557,16 @@ def set_use_flags(extra: dict, flags: dict, *, kind: str = "gallery") -> list:
         i = int(e.get("idx", -1))
         if i in want:
             e["use"] = bool(want[i] and e.get("status") == "done" and e.get("url"))
+    return rows
+
+
+def set_promo_include(extra: dict, idx: int, include: bool, *, kind: str = "gallery") -> list:
+    """T3: 프로모션 의심 장을 **그래도 넣을지**(오너 판단). 갱신된 `images_ko`를 돌려준다."""
+    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    rows = [dict(e) for e in ((extra or {}).get(ko_key) or []) if isinstance(e, dict)]
+    for e in rows:
+        if int(e.get("idx", -1)) == int(idx):
+            e["promo_include"] = bool(include)
     return rows
 
 
@@ -569,9 +650,13 @@ def effective_summary(extra: dict) -> dict:
 
     `warn_idx`가 비어 있지 않으면 **등록 전에 확인 문구**를 띄운다(오너 지시 D2-3).
     """
-    out = {"translated": 0, "original": 0, "warn_idx": [], "dense_idx": []}
+    out = {"translated": 0, "original": 0, "warn_idx": [], "dense_idx": [], "promo_excluded": [],
+           "promo_included": []}
     for kind in ("gallery", "detail"):
         for p in effective_plan(extra, kind=kind):
+            if p.get("promo"):                                  # T3: 프로모션 의심 — 빠졌나/오너가 넣었나
+                (out["promo_excluded"] if p["promo_excluded"] else out["promo_included"]).append(
+                    {"kind": kind, "idx": p["idx"], "promo": p["promo"]})
             out["translated" if p["source"] == "translated" else "original"] += 1
             if p["source"] == "translated" and p["warn"]:
                 out["warn_idx"].append({"kind": kind, "idx": p["idx"], "warn": p["warn"]})

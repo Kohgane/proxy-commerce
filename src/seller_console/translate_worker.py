@@ -122,7 +122,8 @@ def drain_once(limit: int = 10, *, worker_id: str = "", time_budget_sec: float =
             continue
         # 실제 체인 호출(W10 요청 예산 캡은 translate_product 내부에서 그대로 적용 — 이중 안전망).
         try:
-            out = translator.translate_product({"title": title, "description": desc})
+            from src.collectors.ko_polish import strip_cn as _strip_cn
+            out = translator.translate_product({"title": _strip_cn(title) or title, "description": desc})
         except Exception as exc:
             cause = classify_translate_error(exc)
             state = jobs.fail(jid, cause=cause, error=str(exc), retryable=_retryable(cause))
@@ -138,6 +139,11 @@ def drain_once(limit: int = 10, *, worker_id: str = "", time_budget_sec: float =
             summ["retried" if state == "pending" else "failed"] += 1
             continue
         title_ko = (out.get("title_ko") or "").strip() or title
+        try:
+            from src.collectors.ko_polish import polish_ko as _polish
+            title_ko = _polish(title_ko) or title_ko           # T1: 판촉 직역(「재고 있음」 …) 제거
+        except Exception:
+            pass
         desc_ko = (out.get("description_ko") or "").strip() or desc
         title_ok = bool(title_ko and title_ko != title)
         desc_ok = bool(desc and desc_ko and desc_ko != desc)
@@ -152,6 +158,14 @@ def drain_once(limit: int = 10, *, worker_id: str = "", time_budget_sec: float =
         if out.get("detected_lang"):
             extra["translation_lang"] = out.get("detected_lang")
         extra.pop("translate_error", None)
+        # T2(2026-09-30-H): 옵션명·값도 여기서 — 전엔 「한국어 번역」 버튼 경로에서만 불려 운영 values_ko가 0개였다.
+        if isinstance(extra.get("options"), list) and extra["options"]:
+            try:
+                _opt = translator.translate_options(extra["options"])
+                extra["options"] = _opt.get("options") or extra["options"]
+                extra["options_translated"] = bool(_opt.get("translated"))
+            except Exception as _oe:
+                logger.warning("옵션 번역 실패(워커, 원문 유지): %s", _oe)
         fields = {"extra_json": json.dumps(extra, ensure_ascii=False)}
         if title_ko and title_ko != item.get("title"):
             fields["title"] = title_ko

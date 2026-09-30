@@ -649,26 +649,48 @@ class AITranslator:
         for t in terms:
             if t not in uniq:
                 uniq.append(t)
-        uniq = uniq[:40]
-        # 이미 한국어면 번역 불필요.
-        src = _route_src_lang(" ".join(uniq))
-        if src == "ko" or not uniq:
-            mapping = {t: t for t in uniq}
-            provider = "none"
-            translated = False
-        else:
-            # 짧은 용어들을 개행으로 이어 1콜(체인)로 번역 → 줄 단위 매핑(수·순서 보존 시).
-            #   제목이 아닌 **설명**으로 전달(제목 경로의 상용구 제거가 개행을 뭉개지 않게).
-            joined = "\n".join(uniq)
-            out = self.translate_product({"title": "", "description": joined})   # 빈 제목(감지 오염 방지)
-            provider = out.get("provider", "none")
-            translated = provider not in ("none", "stub", "") and not str(provider).endswith("-fallback")
+        # T1/T2(오너 2026-09-30-H): 전엔 **앞 40개만** 한 줄씩 이어 한 번에 보냈고, 줄 수가 하나라도 어긋나면
+        #   전부 원문으로 뒀다(MyMemory는 480자에서 자른다 → 긴 목록은 거의 늘 어긋남). 게다가 이 함수는
+        #   「한국어 번역」 버튼에서만 불렸다 — 운영 최근 48건 values_ko 0개.
+        #   이제: ① 정리 규칙(ko_polish)으로 먼저 옮기고(판촉 접미사 삭제·소재·색상) 한자가 안 남으면 번역기 안 부름
+        #         ② 남은 것만 **작은 묶음**(≤450자·≤15개)으로 — 한 묶음이 어긋나도 그 묶음만 원문
+        #         ③ 번역 결과도 정리 규칙을 한 번 더(「재고 있음」 같은 판촉 직역 삭제)
+        from src.collectors import ko_polish as _kp
+        mapping = {}
+        pending = []                                # (원문, 번역기에 보낼 정리본)
+        for t in uniq:
+            if _route_src_lang(t) == "ko" and not _kp.has_han(t):
+                mapping[t] = t
+                continue
+            if _kp.has_han(t) and not re.search("[\u3040-\u30ff]", t):      # 중국어만 규칙표(일본어 가나는 번역기로)
+                ov = _kp.option_value(t)
+                if ov["value"]:
+                    mapping[t] = ov["value"]
+                    continue
+            pending.append((t, _kp.strip_cn(t) or t))      # 번역기엔 지우기만 한 원문(섞으면 「한국어」로 오판)
+        provider, translated = ("rules" if mapping and any(mapping[k] != k for k in mapping) else "none"), False
+        if any(mapping[k] != k for k in mapping):
+            translated = True
+        batches, cur, size = [], [], 0
+        for t, pre in pending:
+            if cur and (len(cur) >= 15 or size + len(pre) + 1 > 450):
+                batches.append(cur)
+                cur, size = [], 0
+            cur.append((t, pre))
+            size += len(pre) + 1
+        if cur:
+            batches.append(cur)
+        for batch in batches[:12]:                  # 한 번에 최대 12묶음(≈180값) — 나머지는 다음 번역에서
+            out = self.translate_product({"title": "", "description": "\n".join(p for _t, p in batch)})
+            prov = out.get("provider", "none")
+            ok = prov not in ("none", "stub", "") and not str(prov).endswith("-fallback")
             ko_lines = [l.strip() for l in str(out.get("description_ko") or "").split("\n") if l.strip()]
-            if translated and len(ko_lines) == len(uniq):
-                mapping = {uniq[i]: ko_lines[i] for i in range(len(uniq))}
-            else:
-                mapping = {t: t for t in uniq}      # 매핑 어긋나면 원문 유지(가짜 번역 금지)
-                translated = False
+            if ok and len(ko_lines) == len(batch):
+                for (t, _pre), ko in zip(batch, ko_lines):
+                    mapping[t] = _kp.polish_ko(ko) or ko
+                provider, translated = prov, True
+        for t in uniq:
+            mapping.setdefault(t, t)                # 못 옮긴 값은 원문 그대로(가짜 번역 0) — 등록 단계가 값 단위로 보류
         out_opts = []
         for o in opts:
             nm = str(o.get("name") or "").strip()
