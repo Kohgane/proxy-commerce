@@ -76,13 +76,13 @@ def rules_hash(r: dict | None = None) -> str:
 def save_rules_override(r: dict | None) -> None:
     """관리자 덮어쓰기(빈 값이면 기본으로). 모양이 틀리면 ValueError."""
     if r:
-        for k in ("delete_cn", "delete_ko", "price_re", "ban_ko", "ban_cn"):
+        for k in ("delete_cn", "delete_ko", "price_re", "ban_ko", "ban_cn", "promo_img"):
             if k in r and not all(isinstance(x, str) for x in r[k]):
                 raise ValueError(f"{k}는 문자열 목록이어야 합니다")
         for k in ("replace", "colors", "replace_ko"):
             if k in r and not all(isinstance(x, list) and len(x) == 2 for x in r[k]):
                 raise ValueError(f"{k}는 [원문, 한국어] 쌍 목록이어야 합니다")
-        for k in ("price_re", "ban_ko", "ban_cn"):
+        for k in ("price_re", "ban_ko", "ban_cn", "promo_img"):
             for p in r.get(k) or []:
                 try:
                     re.compile(p)
@@ -179,6 +179,19 @@ def ban_hits(text: str) -> List[str]:
     s = str(text or "")
     out: List[str] = []
     for p in list(r.get("ban_ko") or []) + list(r.get("ban_cn") or []):
+        for m in re.finditer(p, s):
+            frag = m.group(0).strip()
+            if frag and frag not in out:
+                out.append(frag)
+    return out
+
+
+def promo_hits(text: str) -> List[str]:
+    """T3: 이미지 OCR 글(원문·번역문)의 판촉 어휘 — 찾은 조각 그대로(프로모션 의심 판정)."""
+    r = rules()
+    s = str(text or "")
+    out: List[str] = []
+    for p in r.get("promo_img") or []:
         for m in re.finditer(p, s):
             frag = m.group(0).strip()
             if frag and frag not in out:

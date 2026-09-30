@@ -44,6 +44,13 @@
     {% endfor %}
   </fieldset>
 
+  {# T4(오너 2026-09-30-H): 카드 → 마켓 선택 → **쿠팡에서 보이는 모습**(전송 0회, 등록과 같은 빌더) → 사전검증 → 등록 #}
+  <section class="m5-cp" data-role="m5-coupang-preview" aria-live="polite">
+    <div class="m5-cp-head"><span class="m5-legend">쿠팡에서 보이는 모습</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="m5CpLoad" data-role="m5-cp-load">다시 보기</button></div>
+    <div id="m5CpBody" class="m5-note">쿠팡 기준으로 만드는 중…</div>
+  </section>
+
   {% if m5.blocked %}<p class="m5-block" data-role="m5-blocked">{{ m5.blocked }}</p>{% endif %}
   <button type="button" class="btn btn-ghost m5-btn" id="m5Check" data-role="m5-check">사전검증</button>
   <div id="m5Checks" class="m5-checks" data-role="m5-checks" aria-live="polite"></div>
@@ -82,6 +89,22 @@
   .m5-fix { display: inline-block; margin-top: 4px; }
   .m5-block { color: var(--danger); margin: 8px 0 0; }
   .m5-checks, .m5-done { margin-top: 10px; }
+  .m5-cp { margin: 16px 0 4px; }
+  .m5-cp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .m5-cp-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 16px);
+                padding: 12px; box-shadow: var(--shadow-sm); }
+  .m5-cp-sum { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .m5-cp-car { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; max-width: 100%;
+               padding-bottom: 6px; }
+  .m5-cp-car img { flex: 0 0 82%; max-width: 82%; aspect-ratio: 1 / 1; object-fit: contain; background: var(--bg);
+                   border-radius: 12px; scroll-snap-align: start; }
+  .m5-cp-name { font-weight: 700; font-size: 1.02rem; line-height: 1.45; margin: 10px 0 4px; word-break: break-word; }
+  .m5-cp-price { font-size: 1.25rem; font-weight: 800; margin: 2px 0 8px; }
+  .m5-cp-sel { width: 100%; min-height: 48px; border: 1px solid var(--border); border-radius: 12px; padding: 0 10px;
+               background: var(--surface); font-size: 1rem; }
+  .m5-cp-ship { color: var(--text-muted); font-size: .92rem; margin: 8px 0; }
+  .m5-cp-det { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .m5-cp-det img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; background: var(--bg); }
   .m5-res { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
             background: var(--surface); word-break: break-word; }
   .m5-res.is-ok { border-color: var(--success); }
@@ -113,6 +136,49 @@
   }
   function resetGo() { okMarkets = []; goBtn.disabled = true; goBtn.textContent = '등록'; }
   root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; } });
+
+  // T4: 쿠팡에서 보이는 모습 — 서버가 등록과 같은 빌더로 만든 것을 그대로 그린다(화면이 따로 계산하지 않는다).
+  var cpBody = document.getElementById('m5CpBody');
+  function won(n) { return (n == null) ? '' : Number(n).toLocaleString('ko-KR') + '원'; }
+  function loadCoupang() {
+    if (!cpBody) return;
+    cpBody.className = 'm5-note'; cpBody.textContent = '쿠팡 기준으로 만드는 중…';
+    fetch('/seller/m/item/' + encodeURIComponent(itemId) + '/coupang-preview', {credentials: 'same-origin'})
+      .then(function (r) { return r.json().catch(function () { return {ok: false, error: 'HTTP ' + r.status}; }); })
+      .then(function (d) {
+        if (!d || !d.ok) { cpBody.textContent = (d && d.error) || '미리보기를 만들지 못했어요.'; return; }
+        var sum = '<div class="m5-cp-sum" data-role="m5-cp-summary">' +
+          '<span class="pc-badge ' + (d.unresolved ? 'pc-badge-danger' : 'pc-badge-on') + '">미해석 값 ' + (d.unresolved || 0) + '개</span>' +
+          '<span class="pc-badge ' + (d.promo_excluded ? 'pc-badge-off' : 'pc-badge-muted') + '">프로모션 이미지 ' + (d.promo_excluded || 0) + '장 제외</span>' +
+          ((d.ad_claims || []).length ? '<span class="pc-badge pc-badge-danger">표시광고 위험 ' + d.ad_claims.length + '</span>' : '') +
+          (d.estimated ? '<span class="pc-badge pc-badge-muted">예상 모습</span>' : '') + '</div>';
+        var car = (d.images || []).length
+          ? '<div class="m5-cp-car" data-role="m5-cp-images">' + d.images.map(function (u, i) {
+              return '<img src="' + esc(u) + '" alt="' + (i + 1) + '번째 이미지" referrerpolicy="no-referrer" loading="lazy">'; }).join('') + '</div>'
+          : '<div class="m5-note">대표 이미지가 없어요.</div>';
+        var price = d.price_min ? (d.price_min === d.price_max ? won(d.price_min) : won(d.price_min) + ' ~ ' + won(d.price_max)) : '판매가를 아직 못 냈어요';
+        var sel = (d.items || []).length
+          ? '<select class="m5-cp-sel" data-role="m5-cp-options" aria-label="옵션 선택">' + d.items.map(function (it) {
+              return '<option>' + esc(it.label) + (it.price ? ' — ' + won(it.price) : '') + (it.unresolved ? ' (미해석)' : '') + '</option>'; }).join('') + '</select>'
+          : '';
+        var det = (d.detail_images || []).length
+          ? '<div class="m5-note" style="margin-top:10px">상세 이미지(순서대로)</div><div class="m5-cp-det" data-role="m5-cp-detail">' +
+            d.detail_images.map(function (u) { return '<img src="' + esc(u) + '" alt="상세" referrerpolicy="no-referrer" loading="lazy">'; }).join('') + '</div>'
+          : '';
+        var notes = (d.holds || []).concat(d.notes || []).concat(d.ad_claims || []);
+        cpBody.className = 'm5-cp-card';
+        cpBody.innerHTML = sum + car +
+          '<div class="m5-cp-name" data-role="m5-cp-name">' + esc(d.name) + '</div>' +
+          '<div class="m5-cp-price" data-role="m5-cp-price">' + price + '</div>' + sel +
+          '<div class="m5-cp-ship" data-role="m5-cp-ship">' + esc(d.shipping) + '</div>' + det +
+          (notes.length ? '<ul class="m5-note" style="margin:10px 0 0;padding-left:1.1rem">' +
+            notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>' : '');
+      })
+      .catch(function (e) { cpBody.textContent = '네트워크 오류 — ' + ((e && e.message) || e); });
+  }
+  var cpBtn = document.getElementById('m5CpLoad');
+  if (cpBtn) cpBtn.addEventListener('click', loadCoupang);
+  loadCoupang();
 
   checkBtn.addEventListener('click', function () {
     var markets = picked();
