@@ -235,3 +235,63 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
         if len(cand) <= limit:
             return cand
     return v[:limit].rstrip(" /")
+
+
+# ── J0(오너 2026-09-30-J): 브랜드 한자 → 병음 대문자 ─────────────────────────────
+# 오너 규칙: 상품명 **맨 앞**이 한자 2~4자이고 그 글자가 소싱처의 브랜드·가게 필드와 **일치**하면 브랜드로 보고
+# 번역하지 않는다(懒小姐 → 「게으른 아가씨」 직역 금지) → 병음 대문자(LANXIAOJIE) + 「브랜드 표기 — 확인」 배지.
+# 일치하지 않으면 평소대로 번역. 필드가 비어 있으면 **판정하지 않는다**(제목만 보고 브랜드라 짐작하지 않음).
+BRAND_FIELDS = ("brand", "shop_name", "shop", "seller_nick")
+_SHOP_SUFFIX = re.compile(r"(官方旗舰店|旗舰店|专营店|专卖店|官方店|企业店|工厂店|品牌店|直营店|店)$")
+_HAN_ONLY = re.compile("^[㐀-䶿一-鿿]+$")
+
+
+def romanize(han: str) -> str:
+    """한자 → 병음 대문자 붙여쓰기(성조 없음). 라이브러리가 없거나 못 옮긴 글자가 있으면 빈 문자열(정직)."""
+    try:
+        from pypinyin import lazy_pinyin
+    except Exception:
+        return ""
+    parts = lazy_pinyin(str(han or ""))
+    out = "".join(parts).upper()
+    return out if out and re.fullmatch(r"[A-Z]+", out) else ""
+
+
+def _brand_core(field: str, value: str) -> str:
+    v = str(value or "").strip().translate(_FW)
+    if field != "brand":
+        v = _SHOP_SUFFIX.sub("", v)
+    v = re.split(r"[/(（\s]", v, maxsplit=1)[0].strip()       # 「懒小姐/LANXIAOJIE」 같은 병기는 앞쪽만
+    return v
+
+
+def brand_prefix(title: str, extra: dict | None) -> Dict | None:
+    """`{han, latin, field, rest}` 또는 None. 제목 맨 앞 한자 2~4자 == 브랜드·가게 필드(접미 「旗舰店」 등 뗌)."""
+    t = str(title or "").strip().translate(_FW)
+    ex = extra or {}
+    for f in BRAND_FIELDS:
+        core = _brand_core(f, ex.get(f) or "")
+        if not (2 <= len(core) <= 4 and _HAN_ONLY.match(core) and t.startswith(core)):
+            continue
+        latin = romanize(core)
+        if not latin:
+            return None
+        return {"han": core, "latin": latin, "field": f, "rest": t[len(core):].strip()}
+    return None
+
+
+def title_for_translator(title: str, extra: dict | None) -> tuple:
+    """번역기에 보낼 제목 + 브랜드 판정. 브랜드면 그 글자를 떼고 보낸다(번역기가 직역하지 못하게)."""
+    info = brand_prefix(title, extra)
+    src = info["rest"] if info else str(title or "")
+    return (strip_cn(src) or src), info
+
+
+def attach_brand(title_ko: str, info: Dict | None) -> str:
+    """번역된 제목 앞에 병음 브랜드를 붙인다(이미 붙어 있으면 그대로)."""
+    s = str(title_ko or "").strip()
+    if not info:
+        return s
+    if s.upper().startswith(info["latin"]):
+        return s
+    return f"{info['latin']} {s}".strip()

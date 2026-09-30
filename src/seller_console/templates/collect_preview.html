@@ -91,6 +91,12 @@
           {% if _att|length > 1 %}<span style="color:var(--gold)" title="{% for a in _att %}{{ a.provider }}:{{ '성공' if a.ok else '실패' }}{% if a.ms %}({{ a.ms }}ms){% endif %}{{ ' · ' if not loop.last }}{% endfor %}">· {{ _att|length }}차 폴백으로 성공</span>{% endif %}
         </div>
         {% endif %}
+        {# J0: 제목 맨 앞 한자가 소싱처 브랜드·가게 이름과 같아 번역하지 않고 병음으로 적었다 — 오너 확인용. #}
+        {% set _br = extra.get('brand_romanized') if extra else None %}
+        {% if _br %}
+        <div class="small mb-1" data-role="brand-romanized"><span class="pc-badge pc-badge-off">브랜드 표기 — 확인</span>
+          <span class="text-muted">{{ _br.han }} → {{ _br.latin }} (소싱처 {{ '브랜드' if _br.field == 'brand' else '가게 이름' }}과 같아 번역하지 않음)</span></div>
+        {% endif %}
         <input type="text" class="form-control" id="editTitle" placeholder="상품 제목">
         <div id="origTitleWrap" class="form-text small d-none">원문: <span id="origTitle" class="text-muted"></span>
           <a href="javascript:void(0)" onclick="restoreOrigTitle()" class="ms-1">원문으로 되돌리기</a></div>

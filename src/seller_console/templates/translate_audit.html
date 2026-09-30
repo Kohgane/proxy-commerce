@@ -1,0 +1,150 @@
+{% extends "_base.html" %}
+{% block title %}번역 정리 점검{% endblock %}
+{% block content %}
+{# J2(오너 2026-09-30-J): 번역 정리가 **실제로** 어디까지 됐는지 — 저장된 값 그대로 센 숫자.
+   백필은 관리자만(번역기 무료 한도를 쓰는 결정은 오너). JSON은 ?format=json(볼트·스크립트용). #}
+<div class="container-fluid py-4">
+  <div class="console-kpi-label mb-1">수집</div>
+  <h1 class="h4 fw-bold mb-1"><i class="bi bi-translate"></i> 번역 정리 점검</h1>
+  <p class="text-muted small mb-0">
+    최근 {{ days }}일 동안 담은 상품의 <strong>옵션 값</strong>(서로 다른 값 기준)과 <strong>상품명</strong>이
+    한국어로 얼마나 옮겨졌는지 셉니다. 규칙표로 옮긴 값은 비용이 들지 않고, 남은 값만 번역기로 갑니다.
+  </p>
+  <hr class="pc-hairline mt-2 mb-4">
+
+  <div class="row g-3 mb-3" data-role="ta-summary">
+    {% set c = got.counts %}
+    {% for k, label, cls in [("rule", "규칙표로 옮김", "console-kpi-success"), ("translator", "번역기로 옮김", "console-kpi-success"), ("left", "외국어 남음", "console-kpi-warning")] %}
+    <div class="col-6 col-lg-3">
+      <div class="op-card console-card console-kpi-card {{ cls }} h-100" data-role="ta-{{ k }}">
+        <div class="op-card-body">
+          <div class="console-kpi-label mb-1">{{ label }}</div>
+          <div class="console-stat-value">{{ c[k] }}<span class="ta-unit">값</span></div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="col-6 col-lg-3">
+      <div class="op-card console-card console-kpi-card h-100" data-role="ta-total">
+        <div class="op-card-body">
+          <div class="console-kpi-label mb-1">외국어 옵션 값(고유)</div>
+          <div class="console-stat-value">{{ got["values"] }}<span class="ta-unit">값</span></div>
+          <div class="small text-muted">남은 비율 {{ "%.0f"|format(got.left_ratio * 100) if got.left_ratio is not none else "—" }}%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="op-card mb-3" data-role="ta-queue">
+    <div class="op-card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+      <div class="small ta-lead">
+        <strong>번역기 큐</strong> — 오늘(KST {{ q.day }}) 보낸 값 <strong data-role="ta-today">{{ q.today }}</strong> / 상한 {{ q.cap }}
+        · 대기 <strong>{{ q.queued }}</strong> · 끝남 {{ q.done }} · 실패 {{ q.failed }}
+        {% if q.waiting_cap %}<span class="pc-badge pc-badge-off ms-1">오늘 상한 — 내일 이어서</span>{% endif %}
+        {% if q.paused %}<div class="pc-status pc-status-danger small mt-2" data-role="ta-paused">{{ q.pause_reason }}</div>{% endif %}
+        <div class="text-muted mt-1">상한은 환경변수 <code>{{ q.env }}</code>. 실패가 {{ q.fail_pause_at }}회 쌓이면 스스로 멈춥니다(지금 {{ q.failed_since_resume }}회).</div>
+      </div>
+      {% if is_admin %}
+      <div class="d-flex flex-wrap gap-2">
+        {% if q.paused %}<button type="button" class="btn btn-ghost" id="taResume"><i class="bi bi-play"></i> 재개</button>{% endif %}
+        <button type="button" class="btn btn-cta" id="taBackfill" data-days="{{ days }}"><i class="bi bi-arrow-repeat"></i> 기존 상품 번역 정리(백필)</button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div id="taMsg" class="mb-3" aria-live="polite"></div>
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-6">
+      <div class="op-card h-100">
+        <div class="op-card-body">
+          <div class="console-kpi-label mb-2">번역기가 옮긴 값 — 표본 {{ got.translator_samples|length }}개</div>
+          {% if got.translator_samples %}
+          <table class="table table-sm align-middle mb-0" data-role="ta-samples">
+            <thead><tr><th>원문</th><th>한국어</th></tr></thead>
+            <tbody>{% for r in got.translator_samples %}<tr><td class="small">{{ r.src }}</td><td>{{ r.ko }}</td></tr>{% endfor %}</tbody>
+          </table>
+          {% else %}<div class="op-empty small">아직 번역기로 옮긴 값이 없습니다.</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-xl-6">
+      <div class="op-card h-100">
+        <div class="op-card-body">
+          <div class="console-kpi-label mb-2">외국어가 남은 값 — {{ got.left_samples|length }}개까지</div>
+          {% if got.left_samples %}
+          <table class="table table-sm align-middle mb-0" data-role="ta-left">
+            <thead><tr><th>원문</th><th>지금 값</th></tr></thead>
+            <tbody>{% for r in got.left_samples %}<tr><td class="small">{{ r.src }}</td><td class="text-muted small">{{ r.ko or "—" }}</td></tr>{% endfor %}</tbody>
+          </table>
+          {% else %}<div class="op-empty small">외국어가 남은 옵션 값이 없습니다.</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="op-card mt-3" data-role="ta-titles">
+    <div class="op-card-body">
+      <div class="console-kpi-label mb-2">상품명 전후 — {{ got.titles|length }}건
+        · 판촉 직역 남음 <strong data-role="ta-promo-left">{{ got.titles_promo_left }}</strong>
+        · 번역 안 됨·외국어 남음 <strong>{{ got.titles_han_left }}</strong></div>
+      {% if got.titles %}
+      <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0 table-cards">
+        <thead><tr><th>원문</th><th>정리 전</th><th>지금</th></tr></thead>
+        <tbody>{% for t in got.titles %}
+          <tr><td class="small text-muted" data-label="원문">{{ t.src }}</td>
+            <td class="small" data-label="정리 전">{{ t.before or "—" }}</td>
+            <td data-label="지금">{{ t.after or "(번역 없음)" }}{% if t.promo_left %} <span class="pc-badge pc-badge-danger">{{ t.promo_left|join(" · ") }}</span>{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+      </div>
+      {% else %}<div class="op-empty small">외국어 상품명이 없습니다.</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="op-card mt-3" data-role="ta-preview">
+    <div class="op-card-body small">
+      <div class="console-kpi-label mb-2">쿠팡 미리보기 「예상 모습」 — 최근 {{ pv.hours }}시간</div>
+      {{ pv.estimated }} / {{ pv.total }}회
+      {% if pv.ratio is not none %}({{ "%.0f"|format(pv.ratio * 100) }}%){% endif %}
+      {% if pv.over %}<span class="pc-badge pc-badge-off ms-1">기준 {{ (pv.threshold * 100)|int }}% 넘음 — 카테고리 메타 캐시 필요</span>{% endif %}
+      {% if pv.reasons %}<div class="text-muted mt-1">사유: {% for r, n in pv.reasons.items() %}{{ r }} {{ n }}{{ " · " if not loop.last }}{% endfor %}</div>{% endif %}
+    </div>
+  </div>
+</div>
+
+<style>
+  .ta-unit { font-size: 1.1rem; color: var(--text-muted); font-family: var(--font-ui); margin-left: .15em; }
+  .ta-lead { max-width: 64ch; }
+  @media (max-width: 767.98px) { #taBackfill, #taResume { width: 100%; min-height: 44px; } }
+</style>
+<script>
+(function () {
+  var msg = document.getElementById("taMsg");
+  function say(kind, text) {
+    msg.innerHTML = "";
+    var d = document.createElement("div");
+    d.className = "pc-status pc-status-" + kind + " small";
+    d.textContent = text;
+    msg.appendChild(d);
+  }
+  function post(url, body, btn) {
+    btn.disabled = true;
+    fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})})
+      .then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+      .then(function (res) {
+        var d = res[1] || {};
+        if (!res[0] || d.ok === false) { say("danger", d.error || d.message || "처리하지 못했어요 — 잠시 뒤 다시 눌러 주세요."); btn.disabled = false; return; }
+        say("info", d.message || "다시 시작했어요.");
+        setTimeout(function () { location.reload(); }, 1500);
+      })
+      .catch(function () { say("danger", "연결이 끊겼어요 — 잠시 뒤 다시 눌러 주세요."); btn.disabled = false; });
+  }
+  var b = document.getElementById("taBackfill");
+  if (b) b.addEventListener("click", function () { post("/seller/collect/translate-audit/backfill", {days: Number(b.dataset.days) || 90}, b); });
+  var r = document.getElementById("taResume");
+  if (r) r.addEventListener("click", function () { post("/seller/collect/option-translate/resume", {}, r); });
+})();
+</script>
+{% endblock %}

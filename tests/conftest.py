@@ -33,6 +33,11 @@ os.environ.setdefault("FX_USE_LIVE", "0")
 #   펴기를 재는 계약만 명시적으로 켜거나 `resolve_short_link`를 목킹한다.
 os.environ.setdefault("KGP_SHORT_LINK_RESOLVE", "0")
 
+# J1: 수집하면 옵션 값·상품명 번역 큐가 **백그라운드 스레드**로 번역기(외부 HTTP)를 부른다(운영 기본 ON).
+#   테스트에서 켜 두면 계약마다 실 번역 API를 두드린다 — 큐 접수까지만 재고, 워커는 끈다.
+#   워커를 재는 계약은 OPTION_TRANSLATE_AUTO_SYNC=1 + 번역기 목킹으로 명시적으로 돌린다.
+os.environ.setdefault("OPTION_TRANSLATE_AUTO_OFF", "1")
+
 
 # ──────────────────────────────────────────────────────────
 # v86-K: KGP_REQUIRE_BROWSER — 인프라 부재 시 '조용한 skip' 금지(실패로 전환).

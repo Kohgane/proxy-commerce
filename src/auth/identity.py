@@ -80,6 +80,8 @@ USER_SCOPED_TABLES = (
     ("image_ko_blobs", "seller_id", "번역본 이미지", "", False, "keep"),
     # D3-8: 이미지 번역 자동 큐(장 단위) — 병합되면 대기 중인 장도 정본 계정으로 옮긴다.
     ("image_translate_queue", "user_id", "이미지 번역 대기열", "id", False, "keep"),
+    # J1: 옵션 값·상품명 번역 큐(상품 단위) — 병합되면 대기 중인 상품도 정본 계정으로(워커가 그 계정으로 읽는다).
+    ("option_translate_queue", "user_id", "옵션 번역 대기열", "id", False, "keep"),
     ("orders", "user_id", "주문", "id", True, "keep"),
 )
 
