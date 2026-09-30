@@ -191,6 +191,8 @@ jobs:
             tests/test_v45_token_bulk_delete.py \
             tests/test_v49_db_metering.py \
             tests/test_v88_b_impl_translation_jobs.py \
+            tests/test_auth1_gunicorn_two_workers.py \
+            tests/test_auth1_signup_login.py \
             2>&1 | tee /tmp/pytest_pg.txt
           tail -1 /tmp/pytest_pg.txt
 

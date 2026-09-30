@@ -53,6 +53,21 @@
           <div class="alert alert-{{ 'danger' if cat in ('danger', 'auth_email', 'auth_oauth') else ('warning' if cat in ('warning',) else ('success' if cat == 'success' else ('info' if cat == 'info' else cat))) }} py-2 small">{{ msg }}</div>
         {% endfor %}
       {% endwith %}
+      {# AUTH-1(2026-09-30): POST 실패는 flash가 아니라 **이 응답 안에** 적는다 — 쿠키가 어긋나도 원인이 보인다. #}
+      {% if auth_error %}
+      <div class="alert alert-danger py-2 small" role="alert" data-role="auth-error" data-code="{{ auth_error_code }}">
+        {{ auth_error }} <span class="d-block opacity-75 mt-1">코드 {{ auth_error_code }}</span>
+      </div>
+      {% endif %}
+      {% if auth_notice %}
+      <div class="alert alert-success py-2 small" role="status" data-role="auth-notice">{{ auth_notice }}</div>
+      {% endif %}
+      {% if auth_resend %}
+      <form method="post" action="/auth/verify-email/resend" class="mb-3" data-role="auth-resend">
+        <input type="hidden" name="email" value="{{ auth_email_value }}">
+        <button type="submit" class="btn btn-outline-light btn-sm w-100">인증 메일 다시 보내기</button>
+      </form>
+      {% endif %}
 
       <!-- 자동 로그인 (체크 안 하면 브라우저 종료 시 자동 로그아웃 → 개인정보 보호) -->
       <div class="form-check d-flex align-items-center gap-2 mb-3">
@@ -132,11 +147,13 @@
         <input type="hidden" name="remember" id="emailRemember" value="0">
         <div class="mb-3">
           <label class="form-label small" for="login-email">이메일</label>
-          <input id="login-email" type="email" name="email" class="form-control" placeholder="you@example.com" required>
+          <input id="login-email" type="email" name="email" class="form-control" placeholder="you@example.com" required
+                 autocomplete="email" value="{{ auth_email_value or '' }}">
         </div>
         <div class="mb-3">
           <label class="form-label small" for="login-password">비밀번호</label>
-          <input id="login-password" type="password" name="password" class="form-control" placeholder="••••••••" required>
+          <input id="login-password" type="password" name="password" class="form-control" placeholder="••••••••" required
+                 autocomplete="current-password" {% if auth_email_value %}autofocus{% endif %}>
         </div>
         <button type="submit" class="btn btn-primary w-100">로그인</button>
       </form>
@@ -171,7 +188,7 @@
       </script>
 
       <div class="auth-foot text-center mt-3 small">
-        <a href="/auth/signup" class="text-decoration-none">회원가입</a>
+        <a href="/auth/signup{% if next_url and next_url != '/seller/dashboard' %}?next={{ next_url|urlencode }}{% endif %}" class="text-decoration-none" data-role="to-signup">회원가입</a>
         &nbsp;·&nbsp;
         <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none text-muted"
                 onclick="document.getElementById('forgotForm').style.display='block';">비밀번호 찾기</button>

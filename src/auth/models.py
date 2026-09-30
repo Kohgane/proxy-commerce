@@ -8,6 +8,13 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 
+def _flag(v) -> bool:
+    """시트 칸의 참/거짓 — "1"·1·True·"true"·"TRUE" 모두 참."""
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("1", "1.0", "true", "yes", "y")
+
+
 @dataclass
 class User:
     """사용자 모델."""
@@ -53,13 +60,15 @@ class User:
         except (json.JSONDecodeError, TypeError):
             social = []
         return cls(
-            user_id=row.get("user_id", ""),
-            email=row.get("email", ""),
-            name=row.get("name", ""),
+            user_id=str(row.get("user_id", "") or ""),
+            email=str(row.get("email", "") or ""),
+            name=str(row.get("name", "") or ""),
             avatar_url=row.get("avatar_url", ""),
-            role=row.get("role", "seller"),
-            email_verified=row.get("email_verified", "0") == "1",
-            active=row.get("active", "1") == "1",
+            role=str(row.get("role", "seller") or "seller"),
+            # AUTH-1(2026-09-30): gspread 6 `get_all_records`는 "1"을 **숫자 1**로 준다 — `== "1"`이면
+            #   모든 시트 계정이 비활성으로 읽혀 이메일 로그인이 통째로 막혔다. 문자열·숫자·불리언 다 받는다.
+            email_verified=_flag(row.get("email_verified", "0")),
+            active=_flag(row.get("active", "1")),
             created_at=row.get("created_at", ""),
             last_login_at=row.get("last_login_at") or None,
             social_accounts=social,

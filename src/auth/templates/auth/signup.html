@@ -30,6 +30,11 @@
           <div class="alert alert-{{ cat }} py-2 small">{{ msg }}</div>
         {% endfor %}
       {% endwith %}
+      {% if auth_error %}
+      <div class="alert alert-danger py-2 small" role="alert" data-role="auth-error" data-code="{{ auth_error_code }}">
+        {{ auth_error }} <span class="d-block opacity-75 mt-1">코드 {{ auth_error_code }}</span>
+      </div>
+      {% endif %}
 
       <!-- 소셜 가입 버튼 -->
       {% if kakao_status.is_configured %}
@@ -72,23 +77,25 @@
 
       <!-- 이메일 가입 폼 -->
       <form method="post" action="/auth/signup">
+        <input type="hidden" name="next" value="{{ next_url or '' }}">
         <div class="mb-3">
           <label class="form-label small">이름</label>
-          <input type="text" name="name" class="form-control" placeholder="홍길동">
+          <input type="text" name="name" class="form-control" placeholder="홍길동" autocomplete="name" value="{{ auth_name_value or '' }}">
         </div>
         <div class="mb-3">
           <label class="form-label small">이메일</label>
-          <input type="email" name="email" class="form-control" placeholder="you@example.com" required>
+          <input type="email" name="email" class="form-control" placeholder="you@example.com" required autocomplete="email" value="{{ auth_email_value or '' }}">
         </div>
         <div class="mb-3">
           <label class="form-label small">비밀번호 (8자 이상)</label>
-          <input type="password" name="password" class="form-control" placeholder="••••••••" required minlength="8">
+          <input type="password" name="password" class="form-control" placeholder="••••••••" required minlength="8" autocomplete="new-password">
         </div>
         <button type="submit" class="btn btn-primary w-100">이메일로 가입</button>
+        <p class="small text-muted mt-2 mb-0">가입하면 바로 로그인됩니다.</p>
       </form>
 
       <div class="text-center mt-3 small">
-        <a href="/auth/login" class="text-decoration-none">이미 계정이 있으신가요? 로그인</a>
+        <a href="/auth/login{% if next_url and next_url != '/seller/dashboard' %}?next={{ next_url|urlencode }}{% endif %}" class="text-decoration-none">이미 계정이 있으신가요? 로그인</a>
       </div>
     </div>
   </div>
