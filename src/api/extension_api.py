@@ -229,7 +229,9 @@ def _translate_payload(payload: dict) -> dict:
     try:
         from src.seller_console.ai.translator import AITranslator
 
-        tr = AITranslator().translate_product({"title": title, "description": description})
+        # T1(2026-09-30-H): 번역 **전** 판촉어·가격을 지우고(现货→「재고 있음」 직역 방지), **후** 한 번 더 정리.
+        from src.collectors.ko_polish import strip_cn as _strip_cn
+        tr = AITranslator().translate_product({"title": _strip_cn(title) or title, "description": description})
         out["title_ko"] = (tr.get("title_ko") or "").strip() or title
         out["description_ko"] = (tr.get("description_ko") or "").strip() or description
         out["provider"] = tr.get("provider", "stub")
@@ -249,6 +251,11 @@ def _translate_payload(payload: dict) -> dict:
         from src.collectors.universal_scraper import strip_placeholder_tokens as _strip_ph
         out["title_ko"] = _strip_ph(out["title_ko"])
         out["description_ko"] = _strip_ph(out["description_ko"])
+    except Exception:
+        pass
+    try:
+        from src.collectors.ko_polish import polish_ko as _polish
+        out["title_ko"] = _polish(out["title_ko"]) or out["title_ko"]
     except Exception:
         pass
     return out
