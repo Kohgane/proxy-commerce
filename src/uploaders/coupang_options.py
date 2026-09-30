@@ -357,7 +357,10 @@ def resolve_option_name(name: str, meta_names, *, name_ko: str = "", override: s
 
     `{meta, how, candidate, why}` — `meta`가 비면 보류. `candidate`는 용어집·번역기가 낸 한국어(메타엔 없음).
     """
-    names = {_norm(n): n for n in meta_names}
+    from src.collectors.ko_polish import MAX_OPTION_NAME
+    # K-0: 쿠팡 attributeTypeName 25자 — 넘는 이름은 **자르지 않고** 후보에서 뺀다(보류 → 「미해석」).
+    names = {_norm(n): n for n in meta_names if len(str(n or "")) <= MAX_OPTION_NAME}
+    long_names = [n for n in meta_names if len(str(n or "")) > MAX_OPTION_NAME]
     nm = str(name or "").strip()
     ov = str(override or "").strip()
     if ov:
@@ -372,6 +375,11 @@ def resolve_option_name(name: str, meta_names, *, name_ko: str = "", override: s
     if ko and ko != nm and _norm(ko) in names:
         return {"meta": names[_norm(ko)], "how": "translator", "candidate": ko, "why": ""}
     cand = g or (ko if ko != nm else "")
+    too_long = [n for n in long_names if _norm(n) in {_norm(x) for x in (ov, nm, g, ko) if x}]
+    if too_long:
+        return {"meta": "", "how": "", "candidate": cand,
+                "why": f"옵션 이름 미해석 — 「{too_long[0]}」이 쿠팡 옵션명 한도 {MAX_OPTION_NAME}자를 넘습니다(자르지 않음). "
+                       "다른 메타 속성을 골라 주세요"}
     return {"meta": "", "how": "", "candidate": cand,
             "why": (f"옵션 「{nm}」" + (f"(→{cand})" if cand else "")
                     + "이 이 카테고리 메타 속성에 없어 SKU별로 나눌 수 없습니다 — 메타 속성 중에서 골라 주세요")}

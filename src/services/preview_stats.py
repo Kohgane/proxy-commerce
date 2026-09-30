@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 _PREFIX = "cp_preview:h:"
+_START = "cp_preview:started"
 THRESHOLD = 0.10
 
 
@@ -26,6 +27,8 @@ def record(estimated: bool, reason: str = "", now=None) -> None:
     k = _key(now)
     try:
         with _LOCK:
+            if not st.state_get(_START).get("at"):           # K-3: 카운터 시작 시각(보고에 명시)
+                st.state_set(_START, {"at": now.astimezone(timezone.utc).isoformat()})
             v = st.state_get(k)
             v["total"] = int(v.get("total") or 0) + 1
             if estimated:
@@ -54,5 +57,6 @@ def window(hours: int = 24, now=None) -> dict:
             reasons[r] = reasons.get(r, 0) + int(n)
     ratio = round(est / total, 3) if total else None
     return {"hours": int(hours), "total": total, "estimated": est, "ratio": ratio, "threshold": THRESHOLD,
+            "started_at": str(st.state_get(_START).get("at") or ""),
             "over": bool(ratio is not None and ratio > THRESHOLD),
             "reasons": dict(sorted(reasons.items(), key=lambda x: -x[1]))}

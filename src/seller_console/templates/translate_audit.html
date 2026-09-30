@@ -106,6 +106,7 @@
   <div class="op-card mt-3" data-role="ta-preview">
     <div class="op-card-body small">
       <div class="console-kpi-label mb-2">쿠팡 미리보기 「예상 모습」 — 최근 {{ pv.hours }}시간</div>
+      <div class="text-muted mb-1" data-role="ta-preview-start">세기 시작: {{ pv.started_at[:16].replace("T", " ") ~ " UTC" if pv.started_at else "아직 미리보기 호출 없음" }}</div>
       {{ pv.estimated }} / {{ pv.total }}회
       {% if pv.ratio is not none %}({{ "%.0f"|format(pv.ratio * 100) }}%){% endif %}
       {% if pv.over %}<span class="pc-badge pc-badge-off ms-1">기준 {{ (pv.threshold * 100)|int }}% 넘음 — 카테고리 메타 캐시 필요</span>{% endif %}

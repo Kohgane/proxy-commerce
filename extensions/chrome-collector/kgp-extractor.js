@@ -489,8 +489,29 @@
       if (inStock.length) price = inStock.map(function (k) { return k.price; }).sort(function (a, b) { return parseFloat(a) - parseFloat(b); })[0];
     }
     var imgs = (Array.isArray(item.images) ? item.images : []).map(_absUrl).filter(Boolean);
+    // K-1(2026-10-01): 브랜드·가게 이름 — 경로는 **실물 스냅샷에서 읽은 것만**
+    //   (fixtures/realpages/diag/kgp-snapshot-detail-tmall-com-item-htm-id-617129397971.html):
+    //   res.seller.{shopName, sellerNick} · res.componentsVO.storeCardVO.shopName ·
+    //   res.plusViewVO.industryParamVO.enhanceParamList[].{propertyName:"品牌", valueName} ·
+    //   res.componentsVO.extensionInfoVO.infos[].items[].{title:"品牌", text[0]}. 없으면 빈 값(지어내지 않음).
+    var seller = res.seller || {}, comp = res.componentsVO || {};
+    var shop = String(seller.shopName || (comp.storeCardVO && comp.storeCardVO.shopName) || seller.sellerNick || "").trim();
+    var brand = "";
+    try {
+      var ep = res.plusViewVO && res.plusViewVO.industryParamVO && res.plusViewVO.industryParamVO.enhanceParamList;
+      (Array.isArray(ep) ? ep : []).forEach(function (p) {
+        if (!brand && p && p.propertyName === "品牌" && p.valueName) brand = String(p.valueName).trim();
+      });
+      var infos = comp.extensionInfoVO && comp.extensionInfoVO.infos;
+      (Array.isArray(infos) ? infos : []).forEach(function (g) {
+        (g && Array.isArray(g.items) ? g.items : []).forEach(function (it) {
+          if (!brand && it && it.title === "品牌" && Array.isArray(it.text) && it.text[0]) brand = String(it.text[0]).trim();
+        });
+      });
+    } catch (e) {}
     return { ok: !!(skus.length || options.length || item.title), title: String(item.title || ""),
-             images: imgs, options: options, skus: skus, price: price, item_id: String(item.itemId || "") };
+             images: imgs, options: options, skus: skus, price: price, item_id: String(item.itemId || ""),
+             brand: brand.slice(0, 60), shop_name: shop.slice(0, 60) };
   }
   function _taobaoHost() {
     try { return /(^|\.)(taobao|tmall)\.com$/.test((location.hostname || "").toLowerCase()); } catch (e) { return false; }
@@ -2161,6 +2182,9 @@
       detail_fold: detailFold,          // v57 STEP3: 상세 '더보기' 접힘 잔존 여부(정직 표기용)
       thumbnail: gallery[0] || "",
       options: options, skus: skus,
+      // K-1: ICE에서 읽은 브랜드·가게 이름(티몰·타오바오). 없으면 필드를 싣지 않는다(빈 값 덮어쓰기 금지).
+      brand: (ice && ice.brand) || undefined,
+      shop_name: (ice && ice.shop_name) || undefined,
       description: description, detail_specs: specs,
       desc_text: description, desc_images: detailImages,   // v60 STEP2: 상세 텍스트/이미지 명시 분리(브리프 명명)
       desc_source: descSource,   // v78 STEP3: 상세설명 출처(adapter>tier1/ldjson>meta>specs) — meta면 품질 낮음 신호

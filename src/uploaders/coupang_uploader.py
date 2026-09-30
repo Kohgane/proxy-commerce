@@ -950,7 +950,8 @@ class CoupangUploader(BaseUploader):
         r'(Black|White|Blue|Red|Green|Gold|Silver|Brown|Navy|Gray|Grey|Pink|Ivory|Beige|Clear)', re.I)
     _ATTR_SHOE_RE = re.compile(r'\b(2[2-9]0|3[0-1]0)\b')
     _ATTR_NIB_RE = re.compile(r'\b(EF|MF|F|M|B|BB)\b')
-    ATTR_VALUE_MAX = 28                                  # 정본: str(av)[:28]
+    ATTR_VALUE_MAX = 28                                  # 정본: str(av)[:28] — 쿠팡 문서 한도 30자(오너 실측 10-01) 안쪽
+    ATTR_NAME_MAX = 25                                   # 쿠팡 문서 attributeTypeName 「max length: 25 characters」
     ATTR_FALLBACK = ({'attributeTypeName': '수량', 'attributeValueName': '1'},)
 
     @classmethod
@@ -1045,6 +1046,9 @@ class CoupangUploader(BaseUploader):
             if not an or 'gtin' in an.lower():            # gtin = 바코드 계열 → 전송 안 함(정본)
                 continue
             if an in seen:                                # 중복 차원은 먼저 온 것만(정본)
+                continue
+            if len(an) > cls.ATTR_NAME_MAX:               # K-0: 쿠팡 옵션명 25자 — 자르면 다른 속성이 된다 → 빼고 남김
+                blocked.append(f'{an}(옵션명 {cls.ATTR_NAME_MAX}자 초과)')
                 continue
             av = a.get('attributeValueName')
             av = '' if av is None else str(av).strip()

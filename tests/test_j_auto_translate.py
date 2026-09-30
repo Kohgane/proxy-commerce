@@ -248,6 +248,7 @@ def test_preview_estimated_counts_meta_missing(monkeypatch):
     w = preview_stats.window(24)
     assert w["total"] == 2 and w["estimated"] == 1 and w["ratio"] == 0.5 and w["over"]
     assert w["reasons"] == {"카테고리 메타 빈 응답": 1}
+    assert w["started_at"].startswith("20")                                     # K-3: 카운터 시작 시각이 남는다
 
 
 # ⑥ 이미지 글자 모양 · 화면 A ─────────────────────────────────────────────

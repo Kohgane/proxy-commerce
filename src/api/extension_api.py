@@ -987,6 +987,11 @@ def collect_enrich():
         v = data.get(k)
         if isinstance(v, list) and v and not extra.get(k):
             extra[k] = v; changed[k] = len(v)
+    # K-1: 브랜드·가게 이름 — 목록 카드 초안은 상세 보강에서야 ICE를 본다. 기존이 비었으면 채움(fill-only).
+    for k in ("brand", "shop_name"):
+        v = str(data.get(k) or "").strip()[:60]
+        if v and not str(extra.get(k) or "").strip():
+            extra[k] = v; changed[k] = 1
     # F49-T 3부: SKU(ICE 컨텍스트) — 목록 카드 수집의 상세 보강으로도 온다. 기존이 비었으면 채움(fill-only).
     _skus = _clean_skus(data.get("skus"))
     if _skus and not extra.get("skus"):
@@ -1464,6 +1469,8 @@ def collect_from_extension():
         "price_original": payload.get("price", ""),
         "currency": payload.get("currency") or "",   # v42 1-1: USD 기본값 금지
         "brand": payload.get("brand", ""),
+        # K-1: 확장이 ICE에서 읽은 가게 이름(브랜드 판정 재료) — 없으면 키를 안 만든다.
+        **({"shop_name": str(payload.get("shop_name"))[:60]} if payload.get("shop_name") else {}),
         **({"brand_romanized": tr["brand_romanized"]} if tr.get("brand_romanized") else {}),
         "options": payload.get("options", []),
         "reviews": payload.get("reviews", []),
