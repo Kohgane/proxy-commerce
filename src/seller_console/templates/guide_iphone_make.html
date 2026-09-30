@@ -2,42 +2,57 @@
 {% block title %}단축어 만들기(오너){% endblock %}
 {% block content %}
 {# 화면 C — 오너용(관리자만). 문구는 오너 원문 그대로. iOS 화면 이름은 오너 실기기 캡처로 확정. #}
+{% macro cshot(k) %}
+<figure class="make-shot" data-role="shot-{{ k }}">
+  {% if shots.get(k) %}<img src="{{ shots[k] }}" alt="{{ k|upper }} 화면" style="max-width:100%;border-radius:12px">
+  {% else %}<div class="text-muted small">{{ k|upper }} 화면 사진 준비 중</div>{% endif %}
+</figure>
+{% endmacro %}
 <div class="container-fluid py-4" style="max-width:720px">
   <div class="console-kpi-label mb-1">도움말 · 오너용</div>
   <h1 class="h4 fw-bold mb-1">단축어 만들기 (한 번)</h1>
   <p class="text-muted small mb-0">만든 단축어의 iCloud 링크를 아래에 붙여넣으면 유저용 <a href="/seller/guide/iphone">설치하기</a> 화면의 파란 버튼이 그 링크로 열립니다.</p>
   <hr class="pc-hairline mt-2 mb-4">
 
-  {# M3-iOS 실측 결함(오너 2026-09-28): 「URL 열기」에 「단축어 입력」을 바로 넣으면 서버엔 제목 3자만 왔다 —
-     타오바오 앱의 공유 입력은 **제목 텍스트 + URL 두 조각**이고, 그대로 넣으면 첫 조각(제목)만 들어간다.
-     그래서 **URL만 골라 인코딩해서** 보낸다. 동작 라벨은 오너 실기기 캡처로 확정(여기서 지어내지 않는다). #}
+  {# T5(오너 2026-09-30-H): 단축어엔 **판단 로직 0** — 동작 셋으로 고정하고, 공유 글·클립보드 중 무엇을 쓸지는
+     서버가 정한다. 그래야 중국 유저가 한 번 설치한 단축어를 다시 바꿀 일이 없다. 「만약」 분기(PR 802)는 폐기.
+     동작 이름은 오너 실기기 캡처로 확정(여기서 지어내지 않는다). #}
   <ol class="make-steps">
     <li>「단축어」 앱 열기 → 오른쪽 위 「+」.</li>
     <li>위쪽 단축어 이름 옆 「∨」 → 「세부사항」 → 「공유 시트에 표시」 켬 → 「공유 시트 유형」에서 「URL」과 「텍스트」만 체크.</li>
-    <li>동작을 이 순서로 둡니다(「동작 추가」 → 검색창에 이름):
+    <li>동작 <strong>셋만</strong> 이 순서로 둡니다(「동작 추가」 → 검색창에 이름). 「만약」·「URL 인코딩」·「입력에서 URL 가져오기」는 넣지 않습니다:
       <ol class="make-acts" data-role="make-actions">
         <li data-role="act-1"><strong>공유 시트 받기</strong> — 위에서 공유 시트를 켜면 맨 위에 저절로 생깁니다.
-          그 안의 「입력이 없는 경우」는 <strong>「계속」</strong>으로 둡니다.
-          <span class="text-muted d-block" data-role="act-1-why">여기서 「클립보드 가져오기」를 고르면 클립보드가 「단축어 입력」이 돼 버려,
-            공유 시트로 온 건지 복사한 링크로 온 건지 서버가 못 가립니다. 클립보드는 아래 2번의 「그렇지 않으면」에서 가져옵니다(하는 일은 같음).</span></li>
-        <li data-role="act-2"><strong>「만약」</strong> — 조건: 「단축어 입력」 「값이 있음」. 아래 두 갈래가 생깁니다.</li>
-        <li data-role="act-3"><strong>공유 시트 갈래</strong>(「만약」 바로 안):
-          「입력에서 URL 가져오기」(입력은 「단축어 입력」) → 「URL 인코딩」 → 「URL 열기」 — 「URL」 칸에 아래를 그대로 입력:
-          <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}</code>
-          그 뒤에 커서를 두고 키보드 위 파란 「URL 인코딩된 텍스트」 토큰을 누르면 뒤에 붙습니다.
-          <span class="text-muted d-block">「텍스트 가져오기」가 아닙니다: 타오바오 공유는 제목 글 + 링크 두 조각이라, 텍스트로 가져오면 제목만 집힙니다.</span></li>
-        <li data-role="act-4"><strong>클립보드 갈래</strong>(「그렇지 않으면」 안 — 앱에서 「复制链接(링크 복사)」 뒤 단축어를 직접 누를 때):
-          「클립보드 가져오기」 → 「입력에서 URL 가져오기」(입력은 「클립보드」) → 「URL 인코딩」 → 「URL 열기」 — 「URL」 칸:
-          <code class="d-block my-2 text-break" data-role="clip-url">{{ clip_url }}</code>
-          뒤에 같은 「URL 인코딩된 텍스트」 토큰.</li>
+          그 안의 「입력이 없는 경우」는 <strong>「계속」</strong>.
+          <span class="text-muted d-block">(「클립보드 가져오기」를 여기서 고르지 않습니다 — 클립보드는 2번이 따로 가져옵니다.)</span>
+          {{ cshot("c1") }}</li>
+        <li data-role="act-2"><strong>「클립보드 가져오기」</strong>
+          {{ cshot("c2") }}</li>
+        <li data-role="act-3"><strong>「URL 열기」</strong> — 「URL」 칸에 아래를 그대로 입력하고, 표시된 두 자리에 변수 토큰을 넣습니다:
+          <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}<b>[단축어 입력]</b>&amp;clip=<b>[클립보드]</b></code>
+          <span class="d-block">· <code>text=</code> 바로 뒤: 파란 「단축어 입력」 토큰</span>
+          <span class="d-block">· <code>clip=</code> 바로 뒤: 파란 「클립보드」 토큰</span>
+          <span class="text-muted d-block" data-role="make-noencode">「URL 인코딩」은 넣지 않습니다 — 인코딩 없이 와도 서버가 풀어 읽습니다
+            (<code>clip=</code>이 맨 뒤여야 합니다).</span>
+          {{ cshot("c3") }}</li>
       </ol>
       <div class="small text-muted" data-role="make-label-note">동작 이름은 iOS 버전마다 조금 다를 수 있어요 — 오너 실기기 캡처로 확정합니다.
-        결과 화면의 「경로: 공유 시트 / 클립보드」는 이 두 주소의 <code>src=</code>로 정해집니다.
-        링크만 보내므로 제목은 타오바오 링크에서 읽히는 만큼만 들어가고, 나머지는 PC 고가수집기 보강 때 채워집니다.</div></li>
-    <li>이름을 「고가브릿지로 수집」으로 바꾸고 「완료」.</li>
-    <li>배포: 단축어 목록에서 이 단축어 길게 누르기 → 「공유」 → 「iCloud 링크 복사」. 이 링크를 아래 칸에 붙여넣고 저장.</li>
-    <li>오너 폰에서 「사용하기」 순서로 1회 실측 → 각 단계 캡처 → 설치하기·사용하기 화면에 삽입(아래 캡처 자리).</li>
+        공유 글에 링크가 있으면 그것을, 없으면 클립보드의 링크를 서버가 씁니다(결과 화면 「경로」도 서버가 정함).
+        <code>v=2</code>가 없는 옛 단축어로 들어오면 결과 화면에 「단축어가 구버전입니다」와 재설치 버튼이 뜹니다.</div></li>
+    <li>이름을 「고가브릿지로 수집」으로 바꾸고 「완료」. 단축어를 길게 눌러 「홈 화면에 추가」(유저 안내 4번이 이 아이콘을 누릅니다).</li>
+    <li>배포: 단축어 목록에서 이 단축어 길게 누르기 → 「공유」 → 「iCloud 링크 복사」. 이 링크를 아래 칸에 붙여넣고 저장 —
+      설치하기 화면의 버튼이 이 링크로 바뀝니다(유저 단축어를 따로 고칠 필요 없음).</li>
+    <li>오너 폰에서 설치하기 1~4번을 그대로 1회 실측 → 캡처(아래 캡처 자리).</li>
   </ol>
+
+  <div class="op-card mb-3" data-role="make-version-counts">
+    <div class="op-card-body small">
+      <div class="fw-semibold mb-1">단축어 버전별 도착 수</div>
+      {% if version_counts %}
+      {% for k, n in version_counts|dictsort %}<span class="pc-badge {{ 'pc-badge-on' if k == 'v2' else 'pc-badge-muted' }} me-1">{{ "새 단축어(v2)" if k == "v2" else ("옛 단축어" if k == "v0" else k) }} {{ n }}</span>{% endfor %}
+      {% else %}<span class="text-muted">아직 도착 기록이 없어요.</span>{% endif %}
+    </div>
+  </div>
 
   <div class="op-card mb-4">
     <div class="op-card-body">
@@ -57,10 +72,10 @@
 
   <div class="op-card">
     <div class="op-card-body small">
-      <div class="fw-semibold mb-2">캡처 자리 7개</div>
-      <p class="mb-2">파일을 <code>src/seller_console/static/help/iphone/</code>에 <code>a1~a4</code>(설치하기)·<code>b1~b3</code>(사용하기) 이름으로 넣으면(.png/.jpg/.webp) 그 자리에 뜹니다.</p>
+      <div class="fw-semibold mb-2">캡처 자리 10개</div>
+      <p class="mb-2">파일을 <code>src/seller_console/static/help/iphone/</code>에 <code>a1~a4</code>(설치하기)·<code>c1~c3</code>(이 화면 동작 셋)·<code>b1~b3</code>(사용하기) 이름으로 넣으면(.png/.jpg/.webp) 그 자리에 뜹니다.</p>
       <div class="d-flex flex-wrap gap-2">
-        {% for k in ["a1", "a2", "a3", "a4", "b1", "b2", "b3"] %}
+        {% for k in ["a1", "a2", "a3", "a4", "b1", "b2", "b3", "c1", "c2", "c3"] %}
         <span class="pc-badge {{ 'pc-badge-on' if shots.get(k) else 'pc-badge-muted' }}" data-role="shot-state-{{ k }}">{{ k|upper }} {{ "있음" if shots.get(k) else "비어 있음" }}</span>
         {% endfor %}
       </div>

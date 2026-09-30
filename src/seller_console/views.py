@@ -1565,44 +1565,84 @@ def collect_quick():
     ), res["status"]
 
 
-_SHARE_KEYS = ("text", "title", "url", "u", "final_url", "src")
+_SHARE_KEYS = ("text", "title", "url", "u", "final_url", "src", "clip", "v")
 
-# M3-iOS-3(오너 2026-09-30): 단축어가 어느 길로 받았는지 — 공유 시트(앱이 넘긴 것) / 클립보드(复制链接 뒤 실행).
-#   「공유 내용이 비어서 왔습니다」가 **앱이 안 넘긴 것**인지 **클립보드가 빈 것**인지 가르려고 단축어가 싣는다.
+# 결과 화면에 적는 「경로」 — 서버가 정한다(T5: 단축어엔 판단 로직 0).
 _SHARE_SRC = {"share": "공유 시트", "clip": "클립보드"}
 
 
-def _share_src() -> str:
-    v = str(request.values.get("src") or "").strip().lower()
-    return v if v in _SHARE_SRC else ""
+def _share_inputs() -> dict:
+    """공유 진입이 넘긴 값 → `{v, text, clip, title, link, final_url, src}`.
+
+    T5(오너 2026-09-30-H) — 단축어는 **동작 셋·판단 0**으로 고정한다:
+      ① 공유 시트에서 받기(입력 없으면 계속) ② 클립보드 가져오기
+      ③ URL 열기 `…/share?v=2&text=[①]&clip=[②]`
+    단축어에는 변수에 붙일 「URL 인코딩」 수식이 없다 — 동작 셋이면 **인코딩 없이** 온다.
+    그래서 원 쿼리에서 되살린다: `clip=`이 맨 뒤이므로 **마지막** `&clip=` 앞까지가 text다
+    (text 속 `&`가 다른 키로 갈라져도 되살아난다). 인코딩돼 오면 평소대로 읽는다.
+    """
+    from urllib.parse import unquote_plus
+    val = request.values
+    text = str(val.get("text") or "")
+    clip = str(val.get("clip") or "")
+    if request.method == "GET" and ("text" in request.args or "clip" in request.args):
+        extra = [k for k in request.args.keys() if k not in _SHARE_KEYS]
+        qs = request.query_string.decode("utf-8", "replace")
+        if extra:
+            body = qs
+            ci = body.rfind("&clip=") if "clip" in request.args else -1
+            if ci >= 0:
+                clip = unquote_plus(body[ci + len("&clip="):])
+                body = body[:ci]
+            ti = body.find("text=")
+            if ti >= 0 and (ti == 0 or body[ti - 1] == "&"):
+                text = unquote_plus(body[ti + len("text="):])
+    try:
+        ver = int(str(val.get("v") or "0").strip() or 0)
+    except ValueError:
+        ver = 0
+    return {"v": ver, "text": text.strip(), "clip": clip.strip(),
+            "title": str(val.get("title") or "").strip(),
+            "link": str(val.get("url") or val.get("u") or "").strip(),
+            "final_url": str(val.get("final_url") or "").strip(),
+            "src": str(val.get("src") or "").strip().lower()}
+
+
+def _share_pick(inp: dict) -> tuple:
+    """`(raw, route)` — 공유 글에 링크가 있으면 그것(공유 시트), 없으면 클립보드의 링크.
+
+    · 안드로이드 PWA(POST title·text·url)와 옛 단축어(`text=`·`url=`·`src=`)도 같은 자리로 온다.
+    · 공유 글에 **제목만** 있고 링크가 없으면(타오바오 iOS 공유 — 제목+URL 두 조각 중 제목만 오는 경우)
+      클립보드의 링크를 쓰고 제목은 곁에 붙인다.
+    """
+    from src.collectors.share_text import parse_share_text
+    title, text, link = inp["title"], inp["text"], inp["link"]
+    shared = "" if (not title or title in text) else title
+    for part in (text, link):
+        if part and part not in shared:
+            shared = f"{shared} {part}".strip()
+    old_src = inp["src"] if inp["src"] in _SHARE_SRC else ""
+    if shared and parse_share_text(shared).get("url"):
+        return shared, old_src or "share"
+    clip = inp["clip"]
+    if clip and parse_share_text(clip).get("url"):
+        return (f"{shared} {clip}".strip() if shared and shared not in clip else clip), "clip"
+    if shared:
+        return shared, old_src or "share"
+    if clip:
+        return clip, "clip"
+    return "", old_src
 
 
 def _share_raw_from_request() -> tuple:
-    """공유 시트가 넘긴 글 → `(raw, final_url)`.
+    """(하위 호환) `(raw, final_url)` — 공유 글·클립보드를 서버가 골라 합친 값."""
+    inp = _share_inputs()
+    return _share_pick(inp)[0], inp["final_url"]
 
-    · 아이폰 단축어(M3-iOS): `?text=<공유 입력>` 하나. 단축어가 **URL 인코딩 없이** 붙이면 공유 글 속 `&`
-      뒤가 다른 쿼리 키로 갈라진다 → 모르는 키가 섞여 있으면 원 쿼리에서 `text=` 뒤 전체를 되살린다.
-    · 안드로이드 PWA(share_target POST): `title`·`text`·`url` 폼. 타오바오 앱은 **text에 제목+링크**를 담는다.
-    · M3-iOS 실측(오너 2026-09-28): 타오바오 앱의 iOS 공유 입력은 **제목 텍스트 + URL 두 조각**이다.
-      단축어가 그중 텍스트만 `text=`로 보내면 서버엔 제목 3자만 온다 → 단축어가 URL을 `url=`로 따로
-      보내도 받도록 **셋(title·text·url)을 합쳐** 파싱한다. 순서는 제목 → 본문 → 링크, 이미 든 조각은
-      다시 붙이지 않는다(제목 앞에 url을 끼우면 파서가 제목을 잘못 읽는다).
-    """
-    from urllib.parse import unquote_plus
-    v = request.values
-    text = str(v.get("text") or "")
-    if request.method == "GET" and "text" in request.args:
-        extra = [k for k in request.args.keys() if k not in _SHARE_KEYS]
-        qs = request.query_string.decode("utf-8", "replace")
-        if extra and "text=" in qs:
-            text = unquote_plus(qs.split("text=", 1)[1])
-    title, text = str(v.get("title") or "").strip(), text.strip()
-    link = str(v.get("url") or v.get("u") or "").strip()
-    raw = "" if (not title or title in text) else title
-    for part in (text, link):
-        if part and part not in raw:
-            raw = f"{raw} {part}".strip()
-    return raw, str(v.get("final_url") or "").strip()
+
+def _share_src() -> str:
+    """(하위 호환) 결과 화면 경로 — 서버 판단값."""
+    return _share_pick(_share_inputs())[1]
 
 
 def share_raw_preview(raw: str, limit: int = 60) -> str:
@@ -1630,37 +1670,46 @@ def collect_share():
         return render_template("collect_share_result.html", out={"ok": False,
                                "error": "다른 사이트에서 보낸 요청은 받지 않아요 — 앱 공유 시트에서 다시 보내 주세요."},
                                raw=""), 403
-    raw, final_url = _share_raw_from_request()
-    src = _share_src()
+    inp = _share_inputs()
+    raw, src = _share_pick(inp)
+    final_url = inp["final_url"]
+    # T5: 단축어 버전 — GET(단축어)인데 v<2면 옛 단축어(판단 로직이 든 것). 안드로이드 POST는 해당 없음.
+    from .help_settings import SHORTCUT_VERSION, bump_share_version, ios_shortcut_url
+    old_shortcut = request.method == "GET" and inp["v"] < SHORTCUT_VERSION
     if not _check_auth():
         # 로그인하고 **같은 주소로** 돌아온다(POST도 GET 주소로 바꿔 싣는다 — 로그인 뒤엔 GET으로 온다).
+        #   이미 서버가 고른 값(raw)을 싣는다 — 로그인 사이 클립보드가 바뀌어도 같은 상품이다.
         q = {"text": raw}
+        if inp["v"]:
+            q["v"] = str(inp["v"])                       # 버전 게이트가 로그인 뒤에도 같은 판정을 하게
         if final_url:
             q["final_url"] = final_url
         if src:
             q["src"] = src
         from urllib.parse import urlencode
         return redirect(url_for("auth.login", next="/seller/collect/share?" + urlencode(q)))
+    bump_share_version(inp["v"])
 
     # M3-iOS 실측 결함: 단축어가 **무엇을 어떤 키로** 보냈는지 로그로 가른다(원 쿼리·폼 키 — 스크럽 후).
     from urllib.parse import unquote_plus
     _got = (unquote_plus(request.query_string.decode("utf-8", "replace")) if request.method == "GET"
             else "&".join(f"{k}={request.form.get(k, '')}" for k in request.form.keys()))
-    logger.info("[share] in method=%s keys=%s len=%d q=%s", request.method,
+    logger.info("[share] in method=%s v=%s keys=%s len=%d q=%s", request.method, inp["v"],
                 ",".join(sorted(request.values.keys())), len(raw), share_raw_preview(_got, 300))
-    # M3-iOS-3: 키마다 원문 길이 + 앞 60자(스크럽 후) — 공유 시트로 왔는데 셋 다 0이면 **앱이 안 넘긴 것**이다.
-    _parts = " ".join(
-        f"{k}(len={len(str(request.values.get(k) or ''))},q={share_raw_preview(request.values.get(k) or '')!r})"
-        for k in ("title", "text", "url"))
-    logger.info("[share] parts src=%s %s", src or "-", _parts)
+    # 키마다 원문 길이 + 앞 60자(스크럽 후) — 공유 글·클립보드가 **둘 다 0이면** 앱도 클립보드도 비었다.
+    _parts = " ".join(f"{k}(len={len(inp[k])},q={share_raw_preview(inp[k])!r})"
+                      for k in ("title", "text", "link", "clip"))
+    logger.info("[share] parts v=%s route=%s %s", inp["v"], src or "-", _parts)
 
     from src.collectors.share_text import link_failure_reason, parse_share_text
     preview = share_raw_preview(raw)
-    ctx = {"raw": raw, "raw_preview": preview, "share_src": _SHARE_SRC.get(src, "")}
+    _route = _SHARE_SRC.get(src, "") or ("둘 다 비어 있음" if not raw else "")
+    ctx = {"raw": raw, "raw_preview": preview, "share_src": _route,
+           "old_shortcut": old_shortcut, "reinstall_url": ios_shortcut_url() or "/seller/guide/iphone"}
     url = parse_share_text(raw, final_url=final_url).get("url", "")
     if not url:
         return render_template("collect_share_result.html",
-                               out={"ok": False, "error": _share_empty_reason(src, raw) or
+                               out={"ok": False, "error": _share_empty_reason(src, raw, inp["v"]) or
                                     link_failure_reason(raw, final_url)}, **ctx)
     from src.api.extension_api import share_collect_core
     out, _res = share_collect_core(raw, url=url, seller_id=_seller_id(), seller_ids=_seller_identities(),
@@ -1678,10 +1727,13 @@ def collect_share():
     return render_template("collect_share_result.html", out=out, **ctx)
 
 
-def _share_empty_reason(src: str, raw: str) -> str:
+def _share_empty_reason(src: str, raw: str, ver: int = 0) -> str:
     """받은 게 **비었을 때** 길을 아는 경우의 사유 — 누가 안 넘겼는지가 다르다."""
     if raw.strip():
         return ""
+    if ver >= 2:
+        return ("공유 내용도 클립보드도 비어 있어요 — 타오바오 앱에서 「分享(공유)」 → 「复制链接(링크 복사)」을 "
+                "누른 뒤 홈 화면의 「고가브릿지로 수집」을 눌러 주세요.")
     if src == "share":
         return ("공유 시트로 왔는데 내용이 비어 있어요 — 이 앱이 공유에 내용을 넘기지 않았어요. "
                 "앱에서 「复制链接(링크 복사)」을 누른 뒤 단축어 앱에서 「고가브릿지로 수집」을 눌러 주세요.")
@@ -1906,11 +1958,13 @@ def guide_iphone_make():
             msg = "저장했어요 — 설치 화면의 버튼이 이 링크로 열립니다." if saved else "지웠어요 — 설치 화면은 「준비 중」으로 보입니다."
         except ValueError as exc:
             err = str(exc)
-    base = f"{_share_base()}/seller/collect/share"
-    return render_template("guide_iphone_make.html", share_url=f"{base}?src=share&text=",
-                           clip_url=f"{base}?src=clip&text=",
+    from .help_settings import share_version_counts
+    # T5: 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`(clip이 맨 뒤 — 인코딩 없이 와도 서버가 되살린다).
+    return render_template("guide_iphone_make.html",
+                           share_url=f"{_share_base()}/seller/collect/share?v=2&text=",
                            shortcut_link=ios_shortcut_url(), msg=msg, err=err,
-                           shots=_iphone_shots(("a1", "a2", "a3", "a4", "b1", "b2", "b3")))
+                           version_counts=share_version_counts(),
+                           shots=_iphone_shots(("a1", "a2", "a3", "a4", "b1", "b2", "b3", "c1", "c2", "c3")))
 
 
 def _extract_reviews(html: str, limit: int = 20) -> list[dict]:
