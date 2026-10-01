@@ -1591,10 +1591,13 @@ def _share_inputs() -> dict:
     if request.method == "GET" and ("text" in request.args or "clip" in request.args):
         extra = [k for k in request.args.keys() if k not in _SHARE_KEYS]
         qs = request.query_string.decode("utf-8", "replace")
-        # O(오너 2026-10-01): 원칙 — **표준 디코드 1회.** 되살리기는 인코딩이 **전혀 없는**(`%`가 하나도 없는)
-        #   원 쿼리에만 건다. iOS 「URL 인코딩」을 거친 값(`%3F`·`%20`·CJK `%E3…`)을 다시 자르고 풀면
-        #   값 안의 `https://…`·`?tk=`를 경계로 오인할 수 있다.
-        if extra and "%" not in qs:
+        # O(오너 2026-10-01): 원칙 — **표준 디코드 1회.** 「URL 인코딩」 동작을 거친 쿼리는 되살리지 않는다 —
+        #   값 안의 `https://…`·`?tk=`를 경계로 오인해 다시 자르고 풀 수 있다.
+        #   판별은 「`%`가 하나도 없나」가 아니라 **`%3F`·`%3D`·`%26`이 있나**다: 인코딩 동작이 없는 옛 단축어도
+        #   iOS가 공백·CJK는 `%20`·`%E3…`로 바꾸고 `?`·`=`·`&`만 그대로 둔다(test_m3_share_sheet 실측 계약) —
+        #   `%`만 보면 그 경우의 `&` 되살리기가 죽는다. `?`·`=`·`&`가 인코딩돼 있으면 = 인코딩 동작을 거쳤다.
+        _encoded = re.search(r"%(?:3[fFdD]|26)", qs) is not None
+        if extra and not _encoded:
             body = qs
             ci = body.rfind("&clip=") if "clip" in request.args else -1
             if ci >= 0:

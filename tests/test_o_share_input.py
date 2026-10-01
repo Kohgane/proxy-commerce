@@ -91,15 +91,18 @@ def test_hello_regression(client):
     assert "받은 내용: 「hello」" in h and _stages(h)["link"][0] == "no"
 
 
-def test_recovery_only_for_unencoded_query():
+def test_recovery_only_when_url_encode_action_was_not_used():
     from src.order_webhook import app
     from src.seller_console.views import _share_inputs
-    # 인코딩된 값 + 낯선 키 — 되살리기 금지(표준 디코드 1회): text는 「你」 그대로
-    with app.test_request_context("/seller/collect/share?v=2&text=%E4%BD%A0&foo=bar&clip=x"):
-        assert _share_inputs()["text"] == "你"
-    # `%`가 하나도 없는 원 쿼리(옛 단축어 — 인코딩 없이 붙임) — text 속 `&`가 되살아난다
-    with app.test_request_context("/seller/collect/share?v=2&text=a b&c=d https://e.tb.cn/h.x&clip=y"):
-        assert _share_inputs()["text"] == "a b&c=d https://e.tb.cn/h.x"
+    # 「URL 인코딩」을 거친 값(`%3F`·`%3D`가 있다) + 낯선 키 — 되살리기 금지(표준 디코드 1회)
+    with app.test_request_context("/seller/collect/share?v=2&text=%E4%BD%A0%20https://e.tb.cn/h.x%3Ftk%3DT&foo=bar&clip=x"):
+        assert _share_inputs()["text"] == "你 https://e.tb.cn/h.x?tk=T"
+    # 인코딩 동작 없는 옛 단축어: iOS가 공백·CJK만 %로, `?`·`=`·`&`는 그대로 — text 속 `&`가 되살아난다
+    with app.test_request_context("/seller/collect/share?v=2&text=a%20b&c=d https://e.tb.cn/h.x?tk=T&clip=y"):
+        assert _share_inputs()["text"] == "a b&c=d https://e.tb.cn/h.x?tk=T"
+    # `%`가 하나도 없는 원 쿼리도 마찬가지
+    with app.test_request_context("/seller/collect/share?v=2&text=a b&c=d&clip=y"):
+        assert _share_inputs()["text"] == "a b&c=d"
 
 
 def test_logged_out_arrival_is_recorded_and_next_keeps_text():
