@@ -84,7 +84,7 @@ def record_share_arrival(entry: dict) -> None:
         cur = _st().state_get(_AKEY) or {}
         rows = list(cur.get("rows") or [])
         rows.insert(0, {k: entry.get(k) for k in ("at", "method", "v", "qlen", "text_len", "clip_len", "keys",
-                                                  "route", "stage", "reason", "authed", "decodes", "ticket")})
+                                                  "route", "stage", "reason", "authed", "decodes", "ticket", "u_len")})
         _st().state_set(_AKEY, {"rows": rows[:_ARRIVALS_MAX]})
     except Exception as exc:
         import logging

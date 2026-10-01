@@ -173,6 +173,14 @@ def polish_ko(text: str, *, hits: dict | None = None) -> str:
             s = s.replace(src, ko)
             if hits is not None:
                 hits.setdefault("replace", []).append(f"{src}→{ko}")
+    # Q(2026-10-01): 문장형 꼬리 — 번역기가 제목을 문장으로 끝낸다(「…스탠드에 적합합니다」). 상품명은 명사로 끝난다.
+    #   끝에서만 뗀다(가운데 「합니다」는 손대지 않음). 다 떼고 남는 게 없으면 원래 값.
+    for p in r.get("tail_ko") or []:
+        t = re.sub(p, "", s)
+        if t != s and t.strip():
+            s = t
+            if hits is not None:
+                hits.setdefault("delete", []).append("문장 꼬리")
     return _tidy(s)
 
 
