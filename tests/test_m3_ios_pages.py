@@ -40,11 +40,13 @@ def test_install_page_is_public_and_verbatim(anon, monkeypatch):
     r = anon.get("/seller/guide/iphone")
     assert r.status_code == 200
     h = r.get_data(as_text=True)
-    for s in ("아이폰으로 상품 담기 — 처음 한 번만 설정", "「단축어 추가」", "「허용」", "「分享(공유)」 → 「复制链接(링크 복사)」",
-              "홈 화면의 「고가브릿지로 수집」", "안 될 때", "단축어가 구버전입니다"):
+    for s in ("아이폰으로 상품 담기 — 처음 한 번만 설정", "「단축어 추가」", "「分享(공유)」 → 「复制链接(링크 복사)」",
+              "홈 화면의 「고가브릿지로 수집」", "안 될 때", "단축어가 구버전입니다", 'data-role="install-stages"'):
         assert s in h, s
     assert 'data-role="install-soon"' in h and 'data-role="install-link"' not in h   # 링크 없으면 준비 중
-    assert all(f'data-role="shot-{k}"' in h for k in ("a1", "a2", "a3", "a4"))
+    assert all(f'data-role="shot-{k}"' in h for k in ("a1", "a2", "a3")) and 'data-role="shot-a4"' not in h
+    # P(10-01) 오너 결정: 붙여넣기 허용 창 단계(옛 2단계) 삭제 — 그 창은 안 뜬다(실측).
+    assert "붙여넣기를 허용하겠습니까" not in h
     # O(2026-10-01) 실측: 붙여넣기 허용 창은 뜨지 않았다 — 「허용 안 함」 안내 줄은 뺐다.
     assert 'data-role="install-paste-denied"' not in h
 
@@ -70,7 +72,9 @@ def test_install_link_is_an_admin_setting(monkeypatch):
     # T5(2026-09-30-H): 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`.
     assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?v=2&amp;text=" in page
     # O(2026-10-01): 두 자리 모두 「URL 인코딩」 결과 토큰 — 클립보드는 ①의 「입력이 없는 경우」로만.
-    assert "<b>[URL 인코딩된 텍스트]</b>&amp;clip=<b>[URL 인코딩된 텍스트]</b>" in page
+    # P(10-01): 두 번 인코딩 — 두 자리 모두 ③(두 번째 인코딩) 결과. 티켓 방식(share-in) 안내도 같은 화면에.
+    assert "<b>[③ 결과]</b>&amp;clip=<b>[③ 결과]</b>" in page
+    assert "https://kohganepercentiii.com/seller/collect/share-in" in page
     assert "「공유 시트에 표시」 켬" in page and "「iCloud 링크 복사」" in page and 'data-role="make-arrivals"' in page
     bad = c.post("/seller/guide/iphone/make", data={"shortcut_url": "https://evil.example/x"}).get_data(as_text=True)
     assert 'data-role="make-err"' in bad and ios_shortcut_url() == ""

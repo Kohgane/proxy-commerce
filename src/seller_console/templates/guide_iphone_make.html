@@ -14,14 +14,13 @@
   <p class="text-muted small mb-0">만든 단축어의 iCloud 링크를 아래에 붙여넣으면 유저용 <a href="/seller/guide/iphone">설치하기</a> 화면의 파란 버튼이 그 링크로 열립니다.</p>
   <hr class="pc-hairline mt-2 mb-4">
 
-  {# O(오너 2026-10-01, 캡처 좌표 있음) — 최종 구조. 단축어엔 판단 로직 0, 고르는 건 서버.
-     T5의 「클립보드 가져오기」 **단독 동작**은 「URL 열기」에서 빈 값으로 들어갔다(오너 실측 — 지뢰). 그래서
-     클립보드는 ①의 「입력이 없는 경우」로만 가져오고, 값은 ②「URL 인코딩」을 지나 ③에 들어간다.
-     iOS 화면 이름은 오너 실측 라벨만 쓴다: 「훑어보기」·「앱 및 2개」·「단축어 입력」(종류 화면 제목). #}
+  {# P(오너 2026-10-01) — 운영 도착 기록: 쿼리 9자 `v=2&text=` · text 0 · clip 0. 단축어 미리보기엔 전체 URL이 있었다 →
+     iOS 「URL 열기」가 비ASCII 앞에서 자른다(영문만은 통과). 그래서 URL에 비ASCII가 남지 않게 **두 번** 인코딩한다(P1).
+     그래도 잘리면 URL을 버리는 길(P2 — 아래). iOS 화면 이름은 오너 실측 라벨만 쓴다. #}
   <ol class="make-steps">
     <li>「단축어」 앱 열기 → 오른쪽 위 「+」.</li>
     <li>위쪽 단축어 이름 옆 「∨」 → 「세부사항」 → 「공유 시트에 표시」 켬.</li>
-    <li>동작 <strong>셋</strong>을 이 순서로 둡니다(「동작 추가」 → 검색창에 이름). 「만약」·「클립보드 가져오기」 단독 동작은 넣지 않습니다:
+    <li>동작 <strong>넷</strong>을 이 순서로 둡니다(「동작 추가」 → 검색창에 이름). 「만약」·「클립보드 가져오기」 단독 동작은 넣지 않습니다:
       <ol class="make-acts" data-role="make-actions">
         <li data-role="act-1"><strong>공유 시트에서 받기</strong> — 공유 시트를 켜면 맨 위에 생깁니다.
           <span class="d-block">· 받을 종류: 파란 글자를 눌러 종류 화면(제목 「단축어 입력」)에서
@@ -31,20 +30,39 @@
           {{ cshot("c1") }}</li>
         <li data-role="act-2"><strong>「URL 인코딩」</strong> — 입력 칸에 파란 「단축어 입력」 토큰.
           {{ cshot("c2") }}</li>
-        <li data-role="act-3"><strong>「URL 열기」</strong> — 「URL」 칸에 아래를 그대로 입력하고, 두 자리 <strong>모두</strong> ②의 결과 토큰을 넣습니다:
-          <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}<b>[URL 인코딩된 텍스트]</b>&amp;clip=<b>[URL 인코딩된 텍스트]</b></code>
+        <li data-role="act-3"><strong>「URL 인코딩」 한 번 더</strong> — 입력 칸에 ②의 결과 토큰(「URL 인코딩된 텍스트」).
+          <span class="text-muted d-block" data-role="make-double">두 번 인코딩하면 URL에 한자·기호가 하나도 안 남습니다 — 아이폰이 「URL 열기」에서 한자 앞을 자르던 것을 피합니다. 서버가 두 번 풉니다.</span>
+          {{ cshot("c3") }}</li>
+        <li data-role="act-4"><strong>「URL 열기」</strong> — 「URL」 칸에 아래를 그대로 입력하고, 두 자리 <strong>모두</strong> ③의 결과 토큰을 넣습니다:
+          <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}<b>[③ 결과]</b>&amp;clip=<b>[③ 결과]</b></code>
           <span class="text-muted d-block" data-role="make-clip-mine">「클립보드 가져오기」를 따로 동작으로 두고 그 토큰을 <code>clip=</code>에 넣으면 빈 값이 갑니다(오너 실측).
             클립보드는 ①의 「입력이 없는 경우」로 이미 들어옵니다.</span>
-          {{ cshot("c3") }}</li>
+          {{ cshot("c4") }}</li>
       </ol>
-      <div class="small text-muted" data-role="make-label-note">서버는 표준 디코드 한 번만 합니다 — <code>%</code>가 든 값을 다시 자르지 않습니다.
+      <div class="small text-muted" data-role="make-label-note">서버는 표준 디코드 뒤에도 인코딩이 남아 있으면 한 번 더(최대 2회) 풉니다 — 아래 「최근 도착」 표의 「디코드」 칸에 몇 번 풀었는지 나옵니다.
         두 자리에 같은 값이 오므로 결과 화면 「경로」는 「단축어」로 적힙니다.
         <code>v=2</code>가 없는 옛 단축어로 들어오면 결과 화면에 「단축어가 구버전입니다」와 재설치 버튼이 뜹니다.</div></li>
     <li>이름을 「고가브릿지로 수집」으로 바꾸고 「완료」.</li>
     <li>배포: 단축어 목록에서 이 단축어 길게 누르기 → 「공유」 → 「iCloud 링크 복사」. 이 링크를 아래 칸에 붙여넣고 저장 —
       설치하기 화면의 버튼이 이 링크로 바뀝니다(유저 단축어를 따로 고칠 필요 없음).</li>
-    <li>오너 폰에서 복制链接 → 단축어 실행 1회 → 결과 화면의 「처리 단계」와 아래 「최근 도착」 표를 같이 캡처.</li>
+    <li>오너 폰에서 复制链接 → 단축어 실행 1회 → 결과 화면의 「처리 단계」와 아래 「최근 도착」 표를 같이 캡처.</li>
   </ol>
+
+  {# P2 — URL을 버리는 길. 두 번 인코딩해도 잘리면 이쪽. iOS 동작 이름은 오너 캡처 뒤 확정(그 전엔 「(캡처 참고)」). #}
+  <div class="op-card mb-3" data-role="make-ticket">
+    <div class="op-card-body small">
+      <div class="fw-semibold mb-1">두 번 인코딩해도 잘리면 — 티켓 방식(동작 셋)</div>
+      <p class="mb-2 text-muted">원문은 서버로 보내고, 브라우저엔 <strong>짧은 영문 주소 한 줄</strong>만 넘깁니다 — 자를 한자가 URL에 없습니다.</p>
+      <ol class="make-acts mb-2">
+        <li data-role="ticket-act-1"><strong>공유 시트에서 받기</strong> — 위 ①과 같음(입력이 없는 경우 = 「클립보드 가져오기」).</li>
+        <li data-role="ticket-act-2"><strong>「웹에서 콘텐츠 가져오기」</strong> <span class="text-muted">(캡처 참고)</span> —
+          URL <code data-role="share-in-url">{{ share_in_url }}</code> · 방식 <strong>POST</strong> · 요청 본문 「양식」 <code>text</code> = 파란 「단축어 입력」 토큰 <span class="text-muted">(캡처 참고)</span>.</li>
+        <li data-role="ticket-act-3"><strong>「URL 열기」</strong> — 입력 = 앞 동작의 결과 토큰 <span class="text-muted">(캡처 참고)</span>.
+          서버가 돌려주는 건 <code>…/seller/collect/share?v=3&amp;t=…</code> 한 줄뿐입니다.</li>
+      </ol>
+      <div class="text-muted">티켓은 10분 뒤 지워지고, 상품은 로그인한 뒤 그 주소를 열 때 저장됩니다. 같은 기기에서 분당 10번까지.</div>
+    </div>
+  </div>
 
   {# O: 서버가 **무엇을 받았는지** — 길이·키·도달 단계만(내용·tk 없음). 「비어 있어요」가 나오면 여기부터 본다. #}
   <div class="op-card mb-3" data-role="make-arrivals">
@@ -53,12 +71,14 @@
       {% if arrivals %}
       <div class="table-responsive">
       <table class="table table-sm mb-0 table-cards">
-        <thead><tr><th>시각(UTC)</th><th>v</th><th class="text-end">쿼리</th><th class="text-end">text</th><th class="text-end">clip</th><th>로그인</th><th>단계</th><th>사유</th></tr></thead>
+        <thead><tr><th>시각(UTC)</th><th>v</th><th class="text-end">쿼리</th><th class="text-end">text</th><th class="text-end">clip</th><th class="text-end">디코드</th><th>로그인</th><th>단계</th><th>사유</th></tr></thead>
         <tbody>{% for a in arrivals %}
           <tr><td data-label="시각">{{ (a.at or "")[5:16].replace("T", " ") }}</td><td data-label="v">{{ a.v }}</td>
             <td data-label="쿼리" class="text-end">{{ a.qlen }}</td><td data-label="text" class="text-end">{{ a.text_len }}</td>
-            <td data-label="clip" class="text-end">{{ a.clip_len }}</td><td data-label="로그인">{{ "예" if a.authed else "아니오" }}</td>
-            <td data-label="단계">{{ {"login": "로그인으로", "recv": "받은 글 0자", "link": "링크 없음", "collect": "담기 실패", "saved": "담음"}.get(a.stage, a.stage) }}</td>
+            <td data-label="clip" class="text-end">{{ a.clip_len }}</td>
+            <td data-label="디코드" class="text-end">{{ "티켓" if a.ticket else ((1 + (a.decodes or 0)) ~ "회") }}</td>
+            <td data-label="로그인">{{ "예" if a.authed else "아니오" }}</td>
+            <td data-label="단계">{{ {"login": "로그인으로", "ticket": "티켓 못 엶", "recv": "받은 글 0자", "link": "링크 없음", "collect": "담기 실패", "saved": "담음"}.get(a.stage, a.stage) }}</td>
             <td data-label="사유" class="text-break">{{ a.reason or "—" }}</td></tr>
         {% endfor %}</tbody>
       </table>
@@ -95,9 +115,9 @@
   <div class="op-card">
     <div class="op-card-body small">
       <div class="fw-semibold mb-2">캡처 자리 10개</div>
-      <p class="mb-2">파일을 <code>src/seller_console/static/help/iphone/</code>에 <code>a1~a4</code>(설치하기)·<code>c1~c3</code>(이 화면 동작 셋)·<code>b1~b3</code>(사용하기) 이름으로 넣으면(.png/.jpg/.webp) 그 자리에 뜹니다.</p>
+      <p class="mb-2">파일을 <code>src/seller_console/static/help/iphone/</code>에 <code>a1~a3</code>(설치하기)·<code>c1~c4</code>(이 화면 동작 넷)·<code>b1~b3</code>(사용하기) 이름으로 넣으면(.png/.jpg/.webp) 그 자리에 뜹니다.</p>
       <div class="d-flex flex-wrap gap-2">
-        {% for k in ["a1", "a2", "a3", "a4", "b1", "b2", "b3", "c1", "c2", "c3"] %}
+        {% for k in ["a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3", "c4"] %}
         <span class="pc-badge {{ 'pc-badge-on' if shots.get(k) else 'pc-badge-muted' }}" data-role="shot-state-{{ k }}">{{ k|upper }} {{ "있음" if shots.get(k) else "비어 있음" }}</span>
         {% endfor %}
       </div>

@@ -16,7 +16,8 @@ def pg_ready():
         pytest.skip("DATABASE_URL 없음 — CI pg-suite 레인에서 돈다")
     pg.init_schema()
     with pg.tx() as cur:
-        cur.execute("DELETE FROM app_state WHERE key IN (%s, %s)", ("help:share_version_counts", "help:share_arrivals"))
+        cur.execute("DELETE FROM app_state WHERE key IN (%s, %s) OR key LIKE %s OR key LIKE %s",
+                    ("help:share_version_counts", "help:share_arrivals", "share_ticket:%", "share_in_rl:%"))
     yield
 
 
@@ -34,3 +35,23 @@ def test_arrival_log_persists_on_postgres(pg_ready):
         record_share_arrival({"at": f"t{i}", "v": 2, "qlen": i, "text_len": 0, "clip_len": 0, "stage": "recv"})
     rows = share_arrivals()
     assert len(rows) == 20 and rows[0]["at"] == "t21"
+
+
+def test_share_tickets_and_rate_limit_on_postgres(pg_ready):
+    """P2 — 티켓·IP 레이트가 **워커 공유 저장소**(app_state)에서 돈다: 10건 뒤 상한 · 만료분 정리."""
+    from src.db import pg
+    from src.seller_console import share_tickets as T
+    with pg.tx() as cur:
+        cur.execute("DELETE FROM app_state WHERE key LIKE %s OR key LIKE %s", ("share_ticket:%", "share_in_rl:%"))
+    t = T.create("你好 https://e.tb.cn/h.x?tk=Z", ip="198.51.100.7")
+    assert T.read(t) == {"ok": True, "text": "你好 https://e.tb.cn/h.x?tk=Z", "reason": "", "used": False}
+    for _ in range(9):
+        T.create("a", ip="198.51.100.7")
+    with pytest.raises(T.RateLimited):
+        T.create("a", ip="198.51.100.7")
+    with pg.tx() as cur:
+        cur.execute("UPDATE app_state SET updated_at = now() - interval '20 minutes' WHERE key LIKE %s", ("share_ticket:%",))
+    T.prune()
+    with pg.query() as cur:
+        cur.execute("SELECT count(*) FROM app_state WHERE key LIKE %s", ("share_ticket:%",))
+        assert cur.fetchone()[0] == 0

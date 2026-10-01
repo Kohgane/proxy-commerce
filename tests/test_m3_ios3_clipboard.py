@@ -69,22 +69,24 @@ def test_login_round_trip_keeps_src():
 
 
 def test_install_screen_has_clipboard_default_step_and_slot():
-    """T5: 링크 복사(复制链接) → 홈 화면 단축어 1탭이 기본 길이다."""
+    """T5: 링크 복사(复制链接) → 홈 화면 단축어 1탭이 기본 길이다. P(10-01): 옛 2단계(붙여넣기 창) 삭제 → 단계 1~3."""
     from src.order_webhook import app
     h = app.test_client().get("/seller/guide/iphone").get_data(as_text=True)
-    a3, a4 = h.index('data-role="step-a3"'), h.index('data-role="step-a4"')
-    assert "复制链接" in h[a3:a4] and "홈 화면의 「고가브릿지로 수집」" in h[a4:a4 + 600] and 'data-role="shot-a4"' in h
+    a2, a3 = h.index('data-role="step-a2"'), h.index('data-role="step-a3"')
+    assert "复制链接" in h[a2:a3] and "홈 화면의 「고가브릿지로 수집」" in h[a3:a3 + 600] and 'data-role="shot-a3"' in h
+    assert 'data-role="step-a4"' not in h and 'data-role="shot-a4"' not in h
 
 
 def test_make_screen_is_three_actions_without_branch():
-    """O(2026-10-01) 최종 구조: ① 공유 시트에서 받기(없으면 클립보드) ② URL 인코딩 ③ URL 열기 — 판단 로직 0.
+    """P(2026-10-01) 최종 구조: ① 공유 시트에서 받기(없으면 클립보드) ② URL 인코딩 ③ URL 인코딩 한 번 더 ④ URL 열기 — 판단 로직 0.
 
     T5의 「클립보드 가져오기」 **단독 동작**은 URL 열기에서 빈 값이었다(오너 실측) — 동작 목록에 없어야 한다.
     """
     t = Path("src/seller_console/templates/guide_iphone_make.html").read_text(encoding="utf-8")
-    acts = [t.index(f'data-role="act-{i}"') for i in (1, 2, 3)]
-    assert acts == sorted(acts) and 'data-role="act-4"' not in t
+    acts = [t.index(f'data-role="act-{i}"') for i in (1, 2, 3, 4)]
+    assert acts == sorted(acts) and 'data-role="act-5"' not in t
     for s in ("「입력이 없는 경우」 = <strong>「클립보드 가져오기」</strong>", "<strong>「URL 인코딩」</strong>",
+              "<strong>「URL 인코딩」 한 번 더</strong>", 'cshot("c4")', 'data-role="make-ticket"',
               "<strong>「URL 열기」</strong>", "텍스트 · 리치 텍스트 · Safari 웹 페이지 · URL", "「훑어보기」", "「앱 및 2개」",
               "「단축어 입력」", 'data-role="make-clip-mine"', 'cshot("c1")', 'cshot("c2")', 'cshot("c3")'):
         assert s in t, s
