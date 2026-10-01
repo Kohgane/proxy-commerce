@@ -29,8 +29,15 @@ def client(app):
 
 class TestBulkCollect:
     def test_bulk_max_1000_urls(self, client):
-        """URL 1000개 초과 시 1000개로 잘림(퍼센티 100 → 우리 1000)."""
-        with patch("src.api.extension_api._require_token") as mock_auth:
+        """URL 1000개 초과 시 1000개로 잘림(퍼센티 100 → 우리 1000).
+
+        P(2026-10-01) 실측: 이 계약이 **진짜 백그라운드 작업**(1000건 수집)을 띄우고 기다리지 않아, 그 스레드가
+        다음 파일들까지 살아서 `collect_one_url`을 불렀다 → 그걸 세는 계약(test_c_share_text)이 부하에 따라
+        남의 호출 649건을 제 것으로 셌다. 이 계약이 재는 건 「잘림」뿐이다 — 작업 본체는 띄우지 않는다.
+        """
+        got = {}
+        with patch("src.api.extension_api._require_token") as mock_auth, \
+                patch("src.api.extension_api._run_bulk_job", lambda job_id, urls: got.update(n=len(urls))):
             mock_auth.return_value = {"user_id": "u", "scopes": ["collect.write"]}
             urls = [f"https://example.com/product/{i}" for i in range(1100)]
             resp = client.post(
@@ -39,8 +46,13 @@ class TestBulkCollect:
                 content_type="application/json",
                 headers={"Authorization": "Bearer tok_test"},
             )
+            import time
+            for _ in range(50):                       # 스레드가 대체 함수를 부를 때까지(즉시 끝난다)
+                if "n" in got:
+                    break
+                time.sleep(0.01)
         data = resp.get_json()
-        assert data["total"] == 1000
+        assert data["total"] == 1000 and got.get("n") == 1000      # 작업에 넘어간 것도 1000개
 
     def test_bulk_job_polling(self, client):
         """잡 ID로 진행률 폴링."""
