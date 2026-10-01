@@ -102,12 +102,33 @@ def test_signup_then_protected_pages_on_both_workers(server):
                                {"email": email, "password": "pass12345", "name": "두워커"})
     assert st == 302 and loc.endswith("/seller/dashboard") and cookie, (st, loc, cookie)
 
-    codes = [_curl(base, jar, "GET", "/seller/dashboard")[0] for _ in range(16)]
-    assert codes == [200] * 16, codes                                     # 튕김 0
+    # Q(2026-10-01) CI 실측: 순차 16건이 **전부 한 워커**로 갔다(pid 1개) — 두 워커가 한 소켓을 나눠 받을 때
+    #   어느 쪽이 받을지는 커널 몫이라, 순차·한가한 서버에선 한쪽이 다 받아도 정상이다(계약이 재는 게 없던 셈).
+    #   그래서 **동시에** 몇 건씩 보내 두 워커가 실제로 받을 때까지 늘린다(최대 64건) — 「전부 200」은 그대로 잰다.
+    def _pids():
+        return {ln.split()[0] for ln in (tmp / "access.log").read_text().splitlines()
+                if " GET /seller/dashboard 200" in ln}
 
-    pids = {ln.split()[0] for ln in (tmp / "access.log").read_text().splitlines()
-            if " GET /seller/dashboard 200" in ln}
-    assert len(pids) >= 2, f"한 워커만 탔다 — 계약이 두 워커를 재지 못했다: {pids}"
+    def _batch(n):
+        procs = []
+        for i in range(n):
+            out = Path(f"{jar}.p{i}")
+            procs.append((subprocess.Popen(
+                ["curl", "-s", "-b", str(jar), "-H", "Connection: close", "-o", "/dev/null",
+                 "-w", "%{http_code}", base + "/seller/dashboard"], stdout=open(out, "w")), out))
+        codes_ = []
+        for pr, out in procs:
+            pr.wait(timeout=30)
+            codes_.append(int(out.read_text().strip() or 0))
+        return codes_
+
+    codes = [_curl(base, jar, "GET", "/seller/dashboard")[0] for _ in range(8)]   # 순차(한 연결씩)
+    while len(_pids()) < 2 and len(codes) < 64:
+        codes += _batch(8)                                                  # 동시 8건
+        time.sleep(0.1)                                                     # 접근 로그가 파일에 내려오게
+    assert codes == [200] * len(codes), codes                             # 튕김 0
+    pids = _pids()
+    assert len(pids) >= 2, f"한 워커만 탔다 — 계약이 두 워커를 재지 못했다({len(codes)}건): {pids}"
 
     _curl(base, jar, "GET", "/auth/logout")
     st, _, _, body = _curl(base, jar, "POST", "/auth/login", {"email": email, "password": "wrong-pass"})
