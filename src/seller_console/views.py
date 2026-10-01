@@ -1565,7 +1565,7 @@ def collect_quick():
     ), res["status"]
 
 
-_SHARE_KEYS = ("text", "title", "url", "u", "final_url", "src", "clip", "v")
+_SHARE_KEYS = ("text", "title", "url", "u", "final_url", "src", "clip", "v", "t", "err")
 
 # 결과 화면에 적는 「경로」 — 서버가 정한다(T5: 단축어엔 판단 로직 0).
 _SHARE_SRC = {"share": "공유 시트", "clip": "클립보드"}
@@ -1610,11 +1610,25 @@ def _share_inputs() -> dict:
         ver = int(str(val.get("v") or "0").strip() or 0)
     except ValueError:
         ver = 0
+    # P1(오너 2026-10-01): iOS 「URL 열기」가 비ASCII 앞에서 URL을 잘랐다(운영 기록: 쿼리 9자 `v=2&text=`) →
+    #   단축어가 「URL 인코딩」을 두 번 건다. 표준 디코드 1회 뒤에도 인코딩이 남았으면 한 번 더(최대 2회).
+    from .share_tickets import decode_again, read as _ticket_read
+    text, _dt = decode_again(text)
+    clip, _dc = decode_again(clip)
+    ticket, ticket_err = str(val.get("t") or "").strip(), str(val.get("err") or "").strip()[:20]
+    if ticket:
+        # P2: 티켓 — URL엔 ASCII 티켓만, 원문은 서버에(10분). 티켓이 있으면 그게 단축어 입력이다.
+        got = _ticket_read(ticket)
+        if got["ok"]:
+            text = clip = got["text"]
+        else:
+            ticket_err = ticket_err or got["reason"]
     return {"v": ver, "text": text.strip(), "clip": clip.strip(),
             "title": str(val.get("title") or "").strip(),
             "link": str(val.get("url") or val.get("u") or "").strip(),
             "final_url": str(val.get("final_url") or "").strip(),
-            "src": str(val.get("src") or "").strip().lower()}
+            "src": str(val.get("src") or "").strip().lower(),
+            "decodes": max(_dt, _dc), "ticket": ticket, "ticket_err": ticket_err}
 
 
 def _share_pick(inp: dict) -> tuple:
@@ -1665,6 +1679,37 @@ def share_raw_preview(raw: str, limit: int = 60) -> str:
     return s if len(s) <= limit else s[:limit] + "…"
 
 
+@bp.post("/collect/share-in")
+def collect_share_in():
+    """P2(오너 2026-10-01) — 단축어 「웹에서 콘텐츠 가져오기」(POST 양식 `text`) → **URL 한 줄**(ASCII 티켓).
+
+    iOS 「URL 열기」는 비ASCII가 든 URL을 `text=` 직후에서 잘랐다(운영 기록). 원문을 URL에 싣지 않으면 자를 게 없다.
+    로그인 불필요(단축어는 쿠키가 없다) — 상품은 **로그인한 뒤 티켓을 열 때** 저장한다. 실패해도 **URL 한 줄**을
+    돌려준다(사유가 결과 화면에 뜨게 — 단축어가 오류 본문을 브라우저로 넘기면 사람이 못 읽는다).
+    """
+    from flask import Response
+    from .share_tickets import RateLimited, create
+    base = _share_base() + "/seller/collect/share?v=3&"
+    if request.headers.get("Sec-Fetch-Site", "") in ("cross-site", "same-site"):
+        return Response(base + "err=bad\n", status=403, mimetype="text/plain")
+    xff = str(request.headers.get("X-Forwarded-For", "") or "").split(",")[0].strip()
+    ip = xff or str(request.remote_addr or "")
+    # 단축어 「요청 본문」이 양식이면 form, JSON이면 json, 텍스트면 본문 그대로 — 어느 쪽이든 받는다.
+    _js = request.get_json(force=False, silent=True) if request.is_json else None
+    text = str(request.form.get("text") or request.values.get("text") or
+               ((_js or {}).get("text") if isinstance(_js, dict) else "") or
+               (request.get_data(as_text=True) if (request.mimetype or "") == "text/plain" else "") or "")
+    try:
+        ticket = create(text, ip=ip)
+        logger.info("[share-in] 티켓 발급 len=%d", len(text.strip()))      # 원문은 남기지 않는다(tk 봉인)
+        return Response(base + "t=" + ticket + "\n", mimetype="text/plain")
+    except RateLimited:
+        logger.warning("[share-in] 레이트 상한(IP 분당 %s)", 10)
+        return Response(base + "err=rate\n", mimetype="text/plain")
+    except ValueError:
+        return Response(base + "err=empty\n", mimetype="text/plain")
+
+
 @bp.route("/collect/share", methods=["GET", "POST"])
 def collect_share():
     """M3 모바일 1탭 수집 — 공유 시트(아이폰 단축어 `GET ?text=` · 안드로이드 PWA share_target `POST`).
@@ -1687,10 +1732,16 @@ def collect_share():
     old_shortcut = request.method == "GET" and inp["v"] < SHORTCUT_VERSION
     _arrival = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "method": request.method,
                 "v": inp["v"], "qlen": len(request.query_string or b""), "text_len": len(inp["text"]),
-                "clip_len": len(inp["clip"]), "keys": ",".join(sorted(request.values.keys()))[:80]}
+                "clip_len": len(inp["clip"]), "keys": ",".join(sorted(request.values.keys()))[:80],
+                "decodes": inp["decodes"], "ticket": bool(inp["ticket"])}
     if not _check_auth():
         record_share_arrival({**_arrival, "authed": False, "stage": "login",
                               "reason": "로그인 화면으로 보냄(받은 값은 next에 실어 둠)"})
+        if inp["ticket"] and not inp["ticket_err"]:
+            # P2: 티켓은 **로그인 뒤에** 연다(그때 저장) — next엔 원문 대신 짧은 티켓만 싣는다.
+            from urllib.parse import urlencode
+            return redirect(url_for("auth.login", next="/seller/collect/share?" + urlencode(
+                {"v": str(inp["v"] or 3), "t": inp["ticket"]})))
         # 로그인하고 **같은 주소로** 돌아온다(POST도 GET 주소로 바꿔 싣는다 — 로그인 뒤엔 GET으로 온다).
         #   이미 서버가 고른 값(raw)을 싣는다 — 로그인 사이 클립보드가 바뀌어도 같은 상품이다.
         q = {"text": raw}
@@ -1731,6 +1782,13 @@ def collect_share():
                "detail": ((urlparse(url).hostname or url[:40]) if url else ("링크 없음" if raw else ""))}]
     ctx = {"raw": raw, "raw_preview": preview, "share_src": _route, "stages": stages,
            "old_shortcut": old_shortcut, "reinstall_url": ios_shortcut_url() or "/seller/guide/iphone"}
+    if inp["ticket_err"]:
+        stages[0]["detail"] = _TICKET_ERR.get(inp["ticket_err"], inp["ticket_err"])
+        record_share_arrival({**_arrival, "authed": True, "route": _route, "stage": "ticket",
+                              "reason": inp["ticket_err"]})
+        return render_template("collect_share_result.html",
+                               out={"ok": False, "error": _TICKET_ERR.get(inp["ticket_err"], "공유 내용을 받지 못했어요 — "
+                                    "타오바오 앱에서 다시 공유해 주세요.")}, **ctx)
     if not url:
         record_share_arrival({**_arrival, "authed": True, "route": _route,
                               "stage": "recv" if not raw else "link", "reason": "빈 값" if not raw else "링크 없음"})
@@ -1750,6 +1808,12 @@ def collect_share():
     record_share_arrival({**_arrival, "authed": True, "route": _route,
                           "stage": "saved" if out.get("ok") else "collect",
                           "reason": ("" if out.get("ok") else str(out.get("error") or "")[:80]) or _rr})
+    if inp["ticket"] and out.get("ok"):
+        try:
+            from .share_tickets import mark_used
+            mark_used(inp["ticket"])
+        except Exception:
+            pass
     logger.info("[share] method=%s ok=%s dup=%s partial=%s item=%s", request.method, out.get("ok"),
                 out.get("duplicate"), out.get("partial"), out.get("item_id"))
     # M5: 담은 그 자리에서 미리보기 → 마켓 선택 → 사전검증 → 등록.
@@ -1761,6 +1825,15 @@ def collect_share():
         except Exception as exc:
             logger.warning("[M5] 결과 화면 등록 흐름 준비 실패(담기는 됨): %s", exc)
     return render_template("collect_share_result.html", out=out, **ctx)
+
+
+# P2: 티켓 갈래 → 사람 말.
+_TICKET_ERR = {
+    "expired": "공유한 지 10분이 지나 내용이 지워졌어요 — 타오바오 앱에서 다시 공유해 주세요.",
+    "bad": "주소가 망가져서 공유 내용을 찾지 못했어요 — 타오바오 앱에서 다시 공유해 주세요.",
+    "rate": "짧은 시간에 너무 많이 보냈어요 — 1분 뒤에 다시 공유해 주세요.",
+    "empty": "단축어가 보낸 글이 비어 있어요 — 「复制链接(링크 복사)」을 누른 뒤 다시 실행해 주세요.",
+}
 
 
 # 단축 링크 펴기 결과(`resolve_short_link.reason`) → 사람 말. 원인은 서버가 본 것 그대로.
@@ -2076,7 +2149,7 @@ def _share_base() -> str:
 def guide_iphone():
     """화면 A — 「설치하기」(유저용 · **로그인 없이** 본다: 설치 전에 보는 화면이다)."""
     from .help_settings import ios_shortcut_url
-    return render_template("guide_iphone.html", screen="install", shots=_iphone_shots(("a1", "a2", "a3", "a4")),
+    return render_template("guide_iphone.html", screen="install", shots=_iphone_shots(("a1", "a2", "a3")),
                            shortcut_link=ios_shortcut_url(), host=_share_base().split("://", 1)[-1])
 
 
@@ -2143,9 +2216,10 @@ def guide_iphone_make():
     # T5: 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`(clip이 맨 뒤 — 인코딩 없이 와도 서버가 되살린다).
     return render_template("guide_iphone_make.html",
                            share_url=f"{_share_base()}/seller/collect/share?v=2&text=",
+                           share_in_url=f"{_share_base()}/seller/collect/share-in",
                            shortcut_link=ios_shortcut_url(), msg=msg, err=err,
                            version_counts=share_version_counts(), arrivals=share_arrivals(),
-                           shots=_iphone_shots(("a1", "a2", "a3", "a4", "b1", "b2", "b3", "c1", "c2", "c3")))
+                           shots=_iphone_shots(("a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3", "c4")))
 
 
 def _extract_reviews(html: str, limit: int = 20) -> list[dict]:
