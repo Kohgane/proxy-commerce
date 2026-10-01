@@ -92,9 +92,33 @@ def _strip_brand_chunk(title: str, brand: str) -> str:
     return t.strip(" ,")
 
 
+# Q(2026-10-01): 「상품 유형 명사」 — 첫 구절에 이게 하나도 없으면(「자석 충전식 스마트폰」처럼 꾸밈말에서 끊김)
+#   제목 뒤쪽에서 **처음 나오는** 유형 명사를 붙인다. 실측: 「…스마트폰·시계 무선 충전 거치대…」가 `·`에서 잘려
+#   쿠팡명이 「자석 충전식 스마트폰」이 됐다(거치대가 빠짐). 첫 구절에 유형 명사가 있으면 지금 규칙 그대로.
+TYPE_NOUNS = (
+    "거치대", "충전기", "충전 패드", "스탠드", "받침대", "홀더", "케이스", "커버", "필름", "케이블", "어댑터", "허브",
+    "이어폰", "헤드폰", "스피커", "마우스", "키보드", "램프", "조명", "무드등", "시계",
+    "의자", "소파", "테이블", "책상", "선반", "수납장", "정리함", "수납함", "바구니", "옷걸이", "행거", "거울", "협탁", "침대",
+    "매트", "쿠션", "베개", "이불", "커튼", "러그", "카페트",
+    "가방", "백팩", "지갑", "파우치", "신발", "운동화", "슬리퍼", "샌들", "모자", "벨트",
+    "셔츠", "티셔츠", "바지", "치마", "원피스", "재킷", "자켓", "코트", "니트", "후드",
+    "컵", "텀블러", "머그", "접시", "그릇", "냄비", "프라이팬", "도마", "칼",
+)
+
+
+def _type_nouns_in(text: str) -> List[str]:
+    found = []
+    for n in TYPE_NOUNS:
+        i = text.find(n)
+        if i >= 0:
+            found.append((i, n))
+    return [n for _i, n in sorted(found)]
+
+
 def product_type(title_ko: str, brand: str = "") -> str:
     """번역 제목 첫 구절의 한글 명사(조사 제거 · 붙임말 결합). 못 찾으면 빈 문자열."""
-    head = re.split(r"[,，/|·]", _strip_brand_chunk(title_ko, brand), maxsplit=1)[0]
+    body = _strip_brand_chunk(title_ko, brand)
+    head = re.split(r"[,，/|·]", body, maxsplit=1)[0]
     toks: List[str] = []
     for raw in head.split():
         t = raw.strip("()[]{}「」'\"")
@@ -103,6 +127,18 @@ def product_type(title_ko: str, brand: str = "") -> str:
         if len(t) > 2:
             t = _PARTICLE_TAIL.sub("", t) if len(_PARTICLE_TAIL.sub("", t)) >= 2 else t
         toks.append(t)
+    if toks and not _type_nouns_in(" ".join(toks)):
+        # 한국어 명사구는 **끝 명사가 머리**다(「·시계 무선 충전 거치대」의 머리는 거치대 — 시계는 충전 대상).
+        #   첫 구절 다음 구간(다음 `,`·「및」까지)에서 **마지막** 유형 명사, 없으면 그 뒤 구간들에서 처음 나오는 것.
+        segs = [x for x in re.split(r"[,，/|]|\s및\s|\s그리고\s", body[len(head):]) if x.strip()]
+        pick = ""
+        for seg in segs:
+            found = _type_nouns_in(seg)
+            if found:
+                pick = max(found, key=lambda n: seg.rfind(n))
+                break
+        if pick:
+            toks.append(pick)                         # 유형 명사는 뒤에서라도 반드시(지어내지 않음 — 제목에 있는 것만)
     out: List[str] = []
     i = 0
     while i < len(toks):

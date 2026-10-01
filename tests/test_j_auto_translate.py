@@ -270,7 +270,7 @@ def test_screen_a_marks_unverified_ios_labels_and_result_has_denied_slot(monkeyp
     from src.order_webhook import app
     h = app.test_client().get("/seller/guide/iphone").get_data(as_text=True)
     a = h[h.index('data-role="step-a1"'):h.index('data-role="install-trouble"')]
-    assert a.count('data-role="unverified"') == 2                                # 단축어 추가·홈 화면 올리기(허용 창 단계는 P에서 삭제)
+    assert a.count('data-role="unverified"') == 1                                # 홈 화면 올리기만(「단축어 추가」는 Q에서 오너 실측 확정)
     assert "「단축어」 앱을 열고" in a
     u = app.test_client().get("/seller/guide/iphone/use").get_data(as_text=True)
     assert u.count('data-role="unverified"') == 1                                # 공유 목록 모양

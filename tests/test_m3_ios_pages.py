@@ -41,7 +41,7 @@ def test_install_page_is_public_and_verbatim(anon, monkeypatch):
     assert r.status_code == 200
     h = r.get_data(as_text=True)
     for s in ("아이폰으로 상품 담기 — 처음 한 번만 설정", "「단축어 추가」", "「分享(공유)」 → 「复制链接(링크 복사)」",
-              "홈 화면의 「고가브릿지로 수집」", "안 될 때", "단축어가 구버전입니다", 'data-role="install-stages"'):
+              "홈 화면의 「고가브릿지수집」", "안 될 때", "단축어가 구버전입니다", 'data-role="install-stages"'):
         assert s in h, s
     assert 'data-role="install-soon"' in h and 'data-role="install-link"' not in h   # 링크 없으면 준비 중
     assert all(f'data-role="shot-{k}"' in h for k in ("a1", "a2", "a3")) and 'data-role="shot-a4"' not in h
@@ -54,7 +54,7 @@ def test_install_page_is_public_and_verbatim(anon, monkeypatch):
 def test_use_page_is_public_and_verbatim(anon):
     h = anon.get("/seller/guide/iphone/use").get_data(as_text=True)
     for s in ("상품 담는 법", "타오바오 앱에서 담고 싶은 상품을 엽니다.", "오른쪽 위 「分享(공유)」를 누릅니다.",
-              "나오는 목록을 옆으로 밀어 「고가브릿지로 수집」을 누릅니다.", "「담았어요」 화면이 나오면 성공입니다.",
+              "나오는 목록을 옆으로 밀어 「고가브릿지수집」을 누릅니다.", "「담았어요」 화면이 나오면 성공입니다.",
               "컴퓨터에서 고가수집기를 켜면 나머지 사진과 옵션이 자동으로 채워집니다.", "안 될 때",
               "로그인하면 자동으로 이어집니다.", "(淘口令)", "공유 → 텔레그램 → 「고가브릿지 봇」 → 보내기. 똑같이 담깁니다."):
         assert s in h, s
@@ -70,10 +70,10 @@ def test_install_link_is_an_admin_setting(monkeypatch):
     page = c.get("/seller/guide/iphone/make").get_data(as_text=True)
     # M3-iOS-3(2026-09-30): 두 갈래(공유 시트·클립보드)가 src로 길을 싣는다.
     # T5(2026-09-30-H): 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`.
-    assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?v=2&amp;text=" in page
+    assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?v=2&amp;u=" in page
     # O(2026-10-01): 두 자리 모두 「URL 인코딩」 결과 토큰 — 클립보드는 ①의 「입력이 없는 경우」로만.
     # P(10-01): 두 번 인코딩 — 두 자리 모두 ③(두 번째 인코딩) 결과. 티켓 방식(share-in) 안내도 같은 화면에.
-    assert "<b>[③ 결과]</b>&amp;clip=<b>[③ 결과]</b>" in page
+    assert "u=<b>[③ 결과]</b>&amp;text=<b>[⑤ 결과]</b>" in page                          # Q: u가 앞
     assert "https://kohganepercentiii.com/seller/collect/share-in" in page
     assert "「공유 시트에 표시」 켬" in page and "「iCloud 링크 복사」" in page and 'data-role="make-arrivals"' in page
     bad = c.post("/seller/guide/iphone/make", data={"shortcut_url": "https://evil.example/x"}).get_data(as_text=True)

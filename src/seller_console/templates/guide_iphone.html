@@ -5,9 +5,11 @@
    한 화면에 한 동작 · 캡처 1장씩 · 전문용어 0. 로그인 없이 본다(설치 전에 보는 화면).
    iOS 화면 이름은 오너 실기기 캡처로 확정한다 — 여기서 지어내지 않는다.
    P(2026-10-01): 옛 2단계(붙여넣기 허용 창 「허용」)는 삭제 — 오너 실측: 그 창은 안 뜬다. 단계는 1~3.
+   Q(2026-10-01): 단축어 이름 = 「고가브릿지수집」(배포본 iCloud 설치 페이지 실측). 그 페이지의 「단축어 추가」 버튼과
+   「공유 시트에 표시됨」 표시는 오너 실측 라벨 — 「(캡처 참고)」를 뗐다.
    J6(2026-09-30-J) 자기 검수: 코드·캡처로 확인 못 한 **iOS 화면 이름**(「단축어 추가」·붙여넣기 허용 창·공유 목록 모양·
    홈 화면에 올리는 법) 옆에는 「(캡처 참고)」를 단다. 타오바오 「分享」「复制链接」은 오너 실측(09-30 M3-iOS 실측 2),
-   「고가브릿지로 수집」은 우리 단축어 이름, 「담았어요」는 우리 결과 화면 제목, 「단축어」는 앱 이름 — 표시 없음. #}
+   「고가브릿지수집」은 우리 단축어 이름, 「담았어요」는 우리 결과 화면 제목, 「단축어」는 앱 이름 — 표시 없음. #}
 {% macro shot(k) %}
 <figure class="ig-shot" data-role="shot-{{ k }}">
   {% if shots.get(k) %}<img src="{{ shots[k] }}" alt="{{ k|upper }} 단계 화면">
@@ -27,7 +29,8 @@
   <section class="ig-step" data-role="step-a1">
     <div class="ig-num">1</div>
     <div class="ig-body">
-      <p>아래 파란 버튼을 누르고, 뜨는 화면 맨 아래 「단축어 추가」를 누르세요. <span class="ig-verify" data-role="unverified">(캡처 참고)</span></p>
+      <p>아래 파란 버튼을 누르고, 뜨는 화면 맨 아래 「단축어 추가」를 누르세요.</p>
+      <p class="ig-note" data-role="a1-share-sheet">그 화면 아래에 「공유 시트에 표시됨」이 보이면 타오바오 「分享」 목록에서도 바로 쓸 수 있어요.</p>
       {% if shortcut_link %}
       <a class="btn btn-primary ig-btn" href="{{ shortcut_link }}" data-role="install-link">단축어 설치하기</a>
       {% else %}
@@ -47,8 +50,8 @@
   <section class="ig-step" data-role="step-a3">
     <div class="ig-num">3</div>
     <div class="ig-body">
-      <p>홈 화면의 「고가브릿지로 수집」을 한 번 누르세요. 사파리가 열리고 「담았어요」가 나오면 끝입니다.</p>
-      <p class="ig-note" data-role="a4-no-home">홈 화면에 아이콘이 없으면 「단축어」 앱을 열고 「고가브릿지로 수집」을 누르세요 — 설치하면 먼저 「단축어」 앱에 들어갑니다. 홈 화면에 올리는 방법은 <span class="ig-verify" data-role="unverified">(캡처 참고)</span></p>
+      <p>홈 화면의 「고가브릿지수집」을 한 번 누르세요. 사파리가 열리고 「담았어요」가 나오면 끝입니다.</p>
+      <p class="ig-note" data-role="a4-no-home">홈 화면에 아이콘이 없으면 「단축어」 앱을 열고 「고가브릿지수집」을 누르세요 — 설치하면 먼저 「단축어」 앱에 들어갑니다. 홈 화면에 올리는 방법은 <span class="ig-verify" data-role="unverified">(캡처 참고)</span></p>
       <p class="ig-note">처음엔 로그인 화면이 나올 수 있어요 — 로그인(또는 가입)하면 그 결과 화면으로 이어집니다.</p>
       {{ shot("a3") }}
     </div>
@@ -75,7 +78,7 @@
   <section class="ig-step" data-role="step-b3">
     <div class="ig-num">3</div>
     <div class="ig-body">
-      <p>나오는 목록을 옆으로 밀어 「고가브릿지로 수집」을 누릅니다. <span class="ig-verify" data-role="unverified">(캡처 참고)</span></p>
+      <p>나오는 목록을 옆으로 밀어 「고가브릿지수집」을 누릅니다. <span class="ig-verify" data-role="unverified">(캡처 참고)</span></p>
       <p>→ 사파리가 열리고 「담았어요」 화면이 나오면 성공입니다. 제목과 가격이 보입니다.</p>
       <p>→ 사진이 없거나 1장뿐인 건 정상입니다. 컴퓨터에서 고가수집기를 켜면 나머지 사진과 옵션이 자동으로 채워집니다.</p>
       {{ shot("b3") }}
@@ -84,11 +87,11 @@
   <section class="ig-help" data-role="use-trouble">
     <h2 class="ig-sub">안 될 때</h2>
     <ul>
-      <li>목록에 「고가브릿지로 수집」이 없으면 → <a href="/seller/guide/iphone">설치하기</a> 1번부터 다시.</li>
+      <li>목록에 「고가브릿지수집」이 없으면 → <a href="/seller/guide/iphone">설치하기</a> 1번부터 다시.</li>
       <li>「로그인」 화면이 나오면 → 로그인하면 자동으로 이어집니다.</li>
       <li>공유 화면에 링크 대신 글자만 복사되는 경우(淘口令) → 그대로 눌러도 됩니다. 글자에서 상품을 찾아냅니다.</li>
-      <li data-role="use-clip">공유 목록에 「고가브릿지로 수집」이 없거나 「공유 내용이 비어서 왔습니다」가 나오면 →
-        「复制链接(링크 복사)」을 누른 뒤 「단축어」 앱에서 「고가브릿지로 수집」을 누르세요(설치하기 2·3번).</li>
+      <li data-role="use-clip">공유 목록에 「고가브릿지수집」이 없거나 「공유 내용이 비어서 왔습니다」가 나오면 →
+        「复制链接(링크 복사)」을 누른 뒤 「단축어」 앱에서 「고가브릿지수집」을 누르세요(설치하기 2·3번).</li>
     </ul>
     <p class="ig-note" data-role="use-telegram">다른 방법(단축어가 어려우면): 공유 → 텔레그램 → 「고가브릿지 봇」 → 보내기. 똑같이 담깁니다.</p>
   </section>
