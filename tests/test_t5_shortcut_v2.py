@@ -77,7 +77,8 @@ def test_version_by_input_matrix(client, v, text, clip, state, route, oldver):
     if route:
         assert got_route == route
     if v == "2" and not text and not clip:
-        assert "공유 내용도 클립보드도 비어 있어요" in h and "复制链接" in h
+        # O(2026-10-01): v2는 text·clip이 같은 값(단축어 입력) — 「단축어가 보낸 글이 비어 있어요」 + 처리 단계.
+        assert "단축어가 보낸 글이 비어 있어요" in h and "复制链接" in h and 'data-stage="recv"' in h
 
 
 def test_clipboard_link_is_used_when_share_text_has_none(client, caplog):

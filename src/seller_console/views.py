@@ -1569,6 +1569,9 @@ _SHARE_KEYS = ("text", "title", "url", "u", "final_url", "src", "clip", "v")
 
 # 결과 화면에 적는 「경로」 — 서버가 정한다(T5: 단축어엔 판단 로직 0).
 _SHARE_SRC = {"share": "공유 시트", "clip": "클립보드"}
+# O(2026-10-01): v=2 단축어는 text·clip에 **같은 값**(URL 인코딩된 단축어 입력)을 싣는다 — 어느 쪽에서 왔는지
+#   서버가 가를 수 없다. 그래서 경로는 「단축어」 하나로 적는다(지어낸 구분 금지).
+_SHARE_ROUTE_SHORTCUT = "단축어"
 
 
 def _share_inputs() -> dict:
@@ -1588,7 +1591,10 @@ def _share_inputs() -> dict:
     if request.method == "GET" and ("text" in request.args or "clip" in request.args):
         extra = [k for k in request.args.keys() if k not in _SHARE_KEYS]
         qs = request.query_string.decode("utf-8", "replace")
-        if extra:
+        # O(오너 2026-10-01): 원칙 — **표준 디코드 1회.** 되살리기는 인코딩이 **전혀 없는**(`%`가 하나도 없는)
+        #   원 쿼리에만 건다. iOS 「URL 인코딩」을 거친 값(`%3F`·`%20`·CJK `%E3…`)을 다시 자르고 풀면
+        #   값 안의 `https://…`·`?tk=`를 경계로 오인할 수 있다.
+        if extra and "%" not in qs:
             body = qs
             ci = body.rfind("&clip=") if "clip" in request.args else -1
             if ci >= 0:
@@ -1674,9 +1680,14 @@ def collect_share():
     raw, src = _share_pick(inp)
     final_url = inp["final_url"]
     # T5: 단축어 버전 — GET(단축어)인데 v<2면 옛 단축어(판단 로직이 든 것). 안드로이드 POST는 해당 없음.
-    from .help_settings import SHORTCUT_VERSION, bump_share_version, ios_shortcut_url
+    from .help_settings import SHORTCUT_VERSION, bump_share_version, ios_shortcut_url, record_share_arrival
     old_shortcut = request.method == "GET" and inp["v"] < SHORTCUT_VERSION
+    _arrival = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "method": request.method,
+                "v": inp["v"], "qlen": len(request.query_string or b""), "text_len": len(inp["text"]),
+                "clip_len": len(inp["clip"]), "keys": ",".join(sorted(request.values.keys()))[:80]}
     if not _check_auth():
+        record_share_arrival({**_arrival, "authed": False, "stage": "login",
+                              "reason": "로그인 화면으로 보냄(받은 값은 next에 실어 둠)"})
         # 로그인하고 **같은 주소로** 돌아온다(POST도 GET 주소로 바꿔 싣는다 — 로그인 뒤엔 GET으로 온다).
         #   이미 서버가 고른 값(raw)을 싣는다 — 로그인 사이 클립보드가 바뀌어도 같은 상품이다.
         q = {"text": raw}
@@ -1701,19 +1712,41 @@ def collect_share():
                       for k in ("title", "text", "link", "clip"))
     logger.info("[share] parts v=%s route=%s %s", inp["v"], src or "-", _parts)
 
-    from src.collectors.share_text import link_failure_reason, parse_share_text
+    from urllib.parse import urlparse
+    from src.collectors.share_text import is_short_link, link_failure_reason, parse_share_text
     preview = share_raw_preview(raw)
-    _route = _SHARE_SRC.get(src, "") or ("둘 다 비어 있음" if not raw else "")
-    ctx = {"raw": raw, "raw_preview": preview, "share_src": _route,
-           "old_shortcut": old_shortcut, "reinstall_url": ios_shortcut_url() or "/seller/guide/iphone"}
+    _v2_get = request.method == "GET" and inp["v"] >= SHORTCUT_VERSION
+    _route = (_SHARE_ROUTE_SHORTCUT if (_v2_get and raw) else _SHARE_SRC.get(src, "")) or \
+        ("둘 다 비어 있음" if not raw else "")
     url = parse_share_text(raw, final_url=final_url).get("url", "")
+    # O-5: 실패 **단계** — 수신 길이 → 링크 추출 → 단축링크 해석 → 상품 ID. 어디서 멈췄는지 화면이 말한다.
+    stages = [{"key": "recv", "name": "받은 글", "ok": bool(raw),
+               "detail": (f"{len(raw)}자" + (f" (단축어 {len(inp['text'])}자 · 클립보드 {len(inp['clip'])}자)"
+                                              if not _v2_get else "")) if raw else
+               f"0자 — 서버에 도착한 값이 비어 있음 (text {len(inp['text'])}자 · clip {len(inp['clip'])}자)"},
+              {"key": "link", "name": "링크 찾기", "ok": bool(url) if raw else None,
+               "detail": ((urlparse(url).hostname or url[:40]) if url else ("링크 없음" if raw else ""))}]
+    ctx = {"raw": raw, "raw_preview": preview, "share_src": _route, "stages": stages,
+           "old_shortcut": old_shortcut, "reinstall_url": ios_shortcut_url() or "/seller/guide/iphone"}
     if not url:
+        record_share_arrival({**_arrival, "authed": True, "route": _route,
+                              "stage": "recv" if not raw else "link", "reason": "빈 값" if not raw else "링크 없음"})
         return render_template("collect_share_result.html",
                                out={"ok": False, "error": _share_empty_reason(src, raw, inp["v"]) or
                                     link_failure_reason(raw, final_url)}, **ctx)
     from src.api.extension_api import share_collect_core
     out, _res = share_collect_core(raw, url=url, seller_id=_seller_id(), seller_ids=_seller_identities(),
                                    final_url=final_url, source="share")
+    _rr = str((_res or {}).get("resolve_reason") or out.get("resolve_reason") or "")
+    _pid = str(out.get("item_id_taobao") or (_res or {}).get("item_id_taobao") or "")
+    if is_short_link(url):
+        stages.append({"key": "resolve", "name": "단축 링크 펴기", "ok": _rr == "ok" or bool(_pid),
+                       "detail": _SHORT_RESOLVE_LABEL.get(_rr.split(":")[0], _rr or "결과 없음")})
+    stages.append({"key": "pid", "name": "상품 번호", "ok": bool(_pid) or (bool(out.get("ok")) and not out.get("partial")),
+                   "detail": _pid or ("이미 담은 상품" if out.get("duplicate") else "못 찾음")})
+    record_share_arrival({**_arrival, "authed": True, "route": _route,
+                          "stage": "saved" if out.get("ok") else "collect",
+                          "reason": ("" if out.get("ok") else str(out.get("error") or "")[:80]) or _rr})
     logger.info("[share] method=%s ok=%s dup=%s partial=%s item=%s", request.method, out.get("ok"),
                 out.get("duplicate"), out.get("partial"), out.get("item_id"))
     # M5: 담은 그 자리에서 미리보기 → 마켓 선택 → 사전검증 → 등록.
@@ -1727,13 +1760,19 @@ def collect_share():
     return render_template("collect_share_result.html", out=out, **ctx)
 
 
+# 단축 링크 펴기 결과(`resolve_short_link.reason`) → 사람 말. 원인은 서버가 본 것 그대로.
+_SHORT_RESOLVE_LABEL = {"ok": "폈음", "no_item_in_body": "열렸지만 상품 번호 없음", "timeout": "시간 초과",
+                        "error": "서버가 열지 못함", "disabled": "서버 설정으로 꺼 둠", "not_short_link": "필요 없음",
+                        "http_200": "열렸지만 상품 번호 없음"}
+
+
 def _share_empty_reason(src: str, raw: str, ver: int = 0) -> str:
     """받은 게 **비었을 때** 길을 아는 경우의 사유 — 누가 안 넘겼는지가 다르다."""
     if raw.strip():
         return ""
     if ver >= 2:
-        return ("공유 내용도 클립보드도 비어 있어요 — 타오바오 앱에서 「分享(공유)」 → 「复制链接(링크 복사)」을 "
-                "누른 뒤 홈 화면(또는 「단축어」 앱)의 「고가브릿지로 수집」을 눌러 주세요.")
+        return ("단축어가 보낸 글이 비어 있어요 — 타오바오 앱에서 「分享(공유)」 → 「复制链接(링크 복사)」을 "
+                "누른 뒤 「고가브릿지로 수집」을 다시 눌러 주세요.")
     if src == "share":
         return ("공유 시트로 왔는데 내용이 비어 있어요 — 이 앱이 공유에 내용을 넘기지 않았어요. "
                 "앱에서 「复制链接(링크 복사)」을 누른 뒤 단축어 앱에서 「고가브릿지로 수집」을 눌러 주세요.")
@@ -2097,12 +2136,12 @@ def guide_iphone_make():
             msg = "저장했어요 — 설치 화면의 버튼이 이 링크로 열립니다." if saved else "지웠어요 — 설치 화면은 「준비 중」으로 보입니다."
         except ValueError as exc:
             err = str(exc)
-    from .help_settings import share_version_counts
+    from .help_settings import share_arrivals, share_version_counts
     # T5: 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`(clip이 맨 뒤 — 인코딩 없이 와도 서버가 되살린다).
     return render_template("guide_iphone_make.html",
                            share_url=f"{_share_base()}/seller/collect/share?v=2&text=",
                            shortcut_link=ios_shortcut_url(), msg=msg, err=err,
-                           version_counts=share_version_counts(),
+                           version_counts=share_version_counts(), arrivals=share_arrivals(),
                            shots=_iphone_shots(("a1", "a2", "a3", "a4", "b1", "b2", "b3", "c1", "c2", "c3")))
 
 

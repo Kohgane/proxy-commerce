@@ -198,6 +198,8 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             "resolve_gap": resolve_gap(share), "message": gap_message(share),
             # 어디서 오래 걸렸는지 — 원문은 안 싣고 **밀리초만** 싣는다.
             "timings": timings,
+            # O-5: 단축 링크 펴기 결과(결과 화면 단계 표시) — 서버가 본 갈래 그대로.
+            "resolve_reason": share.get("resolve_reason", ""),
             }
 
 

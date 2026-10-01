@@ -14,36 +14,58 @@
   <p class="text-muted small mb-0">만든 단축어의 iCloud 링크를 아래에 붙여넣으면 유저용 <a href="/seller/guide/iphone">설치하기</a> 화면의 파란 버튼이 그 링크로 열립니다.</p>
   <hr class="pc-hairline mt-2 mb-4">
 
-  {# T5(오너 2026-09-30-H): 단축어엔 **판단 로직 0** — 동작 셋으로 고정하고, 공유 글·클립보드 중 무엇을 쓸지는
-     서버가 정한다. 그래야 중국 유저가 한 번 설치한 단축어를 다시 바꿀 일이 없다. 「만약」 분기(PR 802)는 폐기.
-     동작 이름은 오너 실기기 캡처로 확정(여기서 지어내지 않는다). #}
+  {# O(오너 2026-10-01, 캡처 좌표 있음) — 최종 구조. 단축어엔 판단 로직 0, 고르는 건 서버.
+     T5의 「클립보드 가져오기」 **단독 동작**은 「URL 열기」에서 빈 값으로 들어갔다(오너 실측 — 지뢰). 그래서
+     클립보드는 ①의 「입력이 없는 경우」로만 가져오고, 값은 ②「URL 인코딩」을 지나 ③에 들어간다.
+     iOS 화면 이름은 오너 실측 라벨만 쓴다: 「훑어보기」·「앱 및 2개」·「단축어 입력」(종류 화면 제목). #}
   <ol class="make-steps">
     <li>「단축어」 앱 열기 → 오른쪽 위 「+」.</li>
-    <li>위쪽 단축어 이름 옆 「∨」 → 「세부사항」 → 「공유 시트에 표시」 켬 → 「공유 시트 유형」에서 「URL」과 「텍스트」만 체크.</li>
-    <li>동작 <strong>셋만</strong> 이 순서로 둡니다(「동작 추가」 → 검색창에 이름). 「만약」·「URL 인코딩」·「입력에서 URL 가져오기」는 넣지 않습니다:
+    <li>위쪽 단축어 이름 옆 「∨」 → 「세부사항」 → 「공유 시트에 표시」 켬.</li>
+    <li>동작 <strong>셋</strong>을 이 순서로 둡니다(「동작 추가」 → 검색창에 이름). 「만약」·「클립보드 가져오기」 단독 동작은 넣지 않습니다:
       <ol class="make-acts" data-role="make-actions">
-        <li data-role="act-1"><strong>공유 시트 받기</strong> — 위에서 공유 시트를 켜면 맨 위에 저절로 생깁니다.
-          그 안의 「입력이 없는 경우」는 <strong>「계속」</strong>.
-          <span class="text-muted d-block">(「클립보드 가져오기」를 여기서 고르지 않습니다 — 클립보드는 2번이 따로 가져옵니다.)</span>
+        <li data-role="act-1"><strong>공유 시트에서 받기</strong> — 공유 시트를 켜면 맨 위에 생깁니다.
+          <span class="d-block">· 받을 종류: 파란 글자를 눌러 종류 화면(제목 「단축어 입력」)에서
+            <strong>텍스트 · 리치 텍스트 · Safari 웹 페이지 · URL</strong>만 켭니다.</span>
+          <span class="d-block">· 「입력이 없는 경우」 = <strong>「클립보드 가져오기」</strong>(复制链接 뒤 단축어 앱에서 누를 때 이 값이 들어갑니다).</span>
+          <span class="text-muted d-block" data-role="make-labels">오너 실측 라벨: 「훑어보기」 · 「앱 및 2개」 · 「단축어 입력」 — 자리는 C1 캡처 기준.</span>
           {{ cshot("c1") }}</li>
-        <li data-role="act-2"><strong>「클립보드 가져오기」</strong>
+        <li data-role="act-2"><strong>「URL 인코딩」</strong> — 입력 칸에 파란 「단축어 입력」 토큰.
           {{ cshot("c2") }}</li>
-        <li data-role="act-3"><strong>「URL 열기」</strong> — 「URL」 칸에 아래를 그대로 입력하고, 표시된 두 자리에 변수 토큰을 넣습니다:
-          <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}<b>[단축어 입력]</b>&amp;clip=<b>[클립보드]</b></code>
-          <span class="d-block">· <code>text=</code> 바로 뒤: 파란 「단축어 입력」 토큰</span>
-          <span class="d-block">· <code>clip=</code> 바로 뒤: 파란 「클립보드」 토큰</span>
-          <span class="text-muted d-block" data-role="make-noencode">「URL 인코딩」은 넣지 않습니다 — 인코딩 없이 와도 서버가 풀어 읽습니다
-            (<code>clip=</code>이 맨 뒤여야 합니다).</span>
+        <li data-role="act-3"><strong>「URL 열기」</strong> — 「URL」 칸에 아래를 그대로 입력하고, 두 자리 <strong>모두</strong> ②의 결과 토큰을 넣습니다:
+          <code class="d-block my-2 text-break" data-role="share-url">{{ share_url }}<b>[URL 인코딩된 텍스트]</b>&amp;clip=<b>[URL 인코딩된 텍스트]</b></code>
+          <span class="text-muted d-block" data-role="make-clip-mine">「클립보드 가져오기」를 따로 동작으로 두고 그 토큰을 <code>clip=</code>에 넣으면 빈 값이 갑니다(오너 실측).
+            클립보드는 ①의 「입력이 없는 경우」로 이미 들어옵니다.</span>
           {{ cshot("c3") }}</li>
       </ol>
-      <div class="small text-muted" data-role="make-label-note">동작 이름은 iOS 버전마다 조금 다를 수 있어요 — 오너 실기기 캡처로 확정합니다.
-        공유 글에 링크가 있으면 그것을, 없으면 클립보드의 링크를 서버가 씁니다(결과 화면 「경로」도 서버가 정함).
+      <div class="small text-muted" data-role="make-label-note">서버는 표준 디코드 한 번만 합니다 — <code>%</code>가 든 값을 다시 자르지 않습니다.
+        두 자리에 같은 값이 오므로 결과 화면 「경로」는 「단축어」로 적힙니다.
         <code>v=2</code>가 없는 옛 단축어로 들어오면 결과 화면에 「단축어가 구버전입니다」와 재설치 버튼이 뜹니다.</div></li>
-    <li>이름을 「고가브릿지로 수집」으로 바꾸고 「완료」. 단축어를 길게 눌러 「홈 화면에 추가」(유저 안내 4번이 이 아이콘을 누릅니다).</li>
+    <li>이름을 「고가브릿지로 수집」으로 바꾸고 「완료」.</li>
     <li>배포: 단축어 목록에서 이 단축어 길게 누르기 → 「공유」 → 「iCloud 링크 복사」. 이 링크를 아래 칸에 붙여넣고 저장 —
       설치하기 화면의 버튼이 이 링크로 바뀝니다(유저 단축어를 따로 고칠 필요 없음).</li>
-    <li>오너 폰에서 설치하기 1~4번을 그대로 1회 실측 → 캡처(아래 캡처 자리).</li>
+    <li>오너 폰에서 복制链接 → 단축어 실행 1회 → 결과 화면의 「처리 단계」와 아래 「최근 도착」 표를 같이 캡처.</li>
   </ol>
+
+  {# O: 서버가 **무엇을 받았는지** — 길이·키·도달 단계만(내용·tk 없음). 「비어 있어요」가 나오면 여기부터 본다. #}
+  <div class="op-card mb-3" data-role="make-arrivals">
+    <div class="op-card-body small">
+      <div class="fw-semibold mb-1">최근 도착 {{ arrivals|length }}건 <span class="text-muted fw-normal">(길이만 — 내용은 남기지 않아요)</span></div>
+      {% if arrivals %}
+      <div class="table-responsive">
+      <table class="table table-sm mb-0 table-cards">
+        <thead><tr><th>시각(UTC)</th><th>v</th><th class="text-end">쿼리</th><th class="text-end">text</th><th class="text-end">clip</th><th>로그인</th><th>단계</th><th>사유</th></tr></thead>
+        <tbody>{% for a in arrivals %}
+          <tr><td data-label="시각">{{ (a.at or "")[5:16].replace("T", " ") }}</td><td data-label="v">{{ a.v }}</td>
+            <td data-label="쿼리" class="text-end">{{ a.qlen }}</td><td data-label="text" class="text-end">{{ a.text_len }}</td>
+            <td data-label="clip" class="text-end">{{ a.clip_len }}</td><td data-label="로그인">{{ "예" if a.authed else "아니오" }}</td>
+            <td data-label="단계">{{ {"login": "로그인으로", "recv": "받은 글 0자", "link": "링크 없음", "collect": "담기 실패", "saved": "담음"}.get(a.stage, a.stage) }}</td>
+            <td data-label="사유" class="text-break">{{ a.reason or "—" }}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+      </div>
+      {% else %}<span class="text-muted">아직 도착 기록이 없어요.</span>{% endif %}
+    </div>
+  </div>
 
   <div class="op-card mb-3" data-role="make-version-counts">
     <div class="op-card-body small">

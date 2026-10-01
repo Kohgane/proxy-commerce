@@ -77,12 +77,16 @@ def test_install_screen_has_clipboard_default_step_and_slot():
 
 
 def test_make_screen_is_three_actions_without_branch():
-    """T5: 단축어엔 판단 로직 0 — 「만약」 분기 폐기, 동작 셋 + 캡처 자리 셋."""
+    """O(2026-10-01) 최종 구조: ① 공유 시트에서 받기(없으면 클립보드) ② URL 인코딩 ③ URL 열기 — 판단 로직 0.
+
+    T5의 「클립보드 가져오기」 **단독 동작**은 URL 열기에서 빈 값이었다(오너 실측) — 동작 목록에 없어야 한다.
+    """
     t = Path("src/seller_console/templates/guide_iphone_make.html").read_text(encoding="utf-8")
     acts = [t.index(f'data-role="act-{i}"') for i in (1, 2, 3)]
     assert acts == sorted(acts) and 'data-role="act-4"' not in t
-    for s in ("「입력이 없는 경우」는 <strong>「계속」</strong>", "「클립보드 가져오기」", "「URL 열기」",
-              'data-role="make-noencode"', 'cshot("c1")', 'cshot("c2")', 'cshot("c3")'):
+    for s in ("「입력이 없는 경우」 = <strong>「클립보드 가져오기」</strong>", "<strong>「URL 인코딩」</strong>",
+              "<strong>「URL 열기」</strong>", "텍스트 · 리치 텍스트 · Safari 웹 페이지 · URL", "「훑어보기」", "「앱 및 2개」",
+              "「단축어 입력」", 'data-role="make-clip-mine"', 'cshot("c1")', 'cshot("c2")', 'cshot("c3")'):
         assert s in t, s
     body = t.split('data-role="make-actions"', 1)[1].split("</ol>", 1)[0]
-    assert "「만약」</strong>" not in body and "<strong>「URL 인코딩」" not in body
+    assert "「만약」</strong>" not in body and "<strong>「클립보드 가져오기」</strong> —" not in body

@@ -193,6 +193,7 @@ jobs:
             tests/test_v88_b_impl_translation_jobs.py \
             tests/test_auth1_gunicorn_two_workers.py \
             tests/test_auth1_signup_login.py \
+            tests/test_o_share_counter_pg.py \
             2>&1 | tee /tmp/pytest_pg.txt
           tail -1 /tmp/pytest_pg.txt
 

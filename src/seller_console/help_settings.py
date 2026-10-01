@@ -48,17 +48,21 @@ def bump_share_version(v: int) -> None:
         from src.db import pg
         if pg.pg_enabled():
             with pg.tx() as cur:
+                # O(2026-10-01) 실측: 형 없는 자리표시자를 `jsonb_build_object`에 넣으면 PG가
+                #   `IndeterminateDatatype`로 거부한다 — 그런데 아래 except가 삼켜서 **운영에 한 건도 안 쌓였다**.
+                #   자리표시자마다 형을 박는다(`::text`).
                 cur.execute(
-                    "INSERT INTO app_state (key, value, updated_at) VALUES (%s, jsonb_build_object(%s, 1), now()) "
-                    "ON CONFLICT (key) DO UPDATE SET value = jsonb_set(app_state.value, ARRAY[%s], "
-                    "to_jsonb(COALESCE((app_state.value->>%s)::int, 0) + 1)), updated_at = now()",
+                    "INSERT INTO app_state (key, value, updated_at) VALUES (%s::text, jsonb_build_object(%s::text, 1), now()) "
+                    "ON CONFLICT (key) DO UPDATE SET value = jsonb_set(app_state.value, ARRAY[%s::text], "
+                    "to_jsonb(COALESCE((app_state.value->>%s::text)::int, 0) + 1)), updated_at = now()",
                     (_VKEY, key, key, key))
             return
         cur_v = _st().state_get(_VKEY) or {}
         cur_v[key] = int(cur_v.get(key) or 0) + 1
         _st().state_set(_VKEY, cur_v)
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("[share] 버전별 도착 수 기록 실패: %s: %s", type(exc).__name__, exc)
 
 
 def share_version_counts() -> dict:
@@ -66,3 +70,29 @@ def share_version_counts() -> dict:
         return {k: int(v) for k, v in (_st().state_get(_VKEY) or {}).items()}
     except Exception:
         return {}
+
+
+# O(오너 2026-10-01): 「공유 내용도 클립보드도 비어 있어요」를 서버가 **무엇을 받았는지**로 가른다.
+#   같은 쿼리를 테스트·실 gunicorn에 넣으면 담기는데 실기기에선 비었다 — 운영에 흔적이 없었다(위 카운터 SQL
+#   결함). 도착마다 **길이·키·도달 단계만** 남긴다(내용·tk는 안 남김). 최근 20건, 관리자 화면 C에서 본다.
+_AKEY = "help:share_arrivals"
+_ARRIVALS_MAX = 20
+
+
+def record_share_arrival(entry: dict) -> None:
+    try:
+        cur = _st().state_get(_AKEY) or {}
+        rows = list(cur.get("rows") or [])
+        rows.insert(0, {k: entry.get(k) for k in ("at", "method", "v", "qlen", "text_len", "clip_len", "keys",
+                                                  "route", "stage", "reason", "authed")})
+        _st().state_set(_AKEY, {"rows": rows[:_ARRIVALS_MAX]})
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("[share] 도착 기록 실패: %s: %s", type(exc).__name__, exc)
+
+
+def share_arrivals() -> list:
+    try:
+        return list((_st().state_get(_AKEY) or {}).get("rows") or [])
+    except Exception:
+        return []
