@@ -45,8 +45,8 @@ def test_install_page_is_public_and_verbatim(anon, monkeypatch):
         assert s in h, s
     assert 'data-role="install-soon"' in h and 'data-role="install-link"' not in h   # 링크 없으면 준비 중
     assert all(f'data-role="shot-{k}"' in h for k in ("a1", "a2", "a3", "a4"))
-    # 추측 금지: 붙여넣기 거부 시 설정 경로는 실기기 캡처 뒤에만 적는다
-    assert "실제 아이폰 화면을 확인한 뒤" in h
+    # O(2026-10-01) 실측: 붙여넣기 허용 창은 뜨지 않았다 — 「허용 안 함」 안내 줄은 뺐다.
+    assert 'data-role="install-paste-denied"' not in h
 
 
 def test_use_page_is_public_and_verbatim(anon):
@@ -69,8 +69,9 @@ def test_install_link_is_an_admin_setting(monkeypatch):
     # M3-iOS-3(2026-09-30): 두 갈래(공유 시트·클립보드)가 src로 길을 싣는다.
     # T5(2026-09-30-H): 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`.
     assert "「URL 열기」" in page and "https://kohganepercentiii.com/seller/collect/share?v=2&amp;text=" in page
-    assert "&amp;clip=<b>[클립보드]</b>" in page and "「클립보드 가져오기」" in page
-    assert "「공유 시트 유형」에서 「URL」과 「텍스트」만 체크." in page and "「iCloud 링크 복사」" in page
+    # O(2026-10-01): 두 자리 모두 「URL 인코딩」 결과 토큰 — 클립보드는 ①의 「입력이 없는 경우」로만.
+    assert "<b>[URL 인코딩된 텍스트]</b>&amp;clip=<b>[URL 인코딩된 텍스트]</b>" in page
+    assert "「공유 시트에 표시」 켬" in page and "「iCloud 링크 복사」" in page and 'data-role="make-arrivals"' in page
     bad = c.post("/seller/guide/iphone/make", data={"shortcut_url": "https://evil.example/x"}).get_data(as_text=True)
     assert 'data-role="make-err"' in bad and ios_shortcut_url() == ""
     ok = "https://www.icloud.com/shortcuts/0123456789abcdef0123456789abcdef"

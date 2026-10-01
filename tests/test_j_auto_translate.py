@@ -279,5 +279,6 @@ def test_screen_a_marks_unverified_ios_labels_and_result_has_denied_slot(monkeyp
     with c.session_transaction() as s:
         s["user_id"] = "u-j"
     r = c.get("/seller/collect/share?v=2&src=clip&text=&clip=").get_data(as_text=True)
-    assert 'data-role="share-paste-denied"' in r and "실제 아이폰 화면을 확인한 뒤" in r
+    # O(2026-10-01) 실측: 붙여넣기 허용 창은 안 뜬다 → 그 자리는 빼고 「처리 단계」로 어디서 멈췄는지 보인다.
+    assert 'data-role="share-paste-denied"' not in r and 'data-role="share-stages"' in r
     assert V is not None

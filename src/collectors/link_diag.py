@@ -85,6 +85,11 @@ _BODY_ITEM_RE = re.compile(
     r"/[^\s\"'<>\\)]+", re.I)
 # 링크가 없어도 `id=993154784090`처럼 숫자만 박혀 있는 경우가 있다(스크립트 안 설정값).
 _BODY_ID_RE = re.compile(r"\b(?:item_?id|itemId|id)\s*[=:]\s*[\"']?(\d{8,})", re.I)
+# O-4(오너 채팅 실측 2026-10-01, UA iPhone Safari): e.tb.cn은 200·Location 없음·본문이
+#   `var url = 'https://item.taobao.com/item.htm?…&id=809968335363&…'; location.replace(url)` —
+#   **페이지가 스스로 넘기는 그 주소**가 정답이다. 본문의 다른 상품 링크(추천 등)보다 먼저 본다.
+_BODY_JS_REDIRECT_RE = re.compile(r"var\s+url\s*=\s*['\"]([^'\"]+)['\"]\s*;?[^<]{0,200}?location\.replace\s*\(\s*url\s*\)",
+                                  re.I | re.S)
 _TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
 
 
@@ -110,7 +115,10 @@ def scan_body_for_item(html: str) -> dict:
     out["body_len"] = len(html)
     head = html[:BODY_SCAN_CAP]
 
-    m = _BODY_ITEM_RE.search(head)
+    js = _BODY_JS_REDIRECT_RE.search(head)
+    m = _BODY_ITEM_RE.search(js.group(1)) if js else None
+    if not m:
+        m = _BODY_ITEM_RE.search(head)
     if m:
         from src.collectors.share_text import parse_final_url
         url = m.group(0).rstrip(".,;\"'").replace("&amp;", "&")   # HTML 이스케이프 복원

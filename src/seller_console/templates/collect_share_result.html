@@ -39,13 +39,23 @@
   <p class="sd-raw" data-role="share-raw">받은 내용: {% if raw_preview %}「{{ raw_preview }}」{% else %}(비어 있음){% endif %}
     {# M3-iOS-3: 어느 길로 왔는지(단축어가 src=share|clip으로 싣는다) — 비었을 때 누가 안 넘겼는지 가른다. #}
     <span class="sd-src" data-role="share-src">경로: {{ share_src or "알 수 없음(옛 단축어)" }}</span></p>
-  {% if not raw_preview %}
-  {# J6: 클립보드가 비어서 온 경우 — 붙여넣기 허용 창에서 거부했을 수 있다. 설정 경로는 실기기 캡처 뒤에만 적는다(추측 금지). #}
-  <p class="sd-note" data-role="share-paste-denied">붙여넣기 허용 창에서 「허용 안 함」을 눌렀다면 →
-    <span data-role="paste-denied-path">설정 경로는 실제 아이폰 화면을 확인한 뒤 여기에 적습니다.</span></p>
-  {% endif %}
+  {# O(2026-10-01): 「붙여넣기 허용 창」 안내는 뺐다 — 오너 실측에서 그 창은 뜨지 않았다. #}
   {% endif %}
   <p class="sd-note">컴퓨터의 고가수집기로는 담을 수 있어요.</p>
+  {% endif %}
+
+  {# O-5: 어느 단계에서 멈췄나 — 받은 글 → 링크 찾기 → 단축 링크 펴기 → 상품 번호. 성공해도 보인다(접힘). #}
+  {% if stages is defined and stages %}
+  <details class="sd-stages" data-role="share-stages" {% if not out.ok %}open{% endif %}>
+    <summary>처리 단계</summary>
+    <ol>
+      {% for st in stages %}
+      <li data-stage="{{ st.key }}" data-ok="{{ 'yes' if st.ok else ('no' if st.ok is not none else 'skip') }}">
+        <span class="sd-st-mark">{{ "완료" if st.ok else ("멈춤" if st.ok is not none else "—") }}</span>
+        <strong>{{ st.name }}</strong> <span class="sd-st-detail">{{ st.detail }}</span></li>
+      {% endfor %}
+    </ol>
+  </details>
   {% endif %}
 
   <div class="sd-btns">
@@ -65,6 +75,15 @@
   .sd-reinstall { display: block; margin-top: 8px; min-height: 48px; line-height: 32px; border-radius: 12px; }
   .sd-src { display: block; margin-top: 6px; color: var(--text-muted); font-size: .92rem; }
   .sd-note { color: var(--text-muted); font-size: 1rem; line-height: 1.55; margin: 0 0 8px; }
+  .sd-stages { text-align: left; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 14px 0 0;
+                background: var(--bg); font-size: .98rem; }
+  .sd-stages summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; }
+  .sd-stages ol { margin: 6px 0 0; padding-left: 1.1rem; line-height: 1.6; }
+  .sd-stages li { word-break: break-all; }
+  .sd-st-mark { display: inline-block; min-width: 3em; font-size: .85rem; color: var(--text-muted); }
+  .sd-stages li[data-ok="yes"] .sd-st-mark { color: var(--teal); }
+  .sd-stages li[data-ok="no"] .sd-st-mark { color: var(--danger); font-weight: 700; }
+  .sd-st-detail { color: var(--text-muted); }
   .sd-btns { display: grid; gap: 12px; margin-top: 28px; }
   .sd-btn { min-height: 56px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; border-radius: 16px; }
 </style>
