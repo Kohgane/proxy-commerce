@@ -40,6 +40,9 @@ _lock = threading.Lock()
 
 # 쿠팡 옵션 값 한도 — 정본 `attr_safe`(볼트 「등록 파이프 이식」): `str(av)[:28]`.
 MAX_OPTION_VALUE = 28
+# 쿠팡 옵션 **이름**(attributeTypeName) 한도 — 문서 「max length: 25 characters」(오너 실측 2026-10-01).
+#   이름은 카테고리 메타의 속성명이 그대로 가므로 넘는 일이 드물다. 넘으면 **자르지 않고** 보류(「미해석」).
+MAX_OPTION_NAME = 25
 # 줄일 때 **남길** 소재 낱말(값끼리 구분하는 핵심) — 나머지 소재 조각은 버린다.
 _KEY_MATERIAL = ("오일왁스", "풀가죽", "반가죽", "소가죽", "에코 가죽", "천연 가죽", "아닐린 가죽", "세미아닐린 가죽",
                  "스크래치 방지 가죽", "리치 가죽", "실리콘 가죽", "셔닐", "스노우 벨벳", "테크 패브릭", "양털")
@@ -242,7 +245,7 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
 # 번역하지 않는다(懒小姐 → 「게으른 아가씨」 직역 금지) → 병음 대문자(LANXIAOJIE) + 「브랜드 표기 — 확인」 배지.
 # 일치하지 않으면 평소대로 번역. 필드가 비어 있으면 **판정하지 않는다**(제목만 보고 브랜드라 짐작하지 않음).
 BRAND_FIELDS = ("brand", "shop_name", "shop", "seller_nick")
-_SHOP_SUFFIX = re.compile(r"(官方旗舰店|旗舰店|专营店|专卖店|官方店|企业店|工厂店|品牌店|直营店|店)$")
+_SHOP_SUFFIX = re.compile(r"(官方旗舰店|旗舰店|专营店|专卖店|官方店|企业店|工厂店|品牌店|直营店|官方|店)$")
 _HAN_ONLY = re.compile("^[㐀-䶿一-鿿]+$")
 
 
@@ -269,7 +272,10 @@ def brand_prefix(title: str, extra: dict | None) -> Dict | None:
     """`{han, latin, field, rest}` 또는 None. 제목 맨 앞 한자 2~4자 == 브랜드·가게 필드(접미 「旗舰店」 등 뗌)."""
     t = str(title or "").strip().translate(_FW)
     ex = extra or {}
-    for f in BRAND_FIELDS:
+    # K(오너 역질문안 2026-10-01): 브랜드 필드가 **있으면 그것만** 본다. 가게 이름은 브랜드가 비었을 때만 —
+    #   접미(旗舰店·专卖店·官方…)를 떼고, 뗀 뒤 2자 미만이면 브랜드 없음(「XX旗舰店」이 병음으로 박히는 사고 방지).
+    fields = ("brand",) if str(ex.get("brand") or "").strip() else BRAND_FIELDS[1:]
+    for f in fields:
         core = _brand_core(f, ex.get(f) or "")
         if not (2 <= len(core) <= 4 and _HAN_ONLY.match(core) and t.startswith(core)):
             continue
