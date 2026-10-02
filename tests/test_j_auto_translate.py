@@ -226,7 +226,8 @@ def test_translate_audit_counts_rule_translator_left(monkeypatch):
         s["user_id"] = "u-a"
     d = c.get("/seller/collect/translate-audit?format=json").get_json()
     a = d["audit"]
-    assert a["counts"] == {"rule": 1, "translator": 1, "left": 1} and a["values"] == 3
+    # U4: 「옵션 아님」(보증·서비스 문구)은 남음과 따로 센다 — 이 표본엔 없다(0)
+    assert a["counts"] == {"rule": 1, "translator": 1, "left": 1, "non_option": 0} and a["values"] == 3
     assert a["translator_samples"] == [{"src": "莫奈色溜溜鸭", "ko": "모네 컬러"}]
     assert a["titles"][0]["before"].endswith("재고 있음") and a["titles_promo_left"] == 0
     h = c.get("/seller/collect/translate-audit").get_data(as_text=True)

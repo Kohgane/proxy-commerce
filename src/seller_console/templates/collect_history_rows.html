@@ -53,6 +53,11 @@
     {% if it.uploaded_markets %}
     <span class="badge mt-1" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"
           title="{{ it.uploaded_markets|join(', ') }}에 등록됨"><i class="bi bi-check-circle"></i> 등록됨 · {{ it.uploaded_markets|join('·') }}</span>
+    {% for rv in (it.uploaded_review or []) %}
+    {# U2: 쿠팡 검토 상태(마지막 조회) — 승인=청록 · 검토중=금 · 반려=적 #}
+    <span class="pc-badge mt-1 {{ 'pc-badge-on' if rv.state == 'approved' else ('pc-badge-off' if rv.state in ('rejected', 'deleted') else '') }}"
+          data-role="list-review-badge" data-state="{{ rv.state }}">{{ rv.label }} {{ rv.text }}</span>
+    {% endfor %}
     {% endif %}
     {# v81 STEP1 북마클릿 코어 폴백 / v86-F 목록 타일 간이 — 둘 다 제목·이미지만. [다시 수집] 권장(warn 토큰). #}
     {% if it.is_core %}

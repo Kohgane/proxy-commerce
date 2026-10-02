@@ -50,14 +50,15 @@ def test_t1_twenty_owner_samples():
     pw = by["✅新品PD65W快充+过载开关✅双层粘夹黑色1.8米【6五孔+1A2C】"]
     assert pw.startswith("PD65W 고속충전") and "블랙" in pw and "새 제품" not in pw and "신품" not in pw
     promo = resolve_option_value("【超长3年质保】", values_ko="[최대 3년 품질 보증]")
-    assert promo["value"] == "" and "판촉·보증 문구뿐" in promo["why"]
+    # U4(오너 2026-10-02): 보증 문구 SKU는 「옵션 아님 — 제외」(T1의 「판촉·보증 문구뿐」 미해석보다 먼저 가른다)
+    assert promo["value"] == "" and promo["how"] == "non_option" and "옵션 아님" in promo["why"]
 
 
 def test_t1_never_cuts_and_drops_tail_first():
-    long_v = "아주 긴 옵션 값 이름 하나 둘 셋 넷 다섯 여섯 일곱"              # 조각 경계 없음 — 줄일 수 없다
+    long_v = "아주 긴 옵션 값 이름 하나 둘 셋 넷 다섯 여섯 일곱 여덟 아홉"     # 조각 경계 없음 — 줄일 수 없다(U3: 30자 넘게)
     assert kp.shorten(long_v) == long_v and not kp.fits(long_v)        # 자르지 않는다 → 호출부가 미해석
     assert kp.shorten("높이 44cm 브라운 비즈니스 스타일 의자 / 화장대용 쿠션 포함 세트") .endswith("세트") is False
-    assert "화장대용" not in kp.shorten("높이 52cm 블랙 고급 원목 스툴 화장대용 쿠션 포함")
+    assert "화장대용" not in kp.shorten("높이 52cm 블랙 고급 원목 스툴 화장대용 쿠션 포함 세트")   # U3: 30자 넘는 모양
 
 
 # ── T2 ────────────────────────────────────────────────────────────────────────
@@ -146,12 +147,13 @@ def test_t3_phone_card_shows_the_risk():
 
 def test_t4_audit_lists_awkward_translator_values_and_two_buttons():
     from src.services import option_translate_auto as optauto
-    # 규칙표가 못 푸는 값(莫奈色·梵高) + 판촉·기호가 남은 번역기 값 / 28자를 넘는 번역기 값
+    # U3(오너 2026-10-02): 판정은 **등록이 쓰는 해석 체인 그대로**(정리 → 축약 → 30자).
+    #   판촉·기호가 붙었던 번역기 값은 정리하면 깨끗이 나가므로(「모네 컬러」) 어색이 아니다 — 줄여도 30자를 넘는 것만 남는다.
     vals, kos = ["莫奈色梵高星空款", "梵高向日葵莫奈睡莲款式超长"], ["✅ 모네 컬러 신품 인기템", "반 고흐 해바라기와 모네 수련 스타일 특대형 긴 버전 모델"]
     row = {"id": "x", "extra_json": json.dumps({"options": [{"name": "颜色", "values": vals, "values_ko": kos}]})}
     got = optauto.audit([row])
     whys = {a["src"]: a for a in got["awkward_samples"]}
-    assert set(whys) == set(vals) and whys[vals[1]]["why"] == "28자 넘음" and whys[vals[0]]["why"]
+    assert set(whys) == {vals[1]} and whys[vals[1]]["why"] == "30자 넘음(줄여도)" and got["awkward_over"] == 1
     tpl = Path("src/seller_console/templates/translate_audit.html").read_text(encoding="utf-8")
     assert "1단계 — 규칙·재정리(비용 0)" in tpl and "2단계 — 남은 값 번역기로" in tpl and 'data-role="ta-awkward"' in tpl
 

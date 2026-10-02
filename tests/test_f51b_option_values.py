@@ -111,11 +111,13 @@ def test_equal_translations_that_cannot_be_split_are_held():
 
 def test_tissue_holder_values_pass_through_the_translator_with_a_badge():
     ko = {"双位纸巾架【卷纸丨湿厕纸丨抽纸】": "2단 휴지걸이(롤·물티슈·각티슈)",
-          "纸巾架-抽屉款【可收纳卫生巾】": "휴지걸이 서랍형(생리대 수납)",
-          "售后品质保障丨购买无忧": "품질 보증"}
+          "纸巾架-抽屉款【可收纳卫生巾】": "휴지걸이 서랍형(생리대 수납)"}
     for v, k in ko.items():
         r = O.resolve_option_value(v, values_ko=k)
         assert r["value"] == k and r["how"] == "translator" and r["confirm"]
+    # U4(오너 2026-10-02): 「售后品质保障丨购买无忧」는 옵션이 아니라 보증 문구 — 번역기 값이 있어도 「옵션 아님 — 제외」.
+    r = O.resolve_option_value("售后品质保障丨购买无忧", values_ko="품질 보증")
+    assert r["value"] == "" and r["how"] == "non_option" and "옵션 아님" in r["why"]
 
 
 # ── 오너 수정 → 후보(자동 반영 0) ────────────────────────────────────────────────

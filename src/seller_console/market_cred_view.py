@@ -124,6 +124,52 @@ def coupang_shipping_state(account: str = "") -> dict:
 _BASE_KEYS = ("COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID")
 
 
+# ── U0(오너 2026-10-02): 쿠팡 두 계정(고가네 A01381223 · 우주대행 A01504840)을 **등록 때 고른다** ─────────
+#   마켓 코드 `coupang:gogane` / `coupang:woojoo` → 그 마켓 한 건을 처리하는 동안만 이 값이 계정을 정한다.
+#   (contextvar — 요청·스레드마다 따로. 끝나면 원래대로.) 판정기(`resolve_upload_account`)가 하나라서
+#   사전검증·등록·자격 점검이 전부 같은 계정을 본다.
+import contextvars as _cv
+from contextlib import contextmanager as _cm
+
+_ACCOUNT_OVERRIDE: "_cv.ContextVar[str]" = _cv.ContextVar("coupang_account_override", default="")
+
+
+@_cm
+def coupang_account(account: str = ""):
+    tok = _ACCOUNT_OVERRIDE.set(str(account or "").strip().lower())
+    try:
+        yield
+    finally:
+        _ACCOUNT_OVERRIDE.reset(tok)
+
+
+def split_market(code: str) -> tuple:
+    """`coupang:woojoo` → (`coupang`, `woojoo`) · 그 밖은 (code, '')."""
+    base, _, acct = str(code or "").partition(":")
+    return base, acct.strip().lower()
+
+
+def coupang_account_choices() -> list:
+    """마켓 선택에 보일 쿠팡 계정 줄 — `[{code, label, account, vendor_id, ready, missing}]`.
+
+    **이 서버에 계정 접두 자격이 하나라도 있을 때만**(오너 서버) 두 줄을 낸다. 다른 셀러(자기 키를 마켓 연동에
+    넣은 사람)에겐 빈 목록 — 「쿠팡」 한 줄 그대로다. `ready`는 업로더가 실제로 읽을 키(`_account_creds`)로 판정.
+    """
+    try:
+        from src.pipeline.coupang_replicate import COUPANG_ACCOUNTS, _account_creds, _prefixed_ready, resolve_base_account
+    except Exception:
+        return []
+    if not any(_prefixed_ready(m["prefix"]) for m in COUPANG_ACCOUNTS.values()) and not resolve_base_account():
+        return []
+    out = []
+    for acct, meta in COUPANG_ACCOUNTS.items():
+        access, secret, vendor = _account_creds(acct)
+        missing = [lab for v, lab in ((access, "액세스 키"), (secret, "시크릿 키"), (vendor, "업체코드")) if not v]
+        out.append({"code": f"coupang:{acct}", "account": acct, "label": f"쿠팡 — {meta['label']}",
+                    "vendor_id": meta["vendor_id"], "ready": not missing, "missing": missing})
+    return out
+
+
 def resolve_upload_account() -> str:
     """이 요청에서 **업로더가 실제로 쓸 계정**. 빈 문자열 = 무접두(계정 없음).
 
@@ -143,6 +189,9 @@ def resolve_upload_account() -> str:
     무접두가 없을 때만 계정 접두로 내려간다. 순서를 뒤집으면 **다른 셀러의 등록이
     오너 계정 자격으로 나간다.**
     """
+    _ov = _ACCOUNT_OVERRIDE.get()
+    if _ov:
+        return _ov                                    # U0: 등록 화면에서 고른 계정(그 마켓 한 건 동안만)
     if all((os.getenv(k) or "").strip() for k in _BASE_KEYS):
         return ""
     try:

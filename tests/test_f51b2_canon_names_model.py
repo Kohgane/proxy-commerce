@@ -125,7 +125,8 @@ def test_tissue_holder_passes_on_the_gyu_axis():
     plan = O.plan_for(meta, p)
     assert plan["multi"] and plan["holds"] == [], plan["holds"]
     assert {a["attributeTypeName"] for it in plan["items"] for a in it["attributes"]} >= {"규격"}
-    assert len(plan["items"]) == 2 and any("재고 0" in n for n in plan["notes"])      # 3번째 SKU는 재고 0
+    # 3번째 SKU(售后品质保障丨购买无忧)는 U4(오너 2026-10-02)부터 재고와 무관하게 「옵션 아님 — 제외」
+    assert len(plan["items"]) == 2 and any("옵션 아님 — 제외" in n and "售后" in n for n in plan["notes"])
     assert all(it["confirm"] for it in plan["items"])                                # 번역기 값 — 확인
 
 

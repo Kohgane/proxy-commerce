@@ -44,10 +44,12 @@ def test_duplicate_type_name_keeps_first():
     assert len(out) == 1 and out[0]["attributeValueName"] == "Red"
 
 
-def test_value_truncated_to_28_and_exposed_preserved():
+def test_value_truncated_to_30_and_exposed_preserved():
+    # U3(오너 2026-10-02): 안전선 28 → 쿠팡 문서 한도 30. 값은 계획 단계(`resolve_option_value`)에서 이미 30자 안이라
+    #   이 절단은 최후 안전선일 뿐이다(계획은 넘으면 자르지 않고 미해석).
     out = CU.attr_safe([{"attributeTypeName": "색상", "attributeValueName": "가" * 40,
                          "exposed": "EXPOSED"}], "상품")
-    assert len(out[0]["attributeValueName"]) == 28 == CU.ATTR_VALUE_MAX
+    assert len(out[0]["attributeValueName"]) == 30 == CU.ATTR_VALUE_MAX
     assert out[0]["exposed"] == "EXPOSED"
     # exposed 없으면 키 자체를 만들지 않는다(원본 보존만).
     assert "exposed" not in CU.attr_safe([{"attributeTypeName": "색상",

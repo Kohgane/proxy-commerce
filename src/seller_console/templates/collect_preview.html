@@ -459,6 +459,32 @@
         <p class="text-muted small mb-2">편집을 마쳤다면 마켓을 골라 한 번에 등록하세요. 연결된 마켓·목표 마진율은 등록 창에서 선택합니다.</p>
         <button type="button" class="btn btn-success" onclick="openUploadModal()"><i class="bi bi-box-arrow-up-right"></i> 등록할 마켓 고르기</button>
         <div class="form-text mt-2">저장은 아래 <b>변경사항 저장</b>으로 언제든 가능해요. 등록 결과는 저장된 마켓별로 목록에 <b>등록됨</b> 뱃지로 남습니다.</div>
+        {# U2·U1b(오너 2026-10-02): 쿠팡 등록본 — 검토 상태(승인·검토중·반려 사유)와, 관리자면 **지금 규칙으로 다시 만든 상품명·검색어**를
+           쿠팡 원본과 비교해 고친 칸만 보내는 버튼. 쿠팡 수정은 「승인필요」라 판매중 상품도 다시 심사를 받는다(화면에 적음). #}
+        {% set _cp_up = [] %}
+        {% for u in (extra.get('uploaded') or []) if extra %}{% if (u.market or '').startswith('coupang') %}{% set _ = _cp_up.append(u) %}{% endif %}{% endfor %}
+        {% if _cp_up %}
+        <div class="kgp-inset mt-3" data-role="cp-live">
+          <div class="small fw-semibold mb-1">쿠팡 등록본</div>
+          {% for u in _cp_up %}
+          {% set rv = u.review or {} %}
+          <div class="d-flex flex-wrap align-items-center gap-2 small mb-1" data-role="cp-live-row" data-market="{{ u.market }}">
+            <span>{{ u.market_label or '쿠팡' }}</span>
+            <code>{{ u.product_id or '' }}</code>
+            <span class="pc-badge {{ 'pc-badge-on' if rv.state == 'approved' else ('pc-badge-off' if rv.state in ('rejected','deleted') else '') }}" data-role="cp-review-badge">{{ rv.label or '검토 상태 모름' }}</span>
+            {% if rv.comment %}<span class="text-muted">반려 사유: {{ rv.comment }}</span>{% endif %}
+          </div>
+          {% endfor %}
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-ghost" id="cpReviewBtn" data-role="cp-review-btn"><i class="bi bi-hourglass-split"></i> 검토 상태 보기</button>
+            {% if is_admin %}
+            <button type="button" class="btn btn-sm btn-ghost" id="cpLiveCheck" data-role="cp-live-check"><i class="bi bi-search"></i> 등록본 점검</button>
+            <button type="button" class="btn btn-sm btn-cta" id="cpLiveSend" data-role="cp-live-send" hidden><i class="bi bi-send"></i> 고친 칸 쿠팡에 보내기</button>
+            {% endif %}
+          </div>
+          <div id="cpLiveOut" class="small mt-2" aria-live="polite"></div>
+        </div>
+        {% endif %}
       </div>
     </div>
 
@@ -654,7 +680,20 @@
           {% endmacro %}
           <div class="market-grid mb-4" id="marketCheckboxes">
             {{ mtile('shopify', 'Shopify', 'chkShopify') }}
+            {# U0: 쿠팡 계정이 둘이면(오너 서버·관리자) 두 줄 — 고른 계정의 키·출고지·반품지로 등록 #}
+            {% set _cpa = coupang_accounts or [] %}
+            {% if _cpa|length > 1 %}
+            {% for c in _cpa %}
+            <label class="market-tile {{ 'is-on' if c.connected else 'is-off' }}" for="chkCoupang{{ loop.index }}" data-role="cp-account-tile">
+              <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ c.code }}" id="chkCoupang{{ loop.index }}">
+              <span class="market-name">{{ c.label }}</span>
+              {% if c.connected %}<span class="market-badge on"><i class="bi bi-check-circle"></i> 키 설정됨</span>
+              {% else %}<span class="market-badge off" title="빠진 것: {{ (c.missing or [])|join(', ') }}"><i class="bi bi-x-circle"></i> 키 없음</span>{% endif %}
+            </label>
+            {% endfor %}
+            {% else %}
             {{ mtile('coupang', '쿠팡', 'chkCoupang') }}
+            {% endif %}
             {{ mtile('smartstore', '스마트스토어', 'chkSmartstore') }}
             {{ mtile('elevenst', '11번가', 'chkElevenst') }}
             {{ mtile('woocommerce', '코가네멀티샵', 'chkWoo') }}
@@ -2099,6 +2138,58 @@ function retryFailedUpload(markets) {
   runUpload();
 }
 
+// U2·U1b(오너 2026-10-02): 쿠팡 등록본 — 검토 상태(1분마다, 10회까지) · 점검 · 고친 칸 보내기(관리자)
+function _cpEsc(x) { return (typeof kgpEscapeForHtml === 'function') ? kgpEscapeForHtml(String(x == null ? '' : x)) : String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
+function cpReviewStatus(round) {
+  const out = document.getElementById('cpLiveOut') || document.getElementById('uploadResults');
+  fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/review-status', {credentials: 'same-origin'})
+    .then(r => r.json()).then(d => {
+      let pending = false, h = '';
+      ((d && d.rows) || []).forEach(row => {
+        if (row.state === 'pending' || row.state === 'saved') pending = true;
+        h += `<div data-role="cp-review-row" data-state="${_cpEsc(row.state)}"><b>${_cpEsc(row.market_label)}</b> ${_cpEsc(row.sid)} — <span class="pc-badge">${_cpEsc(row.label)}</span>`
+          + (row.comment ? ` · 반려 사유: ${_cpEsc(row.comment)}` : '')
+          + (row.error ? ` · 쿠팡에 묻지 못했어요(${_cpEsc(row.error)})` : '')
+          + (row.link ? ` · <a href="${_cpEsc(row.link)}" target="_blank" rel="noopener">쿠팡에서 보기</a>`
+                      : (row.wing_url ? ` · <a href="${_cpEsc(row.wing_url)}" target="_blank" rel="noopener">WING에서 찾기</a>` : ''))
+          + ((row.foreign || []).length ? `<div class="text-muted">쿠팡 원본에 외국어 칸: ${row.foreign.map(f => _cpEsc(f[0]) + ' 「' + _cpEsc(String(f[1]).slice(0, 20)) + '」').join(' · ')}</div>` : '')
+          + '</div>';
+      });
+      if (out) out.innerHTML = h || _cpEsc((d && (d.message || d.error)) || '쿠팡 등록 기록이 없어요.');
+      if (pending && round < 10) setTimeout(() => cpReviewStatus(round + 1), 60000);
+    }).catch(() => { if (out) out.textContent = '검토 상태를 묻지 못했어요 — 잠시 뒤 다시 눌러 주세요.'; });
+}
+function cpLiveCheck(send) {
+  const out = document.getElementById('cpLiveOut');
+  const btn = document.getElementById('cpLiveSend');
+  const go = () => fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/live-fix', {
+      method: send ? 'POST' : 'GET', credentials: 'same-origin',
+      headers: send ? {'Content-Type': 'application/json'} : undefined, body: send ? '{}' : undefined})
+    .then(r => r.json()).then(d => {
+      if (!d.ok) { out.textContent = d.error || '쿠팡 등록본을 읽지 못했어요.'; return; }
+      const rows = (d.changes || []).map(c => `<tr><td class="text-nowrap">${_cpEsc(c.field)}</td><td class="text-muted">${_cpEsc(c.before)}</td><td>${_cpEsc(c.after)}</td></tr>`).join('');
+      out.innerHTML = `<div data-role="cp-live-plan"><b>${_cpEsc(d.market_label)} ${_cpEsc(d.sid)}</b>`
+        + (rows ? `<table class="table table-sm mt-1 mb-1"><thead><tr><th class="text-nowrap">칸</th><th>쿠팡 지금</th><th>바꿀 값</th></tr></thead><tbody>${rows}</tbody></table>`
+                : ' — 고칠 칸이 없어요(쿠팡 원본이 지금 규칙과 같아요).')
+        + `<div class="text-muted">${_cpEsc(d.note || '')}</div>`
+        + (d.message ? `<div>${_cpEsc(d.message)}</div>` : '') + '</div>';
+      if (btn) btn.hidden = send || !rows;
+    }).catch(() => { out.textContent = '쿠팡 등록본을 읽지 못했어요 — 잠시 뒤 다시 눌러 주세요.'; });
+  if (!send) return go();
+  // 확인 창이 없는 문맥(하네스 등)에선 **보내지 않는다** — 비가역 버튼은 확인 없이 나가지 않는다.
+  if (typeof pcConfirm !== 'function') { out.textContent = '확인 창을 열 수 없어 보내지 않았어요.'; return; }
+  pcConfirm('고친 칸을 쿠팡에 보낼까요? 판매중 상품도 다시 심사를 받아요.', {title: '쿠팡 등록본 고치기', confirmLabel: '보내기'})
+    .then(ok => { if (ok) go(); });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const rb = document.getElementById('cpReviewBtn');
+  if (rb) rb.addEventListener('click', () => cpReviewStatus(0));
+  const lc = document.getElementById('cpLiveCheck');
+  if (lc) lc.addEventListener('click', () => cpLiveCheck(false));
+  const ls = document.getElementById('cpLiveSend');
+  if (ls) ls.addEventListener('click', () => cpLiveCheck(true));
+});
+
 function renderUploadResults(data) {
   const el = document.getElementById('uploadResults');
   if (!data.ok) {
@@ -2123,7 +2214,7 @@ function renderUploadResults(data) {
   (result.results || []).forEach(r => {
     const label = kgpEscapeForHtml(r.market_label || r.market);
     if (r.success) {
-      const link = r.external_url ? `<a href="${r.external_url}" target="_blank" rel="noopener noreferrer" class="ms-1" title="상품 페이지"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
+      const link = (r.external_url && String(r.market || '').indexOf('coupang') !== 0) ? `<a href="${r.external_url}" target="_blank" rel="noopener noreferrer" class="ms-1" title="상품 페이지"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
       badges += `<span class="badge" style="background:color-mix(in srgb,var(--success) 16%,transparent);color:var(--success)"><i class="bi bi-check-lg"></i> ${label} 등록됨${link}</span>`;
     } else if (r.queued) {
       badges += `<span class="badge" style="background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)">${label} · 큐</span>`;
@@ -2140,9 +2231,12 @@ function renderUploadResults(data) {
   html += '<div class="list-group mb-2">';
   (result.results || []).forEach(r => {
     if (r.success) {
-      const linkPart = r.external_url
-        ? ` · <a href="${r.external_url}" target="_blank" rel="noopener noreferrer">상품 페이지 열기</a>`
-        : '';
+      // U2: 쿠팡 vp/products/{셀러 상품번호}는 승인 전 「상품을 찾을 수 없습니다」 — 쿠팡은 검토 상태를 묻는다.
+      const linkPart = String(r.market || '').indexOf('coupang') === 0
+        ? ` · <a href="#" data-role="cp-result-review" onclick="event.preventDefault();cpReviewStatus(0)">검토 상태 보기</a>`
+        : (r.external_url
+          ? ` · <a href="${r.external_url}" target="_blank" rel="noopener noreferrer">상품 페이지 열기</a>`
+          : '');
       const idPart = r.external_product_id ? ` (ID: ${r.external_product_id})` : '';
       html += `
         <div class="list-group-item list-group-item-success">

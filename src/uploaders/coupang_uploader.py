@@ -502,6 +502,121 @@ class CoupangUploader(BaseUploader):
             logger.error('get_status_histories failed for sid=%s: %s', seller_product_id, exc)
             return {'error': str(exc)}
 
+    # ── U2(오너 2026-10-02): 등록 후 검토 상태 ─────────────────────────────────────────────
+    #   상품 조회 `GET …/seller-products/{sellerProductId}` 의 `data.statusName`. 값(쿠팡 문서 상태 목록):
+    #   심사중(IN_REVIEW)·임시저장(SAVED)·승인대기중(APPROVING)·승인완료(APPROVED)·부분승인완료(PARTIAL_APPROVED)·
+    #   승인반려(DENIED)·상품삭제(DELETED). 반려 **사유**는 이력(`/histories`)의 comment에만 있다(반려 사유 오독 지뢰).
+    #   ※ 「상품 페이지 열기」(vp/products/{sellerProductId})는 **구매자 상품번호가 아니라** 셀러 상품번호라
+    #     승인 전엔 「상품을 찾을 수 없습니다」가 정상이다(오너 10-02 실측). 승인 뒤 `productId`가 생기면 그걸로 연다.
+    REVIEW_STATES = {
+        '승인완료': 'approved', '부분승인완료': 'approved', 'APPROVED': 'approved', 'PARTIAL_APPROVED': 'approved',
+        '심사중': 'pending', '승인대기중': 'pending', 'IN_REVIEW': 'pending', 'APPROVING': 'pending',
+        '임시저장': 'saved', 'SAVED': 'saved',
+        '승인반려': 'rejected', 'DENIED': 'rejected',
+        '상품삭제': 'deleted', 'DELETED': 'deleted',
+    }
+    REVIEW_LABELS = {'approved': '승인', 'pending': '검토중', 'saved': '임시저장', 'rejected': '반려',
+                     'deleted': '삭제됨', 'unknown': '확인 못 함'}
+    PRODUCT_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/{sid}'
+    MODIFY_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
+
+    @staticmethod
+    def wing_search_url(sid) -> str:
+        """WING 상품조회(오너 스크린샷 실측 형식 — reject_watch N3와 같은 것)."""
+        return f'https://wing.coupang.com/vendor-inventory/list?searchKeywords={sid}'
+
+    def get_product(self, seller_product_id: str) -> dict:
+        """상품 조회 원문 `data`(dict) 또는 `{'error': …}`."""
+        sid = str(seller_product_id or '').strip()
+        if not sid:
+            return {'error': '상품 번호 없음'}
+        try:
+            res = self._api_request('GET', self.PRODUCT_PATH.format(sid=sid))
+        except Exception as exc:
+            return {'error': str(exc)}
+        if not isinstance(res, dict) or 'error' in res:
+            return {'error': (res or {}).get('error') if isinstance(res, dict) else '응답 없음'}
+        data = res.get('data')
+        return data if isinstance(data, dict) else {'error': '응답에 상품 정보가 없습니다'}
+
+    def review_status(self, seller_product_id: str) -> dict:
+        """`{state, label, status_raw, comment, product_id, link, wing_url, name, search_tags, foreign, error}`.
+
+        모르면 `unknown`(가짜 확정 0). 반려면 이력에서 사유를 읽는다. 지금 쿠팡에 **올라가 있는 칸**(이름·검색어·한자 칸)도
+        같이 돌려준다 — 「보낸 게 뭐였나」를 우리 로그가 아니라 **쿠팡 원본**으로 본다(U1 실측의 정본).
+        """
+        sid = str(seller_product_id or '').strip()
+        out = {'sid': sid, 'state': 'unknown', 'label': self.REVIEW_LABELS['unknown'], 'status_raw': '',
+               'comment': '', 'product_id': '', 'link': '', 'wing_url': self.wing_search_url(sid) if sid else '',
+               'name': '', 'search_tags': [], 'foreign': [], 'error': ''}
+        data = self.get_product(sid)
+        if 'error' in data:
+            out['error'] = str(data['error'])[:300]
+            return out
+        raw = str(data.get('statusName') or data.get('status') or '').strip()
+        state = self.REVIEW_STATES.get(raw) or self.REVIEW_STATES.get(raw.upper(), '')
+        if not state and raw:
+            state = 'approved' if re.search(r'판매\s*중|승인\s*완료', raw) else ('rejected' if '반려' in raw else
+                     ('pending' if re.search(r'심사|대기|검토', raw) else ''))
+        out.update(status_raw=raw, state=state or 'unknown', label=self.REVIEW_LABELS.get(state or 'unknown'))
+        pid = str(data.get('productId') or '').strip()
+        out['product_id'] = pid
+        if pid and out['state'] == 'approved':
+            out['link'] = f'https://www.coupang.com/vp/products/{pid}'
+        if out['state'] == 'rejected':
+            try:
+                from src.pipeline.reject_watch import latest_rejection_comment
+                out['comment'] = latest_rejection_comment(self.get_status_histories(sid))[:500]
+            except Exception as exc:
+                logger.warning('[검토 상태] 반려 사유 조회 실패 sid=%s: %s', sid, exc)
+        out['name'] = str(data.get('sellerProductName') or '')
+        items = data.get('items') or []
+        out['search_tags'] = list((items[0] or {}).get('searchTags') or []) if items else []
+        out['foreign'] = [list(x) for x in self.foreign_fields(data)]
+        return out
+
+    def live_fix_plan(self, data: dict, *, name: str = '', search_tags=None) -> dict:
+        """U1b — 쿠팡 원본(`data`)을 **고칠 칸만** 바꾼 수정 몸통 + 바뀌는 것 목록. 아무것도 안 바뀌면 `changes` 빈 목록.
+
+        - 상품명(seller/display/general) → `name`(F53 정본)
+        - 검색어(모든 item) → `search_tags`(정리된 값 — 한자·지어낸 이름·상표 낱말 뺀 것)
+        나머지 칸(가격·재고·옵션·이미지)은 **손대지 않는다** — 승인 상품의 가격·재고는 수정 API로 못 바꾼다(쿠팡 문서).
+        """
+        body = json.loads(json.dumps(data or {}))
+        changes = []
+        if name and name != body.get('sellerProductName'):
+            changes.append({'field': '상품명', 'before': body.get('sellerProductName') or '', 'after': name})
+            for k in ('sellerProductName', 'displayProductName', 'generalProductName'):
+                if k in body or k == 'sellerProductName':
+                    body[k] = name
+        if search_tags is not None:
+            from src.collectors.ko_polish import has_foreign
+            tags = [str(t) for t in search_tags if str(t).strip() and not has_foreign(t)][:10]
+            for it in body.get('items') or []:
+                before = list(it.get('searchTags') or [])
+                if before != tags:
+                    if not any(c['field'] == '검색어' for c in changes):
+                        changes.append({'field': '검색어', 'before': ', '.join(before), 'after': ', '.join(tags)})
+                    it['searchTags'] = tags
+        body['requested'] = True                      # 수정은 승인필요 API — 고친 뒤 다시 심사를 받는다
+        return {'body': body, 'changes': changes}
+
+    def modify_product(self, body: dict) -> dict:
+        """상품 수정(승인필요) `PUT …/seller-products` — 몸통은 **조회 원문에 고칠 칸만 바꾼 것**(sellerProductId 포함).
+        반환 `{success, error}`. 오너 버튼 뒤에서만 부른다(비가역 — 승인 상품은 다시 심사)."""
+        if not str((body or {}).get('sellerProductId') or '').strip():
+            return {'success': False, 'error': '수정 몸통에 sellerProductId가 없습니다(조회 원문이 아님)'}
+        try:
+            res = self._api_request('PUT', self.MODIFY_PATH, data=body)
+        except Exception as exc:
+            return {'success': False, 'error': str(exc)}
+        if not isinstance(res, dict) or 'error' in res:
+            return {'success': False, 'error': (res or {}).get('error') if isinstance(res, dict) else '응답 없음'}
+        code = str(res.get('code') or '').upper()
+        if code and code not in ('SUCCESS', '200', 'OK'):
+            return {'success': False, 'error': f"쿠팡 수정 거부: {res.get('message') or code}"}
+        return {'success': True}
+
     def request_approval(self, seller_product_id: str) -> dict:
         """SAVED(반려/임시저장) 상품 재승인 요청 — `PUT .../seller-products/{sid}/approvals` 한 방.
 
@@ -790,7 +905,50 @@ class CoupangUploader(BaseUploader):
                 notes.append(f'상품명 자동 생성 — 확인: 「{_name}」')
         except Exception as exc:                      # 이름 검사가 등록을 막지 않는다(경고 자리)
             logger.warning('[precheck] 상품명 검사 실패: %s', exc)
+        # U1(오너 2026-10-02): **보낼 몸통 그대로** 만들어 한자·가나가 남은 칸을 잰다(상품명·옵션 이름/값·고시정보·상세).
+        #   예전엔 등록 결과에 「미현지화: 원문 사용」 꼬리만 붙었고(옛 현지화 묶음 유무였다) 칸의 언어는 아무도 안 쟀다.
+        #   원문 폴백은 금지 — 남으면 **보류**하고 어느 칸인지 말한다.
+        if not holds:
+            try:
+                probe = self._build_product_payload(
+                    {**product, 'category_id': cat}, notice_schema=self.get_category_notice_schema(cat) or None,
+                    attributes=out['attributes'], outbound_code=out['outbound_code'], documents=out['documents'],
+                    search_extra=out['search_extra'], items_plan=out.get('items_plan') or None)
+                fx = self.foreign_fields(probe)
+                out['foreign_fields'] = fx
+                if fx:
+                    holds.append('원문(외국어)이 남은 칸: '
+                                 + ' · '.join(f'{lab} 「{val[:24]}」' for lab, val in fx[:4])
+                                 + ' — 한국어로 옮긴 뒤 등록합니다(원문을 대신 보내지 않음)')
+            except Exception as exc:                  # 계측이 사전검증을 죽이지 않게(몸통 조립 실패는 등록에서 다시 드러난다)
+                logger.warning('[precheck] 전송 칸 언어 검사 실패: %s', exc)
         out['ok'] = not holds
+        return out
+
+    @staticmethod
+    def foreign_fields(payload: dict) -> list:
+        """쿠팡 등록 몸통에서 한자·가나가 남은 칸 `[(칸 이름, 값)]`. 검색어는 빌더가 이미 뺀다(선택 칸)."""
+        from src.collectors.ko_polish import has_foreign
+        out = []
+        def chk(label, val):
+            if isinstance(val, str) and has_foreign(val) and (label, val) not in out:
+                out.append((label, val))
+        p = payload or {}
+        chk('상품명', p.get('sellerProductName'))
+        chk('노출 상품명', p.get('displayProductName'))
+        chk('상세', p.get('description'))
+        for it in p.get('items') or []:
+            chk('옵션 이름', it.get('itemName'))
+            for a in it.get('attributes') or []:
+                chk('옵션 속성명', a.get('attributeTypeName'))
+                chk('옵션 값', a.get('attributeValueName'))
+            for c in it.get('contents') or []:
+                for d in c.get('contentDetails') or []:
+                    chk('상세', d.get('content'))
+            for n in it.get('notices') or []:
+                chk('고시정보', n.get('content'))
+            for t in it.get('searchTags') or []:
+                chk('검색어', t)
         return out
 
     def get_category_meta(self, display_category_code: str) -> dict:
@@ -950,7 +1108,7 @@ class CoupangUploader(BaseUploader):
         r'(Black|White|Blue|Red|Green|Gold|Silver|Brown|Navy|Gray|Grey|Pink|Ivory|Beige|Clear)', re.I)
     _ATTR_SHOE_RE = re.compile(r'\b(2[2-9]0|3[0-1]0)\b')
     _ATTR_NIB_RE = re.compile(r'\b(EF|MF|F|M|B|BB)\b')
-    ATTR_VALUE_MAX = 28                                  # 정본: str(av)[:28] — 쿠팡 문서 한도 30자(오너 실측 10-01) 안쪽
+    ATTR_VALUE_MAX = 30                                  # U3: 쿠팡 문서 한도 30자(오너 실측 10-01) — 값은 계획 단계에서 이미 30자 안(자르는 일 없음)
     ATTR_NAME_MAX = 25                                   # 쿠팡 문서 attributeTypeName 「max length: 25 characters」
     ATTR_FALLBACK = ({'attributeTypeName': '수량', 'attributeValueName': '1'},)
 
@@ -1034,7 +1192,7 @@ class CoupangUploader(BaseUploader):
         """구매 옵션 속성 정제 — **정본 승계**(발명 0).
 
         규칙: gtin 속성 스킵 · BAD 값(및 신발사이즈의 FREE/프리)은 상품명에서 실값 추출 후 기본값 ·
-        값 28자 절단 · `exposed` 보존 · 같은 attributeTypeName은 **먼저 온 것만** ·
+        값 30자 안전선(계획 단계에서 이미 30자 안) · `exposed` 보존 · 같은 attributeTypeName은 **먼저 온 것만** ·
         결과가 비면 **`[{수량: 1}]` 반환**(빈 배열 전송 금지 — 9차 거부의 직접 처방).
         """
         out, seen, blocked = [], set(), []
@@ -1123,6 +1281,18 @@ class CoupangUploader(BaseUploader):
             })
         return images
 
+    @staticmethod
+    def search_tags_for(product: dict, search_extra=None) -> list:
+        """정본: searchTags = [브랜드 정규화[:20] or "수입", "해외직구"] + 키워드, 최대 10. 등록·등록본 교정(U1b) 공용."""
+        brand = str((product or {}).get('brand', '') or '').strip()
+        tags = (product or {}).get('tags') or []
+        kw = [str(t).strip() for t in tags if str(t).strip()] if isinstance(tags, list) else []
+        # F48-b — 옵션으로 못 보낸 원 옵션 값은 **검색어로만**(자유옵션은 노출 제한).
+        extra = [str(t).strip() for t in (search_extra or []) if str(t).strip()]
+        # U1(오너 2026-10-02): 검색어는 선택 칸이다 — 한자·가나가 남은 낱말(옵션으로 못 보낸 **원문 값** 등)은 보류 대신 뺀다.
+        from src.collectors.ko_polish import has_foreign
+        return [t for t in ([(brand[:20] or '수입'), '해외직구'] + kw + extra) if not has_foreign(t)][:10]
+
     def _build_product_payload(self, product: dict, notice_schema=None, attr_schema=None,
                                attributes=None, outbound_code=None, documents=None,
                                search_extra=None, items_plan=None) -> dict:
@@ -1146,12 +1316,7 @@ class CoupangUploader(BaseUploader):
         # 정본: 정가 = 판매가 15% 상향 후 100원 반올림(할인 표기용).
         original_price = int(round(price * 1.15 / 100) * 100) if price else 0
         brand = str(product.get('brand', '') or '').strip()
-        # 정본: searchTags = [브랜드 정규화[:20] or "수입", "해외직구"] + 키워드, 최대 10.
-        tags = product.get('tags') or []
-        kw = [str(t).strip() for t in tags if str(t).strip()] if isinstance(tags, list) else []
-        # F48-b — 옵션으로 못 보낸 원 옵션 값은 **검색어로만**(자유옵션은 노출 제한).
-        extra = [str(t).strip() for t in (search_extra or []) if str(t).strip()]
-        search_tags = ([(brand[:20] or '수입'), '해외직구'] + kw + extra)[:10]
+        search_tags = self.search_tags_for(product, search_extra)
 
         # ★ items[] — 5,691건 검증 정본(오너 SSH 실측 coupang_upload.py:122~145). 카나리 7차 거부
         #   "옵션(...): 10원 이상의 판매가를 입력해주세요"의 정답지. 필드명·값 전부 정본 그대로.
