@@ -29,7 +29,7 @@ def client():
 
 def _item(**extra):
     from src.seller_console import collect_history_store as S
-    ex = {"title": "VRSUK椅", "title_ko": "임스 라운지 의자 재고 있음", "price": "6995.00", "currency": "CNY",
+    ex = {"title": "VRSUK椅", "title_ko": "빈티지 라운지 의자 재고 있음", "price": "6995.00", "currency": "CNY",
           "images": ["https://img.example/1.jpg", "https://img.example/2.jpg"],
           "detail_images": ["https://img.example/d1.jpg"],
           "options": [{"name": "颜色分类", "values": VRSUK[:3]}],
@@ -61,7 +61,7 @@ def test_desktop_form_values_win_so_canary_payload_is_unchanged():
     out = build_product(item, edits=form)
     assert all(out[k] == form[k] for k in PRODUCT_KEYS)                   # 폼이 준 키는 전부 폼 값
     plain = build_product(item)
-    assert plain["title"] == "임스 라운지 의자" and plain["coupang_name"]   # 폰: 저장값 + 정리 + F53 규칙안
+    assert plain["title"] == "빈티지 라운지 의자" and plain["coupang_name"]   # 폰: 저장값 + 정리 + F53 규칙안
 
 
 def test_preview_uses_the_same_chain_and_sends_nothing(client, monkeypatch):

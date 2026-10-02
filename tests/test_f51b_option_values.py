@@ -37,7 +37,10 @@ def test_resolution_order():
     assert (t["value"], t["how"], t["confirm"]) == ("블랙 선정리형", "token", True)            # 2) 조각 치환
     tr = r("双位纸巾架【卷纸丨湿厕纸丨抽纸】", values_ko="2단 휴지걸이(롤·물티슈·각티슈)")
     assert tr["how"] == "translator" and tr["confirm"] is True                               # 3) 번역기
-    lost = r("PD20W快充（白色款）", values_ko="고속 충전 화이트")
+    # T1(2026-10-02): 「PD20W快充（白色款）」은 이제 정리 규칙만으로 풀린다(快充→고속충전) — 번역기 경로를 재려고
+    #   규칙표에 없는 말(莫奈色)을 섞었다. 재는 것은 그대로: 번역기 값이 원문의 영문·숫자(PD20W)를 잃으면 보류.
+    assert r("PD20W快充（白色款）")["value"].startswith("PD20W 고속충전")
+    lost = r("PD20W莫奈色款", values_ko="모네 컬러")
     assert lost["value"] == "" and "PD20W" in lost["why"]                                     # 영문 토큰 보존
     # (T1 2026-09-30-H: 紫色 같은 기본 색은 이제 정리 규칙이 옮긴다 — 표에 없는 말로 보류를 잰다)
     assert r("莫奈色", values_ko="모네 컬러")["value"] == "모네 컬러"

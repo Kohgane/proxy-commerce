@@ -95,7 +95,10 @@ def rule_pass(extra: dict) -> dict:
         for v, k in zip(vals, vko):
             k = str(k or "").strip()
             if k and k != v and not foreign(k):
-                new.append(k)                           # 이미 옮김
+                # T1/T4(오너 2026-10-02): 이미 옮긴 값도 **새 정리 규칙**을 한 번 더(이모지·판촉·직역 — 비용 0).
+                from src.collectors import ko_polish as _kp
+                k2 = _kp.polish_ko(k) or k
+                new.append(k2)
                 continue
             if not foreign(v):
                 new.append(v)                           # 영문·숫자·한국어 — 옮길 것 없음
@@ -366,16 +369,27 @@ def audit(rows: list, *, samples: int = 20) -> dict:
         if foreign(src):
             ko = str(ex.get("title_ko") or "")
             titles.append({"item_id": r.get("id"), "src": src[:80], "before": str(ex.get("title_polish_before") or "")[:90],
-                           "after": ko[:90], "promo_left": [w for w in (kp.rules().get("delete_ko") or []) if w and w in ko],
+                           "after": ko[:90], "promo_left": kp.promo_left(ko),         # T2: 삭제표와 같은 표
                            "han_left": foreign(ko) or not ko})
     c = {"rule": 0, "translator": 0, "left": 0}
     for how, _k in seen.values():
         c[how] += 1
     tr_samples = [{"src": v, "ko": k} for v, (how, k) in seen.items() if how == "translator"][:samples]
+    # T4: 「어색」 — 번역기 값 중 정리 규칙이 아직 지울 것이 있거나(판촉·기호) 쿠팡 28자를 넘는 것
+    awkward = []
+    for v, (how, k) in seen.items():
+        if how != "translator" or not k:
+            continue
+        why = kp.promo_left(k)
+        if why or len(k) > kp.MAX_OPTION_VALUE:
+            awkward.append({"src": v, "ko": k, "len": len(k), "why": ", ".join(why[:3]) or "28자 넘음"})
+        if len(awkward) >= samples:
+            break
     left_samples = [{"src": v, "ko": k} for v, (how, k) in seen.items() if how == "left"][:samples]
     total = len(seen)
     bad = c["left"]
     return {"values": total, "counts": c, "left_ratio": round(bad / total, 3) if total else None,
             "translator_samples": tr_samples, "left_samples": left_samples, "titles": titles,
+            "awkward_samples": awkward,
             "titles_promo_left": sum(1 for t in titles if t["promo_left"]),
             "titles_han_left": sum(1 for t in titles if t["han_left"])}

@@ -85,7 +85,7 @@ def save_rules_override(r: dict | None) -> None:
         for k in ("replace", "colors", "replace_ko"):
             if k in r and not all(isinstance(x, list) and len(x) == 2 for x in r[k]):
                 raise ValueError(f"{k}는 [원문, 한국어] 쌍 목록이어야 합니다")
-        for k in ("price_re", "ban_ko", "ban_cn", "promo_img", "detail_drop_lines"):
+        for k in ("price_re", "ban_ko", "ban_cn", "promo_img", "detail_drop_lines", "strip_symbols", "delete_re"):
             for p in r.get(k) or []:
                 try:
                     re.compile(p)
@@ -106,7 +106,24 @@ def has_han(text) -> bool:
     return bool(_HAN.search(str(text or "")))
 
 
+def _drop_unmatched(s: str) -> str:
+    """지운 자리에 남은 **짝 없는 괄호**(「티몰 인기 상품】너무 예쁜…」 → 「】너무…」)를 뗀다."""
+    out, depth = [], {"]": 0, ")": 0, "}": 0}
+    pair = {"[": "]", "(": ")", "{": "}"}
+    for ch in s:
+        if ch in pair:
+            depth[pair[ch]] += 1
+        elif ch in depth:
+            if depth[ch] == 0:
+                out.append(" ")
+                continue
+            depth[ch] -= 1
+        out.append(ch)
+    return "".join(out)
+
+
 def _tidy(s: str) -> str:
+    s = _drop_unmatched(s)
     s = re.sub(r"\[\s*\]|\(\s*\)|\{\s*\}", " ", s)
     s = re.sub(r"\s+([,)\]}])", r"\1", s)                      # 지운 자리 뒤 「 ,」
     s = re.sub(r"([(\[{])\s+", r"\1", s)
@@ -117,10 +134,29 @@ def _tidy(s: str) -> str:
     return s.strip()
 
 
+def _strip_common(s: str, r: dict, hits: dict | None) -> str:
+    """T1(오너 2026-10-02) — 이모지·장식 기호(✅⚡🌟⭐ꔛ…)와 정규식 삭제표(`delete_re` — 판촉·보증·주장 꼬리)."""
+    for p in r.get("strip_symbols") or []:
+        # 장식 기호는 원문에서 **조각 경계**로 쓰였다(「✅弹簧线ꔛPD65W快充✅…」) — 공백이 아니라 「·」로 둬 축약이 조각을 안다.
+        s, n = re.subn(p, " · ", s)
+        if n and hits is not None:
+            hits.setdefault("delete", []).append(f"기호×{n}")
+    for p in r.get("delete_re") or []:
+        s, n = re.subn(p, " ", s)
+        if n and hits is not None:
+            hits.setdefault("delete", []).append(p)
+    return s
+
+
 def preclean_cn(text: str, *, hits: dict | None = None) -> str:
     """번역 **전** 원문 정리 — 판촉어·가격 삭제, 용어·색상은 한국어로 먼저."""
     r = rules()
-    s = str(text or "").translate(_FW)
+    s = _strip_common(str(text or "").translate(_FW), r, hits)
+    # T1: 원문 정규식 치환(「44cm高棕色」 → 「높이 44cm 棕色」 — 높이와 색을 가른다). 번역 전 규칙 경로에만.
+    for pat, rep_ in r.get("sub_cn") or []:
+        s, n = re.subn(pat, rep_, s)
+        if n and hits is not None:
+            hits.setdefault("replace", []).append(f"{pat}→{rep_}")
     for w in sorted(r.get("delete_cn") or [], key=len, reverse=True):
         if w and w in s:
             s = s.replace(w, " ")
@@ -143,7 +179,7 @@ def strip_cn(text: str, *, hits: dict | None = None) -> str:
     """번역기에 보낼 원문 — **지우기만**(판촉어·가격). 한국어를 끼워 넣지 않는다:
     섞인 글은 언어 판별이 「한국어」로 봐서 번역기가 손대지 않고 돌려준다(실측)."""
     r = rules()
-    s = str(text or "").translate(_FW)
+    s = _strip_common(str(text or "").translate(_FW), r, hits)
     for w in sorted(r.get("delete_cn") or [], key=len, reverse=True):
         if w and w in s:
             s = s.replace(w, " ")
@@ -157,7 +193,7 @@ def strip_cn(text: str, *, hits: dict | None = None) -> str:
 def polish_ko(text: str, *, hits: dict | None = None) -> str:
     """번역 **후** 한국어 정리 — 판촉어·가격 문구 삭제, 빈 괄호·겹친 구분자 정리."""
     r = rules()
-    s = str(text or "").translate(_FW)
+    s = _strip_common(str(text or "").translate(_FW), r, hits)
     for w in sorted(r.get("delete_ko") or [], key=len, reverse=True):
         if w and w in s:
             s = s.replace(w, " ")
@@ -168,11 +204,19 @@ def polish_ko(text: str, *, hits: dict | None = None) -> str:
         if n and hits is not None:
             hits.setdefault("delete", []).append(f"가격문구×{n}")
     # 번역기 직역 바로잡기(懒人沙发 → 「게으른 사람 소파」 → 빈백 소파) — 긴 것부터
+    _targets = set()
     for src, ko in sorted(r.get("replace_ko") or [], key=lambda x: len(x[0]), reverse=True):
         if src and src in s:
             s = s.replace(src, ko)
+            _targets.add(ko)
             if hits is not None:
                 hits.setdefault("replace", []).append(f"{src}→{ko}")
+    # T2: 바로잡은 말이 한 제목에 두 번 생기면(「빈백 소파 … 빈백 소파 의자」) 첫 번째만 남긴다.
+    for ko in _targets:
+        # 한글로 바로잡은 말만(영문 브랜드 「SPORTLINK(SPORTLINK)는」의 괄호 표기는 쿠팡명 규칙이 읽는다 — 건드리지 않음)
+        if ko and re.search("[가-힣]", ko) and s.count(ko) > 1:
+            first = s.index(ko) + len(ko)
+            s = s[:first] + s[first:].replace(ko, " ")
     # Q(2026-10-01): 문장형 꼬리 — 번역기가 제목을 문장으로 끝낸다(「…스탠드에 적합합니다」). 상품명은 명사로 끝난다.
     #   끝에서만 뗀다(가운데 「합니다」는 손대지 않음). 다 떼고 남는 게 없으면 원래 값.
     for p in r.get("tail_ko") or []:
@@ -181,6 +225,8 @@ def polish_ko(text: str, *, hits: dict | None = None) -> str:
             s = t
             if hits is not None:
                 hits.setdefault("delete", []).append("문장 꼬리")
+    # T3: 상표 — 호환 표기만(맥세이프 호환…) · 레플리카 상표는 지운다(등록은 사전검증이 「상표 위험」으로 보류)
+    s = trademark_fix(s)
     return _tidy(s)
 
 
@@ -210,6 +256,68 @@ def drop_detail_lines(text: str) -> tuple:
         if keep:
             out_lines.append(" / ".join(keep))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out_lines)).strip(), dropped
+
+
+# ── T3(오너 2026-10-02): 위험 플래그 — 번역이 아니라 **차단·표기**의 일 ───────────────────────────────
+
+def _tm_names(entry) -> List[str]:
+    return sorted([str(n) for n in (entry.get("names") or []) if str(n or "").strip()], key=len, reverse=True)
+
+
+def trademark_fix(text: str) -> str:
+    """상표 — `compat`은 「○○ 호환」으로만 둔다(맥세이프 호환·애플워치 호환), `replica`(가구 레플리카)는 **지운다**.
+    같은 「○○ 호환」이 두 번 생기면 하나만. 표는 `trademarks`(원격 JSON)."""
+    s = str(text or "")
+    for e in rules().get("trademarks") or []:
+        label, mode = str(e.get("label") or ""), str(e.get("mode") or "")
+        names = _tm_names(e)
+        if not names:
+            continue
+        pat = "|".join(re.escape(n) for n in names)
+        if mode == "replica":
+            s = re.sub(pat, " ", s)
+        elif mode == "compat" and label:
+            s = re.sub(rf"(?:{pat})(?:\s*호환)?", f"{label} 호환", s)
+            want = f"{label} 호환"
+            if s.count(want) > 1:
+                first = s.index(want) + len(want)
+                s = s[:first] + s[first:].replace(want, " ")
+    return _tidy(s) if s != str(text or "") else s
+
+
+def replica_hits(text: str) -> List[str]:
+    """가구 레플리카 상표(임스·허먼밀러·바르셀로나…)가 들어 있나 — 라벨 목록."""
+    s = str(text or "")
+    out = []
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") == "replica" and any(n in s for n in _tm_names(e)):
+            out.append(str(e.get("label") or ""))
+    return out
+
+
+def expiry_hits(text: str) -> List[str]:
+    """유통기한 임박·떨이 소싱 어휘(临期·过期·清仓·尾货…) — 찾은 낱말."""
+    s = str(text or "")
+    return [w for w in (rules().get("expiry_block") or []) if w and w in s]
+
+
+def invented_names(src: str, ko: str) -> List[str]:
+    """번역 결과에 **원문에 없는** 고유명이 생겼나(「三宅艺创」 → 「미야케 아키라」). `invented_names` 표:
+    [만들어진 이름, 원문에 있으면 괜찮은 표기들]."""
+    s, k = str(src or ""), str(ko or "")
+    out = []
+    for name, markers in rules().get("invented_names") or []:
+        if name and name in k and not any(m and m in s for m in markers or []):
+            out.append(name)
+    return out
+
+
+def promo_left(text: str) -> List[str]:
+    """T2 — 「판촉 직역 남음」 판정. **삭제표 그 자체**로 잰다(polish_ko가 지울 것 = 남은 판촉).
+    예전 카운터는 `delete_ko` 낱말만 봐서(4건) 화면에 보이는 것보다 적게 셌다."""
+    hits: dict = {}
+    polish_ko(text, hits=hits)
+    return [h for h in hits.get("delete") or [] if h != "문장 꼬리"]
 
 
 def ban_hits(text: str) -> List[str]:
@@ -257,15 +365,28 @@ def option_value(value: str) -> Dict:
 
 
 def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
-    """쿠팡 옵션 값 길이 맞춤 — **소재 조각부터** 줄인다(핵심 가죽·원단 종류는 색상 조각에 붙여 남김)."""
+    """쿠팡 옵션 값 길이 맞춤 — **자르지 않는다**(T1, 오너 2026-10-02). 넘으면 원래 값 그대로 돌려주고,
+    호출부가 「미해석」으로 둔다(`fits`).
+
+    줄이는 순서: ① 판촉·주장(이미 정리 규칙이 지웠다) → ② **용도 꼬리**(현관용·식탁용… `usage_tail_ko`) →
+    ③ 소재 조각(핵심 가죽·원단 종류는 색상 조각에 붙여 남김 — T1-H) → ④ **기능 나열 뒤부터**(`+`·`,`·` / ` 조각).
+    """
     v = re.sub(r"\s{2,}", " ", str(value or "")).strip()
     if len(v) <= limit:
         return v
+    # ② 용도 꼬리
+    for t in sorted(rules().get("usage_tail_ko") or [], key=len, reverse=True):
+        if t and t in v:
+            cand = _tidy(v.replace(t, " "))
+            if cand:
+                v = cand
+                if len(v) <= limit:
+                    return v
+    # ③ 소재 조각(옛 규칙 그대로)
     parts = [p.strip() for p in v.split(" / ") if p.strip()]
     if len(parts) >= 3:
         head, mats, tail = parts[0], parts[1:-1], parts[-1]
         keys = [k for k in _KEY_MATERIAL if any(k in m for m in mats) and k not in head]
-        # 「오일왁스 풀가죽」처럼 겹치는 낱말은 긴 것만
         keys = [k for k in keys if not any(k != o and k in o for o in keys)]
         cand = " / ".join(x for x in (" ".join([head] + keys[:2]).strip(), tail) if x)
         if len(cand) <= limit:
@@ -273,7 +394,26 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
         cand = " / ".join(x for x in (head, tail) if x)
         if len(cand) <= limit:
             return cand
-    return v[:limit].rstrip(" /")
+    # ④ 기능 나열 — **뒤 조각부터** 하나씩 뺀다. 색상이 든 조각은 남긴다(SKU를 가르는 값 — 빼면 뜻이 바뀐다).
+    segs = [x.strip() for x in re.split(r"\s*(?:\s/\s|\+|,|·)\s*", v) if x.strip()]
+    colors_ko = {ko for _src, ko in (rules().get("colors") or []) if ko}
+    def _has_color(seg):
+        return any(c and c in seg for c in colors_ko)
+    while len(segs) > 1:
+        drop = next((i for i in range(len(segs) - 1, 0, -1) if not _has_color(segs[i])), None)
+        if drop is None:
+            drop = next((i for i in range(len(segs)) if not _has_color(segs[i])), None)
+        if drop is None:
+            break
+        segs.pop(drop)
+        cand = _tidy(" · ".join(segs))
+        if len(cand) <= limit:
+            return cand
+    return v                      # 그래도 넘으면 **자르지 않는다** — 호출부가 「미해석」
+
+
+def fits(value: str, limit: int = MAX_OPTION_VALUE) -> bool:
+    return len(str(value or "")) <= limit
 
 
 # ── J0(오너 2026-09-30-J): 브랜드 한자 → 병음 대문자 ─────────────────────────────

@@ -196,7 +196,7 @@ def test_backfill_is_admin_only_and_records_title_before(monkeypatch):
     from src.seller_console.ai import translator as T
     monkeypatch.setattr(T.AITranslator, "translate_product",
                         lambda self, p: (_ for _ in ()).throw(AssertionError("백필이 직접 번역하면 안 된다")))
-    iid = _item(uid="owner", title_ko="임스 라운지 의자 재고 있음")
+    iid = _item(uid="owner", title_ko="빈티지 라운지 의자 재고 있음")
     seller = app.test_client()
     with seller.session_transaction() as s:
         s["user_id"], s["user_role"] = "owner", "seller"
@@ -204,10 +204,13 @@ def test_backfill_is_admin_only_and_records_title_before(monkeypatch):
     admin = app.test_client()
     with admin.session_transaction() as s:
         s["user_id"], s["user_role"] = "owner", "admin"
+    # T4(오너 2026-10-02): 백필 2단계 — 1단계(기본)는 규칙·재정리만(번역기 큐 0), 2단계 버튼이 남은 값을 큐로.
     d = admin.post("/seller/collect/translate-audit/backfill", json={}).get_json()
-    assert d["ok"] and d["titles"] == 1 and d["queued"] == 1 and oq.counts()["queued"] == 1
+    assert d["ok"] and d["stage"] == 1 and d["titles"] == 1 and d["queued"] == 0 and oq.counts()["queued"] == 0
+    d2 = admin.post("/seller/collect/translate-audit/backfill", json={"stage": 2}).get_json()
+    assert d2["ok"] and d2["stage"] == 2 and d2["queued"] == 1 and oq.counts()["queued"] == 1
     ex = _extra(iid, "owner")
-    assert ex["title_polish_before"] == "임스 라운지 의자 재고 있음" and ex["title_ko"] == "임스 라운지 의자"
+    assert ex["title_polish_before"] == "빈티지 라운지 의자 재고 있음" and ex["title_ko"] == "빈티지 라운지 의자"
     assert ex["options"][0]["values_ko"][0] == kp.option_value(VRSUK[0])["value"]
 
 

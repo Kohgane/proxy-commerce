@@ -120,7 +120,7 @@ def test_tail_and_magsafe_polish():
     assert kp.polish_ko("충전 거치대 사용 가능합니다.") == "충전 거치대"
     assert kp.polish_ko("가방입니다") == "가방"
     assert kp.polish_ko("합니다") == "합니다"                                        # 다 떼면 빈 값 — 원래 값
-    assert kp.polish_ko("임스 라운지 의자") == "임스 라운지 의자"                         # 명사로 끝나면 그대로
+    assert kp.polish_ko("빈티지 라운지 의자") == "빈티지 라운지 의자"                     # 명사로 끝나면 그대로
 
 
 def test_coupang_name_keeps_the_product_type_noun():

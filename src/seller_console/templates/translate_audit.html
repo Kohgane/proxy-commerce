@@ -47,7 +47,9 @@
       {% if is_admin %}
       <div class="d-flex flex-wrap gap-2">
         {% if q.paused %}<button type="button" class="btn btn-ghost" id="taResume"><i class="bi bi-play"></i> 재개</button>{% endif %}
-        <button type="button" class="btn btn-cta" id="taBackfill" data-days="{{ days }}"><i class="bi bi-arrow-repeat"></i> 기존 상품 번역 정리(백필)</button>
+        {# T4: 백필 2단계 — 1단계는 규칙·재정리만(비용 0), 2단계는 남은 값만 번역기(Papago 1순위). #}
+        <button type="button" class="btn btn-cta" id="taBackfill" data-stage="1" data-days="{{ days }}"><i class="bi bi-arrow-repeat"></i> 1단계 — 규칙·재정리(비용 0)</button>
+        <button type="button" class="btn btn-ghost" id="taBackfill2" data-stage="2" data-days="{{ days }}"><i class="bi bi-translate"></i> 2단계 — 남은 값 번역기로</button>
       </div>
       {% endif %}
     </div>
@@ -80,6 +82,18 @@
           {% else %}<div class="op-empty small">외국어가 남은 옵션 값이 없습니다.</div>{% endif %}
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="op-card mt-3" data-role="ta-awkward">
+    <div class="op-card-body">
+      <div class="console-kpi-label mb-2">어색한 번역기 값 — {{ (got.awkward_samples or [])|length }}개까지(정리 규칙이 아직 지울 것 · 쿠팡 28자 넘음)</div>
+      {% if got.awkward_samples %}
+      <table class="table table-sm align-middle mb-0" data-role="ta-awkward-rows">
+        <thead><tr><th>원문</th><th>번역기 값</th><th>왜</th></tr></thead>
+        <tbody>{% for r in got.awkward_samples %}<tr><td class="small text-muted">{{ r.src }}</td><td class="small">{{ r.ko }} <span class="text-muted">({{ r.len }}자)</span></td><td class="small">{{ r.why }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="op-empty small">어색한 번역기 값이 없습니다.</div>{% endif %}
     </div>
   </div>
 
@@ -118,7 +132,7 @@
 <style>
   .ta-unit { font-size: 1.1rem; color: var(--text-muted); font-family: var(--font-ui); margin-left: .15em; }
   .ta-lead { max-width: 64ch; }
-  @media (max-width: 767.98px) { #taBackfill, #taResume { width: 100%; min-height: 44px; } }
+  @media (max-width: 767.98px) { #taBackfill, #taBackfill2, #taResume { width: 100%; min-height: 44px; } }
 </style>
 <script>
 (function () {
@@ -143,7 +157,9 @@
       .catch(function () { say("danger", "연결이 끊겼어요 — 잠시 뒤 다시 눌러 주세요."); btn.disabled = false; });
   }
   var b = document.getElementById("taBackfill");
-  if (b) b.addEventListener("click", function () { post("/seller/collect/translate-audit/backfill", {days: Number(b.dataset.days) || 90}, b); });
+  if (b) b.addEventListener("click", function () { post("/seller/collect/translate-audit/backfill", {days: Number(b.dataset.days) || 90, stage: 1}, b); });
+  var b2 = document.getElementById("taBackfill2");
+  if (b2) b2.addEventListener("click", function () { post("/seller/collect/translate-audit/backfill", {days: Number(b2.dataset.days) || 90, stage: 2}, b2); });
   var r = document.getElementById("taResume");
   if (r) r.addEventListener("click", function () { post("/seller/collect/option-translate/resume", {}, r); });
 })();

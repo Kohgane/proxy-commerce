@@ -29,6 +29,7 @@
     <div class="m5-needs" data-role="m5-unresolved">옵션 값 {{ m5.unresolved|length }}개를 아직 한국어로 옮기지 못했어요 —
       편집 화면의 「한국어 번역」을 누르거나 값을 직접 넣어 주세요(이 값의 SKU는 등록 전에 멈춥니다).</div>
     {% endif %}
+    {% for r in m5.risks or [] %}<div class="m5-needs" data-role="m5-risk"><span class="pc-badge pc-badge-danger">{{ r }}</span></div>{% endfor %}
     {% if m5.needs_pc %}
     <div class="m5-needs" data-role="m5-needs-pc">PC 확장에서 보강 필요 — {{ m5.missing|join(", ") }}.
       컴퓨터에서 고가수집기를 켜면 자동으로 채워집니다.</div>

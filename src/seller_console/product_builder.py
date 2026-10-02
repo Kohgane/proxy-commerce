@@ -65,6 +65,8 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
     price = str(ex.get("price") or it.get("price") or "")
     base: Dict[str, Any] = {
         "title": title, "title_ko": title, "title_en": str(ex.get("title_en") or title), "title_en_input": "",
+        # T3: 원문 제목(상표·유통기한 어휘 판정용 — 번역·정리 전 글자에 있다)
+        "title_src": str(ex.get("title") or it.get("title") or ""),
         "coupang_name": str(ex.get("coupang_name") or ""),
         "coupang_name_source": "manual" if ex.get("coupang_name") else "",
         "coupang_brand_pos": str(ex.get("coupang_brand_pos") or ""),

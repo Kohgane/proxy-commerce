@@ -65,8 +65,10 @@ def test_title_polish_before_and_after_translation():
     assert kp.strip_cn("VRSUK{商务系列}简约伊姆斯躺椅油蜡皮Eames办公旋转升降现货单椅").endswith("升降 单椅")
     ko = "VRSUK{비즈니스 시리즈} 심플 이임스 리클라이너 오일 왁스 가죽 Eames 사무용 회전 승강 단일 의자 재고 있음"
     out = kp.polish_ko(ko)
-    assert "재고 있음" not in out and out.endswith("1인 의자") and "임스" in out and "이임스" not in out
-    assert kp.polish_ko("게으른 아가씨 인기템, 게으른 사람들을 위한 소파") == "게으른 아가씨, 빈백 소파"
+    # T3(오너 2026-10-02): Eames(임스)는 가구 레플리카 상표 — 상품명에서 지우고 등록은 「상표 위험」으로 보류.
+    assert "재고 있음" not in out and out.endswith("1인 의자") and "임스" not in out and "Eames" not in out
+    # T2(오너 2026-10-02): 「게으른 아가씨」도 빈백 소파로 — 같은 말이 두 번 생기면 하나만.
+    assert kp.polish_ko("게으른 아가씨 인기템, 게으른 사람들을 위한 소파") == "빈백 소파"
     assert kp.polish_ko("수행 방패(SPORTLINK)는 애플 워치 충전 거치대").startswith("SPORTLINK")
 
 
