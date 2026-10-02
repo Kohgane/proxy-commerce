@@ -403,6 +403,56 @@ class PrevalidationResult:
     # M1-1 — 셀러가 고치러 갈 화면 주소. 빈 칸 이름(env)은 화면 대신 여기(로그·관리자)에만.
     action_url: str = ""
     missing_envs: List[str] = field(default_factory=list)
+    # R2 — 「막힘」이 아니라 **보류**(재료가 덜 왔다 — 보강·번역하면 풀린다). 화면이 「보류」로 말한다.
+    hold: bool = False
+
+
+#: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
+_KO_OPTION_MARKETS = ("coupang", "smartstore", "elevenst")
+PC_ENRICH_LINE = "PC 확장에서 보강 필요 — 컴퓨터에서 고가수집기를 켜면 자동으로 채워집니다."
+
+
+def unresolved_option_values(product: Dict[str, Any]) -> List[str]:
+    """SKU 스펙 값 중 한국어로 못 옮긴 것(M5 카드·쿠팡 계획과 같은 해석 체인). 판정 실패면 빈 목록 — 막지 않는다."""
+    try:
+        from src.uploaders.coupang_options import resolve_option_value, value_ko_map
+        vko = value_ko_map(product)
+        ov = product.get("option_value_overrides") if isinstance(product.get("option_value_overrides"), dict) else {}
+        out: List[str] = []
+        for k in product.get("skus") or []:
+            spec = k.get("spec") if isinstance(k, dict) else None
+            for v in (spec if isinstance(spec, list) else []):
+                sv = str(v)
+                if sv in out:
+                    continue
+                if not resolve_option_value(sv, values_ko=vko.get(sv, ""), override=ov.get(sv, ""))["value"]:
+                    out.append(sv)
+        return out
+    except Exception as exc:
+        logger.warning("[사전검증] 옵션 값 해석 판정 실패(막지 않음): %s", exc)
+        return []
+
+
+def readiness_message(holds: List[Dict[str, str]]) -> str:
+    """「사전검증 — 보류: 이미지 0장·판매가 없음 → PC 확장에서 보강 후」 — 무엇이 모자라고 어디서 채우는지 한 줄."""
+    what = "·".join(h["short"] for h in holds)
+    fixes = []
+    if any(h["fix"] == "pc" for h in holds):
+        fixes.append("PC 확장에서 보강")
+    if any(h["fix"] == "translate" for h in holds):
+        fixes.append("편집 화면에서 옵션 값 번역")
+    return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
+
+
+def readiness_hint(holds: List[Dict[str, str]]) -> str:
+    out = []
+    if any(h["fix"] == "pc" for h in holds):
+        out.append(PC_ENRICH_LINE)
+    if any(h["short"] == "판매가 없음" for h in holds):
+        out.append("외화 원가는 편집 화면 ‘원화로 환산’ 버튼으로 원화 판매가를 채울 수도 있어요.")
+    if any(h["fix"] == "translate" for h in holds):
+        out.append("편집 화면의 「한국어 번역」을 누르거나 값을 직접 넣어 주세요.")
+    return " ".join(out)
 
 
 def lines_message(prefix: str, lines: List[str]) -> str:
@@ -530,6 +580,36 @@ class UploadDispatcher:
                 if line not in out:
                     out.append(line)
         return out
+
+    @staticmethod
+    def readiness_holds(product_data: Dict[str, Any], market: str) -> List[Dict[str, str]]:
+        """R2 — 등록 재료가 다 왔나. `[{short, line, fix}]`(빈 목록 = 준비됨). fix: pc(보강) · translate(번역).
+
+        판정 재료는 등록과 같은 것: 이미지는 등록이 보낼 목록(`images_effective` → `images`),
+        옵션 값은 M5 카드·쿠팡 계획과 같은 해석 체인(`resolve_option_value`).
+        """
+        pd = product_data or {}
+        holds: List[Dict[str, str]] = []
+        imgs = [u for u in (pd.get("images_effective") or pd.get("images") or [])
+                if isinstance(u, str) and u.strip()]
+        if not imgs:
+            holds.append({"short": "이미지 0장", "fix": "pc",
+                          "line": "대표 이미지가 0장이에요 — 마켓은 사진 없는 상품을 받지 않아요."})
+        price_raw = pd.get("price") or pd.get("price_original")
+        try:
+            price = float(price_raw) if price_raw not in (None, "") else None
+        except (TypeError, ValueError):
+            price = None
+        if price is None or price <= 0:
+            holds.append({"short": "판매가 없음", "fix": "pc",
+                          "line": "판매가가 0이거나 비어 있어요 — 원가를 읽어야 판매가를 낼 수 있어요"
+                                  "(외화면 편집 화면 ‘원화로 환산’ 버튼으로도 채울 수 있어요)."})
+        if market in _KO_OPTION_MARKETS:
+            n = len(unresolved_option_values(pd))
+            if n:
+                holds.append({"short": f"옵션 값 {n}개 미해석", "fix": "translate",
+                              "line": f"옵션 값 {n}개를 아직 한국어로 옮기지 못했어요 — 그 값의 SKU는 등록할 수 없어요."})
+        return holds
 
     def _prevalidate_market(
         self,
@@ -659,18 +739,18 @@ class UploadDispatcher:
                 hint="수집 후 상품명을 직접 입력하거나 AI 카피 생성을 활용하세요.",
             )
 
-        price_raw = product_data.get("price") or product_data.get("price_original")
-        try:
-            price = float(price_raw) if price_raw is not None else None
-        except (TypeError, ValueError):
-            price = None
-        if price is None or price <= 0:
+        # R2(오너 2026-10-01 캡처 23:05) — 폰 공유 초안(원가만 있고 이미지 0장·SKU 0개)이 여기서 「통과」했다:
+        #   가격은 원가>0이라 지났고, 이미지는 **있을 때만** 접근을 봤다(0장이면 건너뜀). 그리고 등록 단계
+        #   `screen_images`에서야 「이미지 0장 — 등록 불가」로 멈췄다 — 두 화면이 다른 말을 한다.
+        #   이제 **재료 준비**를 한 번에 본다: 판매가>0 · 이미지 ≥1 · (국내 마켓) 옵션 값 한국어 해석 완료.
+        #   못 채웠으면 「막힘」이 아니라 **보류**(보강·번역하면 풀린다)로 말하고 등록 버튼은 열리지 않는다.
+        holds = self.readiness_holds(product_data, market)
+        if holds:
             return PrevalidationResult(
-                market=market,
-                ok=False,
-                error_code="missing_field",
-                message="판매가가 0이거나 비어 있어 마켓이 등록을 거부합니다.",
-                hint="편집 화면에서 판매가를 입력하세요(외화면 ‘원화로 환산’ 버튼으로 원화 판매가를 채울 수 있어요).",
+                market=market, ok=False, error_code="missing_field", hold=True,
+                message=readiness_message(holds),
+                hint=readiness_hint(holds),
+                details=[h["line"] for h in holds],
             )
 
         # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)

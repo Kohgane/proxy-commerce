@@ -113,6 +113,7 @@
             background: var(--surface); word-break: break-word; }
   .m5-res.is-ok { border-color: var(--success); }
   .m5-res.is-bad { border-color: var(--danger); }
+  .m5-res.is-hold { border-color: var(--warn); }
   .m5-res b { display: block; margin-bottom: 2px; }
   .m5-res ul { margin: 4px 0 0; padding-left: 1.1rem; }
 </style>
@@ -194,15 +195,19 @@
       var h = '';
       (d.results || []).forEach(function (r) {
         if (r.ok) okMarkets.push(r.market);
-        h += '<div class="m5-res ' + (r.ok ? 'is-ok' : 'is-bad') + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '">' +
-             '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : '막힘') + '</b>' +
-             (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '')) +
+        // R2: 재료가 덜 온 것은 「보류」 — 카드의 「PC 확장에서 보강 필요」를 결과 바로 옆에 한 번 더(hint).
+        h += '<div class="m5-res ' + (r.ok ? 'is-ok' : (r.hold ? 'is-hold' : 'is-bad')) + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '"' +
+             (r.hold ? ' data-role="m5-hold"' : '') + '>' +
+             '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
+             (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
              ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
              (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') + '</div>';
       });
       checksEl.innerHTML = h;
       goBtn.disabled = blocked || !okMarkets.length;
-      goBtn.textContent = okMarkets.length ? '등록 (' + okMarkets.length + '곳)' : '등록할 수 있는 마켓이 없어요';
+      var held = (d.results || []).some(function (r) { return r.hold; });
+      goBtn.textContent = okMarkets.length ? '등록 (' + okMarkets.length + '곳)'
+        : (held ? '보강 후 등록할 수 있어요' : '등록할 수 있는 마켓이 없어요');
     });
   });
 

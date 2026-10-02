@@ -45,16 +45,16 @@ def test_prevalidate_says_it_first(monkeypatch):
     monkeypatch.setenv("SHOPIFY_ACCESS_TOKEN", "x")
     called = []
     monkeypatch.setattr(U, "market_reach", lambda m: called.append(m) or {"ok": True, "ms": 5, "detail": "ok"})
-    # 이미지 HEAD 검사(실네트워크)는 이 계약 밖이다 — 이미지 없이 잰다.
-    res = d._prevalidate_market(_draft(images=[]), "shopify")
+    # 이미지 HEAD 검사(실네트워크)는 이 계약 밖이다 — 로컬 경로 이미지로 잰다(R2: 이미지 0장은 사전검증 「보류」).
+    res = d._prevalidate_market(_draft(images=["/seller/static/icon-512.png"]), "shopify")
     assert res.ok is False and res.error_code == "title_not_english" and not called   # 두드리기 전에 멈춘다
 
     monkeypatch.setattr(d, "sell_price_in", lambda *a, **k: (None, "환율 없음"))
-    res = d._prevalidate_market(_draft(title_en="Apple Watch Charging Stand", images=[]), "shopify")
+    res = d._prevalidate_market(_draft(title_en="Apple Watch Charging Stand", images=["/seller/static/icon-512.png"]), "shopify")
     assert res.ok is False and res.error_code == "price_unresolved" and "환율 없음" in res.message
 
     monkeypatch.setattr(d, "sell_price_in", lambda *a, **k: (19.99, ""))
-    res = d._prevalidate_market(_draft(title_en="Apple Watch Charging Stand", images=[]), "shopify")
+    res = d._prevalidate_market(_draft(title_en="Apple Watch Charging Stand", images=["/seller/static/icon-512.png"]), "shopify")
     assert res.ok is True and called == ["shopify"]
 
 

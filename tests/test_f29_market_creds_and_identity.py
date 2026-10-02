@@ -189,14 +189,14 @@ def test_prevalidate_sees_prefixed_shipping_fields(clean_env):
                  ("RETURN_ADDRESS", "서울시 강남구 1"), ("RETURN_CHARGE_NAME", "반품담당"),
                  ("COMPANY_CONTACT_NUMBER", "02-1234-5678")):
         clean_env.setenv(f"COUPANG_GOGANE_{k}", v)
-    res = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900}, ["coupang"])
+    res = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]}, ["coupang"])
     assert res[0].ok is True, res[0].hint
 
 
 def test_missing_message_names_the_store_and_the_fields(clean_env):
     """F29-5: 「미입력」만 말하면 **이미 넣은 값을 또 넣게 된다**(오너가 그랬다)."""
     from src.seller_console.upload_dispatcher import UploadDispatcher
-    res = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900}, ["coupang"])
+    res = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]}, ["coupang"])
     assert res[0].ok is False
     hint = res[0].hint
     assert "확인한 곳:" in hint, hint

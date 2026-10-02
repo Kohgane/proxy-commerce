@@ -17,7 +17,7 @@ async function getSettings() {
   return {
     serverUrl: syncData.serverUrl || localData.serverUrl || DEFAULT_SERVER_URL,
     token: syncData.token || localData.token || "",
-    enrichMode: localData.kgp_enrich_mode || "window",   // v67 STEP2: 보강 렌더 모드(window 기본)
+    enrichMode: localData.kgp_enrich_mode || "background",   // R1: 백그라운드 탭 기본(포커스 변경 0 실측) · minimized=최소화 창
     // v83.1 STEP1: 한국어 번역 토글(기본 ON). 팝업·수집 카드가 같은 키를 읽고 쓴다(단일 소스).
     translate: !(localData.kgp_translate === false),
   };
@@ -225,7 +225,7 @@ const KgpEnrich = {
   failures: [],                             // F49-T 5부: 실패 항목과 사유(툴바 「다시」 버튼이 쓴다)
 };
 function _kgpEnrichSnapshot() {
-  return { done: KgpEnrich.done, total: KgpEnrich.total, failed: KgpEnrich.failed,
+  return { queued: KgpEnrich.queue.length, done: KgpEnrich.done, total: KgpEnrich.total, failed: KgpEnrich.failed,
     ok: KgpEnrich.ok, blocked: KgpEnrich.blocked, paused: KgpEnrich.paused,
     stopped: KgpEnrich.stopped, running: KgpEnrich.running, current: KgpEnrich.current,
     failures: KgpEnrich.failures.slice(-30) };
@@ -280,64 +280,86 @@ function _kgpEnrichVerdict(item, meta) {
   }
   return { ok: true, reason: "" };
 }
-async function _kgpEnrichOne(item, settings) {
-  // v67 STEP2: 렌더 보장 — 기본은 별도 소형 창(popup 480×640, 탭 활성=렌더 보장, 화면 점유 최소).
-  //   설정으로 탭 활성화 사이클(tab-activate)/기존 백그라운드(background) 선택. 서버 크롤 아님(확장 DOM).
-  const mode = (settings && settings.enrichMode) || "window";
-  let win = null, tabId = null;
-  try {
-    if (mode === "window") {
-      // v70 STEP6: 소형 창이 안 뜨는 환경(정책·API 부재) 대비 — 실패 시 조용히 죽지 않고 백그라운드 탭 폴백.
-      try {
-        if (!(chrome.windows && chrome.windows.create)) throw new Error("chrome.windows 미가용");
-        win = await chrome.windows.create({ url: item.url, type: "popup", width: 480, height: 640, top: 90, left: 90, focused: false });
-        tabId = win && win.tabs && win.tabs[0] && win.tabs[0].id;
-        // 창은 떴는데 tabs 미포함(타이밍) → 창의 탭 id 조회(url 불필요, id만 — tabs 권한 불요).
-        if (win && win.id != null && tabId == null) {
-          try { const ts = await chrome.tabs.query({ windowId: win.id }); tabId = ts && ts[0] && ts[0].id; } catch (e) {}
-        }
-        if (tabId == null) throw new Error("소형 창 탭 없음");
-      } catch (e) {
-        try { console.warn("[고가수집기 보강] 소형 창 실패 → 백그라운드 탭 폴백:", e && e.message); } catch (e2) {}
-        if (win && win.id != null) { try { await chrome.windows.remove(win.id); } catch (e3) {} }
-        win = null;
-        const tab = await chrome.tabs.create({ url: item.url, active: false });
-        tabId = tab && tab.id;
+// R1(오너 2026-10-01 「컴터에 자꾸 고가브릿지 수집 창이 계속 뜬다」) — 실측: 기본 모드가 `window`라 보강 1건마다
+//   480×640 popup 창이 화면에 떴다(focused:false여도 **보인다**). 트리거는 5분 알람 + 콘솔 탭 로드마다 폴링,
+//   대기 21건(운영 실측 — 시도 0회로 굳음)이 2~3초 간격으로 차례로 창을 띄웠다.
+//   이제: 기본 = **백그라운드 탭**(active:false). 실브라우저 하네스 실측(확장 로드 · 작업 탭 연 채 보강 2건):
+//     백그라운드 탭 = 창 포커스 변경 0 · 탭 활성 변경 0 / 최소화 창(state:"minimized", focused:false) = 만들 때마다
+//     작업 창 포커스가 빠졌다 돌아옴(2건 6창에 12회). 그래서 최소화 창은 **고르는 사람만**(팝업에 그 사실 표기).
+//   추출이 끝나면 **즉시 닫는다**(서버 저장 전). 동시 1탭(KgpEnrich.running).
+//   옛 설정값 `window`·`tab-activate`(화면에 뜨거나 포커스를 뺏는 방식)는 백그라운드 탭으로 읽는다.
+function _kgpEnrichModeOf(settings) {
+  const m = (settings && settings.enrichMode) || "background";
+  return m === "minimized" ? "minimized" : "background";
+}
+async function _kgpOpenHidden(url, mode) {
+  if (mode === "minimized") {
+    let win = null;
+    try {
+      if (!(chrome.windows && chrome.windows.create)) throw new Error("chrome.windows 미가용");
+      win = await chrome.windows.create({ url: url, state: "minimized", focused: false });
+      let tabId = win && win.tabs && win.tabs[0] && win.tabs[0].id;
+      if (win && win.id != null && tabId == null) {
+        try { const ts = await chrome.tabs.query({ windowId: win.id }); tabId = ts && ts[0] && ts[0].id; } catch (e) {}
       }
-    } else {
-      const tab = await chrome.tabs.create({ url: item.url, active: (mode === "tab-activate") });
-      tabId = tab && tab.id;
+      if (tabId == null) throw new Error("최소화 창 탭 없음");
+      return { winId: win.id, tabId: tabId };
+    } catch (e) {
+      try { console.warn("[고가수집기 보강] 최소화 창 실패 → 백그라운드 탭:", e && e.message); } catch (e2) {}
+      if (win && win.id != null) { try { await chrome.windows.remove(win.id); } catch (e3) {} }
     }
+  }
+  const tab = await chrome.tabs.create({ url: url, active: false });
+  return { winId: null, tabId: tab && tab.id };
+}
+async function _kgpCloseHidden(h) {
+  if (!h) return;
+  if (h.winId != null) { try { await chrome.windows.remove(h.winId); } catch (e) {} }
+  else if (h.tabId != null) { try { await chrome.tabs.remove(h.tabId); } catch (e) {} }
+}
+async function _kgpEnrichOne(item, settings) {
+  const mode = _kgpEnrichModeOf(settings);
+  let h = null, meta = null;
+  try {
+    h = await _kgpOpenHidden(item.url, mode);
     KgpEnrich.current = item.url;
     _kgpBroadcastEnrich();
-    if (tabId != null) await _kgpWaitTabComplete(tabId, 22000);
+    if (h.tabId != null) await _kgpWaitTabComplete(h.tabId, 22000);
     // 렌더 완료 대기 후 추출(자동스크롤·인터스티셜·12초 — content_script extractMetaWait).
-    const meta = (tabId != null) ? await _kgpSendTab(tabId, { action: "extractMetaWait" }) : null;
-    if (!meta) throw new Error("상세 추출 실패(빈 응답)");
-    // v67 STEP2: 렌더 미보장 상태로 '보강 완료' 금지 — 테무 성공 기준 미달이면 정직 실패(재시도/보강 실패).
-    const verdict = _kgpEnrichVerdict(item, meta);
-    if (!verdict.ok) throw new Error(verdict.reason);
-    // C-F13-2b: 로그인 벽·확인 절차를 만났으면 **보강이 아니라 막힘**이다. 뚫지 않는다.
-    if (meta.wall) { const e = new Error(meta.wall); e.kgpWall = true; throw e; }
-    const body = _kgpEnrichBody(item.item_id, meta);
-    const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
-      body: JSON.stringify(body),
-    });
-    const d = await r.json().catch(() => ({}));
-    // F22: 사유 문장에 **상태코드를 넣지 않는다** — 이 글이 서랍·목록에 그대로 실려
-    //   셀러가 「HTTP 502」를 읽게 된다. 셀러가 그 숫자로 할 수 있는 일은 없다.
-    //   숫자는 여기 콘솔과 서버 로그에 남으니 부검에는 지장이 없다.
-    if (!r.ok || !d || !d.ok) {
-      try { console.warn("[고가수집기 보강] 서버 응답", r.status, d); } catch (e) {}
-      throw new Error(r.ok ? "서버가 저장하지 못했어요" : "서버가 받지 못했어요");
-    }
-    return true;
+    meta = (h.tabId != null) ? await _kgpSendTab(h.tabId, { action: "extractMetaWait" }) : null;
   } finally {
-    if (win && win.id != null) { try { await chrome.windows.remove(win.id); } catch (e) {} }
-    else if (tabId != null) { try { await chrome.tabs.remove(tabId); } catch (e) {} }
+    await _kgpCloseHidden(h);          // R1: 읽었으면 바로 닫는다(서버 저장을 기다리며 열어 두지 않는다)
   }
+  if (!meta) throw new Error("상세 추출 실패(빈 응답)");
+  // v67 STEP2: 렌더 미보장 상태로 '보강 완료' 금지 — 테무 성공 기준 미달이면 정직 실패(재시도/보강 실패).
+  const verdict = _kgpEnrichVerdict(item, meta);
+  if (!verdict.ok) throw new Error(verdict.reason);
+  // C-F13-2b: 로그인 벽·확인 절차를 만났으면 **보강이 아니라 막힘**이다. 뚫지 않는다.
+  if (meta.wall) { const e = new Error(meta.wall); e.kgpWall = true; throw e; }
+  const body = _kgpEnrichBody(item.item_id, meta);
+  const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
+    body: JSON.stringify(body),
+  });
+  const d = await r.json().catch(() => ({}));
+  // F22: 사유 문장에 **상태코드를 넣지 않는다** — 이 글이 서랍·목록에 그대로 실려
+  //   셀러가 「HTTP 502」를 읽게 된다. 셀러가 그 숫자로 할 수 있는 일은 없다.
+  //   숫자는 여기 콘솔과 서버 로그에 남으니 부검에는 지장이 없다.
+  if (!r.ok || !d || !d.ok) {
+    try { console.warn("[고가수집기 보강] 서버 응답", r.status, d); } catch (e) {}
+    throw new Error(r.ok ? "서버가 저장하지 못했어요" : "서버가 받지 못했어요");
+  }
+  return true;
+}
+// R1: 「보강 잠시 멈춤(1시간)」 — 팝업 토글이 kgp_enrich_pause_until(ms)을 쓴다. 멈춘 동안은 폴링도·큐도 안 돈다.
+const KGP_ENRICH_PAUSE_MS = 60 * 60 * 1000;
+async function _kgpPausedUntil() {
+  try {
+    const r = await chrome.storage.local.get("kgp_enrich_pause_until");
+    const t = Number((r && r.kgp_enrich_pause_until) || 0);
+    return t > Date.now() ? t : 0;
+  } catch (e) { return 0; }
 }
 async function _kgpEnrichLoop() {
   if (KgpEnrich.running) return;
@@ -345,6 +367,7 @@ async function _kgpEnrichLoop() {
   const settings = await getSettings();
   while (KgpEnrich.queue.length && !KgpEnrich.stopped) {
     if (KgpEnrich.paused) { await _kgpSleep(600); continue; }
+    if (await _kgpPausedUntil()) break;      // R1: 1시간 멈춤 — 남은 큐는 그대로 두고 손 뗀다(창 0)
     const item = KgpEnrich.queue.shift();
     try {
       await _kgpEnrichOne(item, settings);
@@ -358,15 +381,21 @@ async function _kgpEnrichLoop() {
         await _kgpReportBlocked(item, reason, settings);
         KgpEnrich.blocked++;
         KgpEnrich.failures.push({ item_id: item.item_id, url: item.url, reason: reason });
-      } else if ((item.retries || 0) + 1 < KGP_ENRICH_MAX_RETRIES) {
-        item.retries = (item.retries || 0) + 1;
-        KgpEnrich.queue.push(item);
-        KgpEnrich.done++; _kgpBroadcastEnrich();
-        if (!KgpEnrich.stopped) await _kgpSleep(_kgpEnrichDelayMs());
-        continue;
       } else {
-        await _kgpReportBlocked(item, `${KGP_ENRICH_MAX_RETRIES}회 시도 실패 — ${reason}`, settings);
-        KgpEnrich.failed++;                     // 재시도도 실패 → '보강 실패' 정직 집계
+        // R1 실측: 예전엔 3번째 실패에서야 서버에 적었다 → MV3 워커가 그 전에 내려가면 **시도 0회**로 남아
+        //   5분마다 같은 항목을 다시 열었다(운영 대기 21건 전부 attempts 0). 이제 **실패마다** 적는다 —
+        //   서버가 횟수를 세고 상한(3)에 닿으면 `blocked`로 대기 목록에서 뺀다. 재시도는 서버 답을 따른다.
+        const rep = await _kgpReportBlocked(item, reason, settings);
+        const again = rep && rep.state === "pending" && !KgpEnrich.stopped
+          && (item.retries || 0) + 1 < KGP_ENRICH_MAX_RETRIES;     // 서버가 틀려도 이 확장 안에선 3번까지
+        if (again) {
+          item.retries = (item.retries || 0) + 1;
+          KgpEnrich.queue.push(item);
+          KgpEnrich.done++; _kgpBroadcastEnrich();
+          if (!KgpEnrich.stopped) await _kgpSleep(_kgpEnrichDelayMs());
+          continue;
+        }
+        KgpEnrich.failed++;                     // 상한 도달(또는 서버 답 없음) → '보강 실패' 정직 집계
         KgpEnrich.failures.push({ item_id: item.item_id, url: item.url, reason: reason });
       }
     }
@@ -392,19 +421,26 @@ const KGP_ENRICH_POLL_MIN = 5;
 async function _kgpReportBlocked(item, reason, settings) {
   // 막힘을 **서버에 적는다.** 안 적으면 다음 순회가 같은 벽에 또 박고, 화면은 이유를 모른다.
   try {
-    await fetch(`${settings.serverUrl}/api/v1/collect/enrich/blocked`, {
+    const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich/blocked`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}` },
       body: JSON.stringify({ item_id: item.item_id, reason: String(reason || "").slice(0, 200) }),
     });
+    return await r.json().catch(() => null);      // R1: {attempts, state} — 루프가 재시도 여부를 서버 답으로 정한다
   } catch (e) {
     try { console.warn("[고가수집기 보강] 막힘 보고 실패:", e && e.message); } catch (e2) {}
+    return null;
   }
 }
 
+let _kgpLastPollAt = 0;
+const KGP_ENRICH_POLL_GAP_MS = 60 * 1000;   // R1: 콘솔 페이지를 옮길 때마다 폴링하던 것 — 1분에 한 번만
 async function _kgpPollPending(reason) {
   const settings = await getSettings();
   if (!settings.token) return { ok: false, error: "토큰 미설정" };
+  if (await _kgpPausedUntil()) return { ok: true, added: 0, paused: true };
+  if (Date.now() - _kgpLastPollAt < KGP_ENRICH_POLL_GAP_MS) return { ok: true, added: 0, throttled: true };
+  _kgpLastPollAt = Date.now();
   let items = [];
   try {
     const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich/pending?limit=25`, {
@@ -448,6 +484,16 @@ try {
     if (!info || info.status !== "complete" || !tab || !tab.url) return;
     const settings = await getSettings();
     if (_kgpIsConsoleUrl(tab.url, settings.serverUrl)) _kgpPollPending("콘솔 탭 열림");
+  });
+} catch (e) { /* noop */ }
+
+// R1: 1시간 멈춤을 풀면(토글 끔·시간 경과 뒤 알람) 남은 큐를 이어서 돈다.
+try {
+  chrome.storage.onChanged.addListener((ch, area) => {
+    if (area !== "local" || !ch || !ch.kgp_enrich_pause_until) return;
+    const v = Number(ch.kgp_enrich_pause_until.newValue || 0);
+    if (v <= Date.now() && KgpEnrich.queue.length && !KgpEnrich.running) _kgpEnrichLoop();
+    _kgpBroadcastEnrich();
   });
 } catch (e) { /* noop */ }
 

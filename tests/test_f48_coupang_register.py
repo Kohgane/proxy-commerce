@@ -392,7 +392,7 @@ def test_prevalidation_holds_with_details_before_any_post(monkeypatch):
                         lambda acct: {"missing": [], "source": ""})
     monkeypatch.setattr("src.channel_sync.coupang_uploader.precheck",
                         lambda pd: {"ok": False, "holds": ["필수 옵션: 색상", "해외 주소지만"], "notes": []})
-    [r] = UploadDispatcher().prevalidate({"title": "수행방패", "price": 24000}, ["coupang"])
+    [r] = UploadDispatcher().prevalidate({"title": "수행방패", "price": 24000, "images": ["/seller/static/icon-512.png"]}, ["coupang"])
     assert r.ok is False and r.error_code == "coupang_hold"
     assert r.details == ["필수 옵션: 색상", "해외 주소지만"]
     assert "사유 2건" in r.message and "필수 옵션: 색상" not in r.message

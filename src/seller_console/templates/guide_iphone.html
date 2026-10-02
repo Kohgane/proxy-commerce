@@ -11,8 +11,10 @@
    홈 화면에 올리는 법) 옆에는 「(캡처 참고)」를 단다. 타오바오 「分享」「复制链接」은 오너 실측(09-30 M3-iOS 실측 2),
    「고가브릿지수집」은 우리 단축어 이름, 「담았어요」는 우리 결과 화면 제목, 「단축어」는 앱 이름 — 표시 없음. #}
 {% macro shot(k) %}
-<figure class="ig-shot" data-role="shot-{{ k }}">
+{% set _dup = (shots.get('_dups') or {}).get(k) %}
+<figure class="ig-shot{{ ' ig-shot-dup' if _dup and not shots.get(k) else '' }}" data-role="shot-{{ k }}">
   {% if shots.get(k) %}<img src="{{ shots[k] }}" alt="{{ k|upper }} 단계 화면">
+  {% elif _dup %}<div class="ig-shot-dupnote" data-role="shot-dup-{{ k }}">위 사진과 같은 화면이에요.</div>
   {% else %}<div class="ig-shot-empty">화면 사진 준비 중</div>{% endif %}
 </figure>
 {% endmacro %}
@@ -118,6 +120,8 @@
   .ig-help ul { padding-left: 1.1rem; margin: 0 0 10px; }
   .ig-shot { margin-top: 10px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
   .ig-shot img { width: 100%; display: block; }
+  .ig-shot-dup { border-style: dashed; }
+  .ig-shot-dupnote { padding: 10px 12px; color: var(--text-muted); font-size: .92rem; }
   .ig-shot-empty { aspect-ratio: 9 / 16; max-height: 360px; display: flex; align-items: center; justify-content: center;
                    color: var(--text-muted); font-size: .95rem; background: var(--surface-warm); }
 </style>

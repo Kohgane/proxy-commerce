@@ -83,7 +83,7 @@ def file_store(clean_env, tmp_path):
 def _precheck(mc, seller):
     from src.seller_console.upload_dispatcher import UploadDispatcher
     with mc.seller_market_env(seller, ["coupang"]):
-        return UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900},
+        return UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]},
                                               ["coupang"])[0]
 
 

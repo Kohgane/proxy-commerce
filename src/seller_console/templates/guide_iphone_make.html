@@ -3,8 +3,10 @@
 {% block content %}
 {# 화면 C — 오너용(관리자만). 문구는 오너 원문 그대로. iOS 화면 이름은 오너 실기기 캡처로 확정. #}
 {% macro cshot(k) %}
+{% set _dup = (shots.get('_dups') or {}).get(k) %}
 <figure class="make-shot" data-role="shot-{{ k }}">
   {% if shots.get(k) %}<img src="{{ shots[k] }}" alt="{{ k|upper }} 화면" style="max-width:100%;border-radius:12px">
+  {% elif _dup %}<div class="text-muted small" data-role="shot-dup-{{ k }}">{{ k|upper }} — {{ _dup|upper }}와 같은 사진이라 {{ _dup|upper }} 자리에만 띄웠어요.</div>
   {% else %}<div class="text-muted small">{{ k|upper }} 화면 사진 준비 중</div>{% endif %}
 </figure>
 {% endmacro %}
@@ -126,7 +128,8 @@
       <p class="mb-2">파일을 <code>src/seller_console/static/help/iphone/</code>에 <code>a1~a3</code>(설치하기)·<code>c1~c6</code>(이 화면 동작 여섯)·<code>b1~b3</code>(사용하기) 이름으로 넣으면(.png/.jpg/.webp) 그 자리에 뜹니다.</p>
       <div class="d-flex flex-wrap gap-2">
         {% for k in ["a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3", "c4", "c5", "c6"] %}
-        <span class="pc-badge {{ 'pc-badge-on' if shots.get(k) else 'pc-badge-muted' }}" data-role="shot-state-{{ k }}">{{ k|upper }} {{ "있음" if shots.get(k) else "비어 있음" }}</span>
+        {% set _dup = (shots.get('_dups') or {}).get(k) %}
+        <span class="pc-badge {{ 'pc-badge-on' if shots.get(k) else ('pc-badge-off' if _dup else 'pc-badge-muted') }}" data-role="shot-state-{{ k }}">{{ k|upper }} {{ "있음" if shots.get(k) else (("= " ~ _dup|upper ~ "(같은 파일)") if _dup else "비어 있음") }}</span>
         {% endfor %}
       </div>
     </div>

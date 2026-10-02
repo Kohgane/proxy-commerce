@@ -154,7 +154,7 @@ def test_an_unreachable_site_is_not_a_pass(clean_env):
     clean_env.setenv("WC_SECRET", "cs")
     with patch.object(UD, "market_reach",
                       return_value={"ok": False, "ms": 5000, "detail": "ReadTimeout"}):
-        res = UD.UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900},
+        res = UD.UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]},
                                                 ["woocommerce"])[0]
     assert res.ok is False
     assert res.error_code == "market_unreachable"
@@ -171,7 +171,7 @@ def test_a_reachable_site_passes_and_reports_the_time(clean_env):
     clean_env.setenv("WC_SECRET", "cs")
     with patch.object(UD, "market_reach",
                       return_value={"ok": True, "ms": 412, "detail": "HTTP 200"}):
-        res = UD.UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900},
+        res = UD.UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]},
                                                 ["woocommerce"])[0]
     assert res.ok is True and res.reach_ok is True and res.reach_ms == 412
 
