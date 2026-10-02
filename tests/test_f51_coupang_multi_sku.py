@@ -65,7 +65,9 @@ def _skus(price_fn=lambda cost: int(cost * 200)):
 
 def _product(skus):
     res = res_of(F_617)
+    # U1(오너 2026-10-02): 캐너리 실물엔 한국어 제목이 있었다(운영 a3a35e92 title_ko) — 중국어 제목만 있으면 이제 「원문 남음」 보류.
     return {"title": res["item"]["title"], "price": 29.9, "currency": "CNY", "sku": "617129397971",
+            "title_ko": "SPORTLINK(SPORTLINK)는 애플워치 호환 충전 거치대 7 9용, S8 무선 신형 Ultra2 시계 거치대, 에어팟 호환 이어폰 거치대",
             "images": res["item"]["images"], "origin": "중국",
             "options": [{"name": "颜色分类", "values": [v["name"] for v in res["skuBase"]["props"][0]["values"]]}],
             "skus": skus}

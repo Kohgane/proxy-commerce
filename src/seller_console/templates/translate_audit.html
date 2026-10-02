@@ -30,6 +30,8 @@
           <div class="console-kpi-label mb-1">외국어 옵션 값(고유)</div>
           <div class="console-stat-value">{{ got["values"] }}<span class="ta-unit">값</span></div>
           <div class="small text-muted">남은 비율 {{ "%.0f"|format(got.left_ratio * 100) if got.left_ratio is not none else "—" }}%</div>
+          {# U4: 보증·서비스·안내 문구는 옵션이 아니다 — 「남음」에서 빼고 따로 센다(등록에서 그 SKU 제외, 번역기에도 안 보냄). #}
+          <div class="small text-muted" data-role="ta-non-option">옵션 아님 — 제외 <strong>{{ c.non_option or 0 }}</strong>값</div>
         </div>
       </div>
     </div>
@@ -87,7 +89,8 @@
 
   <div class="op-card mt-3" data-role="ta-awkward">
     <div class="op-card-body">
-      <div class="console-kpi-label mb-2">어색한 번역기 값 — {{ (got.awkward_samples or [])|length }}개까지(정리 규칙이 아직 지울 것 · 쿠팡 28자 넘음)</div>
+      {# U3: 판정은 등록이 쓰는 해석 체인 그대로(정리 → 축약 → 쿠팡 30자). 줄여서 들어가는 값은 어색이 아니다. #}
+      <div class="console-kpi-label mb-2">어색한 번역기 값 — 30자 넘음(줄여도) <strong data-role="ta-awkward-over">{{ got.awkward_over or 0 }}</strong> · 그 밖 {{ got.awkward_other or 0 }}</div>
       {% if got.awkward_samples %}
       <table class="table table-sm align-middle mb-0" data-role="ta-awkward-rows">
         <thead><tr><th>원문</th><th>번역기 값</th><th>왜</th></tr></thead>

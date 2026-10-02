@@ -103,6 +103,10 @@ def rule_pass(extra: dict) -> dict:
             if not foreign(v):
                 new.append(v)                           # 영문·숫자·한국어 — 옮길 것 없음
                 continue
+            from src.collectors import ko_polish as _kp
+            if _kp.non_option(v):
+                new.append(k or v)                      # U4: 옵션 아님(보증·서비스 문구) — 번역기에 보내지 않는다
+                continue
             r = _rule(v)
             if r:
                 new.append(r)
@@ -359,7 +363,9 @@ def audit(rows: list, *, samples: int = 20) -> dict:
                 if not v or v in seen or not foreign(v):
                     continue
                 k = str(vko[i] if i < len(vko) else "").strip()
-                if _rule(v):
+                if kp.non_option(v):
+                    seen[v] = ("non_option", "")          # U4: 「남음」이 아니라 「옵션 아님」으로 따로 센다
+                elif _rule(v):
                     seen[v] = ("rule", _rule(v))
                 elif k and k != v and not foreign(k):
                     seen[v] = ("translator", k)
@@ -371,25 +377,36 @@ def audit(rows: list, *, samples: int = 20) -> dict:
             titles.append({"item_id": r.get("id"), "src": src[:80], "before": str(ex.get("title_polish_before") or "")[:90],
                            "after": ko[:90], "promo_left": kp.promo_left(ko),         # T2: 삭제표와 같은 표
                            "han_left": foreign(ko) or not ko})
-    c = {"rule": 0, "translator": 0, "left": 0}
+    c = {"rule": 0, "translator": 0, "left": 0, "non_option": 0}
     for how, _k in seen.values():
         c[how] += 1
     tr_samples = [{"src": v, "ko": k} for v, (how, k) in seen.items() if how == "translator"][:samples]
-    # T4: 「어색」 — 번역기 값 중 정리 규칙이 아직 지울 것이 있거나(판촉·기호) 쿠팡 28자를 넘는 것
+    # T4·U3: 「어색」 — 번역기 값을 **등록이 쓰는 해석 체인 그대로**(`resolve_option_value`: 정리 → 축약 → 30자) 돌려
+    #   나가는 값으로 판정한다. 예전엔 번역기 원문 길이만 봐서, 축약하면 들어가는 값도 「28자 넘음」으로 셌다.
+    from src.uploaders.coupang_options import resolve_option_value
     awkward = []
+    awkward_total = {"over": 0, "other": 0}
     for v, (how, k) in seen.items():
         if how != "translator" or not k:
             continue
-        why = kp.promo_left(k)
-        if why or len(k) > kp.MAX_OPTION_VALUE:
-            awkward.append({"src": v, "ko": k, "len": len(k), "why": ", ".join(why[:3]) or "28자 넘음"})
-        if len(awkward) >= samples:
-            break
+        r = resolve_option_value(v, values_ko=k)
+        sent = r["value"]
+        why = kp.promo_left(sent) if sent else []
+        if sent and not why:
+            continue
+        if not sent and "넘습니다" in (r["why"] or ""):
+            reason, key = f"{kp.MAX_OPTION_VALUE}자 넘음(줄여도)", "over"
+        else:
+            reason, key = (", ".join(why[:3]) if why else (r["why"] or "미해석")), "other"
+        awkward_total[key] += 1
+        if len(awkward) < samples:
+            awkward.append({"src": v, "ko": k, "sent": sent, "len": len(sent or k), "why": reason})
     left_samples = [{"src": v, "ko": k} for v, (how, k) in seen.items() if how == "left"][:samples]
     total = len(seen)
     bad = c["left"]
     return {"values": total, "counts": c, "left_ratio": round(bad / total, 3) if total else None,
             "translator_samples": tr_samples, "left_samples": left_samples, "titles": titles,
-            "awkward_samples": awkward,
+            "awkward_samples": awkward, "awkward_over": awkward_total["over"], "awkward_other": awkward_total["other"],
+            "non_option_samples": [v for v, (how, _k) in seen.items() if how == "non_option"][:samples],
             "titles_promo_left": sum(1 for t in titles if t["promo_left"]),
             "titles_han_left": sum(1 for t in titles if t["han_left"])}

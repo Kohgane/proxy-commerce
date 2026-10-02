@@ -130,7 +130,53 @@ def build_dispatch_payload(product_data: Dict[str, Any],
         pd["description"] = market_description(_market_desc_source(pd))
     except Exception as exc:
         logger.warning("[등록] 상세 정리 실패(빌더 값 그대로): %s", exc)
+    # U1(오너 2026-10-02): 검색어 — 옛 번역 제목을 낱말로 자른 값이 남아 16401838524에 「미야케·아키라의」가 실렸다.
+    #   **지금 상품명에 있는 낱말만** · 지어낸 이름·상표·조사 꼬리 빼기(`ko_polish.clean_tags`). 저장값은 그대로.
+    try:
+        from src.collectors import ko_polish as _kp
+        _title_now = str(pd.get("title_ko") or pd.get("title") or "")
+        for _k in ("keywords", "tags"):
+            if isinstance(pd.get(_k), list):
+                pd[_k] = _kp.clean_tags(pd[_k], _title_now)
+    except Exception as exc:
+        logger.warning("[등록] 검색어 정리 실패(빌더 값 그대로): %s", exc)
+    # U4: 옵션이 아닌 값(보증·서비스·안내 문구)과 그 SKU는 **보내지 않는다**(전 마켓 같은 자리). 저장값은 그대로.
+    try:
+        pd = drop_non_option_values(pd)
+    except Exception as exc:
+        logger.warning("[등록] 옵션 아닌 값 정리 실패(빌더 값 그대로): %s", exc)
     return pd
+
+
+def drop_non_option_values(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """U4 — `options[].values`(+같은 자리 `values_ko`)와 `skus`에서 옵션 아닌 문구를 뺀 사본."""
+    from src.collectors import ko_polish as _kp
+    out = dict(pd or {})
+    opts = []
+    changed = False
+    for o in out.get("options") or []:
+        if not isinstance(o, dict):
+            opts.append(o)
+            continue
+        vals = list(o.get("values") or [])
+        vko = list(o.get("values_ko") or [])
+        keep = [i for i, v in enumerate(vals) if not _kp.non_option(str((v or {}).get("name") if isinstance(v, dict) else v))]
+        if len(keep) != len(vals):
+            changed = True
+            o = dict(o, values=[vals[i] for i in keep])
+            if vko:
+                o["values_ko"] = [vko[i] for i in keep if i < len(vko)]
+        opts.append(o)
+    if changed:
+        out["options"] = opts
+    skus = out.get("skus")
+    if isinstance(skus, list):
+        from src.uploaders.coupang_options import non_option_sku
+        kept = [k for k in skus if not non_option_sku(k)]
+        if len(kept) != len(skus):
+            out["skus_non_option"] = [k for k in skus if non_option_sku(k)]
+            out["skus"] = kept
+    return out
 
 
 def _build_dispatch_payload(product_data: Dict[str, Any],
@@ -335,7 +381,25 @@ MARKET_LABELS = {
     "elevenst": "11번가",
     "woocommerce": "코가네멀티샵(WC)",
     "shopify": "Shopify",
+    # U0(오너 2026-10-02): 쿠팡 두 계정 — 마켓 코드 `coupang:<계정>`(그 마켓 한 건 동안 그 계정 키·출고지·반품지)
+    "coupang:gogane": "쿠팡 — 고가네",
+    "coupang:woojoo": "쿠팡 — 우주대행",
 }
+COUPANG_ACCOUNT_CODES = ("coupang:gogane", "coupang:woojoo")
+
+
+def _market_code_ok(code: str) -> bool:
+    return code in SUPPORTED_MARKETS or code in COUPANG_ACCOUNT_CODES
+
+
+def _for_market(code: str):
+    """마켓 코드 → (기본 마켓, 계정 컨텍스트). `coupang:woojoo`면 그 계정으로 한 건을 처리한다."""
+    from contextlib import nullcontext
+    from src.seller_console.market_cred_view import coupang_account, split_market
+    base, acct = split_market(code)
+    if base == "coupang" and acct:
+        return base, coupang_account(acct)
+    return code, nullcontext()
 
 # 마켓별 필수 환경변수 (사전검증용)
 # 마켓별 필수 환경변수. 별칭(둘 중 하나) 검증은 _prevalidate_market에서 특수 처리한다.
@@ -448,6 +512,24 @@ _KO_OPTION_MARKETS = ("coupang", "smartstore", "elevenst")
 PC_ENRICH_LINE = "PC 확장에서 보강 필요 — 컴퓨터에서 고가수집기를 켜면 자동으로 채워집니다."
 
 
+def outbound_foreign_fields(pd: Dict[str, Any]) -> List[tuple]:
+    """U1 — 한국 마켓에 나갈 칸 중 한자·가나가 남은 것 `[(칸 이름, 값)]`. 상품명·상세(한국어만 규칙 적용 뒤)·검색어."""
+    from src.collectors.ko_polish import has_foreign
+    out: List[tuple] = []
+    title = str(pd.get("coupang_name") or pd.get("title_ko") or pd.get("title") or "")
+    if has_foreign(title):
+        out.append(("상품명", title))
+    for line in str(pd.get("description") or "").split("\n"):
+        if has_foreign(line):
+            out.append(("상세", line.strip()))
+            break
+    for t in (pd.get("keywords") or pd.get("tags") or []):
+        if has_foreign(t):
+            out.append(("검색어", str(t)))
+            break
+    return out
+
+
 def unresolved_option_values(product: Dict[str, Any]) -> List[str]:
     """SKU 스펙 값 중 한국어로 못 옮긴 것(M5 카드·쿠팡 계획과 같은 해석 체인). 판정 실패면 빈 목록 — 막지 않는다."""
     try:
@@ -461,7 +543,8 @@ def unresolved_option_values(product: Dict[str, Any]) -> List[str]:
                 sv = str(v)
                 if sv in out:
                     continue
-                if not resolve_option_value(sv, values_ko=vko.get(sv, ""), override=ov.get(sv, ""))["value"]:
+                _r = resolve_option_value(sv, values_ko=vko.get(sv, ""), override=ov.get(sv, ""))
+                if not _r["value"] and _r.get("how") != "non_option":     # U4: 옵션 아님은 빼고 보내는 값 — 미해석 아님
                     out.append(sv)
         return out
     except Exception as exc:
@@ -481,6 +564,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("편집 화면에서 옵션 값 번역")
     if any(h["fix"] == "trademark" for h in holds):
         fixes.append("상표를 뺀 상품으로 다시 확인")
+    if any(h["fix"] == "price" for h in holds):
+        fixes.append("편집 화면에서 판매가 직접 입력")
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
 
 
@@ -592,7 +677,13 @@ class UploadDispatcher:
         """
         results = []
         for market in markets:
-            results.append(self._prevalidate_market(product_data, market))
+            base, ctx = _for_market(market)
+            if base != market and market not in COUPANG_ACCOUNT_CODES:
+                base, ctx = market, _for_market("")[1]          # 모르는 계정 → 아래에서 「지원하지 않는 마켓」
+            with ctx:
+                r = self._prevalidate_market(product_data, base)
+            r.market = market
+            results.append(r)
         return results
 
     @staticmethod
@@ -663,6 +754,23 @@ class UploadDispatcher:
             if n:
                 holds.append({"short": f"옵션 값 {n}개 미해석", "fix": "translate",
                               "line": f"옵션 값 {n}개를 아직 한국어로 옮기지 못했어요 — 그 값의 SKU는 등록할 수 없어요."})
+        # U4 역질문(답 없음 → 보류): 옵션 아닌 SKU를 빼면 가격이 남지 않는 상품 — 기본 SKU 가격으로 채우지 않는다.
+        try:
+            from src.uploaders.coupang_options import non_option_hold
+            _nh = non_option_hold(pd)
+        except Exception:
+            _nh = ""
+        if _nh:
+            holds.append({"short": "옵션 아닌 SKU만 가격 있음", "fix": "price", "line": _nh})
+        # U1(오너 2026-10-02): 한국 마켓에 나가는 칸에 한자·가나가 남으면 **보류**(원문 폴백 금지).
+        #   쿠팡은 업로더 사전검증이 **보낼 몸통 그대로** 재고(옵션·고시정보까지), 여기선 나머지 한국 마켓의 상품명·상세·검색어.
+        if market in _KO_OPTION_MARKETS and market != "coupang":
+            _fx = outbound_foreign_fields(pd)
+            if _fx:
+                holds.append({"short": "원문(외국어) 남음 — " + "·".join(dict.fromkeys(f for f, _v in _fx)),
+                              "fix": "translate",
+                              "line": "마켓에 나갈 칸에 한자·가나가 남았어요: "
+                                      + " · ".join(f"{f} 「{v[:24]}」" for f, v in _fx[:3])})
         return holds
 
     def _prevalidate_market(
@@ -903,41 +1011,44 @@ class UploadDispatcher:
                     [k for k in DRAFT_URL_KEYS if str(product_data.get(k) or "").strip()])
         result = DispatchResult(product_url=url)
 
-        for market in markets:
-            if market not in SUPPORTED_MARKETS:
+        for code in markets:
+            if not _market_code_ok(code):
                 result.results.append(
                     UploadResult(
-                        market=market,
+                        market=code,
                         success=False,
-                        message=f"지원하지 않는 마켓: {market}",
+                        message=f"지원하지 않는 마켓: {code}",
                     )
                 )
                 result.failed += 1
                 continue
-
-            # T1-c: 표시광고 위험 문구 — 사전검증과 **같은 판정**으로 전송도 막는다(직접 호출 우회 0).
-            _ad = self._ad_claim_hits(product_data, market)
-            if _ad:
-                result.results.append(UploadResult(market=market, success=False, error_code="ad_claim_risk",
-                                                   message="표시광고 위험 문구가 있어 보내지 않았어요.",
-                                                   details=_ad))
-                result.failed += 1
-                continue
-
-            # 판매가는 **마켓마다** 낸다(수수료율이 다르다). 루프 밖에서 한 번 내면
-            #   수수료 낮은 마켓엔 비싸게, 높은 마켓엔 손해로 나간다.
-            enriched = self._ensure_sell_price_krw(product_data, market)
-            upload_result = self._upload_to_market(enriched, market)
-            result.results.append(upload_result)
-            if upload_result.success:
+            market, _acct_ctx = _for_market(code)
+            with _acct_ctx:
+                r = self._dispatch_one(product_data, market)
+            r.market = code
+            result.results.append(r)
+            if r.success:
                 result.succeeded += 1
-            elif upload_result.queued:
+            elif r.queued:
                 result.queued += 1
             else:
                 result.failed += 1
 
         result.total = len(markets)
         return result
+
+    def _dispatch_one(self, product_data: Dict[str, Any], market: str) -> "UploadResult":
+        """한 마켓 — 표시광고 게이트 → 마켓별 판매가 → 업로드. (U0: 계정 컨텍스트 안에서 불린다)"""
+        # T1-c: 표시광고 위험 문구 — 사전검증과 **같은 판정**으로 전송도 막는다(직접 호출 우회 0).
+        _ad = self._ad_claim_hits(product_data, market)
+        if _ad:
+            return UploadResult(market=market, success=False, error_code="ad_claim_risk",
+                                message="표시광고 위험 문구가 있어 보내지 않았어요.", details=_ad)
+
+        # 판매가는 **마켓마다** 낸다(수수료율이 다르다). 루프 밖에서 한 번 내면
+        #   수수료 낮은 마켓엔 비싸게, 높은 마켓엔 손해로 나간다.
+        enriched = self._ensure_sell_price_krw(product_data, market)
+        return self._upload_to_market(enriched, market)
 
     @staticmethod
     def _landed_krw(product_data: Dict[str, Any], market: str = "") -> tuple:
@@ -1117,7 +1228,7 @@ class UploadDispatcher:
         Returns:
             UploadResult
         """
-        market_payload, localized = self._payload_for_market(product_data, market)
+        market_payload, _localized = self._payload_for_market(product_data, market)
 
         # ★ 판매가 단일 관문 (오너 결정 2026-09-20 — 실수령 마진 기준).
         #   판매수수료율을 모르는 마켓은 **여기서 멈춘다.** 마켓별 업로더마다 따로 막으면
@@ -1142,8 +1253,8 @@ class UploadDispatcher:
                 success=False,
                 message="알 수 없는 마켓",
             )
-        if not localized and result.success:
-            result.message = f"{result.message} (미현지화: 원문 사용)"
+        # U1(오너 2026-10-02): 예전 꼬리 「(미현지화: 원문 사용)」은 **옛 AI 현지화 묶음(`localized`)이 없다**는 뜻이었다 —
+        #   보낸 칸의 언어와는 무관했다(16401838524 몸통 재구성: 한자 칸 0). 언어는 사전검증이 보낼 몸통으로 재고 막는다.
         return result
 
     @staticmethod

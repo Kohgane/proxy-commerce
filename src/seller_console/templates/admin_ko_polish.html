@@ -19,7 +19,7 @@
     </div>
     {% if trial %}
     <dl class="small mt-2 mb-0" data-role="kp-trial">
-      <dt>옵션 값으로(쿠팡 ≤28자)</dt><dd>{{ trial.option or "(비었음)" }}{% if trial.left %} — 남은 한자 {{ trial.left }} → 번역기로{% endif %}</dd>
+      <dt>옵션 값으로(쿠팡 ≤30자)</dt><dd>{{ trial.option or "(비었음)" }}{% if trial.left %} — 남은 한자 {{ trial.left }} → 번역기로{% endif %}</dd>
       <dt>번역기에 보낼 원문(지우기만)</dt><dd>{{ trial.cn }}</dd>
       <dt>번역 뒤 정리(한국어로 넣었을 때)</dt><dd>{{ trial.title }}</dd>
       <dt>표시광고 위험</dt><dd>{{ trial.ban|join(", ") if trial.ban else "없음" }}</dd>

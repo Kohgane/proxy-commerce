@@ -35,6 +35,9 @@ from typing import Dict, List, Optional
 #: 볼트 실측(카테고리 78293) — attributes 배열 길이 제한.
 MAX_ATTRIBUTES = 3
 
+# 쿠팡 옵션 값 한도(글자) — 단일 소스는 ko_polish.MAX_OPTION_VALUE(문서 30자, U3).
+from src.collectors.ko_polish import MAX_OPTION_VALUE as _MAXV  # noqa: E402
+
 _CJK = re.compile(r"[㐀-䶿一-鿿]")
 _PURE_NUMBER = re.compile(r"^\d+(?:\.\d+)?$")
 _REQUIRED_WORDS = ("MANDATORY", "REQUIRED", "TRUE", "Y", "필수")
@@ -134,6 +137,12 @@ def resolve_option_value(value: str, *, values_ko: str = "", override: str = "")
         return {"value": str(override).strip(), "how": "override", "confirm": False, "why": ""}
     if not _CJK.search(v):
         return {"value": v, "how": "", "confirm": False, "why": ""}
+    # U4(오너 2026-10-02): 보증·서비스·안내 문구(「售后品质保障丨购买无忧」)는 옵션이 아니다 — 번역하지 않고 「옵션 아님」.
+    from src.collectors import ko_polish as _kp
+    _no = _kp.non_option(v)
+    if _no:
+        return {"value": "", "how": "non_option", "confirm": False,
+                "why": f"옵션 아님 — 제외(보증·서비스·안내 문구 「{_no[0]}」)"}
     g = color_ko(v)
     if g:
         return {"value": g, "how": "glossary", "confirm": False, "why": ""}
@@ -141,14 +150,13 @@ def resolve_option_value(value: str, *, values_ko: str = "", override: str = "")
     if t:
         return {"value": t, "how": "token", "confirm": True, "why": ""}
     # T1/T2(오너 2026-09-30-H): 복합 값 `색상[소재]부속 접미사`를 조각별로 — 판촉 접미사(海外特供)는 지우고,
-    #   소재·부속·색상은 규칙표(원격 JSON)로 옮긴 뒤 **쿠팡 28자에 맞춰 소재부터** 줄인다. 한자가 남으면 다음 단계.
-    from src.collectors import ko_polish as _kp
+    #   소재·부속·색상은 규칙표(원격 JSON)로 옮긴 뒤 **쿠팡 30자에 맞춰 소재부터** 줄인다. 한자가 남으면 다음 단계.
     p = _kp.option_value(v)
     if p["value"]:
         _s = _kp.shorten(p["value"])
         if _kp.fits(_s):
             return {"value": _s, "how": "polish", "confirm": True, "why": ""}
-        # T1: 줄여도 28자를 넘으면 **자르지 않고** 미해석(직접 넣기) — 잘린 값은 다른 SKU와 겹치거나 뜻이 끊긴다.
+        # T1·U3: 줄여도 30자(쿠팡 문서 한도)를 넘으면 **자르지 않고** 미해석(직접 넣기) — 잘린 값은 다른 SKU와 겹치거나 뜻이 끊긴다.
         return {"value": "", "how": "", "confirm": False,
                 "why": f"줄여도 쿠팡 옵션 값 한도 {_kp.MAX_OPTION_VALUE}자를 넘습니다(「{_s}」 {len(_s)}자) — 값을 직접 넣어 주세요"}
     ko = _kp.polish_ko(str(values_ko or "").strip())
@@ -158,6 +166,12 @@ def resolve_option_value(value: str, *, values_ko: str = "", override: str = "")
             return {"value": "", "how": "", "confirm": False,
                     "why": f"줄여도 쿠팡 옵션 값 한도 {_kp.MAX_OPTION_VALUE}자를 넘습니다(「{ko}」 {len(ko)}자) — 값을 직접 넣어 주세요"}
     if ko and ko != v and not _CJK.search(ko):
+        # U1: 번역기가 원문에 없는 이름을 붙였으면(宝蓝 → 「디올 블루」) 그 값은 쓰지 않는다 — 규칙표·직접 입력으로.
+        #   정리 규칙(상표 drop)이 이름을 지우기 **전** 번역기 원래 값으로 잰다 — 지운 뒤 재면 지어낸 값이 통과한다.
+        _inv = _kp.invented_names(v, str(values_ko or ""))
+        if _inv:
+            return {"value": "", "how": "", "confirm": False,
+                    "why": f"번역기 값에 원문에 없는 이름({', '.join(_inv)})이 생겼습니다 — 값을 직접 넣어 주세요"}
         lost = [tok for tok in _ASCII_TOK.findall(v) if tok.lower() not in ko.lower()]
         if not lost:
             return {"value": ko, "how": "translator", "confirm": True, "why": ""}
@@ -222,7 +236,7 @@ def _value_for(entry: Dict, product: Dict) -> tuple:
     if key.replace(" ", "") == "적용모델" and entry.get("dataType") != "NUMBER":
         toks = model_tokens(product.get("title_original") or product.get("title") or "")
         if toks:
-            return ", ".join(toks)[:28], MODEL_SOURCE, ""
+            return ", ".join(toks)[:_MAXV], MODEL_SOURCE, ""
     return "", "", ""
 
 
@@ -308,7 +322,7 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
                 holds.append(f"옵션 값 미해석: {value} — {r['why']}")
                 continue
             if r["how"]:
-                resolved.append({"name": name, "orig": value, "value": r["value"][:28], "how": r["how"],
+                resolved.append({"name": name, "orig": value, "value": r["value"][:_MAXV], "how": r["how"],
                                  "how_label": HOW_LABEL.get(r["how"], r["how"]), "confirm": r["confirm"]})
             value = r["value"]
         if m["dataType"] == "NUMBER" or _PURE_NUMBER.match(value):
@@ -317,7 +331,7 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
                 if why_n:
                     holds.append(f"「{name}」 {why_n}")
                     continue
-        item = {"attributeTypeName": name, "attributeValueName": value[:28]}
+        item = {"attributeTypeName": name, "attributeValueName": value[:_MAXV]}
         if m["exposed"]:
             item["exposed"] = m["exposed"]
         attributes.append(item)
@@ -479,6 +493,10 @@ def sku_mode(product: Dict) -> tuple:
     skus = _sku_list(product)
     if not skus:
         return False, [], [], "SKU 없음"
+    # U4(오너 2026-10-02): 옵션이 아닌 SKU(연장 보증·「售后品质保障丨购买无忧」·「此选项勿拍」)는 등록에서 뺀다.
+    skus = [k for k in skus if not non_option_sku(k)]
+    if not skus:
+        return False, [], [], "옵션이 아닌 SKU(보증·서비스·안내 문구)만 있습니다"
     zero = [k for k in skus if k.get("stock") == 0]
     live = [k for k in skus if k.get("stock") != 0]
     if not live:
@@ -487,6 +505,32 @@ def sku_mode(product: Dict) -> tuple:
     if no_price:
         return False, live, zero, f"SKU별 판매가가 없는 SKU {len(no_price)}개"
     return True, live, zero, ""
+
+
+def non_option_sku(sku) -> list:
+    """U4 — 이 SKU의 스펙 값 중 **옵션이 아닌 문구**(보증·서비스·안내). 빈 목록이면 진짜 옵션."""
+    from src.collectors import ko_polish as _kp
+    spec = sku.get("spec") if isinstance(sku, dict) else None
+    return [str(v) for v in (spec if isinstance(spec, list) else []) if _kp.non_option(str(v))]
+
+
+def non_option_hold(product: Dict) -> str:
+    """U4 역질문(답 없음 → **보류**): 옵션 아닌 SKU를 빼고 나면 판매가가 남지 않는 상품 — 그 SKU에만 값이 붙어 있던 경우.
+    기본 SKU 가격으로 채우지 않는다(그건 다른 상품의 값일 수 있다). 해당 없으면 빈 문자열."""
+    skus = _sku_list(product)
+    # 등록 빌더(`drop_non_option_values`)가 이미 뺐으면 `skus_non_option`에 있다 — 둘 다 본다.
+    out = [k for k in (product.get("skus_non_option") or []) if isinstance(k, dict)] + [k for k in skus if non_option_sku(k)]
+    if not out:
+        return ""
+    rest = [k for k in skus if not non_option_sku(k)]
+    def _priced(k):
+        return _as_float(k.get("sell_price_krw")) > 0 or _as_float(k.get("price")) > 0
+    if rest and any(_priced(k) for k in rest):
+        return ""
+    if not any(_priced(k) for k in out):
+        return ""
+    return ("옵션이 아닌 SKU(" + ", ".join(" / ".join(k.get("spec") or []) for k in out[:2])
+            + ")를 빼면 판매가가 남지 않습니다 — 기본 가격으로 채우지 않고 보류합니다(가격을 직접 넣어 주세요)")
 
 
 def _as_float(v) -> float:
@@ -523,6 +567,10 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
     if zero:
         notes.append("재고 0이라 등록에서 뺀 SKU " + str(len(zero)) + "개: "
                      + ", ".join(" / ".join(k["spec"]) for k in zero))
+    _out = [k for k in _sku_list(product) if non_option_sku(k)]
+    if _out:
+        notes.append("옵션 아님 — 제외한 SKU " + str(len(_out)) + "개: "
+                     + ", ".join(" / ".join(k.get("spec") or []) for k in _out))
     items, unmapped, seen = [], [], {}
     for k in live:
         spec = list(k.get("spec") or [])
@@ -609,9 +657,17 @@ def _dedupe_axis_values(items: List[Dict], axis_names: set) -> List[str]:
             if not ko:
                 fixed = False
                 break
+            joined = None
             for a in it["attributes"]:
                 if _norm(a["attributeTypeName"]) in axis_names:
-                    a["attributeValueName"] = (a["attributeValueName"] + " " + ko)[:28]
+                    joined = a["attributeValueName"] + " " + ko
+                    break
+            if joined is None or len(joined) > _MAXV:
+                fixed = False                       # U3: 붙여서 30자를 넘으면 자르지 않는다 → 보류(예전엔 [:28] 절단)
+                break
+            for a in it["attributes"]:
+                if _norm(a["attributeTypeName"]) in axis_names:
+                    a["attributeValueName"] = joined
                     break
             it["label"] = " / ".join(a["attributeValueName"] for a in it["attributes"]
                                      if _norm(a["attributeTypeName"]) in axis_names)

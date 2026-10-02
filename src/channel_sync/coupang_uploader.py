@@ -14,6 +14,23 @@ REQUIRED_ENVS = ["COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"
 MARKET_LABEL = "쿠팡"
 
 
+def make_uploader():
+    """이 요청이 쓸 쿠팡 업로더 하나 — 계정이 정해지면 **그 계정의 키**로 만든다(U0).
+
+    실측(U0, 2026-10-02): 예전엔 `CoupangUploader(account=…)`로 만들어 **배송 칸만** 계정 접두를 읽고
+    API 키는 무접두를 읽었다 — 우주대행을 고르면 고가네 키에 우주대행 출고지가 섞일 수 있었다.
+    키·업체코드도 `_account_creds`(계정 접두 → 무접두 흡수 계정 순)로 같은 계정에서 읽는다.
+    """
+    from src.uploaders.coupang_uploader import CoupangUploader
+    from src.seller_console.market_cred_view import resolve_upload_account
+    account = resolve_upload_account()
+    if not account:
+        return CoupangUploader(), ""
+    from src.pipeline.coupang_replicate import _account_creds
+    access, secret, vendor = _account_creds(account)
+    return CoupangUploader(access_key=access, secret_key=secret, vendor_id=vendor, account=account), account
+
+
 def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
     """쿠팡에 상품을 등록하고 {"product_id", "url"}을 반환한다.
 
@@ -21,19 +38,16 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
         ChannelCredentialsMissing: COUPANG_* 환경변수 미설정
         ChannelUploadError: 원화 판매가 0 또는 Wing API 실패
     """
-    from src.uploaders.coupang_uploader import CoupangUploader
-
     # F29: 예전엔 `CoupangUploader()` — **계정 없이** 만들었다. 계정이 없으면 배송·자격을
     #   무접두 이름으로만 읽으므로, 오너가 Render에 `COUPANG_GOGANE_*`로 넣어 둔 값이
     #   이 경로에선 아예 안 보였다(그래서 「미입력 7필드」였다).
     #   **무접두가 있으면 계정은 빈 문자열** — 그게 셀러가 연동 화면에 넣은 자기 키다.
     #   무접두가 없을 때만 계정 접두로 내려간다(순서를 뒤집으면 남의 등록이 오너 자격으로 나간다).
-    from src.seller_console.market_cred_view import resolve_upload_account
-    account = resolve_upload_account()
+    up, account = make_uploader()
     required = REQUIRED_ENVS if not account else []   # 계정 자격은 무접두로 존재하지 않는다
 
     return run_upload(
-        CoupangUploader(account=account) if account else CoupangUploader(),
+        up,
         prepared_input(product_data),   # F48-c 선택 · F51 SKU별 판매가 — 사전검증과 같은 반영
         required_envs=required,
         market_label=MARKET_LABEL,
@@ -45,12 +59,9 @@ def precheck(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
     같은 상품을 다른 모양으로 넣고 판정하면, 사전검증이 본 것과 등록이 보내는 것이 갈린다.
     """
-    from src.uploaders.coupang_uploader import CoupangUploader
-    from src.seller_console.market_cred_view import resolve_upload_account
     from ._channel_bridge import to_collected
 
-    account = resolve_upload_account()
-    up = CoupangUploader(account=account) if account else CoupangUploader()
+    up, _account = make_uploader()
     prepared = up.prepare_product(to_collected(prepared_input(product_data)))
     return up.precheck(prepared)
 
@@ -117,13 +128,10 @@ def prepared_input(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def option_form(product_data: Dict[str, Any]) -> Dict[str, Any]:
     """F48-c — 「쿠팡 필수 옵션」 블록 재료. 카테고리 예측 → 메타(릴레이 경유·카테고리 캐시) → 계획."""
-    from src.uploaders.coupang_uploader import CoupangUploader
     from src.uploaders.coupang_options import option_form as _form
-    from src.seller_console.market_cred_view import resolve_upload_account
     from ._channel_bridge import to_collected
 
-    account = resolve_upload_account()
-    up = CoupangUploader(account=account) if account else CoupangUploader()
+    up, _account = make_uploader()
     _pi = prepared_input(product_data)
     prepared = up.prepare_product(to_collected(_pi))
     prepared["fx_info"] = _pi.get("fx_info") or []      # F51-b 6: SKU별 판매가에 쓴 환율(표에 싣는다)

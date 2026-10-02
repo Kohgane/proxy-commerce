@@ -1974,6 +1974,7 @@ def mobile_list_ctx(item: dict) -> dict:
     from .upload_dispatcher import MARKET_LABELS
     markets = [{"code": m, "label": MARKET_LABELS.get(m, m), "connected": bool(connected.get(m)),
                 "checked": m == "coupang"} for m in _M5_MARKETS]
+    markets = _with_coupang_accounts(markets)
     return {"item_id": str(item.get("id") or ""), "title": product["title"] or "(제목 없음)",
             "thumb": product["thumbnail"], "images_count": len(images),
             "price": str(product.get("price") or "") if has_price else "",
@@ -2690,6 +2691,9 @@ def _persist_upload_status(item_id, result_dict) -> None:
                     "market": r["market"],
                     "market_label": r.get("market_label") or r["market"],
                     "external_url": r.get("external_url") or "",
+                    # U2: 검토 상태 조회 재료 — 셀러 상품번호(sellerProductId)와 계정(U0 두 계정 중 어느 쪽)
+                    "product_id": str(r.get("external_product_id") or ""),
+                    "account": (r["market"].partition(":")[2] if r["market"].startswith("coupang:") else ""),
                     "at": now,
                 }
                 changed = True
@@ -2701,6 +2705,158 @@ def _persist_upload_status(item_id, result_dict) -> None:
                 extra_json=json.dumps(extra, ensure_ascii=False))
     except Exception as exc:
         logger.warning("업로드 상태 영속 실패(무시): %s", exc)
+
+
+def _with_coupang_accounts(markets: list) -> list:
+    """U0(오너 2026-10-02): 이 서버에 쿠팡 계정이 둘이면 「쿠팡」 한 줄을 「쿠팡 — 고가네」「쿠팡 — 우주대행」 두 줄로.
+
+    관리자(오너) 화면에서만 — 계정 키는 오너 서버 설정이라 다른 셀러에게 보일 이유가 없다. 계정 키가 빠진 줄은
+    「키 없음」으로 보이고(체크해도 사전검증이 무엇이 빠졌는지 말한다), 기본 체크는 첫 번째 준비된 계정 하나만.
+    """
+    try:
+        from .market_cred_view import coupang_account_choices
+        choices = coupang_account_choices() if _is_admin_user() else []
+    except Exception as exc:
+        logger.warning("[마켓 선택] 쿠팡 계정 목록 실패(한 줄 유지): %s", exc)
+        choices = []
+    if not choices:
+        return markets
+    out = []
+    for m in markets:
+        if m.get("code") != "coupang":
+            out.append(m)
+            continue
+        first = next((c["code"] for c in choices if c["ready"]), "")
+        for c in choices:
+            out.append({"code": c["code"], "label": c["label"], "connected": c["ready"],
+                        "checked": bool(m.get("checked")) and c["code"] == first,
+                        "account": c["account"], "missing": c["missing"]})
+    return out
+
+
+_SID_IN_URL = re.compile(r"/vp/products/(\d+)")
+
+
+def _coupang_uploads(extra: dict) -> list:
+    """이 상품의 쿠팡 등록 기록들 — `[{market, account, sid, label, review}]`. 예전 기록은 주소에서 번호를 읽는다."""
+    out = []
+    for u in (extra.get("uploaded") or []):
+        if not isinstance(u, dict) or not str(u.get("market") or "").startswith("coupang"):
+            continue
+        sid = str(u.get("product_id") or "").strip()
+        if not sid:
+            m = _SID_IN_URL.search(str(u.get("external_url") or ""))
+            sid = m.group(1) if m else ""
+        if sid:
+            out.append({"market": u["market"], "account": u.get("account") or u["market"].partition(":")[2],
+                        "sid": sid, "label": u.get("market_label") or "쿠팡", "review": u.get("review") or {}})
+    return out
+
+
+def _coupang_up_for(account: str):
+    """그 계정 키로 만든 업로더(계정이 없으면 기존 판정 그대로)."""
+    from src.seller_console.market_cred_view import coupang_account
+    from src.channel_sync.coupang_uploader import make_uploader
+    with coupang_account(account):
+        return make_uploader()[0]
+
+
+@bp.get("/collect/<item_id>/review-status")
+def collect_review_status(item_id):
+    """U2(오너 2026-10-02) — 「상품 페이지 열기」 대신 **검토 상태 보기**: 쿠팡 상품 조회로 승인·검토중·반려(사유).
+
+    결과는 `uploaded[].review`에 남긴다(목록·완료 화면 배지가 다음에 열 때도 보이게). 못 물어보면 「확인 못 함」 —
+    지어내지 않는다. 같은 응답에 쿠팡에 **지금 올라가 있는** 상품명·검색어·한자 칸도 싣는다(U1 정본 확인).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        extra = {}
+    ups = _coupang_uploads(extra)
+    if not ups:
+        return jsonify({"ok": True, "rows": [], "message": "쿠팡에 등록한 기록이 없어요."})
+    now = datetime.now(timezone.utc).isoformat()
+    rows = []
+    for u in ups:
+        try:
+            st = _coupang_up_for(u["account"]).review_status(u["sid"])
+        except Exception as exc:
+            st = {"sid": u["sid"], "state": "unknown", "label": "확인 못 함", "error": str(exc)[:200],
+                  "wing_url": f"https://wing.coupang.com/vendor-inventory/list?searchKeywords={u['sid']}"}
+        st.update(market=u["market"], market_label=u["label"], checked_at=now)
+        rows.append(st)
+    by = {r["market"]: r for r in rows}
+    for u in extra.get("uploaded") or []:
+        if isinstance(u, dict) and u.get("market") in by:
+            r = by[u["market"]]
+            u["review"] = {k: r.get(k) for k in ("state", "label", "comment", "link", "product_id", "checked_at")}
+            u["product_id"] = u.get("product_id") or r.get("sid")
+    from .collect_history_store import update as _update
+    _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
+    return jsonify({"ok": True, "rows": rows})
+
+
+def _live_fix_target(item, up) -> dict:
+    """U1b — 쿠팡 등록본을 **지금 우리 규칙으로** 다시 만든 상품명·검색어(등록과 같은 빌더를 지난다)."""
+    from .product_builder import build_product as _build_product
+    from .upload_dispatcher import build_dispatch_payload as _build_payload
+    from src.channel_sync.coupang_uploader import prepared_input
+    from src.channel_sync._channel_bridge import to_collected
+    pd = _build_payload(_build_product(item, edits={}, seller_id=_seller_id()), item)
+    prepared = up.prepare_product(to_collected(prepared_input(pd)))
+    return {"name": prepared.get("title") or "", "name_source": prepared.get("coupang_name_source") or "",
+            "search_tags": up.search_tags_for(prepared)}
+
+
+@bp.route("/collect/<item_id>/live-fix", methods=["GET", "POST"])
+def collect_live_fix(item_id):
+    """U1b(오너 2026-10-02) — **쿠팡 등록본 점검·교정**. GET = 쿠팡 원본 vs 지금 규칙(바뀔 칸 목록). POST = 오너 버튼으로 보냄.
+
+    고치는 칸은 **상품명(F53)·검색어** 둘뿐 — 가격·재고·옵션·이미지는 손대지 않는다. 수정은 쿠팡 「승인필요」 API라
+    판매중 상품도 **다시 심사**에 들어간다(화면에 적는다). 관리자만(오너 계정 키를 쓴다).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 쿠팡 등록본을 고칠 수 있어요."}), 403
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        extra = {}
+    ups = _coupang_uploads(extra)
+    data_in = request.get_json(force=True, silent=True) or {}
+    want = str(data_in.get("market") or request.args.get("market") or "")
+    ups = [u for u in ups if not want or u["market"] == want]
+    if not ups:
+        return jsonify({"ok": False, "error": "쿠팡에 등록한 기록이 없어요."}), 404
+    u = ups[0]
+    up = _coupang_up_for(u["account"])
+    live = up.get_product(u["sid"])
+    if "error" in live:
+        return jsonify({"ok": False, "error": f"쿠팡 상품을 읽지 못했어요 — {live['error']}", "sid": u["sid"]}), 502
+    target = _live_fix_target(item, up)
+    plan = up.live_fix_plan(live, name=target["name"], search_tags=target["search_tags"])
+    out = {"ok": True, "sid": u["sid"], "market": u["market"], "market_label": u["label"],
+           "changes": plan["changes"], "foreign_now": [list(x) for x in up.foreign_fields(live)],
+           "note": "쿠팡 상품 수정은 승인필요 API예요 — 보내면 판매중 상품도 다시 심사를 받아요."}
+    if request.method == "GET":
+        return jsonify(out)
+    if not plan["changes"]:
+        return jsonify(dict(out, sent=False, message="고칠 칸이 없어요 — 쿠팡 원본이 이미 지금 규칙과 같아요."))
+    res = up.modify_product(plan["body"])
+    logger.info("[등록본 교정] sid=%s market=%s 바뀐 칸=%s 결과=%s", u["sid"], u["market"],
+                [c["field"] for c in plan["changes"]], res.get("success"))
+    if not res.get("success"):
+        return jsonify(dict(out, ok=False, sent=False, error=f"쿠팡이 수정을 받지 않았어요 — {res.get('error')}")), 502
+    return jsonify(dict(out, sent=True, message="쿠팡에 고친 칸을 보냈어요 — 다시 심사가 끝나면 반영돼요."))
 
 
 @bp.post("/collect/coupang/options")
@@ -7382,6 +7538,11 @@ def _shape_collect_items(items, current_lang):
         up = ex.get("uploaded")
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
+        # U2: 마지막으로 물어본 쿠팡 검토 상태(승인·검토중·반려) — 목록 배지. 안 물어봤으면 비움(지어내지 않음).
+        it["uploaded_review"] = [{"label": str(u.get("market_label") or u.get("market")),
+                                  "state": (u.get("review") or {}).get("state") or "",
+                                  "text": (u.get("review") or {}).get("label") or ""}
+                                 for u in up if isinstance(u, dict) and (u.get("review") or {}).get("state")] if isinstance(up, list) else []
         # F39: **등록에 필요한 식별자가 있나**를 목록에서 말한다. 없으면 등록이 막히는데,
         #   예전엔 업로더가 처음 알려 줬다(너무 늦다 — 카나리 8차 동형).
         #   옛 레코드는 `vendor_sku`가 아예 없으니 **그때 계산해서** 판정한다(스테일 금지).
@@ -7919,6 +8080,7 @@ def collect_preview_by_id(item_id: str):
         fx_is_mock=fx_is_mock,
         fx_updated=fx_updated,
         market_connected=market_connected,
+        coupang_accounts=_with_coupang_accounts([{"code": "coupang", "label": "쿠팡", "checked": False}]),
         category_options=CATEGORY_OPTIONS,
         current_category=cur_cat,
         category_suggestion=cat_suggestion,
@@ -12340,9 +12502,13 @@ def collect_option_value_fix(item_id: str):
         return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
     data = request.get_json(force=True, silent=True) or {}
     orig = str(data.get("orig") or "").strip()[:80]
-    value = str(data.get("value") or "").strip()[:28]
+    value = str(data.get("value") or "").strip()
     if not orig or not value:
         return jsonify({"ok": False, "error": "원문과 고칠 값이 둘 다 필요합니다."}), 400
+    # U3: 오너가 넣은 값을 몰래 자르지 않는다(예전 [:28]) — 쿠팡 문서 한도(30자)를 넘으면 그 자리에서 말한다.
+    from src.collectors.ko_polish import MAX_OPTION_VALUE as _MAXV
+    if len(value) > _MAXV:
+        return jsonify({"ok": False, "error": f"쿠팡 옵션 값은 {_MAXV}자까지예요(지금 {len(value)}자) — 조금 줄여 주세요."}), 400
     import datetime as _dt
     try:
         ex = json.loads(item.get("extra_json") or "{}")

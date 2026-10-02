@@ -217,11 +217,19 @@ def test_unknown_is_not_reported_as_missing(clean_env):
 
 
 def test_upload_path_uses_the_same_account_as_the_check(clean_env):
-    """★ 사전검증이 통과했는데 업로더가 다른 자리를 읽으면 **가짜 그린**이다."""
-    src = (ROOT / "src/channel_sync/coupang_uploader.py").read_text(encoding="utf-8")
-    body = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
-    assert "resolve_upload_account" in body, "등록 경로가 계정을 해석하지 않는다"
-    assert "CoupangUploader(account=account)" in body
+    """★ 사전검증이 통과했는데 업로더가 다른 자리를 읽으면 **가짜 그린**이다.
+
+    U0(2026-10-02): 소스 문자열 대조 → **동작**으로. 판정기(`resolve_upload_account`)가 고른 계정으로
+    업로더가 만들어지고, 키·업체코드도 그 계정 것(`_account_creds`)이어야 한다(예전엔 배송 칸만 계정 접두였다).
+    """
+    from src.channel_sync.coupang_uploader import make_uploader
+    from src.seller_console.market_cred_view import resolve_upload_account
+    clean_env.setenv("COUPANG_GOGANE_ACCESS_KEY", "gog-a")
+    clean_env.setenv("COUPANG_GOGANE_SECRET_KEY", "gog-s")
+    clean_env.setenv("COUPANG_GOGANE_VENDOR_ID", "A01381223")
+    up, account = make_uploader()
+    assert account == resolve_upload_account() == "gogane"
+    assert (up.account, up.access_key, up.vendor_id) == ("gogane", "gog-a", "A01381223")
 
 
 def test_credential_values_never_leave(clean_env):

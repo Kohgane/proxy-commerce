@@ -38,8 +38,9 @@ _TTL = 60.0
 _cache: dict = {"at": 0.0, "rules": None}
 _lock = threading.Lock()
 
-# 쿠팡 옵션 값 한도 — 정본 `attr_safe`(볼트 「등록 파이프 이식」): `str(av)[:28]`.
-MAX_OPTION_VALUE = 28
+# 쿠팡 옵션 값 한도 — 쿠팡 문서 「max length: 30 characters」(오너 실측 10-01, 브리프 U3 2026-10-02). 글자 단위.
+#   예전 28은 정본 `attr_safe`의 `str(av)[:28]` 안전 여유였다 — 문서 한도로 맞추고, 자르지 않는다(넘으면 미해석).
+MAX_OPTION_VALUE = 30
 # 쿠팡 옵션 **이름**(attributeTypeName) 한도 — 문서 「max length: 25 characters」(오너 실측 2026-10-01).
 #   이름은 카테고리 메타의 속성명이 그대로 가므로 넘는 일이 드물다. 넘으면 **자르지 않고** 보류(「미해석」).
 MAX_OPTION_NAME = 25
@@ -274,7 +275,8 @@ def trademark_fix(text: str) -> str:
         if not names:
             continue
         pat = "|".join(re.escape(n) for n in names)
-        if mode == "replica":
+        if mode in ("replica", "drop"):
+            # replica = 지우고 사전검증 보류(가구 레플리카) · drop = 지우기만(「迪奥棕 → 디올 브라운」 같은 색 이름 속 상표)
             s = re.sub(pat, " ", s)
         elif mode == "compat" and label:
             s = re.sub(rf"(?:{pat})(?:\s*호환)?", f"{label} 호환", s)
@@ -369,7 +371,9 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
     호출부가 「미해석」으로 둔다(`fits`).
 
     줄이는 순서: ① 판촉·주장(이미 정리 규칙이 지웠다) → ② **용도 꼬리**(현관용·식탁용… `usage_tail_ko`) →
-    ③ 소재 조각(핵심 가죽·원단 종류는 색상 조각에 붙여 남김 — T1-H) → ④ **기능 나열 뒤부터**(`+`·`,`·` / ` 조각).
+    ③ 소재 조각(핵심 가죽·원단 종류는 색상 조각에 붙여 남김 — T1-H) → ③-b 괄호 부속(U3: 「(내장 충전기)」 → 「충전기 내장」 접두)
+    → ③-c 구분자 공백 · 핵심 명사 축약표(U3 `abbrev_ko`) → ④ **기능 나열 뒤부터**(`+`·`,`·` / ` 조각).
+    한도는 쿠팡 문서 30자(U3) — 글자 단위.
     """
     v = re.sub(r"\s{2,}", " ", str(value or "")).strip()
     if len(v) <= limit:
@@ -382,20 +386,49 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
                 v = cand
                 if len(v) <= limit:
                     return v
-    # ③ 소재 조각(옛 규칙 그대로)
-    parts = [p.strip() for p in v.split(" / ") if p.strip()]
+    # ③ 소재 조각(옛 규칙 그대로) — U5 실측: 「분리 세탁 / 원목색 / … 커피 브라운 / 쿠션」이 「분리 세탁 테크 패브릭 / 쿠션」이 됐다.
+    #   **색상이 빠지는 줄임은 쓰지 않는다**(SKU를 가르는 값 — 빠지면 같은 값이 된다). 색이 다 남는 후보만.
+    _cols = [c for c in sorted({ko for _s, ko in (rules().get("colors") or []) if ko}, key=len, reverse=True) if c in v]
+    def _keeps_colors(c):
+        return all(col in c for col in _cols)
+    parts = [p.strip() for p in re.split(r"\s*/\s*", v) if p.strip()]
     if len(parts) >= 3:
         head, mats, tail = parts[0], parts[1:-1], parts[-1]
         keys = [k for k in _KEY_MATERIAL if any(k in m for m in mats) and k not in head]
         keys = [k for k in keys if not any(k != o and k in o for o in keys)]
         cand = " / ".join(x for x in (" ".join([head] + keys[:2]).strip(), tail) if x)
-        if len(cand) <= limit:
+        if len(cand) <= limit and _keeps_colors(cand):
             return cand
         cand = " / ".join(x for x in (head, tail) if x)
-        if len(cand) <= limit:
+        if len(cand) <= limit and _keeps_colors(cand):
             return cand
+    r = rules()
+    # ③-b U3(오너 2026-10-02): 괄호 부속 — 「(내장 충전기)」는 「충전기 내장」 접두로(표 `paren_prefix_ko`), 그 밖의 괄호
+    #    부속은 뗀다(「(쿠션 포함)」은 축약표가 「+쿠션」으로 먼저 바꾼다). 색상이 든 괄호는 남긴다(SKU를 가르는 값).
+    _colors = {ko for _s, ko in (r.get("colors") or []) if ko}
+    for ab_src, ab_ko in r.get("abbrev_ko") or []:
+        if ab_src.startswith("(") and ab_src in v:
+            v = v.replace(ab_src, ab_ko)
+    for m in list(re.finditer(r"\(([^()]*)\)", v)):
+        inner = m.group(1).strip()
+        pre = next((ko for src, ko in (r.get("paren_prefix_ko") or []) if src == inner), None)
+        if pre:
+            v = _tidy(f"{pre} " + v.replace(m.group(0), " "))
+        elif inner and not any(c in inner for c in _colors) and len(v) > limit:
+            v = _tidy(v.replace(m.group(0), " "))
+    if len(v) <= limit:
+        return v
+    # ③-c 구분자 둘레 공백 · 핵심 명사 축약표(`abbrev_ko` — 「3-in-1 휴대폰 이어폰 거치대」 → 「3in1 거치대」)
+    v = re.sub(r"\s*([+/·])\s*", r"\1", v)
+    if len(v) <= limit:
+        return v
+    for ab_src, ab_ko in sorted(r.get("abbrev_ko") or [], key=lambda x: len(x[0]), reverse=True):
+        if ab_src and ab_src in v:
+            v = _tidy(v.replace(ab_src, ab_ko))
+            if len(v) <= limit:
+                return v
     # ④ 기능 나열 — **뒤 조각부터** 하나씩 뺀다. 색상이 든 조각은 남긴다(SKU를 가르는 값 — 빼면 뜻이 바뀐다).
-    segs = [x.strip() for x in re.split(r"\s*(?:\s/\s|\+|,|·)\s*", v) if x.strip()]
+    segs = [x.strip() for x in re.split(r"\s*(?:/|\+|,|·)\s*", v) if x.strip()]
     colors_ko = {ko for _src, ko in (rules().get("colors") or []) if ko}
     def _has_color(seg):
         return any(c and c in seg for c in colors_ko)
@@ -414,6 +447,62 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
 
 def fits(value: str, limit: int = MAX_OPTION_VALUE) -> bool:
     return len(str(value or "")) <= limit
+
+
+# ── U(오너 2026-10-02): 옵션이 아닌 값 · 검색어 정리 · 전송 칸 외국어 ─────────────────────────────
+
+_KANA = re.compile("[\u3040-\u30ff\u31f0-\u31ff]")
+
+
+def has_foreign(text) -> bool:
+    """한국 마켓에 나가면 안 되는 글자(한자·가나)가 있나."""
+    s = str(text or "")
+    return bool(_HAN.search(s) or _KANA.search(s))
+
+
+def non_option(value: str) -> List[str]:
+    """U4 — 옵션이 아니라 **보증·서비스·안내·화면 문구**인 값(「售后品质保障丨购买无忧」「【超长3年质保】」「加入购物车」)이면
+    걸린 조각들. 이런 SKU는 등록에서 빼고 번역기에도 보내지 않는다(표 `non_option_re`, 원격 JSON)."""
+    s = str(value or "")
+    out: List[str] = []
+    for p in rules().get("non_option_re") or []:
+        m = re.search(p, s)
+        if m and m.group(0) not in out:
+            out.append(m.group(0))
+    return out
+
+
+_TOKEN = re.compile(r"[가-힣A-Za-z0-9]+")
+
+
+def clean_tags(tags, title_ko: str = "", limit: int = 20) -> List[str]:
+    """U1 — 검색어(쿠팡 `searchTags`) 정리. 실측: 16401838524에 「미야케·아키라의·감각이」가 실렸다 —
+    검색어가 **옛 번역 제목을 낱말로 자른 것**이라, 제목을 고쳐도(T3) 검색어엔 지어낸 이름이 남았다.
+
+    규칙: ① **지금 상품명에 낱말로 있는 것만**(상품명이 정본 — 옛 번역의 흔적은 빠진다) ② 지어낸 이름·상표(`invented_names`·
+    `trademarks`) 낱말 빼기 ③ 조사 꼬리(「상의와」「돋보이는」 — `tag_drop_re`) 빼기 ④ 같은 말 하나만. 상품명이 비면 ①은 건너뛴다.
+    """
+    r = rules()
+    have = {t.lower() for t in _TOKEN.findall(str(title_ko or ""))}
+    bad_names = {str(n).lower() for n, _m in (r.get("invented_names") or [])}
+    for e in r.get("trademarks") or []:
+        bad_names |= {str(n).lower() for n in _tm_names(e)} | {str(e.get("label") or "").lower()}
+    drops = [re.compile(p) for p in r.get("tag_drop_re") or []]
+    out: List[str] = []
+    for t in tags or []:
+        t = str(t or "").strip()
+        if not t or has_foreign(t):
+            continue
+        low = t.lower()
+        if have and low not in have:
+            continue
+        if low in bad_names or any(b and len(b) > 1 and b in low for b in bad_names):
+            continue
+        if any(p.search(t) for p in drops):
+            continue
+        if low not in {x.lower() for x in out}:
+            out.append(t[:limit])
+    return out
 
 
 # ── J0(오너 2026-09-30-J): 브랜드 한자 → 병음 대문자 ─────────────────────────────

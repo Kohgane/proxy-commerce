@@ -90,6 +90,14 @@
   .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
   .m5-btn.btn-ghost { border: 1px solid var(--border); background: var(--surface); font-weight: 600; }
   .m5-fix { display: inline-block; margin-top: 4px; }
+  /* U2 검토 상태 배지 — 승인=청록 · 검토중/임시저장=금 · 반려=적(토큰만) */
+  .m5-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .88rem; font-weight: 700;
+              border: 1px solid var(--border); }
+  .m5-badge.is-ok { color: var(--teal); border-color: var(--teal); }
+  .m5-badge.is-hold { color: var(--gold-ink, var(--warn)); border-color: var(--gold); }
+  .m5-badge.is-bad { color: var(--danger); border-color: var(--danger); }
+  button.m5-fix { background: none; border: 1px solid var(--border); border-radius: 10px; min-height: 40px; padding: 0 12px;
+                  color: var(--teal); font-weight: 600; }
   .m5-block { color: var(--danger); margin: 8px 0 0; }
   .m5-checks, .m5-done { margin-top: 10px; }
   .m5-cp { margin: 16px 0 4px; }
@@ -215,6 +223,26 @@
     });
   });
 
+  // U2(오너 2026-10-02): 쿠팡 검토 상태 — 승인·검토중·반려(사유). 검토중이면 1분마다 다시 묻는다(10회까지).
+  var REVIEW_CLS = {approved: 'is-ok', pending: 'is-hold', saved: 'is-hold', rejected: 'is-bad', deleted: 'is-bad', unknown: 'is-hold'};
+  function reviewStatus(round) {
+    fetch('/seller/collect/' + encodeURIComponent(itemId) + '/review-status', {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); }).then(function (d) {
+        var pending = false;
+        ((d && d.rows) || []).forEach(function (row) {
+          var el = doneEl.querySelector('[data-role=m5-review][data-market="' + row.market + '"]');
+          if (!el) return;
+          if (row.state === 'pending' || row.state === 'saved') pending = true;
+          el.innerHTML = '<span class="m5-badge ' + (REVIEW_CLS[row.state] || 'is-hold') + '" data-role="m5-review-badge" data-state="' + esc(row.state) + '">' + esc(row.label) + '</span>' +
+            (row.comment ? '<div class="m5-note" data-role="m5-review-reason">반려 사유: ' + esc(row.comment) + '</div>' : '') +
+            (row.error ? '<div class="m5-note">쿠팡에 묻지 못했어요 — ' + esc(row.error) + '</div>' : '') +
+            (row.link ? ' <a href="' + esc(row.link) + '" target="_blank" rel="noopener">쿠팡에서 보기</a>'
+                      : (row.wing_url ? ' <a href="' + esc(row.wing_url) + '" target="_blank" rel="noopener" title="심사 전이라 구매자 화면엔 아직 없어요">WING에서 찾기</a>' : ''));
+        });
+        if (pending && round < 10) setTimeout(function () { reviewStatus(round + 1); }, 60000);
+      }).catch(function () {});
+  }
+
   function register(confirmWarn) {
     if (!okMarkets.length) return;
     goBtn.disabled = true; checkBtn.disabled = true;
@@ -238,12 +266,16 @@
         h += '<div class="m5-res ' + (r.success ? 'is-ok' : 'is-bad') + '" data-role="m5-result" data-market="' + esc(r.market) + '">' +
              '<b>' + esc(r.market_label) + ' — ' + (r.success ? '등록됨' : (r.queued ? '대기열에 들어감' : '실패')) + '</b>' +
              (r.success ? '마켓 상품 ID: <strong data-role="m5-ext-id">' + esc(r.external_product_id || '(마켓이 번호를 돌려주지 않았어요)') + '</strong>' +
-                (r.external_url ? '<div><a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">마켓에서 보기</a></div>' : '') +
-                '<div><a href="/seller/dashboard#rp-ledger" data-role="m5-review-link">검토 상태 보기(등록 대장)</a></div>'
+                // U2: 쿠팡 셀러 상품번호 주소(vp/products)는 승인 전엔 「상품을 찾을 수 없습니다」 — 대신 검토 상태를 묻는다.
+                (String(r.market || '').indexOf('coupang') === 0
+                  ? '<div><button type="button" class="m5-fix" data-role="m5-review-btn">검토 상태 보기</button> <span data-role="m5-review" data-market="' + esc(r.market) + '"></span></div>'
+                  : (r.external_url ? '<div><a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">마켓에서 보기</a></div>' : ''))
               : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
                 (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '')) + '</div>';
       });
       doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
+      var rb = doneEl.querySelector('[data-role=m5-review-btn]');
+      if (rb) { rb.addEventListener('click', function () { reviewStatus(0); }); reviewStatus(0); }
       if (rs.some(function (r) { return r.success; })) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; }
       else { goBtn.disabled = false; }
     });
