@@ -65,6 +65,7 @@ def wired(monkeypatch):
     for k in ("COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"):
         monkeypatch.setenv(k, "x")
     monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)
+    monkeypatch.setenv("COUPANG_IMAGE_SCREEN", "0")      # 이미지 실치수 심사는 인스턴스 값(env) — CI에선 실제 이미지를 받아 잰다
     monkeypatch.setattr(CU, "_missing_shipping_config", lambda self: [])
     monkeypatch.setattr(CU, "resolve_delivery_company_code", lambda self: "CJGLS")
     monkeypatch.setattr(CU, "outbound_for_delivery", lambda self: ("1", None))
@@ -74,7 +75,6 @@ def wired(monkeypatch):
     monkeypatch.setattr(CU, "get_category_notice_schema", lambda self, c: [])
     monkeypatch.setattr(CU, "required_documents_plan", lambda self, m: ([], None))
     monkeypatch.setattr(CU, "request_approval", lambda self, sid: {"success": True})
-    monkeypatch.setattr(CU, "image_screen_enabled", False, raising=False)
 
     def api(self, method, path, data=None):
         sent["calls"].append((method, path, data, self.access_key, self.account))
