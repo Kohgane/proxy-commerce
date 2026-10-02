@@ -38,11 +38,18 @@
 
   <fieldset class="m5-markets" data-role="m5-markets">
     <legend class="m5-legend">등록할 마켓</legend>
+    {% set _g = namespace(last='') %}
     {% for m in m5.markets %}
-    <label class="m5-mk">
+    {# U0b: 사업자 축(고가네 = 쿠팡 고가네 + 스스 셰고가 · 우주대행 = 쿠팡 우주대행 + 스스 고코스모스)으로 묶는다 #}
+    {% if m.group and m.group != _g.last %}<div class="m5-group" data-role="m5-group">{{ m.group_label }}</div>{% endif %}
+    {% if not m.group and _g.last %}<div class="m5-group" data-role="m5-group">그 밖의 마켓</div>{% endif %}
+    {% set _g.last = m.group or '' %}
+    <label class="m5-mk{% if m.pending %} is-pending{% endif %}" data-market="{{ m.code }}">
       <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked %}checked{% endif %}>
-      <span>{{ m.label }}</span>
-      {% if not m.connected %}<span class="m5-off" data-role="m5-unconnected">연동 안 됨</span>{% endif %}
+      <span class="m5-mk-body"><span>{{ m.label }}</span>
+        {% if m.note %}<span class="m5-mk-note" data-role="m5-market-note">{{ m.note }}</span>{% endif %}
+        {% if m.limit_text %}<span class="m5-mk-note" data-role="m5-market-limit">{{ m.limit_text }}</span>{% endif %}</span>
+      {% if not m.connected %}<span class="m5-off" data-role="m5-unconnected">{{ '키 없음' if m.group else '연동 안 됨' }}</span>{% endif %}
     </label>
     {% endfor %}
   </fieldset>
@@ -87,6 +94,11 @@
            border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
   .m5-mk input { width: 22px; height: 22px; flex: 0 0 auto; }
   .m5-off { margin-left: auto; color: var(--text-muted); font-size: .88rem; }
+  .m5-group { font-size: .86rem; font-weight: 700; color: var(--gold-ink, var(--text-muted)); margin: 10px 2px 6px;
+              letter-spacing: .02em; }
+  .m5-mk-body { display: flex; flex-direction: column; min-width: 0; padding: 8px 0; }
+  .m5-mk-note { color: var(--text-muted); font-size: .84rem; line-height: 1.35; word-break: keep-all; }
+  .m5-mk.is-pending { border-style: dashed; }
   .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
   .m5-btn.btn-ghost { border: 1px solid var(--border); background: var(--surface); font-weight: 600; }
   .m5-fix { display: inline-block; margin-top: 4px; }

@@ -1974,7 +1974,7 @@ def mobile_list_ctx(item: dict) -> dict:
     from .upload_dispatcher import MARKET_LABELS
     markets = [{"code": m, "label": MARKET_LABELS.get(m, m), "connected": bool(connected.get(m)),
                 "checked": m == "coupang"} for m in _M5_MARKETS]
-    markets = _with_coupang_accounts(markets)
+    markets = _with_coupang_accounts(markets, product)
     return {"item_id": str(item.get("id") or ""), "title": product["title"] or "(제목 없음)",
             "thumb": product["thumbnail"], "images_count": len(images),
             "price": str(product.get("price") or "") if has_price else "",
@@ -2707,30 +2707,55 @@ def _persist_upload_status(item_id, result_dict) -> None:
         logger.warning("업로드 상태 영속 실패(무시): %s", exc)
 
 
-def _with_coupang_accounts(markets: list) -> list:
-    """U0(오너 2026-10-02): 이 서버에 쿠팡 계정이 둘이면 「쿠팡」 한 줄을 「쿠팡 — 고가네」「쿠팡 — 우주대행」 두 줄로.
+_BUSINESS_LABELS = (("gogane", "고가네"), ("woojoo", "우주대행"))
 
-    관리자(오너) 화면에서만 — 계정 키는 오너 서버 설정이라 다른 셀러에게 보일 이유가 없다. 계정 키가 빠진 줄은
-    「키 없음」으로 보이고(체크해도 사전검증이 무엇이 빠졌는지 말한다), 기본 체크는 첫 번째 준비된 계정 하나만.
+
+def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> list:
+    """U0·U0b(오너 2026-10-02 정정): 관리자 화면이면 「쿠팡」「스마트스토어」 한 줄씩을 **사업자 축**으로 펼친다 —
+    고가네 = 쿠팡 고가네 + 스마트스토어 셰고가 · 우주대행 = 쿠팡 우주대행 + 스마트스토어 고코스모스.
+
+    기본 체크: 쿠팡은 키가 있는 계정 둘 다(원래 쿠팡이 체크였을 때), 스마트스토어는 **자동 배정된 스토어 하나** —
+    그 스토어가 커머스API 승인됐을 때만. 미승인 스토어는 「미승인 — 신청 대기」로 보이고(체크하면 사전검증이 보류라고 말한다).
+    다른 셀러에겐 원래 한 줄씩 그대로(계정·스토어는 오너 서버 설정).
     """
     try:
+        admin = _is_admin_user()
+    except Exception:
+        admin = False
+    if not admin:
+        return markets
+    try:
         from .market_cred_view import coupang_account_choices
-        choices = coupang_account_choices() if _is_admin_user() else []
+        cps = {c["account"]: c for c in coupang_account_choices()}
     except Exception as exc:
         logger.warning("[마켓 선택] 쿠팡 계정 목록 실패(한 줄 유지): %s", exc)
-        choices = []
-    if not choices:
+        cps = {}
+    try:
+        from .smartstore_routing import store_choices
+        sss = {c["business"]: c for c in store_choices(product)}
+    except Exception as exc:
+        logger.warning("[마켓 선택] 스마트스토어 스토어 목록 실패(한 줄 유지): %s", exc)
+        sss = {}
+    if not cps and not sss:
         return markets
+    base = {m.get("code"): m for m in markets}
+    cp_checked = bool((base.get("coupang") or {}).get("checked"))
     out = []
-    for m in markets:
-        if m.get("code") != "coupang":
-            out.append(m)
-            continue
-        first = next((c["code"] for c in choices if c["ready"]), "")
-        for c in choices:
+    for biz, biz_label in _BUSINESS_LABELS:
+        c = cps.get(biz)
+        if c and "coupang" in base:
             out.append({"code": c["code"], "label": c["label"], "connected": c["ready"],
-                        "checked": bool(m.get("checked")) and c["code"] == first,
-                        "account": c["account"], "missing": c["missing"]})
+                        "checked": cp_checked and c["ready"], "account": c["account"], "missing": c["missing"],
+                        "group": biz, "group_label": biz_label, "note": "" if c["ready"] else "키 없음"})
+        st = sss.get(biz)
+        if st and "smartstore" in base:
+            out.append({"code": st["code"], "label": st["label"], "connected": st["ready"],
+                        "checked": bool(st["assigned"] and st["approved"] and st["ready"]),
+                        "account": st["store"], "missing": [] if st["ready"] else ["스토어 키"],
+                        "group": biz, "group_label": biz_label, "note": st["note"],
+                        "pending": not st["approved"], "limit_text": st["limit_text"]})
+    out += [m for m in markets if m.get("code") not in ("coupang", "smartstore")
+            or (m.get("code") == "coupang" and not cps) or (m.get("code") == "smartstore" and not sss)]
     return out
 
 
@@ -7774,7 +7799,7 @@ def collect_history():
     upload_markets = [
         {"code": m, "label": MARKET_LABELS.get(m, m),
          "pending": (m == "smartstore" and _ss_pending),
-         "pending_note": ("심사중 — 커머스솔루션 승인 후 오픈" if (m == "smartstore" and _ss_pending) else "")}
+         "pending_note": ("커머스API 미승인 — 신청 대기" if (m == "smartstore" and _ss_pending) else "")}
         for m in SUPPORTED_MARKETS
     ]
     from .category_classifier import CATEGORY_OPTIONS
@@ -8080,7 +8105,9 @@ def collect_preview_by_id(item_id: str):
         fx_is_mock=fx_is_mock,
         fx_updated=fx_updated,
         market_connected=market_connected,
-        coupang_accounts=_with_coupang_accounts([{"code": "coupang", "label": "쿠팡", "checked": False}]),
+        coupang_accounts=_with_coupang_accounts([{"code": "coupang", "label": "쿠팡", "checked": False},
+                                                 {"code": "smartstore", "label": "스마트스토어", "checked": False}],
+                                                extra if isinstance(extra, dict) else None),
         category_options=CATEGORY_OPTIONS,
         current_category=cur_cat,
         category_suggestion=cat_suggestion,

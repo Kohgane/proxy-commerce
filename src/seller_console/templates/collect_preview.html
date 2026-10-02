@@ -680,21 +680,24 @@
           {% endmacro %}
           <div class="market-grid mb-4" id="marketCheckboxes">
             {{ mtile('shopify', 'Shopify', 'chkShopify') }}
-            {# U0: 쿠팡 계정이 둘이면(오너 서버·관리자) 두 줄 — 고른 계정의 키·출고지·반품지로 등록 #}
-            {% set _cpa = coupang_accounts or [] %}
-            {% if _cpa|length > 1 %}
+            {# U0·U0b: 쿠팡 두 계정·스마트스토어 두 스토어(오너 서버·관리자) — 사업자 축으로 묶어 고른 계정·스토어 키로 등록 #}
+            {% set _cpa = (coupang_accounts or [])|selectattr('group')|list %}
+            {% set _has_cp = _cpa|selectattr('code', 'match', '^coupang:')|list|length > 0 %}
+            {% set _has_ss = _cpa|selectattr('code', 'match', '^smartstore:')|list|length > 0 %}
+            {% if _cpa %}
             {% for c in _cpa %}
-            <label class="market-tile {{ 'is-on' if c.connected else 'is-off' }}" for="chkCoupang{{ loop.index }}" data-role="cp-account-tile">
-              <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ c.code }}" id="chkCoupang{{ loop.index }}">
+            <label class="market-tile {{ 'is-on' if c.connected and not c.pending else 'is-off' }}" for="chkAcct{{ loop.index }}" data-role="cp-account-tile" data-group="{{ c.group }}">
+              <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ c.code }}" id="chkAcct{{ loop.index }}"{% if c.checked %} checked{% endif %}>
               <span class="market-name">{{ c.label }}</span>
-              {% if c.connected %}<span class="market-badge on"><i class="bi bi-check-circle"></i> 키 설정됨</span>
+              {% if c.pending %}<span class="market-badge off" data-role="ss-pending" title="{{ c.note }}"><i class="bi bi-hourglass-split"></i> 미승인</span>
+              {% elif c.connected %}<span class="market-badge on"><i class="bi bi-check-circle"></i> 키 설정됨</span>
               {% else %}<span class="market-badge off" title="빠진 것: {{ (c.missing or [])|join(', ') }}"><i class="bi bi-x-circle"></i> 키 없음</span>{% endif %}
+              {% if c.note and not c.pending %}<span class="small text-muted d-block" data-role="ss-assign">{{ c.note }}</span>{% endif %}
             </label>
             {% endfor %}
-            {% else %}
-            {{ mtile('coupang', '쿠팡', 'chkCoupang') }}
             {% endif %}
-            {{ mtile('smartstore', '스마트스토어', 'chkSmartstore') }}
+            {% if not _has_cp %}{{ mtile('coupang', '쿠팡', 'chkCoupang') }}{% endif %}
+            {% if not _has_ss %}{{ mtile('smartstore', '스마트스토어', 'chkSmartstore') }}{% endif %}
             {{ mtile('elevenst', '11번가', 'chkElevenst') }}
             {{ mtile('woocommerce', '코가네멀티샵', 'chkWoo') }}
           </div>

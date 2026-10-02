@@ -74,11 +74,14 @@ def test_wc_find_by_sku_empty_returns_none():
 def test_smartstore_blocked_until_approved(monkeypatch):
     from src.seller_console.upload_dispatcher import UploadDispatcher, smartstore_approved
     monkeypatch.delenv("SMARTSTORE_APPROVED", raising=False)
+    for _k in ("SMARTSTORE_CHEZGOGA_APPROVED", "SMARTSTORE_GOCOSMOS_APPROVED"):
+        monkeypatch.delenv(_k, raising=False)
     assert smartstore_approved() is False
     d = UploadDispatcher()
     r = d._prevalidate_market({"title": "x", "price": "1000"}, "smartstore")
     assert r.ok is False and r.error_code == "smartstore_pending_review"
-    assert "심사중" in r.message
+    # U0b(오너 2026-10-02 정정): 문구 「커머스API 미승인 — 신청 대기」 · 막힘이 아니라 **보류**로 보인다(전송은 여전히 0)
+    assert "커머스API 미승인 — 신청 대기" in r.message and r.hold is True
     # 승인 플래그 켜면 통과(게이트 해제 — 이후 env 검증 단계로)
     monkeypatch.setenv("SMARTSTORE_APPROVED", "1")
     assert smartstore_approved() is True

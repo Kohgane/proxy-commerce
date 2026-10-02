@@ -25,18 +25,24 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
         ChannelUploadError: 원화 판매가 0 또는 커머스 API 실패
     """
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
+    from src.seller_console.market_cred_view import current_naver_account
 
-    client_id = os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID")
-    client_secret = os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET")
+    # U0b(오너 2026-10-02 정정): 스토어를 고르면(`smartstore:chezgoga`·`smartstore:gocosmos`) 그 스토어 키로 —
+    #   `NAVER_<STORE>_CLIENT_ID/SECRET`(없으면 공용 키 폴백 + 경고 — 업로더 `_acct_env`).
+    account = current_naver_account()
+    up = NaverSmartStoreUploader(account=account) if account else NaverSmartStoreUploader()
+    client_id = up.client_id or (os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID"))
+    client_secret = up.client_secret or (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET"))
     if not client_id or not client_secret:
         raise ChannelCredentialsMissing(
             "스마트스토어 자격증명 미설정: "
             "NAVER_CLIENT_ID(또는 NAVER_COMMERCE_CLIENT_ID) / "
             "NAVER_CLIENT_SECRET(또는 NAVER_COMMERCE_CLIENT_SECRET)"
+            + (f" · 스토어 전용 NAVER_{account.upper()}_CLIENT_ID/SECRET" if account else "")
         )
 
     return run_upload(
-        NaverSmartStoreUploader(),
+        up,
         product_data,
         required_envs=[],
         market_label=MARKET_LABEL,

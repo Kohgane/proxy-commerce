@@ -143,6 +143,23 @@ def coupang_account(account: str = ""):
         _ACCOUNT_OVERRIDE.reset(tok)
 
 
+_NAVER_ACCOUNT: "_cv.ContextVar[str]" = _cv.ContextVar("naver_account_override", default="")
+
+
+@_cm
+def naver_account(account: str = ""):
+    """U0b(오너 2026-10-02 정정): 스마트스토어 두 스토어(셰고가 `chezgoga` · 고코스모스 `gocosmos`) — 쿠팡과 같은 방식."""
+    tok = _NAVER_ACCOUNT.set(str(account or "").strip().lower())
+    try:
+        yield
+    finally:
+        _NAVER_ACCOUNT.reset(tok)
+
+
+def current_naver_account() -> str:
+    return _NAVER_ACCOUNT.get()
+
+
 def split_market(code: str) -> tuple:
     """`coupang:woojoo` → (`coupang`, `woojoo`) · 그 밖은 (code, '')."""
     base, _, acct = str(code or "").partition(":")

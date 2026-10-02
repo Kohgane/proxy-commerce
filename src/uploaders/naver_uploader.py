@@ -310,6 +310,23 @@ class NaverSmartStoreUploader(BaseUploader):
             logger.error('update_product failed for product_id=%s: %s', product_id, exc)
             return {'success': False, 'error': str(exc)}
 
+    def count_products(self, statuses=None):
+        """U0b — 스토어 등록 한도(판매중·판매대기·품절 합계 1,000) 확인용 상품 수. 못 세면 None.
+
+        `POST /v1/products/search` `productStatusTypes`(볼트 「네이버 커머스 API 지뢰」: 이 필터는 동작한다) ·
+        `size=1`로 `totalElements`만 읽는다. 응답에 그 칸이 없으면 None(지어내지 않음).
+        """
+        body = {'productStatusTypes': list(statuses or ['SALE', 'WAIT', 'OUTOFSTOCK']), 'page': 1, 'size': 1}
+        res = self._api_request('POST', '/v1/products/search', data=body)
+        if not isinstance(res, dict) or 'error' in res:
+            logger.warning('[스스 한도] %s 상품 수 조회 실패: %s', self.account, (res or {}).get('error') if isinstance(res, dict) else res)
+            return None
+        n = res.get('totalElements')
+        try:
+            return int(n) if n is not None else None
+        except (TypeError, ValueError):
+            return None
+
     def delete_product(self, product_id: str) -> bool:
         """Naver SmartStore 상품을 삭제한다."""
         try:
