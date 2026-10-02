@@ -215,11 +215,13 @@ def test_different_addresses_are_kept_and_we_say_why():
 
 
 def test_the_upload_path_applies_it():
-    import inspect
     from src.seller_console import views
-    # S1(2026-10-02): 이미지 배열은 사전검증과 같은 함수(`_outbound_images`)에서 — 등록이 그 함수를 부른다.
-    assert "_outbound_images(" in inspect.getsource(views.collect_upload)
-    assert "drop_cross_duplicates" in inspect.getsource(views._outbound_images)
+    from tests._ast_probe import calls_in
+    # S1(2026-10-02): 이미지 배열은 사전검증과 같은 함수(`_outbound_images`)에서 — 등록·사전검증이 그 함수를 부른다.
+    #   (문자열 핀이 아니라 호출 구조로 잰다 — 메타 계약)
+    assert "_outbound_images" in calls_in(views.collect_upload)
+    assert "_outbound_images" in calls_in(views.collect_prevalidate)
+    assert "drop_cross_duplicates" in calls_in(views._outbound_images)
 
 
 # ---------------------------------------------------------------------------
