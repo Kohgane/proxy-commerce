@@ -91,6 +91,7 @@ def test_t3_invented_name_is_discarded_for_the_next_engine(monkeypatch):
     for k in ("NCP_PAPAGO_CLIENT_ID", "NCP_PAPAGO_CLIENT_SECRET", "DEEPL_API_KEY"):
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("TRANSLATE_CHAIN_ORDER", "papago,deepl")
+    monkeypatch.delenv("ADAPTER_DRY_RUN", raising=False)   # CI는 dry-run(=stub) — 체인 자체를 재는 계약이라 끈다
 
     class R:
         def __init__(self, p): self.p = p
