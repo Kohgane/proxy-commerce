@@ -471,12 +471,16 @@ def unresolved_option_values(product: Dict[str, Any]) -> List[str]:
 
 def readiness_message(holds: List[Dict[str, str]]) -> str:
     """「사전검증 — 보류: 이미지 0장·판매가 없음 → PC 확장에서 보강 후」 — 무엇이 모자라고 어디서 채우는지 한 줄."""
+    if any(h["fix"] == "block" for h in holds):
+        return "사전검증 — 보류: " + next(h["short"] for h in holds if h["fix"] == "block")
     what = "·".join(h["short"] for h in holds)
     fixes = []
     if any(h["fix"] == "pc" for h in holds):
         fixes.append("PC 확장에서 보강")
     if any(h["fix"] == "translate" for h in holds):
         fixes.append("편집 화면에서 옵션 값 번역")
+    if any(h["fix"] == "trademark" for h in holds):
+        fixes.append("상표를 뺀 상품으로 다시 확인")
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
 
 
@@ -640,6 +644,20 @@ class UploadDispatcher:
             holds.append({"short": "판매가 없음", "fix": "pc",
                           "line": "판매가가 0이거나 비어 있어요 — 원가를 읽어야 판매가를 낼 수 있어요"
                                   "(외화면 편집 화면 ‘원화로 환산’ 버튼으로도 채울 수 있어요)."})
+        # T3(오너 2026-10-02): 위험 플래그 — 번역이 아니라 **차단**. 원문 제목·옵션 값까지 본다.
+        from src.collectors import ko_polish as _kp
+        _risk_text = " ".join([str(pd.get("title_src") or ""), str(pd.get("title") or ""),
+                               str(pd.get("coupang_name") or "")]
+                              + [str(v) for o in (pd.get("options") or []) if isinstance(o, dict)
+                                 for v in (o.get("values") or [])])
+        _exp = _kp.expiry_hits(_risk_text)
+        if _exp:
+            holds.append({"short": "유통기한 임박·떨이 소싱 — 등록 차단", "fix": "block",
+                          "line": f"「{_exp[0]}」 — 유통기한 임박·떨이 상품은 등록하지 않습니다(번역도 하지 않음)."})
+        _rep = _kp.replica_hits(_risk_text)
+        if _rep:
+            holds.append({"short": f"상표 위험({', '.join(_rep)})", "fix": "trademark",
+                          "line": f"가구 레플리카 상표({', '.join(_rep)})가 들어 있어 등록을 보류합니다 — 쿠팡 지재권 신고 대상."})
         if market in _KO_OPTION_MARKETS:
             n = len(unresolved_option_values(pd))
             if n:

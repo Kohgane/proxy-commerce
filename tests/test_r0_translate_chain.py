@@ -34,6 +34,8 @@ def _env(monkeypatch):
     st.reset_for_tests()
     oq.reset_for_tests()
     yield
+    st.reset_for_tests()                 # Papago 일 상한 카운터(소진 표시 포함)를 남기지 않는다 — 뒤 계약이 Papago를 못 부른다
+    oq.reset_for_tests()
 
 
 def _all_keys(monkeypatch):

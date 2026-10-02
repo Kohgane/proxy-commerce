@@ -731,6 +731,7 @@ class AITranslator:
             _budget = 8.0
         self._deadline = _time.time() + max(1.0, _budget)   # 프로바이더가 _budget_left()로 읽어 timeout 클램프
         attempts = []
+        _invented_fallback = None
         for name in chain:
             _t0 = _time.time()
             if self._budget_left() < 0.8:      # 남은 예산이 사실상 없으면 다음 프로바이더 시도 중단(정직 실패로)
@@ -754,6 +755,18 @@ class AITranslator:
             except Exception as exc:
                 res = {"provider": name + "-fallback", "error": classify_translate_error(exc)}
             ok = str(res.get("provider") or "") == name and not res.get("error")
+            # T3(오너 2026-10-02): 번역기가 **원문에 없는 고유명**을 만들면(「三宅艺创」 → 「미야케 아키라」) 그 결과는 버리고
+            #   다음 엔진으로. 끝까지 다 그러면 정리 규칙(이름 → 「플리츠」)을 건 값을 쓴다(아래).
+            if ok:
+                try:
+                    from src.collectors.ko_polish import invented_names as _inv
+                    _bad = _inv(title, res.get("title_ko") or "")
+                except Exception:
+                    _bad = []
+                if _bad:
+                    ok = False
+                    res = dict(res, error=f"원문에 없는 고유명({', '.join(_bad)})을 만들어 버렸습니다")
+                    _invented_fallback = res
             attempts.append({"provider": name, "ok": bool(ok), "error": str(res.get("error") or ""),
                              "ms": int((_time.time() - _t0) * 1000)})   # v87-W7: 소요 시간 기록
             if res.get("skipped"):
@@ -768,6 +781,15 @@ class AITranslator:
                 return res
             logger.warning("[번역 체인] %s 실패(%s) → 다음 프로바이더", name, res.get("error") or "원인 미상")
 
+        if _invented_fallback is not None:
+            # T3: 엔진마다 같은 고유명을 만들었다 — 정리 규칙으로 이름을 바꾼 값을 쓰고 그 사실을 남긴다.
+            from src.collectors.ko_polish import invented_names as _inv2, polish_ko as _pk
+            fixed = _pk(_invented_fallback.get("title_ko") or "")
+            if fixed and not _inv2(title, fixed):
+                out = dict(_invented_fallback, title_ko=fixed, attempts=attempts, detected_lang=_src, chain=list(chain),
+                           translate_warn="번역기가 원문에 없는 고유명을 만들어 정리 규칙으로 바꿨습니다")
+                out.pop("error", None)
+                return out
         # 체인 전부 실패 → 원문 유지(정직 실패). 마지막 프로바이더·사유를 보존(드로어·하위호환 진단).
         _last = attempts[-1]["provider"] if attempts else ""
         _reason = (attempts[-1]["error"] if attempts else "") or "번역 실패"

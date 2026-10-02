@@ -1947,6 +1947,20 @@ def mobile_list_ctx(item: dict) -> dict:
         missing.append(f"사진(지금 {len(images)}장)")
     if taobao and not skus:
         missing.append("SKU(옵션별 가격)")
+    # T3: 위험 플래그(유통기한 임박·떨이 / 가구 레플리카 상표) — 카드에서 먼저 말한다. 사전검증이 같은 판정으로 보류.
+    risks = []
+    try:
+        from src.collectors import ko_polish as _kp3
+        _rt = " ".join([str(product.get("title_src") or ""), str(product.get("title") or "")]
+                       + [str(v) for o in (product.get("options") or []) if isinstance(o, dict)
+                          for v in (o.get("values") or [])])
+        if _kp3.expiry_hits(_rt):
+            risks.append("유통기한 임박·떨이 소싱 — 등록 차단")
+        _rp = _kp3.replica_hits(_rt)
+        if _rp:
+            risks.append(f"상표 위험({', '.join(_rp)}) — 등록 보류")
+    except Exception as exc:
+        logger.warning("[M5] 위험 플래그 판정 실패: %s", exc)
     blocked = ""
     if ax["is_draft"] and not ax["gate_ready"]:
         blocked = "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다."
@@ -1968,7 +1982,8 @@ def mobile_list_ctx(item: dict) -> dict:
             "sku_rows": sku_rows, "sku_count": len(skus), "missing": missing,
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
-            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product}
+            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product,
+            "risks": risks}
 
 
 def coupang_preview_data(item: dict) -> dict:
@@ -12600,9 +12615,13 @@ def collect_translate_audit():
 
 @bp.post("/collect/translate-audit/backfill")
 def collect_translate_audit_backfill():
-    """J1 백필 — 기존 수집 상품(옵션 값·상품명)을 **규칙 단계 즉시** + 남은 외국어는 번역기 큐로.
+    """T4(오너 2026-10-02) — 백필 **2단계**.
 
-    **관리자만**(번역기 무료 한도를 쓰는 결정은 오너). CC는 누르지 않는다 — 버튼만 둔다.
+    - `stage=1`(기본, 비용 0): 규칙표·재정리만 전 상품에 — 옵션 값(규칙 해결 + 이미 옮긴 값 재정리) · 상품명 재-polish.
+      번역기를 부르지 않는다. 응답에 **전/후 숫자**(규칙/번역기/잔존)를 싣는다.
+    - `stage=2`(오너 버튼): 남은 값만 번역기 큐로(체인 Papago 1순위 — R0). 하루 상한 안에서.
+
+    **관리자만**(번역기 무료 한도·비용을 쓰는 결정은 오너). CC는 누르지 않는다.
     상품명은 번역본에 정리 규칙을 한 번 더 걸고 바뀌면 전 값을 `title_polish_before`에 남긴다(전후 표).
     """
     if not _check_auth():
@@ -12617,8 +12636,11 @@ def collect_translate_audit_backfill():
         days = max(1, min(int(data.get("days") or 90), 365))
     except Exception:
         days = 90
+    stage = 2 if str(data.get("stage") or "1") == "2" else 1
+    rows = collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000) or []
+    before = optauto.audit(rows)["counts"]
     touched, queued, titles = 0, 0, 0
-    for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000) or []:
+    for row in rows:
         try:
             ex = json.loads(row.get("extra_json") or "{}") or {}
         except Exception:
@@ -12627,29 +12649,38 @@ def collect_translate_audit_backfill():
         has_opts = bool(ex.get("options"))
         if not (optauto.foreign(src) or has_opts):
             continue
-        st = optauto.rule_pass(ex)
-        fields = {}
-        ko = str(ex.get("title_ko") or "")
-        if ko and ko != src:
-            new = polish_ko(ko) or ko
-            if new != ko:
-                ex.setdefault("title_polish_before", ko)
-                ex["title_ko"] = new
-                fields["title"] = new
-                titles += 1
-        if st["changed"] or fields:
-            ok = collect_history_store.update(row.get("id"), seller_id=row.get("seller_id") or _seller_id(),
-                                              extra_json=json.dumps(ex, ensure_ascii=False), **fields)
-            touched += 1 if ok else 0
-        if optauto.enqueue_if_pending(str(row.get("seller_id") or _seller_id()), str(row.get("id")), ex,
-                                      kick_worker=False):
+        if stage == 1:
+            st = optauto.rule_pass(ex)
+            fields = {}
+            ko = str(ex.get("title_ko") or "")
+            if ko and ko != src:
+                new = polish_ko(ko) or ko
+                if new != ko:
+                    ex.setdefault("title_polish_before", ko)
+                    ex["title_ko"] = new
+                    fields["title"] = new
+                    titles += 1
+            if st["changed"] or fields:
+                ok = collect_history_store.update(row.get("id"), seller_id=row.get("seller_id") or _seller_id(),
+                                                  extra_json=json.dumps(ex, ensure_ascii=False), **fields)
+                touched += 1 if ok else 0
+        elif optauto.enqueue_if_pending(str(row.get("seller_id") or _seller_id()), str(row.get("id")), ex,
+                                        kick_worker=False):
             queued += 1
     if queued:
         optauto.kick()
-    logger.info("[translate-audit] 백필 seller=%s 규칙 반영 %s · 상품명 정리 %s · 큐 %s", _seller_id(), touched, titles, queued)
-    return jsonify({"ok": True, "touched": touched, "titles": titles, "queued": queued,
-                    "message": f"규칙으로 {touched}건 정리 · 상품명 {titles}건 다듬음 · 번역기 큐 {queued}건 — "
-                               f"하루 상한 {optauto.daily_cap()}개 안에서 차례로 옮깁니다.", **optauto.status()})
+    after = optauto.audit(collect_history_store.list_items(seller_ids=_seller_identities(), days=days, limit=2000)
+                          or [])["counts"]
+    logger.info("[translate-audit] 백필 %s단계 seller=%s 규칙 반영 %s · 상품명 %s · 큐 %s · 전 %s → 후 %s",
+                stage, _seller_id(), touched, titles, queued, before, after)
+    if stage == 1:
+        msg = (f"1단계(비용 0): 규칙으로 {touched}건 정리 · 상품명 {titles}건 다듬음 — "
+               f"규칙 {before['rule']}→{after['rule']} · 번역기 {before['translator']}→{after['translator']} · "
+               f"남음 {before['left']}→{after['left']}. 남은 값은 2단계 버튼으로 번역기에.")
+    else:
+        msg = (f"2단계: 번역기 큐 {queued}건 — 하루 상한 {optauto.daily_cap()}개 안에서 Papago부터 차례로 옮깁니다.")
+    return jsonify({"ok": True, "stage": stage, "touched": touched, "titles": titles, "queued": queued,
+                    "before": before, "after": after, "message": msg, **optauto.status()})
 
 
 @bp.post("/collect/option-translate/resume")

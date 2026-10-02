@@ -145,10 +145,18 @@ def resolve_option_value(value: str, *, values_ko: str = "", override: str = "")
     from src.collectors import ko_polish as _kp
     p = _kp.option_value(v)
     if p["value"]:
-        return {"value": _kp.shorten(p["value"]), "how": "polish", "confirm": True, "why": ""}
+        _s = _kp.shorten(p["value"])
+        if _kp.fits(_s):
+            return {"value": _s, "how": "polish", "confirm": True, "why": ""}
+        # T1: 줄여도 28자를 넘으면 **자르지 않고** 미해석(직접 넣기) — 잘린 값은 다른 SKU와 겹치거나 뜻이 끊긴다.
+        return {"value": "", "how": "", "confirm": False,
+                "why": f"줄여도 쿠팡 옵션 값 한도 {_kp.MAX_OPTION_VALUE}자를 넘습니다(「{_s}」 {len(_s)}자) — 값을 직접 넣어 주세요"}
     ko = _kp.polish_ko(str(values_ko or "").strip())
     if ko and len(ko) > _kp.MAX_OPTION_VALUE:
         ko = _kp.shorten(ko)
+        if not _kp.fits(ko):
+            return {"value": "", "how": "", "confirm": False,
+                    "why": f"줄여도 쿠팡 옵션 값 한도 {_kp.MAX_OPTION_VALUE}자를 넘습니다(「{ko}」 {len(ko)}자) — 값을 직접 넣어 주세요"}
     if ko and ko != v and not _CJK.search(ko):
         lost = [tok for tok in _ASCII_TOK.findall(v) if tok.lower() not in ko.lower()]
         if not lost:
@@ -157,6 +165,9 @@ def resolve_option_value(value: str, *, values_ko: str = "", override: str = "")
                 "why": f"번역기 값이 원문의 영문·숫자({', '.join(lost)})를 잃었습니다"}
     if ko and _CJK.search(ko):
         why = "번역기 값에 한자가 남았습니다"
+    elif not p["draft"] and not ko:
+        # T1: 판촉·보증·장식만 있는 값(【超长3年质保】·【90天免费换新】) — 정리하면 남는 게 없다. 옵션이 아니다.
+        why = "판촉·보증 문구뿐인 값이라 정리하면 남는 게 없습니다 — 이 SKU는 빼거나 값을 직접 넣어 주세요"
     else:
         why = "용어집에도 번역기 값에도 없습니다 — 한국어 번역을 먼저 돌리거나 값을 직접 넣어 주세요"
     return {"value": "", "how": "", "confirm": False, "why": why}

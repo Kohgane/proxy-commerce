@@ -187,7 +187,8 @@ def test_route_builds_and_respects_brand_position():
     seller = "u-f53-route"
     c, iid = _client(seller), _seed(seller)
     d = c.get(f"/seller/collect/preview/{iid}/coupang-name").get_json()
-    assert d["ok"] and d["name"] == "SPORTLINK 3in1 애플워치 충전 거치대 (에어팟 겸용)" and d["source"] == "rule"
+    # T3(오너 2026-10-02): 상표는 원문에 있어도 「○○ 호환」으로만 — 애플워치 → 애플워치 호환
+    assert d["ok"] and d["name"] == "SPORTLINK 3in1 애플워치 호환 충전 거치대 (에어팟 겸용)" and d["source"] == "rule"
     assert d["brand_pos"] == "front" and d["title_warnings"]
     assert c.post("/seller/coupang/brand-pos", json={"category": "DIG", "pos": "back"}).get_json()["ok"]
     d = c.get(f"/seller/collect/preview/{iid}/coupang-name").get_json()
