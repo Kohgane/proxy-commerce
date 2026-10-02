@@ -369,10 +369,17 @@ except Exception:  # pragma: no cover - 브리지 모듈 부재 시 안전 폴�
 SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce", "shopify"]
 
 
-def smartstore_approved() -> bool:
-    """v61 STEP3: 스마트스토어(네이버 커머스솔루션) 승인 여부. 승인 전엔 업로드 시도 차단.
-    승인 완료 시 관리자가 SMARTSTORE_APPROVED=1(또는 true/yes) 설정으로 오픈."""
-    return str(os.getenv("SMARTSTORE_APPROVED", "")).strip().lower() in ("1", "true", "yes", "on")
+def smartstore_approved(store: str = "") -> bool:
+    """v61 STEP3: 스마트스토어(네이버 커머스솔루션) 승인 여부. 승인 완료 시 관리자가 SMARTSTORE_APPROVED=1.
+    U0b: 스토어별 `SMARTSTORE_<STORE>_APPROVED`가 있으면 그것(셰고가·고코스모스가 따로 승인된다)."""
+    from .smartstore_routing import approved
+    if not store:
+        try:
+            from .market_cred_view import current_naver_account
+            store = current_naver_account()
+        except Exception:
+            store = ""
+    return approved(store)
 
 # 마켓 표시명
 MARKET_LABELS = {
@@ -384,21 +391,28 @@ MARKET_LABELS = {
     # U0(오너 2026-10-02): 쿠팡 두 계정 — 마켓 코드 `coupang:<계정>`(그 마켓 한 건 동안 그 계정 키·출고지·반품지)
     "coupang:gogane": "쿠팡 — 고가네",
     "coupang:woojoo": "쿠팡 — 우주대행",
+    # U0b(오너 2026-10-02 정정): 스마트스토어 두 스토어 — 셰고가(고가네 축) · 고코스모스(우주대행 축)
+    "smartstore:chezgoga": "스마트스토어 — 셰고가",
+    "smartstore:gocosmos": "스마트스토어 — 고코스모스",
 }
 COUPANG_ACCOUNT_CODES = ("coupang:gogane", "coupang:woojoo")
+SMARTSTORE_STORE_CODES = ("smartstore:chezgoga", "smartstore:gocosmos")
+ACCOUNT_MARKET_CODES = COUPANG_ACCOUNT_CODES + SMARTSTORE_STORE_CODES
 
 
 def _market_code_ok(code: str) -> bool:
-    return code in SUPPORTED_MARKETS or code in COUPANG_ACCOUNT_CODES
+    return code in SUPPORTED_MARKETS or code in ACCOUNT_MARKET_CODES
 
 
 def _for_market(code: str):
     """마켓 코드 → (기본 마켓, 계정 컨텍스트). `coupang:woojoo`면 그 계정으로 한 건을 처리한다."""
     from contextlib import nullcontext
-    from src.seller_console.market_cred_view import coupang_account, split_market
+    from src.seller_console.market_cred_view import coupang_account, naver_account, split_market
     base, acct = split_market(code)
     if base == "coupang" and acct:
         return base, coupang_account(acct)
+    if base == "smartstore" and acct:
+        return base, naver_account(acct)
     return code, nullcontext()
 
 # 마켓별 필수 환경변수 (사전검증용)
@@ -678,7 +692,7 @@ class UploadDispatcher:
         results = []
         for market in markets:
             base, ctx = _for_market(market)
-            if base != market and market not in COUPANG_ACCOUNT_CODES:
+            if base != market and market not in ACCOUNT_MARKET_CODES:
                 base, ctx = market, _for_market("")[1]          # 모르는 계정 → 아래에서 「지원하지 않는 마켓」
             with ctx:
                 r = self._prevalidate_market(product_data, base)
@@ -797,13 +811,33 @@ class UploadDispatcher:
         # v61 STEP3: 스마트스토어 약관 준수 게이트 — 커머스솔루션 승인 전에는 업로드 시도 자체 차단
         #   (토큰 발급·실패 노출 금지). SMARTSTORE_APPROVED=1(env 또는 admin 토글) 시에만 활성.
         if market == "smartstore" and not smartstore_approved():
+            # U0b(오너 2026-10-02 정정): 미승인 스토어는 **보류**로 보인다(막힘이 아니라 기다리는 것) — 전송은 안 한다.
+            from .market_cred_view import current_naver_account
+            from .smartstore_routing import store_label
+            _st = current_naver_account()
             return PrevalidationResult(
                 market=market,
                 ok=False,
+                hold=True,
                 error_code="smartstore_pending_review",
-                message="스마트스토어는 심사중입니다 — 커머스솔루션 승인 후 오픈됩니다.",
-                hint="네이버 커머스솔루션 승인 완료 후 관리자가 오픈합니다(현재는 등록 시도가 차단됩니다).",
+                message=(f"{store_label(_st)} — " if _st else "") + "커머스API 미승인 — 신청 대기",
+                hint="네이버 커머스API 승인이 나면 관리자가 그 스토어를 엽니다(그 전엔 보내지 않아요).",
             )
+        if market == "smartstore":
+            from .market_cred_view import current_naver_account
+            from . import smartstore_routing as _sr
+            _st = current_naver_account()
+            _ph = _sr.price_hold(product_data)
+            if _ph:
+                return PrevalidationResult(market=market, ok=False, hold=True, error_code="smartstore_price_floor",
+                                           message=_ph, hint="기준은 관리자 규칙표(smartstore_routing)에서 바꿀 수 있어요.")
+            if _st:
+                _lim = _sr.limit_state(_st)
+                if _lim["full"]:
+                    return PrevalidationResult(
+                        market=market, ok=False, hold=True, error_code="smartstore_limit_full",
+                        message=f"등록 한도 꽉 참 — {_lim['text']}",
+                        hint="스토어당 판매중·판매대기·품절 합계 1,000이 상한이에요 — 자리가 생기면 다시 사전검증해 주세요.")
 
         # 토큰/환경변수 검증
         required_envs = _MARKET_REQUIRED_ENVS.get(market, [])
@@ -1039,6 +1073,13 @@ class UploadDispatcher:
 
     def _dispatch_one(self, product_data: Dict[str, Any], market: str) -> "UploadResult":
         """한 마켓 — 표시광고 게이트 → 마켓별 판매가 → 업로드. (U0: 계정 컨텍스트 안에서 불린다)"""
+        # U0b: 스마트스토어 미승인·한도 꽉 참·고단가 기준 미달은 사전검증과 **같은 판정**으로 전송 전 보류(직접 호출 우회 0).
+        if market == "smartstore":
+            _pv = self._prevalidate_market(product_data, market)
+            if not _pv.ok and _pv.error_code in ("smartstore_pending_review", "smartstore_limit_full",
+                                                 "smartstore_price_floor"):
+                return UploadResult(market=market, success=False, error_code=_pv.error_code,
+                                    message=f"전송 전에 보류했습니다 — {_pv.message}", hint=_pv.hint)
         # T1-c: 표시광고 위험 문구 — 사전검증과 **같은 판정**으로 전송도 막는다(직접 호출 우회 0).
         _ad = self._ad_claim_hits(product_data, market)
         if _ad:
