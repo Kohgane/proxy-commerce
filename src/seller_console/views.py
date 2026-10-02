@@ -2016,7 +2016,9 @@ def coupang_preview_data(item: dict) -> dict:
         pass
     if form and form.get("ok"):
         out.update(category=str(form.get("category") or ""), meta_ok=bool(form.get("meta_ok")),
-                   holds=list(form.get("holds") or []), notes=list(form.get("notes") or []))
+                   holds=list(form.get("holds") or []), notes=list(form.get("notes") or []),
+                   # S3: 자동으로 붙인 옵션 축(폰 미리보기에도 「자동 매핑 — 확인」)
+                   auto_axes=[a for a in (form.get("axis_names") or []) if a.get("confirm") and a.get("meta")])
         items = form.get("items") or []
         out["items"] = [{"label": str(i.get("label") or " / ".join(i.get("spec") or []) or "(이름 없음)"),
                          "price": i.get("sell_price_krw"), "stock": i.get("stock"),
@@ -2436,6 +2438,99 @@ def collect_receive():
     })
 
 
+from .upload_dispatcher import market_description  # noqa: E402 — S2: 드로어 미리보기·등록이 같은 함수
+
+
+def _ensure_outward(item: dict) -> dict:
+    """S1 — 등록에 나갈 장 중 **아직 우리 주소인 것**을 보내기 직전에 Cloudinary로 올린다(그 상품만).
+
+    원본은 `run_originals`(공급사에서 받아 올림 — 사이트 상대 경로는 소스 페이지 기준으로 폄),
+    번역본은 blob 바이트를 올리고 초안이 그 주소를 가리키게 한다(`run`과 같은 단계, 이 상품만).
+    CDN이 없으면 아무것도 안 한다 — 그 장은 아래 도달 확인이 이름을 대고 막는다(가짜 주소 0).
+    돌려주는 것은 **다시 읽은 행**(올린 주소가 반영된 것).
+    """
+    try:
+        from src.services import image_cdn_backfill as _cb
+        from src.services import image_translate_store as _its
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+        iid = str(item.get("id") or "")
+        missing = _its.outbound_missing(ex, item_id=iid)
+        if not missing or not _cb.cdn_ready():
+            return item
+        if any(p.get("source") != "translated" for p in missing):
+            _cb.run_originals([item], limit=20)
+        from src.db import image_ko_blobs_pg as _blobs
+        _run = _cb._stamp("send")
+        for p in missing:
+            if p.get("source") != "translated":
+                continue
+            raw, _ct = _blobs.get(iid, int(p["idx"]), kind=p["kind"])
+            if not raw:
+                continue
+            url, err = _cb._upload(raw, _cb._label(_run, iid, p["idx"], "TENCENT"))
+            if url:
+                _cb._point_entry_at_cdn(iid, int(p["idx"]), p["kind"], url)
+                _blobs.set_cdn(iid, int(p["idx"]), url, kind=p["kind"])
+            else:
+                logger.warning("[등록] 번역본 CDN 업로드 실패 item=%s idx=%s: %s", iid, p["idx"], err)
+        return _get_owned_item(iid) or item
+    except Exception as exc:
+        logger.warning("[등록] 보내기 전 CDN 올리기 건너뜀(도달 확인이 판정): %s", exc)
+        return item
+
+
+def _outbound_images(product_data: dict, item_id) -> tuple:
+    """등록에 **실제로 나갈** 이미지 배열을 만들고 마켓 관점 도달을 잰다 — `(product_data, warn_pages, reach)`.
+
+    등록(`/collect/upload`)과 사전검증(`/collect/prevalidate`)이 **같은 함수**를 지난다(S1).
+    `reach`는 `image_reachability.check_all` 결과(확인 자체가 실패하면 None — 막지 않는다).
+    """
+    _warn_pages = []
+    # D2: 마켓에 나가는 이미지는 **번역본 사용 토글을 반영한 배열**이다.
+    #   폼이 보낸 목록(사람이 방금 고친 원본 순서)을 기준으로, 저장된 토글을 서버가 매핑한다 —
+    #   화면과 서버가 각자 계산하면 「서랍은 한국어인데 마켓은 중국어」가 된다.
+    #   **원본 `images`는 건드리지 않는다**(저장 경로는 그대로 폼 값을 쓴다).
+    try:
+        if item_id:
+            _uit = _get_owned_item(item_id)
+            if _uit:
+                _uit = _ensure_outward(_uit)               # S1: 아직 우리 주소인 장은 지금 CDN으로
+                from src.services import image_translate_store as _its
+                _uex = json.loads(_uit.get("extra_json") or "{}") or {}
+                _eff = _its.effective_images(_uex, item_id=item_id,
+                                             originals=product_data.get("images") or [])
+                if _eff:
+                    product_data["images"] = _eff
+                    product_data["thumbnail"] = _eff[0]
+                _dt = _its.effective_images(
+                    _uex, kind="detail", item_id=item_id,
+                    originals=product_data.get("detail_images") or [])
+                if _dt:
+                    product_data["detail_images"] = _dt
+                # F42e: 상세에 **갤러리와 같은 장**이 섞여 있었다(실측: 상세 1·2 = 갤러리 1).
+                _g, _d = _its.drop_cross_duplicates(product_data.get("images") or [],
+                                                    product_data.get("detail_images") or [])
+                product_data["images"], product_data["detail_images"] = _g, _d
+                _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
+    except Exception as exc:
+        logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
+
+    # D2b: **외부 관점**으로 이미지가 열리는지 본다. 마켓은 우리 세션 쿠키가 없다.
+    try:
+        from src.services import image_reachability as _reach
+        _gal = list(product_data.get("images") or [])
+        _det = list(product_data.get("detail_images") or [])
+        # F28: **어느 장인지**를 결과에 달아 보낸다.
+        _labels = ([f"갤러리 {i + 1}번째" for i in range(len(_gal))]
+                   + [f"상세 {i + 1}번째" for i in range(len(_det))])
+        _rc = _reach.check_all(_gal + _det, labels=_labels)
+    except Exception as exc:
+        # 확인 자체가 실패하면 **막지 않는다** — 우리 네트워크 사정이 셀러의 벽이 되면 안 된다.
+        logger.warning("[등록] 도달성 확인 건너뜀: %s", exc)
+        _rc = None
+    return product_data, _warn_pages, _rc
+
+
 @bp.post("/collect/upload")
 def collect_upload():
     """마켓 업로드 트리거 (JSON).
@@ -2473,63 +2568,19 @@ def collect_upload():
         product_data = _build_product(_owned, edits=product_data, seller_id=_seller_id())
     product_data = _build_payload(product_data, _owned)
 
-    # D2: 마켓에 나가는 이미지는 **번역본 사용 토글을 반영한 배열**이다.
-    #   폼이 보낸 목록(사람이 방금 고친 원본 순서)을 기준으로, 저장된 토글을 서버가 매핑한다 —
-    #   화면과 서버가 각자 계산하면 「서랍은 한국어인데 마켓은 중국어」가 된다.
-    #   **원본 `images`는 건드리지 않는다**(저장 경로는 그대로 폼 값을 쓴다).
-    _warn_pages = []
-    try:
-        _uid = data.get("item_id")
-        if _uid:
-            _uit = _get_owned_item(_uid)
-            if _uit:
-                from src.services import image_translate_store as _its
-                _uex = json.loads(_uit.get("extra_json") or "{}") or {}
-                # (F40-b: 주소 채우기는 이 블록 **밖**으로 옮겼다 — 여기 except가 모든 예외를
-                #  삼켜서, 앞이 터지면 주소가 조용히 안 채워졌다. 위 `build_dispatch_payload` 참조.)
-                _eff = _its.effective_images(_uex, item_id=_uid,
-                                             originals=product_data.get("images") or [])
-                if _eff:
-                    product_data["images"] = _eff
-                    product_data["thumbnail"] = _eff[0]
-                _dt = _its.effective_images(
-                    _uex, kind="detail", item_id=_uid,
-                    originals=product_data.get("detail_images") or [])
-                if _dt:
-                    product_data["detail_images"] = _dt
-                # F42e: 상세에 **갤러리와 같은 장**이 섞여 있었다(실측: 상세 1·2 = 갤러리 1).
-                #   같은 사진을 세 번 올리면 상품 페이지가 같은 그림으로 찬다.
-                _g, _d = _its.drop_cross_duplicates(product_data.get("images") or [],
-                                                    product_data.get("detail_images") or [])
-                product_data["images"], product_data["detail_images"] = _g, _d
-                _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
-    except Exception as exc:
-        logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
-
-    # D2b: **외부 관점**으로 이미지가 열리는지 본다. 마켓은 우리 세션 쿠키가 없다 —
-    #   `/seller/collect/image-ko/…`는 로그인 게이트 뒤라 쿠팡이 받으러 오면 404를 본다.
-    #   우리 화면엔 잘 보이니까 **보내고 반려 통지로 알게 되는** 것이 기본값이었다.
-    try:
+    # S1(오너 2026-10-02): 이미지 배열·외부 도달 확인은 **사전검증과 같은 함수**(`_outbound_images`)를 지난다 —
+    #   R2와 같은 교훈: 사전검증 「통과」 뒤 등록에서 「우리 서버 주소」로 막히던 자리.
+    product_data, _warn_pages, _rc = _outbound_images(product_data, data.get("item_id"))
+    if _rc is not None and not _rc["ok"]:
+        logger.warning("[등록] 외부 도달성 실패 %s건: %s", len(_rc["bad"]),
+                       [(b["url"][:80], b["status"], b["reason"]) for b in _rc["bad"]])
+        # `user_message`: 이 문장은 **이미 셀러의 말**이다. 화면의 친절 처리기가
+        #   다시 번역하면(F28 실측: 「이미지 처리에 실패했어요 — 잠시 후 다시 시도」)
+        #   사유가 사라지고, 게다가 **틀린 조언**이 된다 — 다시 시도해도 똑같이 막힌다.
         from src.services import image_reachability as _reach
-        _gal = list(product_data.get("images") or [])
-        _det = list(product_data.get("detail_images") or [])
-        # F28: **어느 장인지**를 결과에 달아 보낸다. 「5장이 안 열린다」만으로는 셀러가
-        #   무엇을 고쳐야 하는지 모른다 — 장 번호가 없는 문장은 행동으로 못 옮긴다.
-        _labels = ([f"갤러리 {i + 1}번째" for i in range(len(_gal))]
-                   + [f"상세 {i + 1}번째" for i in range(len(_det))])
-        _rc = _reach.check_all(_gal + _det, labels=_labels)
-        if not _rc["ok"]:
-            logger.warning("[등록] 외부 도달성 실패 %s건: %s", len(_rc["bad"]),
-                           [(b["url"][:80], b["status"], b["reason"]) for b in _rc["bad"]])
-            # `user_message`: 이 문장은 **이미 셀러의 말**이다. 화면의 친절 처리기가
-            #   다시 번역하면(F28 실측: 「이미지 처리에 실패했어요 — 잠시 후 다시 시도」)
-            #   사유가 사라지고, 게다가 **틀린 조언**이 된다 — 다시 시도해도 똑같이 막힌다.
-            return jsonify({"ok": False, "error": _reach.message(_rc),
-                            "user_message": True, "step": "도달성 확인",
-                            "unreachable": _rc["bad"]}), 409
-    except Exception as exc:
-        # 확인 자체가 실패하면 **막지 않는다** — 우리 네트워크 사정이 셀러의 벽이 되면 안 된다.
-        logger.warning("[등록] 도달성 확인 건너뜀: %s", exc)
+        return jsonify({"ok": False, "error": _reach.message(_rc),
+                        "user_message": True, "step": "도달성 확인",
+                        "unreachable": _rc["bad"]}), 409
 
     # 금칙어가 걸린 번역본을 쓰는 경우 — **막지는 않되 응답에 실어** 화면이 확인 문구를 띄운다.
     #   조용히 올리면 반려 사유를 나중에 반려 통지로 알게 된다.
@@ -2566,25 +2617,10 @@ def collect_upload():
         #   즉 여기서 새어 나가도 가격 없는 초안은 거기서 막힌다. 그 사실이 없었다면 닫는 쪽이 맞다.
         logger.warning("보강 게이트 확인 실패(가격 게이트로 넘김): %s", _gexc)
 
-    # v87-W7 item2: 상세 병기 — 마켓에 보내는 상세는 **한국어 번역 + 구분선 + 원문**(원문 항상 보존).
-    #   저장 필드는 순수 유지, 전송 시점에만 합성. 편집본(product_data.description=번역/편집본)에 저장된
-    #   원문을 재읽어 병기. 둘이 같거나 원문 없으면 중복 없이 하나만(compose_bilingual).
-    try:
-        _iid = data.get("item_id")
-        if _iid:
-            from src.seller_console.ai.translator import compose_bilingual
-            _it = _get_owned_item(_iid)
-            _orig = ""
-            if _it:
-                try:
-                    _orig = (json.loads(_it.get("extra_json") or "{}") or {}).get("description") or ""
-                except Exception:
-                    _orig = ""
-            _bi = compose_bilingual(product_data.get("description") or "", _orig)
-            if _bi:
-                product_data["description"] = _bi
-    except Exception as _bexc:
-        logger.warning("상세 병기 합성 실패(원문 유지): %s", _bexc)
+    # S2(오너 2026-10-02): 마켓에 보내는 상세는 **한국어만**. 원문은 DB(`extra.description`)에만 보관한다.
+    #   (v87-W7의 「한국어+원문 병기」 전송은 중단 — 쿠팡 상세에 중국어 가게 문구가 그대로 실렸다.)
+    #   가게 통계·운영 줄(折扣店·好评率·平均N小时发货…)은 `detail_drop_lines`(원격 JSON)로 뺀다. 전 마켓 같은 규칙.
+    #   (적용 자리는 `build_dispatch_payload` 한 곳 — 단건·일괄·재등록 공통. 위에서 이미 지났다.)
 
     # Phase 190: target_margin_pct를 payload에 반영 (마진율 실반영)
     target_margin_pct = data.get("target_margin_pct")
@@ -2698,11 +2734,23 @@ def collect_prevalidate():
         return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
 
     try:
-        from .upload_dispatcher import MARKET_LABELS
+        from .upload_dispatcher import MARKET_LABELS, PrevalidationResult
         from . import market_credentials as mc
 
+        # S1(오너 2026-10-02): 등록이 보낼 **그 이미지 배열**로 재고, 마켓 관점 도달도 **여기서** 본다 —
+        #   예전엔 사전검증 「통과」 뒤 등록에서야 「상세 1번째 — 우리 서버 주소」로 막혔다(R2와 같은 교훈).
+        product_data, _wp, _rc = _outbound_images(dict(product_data), data.get("item_id"))
         with mc.seller_market_env(_seller_id(), markets):
             results = dispatcher.prevalidate(product_data, markets)
+        if _rc is not None and not _rc["ok"]:
+            from src.services import image_reachability as _reach
+            _lines = [_reach.describe(b) for b in _rc["bad"][:8]]
+            results = [r if not r.ok else PrevalidationResult(   # 다른 사유로 이미 멈춘 마켓은 그 사유 그대로
+
+                market=r.market, ok=False, error_code="image_unreachable",
+                message=_reach.message(_rc).split(" (")[0],
+                hint="마켓 서버가 이 주소로 이미지를 받으러 와도 열리지 않습니다 — 그 장을 빼거나 다른 장으로 바꿔 주세요.",
+                details=_lines) for r in results]
         return jsonify({
             "ok": True,
             "results": [
@@ -7832,10 +7880,17 @@ def collect_preview_by_id(item_id: str):
             extra = dict(extra, translated=True)      # R0: 표시만 보정(저장값은 안 건드림)
     except Exception:
         pass
+    try:                                            # S2: 마켓 전송 미리보기 = 등록이 보내는 그 함수
+        from src.collectors import ko_polish as _kp_s2
+        _d_src = str((extra or {}).get("description_ko") or (extra or {}).get("description") or "")
+        market_desc_preview = market_description(_d_src)
+        market_desc_dropped = _kp_s2.drop_detail_lines(_d_src)[1]
+    except Exception:
+        market_desc_preview, market_desc_dropped = "", []
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
-        "collect_preview.html",
+        "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         field_src=field_src,
         page="collect_history",
         item=item,

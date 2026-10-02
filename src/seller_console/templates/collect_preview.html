@@ -195,18 +195,15 @@
                   placeholder="상품 상세 설명을 입력하세요 (소재·사이즈·사용법 등). 비워두면 저장되지 않아요."
                   oninput="updateDescCount(); hideAiDraftBadge();"></textarea>
         <div id="aiDescHint" class="form-text" style="display:none;"></div>
-        {# v87-W7 item2: 마켓 전송 미리보기(병기) — 한국어 번역 상단 + 구분선 + 원문 하단(원문 항상 보존).
-           읽기 전용. 실제 마켓 등록 시 이 병기본이 나갑니다. 번역/원문이 같으면 하나만. #}
-        {% set _ko = (extra.get('description_ko') if extra else '') or '' %}
+        {# S2(오너 2026-10-02): 마켓에는 **한국어만** 나간다(원문은 보관만). 가게 통계·운영 줄은 빠진 채로 보여 준다 —
+           미리보기는 등록이 보내는 그 함수(`market_description`)의 결과다. #}
         {% set _orig = (extra.get('description') if extra else '') or '' %}
-        {% if _orig and _ko and _ko|trim != _orig|trim %}
-        <details class="mt-2 small kgp-inset">
-          <summary style="cursor:pointer;font-weight:600"><i class="bi bi-layout-split" style="color:var(--teal)"></i> 마켓 전송 미리보기 — 한국어+원문 병기</summary>
-          <div class="mt-2" style="white-space:pre-wrap;color:var(--ink-soft);font-size:.86rem;line-height:1.55">{{ _ko|trim }}
-
-───────── 원문 (Original) ─────────
-{{ _orig|trim }}</div>
-          <p class="text-muted mb-0 mt-1" style="font-size:.74rem">원문은 항상 보존됩니다. 마켓 등록 시 위 병기본(한국어+원문)이 전송돼요.</p>
+        {% if market_desc_preview or _orig %}
+        <details class="mt-2 small kgp-inset" data-role="market-desc-preview">
+          <summary style="cursor:pointer;font-weight:600"><i class="bi bi-layout-split" style="color:var(--teal)"></i> 마켓 전송 미리보기 — 한국어만</summary>
+          <div class="mt-2" style="white-space:pre-wrap;color:var(--ink-soft);font-size:.86rem;line-height:1.55">{{ market_desc_preview or '(한국어 상세가 아직 없어요 — 위 「한국어로 번역」을 누르거나 직접 써 주세요)' }}</div>
+          {% if market_desc_dropped %}<p class="text-muted mb-0 mt-1" style="font-size:.74rem" data-role="market-desc-dropped">가게 소개 줄 {{ market_desc_dropped|length }}개는 빼고 보내요: {{ market_desc_dropped[:5]|join(' · ') }}</p>{% endif %}
+          <p class="text-muted mb-0 mt-1" style="font-size:.74rem">원문은 보관만 하고 마켓엔 보내지 않아요(모든 마켓 같음).</p>
         </details>
         {% endif %}
       </div>
@@ -1639,6 +1636,11 @@ function kgpRenderCoupangOptions(d) {
     h += '<div class="mt-2" data-role="cp-resolved">' + d.resolved.map(r =>
       `<div>${esc(r.orig)} → <b>${esc(r.value)}</b>${kgpCpConfirm([r])}</div>`).join('') + '</div>';
   }
+  // S3: 옵션 축 이름을 메타 속성에 **자동으로** 붙였으면 그 사실을 보여 준다(오너가 확인만 — 고를 필요 0).
+  (d.axis_names || []).filter(a => a.confirm && a.meta).forEach(a => {
+    h += `<div class="mt-1" data-role="cp-auto-axis">「${esc(a.orig)}」 → <b>${esc(a.meta)}</b> ` +
+      '<span class="pc-badge pc-badge-off">자동 매핑 — 확인</span></div>';
+  });
   if ((d.holds || []).length) {
     h += '<div class="text-danger mt-2" data-role="cp-holds">지금 상태로는 멈춥니다:<ul class="mb-0 ps-3">' +
       d.holds.map(x => `<li>${esc(x)}</li>`).join('') + '</ul></div>';
@@ -1973,7 +1975,7 @@ async function runPrevalidate() {
     const resp = await fetch('/seller/collect/prevalidate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({product: buildProductData(), markets}),
+      body: JSON.stringify({product: buildProductData(), markets, item_id: _ITEM_ID}),
     });
     const data = await resp.json();
     btn.disabled = false;

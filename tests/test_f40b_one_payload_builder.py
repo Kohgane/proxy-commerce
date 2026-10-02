@@ -176,5 +176,8 @@ def test_the_single_path_does_not_refill_inside_the_block():
 def test_the_fill_is_logged_so_the_next_canary_can_see_it():
     """★ F40이 남긴 규율 — 고른 주소를 로그에 남긴다(URL이라 마스킹 대상이 아니다)."""
     # 「로그를 남기나」는 **호출**로, 「무엇을 남기나」는 **그 코드가 쓰는 값**으로 잰다.
-    assert "info" in calls_in(build_dispatch_payload)
-    assert any("url=%s" in s for s in string_constants_in(build_dispatch_payload))
+    # S2(2026-10-02): 공개 이름은 상세 규칙을 얹는 겉 함수 — 주소 채우기·로그는 안쪽 빌더(`_build_dispatch_payload`).
+    from src.seller_console.upload_dispatcher import _build_dispatch_payload
+    assert "_build_dispatch_payload" in calls_in(build_dispatch_payload)
+    assert "info" in calls_in(_build_dispatch_payload)
+    assert any("url=%s" in s for s in string_constants_in(_build_dispatch_payload))

@@ -85,7 +85,7 @@ def save_rules_override(r: dict | None) -> None:
         for k in ("replace", "colors", "replace_ko"):
             if k in r and not all(isinstance(x, list) and len(x) == 2 for x in r[k]):
                 raise ValueError(f"{k}는 [원문, 한국어] 쌍 목록이어야 합니다")
-        for k in ("price_re", "ban_ko", "ban_cn", "promo_img"):
+        for k in ("price_re", "ban_ko", "ban_cn", "promo_img", "detail_drop_lines"):
             for p in r.get(k) or []:
                 try:
                     re.compile(p)
@@ -182,6 +182,34 @@ def polish_ko(text: str, *, hits: dict | None = None) -> str:
             if hits is not None:
                 hits.setdefault("delete", []).append("문장 꼬리")
     return _tidy(s)
+
+
+def drop_detail_lines(text: str) -> tuple:
+    """S2(오너 2026-10-02) — 상세 본문에서 **가게 통계·운영 줄**을 뺀다 → `(남은 글, 뺀 조각들)`.
+
+    실측: 병기본에 「褶衣折扣店/4.8/88VIP好评率98%/平均12小时发货/客服平均10秒回复」가 번역돼 그대로 실렸다 —
+    상품이 아니라 **가게** 이야기다. 표는 `detail_drop_lines`(원격 JSON). 한 줄이 `/`·`|`로 이어져 있으면
+    **걸린 조각만** 빼고 나머지 조각은 남긴다(상품 문장을 통째로 잃지 않게). 다 빠진 줄은 줄째 지운다.
+    """
+    pats = [re.compile(p) for p in (rules().get("detail_drop_lines") or [])]
+    if not pats:
+        return str(text or ""), []
+    dropped: List[str] = []
+    out_lines = []
+    for line in str(text or "").split("\n"):
+        if not any(p.search(line) for p in pats):
+            out_lines.append(line)
+            continue
+        segs = re.split(r"\s*[/|｜]\s*", line)
+        keep = []
+        for seg in segs:
+            if seg.strip() and any(p.search(seg) for p in pats):
+                dropped.append(seg.strip())
+            elif seg.strip():
+                keep.append(seg.strip())
+        if keep:
+            out_lines.append(" / ".join(keep))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out_lines)).strip(), dropped
 
 
 def ban_hits(text: str) -> List[str]:
