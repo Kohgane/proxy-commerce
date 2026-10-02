@@ -31,7 +31,7 @@ class TestPrevalidateEnvAliases:
 
     def _prevalidate(self, market):
         from src.seller_console.upload_dispatcher import UploadDispatcher
-        prod = {"title": "T", "sell_price_krw": 19900, "price": 19900, "currency": "KRW"}
+        prod = {"title": "T", "sell_price_krw": 19900, "price": 19900, "currency": "KRW", "images": ["/seller/static/icon-512.png"]}
         return UploadDispatcher().prevalidate(prod, [market])[0]
 
     def test_woocommerce_accepts_woo_names(self, monkeypatch):

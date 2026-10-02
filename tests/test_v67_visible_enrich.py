@@ -21,13 +21,14 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.164"
+    assert MANIFEST["version"] == "1.5.165"
 
 
 def test_window_mode_source_contract():
-    # 소형 창(popup) 기반 보강 + 모드 설정.
-    assert 'chrome.windows.create({ url: item.url, type: "popup", width: 480, height: 640' in BG
-    assert 'enrichMode: localData.kgp_enrich_mode || "window"' in BG
+    # R1(오너 2026-10-01): 보이는 소형 창(popup) → 기본 **백그라운드 탭**(포커스 변경 0), 최소화 창은 선택.
+    assert 'chrome.windows.create({ url: url, state: "minimized", focused: false })' in BG
+    assert 'type: "popup"' not in BG
+    assert 'enrichMode: localData.kgp_enrich_mode || "background"' in BG
     assert "chrome.windows.remove" in BG
     # 팝업 설정.
     assert 'id="enrichMode"' in Path("extensions/chrome-collector/popup.html").read_text(encoding="utf-8")

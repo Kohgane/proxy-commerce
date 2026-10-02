@@ -2017,9 +2017,11 @@ function renderPrevalidateResults(results) {
   let html = `<div class="mb-2 text-muted small">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
+    // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).
     const badge = r.ok
       ? '<span class="pc-badge pc-badge-on">통과</span>'
-      : '<span class="pc-badge pc-badge-danger">실패</span>';
+      : (r.hold ? '<span class="pc-badge pc-badge-off" data-role="prevalidate-hold">보류</span>'
+                : '<span class="pc-badge pc-badge-danger">실패</span>');
     // F35-2: 「닿나」를 잰 마켓은 걸린 시간을 적는다. 안 잰 마켓을 「빠르다」로 읽지 않게
     //   아무 표시도 하지 않는다(측정 안 한 것을 통과의 근거로 쓰지 않는다).
     let reach = '';

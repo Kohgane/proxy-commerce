@@ -149,13 +149,13 @@ def test_saved_credentials_make_the_coupang_precheck_pass(clean_env, tmp_path):
     with patch.object(mc, "_pg_links", return_value=None):   # 파일 저장소로 고정
         mc.save("seller-1", "coupang", dict(FULL_COUPANG))
         # 저장 전에는 막힌다 — 게이트가 살아 있다는 뜻이다.
-        blocked = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900},
+        blocked = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]},
                                                  ["coupang"])[0]
         assert blocked.ok is False and blocked.error_code == "token_missing"
 
         # 등록 경로가 실제로 쓰는 그 주입으로 다시 잰다.
         with mc.seller_market_env("seller-1", ["coupang"]):
-            passed = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900},
+            passed = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]},
                                                     ["coupang"])[0]
     assert passed.ok is True, passed.hint
 
@@ -171,7 +171,7 @@ def test_one_missing_shipping_field_still_blocks(clean_env, tmp_path):
     with patch.object(mc, "_pg_links", return_value=None):
         mc.save("seller-2", "coupang", partial)
         with mc.seller_market_env("seller-2", ["coupang"]):
-            res = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900},
+            res = UploadDispatcher().prevalidate({"title": "수행방패", "price": 9900, "images": ["/seller/static/icon-512.png"]},
                                                  ["coupang"])[0]
     assert res.ok is False
     assert "반품지 우편번호" in res.hint and "COUPANG_" not in res.hint    # M1-1: 칸 이름(연동 화면 라벨)만

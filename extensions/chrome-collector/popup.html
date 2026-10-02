@@ -69,13 +69,21 @@
 
     <!-- v67 STEP2: 상세 보강 렌더 모드(테무 1/5 근원 — 백그라운드 탭 스로틀 대응) -->
     <label class="fab-toggle" id="enrichModeWrap" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding:9px 12px;background:#f8f6f0;border-radius:8px;font-size:12.5px;font-weight:600">
-      <span>상세 보강 방식</span>
-      <select id="enrichMode" style="font-size:12.5px;font-weight:600;padding:4px 8px;border:1px solid #d8d0c0;border-radius:6px;background:#fff;cursor:pointer">
-        <option value="window">소형 창(렌더 보장)</option>
-        <option value="tab-activate">탭 활성화</option>
-        <option value="background">백그라운드 탭</option>
+      <span style="white-space:nowrap">상세 보강 방식</span>
+      <select id="enrichMode" title="백그라운드 탭은 작업 중인 창의 포커스를 뺏지 않습니다. 최소화 창은 만들 때 포커스가 잠깐 바뀔 수 있어요." style="min-width:0;font-size:12.5px;font-weight:600;padding:4px 8px;border:1px solid #d8d0c0;border-radius:6px;background:#fff;cursor:pointer">
+        <option value="background">백그라운드 탭(권장)</option>
+        <option value="minimized">최소화 창(포커스 바뀜)</option>
       </select>
     </label>
+
+    <!-- R1: 보강 잠시 멈춤(1시간) + 진행 수 — 보강은 화면에 창을 띄우지 않고, 포커스를 뺏지 않는다. -->
+    <div id="enrichPauseWrap" style="margin-top:8px;padding:9px 12px;background:#f8f6f0;border-radius:8px;font-size:12.5px">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600;cursor:pointer">
+        <span>보강 잠시 멈춤(1시간)</span>
+        <input type="checkbox" id="enrichPause1h" style="width:36px;height:20px;cursor:pointer">
+      </label>
+      <div id="enrichPauseNote" data-role="enrich-progress" style="margin-top:3px;color:#7a726a;font-size:11.5px">보강 대기 확인 중…</div>
+    </div>
 
     <!-- v54 STEP2: 자가진단 모드 — 상품 API 응답을 스스로 찾도록 콘솔 표 출력 -->
     <label class="fab-toggle" id="diagToggleWrap" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding:9px 12px;background:#f8f6f0;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">

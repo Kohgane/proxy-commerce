@@ -248,7 +248,10 @@ if (btnDiagBundle) {
 // v67 STEP2: 상세 보강 렌더 모드(소형 창/탭 활성화/백그라운드) — background가 getSettings로 읽음.
 const enrichMode = document.getElementById("enrichMode");
 if (enrichMode) {
-  chrome.storage.local.get("kgp_enrich_mode", (r) => { enrichMode.value = (r && r.kgp_enrich_mode) || "window"; });
+  // R1: 옛 값(window·tab-activate — 화면에 뜨거나 포커스를 뺏던 방식)은 백그라운드 탭으로 보인다(background.js가 그렇게 읽는다).
+  chrome.storage.local.get("kgp_enrich_mode", (r) => {
+    enrichMode.value = (r && r.kgp_enrich_mode === "minimized") ? "minimized" : "background";
+  });
   enrichMode.addEventListener("change", () => { kgpPopupSet({ kgp_enrich_mode: enrichMode.value }); });
 }
 
@@ -514,3 +517,28 @@ try {
     chrome.storage.local.get("kgp_update", (r) => kgpRenderUpdate(r && r.kgp_update));
   });
 } catch (e) { /* noop */ }
+
+// R1: 「보강 잠시 멈춤(1시간)」 토글 + 진행 수. 멈춤 = kgp_enrich_pause_until(ms) — background가 폴링·큐를 쉰다.
+(function () {
+  const box = document.getElementById("enrichPause1h");
+  const note = document.getElementById("enrichPauseNote");
+  if (!box || !note) return;
+  let pausedUntil = 0, snap = null;
+  function render() {
+    const now = Date.now();
+    const parts = [];
+    if (pausedUntil > now) parts.push("멈춤 — " + Math.ceil((pausedUntil - now) / 60000) + "분 남음");
+    if (snap && snap.total) parts.push("진행 " + snap.done + "/" + snap.total + (snap.queued ? " · 대기 " + snap.queued : ""));
+    else parts.push("지금 보강할 상품 없음");
+    note.textContent = parts.join(" · ");
+    box.checked = pausedUntil > now;
+  }
+  chrome.storage.local.get("kgp_enrich_pause_until", (r) => { pausedUntil = Number((r && r.kgp_enrich_pause_until) || 0); render(); });
+  try { chrome.runtime.sendMessage({ action: "enrichState" }, (s) => { if (!chrome.runtime.lastError) { snap = s; render(); } }); } catch (e) {}
+  try { chrome.runtime.onMessage.addListener((m) => { if (m && m.action === "enrichProgress") { snap = m.state; render(); } return false; }); } catch (e) {}
+  box.addEventListener("change", () => {
+    pausedUntil = box.checked ? Date.now() + 60 * 60 * 1000 : 0;
+    kgpPopupSet({ kgp_enrich_pause_until: pausedUntil });
+    render();
+  });
+})();

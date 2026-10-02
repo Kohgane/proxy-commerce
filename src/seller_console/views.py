@@ -2143,12 +2143,27 @@ _IPHONE_SHOTS_DIR = os.path.join(os.path.dirname(__file__), "static", "help", "i
 
 
 def _iphone_shots(keys) -> dict:
-    out = {}
+    """`{자리: 주소}` + `_dups`(R3). 같은 파일(내용 해시 같음)을 여러 자리에 올렸으면 **첫 자리만** 사진을 띄우고
+    나머지 자리는 `_dups[자리] = 첫 자리`로 「같은 사진 — C1 참고」라고 말한다(같은 사진 넷이 줄줄이 뜨지 않게)."""
+    import hashlib
+    out, seen, dups = {}, {}, {}
     for k in keys:
         for ext in ("png", "jpg", "webp"):
-            if os.path.exists(os.path.join(_IPHONE_SHOTS_DIR, f"{k}.{ext}")):
-                out[k] = f"/seller/static/help/iphone/{k}.{ext}"
+            path = os.path.join(_IPHONE_SHOTS_DIR, f"{k}.{ext}")
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        h = hashlib.md5(f.read()).hexdigest()
+                except OSError:
+                    h = ""
+                if h and h in seen:
+                    dups[k] = seen[h]
+                else:
+                    if h:
+                        seen[h] = k
+                    out[k] = f"/seller/static/help/iphone/{k}.{ext}"
                 break
+    out["_dups"] = dups
     return out
 
 
@@ -2706,6 +2721,8 @@ def collect_prevalidate():
                     "details": list(getattr(r, "details", None) or []),
                     # M1-1 — 고치러 갈 화면(마켓 연동 › 그 마켓). env 이름은 싣지 않는다.
                     "action_url": getattr(r, "action_url", "") or "",
+                    # R2 — 재료가 덜 와서 멈춘 것(보강·번역하면 풀린다). 화면은 「막힘」 대신 「보류」.
+                    "hold": bool(getattr(r, "hold", False)),
                 }
                 for r in results
             ],

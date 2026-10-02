@@ -20,14 +20,14 @@ MANIFEST = json.loads(Path("extensions/chrome-collector/manifest.json").read_tex
 
 
 def test_manifest_bumped():
-    assert MANIFEST["version"] == "1.5.164"
+    assert MANIFEST["version"] == "1.5.165"
 
 
 def test_source_contract():
     # 소형 창 미가용/실패 → 백그라운드 탭 폴백(조용한 실패 금지).
     assert "chrome.windows && chrome.windows.create" in BG
-    assert "소형 창 실패 → 백그라운드 탭 폴백" in BG
-    assert "const tab = await chrome.tabs.create({ url: item.url, active: false });" in BG
+    assert "최소화 창 실패 → 백그라운드 탭" in BG                       # R1: 소형 창 → 최소화 창
+    assert "const tab = await chrome.tabs.create({ url: url, active: false });" in BG
     # 창은 떴는데 tabs 미포함 시 창 탭 id 조회.
     assert "chrome.tabs.query({ windowId: win.id })" in BG
     # 테무 성공 기준 미달이면 정직 실패(보강 완료 처리 안 함).
@@ -47,7 +47,8 @@ def _fn(name):
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치")
 def test_enrich_window_fallback_and_gate_node():
     # F49-T: 보강 본문은 `_kgpEnrichBody` **한 곳**에서 만든다(대기열·초안 채우기 공용) — 같이 잘라 온다.
-    deps = _fn("_kgpEnrichVerdict") + "\n" + _fn("_kgpEnrichBody") + "\n" + _fn("_kgpEnrichOne")
+    deps = "\n".join(_fn(n) for n in ("_kgpEnrichVerdict", "_kgpEnrichBody", "_kgpEnrichModeOf",
+                                        "_kgpOpenHidden", "_kgpCloseHidden", "_kgpEnrichOne"))
     harness = deps + "\n" + r"""
 var calls = {};
 function reset(){ calls = { winCreate:0, winRemove:0, tabCreate:0, tabCreateActive:null, tabRemove:0, fetch:0 }; }
@@ -69,7 +70,7 @@ async function _kgpWaitTabComplete(){}
 async function _kgpSendTab(){ return META; }
 global.fetch = async function(){ calls.fetch++; return { ok:true, json: async function(){ return { ok:true }; } }; };
 global.console = { warn: function(){}, log: function(){}, error: function(){} };
-var S = { enrichMode:"window", serverUrl:"http://x", token:"t" };
+var S = { enrichMode:"minimized", serverUrl:"http://x", token:"t" };   // R1: 창 경로(최소화 창 — 선택)의 폴백을 잰다
 
 (async function(){
   var out = {};

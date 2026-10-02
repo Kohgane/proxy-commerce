@@ -26,7 +26,7 @@ MANIFEST = json.loads((ROOT / "extensions/chrome-collector/manifest.json").read_
 
 def test_manifest_unchanged():
     # STEP3은 판정 회수(보강 큐 검증 테스트만) — 확장 코드 불변 → 버전 유지(정직).
-    assert MANIFEST["version"] == "1.5.164"
+    assert MANIFEST["version"] == "1.5.165"
 
 
 # ── source-contract: 진행률 표기(0/N → done/total · 완료) + 서버 보강 배선 ──
@@ -64,6 +64,8 @@ def test_enrich_queue_completes_7_of_7_node():
         "async function getSettings(){ return {}; }\n"
         "function _kgpSleep(){ return Promise.resolve(); }\n"
         "function _kgpEnrichDelayMs(){ return 0; }\n"
+        "async function _kgpPausedUntil(){ return 0; }\n"                  # R1: 1시간 멈춤 아님
+        "async function _kgpReportBlocked(){ return null; }\n"
         + kgp + "\n" + snap + "\n" + bcast + "\n" + loop + "\n" + start + "\n"
         "(async () => {\n"
         "  var resp=null; handleEnrichStart("

@@ -138,7 +138,7 @@ class TestPrevalidate:
         monkeypatch.delenv("COUPANG_SECRET_KEY", raising=False)
         monkeypatch.delenv("COUPANG_VENDOR_ID", raising=False)
 
-        product = {"title": "테스트 상품", "title_en": "Umbrella", "price": 10000}
+        product = {"title": "테스트 상품", "title_en": "Umbrella", "price": 10000, "images": ["/seller/static/icon-512.png"]}
         results = self._dispatcher().prevalidate(product, ["coupang"])
         assert len(results) == 1
         assert results[0].ok is False
@@ -168,7 +168,7 @@ class TestPrevalidate:
         """필수 필드 + 환경변수 모두 있으면 통과."""
         self._set_coupang_envs(monkeypatch)
 
-        product = {"title": "좋은 상품", "title_en": "Umbrella", "price": 9900}
+        product = {"title": "좋은 상품", "title_en": "Umbrella", "price": 9900, "images": ["/seller/static/icon-512.png"]}
         results = self._dispatcher().prevalidate(product, ["coupang"])
         assert results[0].ok is True
 
@@ -185,7 +185,7 @@ class TestPrevalidate:
         monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
 
         # 캐너리 사전 점검(2026-09-28): 사전검증이 판매가도 잰다 — 통화 없는 원가는 판매가를 못 낸다.
-        product = {"title": "test", "price": 100, "currency": "USD"}
+        product = {"title": "test", "price": 100, "currency": "USD", "images": ["/seller/static/icon-512.png"]}
         results = self._dispatcher().prevalidate(product, ["shopify"])
         assert results[0].ok is True
 
@@ -195,7 +195,7 @@ class TestPrevalidate:
         monkeypatch.delenv("SHOPIFY_AUTO_TOKEN", raising=False)
         monkeypatch.delenv("SHOPIFY_ACCESS_TOKEN", raising=False)
 
-        product = {"title": "test", "price": 100}
+        product = {"title": "test", "price": 100, "images": ["/seller/static/icon-512.png"]}
         results = self._dispatcher().prevalidate(product, ["shopify"])
         assert results[0].ok is False
         assert results[0].error_code == "token_missing"
@@ -206,7 +206,7 @@ class TestPrevalidate:
         monkeypatch.setenv("SHOPIFY_AUTO_TOKEN", "atk_ok")
         monkeypatch.delenv("COUPANG_ACCESS_KEY", raising=False)
 
-        product = {"title": "테스트", "title_en": "Umbrella", "price": 5000, "currency": "KRW"}
+        product = {"title": "테스트", "title_en": "Umbrella", "price": 5000, "currency": "KRW", "images": ["/seller/static/icon-512.png"]}
         results = self._dispatcher().prevalidate(product, ["shopify", "coupang"])
         assert len(results) == 2
         shopify_r = next(r for r in results if r.market == "shopify")
