@@ -129,6 +129,24 @@ def test_picker_groups_by_business_with_defaults(monkeypatch):
 
 def test_screens_render_groups():
     m5 = Path("src/seller_console/templates/_m5_flow.html").read_text(encoding="utf-8")
-    pv = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert 'data-role="m5-group"' in m5 and 'data-role="m5-market-limit"' in m5
-    assert 'data-role="ss-pending"' in pv and "^smartstore:" in pv
+
+
+def test_admin_drawer_renders_store_tiles(monkeypatch):
+    """전체 스위트가 잡은 결함: 드로어가 Jinja에 없는 `match` 테스트를 써서 **관리자 화면에서 500**이었다 — 실제로 렌더한다."""
+    import src.seller_console.views as V
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as S
+    for k, v in {"COUPANG_WOOJOO_ACCESS_KEY": "w", "COUPANG_WOOJOO_SECRET_KEY": "w", "COUPANG_WOOJOO_VENDOR_ID": "A01504840",
+                 "NAVER_GOCOSMOS_CLIENT_ID": "o", "NAVER_GOCOSMOS_CLIENT_SECRET": "o"}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(V, "_is_admin_user", lambda: True)
+    iid = S.append(source="extension", url="https://item.taobao.com/item.htm?id=4242", seller_id="u-u0b-d", title="냄비",
+                   price="120", currency="CNY", extra={"title": "汤锅", "title_ko": "스테인리스 냄비 주방", "category_code": "HOM"})
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "u-u0b-d"
+    r = c.get(f"/seller/collect/preview/{iid}")
+    h = r.get_data(as_text=True)
+    assert r.status_code == 200 and 'data-role="cp-account-tile"' in h and 'value="smartstore:gocosmos"' in h
+    assert 'data-role="ss-pending"' in h and 'id="chkSmartstore"' not in h       # 「스마트스토어」 한 줄은 스토어 줄로 대체

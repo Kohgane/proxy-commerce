@@ -31,8 +31,9 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
     #   `NAVER_<STORE>_CLIENT_ID/SECRET`(없으면 공용 키 폴백 + 경고 — 업로더 `_acct_env`).
     account = current_naver_account()
     up = NaverSmartStoreUploader(account=account) if account else NaverSmartStoreUploader()
-    client_id = up.client_id or (os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID"))
-    client_secret = up.client_secret or (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET"))
+    client_id = getattr(up, "client_id", "") or (os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID"))
+    client_secret = (getattr(up, "client_secret", "")
+                     or (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET")))
     if not client_id or not client_secret:
         raise ChannelCredentialsMissing(
             "스마트스토어 자격증명 미설정: "

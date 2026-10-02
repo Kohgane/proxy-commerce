@@ -682,8 +682,9 @@
             {{ mtile('shopify', 'Shopify', 'chkShopify') }}
             {# U0·U0b: 쿠팡 두 계정·스마트스토어 두 스토어(오너 서버·관리자) — 사업자 축으로 묶어 고른 계정·스토어 키로 등록 #}
             {% set _cpa = (coupang_accounts or [])|selectattr('group')|list %}
-            {% set _has_cp = _cpa|selectattr('code', 'match', '^coupang:')|list|length > 0 %}
-            {% set _has_ss = _cpa|selectattr('code', 'match', '^smartstore:')|list|length > 0 %}
+            {% set _acct = namespace(cp=false, ss=false) %}
+            {% for c in _cpa %}{% if c.code.startswith('coupang:') %}{% set _acct.cp = true %}{% elif c.code.startswith('smartstore:') %}{% set _acct.ss = true %}{% endif %}{% endfor %}
+            {% set _has_cp = _acct.cp %}{% set _has_ss = _acct.ss %}
             {% if _cpa %}
             {% for c in _cpa %}
             <label class="market-tile {{ 'is-on' if c.connected and not c.pending else 'is-off' }}" for="chkAcct{{ loop.index }}" data-role="cp-account-tile" data-group="{{ c.group }}">
