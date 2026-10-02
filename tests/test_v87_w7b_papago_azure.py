@@ -28,7 +28,8 @@ def test_chain_order_free_papago_deepl_azure_openai(monkeypatch):
     monkeypatch.setenv("DEEPL_API_KEY", "d:fx")
     monkeypatch.setenv("AZURE_TRANSLATOR_KEY", "az")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
-    assert AITranslator()._provider_chain() == ["mymemory", "papago", "deepl", "azure", "openai"]
+    # R0(오너 2026-10-01): 기본 순서 Papago → DeepL → Azure → OpenAI → MyMemory(마지막).
+    assert AITranslator()._provider_chain() == ["papago", "deepl", "azure", "openai", "mymemory"]
 
 
 def test_papago_needs_both_ncp_keys(monkeypatch):

@@ -1,13 +1,14 @@
 """src/seller_console/ai/translator.py — 상품 번역 + 마켓별 광고 카피 자동 생성 (Phase 130).
 
-번역 프로바이더 **체인**(v87-W7, 순차 폴백 — 하나 실패하면 다음). 기본 순서 = 무료 우선 → 저가/키필요 → OpenAI 최후:
-1. mymemory  — 무키·무가입 무료(TRANSLATE_DISABLE_MYMEMORY=1로 차단)
-2. papago    — NCP Papago NMT (NCP_PAPAGO_CLIENT_ID + NCP_PAPAGO_CLIENT_SECRET). ko·ja·zh 도메인 최적
-3. deepl     — DeepL (DEEPL_API_KEY). 번역만, 카피는 template
-4. azure     — Azure Translator (AZURE_TRANSLATOR_KEY + AZURE_TRANSLATOR_REGION). 소스 자동감지
-5. openai    — GPT (OPENAI_API_KEY + OPENAI_MODEL=gpt-4o-mini). 번역 + 카피, 최후 폴백
-전부 실패/키 전무 → 원본 유지(stub/-fallback, 정직 실패). `TRANSLATE_PROVIDER_CHAIN`(쉼표)로 순서·선택 오버라이드.
-※ 기존 DEEPL_API_KEY 경로는 별도 분기가 아니라 이 체인의 한 단계로 **흡수**됨(2번째 순위, 병행 아님).
+번역 프로바이더 **체인**(v87-W7, 순차 폴백 — 하나 실패하면 다음). 기본 순서(R0, 오너 2026-10-01) — 모든 원문 언어 공통:
+1. papago    — NCP Papago NMT (NCP_PAPAGO_CLIENT_ID + NCP_PAPAGO_CLIENT_SECRET). 중·일 → 한 1순위.
+               하루 글자 상한 PAPAGO_DAILY_CHAR_LIMIT(기본 100,000 · 0=없음)을 넘으면 그날은 건너뛴다.
+2. deepl     — DeepL (DEEPL_API_KEY). 번역만, 카피는 template
+3. azure     — Azure Translator (AZURE_TRANSLATOR_KEY + AZURE_TRANSLATOR_REGION). 소스 자동감지
+4. openai    — GPT (OPENAI_API_KEY + OPENAI_MODEL=gpt-4o-mini). 번역 + 카피. 서버 월 예산(AI_MONTHLY_BUDGET_USD)에 묶임
+5. mymemory  — 무키·무가입 무료, 마지막(TRANSLATE_DISABLE_MYMEMORY=1로 차단)
+전부 실패/키 전무 → 원본 유지(stub/-fallback, 정직 실패). `TRANSLATE_CHAIN_ORDER`(쉼표)로 순서·선택 오버라이드
+(예전 이름 `TRANSLATE_PROVIDER_CHAIN`도 읽는다 — 새 이름 우선).
 
 ADAPTER_DRY_RUN=1 시 실 API 호출 차단.
 """
@@ -34,6 +35,22 @@ _CONTAM_RE = re.compile(
 #:   사전형·통계형 MT(mymemory·papago·deepl·azure)는 「평서형 종결 금지」 같은 지시를 받을
 #:   자리가 없다. 거기에 지시를 보내 놓고 「지시했다」고 적으면 그건 **따른 척**이다.
 STYLE_CAPABLE = ("openai",)
+
+#: R0(오너 2026-10-01): 기본 체인 순서 — Papago → DeepL → Azure → OpenAI → MyMemory(마지막).
+#:   `TRANSLATE_CHAIN_ORDER`(쉼표)로 바꾼다. MyMemory를 아예 빼려면 순서에서 지우거나 `TRANSLATE_DISABLE_MYMEMORY=1`.
+DEFAULT_CHAIN_ORDER = ("papago", "deepl", "azure", "openai", "mymemory")
+
+#: Papago 하루 글자 상한(우리 쪽 비용 가드). 넘으면 그날은 Papago를 건너뛰고 DeepL로 내려간다.
+#:   NCP Papago Translation은 **무료 제공량이 없는 종량제**(100만 자 단위 과금 — 검색 결과 기준, 공식 요금 페이지는
+#:   이 작업 환경에서 막혀 직접 못 봤다). 그래서 이 값은 「무료 한도」가 아니라 **하루 지출 상한**이다.
+#:   0이면 상한 없음(NCP 콘솔의 앱별 일 한도만 남는다). `PAPAGO_DAILY_CHAR_LIMIT`로 조정.
+PAPAGO_DAILY_CHAR_LIMIT_DEFAULT = 100000
+
+#: OpenAI 토큰 단가(USD/토큰) — gpt-4o-mini 기준(입력 $0.15/1M · 출력 $0.60/1M, src/ai/copywriter.py와 같은 값).
+#:   다른 모델을 OPENAI_MODEL로 쓰면 이 단가는 근사다.
+from decimal import Decimal as _Dec
+_OPENAI_IN_USD = _Dec("0.00000015")
+_OPENAI_OUT_USD = _Dec("0.0000006")
 
 
 def _is_contaminated(s: str) -> bool:
@@ -187,9 +204,31 @@ def _route_src_lang(text: str) -> str:
         return "ko"
     has_kana = any(("぀" <= c <= "ゟ") or ("゠" <= c <= "ヿ") for c in s)
     has_han = any("一" <= c <= "鿿" for c in s)
+    # R0(오너 2026-10-01): 타오바오 제목(가나 0 · 간체자)이 전엔 ja로 판정돼 Papago에 `source=ja`로 갔다
+    #   (운영 46건 실측 — 「懒人」→「일레븐」). 가나가 **없고** 간체 전용 글자가 하나라도 있으면 zh.
+    #   일본어 한자 제목(玉渕·手帳)은 간체 전용 글자가 없어 ja 그대로.
+    if has_han and not has_kana and _SIMPLIFIED_ONLY_RE.search(s):
+        return "zh"
     if has_kana or has_han:      # 가나·한자 1자라도 → ja 체인(라틴 비율 무관)
         return "ja"
     return "en"
+
+
+#: 간체 전용 글자(일본 신자체와 모양이 다른 것만 — 会·号·万·灯처럼 같은 글자는 뺐다). 상품명에 자주 나오는 것 위주.
+_SIMPLIFIED_ONLY_RE = re.compile(
+    "[们这个发东车说时买卖热无线电门实头长马鱼页质设计级纸维红绿蓝黑现货单气动转简约办务杂带适场轮叠换圆网垫盘懒师乐书"
+    "产业专从优关兴养农决净凉减刘则刚创删别劳势华协卫厂厅历压县变吗员听启呜园围图块坚坛垒处备复够夹夺奋妆妇妈娱婴宁宠"
+    "审宽对导尔尘尝层岁岛币帅帐帮广庆库应庙废开异弃张弹归录彻忆忧怀态总恶悬惊惯战户扑执扩扫扬扰抚抢护报拟拥拦择挤挥损"
+    "据掳摄摆摊撑显晒晓晕暂术杀权杨极构枪标栏树样桥档梦检楼欢欧歼毁毕汇汉汤沟沪泪泼泽洁浆测济浏浑浓涛涝润涨渊渐渔满滚"
+    "滤滥灭灵灶灾炼烂烛烦烧焕爱牍牵犹狈猎环玛珐琐瑶畅疗疮疯痒瘫盏盐监盖眯矫码砖础硕确离种积稳穷窍窑窜窝竞笔笋笼筑筛筝"
+    "箩篮类粮紧纠纪纫纬纯纱纲纳纵纷纹纺练组绅细织终绊绍经绑结绕绘给络绝统继绩绪续绳绵绸综绽缆缓编缘缝缠缩缴罗罚罢职联"
+    "聪肃肠肤肾肿胀胁胶脉脏脑脸腊腾舰舱艰艺节苏苹荐荡荣药莱获莹萝营萧虏虑虽虾蚀蚁蚂蛮蜡衔补衬袄袜袭裤见观规视览觉触誉"
+    "订认讨让训议讯记讲许论访证评识诈诉词译试诗诚话诞询该详语误请诸读课谁调谈谊谋谓谢谣谱贝负贡财责贤败账贩贪贫购贯贴"
+    "贵贷贸费贺赁资赋赌赎赏赐赔赖赚赛赞赠赶趋跃践踪躯轨轩软轰轴轻载较辅辆辈辉辑输辖边辽达迁过迈运还进远违连迟选递逻遗"
+    "邓邮邻郑酱释鉴钉针钓钞钟钢钥钩钮钱钳钻铁铃铅铜铝铭银铺链销锁锅锐错锦键锯镇镜闪闭问闲间闷闹闻阀阁阅队阳阴阵阶际陆"
+    "陈陕险随隐难雾韦韧韩顶项顺须顾顿颁颂预领颇颈频颗题颜额风飘飞饭饮饰饱饲饺饼馆驱驶驻驾验骑骗骚鲜鸟鸡鸣鸭鸽鹅鹰黾齐"
+    "龙]"
+)
 
 
 # v87-W6 item 2: 번역 실패 다발 조사 — **계측**(호출 n·성공 n·실패 n·사유별). 번역 무료 쿼터 회계와
@@ -201,8 +240,122 @@ _TR_STATS_LOCK = threading.Lock()
 _TR_RECENT_MAX = 25
 
 
+#: 실제 번역기 이름(체인 단). `-fallback`·`stub`·`none`·`rules`는 번역이 아니다.
+REAL_PROVIDERS = ("mymemory", "papago", "deepl", "azure", "openai")
+
+
+def is_real_translation(provider, error="") -> bool:
+    """「실제로 번역됐나」 — 단 하나의 판정. R0 실측: 확장 수집 API가 `("mymemory","openai","deepl")`만 보고
+    papago·azure 번역을 「안 됨」으로 저장했다(운영 papago 46건 전부 `translated=false`)."""
+    return str(provider or "") in REAL_PROVIDERS and not str(error or "").strip()
+
+
+def translated_flag(extra: dict) -> bool:
+    """저장된 행의 번역 여부 — 저장값이 참이거나, 실제 번역기 이름이 있고 실패 사유가 없으면 참(옛 오기록 보정)."""
+    ex = extra or {}
+    return bool(ex.get("translated")) or is_real_translation(ex.get("translation_provider"), ex.get("translate_error"))
+
+
+_PROV_DAY_PREFIX = "translate:provider_day:"
+_PAPAGO_DAY_PREFIX = "translate:papago_chars:"
+
+
+def _utc_day() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y%m%d")
+
+
+def _bump_provider_day(provider: str, ok: bool) -> None:
+    """R0: 프로바이더별 **오늘(UTC)** 성공·실패 수를 공유 저장소(app_state)에 +1.
+
+    진단 화면의 「호출 n」은 워커 메모리 카운터라 재시작·다른 워커면 0으로 보였다(오너 실측 「호출 0」 —
+    같은 기간 운영 DB엔 papago 번역 46건). 이 수는 워커 둘·재시작에도 남는다. 실패는 조용히(번역을 막지 않는다).
+    """
+    p = (provider or "").replace("-fallback", "").strip().lower()
+    if p not in ("mymemory", "papago", "deepl", "azure", "openai"):
+        return
+    key, field = _PROV_DAY_PREFIX + _utc_day(), f"{p}_{'ok' if ok else 'fail'}"
+    try:
+        from src.db import pg
+        if pg.pg_enabled():
+            with pg.tx() as cur:
+                cur.execute(
+                    "INSERT INTO app_state (key, value, updated_at) VALUES (%s::text, jsonb_build_object(%s::text, 1), now()) "
+                    "ON CONFLICT (key) DO UPDATE SET value = jsonb_set(app_state.value, ARRAY[%s::text], "
+                    "to_jsonb(COALESCE((app_state.value->>%s::text)::int, 0) + 1)), updated_at = now()",
+                    (key, field, field, field))
+            return
+        from src.db import image_translate_queue_pg as st
+        with st._LOCK:
+            cur_v = dict(st._MEM_STATE.get(key) or {})
+            cur_v[field] = int(cur_v.get(field) or 0) + 1
+            st._MEM_STATE[key] = cur_v
+    except Exception as exc:
+        logger.warning("[번역 계측] 프로바이더 일 집계 기록 실패: %s: %s", type(exc).__name__, exc)
+
+
+def provider_day_counts(day: str = "") -> dict:
+    """`{provider: {ok, fail}}` — 오늘(UTC) 또는 `day`(YYYYMMDD). 없으면 빈 칸 0."""
+    out = {p: {"ok": 0, "fail": 0} for p in DEFAULT_CHAIN_ORDER}
+    try:
+        from src.db import image_translate_queue_pg as st
+        raw = st.state_get(_PROV_DAY_PREFIX + (day or _utc_day())) or {}
+    except Exception:
+        raw = {}
+    for k, v in raw.items():
+        p, _, kind = str(k).rpartition("_")
+        if p in out and kind in ("ok", "fail"):
+            out[p][kind] = int(v or 0)
+    return out
+
+
+def papago_daily_limit() -> int:
+    try:
+        return max(0, int(os.getenv("PAPAGO_DAILY_CHAR_LIMIT", str(PAPAGO_DAILY_CHAR_LIMIT_DEFAULT)) or 0))
+    except (TypeError, ValueError):
+        return PAPAGO_DAILY_CHAR_LIMIT_DEFAULT
+
+
+def papago_chars_today() -> int:
+    try:
+        from src.db import option_translate_queue_pg as q
+        return int(q.day_count(_PAPAGO_DAY_PREFIX + _utc_day()))
+    except Exception:
+        return 0
+
+
+def _papago_take(chars: int) -> bool:
+    """오늘 Papago 몫에서 `chars`자를 가져간다(워커 공유·원자적). 상한이면 False — 그날은 다음 단(DeepL)으로."""
+    limit = papago_daily_limit()
+    if limit <= 0 or chars <= 0:
+        return True
+    from src.db import option_translate_queue_pg as q
+    granted, _n = q.take_n(_PAPAGO_DAY_PREFIX + _utc_day(), limit, chars)
+    if granted < chars:
+        # 일부만 남았으면 그 몫도 다 써 버린 것으로 둔다(오늘 남은 호출이 반쪽 번역을 내지 않게).
+        return False
+    return True
+
+
+def _papago_exhaust_today() -> None:
+    """Papago가 한도 초과로 거절했으면(NCP 콘솔 일 한도 등) 오늘 몫을 상한까지 채워 다시 안 부르게 한다."""
+    limit = papago_daily_limit()
+    if limit <= 0:
+        return
+    try:
+        from src.db import option_translate_queue_pg as q
+        q.take_n(_PAPAGO_DAY_PREFIX + _utc_day(), limit, limit)
+    except Exception:
+        pass
+
+
+class PapagoDailyLimit(RuntimeError):
+    """우리 쪽 Papago 일 상한 도달 — 체인이 다음 단으로 내려간다(실패 아님, 건너뜀)."""
+
+
 def _record_translate(ok: bool, reason: str = "", provider: str = "",
                       code: str = "", status=None, body: str = "") -> None:
+    _bump_provider_day(provider, ok)
     with _TR_STATS_LOCK:
         _TR_STATS["calls"] += 1
         if ok:
@@ -487,16 +640,15 @@ class AITranslator:
     #   mymemory는 `TRANSLATE_DISABLE_MYMEMORY=1`로 끌 수 있다(사설 프록시 등 외부호출 차단 환경).
     def _provider_chain(self, src_lang: str = None) -> list:
         from src.utils.env import env_present
-        override = os.getenv("TRANSLATE_PROVIDER_CHAIN", "").strip()
-        # v87-W7 회수: 무료 우선 → 저가/키필요(papago=ko·ja·zh 도메인 최적 → deepl 고품질 → azure 광역)
-        #   → OpenAI 최후. Papago/Azure는 오너가 등록한 확정 env명으로 배선(공식 엔드포인트만).
+        # R0(오너 2026-10-01): 순서 env는 `TRANSLATE_CHAIN_ORDER`(쉼표). 예전 이름 `TRANSLATE_PROVIDER_CHAIN`도
+        #   그대로 읽는다(새 이름이 우선). 둘 다 없으면 기본 순서 — **모든 원문 언어 공통**.
+        #   예전 기본(비-ja)은 mymemory가 맨 앞이라 무료 단이 거의 늘 이겼다 — 뒤 단은 부를 일이 없었다.
+        override = (os.getenv("TRANSLATE_CHAIN_ORDER", "").strip()
+                    or os.getenv("TRANSLATE_PROVIDER_CHAIN", "").strip())
         if override:
             names = [n.strip().lower() for n in override.split(",") if n.strip()]
-        elif src_lang == "ja":
-            # v87-W8 item3: ja는 mymemory 저품질(라쿠텐 상용구 오역) → papago/deepl 선행, mymemory 최후순위.
-            names = ["papago", "deepl", "azure", "openai", "mymemory"]
         else:
-            names = ["mymemory", "papago", "deepl", "azure", "openai"]
+            names = list(DEFAULT_CHAIN_ORDER)
         chain = []
         for n in names:
             if n == "openai" and not env_present("OPENAI_API_KEY"):
@@ -510,7 +662,7 @@ class AITranslator:
                 continue
             if n == "mymemory" and os.getenv("TRANSLATE_DISABLE_MYMEMORY") == "1":
                 continue
-            if n in ("mymemory", "papago", "deepl", "azure", "openai"):
+            if n in ("mymemory", "papago", "deepl", "azure", "openai") and n not in chain:
                 chain.append(n)
         return chain
 
@@ -604,6 +756,8 @@ class AITranslator:
             ok = str(res.get("provider") or "") == name and not res.get("error")
             attempts.append({"provider": name, "ok": bool(ok), "error": str(res.get("error") or ""),
                              "ms": int((_time.time() - _t0) * 1000)})   # v87-W7: 소요 시간 기록
+            if res.get("skipped"):
+                attempts[-1]["skipped"] = True      # R0: 비용 상한으로 건너뜀(호출 안 함) — 실패와 구별
             if ok:
                 res["attempts"] = attempts
                 res["detected_lang"] = _src          # v87-W9 item1: 감지 언어·선택 체인 기록(진단만으로 판독)
@@ -713,6 +867,8 @@ class AITranslator:
                     "copy_smartstore": self._copy_template(title, "smartstore"),
                     "copy_11st": self._copy_template(title, "11st")}
 
+        _mm_src = {"zh": "zh-CN"}.get(src, src)      # R0: 중국어는 zh-CN(전엔 ja로 갔다)
+
         def _one(text: str) -> str:
             text = (text or "").strip()
             if not text:
@@ -720,7 +876,7 @@ class AITranslator:
             # MyMemory 단일 요청 상한(약 500자) — 초과분은 그대로 두지 않고 문장 경계로 잘라 앞부분만(정직: 부분).
             snippet = text[:480]
             r = _req.get("https://api.mymemory.translated.net/get",
-                         params={"q": snippet, "langpair": f"{src}|ko"}, timeout=self._clamp_timeout(12))
+                         params={"q": snippet, "langpair": f"{_mm_src}|ko"}, timeout=self._clamp_timeout(12))
             r.raise_for_status()
             j = r.json()
             if int(j.get("responseStatus") or 0) != 200:
@@ -904,11 +1060,28 @@ class AITranslator:
                 "max_tokens": _max_tokens,
                 "response_format": {"type": "json_object"},
             }
+            # R0(오너 2026-10-01): 번역 체인의 OpenAI 호출도 **서버 월 예산(AI_MONTHLY_BUDGET_USD)**에 묶는다.
+            #   실측: 이 함수는 예산을 확인하지도 기록하지도 않았다 — 카피·CS 봇만 묶여 있었다.
+            #   넘었으면 부르지 않고(BudgetExceededError → 사유 「서버 월 예산」) 다음 단(MyMemory)으로.
+            from decimal import Decimal as _D
+            from src.ai.budget import BudgetGuard, BudgetExceededError
+            _guard = BudgetGuard()
+            _est = _D(str(_in_len)) * _OPENAI_IN_USD + _D(str(_max_tokens)) * _OPENAI_OUT_USD
+            if not _guard.can_spend(estimated_cost_usd=_est):
+                raise BudgetExceededError(_guard.summary())
             resp = _post_with_429_retry(   # v87-W8 item4: 429면 짧은 백오프 1회 재시도
                 _req, "https://api.openai.com/v1/chat/completions",
                 headers=headers, json=payload, timeout=self._clamp_timeout(_timeout),
             )
-            content = resp.json()["choices"][0]["message"]["content"]
+            _j = resp.json()
+            _usage = _j.get("usage") or {}
+            _pt, _ct = int(_usage.get("prompt_tokens") or 0), int(_usage.get("completion_tokens") or 0)
+            try:
+                _guard.record(cost_usd=_D(str(_pt)) * _OPENAI_IN_USD + _D(str(_ct)) * _OPENAI_OUT_USD,
+                              provider="openai", tokens=_pt + _ct, note="translate")
+            except Exception as _e:
+                logger.warning("[번역 체인] OpenAI 비용 기록 실패: %s", _e)
+            content = _j["choices"][0]["message"]["content"]
             import json
             result = json.loads(content)
             result["provider"] = "openai"
@@ -984,13 +1157,22 @@ class AITranslator:
                     "copy_smartstore": self._copy_template(title, "smartstore"),
                     "copy_11st": self._copy_template(title, "11st")}
         headers = {"x-ncp-apigw-api-key-id": cid, "x-ncp-apigw-api-key": secret}
+        # R0: 중국어는 `zh-CN`으로 보낸다(전엔 ja로 판정돼 `source=ja`로 갔다). Papago 언어 코드 표기.
+        papago_src = {"zh": "zh-CN"}.get(src, src)
+        # R0 비용 가드: 오늘(UTC) 몫이 모자라면 부르지 않고 다음 단(DeepL)으로 — 지출 상한, 실패 아님.
+        need = len((title or "").strip()[:4900]) + len((description or "").strip()[:4900])
+        if not _papago_take(need):
+            limit = papago_daily_limit()
+            logger.info("[번역 체인] Papago 오늘 상한(%s자) — 이번 %s자는 다음 번역기로", limit, need)
+            return {"title_ko": title, "description_ko": description, "provider": "papago-fallback",
+                    "error": f"Papago 오늘 사용 상한({limit:,}자) — 다음 번역기로", "skipped": True}
 
         def _one(text: str) -> str:
             text = (text or "").strip()
             if not text:
                 return text
             r = _req.post("https://papago.apigw.ntruss.com/nmt/v1/translation",
-                          headers=headers, data={"source": src, "target": "ko", "text": text[:4900]},
+                          headers=headers, data={"source": papago_src, "target": "ko", "text": text[:4900]},
                           timeout=self._clamp_timeout(10))
             r.raise_for_status()
             out = (((r.json() or {}).get("message") or {}).get("result") or {}).get("translatedText", "")
@@ -1008,6 +1190,10 @@ class AITranslator:
         except Exception as exc:
             reason = record_translate_failure(exc, "papago")   # v87-W7a: 원 응답 코드·바디까지 계측 적재
             logger.warning("Papago 번역 실패(%s): %s", reason, exc)
+            # R0: NCP가 한도 초과로 거절(429 + quota/limit)하면 오늘은 더 안 부른다 — 다음 호출부터 바로 DeepL.
+            _st, _body = raw_error_meta(exc)
+            if _st == 429 and re.search(r"quota|limit|한도|사용량", _body or "", re.I):
+                _papago_exhaust_today()
             return {"title_ko": title, "description_ko": description,
                     "provider": "papago-fallback", "error": reason}
 

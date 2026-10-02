@@ -784,6 +784,12 @@ def collect_enrich_blocked():
                     "max_attempts": ENRICH_MAX_ATTEMPTS, "state": state})
 
 
+def _is_real_tr(provider, error="") -> bool:
+    """R0: 「번역됨」 판정은 번역기 모듈 한 곳에서(papago·azure 누락 재발 방지)."""
+    from src.seller_console.ai.translator import is_real_translation
+    return is_real_translation(provider, error)
+
+
 def _clean_skus(raw) -> list:
     """F49-T 2부 — 확장이 보낸 `skus[]`를 **알려진 키·짧은 값**만 남겨 저장한다(모양·크기 방어).
 
@@ -1399,7 +1405,7 @@ def collect_from_extension():
                 _merged["detail_specs"] = _fresh("detail_specs", payload.get("detail_specs", []))
                 # v87-W6: 재수집=번역 재시도이기도 하다 — 번역 상태(성공/실패 사유)를 갱신.
                 _merged["translation_provider"] = tr.get("provider", "none")
-                _merged["translated"] = (str(tr.get("provider") or "") in ("mymemory", "openai", "deepl")) and not tr.get("translate_error")
+                _merged["translated"] = _is_real_tr(tr.get("provider"), tr.get("translate_error"))
                 _merged["translate_error"] = tr.get("translate_error", "")
                 _merged["translate_requested"] = bool(translate)
                 _merged["translation_attempts"] = tr.get("attempts") or []
@@ -1484,7 +1490,7 @@ def collect_from_extension():
         # v87-W6 item1·2 + v87-W7: 레코드 단위 번역 상태 — 사용자 선택(안 함) vs 실패를 구분해 정직 표시.
         #   translated=실제 번역됨(mymemory/openai/deepl, 폴백·stub·none 제외). translate_error=실패 사유.
         #   translate_requested=수집 시 토글 값(안 함이면 '원문 유지'는 사용자 선택). translation_attempts=체인 시도 이력.
-        "translated": (str(tr.get("provider") or "") in ("mymemory", "openai", "deepl")) and not tr.get("translate_error"),
+        "translated": _is_real_tr(tr.get("provider"), tr.get("translate_error")),
         "translate_error": tr.get("translate_error", ""),
         "translate_requested": bool(translate),
         "translation_attempts": tr.get("attempts") or [],
@@ -1638,7 +1644,7 @@ def collect_from_extension():
         "field_status": _field_status,   # {status,filled,total,missing,...}
         # v87-W6: 폴백(openai-fallback/deepl-fallback)은 **실패=번역 안 됨**이다(원문 유지). 종전엔 fallback을
         #   translated=True로 보고해 '됐다는데 원문'인 체감 불일치를 만들었다 → 실제 번역된 경우만 True.
-        "translated": str(tr.get("provider") or "none") in ("mymemory", "openai", "deepl") and not tr.get("translate_error"),
+        "translated": _is_real_tr(tr.get("provider"), tr.get("translate_error")),
         "translate_error": tr.get("translate_error", ""),
         "translation_provider": tr.get("provider", "none"),
         # v87-W1: 비상품 의심 경고(저장은 됨) — 확장/토스트가 '상품이 아닌 페이지 같아요' 안내.

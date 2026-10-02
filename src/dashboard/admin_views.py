@@ -1191,6 +1191,13 @@ def _build_translate_stats() -> dict:
         s = get_translate_stats()
         s["available"] = True
         s["providers"] = provider_diagnostics()   # v87-W11: env 검출·체인 포함 여부(키 값 없음)
+        # R0: 워커 공유 저장소의 **오늘(UTC)** 프로바이더별 성공·실패 + 체인 순서 + Papago 오늘 사용 글자/상한.
+        #   위 「호출 n」은 이 워커 메모리 값이라 재시작하면 0 — 오늘 실제로 어디가 불렸는지는 이 표가 답한다.
+        from src.seller_console.ai.translator import (AITranslator, papago_chars_today, papago_daily_limit,
+                                                      provider_day_counts)
+        s["provider_day"] = provider_day_counts()
+        s["chain_order"] = AITranslator()._provider_chain()
+        s["papago_today"] = {"chars": papago_chars_today(), "limit": papago_daily_limit()}
         return s
     except Exception as exc:
         logger.debug("번역 계측 로드 불가: %s", exc)
@@ -2755,8 +2762,22 @@ _DIAGNOSTICS_TEMPLATE = """
           {% endfor %}
         </div>
         {% endif %}
+        {% if translate_stats.provider_day %}
+        <div class="fw-semibold small mb-1">오늘(UTC) 프로바이더별 — 워커 공유 집계(재시작에도 남음)</div>
+        <div class="small mb-1" data-role="chain-order">체인 순서: {{ translate_stats.chain_order | join(' → ') if translate_stats.chain_order else '없음(키·무료 모두 불가)' }}</div>
+        <div class="table-responsive"><table class="table table-sm small mb-2" data-role="provider-day">
+          <thead><tr><th>프로바이더</th><th>성공</th><th>실패</th></tr></thead>
+          <tbody>
+          {% for name, c in translate_stats.provider_day.items() %}
+            <tr><td>{{ name }}</td><td>{{ c.ok }}</td><td>{{ c.fail }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+        <div class="small mb-2" data-role="papago-today">Papago 오늘 {{ '{:,}'.format(translate_stats.papago_today.chars) }}자
+          {% if translate_stats.papago_today.limit %}/ 상한 {{ '{:,}'.format(translate_stats.papago_today.limit) }}자(넘으면 DeepL로){% else %}(우리 쪽 상한 없음 — NCP 콘솔 일 한도만){% endif %}</div>
+        {% endif %}
         <ul class="mb-2">
-          <li>호출 {{ translate_stats.calls }} · 성공 {{ translate_stats.ok }} · 실패 {{ translate_stats.fail }}</li>
+          <li>이 워커 메모리 — 호출 {{ translate_stats.calls }} · 성공 {{ translate_stats.ok }} · 실패 {{ translate_stats.fail }}</li>
           <li>사유코드별:
             {% if translate_stats.by_code %}{% for code, n in translate_stats.by_code.items() %}<span class="badge bg-secondary">{{ code }} {{ n }}</span> {% endfor %}
             {% else %}<span class="text-muted">실패 없음</span>{% endif %}
