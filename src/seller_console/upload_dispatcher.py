@@ -97,8 +97,44 @@ def draft_url(product_data: Dict[str, Any]) -> str:
 DISPATCH_PATHS = ("단건(서랍)", "일괄(수집 이력)", "재등록(멀티샵)")
 
 
+def market_description(desc: str) -> str:
+    """S2(오너 2026-10-02) — 마켓 전송용 상세: **한국어만**, 가게 통계·운영 줄 뺌. 원문은 DB에만 보관.
+
+    실측: v87-W7 병기본(한국어+구분선+원문)이 쿠팡 상세로 나가 「褶衣折扣店/4.8/88VIP好评率98%/…」 같은
+    **가게** 문구가 원문·번역 두 벌로 실렸다. 병기 구분선 아래(원문)는 버리고, `detail_drop_lines`(원격 JSON)로
+    가게 줄을 빼고, 한글 없이 한자만 남은 줄(번역 안 된 원문 줄)도 뺀다 — 마켓에 중국어를 올리지 않는다.
+    """
+    import re as _re
+    from src.collectors import ko_polish as _kp
+    from src.seller_console.ai.translator import _BILINGUAL_DIVIDER
+    s = str(desc or "").split(_BILINGUAL_DIVIDER)[0]
+    s, _dropped = _kp.drop_detail_lines(s)
+    keep = [ln for ln in s.split("\n") if not (_kp.has_han(ln) and not _re.search("[가-힣]", ln))]
+    return _re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip()
+
+
+def _market_desc_source(pd: Dict[str, Any]) -> str:
+    """보낼 상세의 재료 — 편집본(`description`)에 한국어가 있으면 그것, 없으면 저장된 번역본(`description_ko`)."""
+    import re as _re
+    d = str(pd.get("description") or "")
+    if _re.search("[가-힣]", d):
+        return d
+    return str(pd.get("description_ko") or d)
+
+
 def build_dispatch_payload(product_data: Dict[str, Any],
                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """S2: 아래 빌더 결과에 **마켓 상세 규칙**(한국어만·가게 줄 뺌)을 얹는다 — 단건·일괄·재등록 세 경로 공통."""
+    pd = _build_dispatch_payload(product_data, item)
+    try:
+        pd["description"] = market_description(_market_desc_source(pd))
+    except Exception as exc:
+        logger.warning("[등록] 상세 정리 실패(빌더 값 그대로): %s", exc)
+    return pd
+
+
+def _build_dispatch_payload(product_data: Dict[str, Any],
+                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """등록에 나갈 페이로드 — **세 경로가 이 한 자리를 쓴다** (F40-b).
 
     ## 왜 한 자리여야 하나 (실측 2026-09-20 · 09-21)

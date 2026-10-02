@@ -217,7 +217,9 @@ def test_different_addresses_are_kept_and_we_say_why():
 def test_the_upload_path_applies_it():
     import inspect
     from src.seller_console import views
-    assert "drop_cross_duplicates" in inspect.getsource(views.collect_upload)
+    # S1(2026-10-02): 이미지 배열은 사전검증과 같은 함수(`_outbound_images`)에서 — 등록이 그 함수를 부른다.
+    assert "_outbound_images(" in inspect.getsource(views.collect_upload)
+    assert "drop_cross_duplicates" in inspect.getsource(views._outbound_images)
 
 
 # ---------------------------------------------------------------------------

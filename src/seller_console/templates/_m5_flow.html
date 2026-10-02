@@ -156,7 +156,10 @@
           '<span class="pc-badge ' + (d.unresolved ? 'pc-badge-danger' : 'pc-badge-on') + '">미해석 값 ' + (d.unresolved || 0) + '개</span>' +
           '<span class="pc-badge ' + (d.promo_excluded ? 'pc-badge-off' : 'pc-badge-muted') + '">프로모션 이미지 ' + (d.promo_excluded || 0) + '장 제외</span>' +
           ((d.ad_claims || []).length ? '<span class="pc-badge pc-badge-danger">표시광고 위험 ' + d.ad_claims.length + '</span>' : '') +
-          (d.estimated ? '<span class="pc-badge pc-badge-muted">예상 모습</span>' : '') + '</div>';
+          (d.estimated ? '<span class="pc-badge pc-badge-muted">예상 모습</span>' : '') + '</div>' +
+          (d.auto_axes || []).map(function (a) {        // S3: 옵션 축 자동 매핑 — 확인만
+            return '<div class="m5-note" data-role="m5-cp-auto-axis">「' + esc(a.orig) + '」 → ' + esc(a.meta) +
+                   ' <span class="pc-badge pc-badge-off">자동 매핑 — 확인</span></div>'; }).join('');
         var car = (d.images || []).length
           ? '<div class="m5-cp-car" data-role="m5-cp-images">' + d.images.map(function (u, i) {
               return '<img src="' + esc(u) + '" alt="' + (i + 1) + '번째 이미지" referrerpolicy="no-referrer" loading="lazy">'; }).join('') + '</div>'
@@ -189,7 +192,7 @@
     var markets = picked();
     if (!markets.length) { checksEl.innerHTML = '<div class="m5-res is-bad">등록할 마켓을 하나 이상 골라 주세요.</div>'; return; }
     checkBtn.disabled = true; checksEl.innerHTML = '<div class="m5-note">마켓 조건을 확인하는 중…</div>'; resetGo();
-    post('/seller/collect/prevalidate', {product: product, markets: markets}).then(function (d) {
+    post('/seller/collect/prevalidate', {product: product, markets: markets, item_id: itemId}).then(function (d) {
       checkBtn.disabled = false;
       if (!d.ok) { checksEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-check-error">' + esc(d.error || '사전검증을 하지 못했어요') + '</div>'; return; }
       var h = '';

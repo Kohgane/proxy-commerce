@@ -442,7 +442,17 @@ def _origin_or_cdn(orig: str, cdn_map: dict, i: int) -> str:
     **스킴이 없거나**(`//img.example.com/a.jpg`). 확장이 `data-src`·`srcset` 원문을
     절대화 없이 그대로 보내므로 후자가 흔하다. 둘 다 CDN 사본이 답이다.
     """
-    return cdn_map.get(i) or orig
+    return cdn_map.get(i) or _scheme_fix(orig)
+
+
+def _scheme_fix(url: str) -> str:
+    """S1(오너 2026-10-02 폰 등록 16:09): 상세 1번째가 `//img.alicdn.com/…`(스킴 없음)였다.
+    확장이 `data-src` 원문을 그대로 보내 생긴 모양인데, `is_internal`은 스킴이 없으면 **우리 주소**로 친다 →
+    등록이 「우리 서버 주소라 마켓이 가져갈 수 없습니다」로 막았다(사전검증은 「통과」).
+    `//`는 **프로토콜 상대 주소** — `https:`만 붙이면 마켓이 여는 그 주소다(발명 아님).
+    사이트 상대 경로(`/img/a.jpg`)는 기준 페이지가 필요해 여기서 펴지 않는다(CDN 백필 `run_originals` 몫)."""
+    u = str(url or "").strip()
+    return "https:" + u if u.startswith("//") else u
 
 
 def _outward_url(url: str, blob) -> str:

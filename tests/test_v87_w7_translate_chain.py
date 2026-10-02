@@ -173,13 +173,14 @@ def test_collect_upload_composes_bilingual_from_stored_original(monkeypatch):
         c.post("/seller/collect/upload", json={
             "product": {"description": "한국어 번역본", "title": "T", "price": "1000"},
             "markets": ["coupang"], "item_id": "it1"})
-    assert "日本語の説明" in captured["desc"] and "한국어 번역본" in captured["desc"]   # 병기본이 마켓으로
-    assert "원문 (Original)" in captured["desc"]
+    # S2(오너 2026-10-02): 병기 전송 중단 — 마켓엔 **한국어만**, 원문은 DB에만(드로어·저장값 그대로).
+    assert captured["desc"] == "한국어 번역본" and "日本語の説明" not in captured["desc"]
+    assert "원문 (Original)" not in captured["desc"]
 
 
 def test_drawer_has_bilingual_preview_and_provider():
     t = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
-    assert "마켓 전송 미리보기" in t and "원문 (Original)" in t
+    assert "마켓 전송 미리보기 — 한국어만" in t and "원문은 보관만 하고 마켓엔 보내지 않아요" in t   # S2
     assert "번역 프로바이더" in t and "translation_attempts" in t
 
 

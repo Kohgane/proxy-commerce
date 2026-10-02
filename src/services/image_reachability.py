@@ -59,7 +59,11 @@ def check_one(url: str) -> dict:
     """한 장. `{url, ok, status, content_type, reason}` — `status`는 **실제 응답코드**다."""
     out = {"url": url, "ok": False, "status": 0, "content_type": "", "reason": ""}
     if is_internal(url):
-        out["reason"] = "우리 서버 주소라 마켓이 가져갈 수 없습니다"
+        # S1: 스킴·호스트가 없는 주소(`//…`·`/img/…`)도 여기로 온다 — 판정(못 가져감)은 같지만 **이유가 다르다**.
+        #   예전엔 둘 다 「우리 서버 주소」라 해서 공급사 주소를 우리 것으로 오인하게 했다(오너 10-02 실측).
+        _u = str(url or "").strip()
+        out["reason"] = ("우리 서버 주소라 마켓이 가져갈 수 없습니다" if _u.startswith(INTERNAL_PREFIXES)
+                         else "주소에 사이트(https://…)가 빠져 있어 마켓이 가져갈 수 없습니다")
         return out
 
     try:

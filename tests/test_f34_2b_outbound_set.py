@@ -39,7 +39,9 @@ from unittest.mock import patch
 
 import pytest
 
-SUPPLIER = "//img.example.com/detail-1.jpg"          # 스킴 없는 원본(실측된 모양)
+# S1(2026-10-02): `//` 주소는 이제 등록 배열에서 `https:`로 펴진다(`_scheme_fix` — 프로토콜 상대 주소, 발명 아님).
+#   그래서 「마켓이 못 여는 원본」의 대표 예는 **사이트 상대 경로**다(기준 페이지 없이는 못 편다).
+SUPPLIER = "/imgextra/detail-1.jpg"
 CDN = "https://res.cloudinary.com/x/image/upload/v1/orig.jpg"
 
 
@@ -164,7 +166,7 @@ def test_a_supplier_error_is_reported_verbatim():
         content = b""
 
     with patch("requests.get", return_value=_R()):
-        raw, err = fetch_original(SUPPLIER)
+        raw, err = fetch_original("//img.example.com/detail-1.jpg")
     assert raw == b"" and "403" in err
 
 
