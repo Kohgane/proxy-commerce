@@ -7294,7 +7294,8 @@ def _shape_collect_items(items, current_lang):
             it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
             it["title_is_original"] = not _translated
         # v87-W6: 번역 상태(레코드 단위) — 번역함/원문(안 함)/실패 3분. 실패는 사유 + 재시도 유도.
-        it["translated"] = bool(ex.get("translated"))
+        from src.seller_console.ai.translator import translated_flag as _tflag
+        it["translated"] = _tflag(ex)          # R0: papago·azure 번역이 「안 됨」으로 저장된 옛 행도 바르게
         it["translate_error"] = str(ex.get("translate_error") or "").strip()
         # translate_requested가 명시 저장 안 된 옛 레코드는 True로 간주(기본값이 번역함).
         it["translate_requested"] = ex.get("translate_requested", True) is not False
@@ -7808,6 +7809,12 @@ def collect_preview_by_id(item_id: str):
     except Exception:
         field_src = {}
 
+    try:
+        from src.seller_console.ai.translator import translated_flag as _tflag
+        if isinstance(extra, dict) and not extra.get("translated") and _tflag(extra):
+            extra = dict(extra, translated=True)      # R0: 표시만 보정(저장값은 안 건드림)
+    except Exception:
+        pass
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(

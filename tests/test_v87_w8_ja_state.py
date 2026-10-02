@@ -21,7 +21,8 @@ def test_ja_chain_puts_mymemory_last(monkeypatch):
     for k in ["NCP_PAPAGO_CLIENT_ID", "NCP_PAPAGO_CLIENT_SECRET", "DEEPL_API_KEY", "AZURE_TRANSLATOR_KEY", "OPENAI_API_KEY"]:
         monkeypatch.setenv(k, "x")
     assert AITranslator()._provider_chain(src_lang="ja") == ["papago", "deepl", "azure", "openai", "mymemory"]
-    assert AITranslator()._provider_chain(src_lang="en")[0] == "mymemory"   # 비-ja는 무료 우선 유지
+    # R0(오너 2026-10-01): 원문 언어와 무관하게 같은 순서 — MyMemory는 마지막.
+    assert AITranslator()._provider_chain(src_lang="en") == ["papago", "deepl", "azure", "openai", "mymemory"]
 
 
 def test_rakuten_boilerplate_stripped_from_title():

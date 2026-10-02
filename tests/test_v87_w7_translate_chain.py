@@ -29,7 +29,7 @@ def test_provider_chain_free_first_and_override(monkeypatch):
     monkeypatch.delenv("TRANSLATE_DISABLE_MYMEMORY", raising=False)
     assert AITranslator()._provider_chain() == ["mymemory"]          # 무키 → 무료만
     monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
-    assert AITranslator()._provider_chain() == ["mymemory", "openai"]  # 무료 우선 → OpenAI 폴백
+    assert AITranslator()._provider_chain() == ["openai", "mymemory"]  # R0(2026-10-01): 무료(MyMemory)는 마지막
     monkeypatch.setenv("TRANSLATE_PROVIDER_CHAIN", "openai,mymemory")
     assert AITranslator()._provider_chain() == ["openai", "mymemory"]  # 오버라이드(품질 우선)
 
