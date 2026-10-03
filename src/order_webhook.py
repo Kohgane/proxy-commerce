@@ -115,6 +115,16 @@ if os.getenv("SMARTSTORE_LIVE_PROBE", "1").strip().lower() not in ("0", "false",
     import threading as _ss_threading
     _ss_threading.Thread(target=_smartstore_boot_probe, name="smartstore-boot-probe", daemon=True).start()
 
+# Y4(2026-10-04): 이미지 번역 차단기 — 글자 없는 사진을 실패에서 뺀 재계산이 상한 아래면 풀고 대기분을 다시 돈다.
+#   워커 서비스(WORKERS_ENABLED)에서만. 사람이 멈춘 것은 그대로.
+try:
+    from src.services import workers as _wk
+    if _wk.workers_enabled():
+        from src.services import image_translate_auto as _imgauto
+        logger.info("이미지 번역 차단기: %s", _imgauto.heal_breaker())
+except Exception as _hbexc:
+    logger.warning("이미지 번역 차단기 재계산 실패(계속): %s", _hbexc)
+
 # W1·W2(2026-10-03): 네이버 주문 폴러 워커 — NAVER_ORDER_POLL=1 + WORKERS_ENABLED 서비스에서만(기본 꺼짐).
 try:
     from src.order_alerts.naver_worker import start_if_enabled as _naver_poll_start
