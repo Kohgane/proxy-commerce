@@ -221,7 +221,7 @@ def fixed_title(product: Dict[str, Any]) -> str:
         return t
     try:
         from src.collectors import ko_polish as kp
-        return kp.polish_ko(t, src=src) or t
+        return kp.fix_by_source(t, src) or t
     except Exception:
         return t
 

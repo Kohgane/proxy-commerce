@@ -1402,7 +1402,15 @@ def collect_from_extension():
                 _merged = {}
             from src.collectors.source_merge import incoming_from_payload as _inc, merge_by_source as _msrc
             _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
-            _incoming = _inc({**payload, "skus": _clean_skus(payload.get("skus"))}, images=images)
+            # Y1: 쓰레기 상세 이미지(가게 아이콘·추적 픽셀)는 **병합 전에** 뺀다 — 뒤에서 빼면 같은 페이로드가
+            #   매번 「바뀜」으로 보여 「이미 수집한 상품」이 「갱신됨」이 된다(f49t2c 계약이 잡음).
+            from src.collectors.collect_status import real_detail_images as _rdi, still_uncollected as _stu
+            _pl = {**payload, "skus": _clean_skus(payload.get("skus"))}
+            if isinstance(_pl.get("detail_images"), list):
+                _pl["detail_images"] = _rdi(_pl["detail_images"])
+            if isinstance(_merged.get("detail_images"), list):
+                _merged["detail_images"] = _rdi(_merged["detail_images"])
+            _incoming = _inc(_pl, images=images)
             _merged, _mchg, _mkept = _msrc(_merged, _incoming, _cfs, force=_force,
                                            path=("recollect" if _force else "collect-duplicate"))
             if "title" in _mchg:
@@ -1419,10 +1427,7 @@ def collect_from_extension():
                     _merged["uncollected"] = [f for f in (_merged.get("uncollected") or []) if f != "price"]
             if isinstance(payload.get("page_diag"), dict):
                 _merged["page_diag"] = _clean_page_diag(payload.get("page_diag"))
-            # Y1: 재수집도 같은 판정 — 쓰레기 상세 이미지 빼고, 배너 재료를 실제 값으로.
-            from src.collectors.collect_status import real_detail_images as _rdi, still_uncollected as _stu
-            if isinstance(_merged.get("detail_images"), list):
-                _merged["detail_images"] = _rdi(_merged["detail_images"])
+            # Y1: 재수집도 같은 판정 — 배너 재료를 실제 값으로(쓰레기 상세 이미지는 위에서 병합 전에 뺐다).
             if "uncollected" in _merged:
                 _merged["uncollected"] = _stu(_merged)
             if _force:

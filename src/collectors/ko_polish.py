@@ -337,6 +337,18 @@ def replica_hits(text: str) -> List[str]:
     return out
 
 
+def fix_by_source(text: str, src: str) -> str:
+    """Y6 — 원문을 보고 하는 것**만**: 오역 사전(`title_fix_ko`) + IP명·IP 꾸밈말 삭제. 판촉 정리·호환 표기 같은
+    나머지 `polish_ko`는 안 한다(쿠팡명 규칙이 「애플 워치」를 따로 붙인다 — 「애플워치 호환」으로 바꾸면 안 됨)."""
+    s = str(text or "")
+    if not s or not src:
+        return s
+    t = title_fix(s, src)
+    if ip_hits(src) or ip_hits(t):
+        t = _drop_ip_context(_drop_ip(t))
+    return _tidy(t) if t != s else s
+
+
 def ip_hits(text: str) -> List[str]:
     """Y6 — 영화·게임·애니 IP명(`trademarks` mode=ip: 星际穿越·漫威·迪士尼·宝可梦…)이 들어 있나 — 라벨 목록."""
     s = str(text or "")
