@@ -382,8 +382,66 @@ def read_state(seller_id: str = "") -> Dict[str, Any]:
     return {"ok": True, "reason": ""}
 
 
+# ── X0(오너 2026-10-04): 쿠팡 **계정별** 배송 프로필 ─────────────────────────────────────────────
+#   한 셀러(오너)가 쿠팡 계정을 여럿(고가네 A01381223 · 우주대행 A01504840) 갖는다. 고가네 배송 프로필은
+#   예전부터 `coupang` 자리에 있다 — 같은 저장소에 **계정 키**를 붙여 우주대행은 `coupang@woojoo`.
+#   API 키는 여기 담지 않는다(서버 환경변수 · W0 규칙). 출고지·반품지·Wing ID·인보이스만.
+COUPANG_ACCOUNT_PREFIX = {"gogane": "COUPANG_GOGANE", "woojoo": "COUPANG_WOOJOO"}
+_COUPANG_KEY_ENVS = ("COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID")
+COUPANG_SHIPPING_ENVS = tuple(f["env"] for f in MARKET_CRED_FIELDS["coupang"] if f["env"] not in _COUPANG_KEY_ENVS)
+
+
+def account_profile_key(account: str) -> str:
+    acct = str(account or "").strip().lower()
+    return "coupang" if acct in ("", "gogane") else f"coupang@{acct}"
+
+
+def account_profile(seller_id: str, account: str) -> Dict[str, str]:
+    """그 계정의 **저장된** 배송 프로필(무접두 이름 → 값). 키 칸은 빼고 준다."""
+    raw = _load_all(seller_id).get(account_profile_key(account)) or {}
+    return {k: str(v) for k, v in raw.items() if k in COUPANG_SHIPPING_ENVS and str(v or "").strip()}
+
+
+def save_account_profile(seller_id: str, account: str, values: Dict[str, str]) -> Dict[str, str]:
+    """계정 배송 프로필 저장 — 배송 칸 이름만 받고, 되읽어서 확인한다(F34-1과 같은 규율)."""
+    acct = str(account or "").strip().lower()
+    if acct not in COUPANG_ACCOUNT_PREFIX:
+        raise KeyError(acct)
+    cleaned = {k: str(v).strip() for k, v in (values or {}).items()
+               if k in COUPANG_SHIPPING_ENVS and str(v or "").strip()}
+    if not cleaned:
+        bad = sorted(k for k, v in (values or {}).items() if k not in COUPANG_SHIPPING_ENVS and str(v or "").strip())
+        raise ValueError("저장할 값이 없습니다" + (f" — 배송 칸이 아닌 이름: {', '.join(bad)}" if bad else ""))
+    key = account_profile_key(acct)
+    data = _load_all(seller_id)
+    merged = {**(data.get(key) if isinstance(data.get(key), dict) else {}), **cleaned}
+    _b = _pg_links()
+    if _b is not None:
+        _b.save(seller_id, key, merged)
+    else:
+        _bs = backend_state()
+        if _bs.get("degraded"):
+            raise RuntimeError(_bs.get("reason") or "자격 저장소에 연결하지 못했습니다")
+        data[key] = merged
+        _save_all(seller_id, data)
+    _verify_saved(seller_id, key, cleaned)
+    return account_profile(seller_id, acct)
+
+
+def account_env(seller_id: str, account: str) -> Dict[str, str]:
+    """저장된 계정 프로필을 **그 계정 접두 이름**으로 — 업로더가 env보다 먼저 보게 주입한다(DB 우선)."""
+    pfx = COUPANG_ACCOUNT_PREFIX.get(str(account or "").strip().lower())
+    if not pfx:
+        return {}
+    return {f"{pfx}_{k[len('COUPANG_'):]}": v for k, v in account_profile(seller_id, account).items()}
+
+
 def credential_env(seller_id: str, market: str) -> Dict[str, str]:
-    """주입용 환경변수 dict (셀러 저장값만). 없으면 빈 dict."""
+    """주입용 환경변수 dict (셀러 저장값만). 없으면 빈 dict.
+    X0: `coupang:<계정>`이면 그 계정의 저장 배송 프로필을 계정 접두 이름으로."""
+    m = str(market or "")
+    if m.startswith("coupang:"):
+        return account_env(seller_id, m.partition(":")[2])
     return get(seller_id, market)
 
 

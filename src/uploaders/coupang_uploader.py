@@ -19,6 +19,20 @@ from .base_uploader import BaseUploader
 logger = logging.getLogger(__name__)
 
 
+def _record_meta_probe(account: str, vendor_id: str, category: str, ok: bool, raw: str) -> None:
+    """X1: 계정별 카테고리 메타 결과를 `app_state coupang:meta_probe`에 최근 20건(키 값 없음 — 업체코드·원문만)."""
+    try:
+        from datetime import datetime, timezone
+        from src.db import image_translate_queue_pg as st
+        snap = st.state_get('coupang:meta_probe') or {}
+        rows = list(snap.get('rows') or [])
+        rows.insert(0, {'at': datetime.now(timezone.utc).isoformat(), 'account': account, 'vendor_id': vendor_id,
+                        'category': category, 'ok': ok, 'raw': (raw or '')[:500]})
+        st.state_set('coupang:meta_probe', {'rows': rows[:20]})
+    except Exception as exc:  # 기록 실패는 판정에 영향 없음
+        logger.debug('메타 기록 실패: %s', exc)
+
+
 class CoupangUploader(BaseUploader):
     """Coupang Wing API를 통한 상품 업로더."""
 
@@ -150,6 +164,7 @@ class CoupangUploader(BaseUploader):
             '0', 'false', 'no', 'off')
         self._delivery_companies_cache = None
         self._meta_cache = {}            # displayCategoryCode → 카테고리 메타 원문(고시정보+속성 단일 소스)
+        self._meta_errors = {}           # X1: displayCategoryCode → 실패 원문(HTTP 코드·본문)
         self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
         self._predict_cache = {}         # 상품명 → 예측 categoryId
         if not self.access_key:
@@ -760,18 +775,26 @@ class CoupangUploader(BaseUploader):
 
         ★ AGENT_BUY는 **해외 칸만** 본다. 국내 칸으로 떨어지지 않는다 — 그게 바로 이번 거부다.
         """
+        who = self.account_label()
         if self.is_agent_buy():
             code = str(self.overseas_outbound_place_code or '').strip()
             if not code:
                 # 화면에 나가는 문장이다 — env 이름·마크다운 기호를 넣지 않는다(F48 캡처 자기비평).
-                #   칸 이름은 연동 화면의 라벨 그대로 쓴다.
+                #   칸 이름은 연동 화면의 라벨 그대로 쓴다. X0: 출고지 번호 옆에 **어느 계정 것인지**.
                 dom = str(self.outbound_place_code or '').strip()
-                return '', ('구매대행 출고지는 해외 주소지만 받습니다 — 「구매대행 출고지 (해외)」가 비어 있습니다. '
-                            '마켓 연동 › 쿠팡 › 「불러오기」에서 해외(OVERSEA) 출고지를 고르세요'
-                            + (f'(국내 출고지 {dom}는 국내 배송 전용입니다)' if dom else '') + '.')
+                return '', ('구매대행 출고지는 해외 주소지만 받습니다 — '
+                            + (f'{who} ' if who else '') + '「구매대행 출고지 (해외)」가 비어 있습니다. '
+                            '마켓 연동 › 쿠팡 › ' + (f'{who} 카드 ' if who else '')
+                            + '「불러오기」에서 해외(OVERSEA) 출고지를 고르세요'
+                            + (f'({who + " " if who else ""}국내 출고지 {dom}는 국내 배송 전용입니다)' if dom else '') + '.')
             return code, ''
         code = str(self.outbound_place_code or '').strip()
-        return code, ('' if code else '출고지 코드가 비어 있습니다')
+        return code, ('' if code else (f'{who} ' if who else '') + '출고지 코드가 비어 있습니다')
+
+    _ACCOUNT_LABELS = {'gogane': '고가네', 'woojoo': '우주대행'}
+
+    def account_label(self) -> str:
+        return self._ACCOUNT_LABELS.get(self.account or '', '')
 
     def outbound_address_type(self, code: str) -> str:
         """출고지 코드의 `addressType`(예: OVERSEA). 못 알아내면 빈 문자열 — **모른다**.
@@ -854,11 +877,12 @@ class CoupangUploader(BaseUploader):
             holds.append(hold)
         elif self.is_agent_buy():
             at = self.outbound_address_type(code)
+            _who = (self.account_label() + ' ') if self.account_label() else ''
             if at and at.upper() != 'OVERSEA':
-                holds.append(f'「구매대행 출고지 (해외)」 {code}의 주소 유형이 {at}입니다 — '
+                holds.append(f'「구매대행 출고지 (해외)」 {_who}{code}의 주소 유형이 {at}입니다 — '
                              'AGENT_BUY는 해외(OVERSEA) 출고지만 받습니다.')
             elif not at:
-                notes.append(f'출고지 {code}의 주소 유형을 확인하지 못했습니다(조회 실패) — 해외인지 모릅니다.')
+                notes.append(f'출고지 {_who}{code}의 주소 유형을 확인하지 못했습니다(조회 실패) — 해외인지 모릅니다.')
 
         # b) 카테고리 → 메타(고시정보·구매옵션·필수서류 단일 소스)
         cat = self.predict_category(product.get('title', '')) or str(product.get('category_id', '') or '')
@@ -868,6 +892,8 @@ class CoupangUploader(BaseUploader):
             return out
         meta = self.get_category_meta(cat)
         out['meta_ok'] = bool(meta)
+        if not meta:
+            out['meta_error'] = self.meta_error(cat)
         docs, dhold = self.required_documents_plan(meta)
         out['documents'] = docs
         if dhold:
@@ -878,6 +904,11 @@ class CoupangUploader(BaseUploader):
         self._log_meta_attributes(cat, meta.get('attributes') or [])
         # F51 — SKU별 판매가가 다 있으면 SKU마다 item(`plan_for`가 판정 한 곳).
         plan = plan_for(meta.get('attributes') or [], product, meta_ok=bool(meta))
+        if not meta:
+            # X1: 「메타를 읽지 못했습니다」 옆에 **어느 계정 키로 · 쿠팡이 뭐라 했는지** 원문을 붙인다.
+            _who = self.account_label() or '무접두 키'
+            _tail = f' ({_who} · 카테고리 {cat} · 쿠팡 응답: {(out.get("meta_error") or "알 수 없음")[:300]})'
+            plan['holds'] = [h + _tail if '카테고리 메타를 읽지 못했습니다' in h else h for h in plan['holds']]
         holds.extend(plan['holds'])
         notes.extend(plan['notes'])
         out.update(attributes=plan['attributes'], search_extra=plan['search_extra'])
@@ -963,15 +994,30 @@ class CoupangUploader(BaseUploader):
         if code in self._meta_cache:
             return self._meta_cache[code]
         data = {}
+        raw = ''
         try:
             res = self._api_request('GET', self.NOTICE_META_PATH.format(code=code))
             d = res.get('data') if isinstance(res, dict) else None
             if isinstance(d, dict):
                 data = d
+            elif isinstance(res, dict) and res.get('error'):
+                raw = str(res['error'])            # _api_request가 남긴 HTTP 코드·본문 원문(4xx·401·릴레이)
+            else:
+                raw = f'응답에 data 없음: {str(res)[:300]}'
         except Exception as exc:
-            logger.warning('카테고리 메타 조회 실패(폴백): %s', exc)
+            raw = f'{type(exc).__name__}: {str(exc)[:300]}'
+        if not data:
+            # X1(오너 2026-10-04): 사유만 남기고 **원문을 버렸다** — 키·권한 문제인지 카테고리 문제인지 갈리지 않았다.
+            self._meta_errors[code] = raw or '알 수 없음'
+            logger.warning('쿠팡 카테고리 메타 실패 — 계정 %s · 업체코드 %s · 카테고리 %s · 원문 %s',
+                           self.account or '무접두', self.vendor_id, code, (raw or '')[:500])
+            _record_meta_probe(self.account or '', self.vendor_id, code, False, raw)
         self._meta_cache[code] = data
         return data
+
+    def meta_error(self, display_category_code: str) -> str:
+        """그 카테고리 메타 실패 원문(없으면 빈 문자열)."""
+        return self._meta_errors.get(str(display_category_code or '').strip(), '')
 
     def get_category_attribute_schema(self, display_category_code: str) -> list:
         """이 카테고리의 **구매 옵션(attributes) 스키마**. 카나리 9차 거부('필수 구매 옵션 없음') 대응.

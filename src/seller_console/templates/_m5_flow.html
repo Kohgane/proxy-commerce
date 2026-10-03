@@ -209,11 +209,13 @@
   if (cpBtn) cpBtn.addEventListener('click', loadCoupang);
   loadCoupang();
 
+  var refreshFromStore = false;
   checkBtn.addEventListener('click', function () {
     var markets = picked();
     if (!markets.length) { checksEl.innerHTML = '<div class="m5-res is-bad">등록할 마켓을 하나 이상 골라 주세요.</div>'; return; }
     checkBtn.disabled = true; checksEl.innerHTML = '<div class="m5-note">마켓 조건을 확인하는 중…</div>'; resetGo();
-    post('/seller/collect/prevalidate', {product: product, markets: markets, item_id: itemId}).then(function (d) {
+    var _refresh = refreshFromStore; refreshFromStore = false;
+    post('/seller/collect/prevalidate', {product: product, markets: markets, item_id: itemId, refresh_from_store: _refresh}).then(function (d) {
       checkBtn.disabled = false;
       if (!d.ok) { checksEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-check-error">' + esc(d.error || '사전검증을 하지 못했어요') + '</div>'; return; }
       var h = '';
@@ -225,9 +227,27 @@
              '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
              (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
              ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
-             (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') + '</div>';
+             (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') +
+             // X2: 번역으로 풀리는 보류엔 버튼 하나 — 이 상품을 지금 옮기고 같은 마켓으로 다시 검증한다.
+             (r.hold && (r.fixes || []).indexOf('translate') >= 0
+               ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '') + '</div>';
       });
+      if (d.auto_translate) {
+        var at = d.auto_translate;
+        h = '<div class="m5-note" data-role="m5-auto-translate">' + (at.status === 'done' || at.status === 'queued'
+          ? '보류 전에 자동 번역을 돌리고 다시 확인했어요' + (at.reason ? ' — ' + esc(at.reason) : '') + '.'
+          : '자동 번역을 시도했지만 옮기지 못했어요 — ' + esc(at.reason || at.status) + '.') + '</div>' + h;
+      }
       checksEl.innerHTML = h;
+      checksEl.querySelectorAll('[data-role="m5-translate-recheck"]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true; b.textContent = '번역하는 중…';
+          post('/seller/collect/' + encodeURIComponent(itemId) + '/translate-now', {}).then(function (t) {
+            if (!t.ok) { b.disabled = false; b.textContent = '번역하고 다시 검증'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.reason || t.error || '옮기지 못했어요') + '</div>'); return; }
+            refreshFromStore = true; checkBtn.click();
+          });
+        });
+      });
       goBtn.disabled = blocked || !okMarkets.length;
       var held = (d.results || []).some(function (r) { return r.hold; });
       goBtn.textContent = okMarkets.length ? '등록 (' + okMarkets.length + '곳)'

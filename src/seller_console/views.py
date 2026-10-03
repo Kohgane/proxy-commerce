@@ -2910,6 +2910,33 @@ def collect_coupang_options():
     return jsonify(out), (200 if out.get("ok") else 422)
 
 
+def _merge_stored_translation(product_data: dict, item_id: str) -> dict:
+    """X2: 저장된 번역(옵션 `values_ko`·`name_ko`·상품명 `title_ko`)을 화면이 보낸 상품에 덮는다 — 방금 옮긴 결과로 재검증."""
+    try:
+        item = _get_owned_item(item_id) or {}
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        return product_data
+    out = dict(product_data)
+    if isinstance(ex.get("options"), list) and ex["options"]:
+        out["options"] = ex["options"]
+    if ex.get("title_ko"):
+        out["title_ko"] = ex["title_ko"]
+    return out
+
+
+@bp.post("/collect/<item_id>/translate-now")
+def collect_translate_now(item_id):
+    """X2: 「번역하고 다시 검증」 — 이 상품 하나를 지금 옮긴다(규칙 → 번역기, 하루 상한 안). 결과 원문 그대로."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if not _get_owned_item(item_id):
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    from src.services import option_translate_auto as _optauto
+    r = _optauto.translate_now(_seller_id(), item_id)
+    return jsonify({"ok": r.get("status") in ("done", "queued"), **r})
+
+
 @bp.post("/collect/prevalidate")
 def collect_prevalidate():
     """마켓 업로드 사전검증 (Phase 190).
@@ -2937,8 +2964,19 @@ def collect_prevalidate():
         # S1(오너 2026-10-02): 등록이 보낼 **그 이미지 배열**로 재고, 마켓 관점 도달도 **여기서** 본다 —
         #   예전엔 사전검증 「통과」 뒤 등록에서야 「상세 1번째 — 우리 서버 주소」로 막혔다(R2와 같은 교훈).
         product_data, _wp, _rc = _outbound_images(dict(product_data), data.get("item_id"))
+        if data.get("refresh_from_store") and data.get("item_id"):
+            product_data = _merge_stored_translation(product_data, str(data["item_id"]))
         with mc.seller_market_env(_seller_id(), markets):
             results = dispatcher.prevalidate(product_data, markets)
+        # X2(오너 2026-10-04): 「번역」 보류는 **보류하기 전에 번역을 먼저** — 옮겨지면 다시 검증, 그래도 남으면 보류.
+        _auto = None
+        if data.get("item_id") and any(r.hold and "translate" in (getattr(r, "fixes", None) or []) for r in results):
+            from src.services import option_translate_auto as _optauto
+            _auto = _optauto.translate_now(_seller_id(), str(data["item_id"]))
+            if _auto.get("status") in ("done", "queued"):
+                product_data = _merge_stored_translation(product_data, str(data["item_id"]))
+                with mc.seller_market_env(_seller_id(), markets):
+                    results = dispatcher.prevalidate(product_data, markets)
         if _rc is not None and not _rc["ok"]:
             from src.services import image_reachability as _reach
             _lines = [_reach.describe(b) for b in _rc["bad"][:8]]
@@ -2968,10 +3006,13 @@ def collect_prevalidate():
                     "action_url": getattr(r, "action_url", "") or "",
                     # R2 — 재료가 덜 와서 멈춘 것(보강·번역하면 풀린다). 화면은 「막힘」 대신 「보류」.
                     "hold": bool(getattr(r, "hold", False)),
+                    "fixes": list(getattr(r, "fixes", None) or []),
                 }
                 for r in results
             ],
             "all_ok": all(r.ok for r in results),
+            # X2: 보류 전에 돌린 자동 번역 결과(없으면 null) — 화면이 「자동 번역 후 다시 확인」/실패 사유를 말한다.
+            "auto_translate": _auto,
         })
     except Exception as exc:
         logger.warning("사전검증 오류: %s", exc)
@@ -5745,8 +5786,50 @@ def markets_connect():
     return render_template(
         "markets_connect.html", page="markets",
         market_statuses=statuses, market_chips=chips, single_market=None, guide_entry=None,
-        guide_map=guide_map(), **_connect_ip_ctx(),
+        guide_map=guide_map(), coupang_accounts=_coupang_account_cards(seller), **_connect_ip_ctx(),
     )
+
+
+def _coupang_account_cards(seller: str) -> list:
+    """X0(오너 2026-10-04): 마켓 연동 › 쿠팡 — **계정별 카드**(고가네 A01381223 · 우주대행 A01504840).
+
+    서버에 계정 접두 자격이 있는 오너 서버에서만(다른 셀러는 「쿠팡」 한 장 그대로). 칸 값은 등록이 읽는 순서 그대로:
+    저장된 계정 프로필(DB) → 서버 환경변수(계정 접두, 고가네는 무접두 폴백). 키 값은 안 싣는다(출처만).
+    """
+    try:
+        from .market_cred_view import coupang_account_choices
+        if not coupang_account_choices():
+            return []
+        from . import market_credentials as mc
+        from .coupang_shipping_lookup import _uploader
+        from src.pipeline.coupang_replicate import COUPANG_ACCOUNTS, coupang_key_source
+    except Exception as exc:
+        logger.warning("[마켓 연동] 쿠팡 계정 카드 준비 실패: %s", exc)
+        return []
+    labels = {f["env"]: f["label"] for f in mc.MARKET_CRED_FIELDS["coupang"]}
+    cards = []
+    for acct, meta in COUPANG_ACCOUNTS.items():
+        src = coupang_key_source(acct)
+        saved = mc.account_profile(seller, acct)
+        try:
+            up = _uploader(acct)
+        except Exception:
+            up = None
+        pfx = mc.COUPANG_ACCOUNT_PREFIX[acct]
+        fields = []
+        for env in mc.COUPANG_SHIPPING_ENVS:
+            if env in saved:
+                val, where = saved[env], "저장값"
+            else:
+                val = (up._ship_env(env) if up is not None else "") or ""
+                where = (f"서버 환경변수 {pfx}_{env[len('COUPANG_'):]}" if os.getenv(f"{pfx}_{env[len('COUPANG_'):]}", "").strip()
+                         else ("서버 환경변수 " + env if val else ""))
+            fields.append({"env": env, "label": labels.get(env, env), "value": val, "source": where})
+        cards.append({"account": acct, "label": meta["label"], "vendor_id": src.get("vendor_id") or meta["vendor_id"],
+                      "key_source": src["key_source"], "key_env": src["key_env"], "ready": src["ready"],
+                      "note": src.get("note") or "", "fields": fields,
+                      "overseas_env": f"{pfx}_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE"})
+    return cards
 
 
 def _connect_ip_ctx() -> dict:
@@ -5855,7 +5938,8 @@ def markets_connect_one(market):
         "markets_connect.html", page="markets",
         market_statuses=[mc.status(seller, market)], market_chips=chips,
         single_market=market, guide_entry=guide_entry,
-        guide_map=guide_map(), **_connect_ip_ctx(),
+        guide_map=guide_map(), coupang_accounts=(_coupang_account_cards(seller) if market == "coupang" else []),
+        **_connect_ip_ctx(),
     )
 
 
@@ -13137,6 +13221,50 @@ def coupang_invoice_upload_route():
         return jsonify({"ok": False, "error": out.get("error") or "올리지 못했습니다.",
                         "user_message": True}), 502
     return jsonify({"ok": True, "secure_url": out["secure_url"], "kind": out.get("kind", "")})
+
+
+@bp.post("/markets/connect/coupang/<account>/lookup")
+def coupang_account_lookup_route(account):
+    """X0: 그 계정의 키로 출고지·반품지를 불러온다(우주대행 = COUPANG_WOOJOO_* · relay2 경유). 저장은 안 한다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import market_credentials as mc
+    from .coupang_shipping_lookup import fetch
+    from .market_cred_view import coupang_account
+    acct = str(account or "").strip().lower()
+    if acct not in mc.COUPANG_ACCOUNT_PREFIX:
+        return jsonify({"ok": False, "error": f"모르는 쿠팡 계정: {acct}", "user_message": True}), 404
+    try:
+        with mc.seller_market_env(_seller_id(), [f"coupang:{acct}"]), coupang_account(acct):
+            out = fetch(acct)
+    except Exception as exc:
+        logger.warning("[쿠팡 불러오기] %s 실패: %s", acct, exc)
+        return jsonify({"ok": False, "error": f"불러오지 못했습니다 — {type(exc).__name__}", "user_message": True}), 502
+    if not out.get("ok"):
+        reason = (out.get("reason") or (out.get("return_centers") or {}).get("error")
+                  or (out.get("outbound_places") or {}).get("error") or "불러오지 못했습니다.")
+        return jsonify({"ok": False, "error": reason, "user_message": True, **out}), 409
+    return jsonify({"ok": True, **out})
+
+
+@bp.post("/markets/connect/coupang/<account>/profile")
+def coupang_account_profile_route(account):
+    """X0: 고른 출고지·반품지를 **그 계정** 배송 프로필로 저장(DB, 되읽어 확인). 등록은 DB 우선 → 없으면 env."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from . import market_credentials as mc
+    acct = str(account or "").strip().lower()
+    if acct not in mc.COUPANG_ACCOUNT_PREFIX:
+        return jsonify({"ok": False, "error": f"모르는 쿠팡 계정: {acct}", "user_message": True}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        saved = mc.save_account_profile(_seller_id(), acct, data.get("values") or {})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc), "user_message": True}), 400
+    except Exception as exc:
+        logger.warning("[쿠팡 계정 프로필] %s 저장 실패: %s", acct, exc)
+        return jsonify({"ok": False, "error": f"저장하지 못했습니다 — {exc}", "user_message": True}), 502
+    return jsonify({"ok": True, "account": acct, "saved": saved})
 
 
 @bp.post("/markets/connect/coupang/lookup")

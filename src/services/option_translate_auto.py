@@ -363,6 +363,26 @@ def _job(job: dict) -> tuple:
     return "done", ("; ".join(errors)[:300] if errors else ""), sent
 
 
+def translate_now(user_id: str, item_id: str) -> dict:
+    """X2: 사전검증이 「번역」 때문에 보류하기 **전에** 이 상품 하나를 지금 옮긴다(큐 워커와 같은 `_job` —
+    규칙 → 번역기, 하루 상한·Papago 일한도 안에서). → `{status, reason, sent}`.
+    번역 끄기(`translate_requested is False`)·일시정지면 손대지 않는다."""
+    if pause_state().get("paused"):
+        return {"status": "paused", "reason": pause_state().get("reason") or "일시정지", "sent": 0}
+    try:
+        _row, ex = _load(item_id, user_id)
+    except Exception as exc:
+        return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}", "sent": 0}
+    if ex.get("translate_requested") is False:
+        return {"status": "skipped", "reason": "이 상품은 번역을 끈 상태", "sent": 0}
+    try:
+        status_, reason, sent = _job({"item_id": item_id, "user_id": user_id})
+    except Exception as exc:
+        status_, reason, sent = "failed", f"{type(exc).__name__}: {exc}", 0
+    logger.info("[옵션번역·즉시] item=%s %s %s", item_id, status_, (reason or "")[:120])
+    return {"status": status_, "reason": reason or "", "sent": sent}
+
+
 # ── 점검(J2 실측 보고) ───────────────────────────────────────────────────────
 
 def audit(rows: list, *, samples: int = 20) -> dict:

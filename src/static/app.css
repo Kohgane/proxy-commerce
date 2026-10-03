@@ -1681,6 +1681,13 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 }
 .mc-badge.on { background: color-mix(in srgb, var(--teal) 14%, transparent); color: var(--teal); }
 /* 마스킹된 연동 값 — 키/값 한 줄(세로 쪼개짐 0). */
+/* X0(2026-10-04): 마켓 연동 › 쿠팡 계정별 카드 */
+.mc-acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-3); }
+.mc-acct { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); background: var(--surface); min-width: 0; }
+.mc-acct .mc-kv .v { word-break: break-word; }
+.mc-acct-pick label { display: flex; gap: 6px; align-items: flex-start; word-break: break-word; }
+.mc-acct-break { word-break: break-word; }
+.mc-acct-warn { color: var(--danger); word-break: break-word; }
 .mc-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-3); }
 .mc-kv .kv { border-radius: var(--radius); padding: var(--space-3); background: var(--surface-warm); }
 .mc-kv .kv .k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
