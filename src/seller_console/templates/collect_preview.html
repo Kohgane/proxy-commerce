@@ -2614,9 +2614,35 @@ function kgpEnrichRetry() {
     var id = b.getAttribute('data-item');
     b.disabled = true;
     try {
-      var r = await fetch('/seller/collect/' + encodeURIComponent(id) + '/recollect', {method: 'POST'});
+      // Y3: 폰(확장 없음)은 새 탭이 소용없다 — 재보강 큐에 넣고 PC 확장이 집어 가길 기다린다.
+      //   확장은 페이지에 `data-kgp-ext`(설치 버전)를 남긴다 — 그게 없으면(폰·확장 없는 PC) 큐로 간다.
+      var hasExt = false;
+      try { hasExt = !!(document.documentElement.getAttribute('data-kgp-ext')
+                        || (window.parent && window.parent !== window && window.parent.document.documentElement.getAttribute('data-kgp-ext'))); } catch (e) { hasExt = false; }
+      var phone = !hasExt;
+      var r = await fetch('/seller/collect/' + encodeURIComponent(id) + '/recollect' + (phone ? '?mode=queue' : ''), {method: 'POST'});
       var d = await r.json().catch(function () { return {}; });
       if (!r.ok || !d.ok) { say('<span style="color:var(--danger)">' + (d.error || '요청하지 못했어요') + '</span>'); b.disabled = false; return; }
+      if (d.queued) {
+        say('<i class="bi bi-hourglass-split"></i> ' + d.message);
+        var qreq = d.requested_at, qn = 0;
+        var qt = setInterval(async function () {
+          qn += 1;
+          try {
+            var s = await (await fetch('/seller/collect/' + encodeURIComponent(id) + '/state')).json();
+            if (s && s.ok && s.enrich_rerun_done_at && s.enrich_rerun_done_at >= qreq) {
+              clearInterval(qt);
+              try { if (window.parent && window.parent !== window) window.parent.postMessage({kgp: 'item-updated', id: id, title: s.title || ''}, location.origin); } catch (e) { /* 단독 */ }
+              say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> PC 확장이 다시 보강했어요</span> — 새 값으로 다시 그립니다');
+              setTimeout(function () { location.reload(); }, 600);
+              return;
+            }
+            if (s && s.enrich_fail) say('<i class="bi bi-arrow-repeat"></i> ' + s.enrich_fail + ' — 다시 줄 서 있어요');
+          } catch (e) { /* 다음 틱 */ }
+          if (qn >= 90) clearInterval(qt);        // 30초 × 90 = 45분 — 화면을 닫아도 큐는 남는다
+        }, 30000);
+        b.disabled = false; return;
+      }
       window.open(d.open_url, '_blank', 'noopener');
       say('<i class="bi bi-hourglass-split"></i> 새 탭에서 고가수집기 버튼을 눌러 주세요 — 기다리는 중');
       var req = d.requested_at, n = 0;

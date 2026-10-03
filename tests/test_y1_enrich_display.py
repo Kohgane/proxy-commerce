@@ -63,7 +63,10 @@ def test_empty_page_enrich_is_discarded_and_requeued(monkeypatch):
     d = r.get_json()
     assert d["ok"] is False and d["requeued"] and "봇 확인 페이지" in d["error"]
     ex = json.loads(S.get(iid, seller_ids={seller})["extra_json"])
-    assert ex["enrich_state"] == "failed" and ex["enrich_rerun"] is True and not ex.get("detail_images")   # 덮어쓰기 0
+    assert ex["enrich_state"] == "pending" and ex["enrich_rerun"] is True and not ex.get("detail_images")  # 덮어쓰기 0
+    assert ex["enrich_attempts"] == 1                                       # 같은 벽 무한 반복 방지(상한 3)
+    from src.collectors.collect_status import enrich_axes
+    assert enrich_axes(ex)["enrich_state"] == "pending"                     # 재보강 큐(확장 폴러)가 집는다
     h = c.get(f"/seller/collect/preview/{iid}?drawer=1").get_data(as_text=True)
     assert 'data-role="enrich-fail"' in h and "KST" in h
 

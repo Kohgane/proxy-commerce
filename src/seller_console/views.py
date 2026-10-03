@@ -12622,6 +12622,10 @@ def collect_item_state(item_id: str):
         # F49-T 2부-c: 드로어 「원본에서 다시 수집」이 들여다본다 — 요청 뒤에 갱신됐는지·무엇이 바뀌었는지.
         "recollect_requested_at": ex.get("recollect_requested_at") or "",
         "recollected_at": ex.get("recollected_at") or "",
+        # Y3: 폰에서 재보강 큐에 넣은 뒤 — 확장이 실제로 다시 보강했는지(`enrich_rerun_done_at`)를 본다.
+        "enrich_rerun_waiting": bool(ex.get("enrich_rerun")),
+        "enrich_rerun_done_at": ex.get("enrich_rerun_done_at") or "",
+        "enrich_fail": (ex.get("enrich_fail") or {}).get("reason", ""),
         # Y1: 재수집 뒤 드로어 헤더·목록 행이 같은 값을 쓰게(목록과 같은 표시 규칙: 번역 제목 → 원문 → 행 제목).
         "title": str(ex.get("title_ko") or row.get("title") or ex.get("title") or ""),
         "last_merge": (list(ex.get("merge_log") or [])[-1:] or [None])[0],
@@ -13142,14 +13146,50 @@ def collect_item_recollect(item_id: str):
         return jsonify({"ok": False, "error": "원본 주소가 없어 다시 수집할 수 없어요."}), 400
     # 수집 라우트의 `recollected_at`과 **같은 형식**(UTC isoformat) — 문자열 비교로 선후를 가린다.
     ex["recollect_requested_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    _data = request.get_json(silent=True) or {}
+    _queue = str(_data.get("mode") or request.args.get("mode") or "") == "queue"
+    if _queue:
+        # Y3(오너 2026-10-04): 폰엔 확장이 없다 — 「새 탭에서 고가수집기를 눌러 주세요」는 할 수 없는 일이다.
+        #   **재보강 큐**에 넣는다(R1 백그라운드 보강 = 확장 폴러 `/api/v1/collect/enrich/pending`이 집는 그 큐).
+        ex["enrich_state"] = "pending"
+        ex["enrich_attempts"] = 0
+        ex["enrich_rerun"] = True
+        ex["enrich_requeued_at"] = ex["recollect_requested_at"]
     from . import collect_history_store
     ok = collect_history_store.update(item_id, seller_id=item.get("seller_id") or _seller_id(),
                                       extra_json=_json.dumps(ex, ensure_ascii=False))
     if not ok:
         return jsonify({"ok": False, "error": "요청을 저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요."}), 502
+    if _queue:
+        pos = _enrich_queue_position(item_id)
+        return jsonify({"ok": True, "item_id": item_id, "queued": True, "position": pos,
+                        "requested_at": ex["recollect_requested_at"],
+                        "message": "PC 확장이 켜지면 자동으로 다시 보강됩니다" + (f" (대기 {pos}번째)" if pos else "")})
     return jsonify({"ok": True, "item_id": item_id, "open_url": url,
                     "requested_at": ex["recollect_requested_at"],
                     "message": "새 탭에서 고가수집기 버튼을 누르면 이 항목이 갱신됩니다(15분 안)."})
+
+
+def _enrich_queue_position(item_id: str) -> int:
+    """Y3: 확장 폴러(`/enrich/pending`)가 보는 **같은 순서**로 이 항목이 몇 번째인지(없으면 0)."""
+    try:
+        from .collect_history_store import list_items
+        from src.collectors.collect_status import enrich_axes
+        from src.api.extension_api import ENRICH_MAX_ATTEMPTS
+        n = 0
+        for row in list_items(seller_ids=_seller_identities(), days=90, limit=500):
+            try:
+                ex = json.loads(row.get("extra_json") or "{}") or {}
+            except Exception:
+                continue
+            if enrich_axes(ex)["enrich_state"] != "pending" or int(ex.get("enrich_attempts") or 0) >= ENRICH_MAX_ATTEMPTS:
+                continue
+            n += 1
+            if str(row.get("id")) == str(item_id):
+                return n
+    except Exception as exc:
+        logger.warning("[재보강 큐] 순번 계산 실패: %s", exc)
+    return 0
 
 
 @bp.post("/collect/<item_id>/enrich-retry")

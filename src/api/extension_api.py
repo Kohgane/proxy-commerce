@@ -963,7 +963,10 @@ def collect_enrich():
     from src.collectors.collect_status import bot_wall_reason, real_detail_images, still_uncollected
     _wall = bot_wall_reason(data)
     if _wall:
-        extra["enrich_state"] = "failed"
+        # 큐(`/enrich/pending`)는 보정 축이 `pending`인 행만 집는다 — `failed`로 두면 재보강이 영영 안 온다.
+        #   시도 수는 올려서 같은 벽에 무한히 박지 않게(상한 ENRICH_MAX_ATTEMPTS — 넘으면 큐에서 빠진다).
+        extra["enrich_state"] = "pending"
+        extra["enrich_attempts"] = int(extra.get("enrich_attempts") or 0) + 1
         extra["enrich_fail"] = {"at": _now_iso_w4(), "reason": _wall}
         extra["enrich_rerun"] = True
         extra["enrich_requeued_at"] = _now_iso_w4()
