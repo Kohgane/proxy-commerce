@@ -567,13 +567,13 @@ def test_account_creds_prefix_and_base_fallback(monkeypatch):
     monkeypatch.setenv("COUPANG_GOGANE_ACCESS_KEY", "gak")
     monkeypatch.setenv("COUPANG_GOGANE_SECRET_KEY", "gsk")
     monkeypatch.setenv("COUPANG_GOGANE_VENDOR_ID", "A01381223")
-    # 우주대행은 무접두 base(COUPANG_*)로 흡수(VENDOR_ID 일치).
+    # W0(오너 2026-10-03): 우주대행은 COUPANG_WOOJOO_*만 — 무접두가 우주대행 업체코드여도 흡수하지 않는다.
     monkeypatch.setenv("COUPANG_ACCESS_KEY", "bak")
     monkeypatch.setenv("COUPANG_SECRET_KEY", "bsk")
     monkeypatch.setenv("COUPANG_VENDOR_ID", "A01504840")
     assert CR._account_creds("gogane") == ("gak", "gsk", "A01381223")
-    assert CR._account_creds("woojoo") == ("bak", "bsk", "A01504840")   # base 폴백
-    assert set(CR.ready_accounts()) == {"gogane", "woojoo"}
+    assert CR._account_creds("woojoo") == ("", "", "A01504840")         # base 흡수 없음
+    assert set(CR.ready_accounts()) == {"gogane"}
 
 
 def test_fetch_coupang_images_account_routing_hint_and_order(monkeypatch):

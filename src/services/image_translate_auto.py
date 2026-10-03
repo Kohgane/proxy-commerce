@@ -166,6 +166,10 @@ def kick() -> None:
     if os.getenv("IMAGE_TRANSLATE_AUTO_SYNC") == "1":      # 테스트: 같은 스레드에서 끝까지
         run_until_idle()
         return
+    from src.services import workers as _w
+    if not _w.workers_enabled():                      # W2: 워커는 WORKERS_ENABLED 서비스에서만 — 여기선 접수만(큐에 남는다)
+        logger.info("[이미지번역·자동] 이 서비스(%s)는 워커 꺼짐(%s) — 접수만", _w.service_name(), _w.gate_text())
+        return
     with _WORKER["lock"]:
         th = _WORKER["thread"]
         if th and th.is_alive():
@@ -176,12 +180,29 @@ def kick() -> None:
 
 
 def run_until_idle(max_pages: int = 10_000) -> int:
+    """W2: 서비스 간 단일 실행 — DB 리스를 잡은 한 곳만 돈다. 실행 기록은 서비스별로 남긴다."""
+    from src.services import workers as _w
+    if not _w.lease("imgko-auto"):
+        logger.info("[이미지번역·자동] 다른 서비스가 돌리는 중 — 이번엔 건너뜀")
+        return 0
+    n = 0
+    try:
+        n = _drain(max_pages)
+        return n
+    finally:
+        _w.release("imgko-auto")
+        _w.record_run("imgko-auto", n)
+
+
+def _drain(max_pages: int = 10_000) -> int:
     """큐가 빌 때까지(또는 상한·일시정지) 한 장씩. 처리한 장 수."""
     q = _q()
     n = 0
     while n < max_pages:
         if pause_state().get("paused"):
             return n
+        from src.services import workers as _w
+        _w.lease("imgko-auto")                                 # 리스 갱신(장마다)
         job = q.lease_next()
         if not job:
             return n

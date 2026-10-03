@@ -63,14 +63,19 @@ def _cmd_poll(args):
         threads.append(t)
 
     if platform in ('naver', 'all'):
-        poller = NaverOrderPoller(poll_interval=args.interval)
-        t = threading.Thread(
-            target=poller.poll_loop,
-            kwargs={'callback': handle_orders},
-            daemon=True,
-            name='naver-poller',
-        )
-        threads.append(t)
+        # W1: 스토어마다 하나(셰고가·고코스모스 — 키 있는 스토어만). 키가 하나도 없으면 예전 공용 키 한 벌.
+        from .naver_order_poller import store_pollers
+        pollers = store_pollers() or [NaverOrderPoller(poll_interval=args.interval)]
+        for poller in pollers:
+            if args.interval is not None:
+                poller._poll_interval = args.interval
+            t = threading.Thread(
+                target=poller.poll_loop,
+                kwargs={'callback': handle_orders},
+                daemon=True,
+                name=f'naver-poller-{poller.store or "common"}',
+            )
+            threads.append(t)
 
     if not threads:
         print(f"알 수 없는 플랫폼: {args.platform}")

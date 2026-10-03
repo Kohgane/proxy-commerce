@@ -149,7 +149,15 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
     import time as _t
     t0 = _t.monotonic()
     result: dict = {"limit": limit}
+    from src.services import workers as _w
+    _leased = False
     try:
+        # W2: 서비스 간 단일 실행 — 외부 크론이 두 서비스를 불러도 한 곳만 돈다(나머지는 기록만 남기고 건너뜀).
+        _leased = _w.lease("translate-pilot-tick", ttl=int(tick_budget) + 30)
+        if not _leased:
+            result["skipped"] = "다른 서비스가 틱을 돌리는 중"
+            logger.info("틱 건너뜀: 다른 서비스가 리스 보유(translate-pilot-tick)")
+            return result
         with app.app_context():
             drain_budget = max(4.0, min(_drain_share_sec(), tick_budget - _PILOT_MIN_SEC))
             try:
@@ -191,6 +199,10 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
         logger.error("틱 실행 오류(백그라운드): %s", exc)
         result["error"] = str(exc)
     finally:
+        if _leased:
+            _w.release("translate-pilot-tick")
+            _w.record_run("translate-pilot-tick", int((result.get("drain") or {}).get("processed") or 0),
+                          note=f"총 {result.get('total_sec', '?')}s" + (f" · 오류 {result['error'][:80]}" if result.get("error") else ""))
         _last_tick.clear()
         _last_tick.update(result)
         try:
@@ -287,7 +299,14 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
     import time as _t
     t0 = _t.monotonic()
     out: dict = {"account": account}
+    from src.services import workers as _w
+    _leased = False
     try:
+        _leased = dry_run or _w.lease("reject-watch", ttl=int(budget) + 60)   # W2: 서비스 간 단일 실행
+        if not _leased:
+            out = {"ok": True, "skipped": "다른 서비스가 반려감시를 돌리는 중", "account": account}
+            logger.info("반려감시 상태: 건너뜀 — 다른 서비스가 리스 보유(reject-watch)")
+            return out
         with app.app_context():
             from src.db import market_registrations_pg as REG
             from src.pipeline import reject_watch as RW
@@ -337,6 +356,10 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
         logger.error("반려감시 상태: 오류(백그라운드) — %s", exc)
         out = {"ok": False, "error": str(exc)}
     finally:
+        if _leased and not dry_run:
+            _w.release("reject-watch")
+            _w.record_run("reject-watch", int(out.get("checked") or out.get("total") or 0),
+                          note=f"{account}" + (f" · 오류 {str(out.get('error'))[:80]}" if out.get("error") else ""))
         if not dry_run:                        # dry-run은 락을 안 잡았다(마지막 결과도 안 덮는다)
             _last_reject_watch.clear()
             _last_reject_watch.update(out)

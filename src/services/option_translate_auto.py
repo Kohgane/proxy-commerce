@@ -206,6 +206,10 @@ def kick() -> None:
         return
     if os.getenv("OPTION_TRANSLATE_AUTO_OFF") == "1":
         return
+    from src.services import workers as _w
+    if not _w.workers_enabled():                      # W2: 워커는 WORKERS_ENABLED 서비스에서만 — 여기선 접수만(큐에 남는다)
+        logger.info("[옵션번역·자동] 이 서비스(%s)는 워커 꺼짐(%s) — 접수만", _w.service_name(), _w.gate_text())
+        return
     with _WORKER["lock"]:
         th = _WORKER["thread"]
         if th and th.is_alive():
@@ -216,11 +220,28 @@ def kick() -> None:
 
 
 def run_until_idle(max_jobs: int = 10_000) -> int:
+    """W2: 서비스 간 단일 실행 — DB 리스를 잡은 한 곳만 돈다. 실행 기록은 서비스별로 남긴다."""
+    from src.services import workers as _w
+    if not _w.lease("optko-auto"):
+        logger.info("[옵션번역·자동] 다른 서비스가 돌리는 중 — 이번엔 건너뜀")
+        return 0
+    n = 0
+    try:
+        n = _drain(max_jobs)
+        return n
+    finally:
+        _w.release("optko-auto")
+        _w.record_run("optko-auto", n)
+
+
+def _drain(max_jobs: int = 10_000) -> int:
     q = _q()
     n = 0
     while n < max_jobs:
         if pause_state().get("paused"):
             return n
+        from src.services import workers as _w
+        _w.lease("optko-auto")                                 # 리스 갱신(장마다)
         job = q.lease_next()
         if not job:
             return n

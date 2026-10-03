@@ -230,26 +230,52 @@ class TestCoupangOrderPoller:
 class TestNaverOrderPoller:
     """네이버 주문 폴러 테스트."""
 
-    def _make_token_response(self):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {'access_token': 'test-token', 'expires_in': 3600}
-        return m
+    # W1(2026-10-03): 토큰·주문 전부 **업로더 한 곳**(bcrypt 서명·릴레이)을 지난다 — 그 자리(relay_request)를 목킹.
+    @staticmethod
+    def _salt():
+        import bcrypt
+        return bcrypt.gensalt(rounds=4).decode()
 
-    def _make_orders_response(self, orders: list):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {'data': orders}
-        return m
+    @staticmethod
+    def _relay(calls, orders):
+        """토큰 POST · 변경목록 GET · 상세 POST(query)에 각각 답하는 가짜 relay_request."""
+        class _R:
+            def __init__(self, code, body):
+                import json as _j
+                self.status_code, self.text = code, _j.dumps(body)
+                self.content = self.text.encode()
+            def json(self):
+                import json as _j
+                return _j.loads(self.text)
+            def raise_for_status(self):
+                pass
+
+        def fake(method, url, **kw):
+            calls.append((method, url, kw))
+            if url.endswith('/oauth2/token'):
+                return _R(200, {'access_token': 'test-token', 'expires_in': 3600})
+            if '/last-changed-statuses' in url:
+                return _R(200, {'data': {'lastChangeStatuses': [{'productOrderId': o['productOrderId']} for o in orders]}})
+            if url.endswith('/product-orders/query'):
+                return _R(200, {'data': orders})
+            return _R(404, {'message': 'unexpected'})
+        return fake
 
     def test_init_from_env(self, monkeypatch):
-        """환경변수에서 자격증명 로드."""
+        """스토어 미지정이면 공용 NAVER_COMMERCE_*(로그인용 NAVER_CLIENT_ID는 읽지 않음)."""
         monkeypatch.setenv('NAVER_COMMERCE_CLIENT_ID', 'NC123')
         monkeypatch.setenv('NAVER_COMMERCE_CLIENT_SECRET', 'NS456')
+        monkeypatch.setenv('NAVER_CLIENT_ID', 'login-id')
         from src.order_alerts.naver_order_poller import NaverOrderPoller
         poller = NaverOrderPoller()
-        assert poller._client_id == 'NC123'
-        assert poller._client_secret == 'NS456'
+        assert poller._client_id == 'NC123' and poller._up.client_secret == 'NS456'
+
+    def test_init_store_keys(self, monkeypatch):
+        """스토어 지정이면 그 스토어 키(NAVER_<STORE>_*)."""
+        monkeypatch.setenv('NAVER_GOCOSMOS_CLIENT_ID', 'cos-id')
+        monkeypatch.setenv('NAVER_GOCOSMOS_CLIENT_SECRET', 'cos-sec')
+        from src.order_alerts.naver_order_poller import NaverOrderPoller
+        assert NaverOrderPoller(store='gocosmos')._client_id == 'cos-id'
 
     def test_init_explicit_params(self):
         """명시적 파라미터로 초기화."""
@@ -258,79 +284,68 @@ class TestNaverOrderPoller:
         assert poller._client_id == 'NC1'
         assert poller._poll_interval == 120
 
-    def test_fetch_new_orders_no_credentials_raises(self):
+    def test_fetch_new_orders_no_credentials_raises(self, monkeypatch):
         """자격증명 없으면 ValueError."""
+        for k in ('NAVER_COMMERCE_CLIENT_ID', 'NAVER_COMMERCE_CLIENT_SECRET'):
+            monkeypatch.delenv(k, raising=False)
         from src.order_alerts.naver_order_poller import NaverOrderPoller
         poller = NaverOrderPoller(client_id='', client_secret='')
         with pytest.raises(ValueError, match='자격증명'):
             poller.fetch_new_orders()
 
-    @patch('src.order_alerts.naver_order_poller.relay_request')
-    def test_fetch_new_orders_success(self, mock_relay):
-        """정상 주문 조회 — V1': 토큰·주문 둘 다 릴레이 관문(market=smartstore)으로 나간다."""
-        from unittest.mock import MagicMock
-        mock_post, mock_get = MagicMock(), MagicMock()
-        mock_relay.side_effect = lambda m, *a, **k: (mock_post if m == 'POST' else mock_get)(*a, **k)
-        mock_post.return_value = self._make_token_response()
+    def test_fetch_new_orders_success(self, monkeypatch):
+        """정상 주문 조회 — 토큰(bcrypt)·변경목록·상세 전부 릴레이 관문(market=smartstore), 정본 경로."""
         raw_order = {
             'productOrderId': 'NOD-001',
-            'orderId': 'NV-001',
-            'productOrder': {
-                'productName': '스마트워치',
-                'quantity': 1,
-                'totalPaymentAmount': 89000,
-                'productOrderStatus': 'PAYED',
-            },
-            'order': {
-                'ordererName': '이순신',
-                'ordererTel': '010-9876-5432',
-                'paymentDate': '2024-01-15T11:00:00',
-            },
+            'productOrder': {'productOrderId': 'NOD-001', 'productName': '스마트워치', 'quantity': 1,
+                             'totalPaymentAmount': 89000, 'productOrderStatus': 'PAYED'},
+            'order': {'orderId': 'NV-001', 'ordererName': '이순신', 'ordererTel': '010-9876-5432',
+                      'paymentDate': '2024-01-15T11:00:00'},
         }
-        mock_get.return_value = self._make_orders_response([raw_order])
+        calls = []
+        monkeypatch.setattr('src.uploaders.naver_uploader.relay_request', self._relay(calls, [raw_order]))
         from src.order_alerts.naver_order_poller import NaverOrderPoller
-        poller = NaverOrderPoller(client_id='NC1', client_secret='NS1')
+        poller = NaverOrderPoller(client_id='NC1', client_secret=self._salt())
         orders = poller.fetch_new_orders()
         assert len(orders) == 1
-        assert orders[0]['platform'] == 'naver'
-        assert orders[0]['order_id'] == 'NOD-001'
-        assert orders[0]['product_names'] == ['스마트워치']
-        assert all(c.kwargs.get('market') == 'smartstore' for c in mock_relay.call_args_list)
+        assert orders[0]['platform'] == 'naver' and orders[0]['order_id'] == 'NOD-001'
+        assert orders[0]['order_number'] == 'NV-001' and orders[0]['product_names'] == ['스마트워치']
+        assert all(c[2].get('market') == 'smartstore' for c in calls)
+        urls = [c[1] for c in calls]
+        assert any('/v1/pay-order/seller/product-orders/last-changed-statuses?' in u for u in urls)
+        assert any(u.endswith('/v1/pay-order/seller/product-orders/query') for u in urls)
+        tok = next(c for c in calls if c[1].endswith('/oauth2/token'))
+        assert tok[2]['data']['client_secret_sign'].startswith('JDJ')       # bcrypt('$2…') base64 — HMAC 아님
 
-    @patch('src.order_alerts.naver_order_poller.relay_request')
-    def test_fetch_new_orders_empty(self, mock_relay):
-        """주문 없을 때 빈 리스트."""
-        from unittest.mock import MagicMock
-        mock_post, mock_get = MagicMock(), MagicMock()
-        mock_relay.side_effect = lambda m, *a, **k: (mock_post if m == 'POST' else mock_get)(*a, **k)
-        mock_post.return_value = self._make_token_response()
-        mock_get.return_value = self._make_orders_response([])
+    def test_fetch_new_orders_empty(self, monkeypatch):
+        """주문 없을 때 빈 리스트(상세 조회는 안 부른다)."""
+        calls = []
+        monkeypatch.setattr('src.uploaders.naver_uploader.relay_request', self._relay(calls, []))
         from src.order_alerts.naver_order_poller import NaverOrderPoller
-        poller = NaverOrderPoller(client_id='NC1', client_secret='NS1')
-        orders = poller.fetch_new_orders()
-        assert orders == []
+        poller = NaverOrderPoller(client_id='NC1', client_secret=self._salt())
+        assert poller.fetch_new_orders() == []
+        assert not any(c[1].endswith('/product-orders/query') for c in calls)
 
-    @patch('src.order_alerts.naver_order_poller.relay_request')
-    def test_token_cached_within_expiry(self, mock_post):
+    def test_token_cached_within_expiry(self, monkeypatch):
         """토큰 캐싱 — 유효 기간 내 재발급 안 함."""
-        mock_post.return_value = self._make_token_response()
+        calls = []
+        monkeypatch.setattr('src.uploaders.naver_uploader.relay_request', self._relay(calls, []))
         from src.order_alerts.naver_order_poller import NaverOrderPoller
-        poller = NaverOrderPoller(client_id='NC1', client_secret='NS1')
-        token1 = poller._get_access_token()
-        token2 = poller._get_access_token()
-        assert token1 == token2
-        assert mock_post.call_count == 1
+        poller = NaverOrderPoller(client_id='NC1', client_secret=self._salt())
+        assert poller._get_access_token() == poller._get_access_token() == 'test-token'
+        assert sum(1 for c in calls if c[1].endswith('/oauth2/token')) == 1
 
-    def test_generate_client_secret_sign(self):
-        """클라이언트 시크릿 서명 Base64 형식."""
-        import base64
+    def test_token_failure_raises_with_raw_reason(self, monkeypatch):
+        """토큰이 안 나오면 원문과 함께 실패(조용한 0건 금지)."""
+        from src.order_alerts.naver_order_poller import NaverOrderPoller, NaverOrderError
+        poller = NaverOrderPoller(client_id='NC1', client_secret='plaintext-not-bcrypt')
+        with pytest.raises(NaverOrderError, match='전자서명'):
+            poller.fetch_new_orders()
+
+    def test_poller_has_no_signing_code(self):
+        """서명은 한 곳(smartstore_adapter._naver_signature) — 이 파일엔 HMAC·bcrypt가 없다."""
         from src.order_alerts.naver_order_poller import NaverOrderPoller
-        poller = NaverOrderPoller(client_id='NC1', client_secret='secret')
-        sign = poller._generate_client_secret_sign('1234567890')
-        assert isinstance(sign, str)
-        # Base64 디코딩 가능 여부 확인
-        decoded = base64.b64decode(sign)
-        assert len(decoded) == 32  # SHA-256 = 32바이트
+        assert not hasattr(NaverOrderPoller, '_generate_client_secret_sign')
 
     def test_normalize_orders_platform(self):
         """정규화 결과에 platform='naver' 포함."""
