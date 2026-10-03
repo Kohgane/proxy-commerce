@@ -119,8 +119,18 @@ def test_live_probe_off_says_so_and_sends_nothing(monkeypatch):
     assert SR.status_text("gocosmos").startswith("실측 꺼짐 — ")
 
 
+def _settle_boot_probe():
+    """앱을 처음 import하면 부팅 실측 스레드가 돈다(이 파일은 실측을 켜 둔다) — 끝나길 기다리고 캐시를 비운다."""
+    import threading
+    for t in threading.enumerate():
+        if t.name == "smartstore-boot-probe":
+            t.join(timeout=30)
+    SR.reset_cache()
+
+
 def test_diagnostics_block_shows_both_stores(monkeypatch):
     from src.order_webhook import app
+    _settle_boot_probe()
     _keys(monkeypatch, "chezgoga", "gocosmos")
     calls = _naver(monkeypatch, ok_stores=("gocosmos",), count=778)
     c = app.test_client()
@@ -131,6 +141,7 @@ def test_diagnostics_block_shows_both_stores(monkeypatch):
     assert 'data-store="chezgoga"' in h and 'data-store="gocosmos"' in h
     assert "셰고가" in h and "고코스모스" in h and "토큰 OK" in h and "778/1,000" in h
     assert "client_id 불일치" in h and "KST" in h and _TOKEN not in h
+    assert "NAVER_GOCOSMOS_CLIENT_ID · NAVER_GOCOSMOS_CLIENT_SECRET · MARKET_API_RELAY_URL" in h   # 섹션 1에 이름(값 아님)
     n = len([x for x in calls if x[0] == "token"])
     r = c.post("/admin/diagnostics/smartstore-recheck")
     assert r.status_code == 302 and len([x for x in calls if x[0] == "token"]) == n + 2   # 캐시 건너뛰고 둘 다 다시

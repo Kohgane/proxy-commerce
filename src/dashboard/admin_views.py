@@ -2511,6 +2511,7 @@ _DIAGNOSTICS_TEMPLATE = """
                     <td class="w-50">
                       <span class="fw-semibold">{{ api.name }}</span>
                       <br><small class="text-muted">{{ api.purpose[:50] }}</small>
+                      <br><small class="text-break" data-role="env-names"><code>{{ api.env_vars|join(' · ') }}</code></small>
                     </td>
                     <td>
                       {% if api.status == 'active' %}
@@ -2788,22 +2789,21 @@ _DIAGNOSTICS_TEMPLATE = """
       </div>
       <div class="card-body">
         {% if smartstore_probe.available %}
-        <table class="table table-sm mb-2">
-          <thead><tr><th>스토어</th><th>토큰</th><th>상품 수</th><th>마지막 확인</th></tr></thead>
-          <tbody>
-          {% for r in smartstore_probe.rows %}
-            <tr data-role="ss-probe-row" data-store="{{ r.store }}">
-              <td class="text-nowrap">{{ r.label }}<div class="small text-muted text-wrap" data-role="ss-probe-via">{{ r.via or '' }}</div></td>
-              <td>{% if r.ok %}<span class="badge bg-success">토큰 OK</span>
-                  {% else %}<span class="badge bg-danger">{{ {'fail': '실패', 'no_creds': '키 없음', 'off': '실측 꺼짐'}.get(r.state, '실패') }}</span>
-                  <div class="small text-break mt-1" data-role="ss-probe-raw"><code>{{ r.raw }}</code></div>{% endif %}</td>
-              <td class="text-nowrap" data-role="ss-probe-count">{% if r.count is not none %}{{ '{:,}'.format(r.count) }}/{{ '{:,}'.format(smartstore_probe.limit) }}{% if r.count >= smartstore_probe.limit %} <span class="badge bg-warning text-dark">한도 도달</span>{% endif %}
-                  {% elif r.ok %}조회 불가<div class="small text-break"><code>{{ r.count_raw }}</code></div>{% else %}—{% endif %}</td>
-              <td class="small text-nowrap">{{ r.at }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
+        {% for r in smartstore_probe.rows %}
+        <div class="border-bottom py-2" data-role="ss-probe-row" data-store="{{ r.store }}">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <strong>{{ r.label }}</strong>
+            {% if r.ok %}<span class="badge bg-success">토큰 OK</span>
+            {% else %}<span class="badge bg-danger">{{ {'fail': '실패', 'no_creds': '키 없음', 'off': '실측 꺼짐'}.get(r.state, '실패') }}</span>{% endif %}
+            <span class="ms-auto text-nowrap" data-role="ss-probe-count">상품 수
+              {% if r.count is not none %}<strong>{{ '{:,}'.format(r.count) }}/{{ '{:,}'.format(smartstore_probe.limit) }}</strong>{% if r.count >= smartstore_probe.limit %} <span class="badge bg-warning text-dark">한도 도달</span>{% endif %}
+              {% elif r.ok %}조회 불가{% else %}—{% endif %}</span>
+          </div>
+          {% if not r.ok %}<div class="small mt-1" style="word-break:break-word" data-role="ss-probe-raw"><code>{{ r.raw }}</code></div>{% endif %}
+          {% if r.ok and r.count is none %}<div class="small mt-1" style="word-break:break-word"><code>{{ r.count_raw }}</code></div>{% endif %}
+          <div class="small text-muted mt-1" data-role="ss-probe-via">경로: {{ r.via or '—' }} · 확인 {{ r.at }}</div>
+        </div>
+        {% endfor %}
         <div class="text-muted small">토큰 = 그 스토어 키로 커머스API 토큰을 실제로 발급해 본 결과(10분마다 다시). 상품 수 = 판매중·판매대기·품절 합계(products/search).</div>
         {% else %}
         <div class="text-muted small">확인하지 못했어요: <code>{{ smartstore_probe.error }}</code></div>
