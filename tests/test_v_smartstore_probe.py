@@ -116,6 +116,9 @@ def test_snapshot_kept_in_app_state_without_the_token(monkeypatch):
     assert snap["proxy-commerce-sg"]["gocosmos"]["state"] == "no_creds"     # 다른 서비스 기록은 덮지 않는다
     assert "gocosmos" not in snap                                           # 옛 평면 기록은 정리
     assert "proxy-commerce" in Q.state_get("smartstore:common_key")
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "proxy-commerce-sg")                 # 다른 서비스가 써도
+    SR.identify_common_key(force=True)
+    assert {"proxy-commerce", "proxy-commerce-sg"} <= set(Q.state_get("smartstore:common_key"))   # 서로 지우지 않는다
     assert _TOKEN not in str(snap)
 
 
@@ -282,3 +285,18 @@ def test_own_store_keys_win_over_the_common_key(monkeypatch):
     _keys(monkeypatch, "chezgoga")
     SR.probe("chezgoga")
     assert ("token", "chezgoga", "chezgoga-id") in calls and not any(c[0] == "token" and c[2] == "common-id" for c in calls)
+
+
+def test_relay_2xx_body_is_read_not_crashed(monkeypatch):
+    """10-03 운영 실측(싱가포르): 셰고가 토큰 OK 뒤 `AttributeError: 'RelayResponse' object has no attribute 'content'`.
+    릴레이 경유 네이버 2xx가 전부 이 자리에서 터졌다 — 응답 래퍼가 `.content`를 안 가졌다."""
+    from src import market_relay as mr
+    monkeypatch.setenv("MARKET_API_RELAY_URL", "http://158.247.231.248/mkt")
+    sent = []
+    monkeypatch.setattr(mr, "_api_relay_send",
+                        lambda method, url, headers, j, d, t: sent.append((method, url)) or mr.RelayResponse(200, '{"totalElements": 812}'))
+    monkeypatch.setattr(N, "_get_access_token", lambda self: _TOKEN)
+    _keys(monkeypatch, "chezgoga")
+    assert N(account="chezgoga").count_products() == 812
+    assert sent and sent[0][0] == "POST" and sent[0][1].endswith("/v1/products/search")
+    assert mr.RelayResponse(204, "").content == b""

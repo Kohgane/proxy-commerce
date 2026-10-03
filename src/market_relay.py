@@ -283,6 +283,12 @@ class RelayResponse:
         self.text = text or ""
         self.headers = headers or {}
 
+    @property
+    def content(self) -> bytes:
+        """requests.Response.content 호환 — 10-03 운영 실측: 이게 없어서 릴레이 경유 네이버 2xx가 전부
+        `AttributeError`로 끝났다(`naver_uploader._api_request`가 `if resp.content:`로 본문 유무를 본다)."""
+        return self.text.encode("utf-8")
+
     def json(self):
         return _json.loads(self.text) if self.text else {}
 
