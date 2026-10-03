@@ -8264,6 +8264,9 @@ def collect_ai_description(item_id: str):
 
     data = request.get_json(force=True, silent=True) or {}
     title = (data.get("title") or item.get("title") or extra.get("title_ko") or "").strip()
+    if not title:
+        # Y5(오너 2026-10-04): 제목이 비면 초안 재료가 없다 — AI를 부르지 않고 무엇이 먼저인지 말한다.
+        return jsonify({"ok": False, "skipped": True, "error": "제목 없음 — 보강 먼저(AI 상세 초안 건너뜀)"}), 200
     category = (data.get("category") or extra.get("category_code") or "").strip()
     keywords = data.get("keywords") or extra.get("keywords") or []
     specs = extra.get("detail_specs") or []

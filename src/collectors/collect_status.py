@@ -475,6 +475,9 @@ def bot_wall_reason(payload: dict) -> str:
         except (TypeError, ValueError):
             return 0
     title_len = len(str((payload or {}).get("title") or "").strip())
-    if title_len == 0 and _n("title") == 0 and _n("detail") == 0:
+    # 갤러리·가격이 실려 왔으면 빈 페이지가 아니다(타일 초안 보강은 제목을 안 실어 보내기도 한다 — F49-T 계약).
+    got_data = bool((payload or {}).get("gallery") or (payload or {}).get("images")
+                    or (payload or {}).get("gallery_images") or str((payload or {}).get("price") or "").strip())
+    if title_len == 0 and _n("title") == 0 and _n("detail") == 0 and not got_data:
         return "보강 실패: 봇 확인 페이지로 보임 — 제목 0자 · 상세 셀렉터 0개(이번 결과는 버리고 다시 보강)"
     return ""

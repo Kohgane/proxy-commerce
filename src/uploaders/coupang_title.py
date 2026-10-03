@@ -14,7 +14,10 @@
 """
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -231,6 +234,9 @@ def llm_rewrite(product: Dict[str, Any], rule: Dict[str, Any], *, call=None) -> 
     `call(prompt) -> str`을 주입할 수 있다(테스트). 기본은 OpenAI(키 없으면 규칙안).
     """
     parts = rule.get("parts") or {}
+    # Y5(오너 2026-10-04): 제목이 비면 AI에 물을 재료가 없다 — 부르지 않고 그렇게 말한다(헛호출·HTTPError 0).
+    if not str(product.get("title_ko") or product.get("title") or "").strip():
+        return {**rule, "note": "제목 없음 — 보강 먼저(AI 다듬기 건너뜀)"}
     prompt = ("쿠팡 상품명을 만드세요. 규칙: 「브랜드 + 제품 유형 + 핵심 속성」만, 조사·서술어·문장 금지, "
               "쉼표 나열 금지, 같은 말 반복 금지, 100자 이내, 없는 기능·스펙 추가 금지. 한 줄만 답하세요.\n"
               f"브랜드: {parts.get('brand') or '(없음)'} (위치: {parts.get('brand_pos')})\n"
@@ -241,7 +247,14 @@ def llm_rewrite(product: Dict[str, Any], rule: Dict[str, Any], *, call=None) -> 
     try:
         text = (call or _openai_call)(prompt)
     except Exception as exc:                          # noqa: BLE001 — 실패하면 규칙안(정직 표기)
-        return {**rule, "note": f"AI 다듬기 실패({type(exc).__name__}) — 규칙안을 그대로 둡니다"}
+        # Y5: 「HTTPError」 한 단어 대신 사유·HTTP 코드·재시도 여부·원문(계측에도 적재).
+        try:
+            from src.seller_console.ai.translator import failure_line
+            why = failure_line(exc, "openai-title")
+        except Exception:
+            why = type(exc).__name__
+        logger.warning("쿠팡 상품명 AI 다듬기 실패 — %s", why)
+        return {**rule, "note": f"AI 다듬기 실패 — {why} · 규칙안을 그대로 둡니다"}
     cand = _fit(str(text or "").strip().strip("「」\"'").splitlines()[0] if text else "")
     if not cand:
         return {**rule, "note": "AI가 빈 답을 줬어요 — 규칙안을 그대로 둡니다"}
@@ -259,11 +272,16 @@ def _openai_call(prompt: str) -> str:
     if not key or os.getenv("ADAPTER_DRY_RUN", "0") == "1":
         raise RuntimeError("OPENAI_API_KEY 없음")
     import requests
-    r = requests.post("https://api.openai.com/v1/chat/completions",
-                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                      json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "temperature": 0.2,
-                            "messages": [{"role": "user", "content": prompt}]}, timeout=20)
-    r.raise_for_status()
+    from decimal import Decimal
+    from src.ai.budget import BudgetExceededError, BudgetGuard
+    from src.seller_console.ai.translator import _OPENAI_IN_USD, _OPENAI_OUT_USD, _post_with_429_retry
+    guard = BudgetGuard()                              # Y5: 서버 월 예산에 묶는다(넘으면 「서버 월 예산」으로 실패)
+    if not guard.can_spend(estimated_cost_usd=Decimal(str(len(prompt))) * _OPENAI_IN_USD + Decimal("200") * _OPENAI_OUT_USD):
+        raise BudgetExceededError(guard.summary())
+    r = _post_with_429_retry(requests, "https://api.openai.com/v1/chat/completions",   # Y5: 429 백오프 1회
+                             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                             json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "temperature": 0.2,
+                                   "messages": [{"role": "user", "content": prompt}]}, timeout=20)
     return r.json()["choices"][0]["message"]["content"]
 
 
