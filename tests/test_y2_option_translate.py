@@ -68,3 +68,21 @@ def test_options_tab_has_translate_button():
     from pathlib import Path
     pv = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert 'data-role="options-translate"' in pv and "translateOptionsKo" in pv and "/translate-now" in pv
+
+
+def test_rule_moves_are_reported_when_translator_fails(monkeypatch):
+    """Y2 실측(캡처): 번역기 없음 → 「하나도 못 옮김」이라 했지만 사이즈·색상·소형·대형은 규칙으로 저장됐다."""
+    import json
+    from src.seller_console import collect_history_store as S
+    from src.seller_console.ai import translator as T
+    from src.services import option_translate_auto as A
+    monkeypatch.setattr(T.AITranslator, "translate_options",
+                        lambda self, o: {"provider": "none", "options": [{"values": o[0]["values"], "values_ko": o[0]["values"]}]})
+    ex = {"title": "朦胧月光小夜灯", "title_ko": "몽롱한 달빛 무드등",
+          "options": [{"name": "大小", "values": ["小号", "大号"]}, {"name": "颜色分类", "values": ["朦胧月光款"]}]}
+    iid = S.append(source="extension", url="https://item.taobao.com/item.htm?id=1", seller_id="owner-y2-rule",
+                   title="x", price="1", currency="CNY", extra=ex)
+    r = A.translate_now("owner-y2-rule", iid)
+    assert r["status"] == "failed" and r["reason"].startswith("규칙으로 4개 옮겨 저장") and "朦胧月光款" in r["reason"]
+    o = json.loads(S.get(iid, seller_ids={"owner-y2-rule"})["extra_json"])["options"]
+    assert o[0]["name_ko"] == "사이즈" and o[0]["values_ko"] == ["소형", "대형"] and o[1]["name_ko"] == "색상"

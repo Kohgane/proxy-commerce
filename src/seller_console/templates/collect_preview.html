@@ -1409,7 +1409,8 @@ async function translateOptionsKo() {
     var r = await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/translate-now', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
     var d = await r.json();
     if (d.ok) { out.textContent = '옮겼어요' + (d.reason ? ' — ' + d.reason : '') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 500); return; }
-    out.textContent = '옮기지 못했어요 — ' + (d.reason || d.error || d.status || '사유 원문 없음');
+    out.textContent = (d.saved ? '일부만 옮겼어요 — ' : '옮기지 못했어요 — ') + (d.reason || d.error || d.status || '사유 원문 없음');
+    if (d.saved) { setTimeout(function () { location.reload(); }, 2500); return; }
   } catch (e) { out.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
   b.disabled = false;
 }

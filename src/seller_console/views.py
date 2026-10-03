@@ -2954,7 +2954,9 @@ def collect_translate_now(item_id):
         return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
     from src.services import option_translate_auto as _optauto
     r = _optauto.translate_now(_seller_id(), item_id)
-    return jsonify({"ok": r.get("status") in ("done", "queued"), **r})
+    # Y2: 번역기가 실패해도 규칙으로 옮겨 저장한 게 있으면 화면이 다시 그린다(`saved`).
+    return jsonify({"ok": r.get("status") in ("done", "queued"),
+                    "saved": "옮겨 저장" in str(r.get("reason") or ""), **r})
 
 
 @bp.post("/collect/prevalidate")
