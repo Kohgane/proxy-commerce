@@ -12,7 +12,9 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import List
 
-import requests
+import requests  # noqa: F401 — 예전 호출부 호환(실제 전송은 relay_request)
+
+from src.market_relay import relay_request
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +87,9 @@ class NaverOrderPoller:
             'lastChangedTo': last_changed_to,
             'orderStatusType': 'PAY_WAITING,PAYED',
         }
-        resp = requests.get(_ORDERS_URL, headers=headers, params=params, timeout=_REQUEST_TIMEOUT)
+        # V1'(2026-10-03): 네이버는 허용 IP 게이트 — 직결(requests.get)이던 마지막 자리를 릴레이 관문으로.
+        resp = relay_request('GET', _ORDERS_URL, headers=headers, params=params, timeout=_REQUEST_TIMEOUT,
+                             market='smartstore', key=str(self._client_id or ''))
         resp.raise_for_status()
         data = resp.json()
 
@@ -133,7 +137,8 @@ class NaverOrderPoller:
             'grant_type': 'client_credentials',
             'type': 'SELF',
         }
-        resp = requests.post(_TOKEN_URL, data=payload, timeout=_REQUEST_TIMEOUT)
+        resp = relay_request('POST', _TOKEN_URL, data=payload, timeout=_REQUEST_TIMEOUT,
+                             market='smartstore', key=str(self._client_id or ''))
         resp.raise_for_status()
         token_data = resp.json()
 

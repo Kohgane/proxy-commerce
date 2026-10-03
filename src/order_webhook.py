@@ -100,6 +100,21 @@ except Exception as _pgexc:
     if _dep and str(os.getenv("ALLOW_VOLATILE_STORAGE", "")).strip().lower() not in ("1", "true", "yes", "on"):
         raise
 
+# V(2026-10-03): 스마트스토어 두 스토어 토큰 실측 — 부팅을 기다리게 하지 않게 백그라운드로 한 번.
+#   결과(원문·상품 수·시각)는 로그 1줄 + app_state `smartstore:probe`. 토큰 값은 어디에도 안 남긴다.
+#   테스트는 SMARTSTORE_LIVE_PROBE=0(conftest)이라 네트워크에 나가지 않는다.
+def _smartstore_boot_probe():
+    try:
+        from src.seller_console import smartstore_routing as _ssr
+        _ssr.probe_all(force=True)
+    except Exception as _ssexc:
+        logger.warning("스마트스토어 부팅 실측 실패(계속): %s", _ssexc)
+
+
+if os.getenv("SMARTSTORE_LIVE_PROBE", "1").strip().lower() not in ("0", "false", "no", "off"):
+    import threading as _ss_threading
+    _ss_threading.Thread(target=_smartstore_boot_probe, name="smartstore-boot-probe", daemon=True).start()
+
 app = Flask(__name__)
 
 # 프록시(Render/nginx) 뒤에서 X-Forwarded-Proto/Host를 신뢰하여 scheme/host를 올바르게 반영

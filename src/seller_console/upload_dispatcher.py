@@ -370,8 +370,7 @@ SUPPORTED_MARKETS = ["coupang", "smartstore", "elevenst", "woocommerce", "shopif
 
 
 def smartstore_approved(store: str = "") -> bool:
-    """v61 STEP3: 스마트스토어(네이버 커머스솔루션) 승인 여부. 승인 완료 시 관리자가 SMARTSTORE_APPROVED=1.
-    U0b: 스토어별 `SMARTSTORE_<STORE>_APPROVED`가 있으면 그것(셰고가·고코스모스가 따로 승인된다)."""
+    """스마트스토어 그 스토어가 열렸나 — V(2026-10-03): 수동 플래그 폐기, **토큰을 실제로 발급해 본 결과**(10분 캐시)."""
     from .smartstore_routing import approved
     if not store:
         try:
@@ -808,20 +807,19 @@ class UploadDispatcher:
                 hint="지원 마켓: " + ", ".join(SUPPORTED_MARKETS),
             )
 
-        # v61 STEP3: 스마트스토어 약관 준수 게이트 — 커머스솔루션 승인 전에는 업로드 시도 자체 차단
-        #   (토큰 발급·실패 노출 금지). SMARTSTORE_APPROVED=1(env 또는 admin 토글) 시에만 활성.
+        # V(오너 2026-10-03): 스마트스토어 게이트 = **토큰 실측**. 그 스토어 키로 토큰이 안 나오면 보류(전송 0) —
+        #   사유는 네이버 응답 **원문** 그대로(「미승인」이라고 짐작해 쓰지 않는다).
         if market == "smartstore" and not smartstore_approved():
-            # U0b(오너 2026-10-02 정정): 미승인 스토어는 **보류**로 보인다(막힘이 아니라 기다리는 것) — 전송은 안 한다.
             from .market_cred_view import current_naver_account
-            from .smartstore_routing import store_label
+            from .smartstore_routing import store_label, status_text
             _st = current_naver_account()
             return PrevalidationResult(
                 market=market,
                 ok=False,
                 hold=True,
-                error_code="smartstore_pending_review",
-                message=(f"{store_label(_st)} — " if _st else "") + "커머스API 미승인 — 신청 대기",
-                hint="네이버 커머스API 승인이 나면 관리자가 그 스토어를 엽니다(그 전엔 보내지 않아요).",
+                error_code="smartstore_token_failed",
+                message=(f"{store_label(_st)} — " if _st else "") + status_text(_st),
+                hint="토큰은 10분마다 다시 확인해요 — 발급되면 그때 보냅니다(그 전엔 보내지 않아요).",
             )
         if market == "smartstore":
             from .market_cred_view import current_naver_account
@@ -836,7 +834,7 @@ class UploadDispatcher:
                 if _lim["full"]:
                     return PrevalidationResult(
                         market=market, ok=False, hold=True, error_code="smartstore_limit_full",
-                        message=f"등록 한도 꽉 참 — {_lim['text']}",
+                        message=f"보류 — 한도 {_lim['limit']:,} 도달 ({_lim['text']})",
                         hint="스토어당 판매중·판매대기·품절 합계 1,000이 상한이에요 — 자리가 생기면 다시 사전검증해 주세요.")
 
         # 토큰/환경변수 검증
@@ -860,8 +858,11 @@ class UploadDispatcher:
             if not has_token:
                 missing.append("SHOPIFY_CLIENT_ID/SECRET (또는 SHOPIFY_AUTO_TOKEN)")
 
-        # 스마트스토어: NAVER_CLIENT_* 또는 NAVER_COMMERCE_CLIENT_* 어느 쪽이든 허용
-        if market == "smartstore":
+        # 스마트스토어: NAVER_CLIENT_* 또는 NAVER_COMMERCE_CLIENT_* 어느 쪽이든 허용.
+        #   V1'': 스토어 계정(셰고가·고코스모스)은 자기 이름(`NAVER_<STORE>_*`)만 읽고, 위 토큰 실측이
+        #   이미 그 키로 발급에 성공했다 — 공용 이름을 다시 찾으면 있는 키를 「없다」고 말하게 된다.
+        from .market_cred_view import current_naver_account as _cna
+        if market == "smartstore" and not _cna():
             if not (os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID")):
                 missing.append("NAVER_CLIENT_ID (또는 NAVER_COMMERCE_CLIENT_ID)")
             if not (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET")):
@@ -1076,7 +1077,7 @@ class UploadDispatcher:
         # U0b: 스마트스토어 미승인·한도 꽉 참·고단가 기준 미달은 사전검증과 **같은 판정**으로 전송 전 보류(직접 호출 우회 0).
         if market == "smartstore":
             _pv = self._prevalidate_market(product_data, market)
-            if not _pv.ok and _pv.error_code in ("smartstore_pending_review", "smartstore_limit_full",
+            if not _pv.ok and _pv.error_code in ("smartstore_token_failed", "smartstore_limit_full",
                                                  "smartstore_price_floor"):
                 return UploadResult(market=market, success=False, error_code=_pv.error_code,
                                     message=f"전송 전에 보류했습니다 — {_pv.message}", hint=_pv.hint)

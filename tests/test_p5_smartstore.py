@@ -399,8 +399,8 @@ def _valid_salt():
     return bcrypt.gensalt(rounds=4).decode()
 def test_token_uses_bcrypt_signature_not_plain_secret(monkeypatch):
     """★ 카나리 1차 근원: 평문 client_secret을 보냈다. 정본은 **bcrypt client_secret_sign**."""
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", _valid_salt())
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_SECRET", _valid_salt())
     up = SS(account="chezgoga")
     sent = {}
 
@@ -428,8 +428,8 @@ def test_signature_is_single_source():
 
 def test_token_failure_surfaces_response_body(monkeypatch):
     """조용한 실패 수리 — 네이버 응답 본문 200자를 사유로 올린다(원문이 범인을 지목)."""
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", _valid_salt())
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_SECRET", _valid_salt())
     up = SS(account="chezgoga")
 
     class _R:
@@ -443,8 +443,8 @@ def test_token_failure_surfaces_response_body(monkeypatch):
 
 def test_ip_gate_error_is_visible(monkeypatch):
     """GW.IP_NOT_ALLOWED도 그대로 보인다 — 릴레이 IP 미등록을 즉시 판별."""
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", _valid_salt())
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_SECRET", _valid_salt())
     up = SS(account="chezgoga")
 
     class _R:
@@ -458,8 +458,8 @@ def test_ip_gate_error_is_visible(monkeypatch):
 
 def test_bad_secret_format_reports_actionable_reason(monkeypatch):
     """평문 시크릿(bcrypt salt 아님)이면 무엇을 고쳐야 하는지 말한다."""
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "cid")
-    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "plaintext-secret")
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_SECRET", "plaintext-secret")
     up = SS(account="chezgoga")
     monkeypatch.setattr("src.uploaders.naver_uploader.relay_request",
                         lambda *a, **k: pytest.fail("서명 실패인데 토큰 요청됨"))

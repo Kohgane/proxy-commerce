@@ -2715,7 +2715,7 @@ def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> lis
     고가네 = 쿠팡 고가네 + 스마트스토어 셰고가 · 우주대행 = 쿠팡 우주대행 + 스마트스토어 고코스모스.
 
     기본 체크: 쿠팡은 키가 있는 계정 둘 다(원래 쿠팡이 체크였을 때), 스마트스토어는 **자동 배정된 스토어 하나** —
-    그 스토어가 커머스API 승인됐을 때만. 미승인 스토어는 「미승인 — 신청 대기」로 보이고(체크하면 사전검증이 보류라고 말한다).
+    그 스토어 토큰이 실제로 발급될 때만(V). 안 나오는 스토어는 응답 원문이 보이고(체크하면 사전검증이 보류라고 말한다).
     다른 셀러에겐 원래 한 줄씩 그대로(계정·스토어는 오너 서버 설정).
     """
     try:
@@ -2753,7 +2753,8 @@ def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> lis
                         "checked": bool(st["assigned"] and st["approved"] and st["ready"]),
                         "account": st["store"], "missing": [] if st["ready"] else ["스토어 키"],
                         "group": biz, "group_label": biz_label, "note": st["note"],
-                        "pending": not st["approved"], "limit_text": st["limit_text"]})
+                        "pending": not st["approved"], "pending_head": st.get("pending_head") or "",
+                        "pending_why": st.get("pending_why") or "", "limit_text": st["limit_text"]})
     out += [m for m in markets if m.get("code") not in ("coupang", "smartstore")
             or (m.get("code") == "coupang" and not cps) or (m.get("code") == "smartstore" and not sss)]
     return out
@@ -7793,13 +7794,15 @@ def collect_history():
     _shape_collect_items(items, _current_lang)
 
     from .upload_dispatcher import MARKET_LABELS, SUPPORTED_MARKETS
-    # v61 STEP3: 스마트스토어는 커머스솔루션 승인 전 '심사중'(비활성) — 등록 시도 차단(약관 준수).
+    # V(2026-10-03): 스마트스토어는 토큰 실측이 실패하면 비활성 — 사유는 응답 원문(짐작 문구 없음).
     from .upload_dispatcher import smartstore_approved as _ss_ok
     _ss_pending = (not _ss_ok())
+    if _ss_pending:
+        from .smartstore_routing import status_text as _ss_why
     upload_markets = [
         {"code": m, "label": MARKET_LABELS.get(m, m),
          "pending": (m == "smartstore" and _ss_pending),
-         "pending_note": ("커머스API 미승인 — 신청 대기" if (m == "smartstore" and _ss_pending) else "")}
+         "pending_note": (_ss_why() if (m == "smartstore" and _ss_pending) else "")}
         for m in SUPPORTED_MARKETS
     ]
     from .category_classifier import CATEGORY_OPTIONS

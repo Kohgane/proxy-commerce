@@ -111,16 +111,20 @@ API_REGISTRY: list = [
         docs_url="https://wing.coupang.com",
         category=ApiCategory.MARKETPLACE,
     ),
+    # V1''(2026-10-03): 스마트스토어는 **스토어별 앱** — 업로더·토큰 실측·Health 카드가 읽는 이름 그대로.
+    #   네이버 호출은 릴레이 경유 고정이라 MARKET_API_RELAY_URL도 같은 줄에 둔다(없으면 배포에서 안 나간다).
     ApiKey(
-        name="naver_commerce",
-        env_vars=[
-            "NAVER_COMMERCE_CLIENT_ID",
-            "NAVER_COMMERCE_CLIENT_SECRET",
-            "NAVER_COMMERCE_API_BASE",
-            "MARKET_ADAPTER_DEFAULT",
-        ],
-        purpose="네이버 커머스 API — 스마트스토어",
-        docs_url="https://commerce.naver.com",
+        name="naver_commerce_chezgoga",
+        env_vars=["NAVER_CHEZGOGA_CLIENT_ID", "NAVER_CHEZGOGA_CLIENT_SECRET", "MARKET_API_RELAY_URL"],
+        purpose="네이버 커머스 API — 스마트스토어 셰고가(고가네)",
+        docs_url="https://apicenter.commerce.naver.com",
+        category=ApiCategory.MARKETPLACE,
+    ),
+    ApiKey(
+        name="naver_commerce_gocosmos",
+        env_vars=["NAVER_GOCOSMOS_CLIENT_ID", "NAVER_GOCOSMOS_CLIENT_SECRET", "MARKET_API_RELAY_URL"],
+        purpose="네이버 커머스 API — 스마트스토어 고코스모스(우주대행)",
+        docs_url="https://apicenter.commerce.naver.com",
         category=ApiCategory.MARKETPLACE,
     ),
     ApiKey(

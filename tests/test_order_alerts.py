@@ -265,10 +265,12 @@ class TestNaverOrderPoller:
         with pytest.raises(ValueError, match='자격증명'):
             poller.fetch_new_orders()
 
-    @patch('src.order_alerts.naver_order_poller.requests.get')
-    @patch('src.order_alerts.naver_order_poller.requests.post')
-    def test_fetch_new_orders_success(self, mock_post, mock_get):
-        """정상 주문 조회."""
+    @patch('src.order_alerts.naver_order_poller.relay_request')
+    def test_fetch_new_orders_success(self, mock_relay):
+        """정상 주문 조회 — V1': 토큰·주문 둘 다 릴레이 관문(market=smartstore)으로 나간다."""
+        from unittest.mock import MagicMock
+        mock_post, mock_get = MagicMock(), MagicMock()
+        mock_relay.side_effect = lambda m, *a, **k: (mock_post if m == 'POST' else mock_get)(*a, **k)
         mock_post.return_value = self._make_token_response()
         raw_order = {
             'productOrderId': 'NOD-001',
@@ -293,11 +295,14 @@ class TestNaverOrderPoller:
         assert orders[0]['platform'] == 'naver'
         assert orders[0]['order_id'] == 'NOD-001'
         assert orders[0]['product_names'] == ['스마트워치']
+        assert all(c.kwargs.get('market') == 'smartstore' for c in mock_relay.call_args_list)
 
-    @patch('src.order_alerts.naver_order_poller.requests.get')
-    @patch('src.order_alerts.naver_order_poller.requests.post')
-    def test_fetch_new_orders_empty(self, mock_post, mock_get):
+    @patch('src.order_alerts.naver_order_poller.relay_request')
+    def test_fetch_new_orders_empty(self, mock_relay):
         """주문 없을 때 빈 리스트."""
+        from unittest.mock import MagicMock
+        mock_post, mock_get = MagicMock(), MagicMock()
+        mock_relay.side_effect = lambda m, *a, **k: (mock_post if m == 'POST' else mock_get)(*a, **k)
         mock_post.return_value = self._make_token_response()
         mock_get.return_value = self._make_orders_response([])
         from src.order_alerts.naver_order_poller import NaverOrderPoller
@@ -305,7 +310,7 @@ class TestNaverOrderPoller:
         orders = poller.fetch_new_orders()
         assert orders == []
 
-    @patch('src.order_alerts.naver_order_poller.requests.post')
+    @patch('src.order_alerts.naver_order_poller.relay_request')
     def test_token_cached_within_expiry(self, mock_post):
         """토큰 캐싱 — 유효 기간 내 재발급 안 함."""
         mock_post.return_value = self._make_token_response()

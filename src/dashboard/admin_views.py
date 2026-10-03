@@ -519,6 +519,9 @@ def _render_diagnostics(issued_magic_link: str | None):
     # 섹션 5: 가격 엔진 상태
     pricing_status = _build_pricing_status()
 
+    # V(2026-10-03): 스마트스토어 두 스토어 토큰 실측·상품 수(10분 캐시)
+    smartstore_probe = _build_smartstore_probe()
+
     # v87-W7a: 서버 AI 예산 가드 현황(읽기 전용)
     ai_budget = _build_ai_budget_status()
 
@@ -588,6 +591,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         market_health=market_health,
         pricing_status=pricing_status,
         ai_budget=ai_budget,
+        smartstore_probe=smartstore_probe,
         translate_stats=translate_stats,
         message_log=message_log,
         cs_bot_status=cs_bot_status,
@@ -1174,13 +1178,42 @@ def _build_messenger_health() -> dict:
 
 
 def _build_market_health() -> dict:
-    """마켓 어댑터 health 상태."""
-    try:
-        from src.seller_console.market_integration_diagnostics import normalize_market_diagnostic_result, run_all_market_diagnostics
+    """마켓 어댑터 health 상태.
 
-        return {item["market"]: normalize_market_diagnostic_result(item) for item in run_all_market_diagnostics()}
+    V1-c(오너 2026-10-03): 스마트스토어는 **스토어별 2장**(셰고가·고코스모스) — 토큰 실측 원문·상품 수 N/1,000·경로.
+    예전 한 장은 공용 키(NAVER_COMMERCE_*)로 따로 토큰을 청해, 스토어 실측과 다른 이름·다른 결과를 보였다.
+    """
+    try:
+        from src.seller_console.market_integration_diagnostics import (MARKET_GUIDES, normalize_market_diagnostic_result,
+                                                                        run_market_diagnostic)
+        out = {}
+        for market in MARKET_GUIDES:
+            if market == "smartstore":
+                out.update(_smartstore_store_cards())
+                continue
+            out[market] = normalize_market_diagnostic_result(run_market_diagnostic(market))
+        return out
     except Exception as exc:
         return {"market_diagnostics": {"status": "api_error", "detail": str(exc), "steps": []}}
+
+
+def _smartstore_store_cards() -> dict:
+    """스토어 실측(probe, 10분 캐시)을 Health 카드 모양으로 — 새 요청을 따로 만들지 않는다(같은 결과를 본다)."""
+    from src.seller_console import smartstore_routing as sr
+    from src.seller_console.market_integration_diagnostics import build_market_ui_state
+    limit = int(sr.rules().get("limit") or 1000)
+    cards = {}
+    for p in sr.probe_all():
+        status = {"ok": "connected", "no_creds": "token_missing"}.get(p["state"], "api_error")
+        count = (f"{p['count']:,}/{limit:,}" if p.get("count") is not None
+                 else (f"?/{limit:,} — 조회 불가({p.get('count_raw') or '—'})" if p["ok"] else "—"))
+        card = {"market": f"smartstore_{p['store']}", "label": f"스마트스토어 — {p['label']}", "status": status,
+                "summary": f"토큰: {p['raw']} · 상품 수 {count}", "detail": p["raw"],
+                "hint": f"경로: {p.get('via') or '—'}", "required_env": list(p.get("env") or []),
+                "last_checked_at": p["at"], "checked_at": p["at"], "steps": []}
+        card["ui"] = build_market_ui_state(card)
+        cards[card["market"]] = card
+    return cards
 
 
 def _build_translate_stats() -> dict:
@@ -1202,6 +1235,26 @@ def _build_translate_stats() -> dict:
     except Exception as exc:
         logger.debug("번역 계측 로드 불가: %s", exc)
         return {"available": False, "error": str(exc)}
+
+
+def _build_smartstore_probe(force: bool = False) -> dict:
+    """V(오너 2026-10-03): 셰고가·고코스모스 — 토큰 OK/실패(응답 원문)·상품 수 N/1,000·마지막 확인 시각.
+    승인 여부는 손으로 켜는 값이 아니라 **토큰을 실제로 발급해 본 결과**다. 확인 자체가 실패해도 그렇게 적는다."""
+    try:
+        from src.seller_console import smartstore_routing as sr
+        limit = int(sr.rules().get("limit") or 1000)
+        rows = sr.probe_all(force=force)
+        return {"available": True, "limit": limit, "rows": rows, "common": sr.identify_common_key()}
+    except Exception as exc:
+        logger.warning("스마트스토어 실측 블록 실패: %s", exc)
+        return {"available": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+
+@admin_panel_bp.post("/diagnostics/smartstore-recheck")
+def diagnostics_smartstore_recheck():
+    """캐시(10분)를 건너뛰고 지금 다시 발급해 본다."""
+    _build_smartstore_probe(force=True)
+    return redirect("/admin/diagnostics#smartstore-probe")
 
 
 def _build_ai_budget_status() -> dict:
@@ -2459,6 +2512,7 @@ _DIAGNOSTICS_TEMPLATE = """
                     <td class="w-50">
                       <span class="fw-semibold">{{ api.name }}</span>
                       <br><small class="text-muted">{{ api.purpose[:50] }}</small>
+                      <br><small class="text-break" data-role="env-names"><code>{{ api.env_vars|join(' · ') }}</code></small>
                     </td>
                     <td>
                       {% if api.status == 'active' %}
@@ -2723,6 +2777,43 @@ _DIAGNOSTICS_TEMPLATE = """
             </div>
           {% endfor %}
         </div>
+      </div>
+    </div>
+
+    <!-- V(2026-10-03): 스마트스토어 — 토큰 실측·한도(수동 승인 플래그 없음) -->
+    <div class="card mb-4" id="smartstore-probe" data-role="ss-probe">
+      <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+        <span>🏬 스마트스토어 — 셰고가 / 고코스모스</span>
+        <form method="post" action="/admin/diagnostics/smartstore-recheck" class="m-0">
+          <button class="btn btn-sm btn-outline-secondary" type="submit">지금 다시 확인</button>
+        </form>
+      </div>
+      <div class="card-body">
+        {% if smartstore_probe.available %}
+        {% for r in smartstore_probe.rows %}
+        <div class="border-bottom py-2" data-role="ss-probe-row" data-store="{{ r.store }}">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <strong>{{ r.label }}</strong>
+            {% if r.ok %}<span class="badge bg-success">토큰 OK</span>
+            {% else %}<span class="badge bg-danger">{{ {'fail': '실패', 'no_creds': '키 없음', 'off': '실측 꺼짐'}.get(r.state, '실패') }}</span>{% endif %}
+            <span class="ms-auto text-nowrap" data-role="ss-probe-count">상품 수
+              {% if r.count is not none %}<strong>{{ '{:,}'.format(r.count) }}/{{ '{:,}'.format(smartstore_probe.limit) }}</strong>{% if r.count >= smartstore_probe.limit %} <span class="badge bg-warning text-dark">한도 도달</span>{% endif %}
+              {% elif r.ok %}조회 불가{% else %}—{% endif %}</span>
+          </div>
+          {% if not r.ok %}<div class="small mt-1" style="word-break:break-word" data-role="ss-probe-raw"><code>{{ r.raw }}</code></div>{% endif %}
+          {% if r.ok and r.count is none %}<div class="small mt-1" style="word-break:break-word"><code>{{ r.count_raw }}</code></div>{% endif %}
+          {% if r.key_src %}<div class="small mt-1" data-role="ss-probe-key">키: {{ r.key_src }}</div>{% endif %}
+          <div class="small text-muted mt-1" data-role="ss-probe-via">경로: {{ r.via or '—' }} · 확인 {{ r.at }}</div>
+        </div>
+        {% endfor %}
+        {% set cm = smartstore_probe.common %}
+        <div class="small mt-2" data-role="ss-common-key">공용 키(NAVER_COMMERCE_*) 주인:
+          <strong>{{ {'identified': cm.store and (cm.store == 'chezgoga' and '셰고가' or '고코스모스'), 'ambiguous': '정하지 못함', 'none': '두 스토어와 안 맞음', 'fail': '실측 실패', 'no_key': '키 없음', 'off': '실측 꺼짐'}.get(cm.state, cm.state) }}</strong>
+          <span class="text-muted" style="word-break:break-word">— {{ cm.evidence }}{% if cm.channels_raw %} · channels: <code>{{ cm.channels_raw }}</code>{% endif %}</span></div>
+        <div class="text-muted small">토큰 = 그 스토어 키로 커머스API 토큰을 실제로 발급해 본 결과(10분마다 다시). 상품 수 = 판매중·판매대기·품절 합계(products/search).</div>
+        {% else %}
+        <div class="text-muted small">확인하지 못했어요: <code>{{ smartstore_probe.error }}</code></div>
+        {% endif %}
       </div>
     </div>
 

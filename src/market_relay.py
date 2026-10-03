@@ -291,6 +291,49 @@ class RelayResponse:
             raise requests.exceptions.HTTPError(f"{self.status_code} via relay", response=self)
 
 
+# V1'(오너 2026-10-03): 네이버 커머스는 **릴레이 경유 고정**. Render 아웃바운드 IP는 유동이라 허용 IP에 못 넣는다 —
+#   배포 컨테이너에서 릴레이 설정이 없으면 직결로 보내 IP 벽에 부딪히느니 **보내지 않고** 그렇게 말한다.
+_NAVER_MARKETS = {"smartstore", "naver", "naver_commerce"}
+
+
+class RelayRequired(RuntimeError):
+    """릴레이 고정 마켓인데 배포 환경에 릴레이 설정이 없다."""
+
+
+def route_for(market: str, url: str = "") -> dict:
+    """이 호출이 **실제로** 어디로 나가는가 — `{via, host, ip}`. relay_request와 같은 판정(단일 소스).
+
+    via: `relay`(MARKET_API_RELAY_URL) · `legacy_relay`(MARKET_RELAY_URL+TOKEN) · `direct`(직결).
+    """
+    m = (market or "").strip().lower()
+    via = "direct"
+    if api_relay_enabled() and (m in _IP_GATED_MARKETS
+                                or (urlparse(url).hostname or "").lower() in _API_RELAY_ALLOWED_HOSTS):
+        via = "relay"
+    elif relay_enabled(m):
+        via = "legacy_relay"                  # _send의 구 경로와 같은 판정
+    host = ""
+    if via == "relay":
+        host = urlparse(api_relay_url()).hostname or ""
+    elif via == "legacy_relay":
+        host = urlparse(os.getenv("MARKET_RELAY_URL", "")).hostname or ""
+    ip = ""
+    if via != "direct":
+        try:
+            ip = relay_outbound_ip()
+        except Exception:
+            ip = ""
+    return {"via": via, "host": host, "ip": ip}
+
+
+def route_text(market: str, url: str = "") -> str:
+    r = route_for(market, url)
+    if r["via"] == "direct":
+        return "직결(릴레이 미설정 — MARKET_API_RELAY_URL 없음)"
+    name = "MARKET_API_RELAY_URL" if r["via"] == "relay" else "MARKET_RELAY_URL"
+    return f"릴레이 경유({name} · {r['host'] or '호스트 미상'} → 나가는 IP {r['ip'] or '미확인'})"
+
+
 def relay_request(method, url, *, headers=None, json=None, data=None, params=None, timeout=30, market="", key=""):
     """릴레이 설정 시 고정 IP 경유, 아니면 직접 requests 호출(폴백).
 
@@ -313,13 +356,19 @@ def relay_request(method, url, *, headers=None, json=None, data=None, params=Non
     # v87-S7: 이 함수가 **모든 마켓 아웃바운드의 단일 관문**이다. IP 화이트리스트가 걸린 마켓
     #   (쿠팡·스마트스토어/네이버)은 반드시 릴레이를 타야 하고, 그 외 마켓(쇼피파이·우커머스·11번가)은
     #   같은 관문을 지나되 직결로 나간다 — 릴레이 허용 호스트가 아니기 때문이다.
-    _via_relay = False
-    if api_relay_enabled():
-        if (market or "").strip().lower() in _IP_GATED_MARKETS:
-            assert_host_allowed(url)          # IP 게이트 마켓이 엉뚱한 호스트로 나가면 즉시 거부
-            _via_relay = True
-        else:
-            _via_relay = (urlparse(url).hostname or "").lower() in _API_RELAY_ALLOWED_HOSTS
+    _route = route_for(market, url)
+    _via_relay = _route["via"] == "relay"
+    if _via_relay and (market or "").strip().lower() in _IP_GATED_MARKETS:
+        assert_host_allowed(url)              # IP 게이트 마켓이 엉뚱한 호스트로 나가면 즉시 거부
+    if _route["via"] == "direct" and (market or "").strip().lower() in _NAVER_MARKETS:
+        try:
+            from src.db.pg import is_deployed as _deployed
+            _dep = _deployed()
+        except Exception:
+            _dep = False
+        if _dep:
+            raise RelayRequired("네이버 호출은 릴레이 경유로 고정 — MARKET_API_RELAY_URL이 없어 보내지 않았습니다"
+                                "(서버 직결 IP는 유동이라 커머스API 허용 IP에 넣을 수 없음)")
 
     _plan = relay_wait_plan()
 
