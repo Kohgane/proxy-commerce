@@ -141,13 +141,42 @@ def started_since(since) -> int:
         return int(cur.fetchone()[0])
 
 
+#: Y4(오너 2026-10-04): **글자 없는 사진은 실패가 아니다** — 원본을 그대로 쓰면 된다. 예전 기록(`failed`)도 세지 않는다.
+NO_TEXT_MARKERS = ("그릴 줄이 없습니다", "无文本")
+
+
+def is_no_text(reason) -> bool:
+    r = str(reason or "")
+    return any(m in r for m in NO_TEXT_MARKERS)
+
+
 def failed_since(since) -> int:
+    """차단기가 세는 **진짜 실패** 수(글자 없는 사진 제외)."""
     if not _enabled():
         with _LOCK:
-            return sum(1 for r in _MEM_Q if r["status"] == "failed" and r["finished_at"] and r["finished_at"] >= since)
+            return sum(1 for r in _MEM_Q if r["status"] == "failed" and r["finished_at"] and r["finished_at"] >= since
+                       and not is_no_text(r.get("reason")))
     with pg.query() as cur:
-        cur.execute("SELECT count(*) FROM image_translate_queue WHERE status='failed' AND finished_at >= %s", (since,))
+        cur.execute("SELECT count(*) FROM image_translate_queue WHERE status='failed' AND finished_at >= %s "
+                    "AND coalesce(reason,'') NOT LIKE %s AND coalesce(reason,'') NOT LIKE %s",
+                    (since, "%그릴 줄이 없습니다%", "%无文本%"))
         return int(cur.fetchone()[0])
+
+
+def failure_breakdown(since) -> list:
+    """Y4: 실패 사유 분포 `[(사유, 건수, 글자없음?)]` — 진단·보고용."""
+    if not _enabled():
+        with _LOCK:
+            rows = {}
+            for r in _MEM_Q:
+                if r["status"] == "failed" and r["finished_at"] and r["finished_at"] >= since:
+                    k = str(r.get("reason") or "")[:80]
+                    rows[k] = rows.get(k, 0) + 1
+        return sorted(((k, n, is_no_text(k)) for k, n in rows.items()), key=lambda x: -x[1])
+    with pg.query() as cur:
+        cur.execute("SELECT left(coalesce(reason,''),80), count(*) FROM image_translate_queue "
+                    "WHERE status='failed' AND finished_at >= %s GROUP BY 1 ORDER BY 2 DESC", (since,))
+        return [(r[0], int(r[1]), is_no_text(r[0])) for r in cur.fetchall()]
 
 
 # ── 전역 작은 상태 ────────────────────────────────────────────────────────────

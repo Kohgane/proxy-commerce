@@ -126,6 +126,13 @@ def build_dispatch_payload(product_data: Dict[str, Any],
                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """S2: 아래 빌더 결과에 **마켓 상세 규칙**(한국어만·가게 줄 뺌)을 얹는다 — 단건·일괄·재등록 세 경로 공통."""
     pd = apply_outbound_text(_build_dispatch_payload(product_data, item))
+    # Y1: 가게 아이콘·추적 픽셀은 마켓에 상세 이미지로 보내지 않는다(저장값은 그대로).
+    try:
+        from src.collectors.collect_status import real_detail_images
+        if isinstance(pd.get("detail_images"), list):
+            pd["detail_images"] = real_detail_images(pd["detail_images"])
+    except Exception as exc:
+        logger.warning("[등록] 상세 이미지 정리 실패(빌더 값 그대로): %s", exc)
     # U4: 옵션이 아닌 값(보증·서비스·안내 문구)과 그 SKU는 **보내지 않는다**(전 마켓 같은 자리). 저장값은 그대로.
     try:
         pd = drop_non_option_values(pd)
@@ -772,6 +779,13 @@ class UploadDispatcher:
         if _rep:
             holds.append({"short": f"상표 위험({', '.join(_rep)})", "fix": "trademark",
                           "line": f"가구 레플리카 상표({', '.join(_rep)})가 들어 있어 등록을 보류합니다 — 쿠팡 지재권 신고 대상."})
+        # Y6(오너 2026-10-04): 영화·게임·애니 IP명(星际穿越·漫威·迪士尼·宝可梦…) — 제목에선 이미 지웠고(ko_polish),
+        #   등록은 라이선스 확인 전까지 보류. 원문 제목까지 본다(번역 제목엔 IP명이 없어도 원문에 있다).
+        _ip = _kp.ip_hits(_risk_text)
+        if _ip:
+            holds.append({"short": f"상표 확인 보류({', '.join(_ip)})", "fix": "trademark",
+                          "line": f"영화·게임·애니 IP({', '.join(_ip)})가 원문 제목에 있어요 — 상품명에선 지웠고, "
+                                  "정품·공식 라이선스인지 확인되기 전까지 등록을 보류합니다."})
         if market in _KO_OPTION_MARKETS:
             n = len(unresolved_option_values(pd))
             if n:

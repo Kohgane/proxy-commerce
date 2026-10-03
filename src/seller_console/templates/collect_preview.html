@@ -11,7 +11,7 @@
     <a href="/seller/collect/history" class="text-decoration-none text-muted small">← 수집 이력으로 돌아가기</a>
     <span class="text-muted small">
       <i class="bi bi-translate"></i> <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
-      · {{ item.collected_at[:16] if item.collected_at else "" }}
+      · {{ item.collected_at|kst if item.collected_at else "" }}
     </span>
   </div>
 
@@ -47,6 +47,13 @@
       {# C-T3: 공유 텍스트 수집분 — **무엇이 아직 없는지**를 먼저 말한다.
          공유 글엔 제목·링크만 들어 있어 가격·이미지·옵션은 비어 있다. 그 빈칸이 "0원"이나
          "이미지 없음"으로 조용히 앉으면 셀러가 수집된 줄 안다 — 그래서 맨 위에서 밝힌다. #}
+      {# Y1: 빈 페이지 보강은 「완료」가 아니다 — 버린 이유와 재보강 대기를 먼저 말한다. #}
+      {% if extra and extra.get('enrich_fail') %}
+      <div class="kgp-esec mb-3" data-etab="basic" data-role="enrich-fail">
+        <div class="pc-status pc-status-warning"><i class="bi bi-arrow-repeat"></i>
+          <span>{{ extra.get('enrich_fail', {}).get('reason') }} <span class="small text-muted">· {{ extra.get('enrich_fail', {}).get('at')|kst }}</span></span></div>
+      </div>
+      {% endif %}
       {% set _unc = (extra.get('uncollected') if extra else []) or [] %}
       {% if _unc %}
       {% set _unc_ko = {'price': '가격', 'images': '이미지', 'options': '옵션', 'description': '상세설명'} %}
@@ -173,7 +180,7 @@
             <span><i class="bi bi-chat-square-text" style="color:var(--teal)"></i> 리뷰 <strong>{{ _rc }}</strong>건</span>
             {% if _rating|string|trim %}<span class="text-muted">·</span>
             <span><i class="bi bi-star-half" style="color:var(--teal)"></i> 평점 <strong>{{ _rating }}</strong> / 5</span>{% endif %}
-            {% if extra.get('recollected_at') %}<span class="text-muted" style="font-size:.74rem">· 최근 갱신 {{ extra.get('recollected_at')[:16] }}</span>{% endif %}
+            {% if extra.get('recollected_at') %}<span class="text-muted" style="font-size:.74rem">· 최근 갱신 {{ extra.get('recollected_at')|kst }}</span>{% endif %}
           {% else %}
             <span class="text-muted"><i class="bi bi-dash-circle"></i> 리뷰 0건 수신 — 이 상품 페이지에서 리뷰·평점을 찾지 못했어요</span>
           {% endif %}
@@ -289,8 +296,14 @@
       <div class="kgp-esec mb-2 kgp-etab-hide" data-etab="options">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <label class="form-label small fw-semibold mb-0">옵션{{ src_badge('options') }} <span class="text-muted fw-normal">(예: 색상, 사이즈 — 값은 쉼표로 구분)</span></label>
-          <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
+          <span class="d-flex gap-1">
+            {# Y2(오너 2026-10-04): 상품명 탭 「한국어로 번역」과 같은 자리 — 옵션 **축 이름 + 값**을 한 번에(규칙 → 번역기, 하루 상한 안). #}
+            <button type="button" class="btn btn-ghost btn-sm py-0" id="btnOptionsKo" data-role="options-translate" onclick="translateOptionsKo()">
+              <i class="bi bi-translate"></i> 한국어로 번역</button>
+            <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
+          </span>
         </div>
+        <div class="small mb-2 d-none" data-role="options-translate-out" id="optionsKoOut"></div>
         <div id="optionRows" class="vstack gap-2"></div>
         {# F49-T 2부 — 수집된 **SKU 실물**(조합·원가·참고가·재고). 원가 = 优惠前, 참고가 = 平台加补后(원가 계산 미사용).
            재고 0은 등록 대상에서 빠진다 — 사유를 그 줄에 적는다. #}
@@ -499,7 +512,7 @@
         <span class="text-muted" id="recollectState">새 탭에서 고가수집기 버튼을 누르면 더 정확한 출처의 값으로 바뀝니다 · 직접 고친 칸은 그대로</span>
       </div>
       <div class="mt-1" data-role="merge-log" id="mergeLog">{% if _ml %}
-        <span class="text-muted">마지막 갱신 {{ (_ml.at or '')[:16]|replace('T',' ') }}:</span>
+        <span class="text-muted">마지막 갱신 {{ (_ml.at or '')|kst }}:</span>
         {% for f, why in (_ml.changed or {}).items() %}<span class="me-2">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} {{ why }}</span>{% endfor %}
         {% for f, why in (_ml.kept or {}).items() %}<span class="me-2 text-muted">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} 유지 — {{ why }}</span>{% endfor %}
       {% endif %}</div>
@@ -888,7 +901,20 @@ function _initOptions() {
     name: o.name || '',
     values: Array.isArray(o.values) ? o.values.join(', ')
           : (o.value !== undefined ? String(o.value) : ''),
+    ko: _optKoLine(o),
   }));
+}
+
+// Y2(오너 2026-10-04): 저장된 한국어(축 이름 name_ko · 값 values_ko)를 행 아래 한 줄로 보인다 — 「한국어로 번역」을
+//   눌러도 칸엔 원문이 그대로라 「안 됐다」로 보였다(캡처). 칸은 원문 그대로 두고(등록이 원문 → 한국어로 바꿔 보냄),
+//   못 옮긴 값은 「아직」이라고 말한다.
+function _optKoLine(o) {
+  if (!o) return '';
+  var vs = Array.isArray(o.values) ? o.values.map(v => (v && typeof v === 'object') ? (v.name || '') : String(v || '')) : [];
+  var ks = Array.isArray(o.values_ko) ? o.values_ko : [];
+  if (!o.name_ko && !ks.some(k => k)) return '';
+  var vals = vs.map((v, i) => { var k = String(ks[i] || '').trim(); return (k && k !== v) ? k : '아직(' + v + ')'; });
+  return (o.name_ko || o.name || '') + ': ' + vals.join(', ');
 }
 
 function addImageRow(url) {
@@ -1257,7 +1283,7 @@ function dpInit() {
   dpSelectMarket('common');
 }
 
-function addOptionRow(name, values) {
+function addOptionRow(name, values, ko) {
   const wrap = document.getElementById('optionRows');
   const row = document.createElement('div');
   row.className = 'input-group input-group-sm opt-row';
@@ -1265,8 +1291,16 @@ function addOptionRow(name, values) {
     <input type="text" class="form-control opt-name kgp-w-xs" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
     <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: Black, White)" value="${escapeHtml(values || '')}">
     <button class="btn btn-ghost" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
-  row.querySelector('button').addEventListener('click', () => row.remove());
   wrap.appendChild(row);
+  var koLine = null;
+  if (ko) {
+    koLine = document.createElement('div');
+    koLine.className = 'small text-muted opt-ko';
+    koLine.setAttribute('data-role', 'opt-ko');
+    koLine.textContent = '한국어 — ' + ko;
+    wrap.appendChild(koLine);
+  }
+  row.querySelector('button').addEventListener('click', () => { row.remove(); if (koLine) koLine.remove(); });
 }
 
 function refreshPrimaryImage() {
@@ -1387,6 +1421,21 @@ async function aiDescribe() {
 }
 
 // v39 D: 제목·상세 한국어 번역(온디맨드). 무료 카운터 연동. 키 미설정이면 정직 안내(원문 유지·가짜 번역 0).
+async function translateOptionsKo() {
+  // Y2: 이 상품 하나를 지금 옮긴다(축 이름 용어집 → 값 규칙 → 번역기). 결과 원문을 그대로 말하고, 옮겨졌으면 다시 그린다.
+  var b = document.getElementById('btnOptionsKo'), out = document.getElementById('optionsKoOut');
+  if (!_ITEM_ID) return;
+  b.disabled = true; out.classList.remove('d-none'); out.textContent = '옵션을 한국어로 옮기는 중…';
+  try {
+    var r = await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/translate-now', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    var d = await r.json();
+    if (d.ok) { out.textContent = '옮겼어요' + (d.reason ? ' — ' + d.reason : '') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 500); return; }
+    out.textContent = (d.saved ? '일부만 옮겼어요 — ' : '옮기지 못했어요 — ') + (d.reason || d.error || d.status || '사유 원문 없음');
+    if (d.saved) { setTimeout(function () { location.reload(); }, 2500); return; }
+  } catch (e) { out.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
+  b.disabled = false;
+}
+
 async function translateToKo() {
   const btn = document.getElementById('btnTranslateKo');
   btn.disabled = true; const _old = btn.innerHTML; btn.innerHTML = '번역 중...';
@@ -1482,7 +1531,7 @@ function initEditor() {
   _initImages().forEach(addImageRow);
   if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
   var _opts = _initOptions();
-  _opts.forEach(o => addOptionRow(o.name, o.values));
+  _opts.forEach(o => addOptionRow(o.name, o.values, o.ko));
   // v58 STEP2 / v67 STEP3: 옵션 없음 배지 — 무옵션(단일 상품)과 추출 실패를 구분(정직).
   //   핵심 필드(가격·이미지)를 제대로 읽었으면 = 옵션 UI 없는 단일 상품 → 중립('단일 상품').
   //   핵심도 못 읽었으면 = 추출 실패 → 경고색('옵션 미수집').
@@ -2587,9 +2636,35 @@ function kgpEnrichRetry() {
     var id = b.getAttribute('data-item');
     b.disabled = true;
     try {
-      var r = await fetch('/seller/collect/' + encodeURIComponent(id) + '/recollect', {method: 'POST'});
+      // Y3: 폰(확장 없음)은 새 탭이 소용없다 — 재보강 큐에 넣고 PC 확장이 집어 가길 기다린다.
+      //   확장은 페이지에 `data-kgp-ext`(설치 버전)를 남긴다 — 그게 없으면(폰·확장 없는 PC) 큐로 간다.
+      var hasExt = false;
+      try { hasExt = !!(document.documentElement.getAttribute('data-kgp-ext')
+                        || (window.parent && window.parent !== window && window.parent.document.documentElement.getAttribute('data-kgp-ext'))); } catch (e) { hasExt = false; }
+      var phone = !hasExt;
+      var r = await fetch('/seller/collect/' + encodeURIComponent(id) + '/recollect' + (phone ? '?mode=queue' : ''), {method: 'POST'});
       var d = await r.json().catch(function () { return {}; });
       if (!r.ok || !d.ok) { say('<span style="color:var(--danger)">' + (d.error || '요청하지 못했어요') + '</span>'); b.disabled = false; return; }
+      if (d.queued) {
+        say('<i class="bi bi-hourglass-split"></i> ' + d.message);
+        var qreq = d.requested_at, qn = 0;
+        var qt = setInterval(async function () {
+          qn += 1;
+          try {
+            var s = await (await fetch('/seller/collect/' + encodeURIComponent(id) + '/state')).json();
+            if (s && s.ok && s.enrich_rerun_done_at && s.enrich_rerun_done_at >= qreq) {
+              clearInterval(qt);
+              try { if (window.parent && window.parent !== window) window.parent.postMessage({kgp: 'item-updated', id: id, title: s.title || ''}, location.origin); } catch (e) { /* 단독 */ }
+              say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> PC 확장이 다시 보강했어요</span> — 새 값으로 다시 그립니다');
+              setTimeout(function () { location.reload(); }, 600);
+              return;
+            }
+            if (s && s.enrich_fail) say('<i class="bi bi-arrow-repeat"></i> ' + s.enrich_fail + ' — 다시 줄 서 있어요');
+          } catch (e) { /* 다음 틱 */ }
+          if (qn >= 90) clearInterval(qt);        // 30초 × 90 = 45분 — 화면을 닫아도 큐는 남는다
+        }, 30000);
+        b.disabled = false; return;
+      }
       window.open(d.open_url, '_blank', 'noopener');
       say('<i class="bi bi-hourglass-split"></i> 새 탭에서 고가수집기 버튼을 눌러 주세요 — 기다리는 중');
       var req = d.requested_at, n = 0;
@@ -2600,9 +2675,11 @@ function kgpEnrichRetry() {
           if (s && s.ok && s.recollected_at && s.recollected_at >= req) {
             clearInterval(t);
             var ch = (s.last_merge && s.last_merge.changed) ? Object.keys(s.last_merge.changed).length : 0;
-            say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> 갱신됐어요 · ' + ch + '개 필드</span> — 새로고침하면 반영된 값이 보입니다');
-            // F48-d: 재수집 뒤 쿠팡 필수 옵션을 바로 다시 불러온다(칸 0개로 남지 않게).
-            if (typeof kgpLoadCoupangOptions === 'function') kgpLoadCoupangOptions();
+            say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> 갱신됐어요 · ' + ch + '개 필드</span> — 화면을 새 값으로 다시 그립니다');
+            // Y1(오너 2026-10-04): 「새로고침하면」이라 해 놓고 아무도 안 그렸다 — 헤더·목록·배너가 옛 값으로 남았다.
+            //   부모(목록 드로어)에 새 제목을 알리고, 이 화면은 저장값으로 다시 그린다(같은 소스).
+            try { if (window.parent && window.parent !== window) window.parent.postMessage({kgp: 'item-updated', id: id, title: s.title || ''}, location.origin); } catch (e) { /* 단독 페이지 */ }
+            setTimeout(function () { location.reload(); }, 600);
             b.disabled = false; return;
           }
         } catch (e) { /* 다음 틱 */ }

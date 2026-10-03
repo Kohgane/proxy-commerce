@@ -49,6 +49,23 @@ bp = Blueprint(
     static_url_path="/static",
 )
 
+
+@bp.app_template_filter("kst")
+def _kst_filter(value) -> str:
+    """Y1(오너 2026-10-04): 화면 시각은 **KST**로. 저장값은 UTC ISO(「16:05」가 실제론 01:05였다).
+    시간대가 없는 값은 UTC로 읽는다(저장 규약). 못 읽으면 앞 16자 그대로(지어내지 않음)."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        d = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw[:16].replace("T", " ")
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=_tz.utc)
+    return d.astimezone(_tz(_td(hours=9))).strftime("%Y-%m-%d %H:%M") + " KST"
+
 # ---------------------------------------------------------------------------
 # 인증 stub — Phase 24 OAuth 연결 전까지 환경변수로 제어
 # ---------------------------------------------------------------------------
@@ -1959,6 +1976,9 @@ def mobile_list_ctx(item: dict) -> dict:
         _rp = _kp3.replica_hits(_rt)
         if _rp:
             risks.append(f"상표 위험({', '.join(_rp)}) — 등록 보류")
+        _ipl = _kp3.ip_hits(_rt)                       # Y6: 영화·게임·애니 IP — 사전검증과 같은 판정
+        if _ipl:
+            risks.append(f"상표 확인 보류({', '.join(_ipl)}) — 라이선스 확인 전 등록 보류")
     except Exception as exc:
         logger.warning("[M5] 위험 플래그 판정 실패: %s", exc)
     blocked = ""
@@ -2934,7 +2954,9 @@ def collect_translate_now(item_id):
         return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
     from src.services import option_translate_auto as _optauto
     r = _optauto.translate_now(_seller_id(), item_id)
-    return jsonify({"ok": r.get("status") in ("done", "queued"), **r})
+    # Y2: 번역기가 실패해도 규칙으로 옮겨 저장한 게 있으면 화면이 다시 그린다(`saved`).
+    return jsonify({"ok": r.get("status") in ("done", "queued"),
+                    "saved": "옮겨 저장" in str(r.get("reason") or ""), **r})
 
 
 @bp.post("/collect/prevalidate")
@@ -3702,7 +3724,7 @@ def collect_bulk_translate():
                     _src_title, _brand = _t4t(title, extra)          # J0: 브랜드 한자는 번역기에 안 보낸다
                     out = translator.translate_product({"title": _src_title or title, "description": desc})
                     title_ko = (out.get("title_ko") or "").strip() or title
-                    title_ko = _polish(title_ko) or title_ko          # T1: 판촉 직역 제거
+                    title_ko = _polish(title_ko, src=title) or title_ko   # T1: 판촉 직역 제거 · Y6: 원문 보고 오역 사전·IP 삭제
                     if _brand and title_ko != title:
                         title_ko = _attach(title_ko, _brand)
                         extra["brand_romanized"] = {k: _brand[k] for k in ("han", "latin", "field")}
@@ -8065,6 +8087,13 @@ def collect_preview_by_id(item_id: str):
         extra = json.loads(item.get("extra_json") or "{}")
     except Exception:
         pass
+    # Y1: 「보강 필요」 배너는 **지금 실제로 비어 있는 칸**만(예전 저장값이 다 찬 칸까지 계속 말했다 — 오너 51건 중 5건).
+    try:
+        from src.collectors.collect_status import still_uncollected as _stu
+        if extra.get("uncollected"):
+            extra["uncollected"] = _stu(extra)
+    except Exception:
+        pass
 
     # v39 D: 과거 수집분에 남아있을 수 있는 플레이스홀더 토큰을 편집 프리필 직전에 제거(렌더 안전망).
     try:
@@ -8240,6 +8269,9 @@ def collect_ai_description(item_id: str):
 
     data = request.get_json(force=True, silent=True) or {}
     title = (data.get("title") or item.get("title") or extra.get("title_ko") or "").strip()
+    if not title:
+        # Y5(오너 2026-10-04): 제목이 비면 초안 재료가 없다 — AI를 부르지 않고 무엇이 먼저인지 말한다.
+        return jsonify({"ok": False, "skipped": True, "error": "제목 없음 — 보강 먼저(AI 상세 초안 건너뜀)"}), 200
     category = (data.get("category") or extra.get("category_code") or "").strip()
     keywords = data.get("keywords") or extra.get("keywords") or []
     specs = extra.get("detail_specs") or []
@@ -12595,6 +12627,12 @@ def collect_item_state(item_id: str):
         # F49-T 2부-c: 드로어 「원본에서 다시 수집」이 들여다본다 — 요청 뒤에 갱신됐는지·무엇이 바뀌었는지.
         "recollect_requested_at": ex.get("recollect_requested_at") or "",
         "recollected_at": ex.get("recollected_at") or "",
+        # Y3: 폰에서 재보강 큐에 넣은 뒤 — 확장이 실제로 다시 보강했는지(`enrich_rerun_done_at`)를 본다.
+        "enrich_rerun_waiting": bool(ex.get("enrich_rerun")),
+        "enrich_rerun_done_at": ex.get("enrich_rerun_done_at") or "",
+        "enrich_fail": (ex.get("enrich_fail") or {}).get("reason", ""),
+        # Y1: 재수집 뒤 드로어 헤더·목록 행이 같은 값을 쓰게(목록과 같은 표시 규칙: 번역 제목 → 원문 → 행 제목).
+        "title": str(ex.get("title_ko") or row.get("title") or ex.get("title") or ""),
         "last_merge": (list(ex.get("merge_log") or [])[-1:] or [None])[0],
         "missing": [{"label": f["label"], "reason": f.get("reason") or ""}
                     for f in st.get("fields") or [] if f.get("count", True) and not f.get("ok") and not f.get("na")],
@@ -12934,7 +12972,7 @@ def collect_translate_audit_backfill():
             fields = {}
             ko = str(ex.get("title_ko") or "")
             if ko and ko != src:
-                new = polish_ko(ko) or ko
+                new = polish_ko(ko, src=src) or ko   # Y6: 원문 보고 오역 사전(小夜灯 → 무드등)·IP명 삭제
                 if new != ko:
                     ex.setdefault("title_polish_before", ko)
                     ex["title_ko"] = new
@@ -12979,7 +13017,9 @@ def _coupang_name_input(item: dict, ex: dict) -> dict:
     """F53 — 쿠팡 상품명 재료(저장된 값 그대로): 번역 제목 · 원문 제목 · 브랜드 · 옵션 원문 · SKU."""
     from src.collectors.ko_polish import polish_ko as _polish   # T1: 옛 행의 「재고 있음」 같은 판촉 직역도 여기서 걷힌다
     _tk = str(ex.get("title_ko") or ex.get("title") or item.get("title") or "")
-    return {"title_ko": _polish(_tk) or _tk,
+    _src = str(ex.get("title") or item.get("title") or "")
+    return {"title_ko": _polish(_tk, src=_src) or _tk,
+            "title_src": _src,                         # Y6: 쿠팡명도 원문 보고 오역 사전(小夜灯 → 무드등) 먼저
             "title_original": str(ex.get("title_original") or ex.get("title_en") or ""),
             # J0: 브랜드 필드가 비어도 제목 앞 병음 브랜드(LANXIAOJIE)가 판정됐으면 그걸 브랜드로 — 쿠팡명에서 빠지지 않게.
             "brand": str(ex.get("brand") or (ex.get("brand_romanized") or {}).get("latin") or ""),
@@ -13113,14 +13153,50 @@ def collect_item_recollect(item_id: str):
         return jsonify({"ok": False, "error": "원본 주소가 없어 다시 수집할 수 없어요."}), 400
     # 수집 라우트의 `recollected_at`과 **같은 형식**(UTC isoformat) — 문자열 비교로 선후를 가린다.
     ex["recollect_requested_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    _data = request.get_json(silent=True) or {}
+    _queue = str(_data.get("mode") or request.args.get("mode") or "") == "queue"
+    if _queue:
+        # Y3(오너 2026-10-04): 폰엔 확장이 없다 — 「새 탭에서 고가수집기를 눌러 주세요」는 할 수 없는 일이다.
+        #   **재보강 큐**에 넣는다(R1 백그라운드 보강 = 확장 폴러 `/api/v1/collect/enrich/pending`이 집는 그 큐).
+        ex["enrich_state"] = "pending"
+        ex["enrich_attempts"] = 0
+        ex["enrich_rerun"] = True
+        ex["enrich_requeued_at"] = ex["recollect_requested_at"]
     from . import collect_history_store
     ok = collect_history_store.update(item_id, seller_id=item.get("seller_id") or _seller_id(),
                                       extra_json=_json.dumps(ex, ensure_ascii=False))
     if not ok:
         return jsonify({"ok": False, "error": "요청을 저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요."}), 502
+    if _queue:
+        pos = _enrich_queue_position(item_id)
+        return jsonify({"ok": True, "item_id": item_id, "queued": True, "position": pos,
+                        "requested_at": ex["recollect_requested_at"],
+                        "message": "PC 확장이 켜지면 자동으로 다시 보강됩니다" + (f" (대기 {pos}번째)" if pos else "")})
     return jsonify({"ok": True, "item_id": item_id, "open_url": url,
                     "requested_at": ex["recollect_requested_at"],
                     "message": "새 탭에서 고가수집기 버튼을 누르면 이 항목이 갱신됩니다(15분 안)."})
+
+
+def _enrich_queue_position(item_id: str) -> int:
+    """Y3: 확장 폴러(`/enrich/pending`)가 보는 **같은 순서**로 이 항목이 몇 번째인지(없으면 0)."""
+    try:
+        from .collect_history_store import list_items
+        from src.collectors.collect_status import enrich_axes
+        from src.api.extension_api import ENRICH_MAX_ATTEMPTS
+        n = 0
+        for row in list_items(seller_ids=_seller_identities(), days=90, limit=500):
+            try:
+                ex = json.loads(row.get("extra_json") or "{}") or {}
+            except Exception:
+                continue
+            if enrich_axes(ex)["enrich_state"] != "pending" or int(ex.get("enrich_attempts") or 0) >= ENRICH_MAX_ATTEMPTS:
+                continue
+            n += 1
+            if str(row.get("id")) == str(item_id):
+                return n
+    except Exception as exc:
+        logger.warning("[재보강 큐] 순번 계산 실패: %s", exc)
+    return 0
 
 
 @bp.post("/collect/<item_id>/enrich-retry")

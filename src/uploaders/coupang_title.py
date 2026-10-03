@@ -14,11 +14,17 @@
 """
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
 MAX_LEN = 100
+# Y6(오너 2026-10-04): 하한 — 실측 「블랙홀 미니 벽등」 9자(첫 구절만 잘라 유형 명사만 남음). 20자 미만이면 제목 뒤쪽의
+#   **제목에 있는** 한글 낱말로 보탠다(지어내지 않음). 그래도 모자라면 경고(직접 보태 주세요).
+MIN_LEN = 20
 BRAND_POS = ("front", "back", "omit")
 
 # 띄어 번역되는 붙임말(쿠팡 검색 표기) — 두 토큰이 나란히 올 때만 붙인다.
@@ -199,10 +205,54 @@ def _fit(s: str) -> str:
     return cut[:cut.rfind(" ")].strip() if " " in cut else cut
 
 
+def _source_title(product: Dict[str, Any]) -> str:
+    for k in ("title_src", "title_original", "title_en"):
+        v = str(product.get(k) or "")
+        if re.search("[\u4e00-\u9fff]", v):
+            return v
+    return ""
+
+
+def fixed_title(product: Dict[str, Any]) -> str:
+    """Y6 — 쿠팡명 재료 제목: 번역 제목에 **오역 사전 먼저**(원문을 보고 — 小夜灯 → 무드등, 星际穿越 → IP 삭제)."""
+    t = str(product.get("title_ko") or product.get("title") or "")
+    src = _source_title(product)
+    if not src or not t:
+        return t
+    try:
+        from src.collectors import ko_polish as kp
+        return kp.fix_by_source(t, src) or t
+    except Exception:
+        return t
+
+
+def _extend_to_floor(name: str, title: str, brand: str) -> tuple:
+    """하한 미만이면 제목 뒤쪽의 한글 낱말을 차례로 보탠다 — `(이름, 보탠 낱말들)`."""
+    if len(name) >= MIN_LEN:
+        return name, []
+    have = {_norm_tok(t) for t in name.split()}
+    added: List[str] = []
+    for raw in re.split(r"[\s,，/|·]+", _strip_brand_chunk(title, brand)):
+        t = raw.strip("()[]{}「」'\"")
+        if not _HANGUL_TOKEN.match(t) or len(t) < 2:
+            continue
+        if len(t) > 2 and len(_PARTICLE_TAIL.sub("", t)) >= 2:
+            t = _PARTICLE_TAIL.sub("", t)
+        if _norm_tok(t) in have:
+            continue
+        have.add(_norm_tok(t))
+        added.append(t)
+        name = f"{name} {t}"
+        if len(name) >= MIN_LEN:
+            break
+    return _fit(name), added
+
+
 def build_name(product: Dict[str, Any], brand_pos: str = "front") -> Dict[str, Any]:
     """규칙형 쿠팡 상품명 → `{name, parts, warnings, source:"rule"}`. 유형을 못 찾으면 name=""(지어내지 않음)."""
     brand = brand_of(product)
-    ptype = product_type(str(product.get("title_ko") or product.get("title") or ""), brand)
+    title = fixed_title(product)
+    ptype = product_type(title, brand)
     attrs = [a for a in common_attrs(product) if a not in ptype]
     compat = compat_of(product, exclude=[ptype] + attrs)
     parts = {"brand": brand, "type": ptype, "attrs": attrs, "compat": compat,
@@ -221,7 +271,13 @@ def build_name(product: Dict[str, Any], brand_pos: str = "front") -> Dict[str, A
     else:
         name = f"{body}{tail}"
     name = _fit(name)
-    return {"name": name, "parts": parts, "source": "rule", "warnings": check_name(name)}
+    name, added = _extend_to_floor(name, title, brand)
+    if added:
+        parts["extended"] = added
+    warnings = check_name(name)
+    if len(name) < MIN_LEN:
+        warnings.append(f"쿠팡 상품명이 {MIN_LEN}자보다 짧아요({len(name)}자) — 제목에 보탤 낱말이 없어요, 직접 보태 주세요")
+    return {"name": name, "parts": parts, "source": "rule", "warnings": warnings}
 
 
 # ── LLM 다듬기(오너가 누를 때만) ─────────────────────────────────────────
@@ -231,6 +287,9 @@ def llm_rewrite(product: Dict[str, Any], rule: Dict[str, Any], *, call=None) -> 
     `call(prompt) -> str`을 주입할 수 있다(테스트). 기본은 OpenAI(키 없으면 규칙안).
     """
     parts = rule.get("parts") or {}
+    # Y5(오너 2026-10-04): 제목이 비면 AI에 물을 재료가 없다 — 부르지 않고 그렇게 말한다(헛호출·HTTPError 0).
+    if not str(product.get("title_ko") or product.get("title") or "").strip():
+        return {**rule, "note": "제목 없음 — 보강 먼저(AI 다듬기 건너뜀)"}
     prompt = ("쿠팡 상품명을 만드세요. 규칙: 「브랜드 + 제품 유형 + 핵심 속성」만, 조사·서술어·문장 금지, "
               "쉼표 나열 금지, 같은 말 반복 금지, 100자 이내, 없는 기능·스펙 추가 금지. 한 줄만 답하세요.\n"
               f"브랜드: {parts.get('brand') or '(없음)'} (위치: {parts.get('brand_pos')})\n"
@@ -241,7 +300,14 @@ def llm_rewrite(product: Dict[str, Any], rule: Dict[str, Any], *, call=None) -> 
     try:
         text = (call or _openai_call)(prompt)
     except Exception as exc:                          # noqa: BLE001 — 실패하면 규칙안(정직 표기)
-        return {**rule, "note": f"AI 다듬기 실패({type(exc).__name__}) — 규칙안을 그대로 둡니다"}
+        # Y5: 「HTTPError」 한 단어 대신 사유·HTTP 코드·재시도 여부·원문(계측에도 적재).
+        try:
+            from src.seller_console.ai.translator import failure_line
+            why = failure_line(exc, "openai-title")
+        except Exception:
+            why = type(exc).__name__
+        logger.warning("쿠팡 상품명 AI 다듬기 실패 — %s", why)
+        return {**rule, "note": f"AI 다듬기 실패 — {why} · 규칙안을 그대로 둡니다"}
     cand = _fit(str(text or "").strip().strip("「」\"'").splitlines()[0] if text else "")
     if not cand:
         return {**rule, "note": "AI가 빈 답을 줬어요 — 규칙안을 그대로 둡니다"}
@@ -259,11 +325,16 @@ def _openai_call(prompt: str) -> str:
     if not key or os.getenv("ADAPTER_DRY_RUN", "0") == "1":
         raise RuntimeError("OPENAI_API_KEY 없음")
     import requests
-    r = requests.post("https://api.openai.com/v1/chat/completions",
-                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                      json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "temperature": 0.2,
-                            "messages": [{"role": "user", "content": prompt}]}, timeout=20)
-    r.raise_for_status()
+    from decimal import Decimal
+    from src.ai.budget import BudgetExceededError, BudgetGuard
+    from src.seller_console.ai.translator import _OPENAI_IN_USD, _OPENAI_OUT_USD, _post_with_429_retry
+    guard = BudgetGuard()                              # Y5: 서버 월 예산에 묶는다(넘으면 「서버 월 예산」으로 실패)
+    if not guard.can_spend(estimated_cost_usd=Decimal(str(len(prompt))) * _OPENAI_IN_USD + Decimal("200") * _OPENAI_OUT_USD):
+        raise BudgetExceededError(guard.summary())
+    r = _post_with_429_retry(requests, "https://api.openai.com/v1/chat/completions",   # Y5: 429 백오프 1회
+                             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                             json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "temperature": 0.2,
+                                   "messages": [{"role": "user", "content": prompt}]}, timeout=20)
     return r.json()["choices"][0]["message"]["content"]
 
 

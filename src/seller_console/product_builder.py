@@ -52,7 +52,8 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
     ex = _extra(it)
     from src.collectors.ko_polish import polish_ko
     title_raw = str(ex.get("title_ko") or ex.get("title") or it.get("title") or "")
-    title = polish_ko(title_raw) or title_raw
+    # Y6: 원문 제목을 같이 넘긴다 — 오역 사전(小夜灯 → 무드등)·IP명 삭제는 원문을 보고만 한다
+    title = polish_ko(title_raw, src=str(ex.get("title") or it.get("title") or "")) or title_raw
     images = [u for u in (ex.get("images") or []) if isinstance(u, str) and u]
     try:
         from src.services import image_translate_store as _its

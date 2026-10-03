@@ -104,6 +104,20 @@ def pause(reason: str) -> None:
     logger.warning("[이미지번역·자동] 큐 일시정지 — %s", reason)
 
 
+def heal_breaker() -> dict:
+    """Y4: 차단기가 「번역 실패 N장」으로 멈췄는데, 글자 없는 사진을 뺀 **진짜 실패**가 상한 아래면 풀고 다시 돈다.
+    사람이 멈춘 것(다른 사유)은 건드리지 않는다. → `{healed, real_failed, reason}`"""
+    st = pause_state()
+    if not st.get("paused") or not str(st.get("reason") or "").startswith("번역 실패"):
+        return {"healed": False, "real_failed": None, "reason": "멈춤 아님 또는 사람이 멈춘 것"}
+    n = _q().failed_since(_since_resume())
+    if n >= FAIL_PAUSE_AT:
+        return {"healed": False, "real_failed": n, "reason": f"진짜 실패 {n}장 — 상한 {FAIL_PAUSE_AT} 이상이라 그대로"}
+    resume()
+    logger.warning("[이미지번역·자동] 차단기 해제 — 글자 없는 사진을 실패에서 빼니 진짜 실패 %s장(상한 %s)", n, FAIL_PAUSE_AT)
+    return {"healed": True, "real_failed": n, "reason": f"진짜 실패 {n}장 < {FAIL_PAUSE_AT}"}
+
+
 def resume() -> dict:
     st = {"paused": False, "reason": "", "resumed_at": datetime.now(timezone.utc).isoformat()}
     _q().state_set(_STATE_KEY, st)
@@ -258,7 +272,11 @@ def _translate_job(job: dict) -> tuple:
     except Exception:
         pass
     st = entry.get("status")
-    return (st if st in ("done", "skipped") else "failed"), str(entry.get("error_message") or entry.get("reason") or "")
+    why = str(entry.get("error_message") or entry.get("reason") or "")
+    if st not in ("done", "skipped") and _q().is_no_text(why):
+        # Y4: 글자 없는 사진 = **성공(원본 유지)**. 실패로 세면 차단기가 멀쩡한 큐를 멈춘다(실측 20장 중 14장이 이것).
+        return "skipped", f"글자 없는 사진 — 원본 그대로({why[:60]})"
+    return (st if st in ("done", "skipped") else "failed"), why
 
 
 def translate_page(url: str, *, idx: int, kind: str, item_id: str, seller_id: str, title: str = "") -> dict:

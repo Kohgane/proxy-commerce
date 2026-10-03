@@ -120,7 +120,9 @@ def rule_pass(extra: dict) -> dict:
         nm = str(o.get("name") or "").strip()
         nk = str(o.get("name_ko") or "").strip()
         if nm and not (nk and not foreign(nk)):
-            r = _rule(nm) if foreign(nm) else nm
+            # Y2: 축 **이름**은 옵션 이름 용어집이 먼저(大小·尺寸·尺码→사이즈, 颜色·颜色分类→색상) — 쿠팡 필수 옵션과 같은 말.
+            from src.uploaders.coupang_options import OPTION_NAME_GLOSSARY as _ONG
+            r = _ONG.get(nm) or (_rule(nm) if foreign(nm) else nm)
             if r and r != nk:
                 o["name_ko"] = r
                 changed = True
@@ -271,6 +273,18 @@ def _load(item_id: str, uid: str):
     return row, ex
 
 
+def _ko_count(ex: dict) -> int:
+    """옵션 이름·값 중 한국어로 채워진 자리 수(외국어·빈칸 제외) — 규칙이 몇 개 옮겼는지 세는 데 쓴다."""
+    n = 0
+    for o in ex.get("options") or []:
+        if not isinstance(o, dict):
+            continue
+        k = str(o.get("name_ko") or "").strip()
+        n += bool(k and not foreign(k))
+        n += sum(1 for v in o.get("values_ko") or [] if str(v or "").strip() and not foreign(v))
+    return n
+
+
 def _job(job: dict) -> tuple:
     """상품 하나 — `(status, reason, values_sent)`. status: done | failed | skipped | queued(나머지 내일) | cap."""
     from src.seller_console import collect_history_store as store
@@ -280,7 +294,9 @@ def _job(job: dict) -> tuple:
     row, ex = _load(item_id, uid)
     if not row:
         return "skipped", "상품이 더는 없습니다", 0
+    _ko0 = _ko_count(ex)
     st = rule_pass(ex)
+    ruled = max(0, _ko_count(ex) - _ko0)          # Y2: 규칙(축 이름 사전·값 표)이 이번에 옮긴 자리 수
     want_vals = st["pending"][:MAX_VALUES_PER_JOB]
     need = len(want_vals) + (1 if st["title_pending"] else 0)
     if not need:
@@ -302,7 +318,7 @@ def _job(job: dict) -> tuple:
         src_t, brand = kp.title_for_translator(src, ex)
         try:
             out = tr.translate_product({"title": src_t or src, "description": ""})
-            ko = kp.polish_ko(str(out.get("title_ko") or "").strip())
+            ko = kp.polish_ko(str(out.get("title_ko") or "").strip(), src=src)   # Y6: 원문 보고 오역 사전·IP 삭제
             prov = str(out.get("provider") or "")
             if ko and ko != src and not foreign(ko) and prov not in ("none", "stub", ""):
                 if brand:
@@ -357,7 +373,12 @@ def _job(job: dict) -> tuple:
     store.update(item_id, seller_ids={uid}, extra_json=json.dumps(ex2, ensure_ascii=False), **fields)
     left = need - granted
     if moved == 0:
-        return "failed", "; ".join(errors)[:300] or "번역기가 하나도 옮기지 못했습니다", sent
+        why = "; ".join(errors)[:300] or "번역기가 하나도 옮기지 못했습니다"
+        if ruled:
+            # Y2: 규칙으로 옮긴 건 저장됐다 — 「하나도 못 옮김」으로만 말하면 거짓(실측: 사이즈·소형·대형·색상 저장됨).
+            left_v = ", ".join(str(v) for v in want_vals[:3])
+            why = f"규칙으로 {ruled}개 옮겨 저장 · 번역기 남은 {len(want_vals)}개({left_v}) 못 옮김 — {why}"
+        return "failed", why[:300], sent
     if left > 0 or len(st["pending"]) > MAX_VALUES_PER_JOB:
         return "queued", f"오늘 {moved}개 옮김 — 남은 {max(left, 0)}개는 상한 뒤 이어서", sent
     return "done", ("; ".join(errors)[:300] if errors else ""), sent

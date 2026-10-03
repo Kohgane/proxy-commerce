@@ -428,6 +428,18 @@ def record_translate_failure(exc: Exception, provider: str) -> str:
     return reason
 
 
+def failure_line(exc: Exception, provider: str) -> str:
+    """Y5(오너 2026-10-04): AI 호출 실패를 **한 줄 원문**으로 — 사유 · 공급사 · HTTP 코드 · 재시도 여부 · 응답 앞부분.
+    「요청 속도 제한」「HTTPError」만 보여서 무엇이 언제 막았는지 몰랐다. 계측에도 같이 적재한다."""
+    code, reason = classify_translate_reason(exc)
+    status, body = raw_error_meta(exc)
+    _record_translate(False, reason=reason, provider=provider, code=code, status=status, body=body)
+    label = provider_label(provider.split("-")[0])
+    retry = ("429 백오프 재시도 1회 뒤에도 실패" if code == "rate_limit"
+             else ("재시도 안 함(서버 월 예산)" if code == "budget" else "재시도 안 함"))
+    return f"{reason} · {label} HTTP {status if status else '—'} · {retry} · 원문 {str(body or '')[:120]}"
+
+
 def provider_diagnostics() -> list:
     """v87-W11 item1: 프로바이더별 **env 검출 여부 + 활성 체인 포함 여부**(키 값 미출력).
     '상위 4 전멸'이 env 미검출(체인에서 제외됨)인지 호출 실패(체인엔 있으나 실패)인지 즉시 판별.
@@ -978,7 +990,7 @@ class AITranslator:
                 _res.setdefault("draft_status", "openai")
                 return _res
             except Exception as exc:
-                draft_error = record_translate_failure(exc, "openai-draft")   # v87-W7a: 원 응답 코드·바디 적재
+                draft_error = failure_line(exc, "openai-draft")   # Y5: 사유·HTTP·재시도·원문 한 줄(계측 적재 포함)
                 draft_status = "openai_error"
                 logger.warning("AI 상세 생성 실패(%s) — 구조화 폴백(키 있음, 호출 실패): %s", draft_error, exc)
 
@@ -1022,13 +1034,18 @@ class AITranslator:
             f"상품명: {title}\n브랜드: {brand or '(미상)'}\n카테고리: {category or '(미상)'}\n"
             f"스펙:\n{spec_txt}\n키워드: {kw_txt}\n"
         )
-        resp = _req.post(
-            "https://api.openai.com/v1/chat/completions",
+        # Y5: AI 초안도 서버 월 예산(AI_MONTHLY_BUDGET_USD)에 묶고, 429는 백오프 1회 재시도(번역 체인과 같은 규칙).
+        from decimal import Decimal as _D
+        from src.ai.budget import BudgetGuard, BudgetExceededError
+        _guard = BudgetGuard()
+        if not _guard.can_spend(estimated_cost_usd=_D(str(len(prompt))) * _OPENAI_IN_USD + _D("900") * _OPENAI_OUT_USD):
+            raise BudgetExceededError(_guard.summary())
+        resp = _post_with_429_retry(
+            _req, "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.5},
             timeout=self._clamp_timeout(20),
         )
-        resp.raise_for_status()
         text = resp.json()["choices"][0]["message"]["content"].strip()
         return {"text": text, "provider": "openai", "is_draft": True}
 

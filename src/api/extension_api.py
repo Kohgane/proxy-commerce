@@ -958,6 +958,29 @@ def collect_enrich():
     except Exception:
         extra = {}
 
+    # Y1(오너 2026-10-04): **빈 페이지 결과는 「보강 완료」가 아니다.** 제목 0자·상세 셀렉터 0이면 버리고(덮어쓰기 0)
+    #   「보강 실패」로 적은 뒤 재보강 큐에 다시 넣는다. 쓰레기(가게 아이콘·추적 픽셀)는 들어오기 전에 뺀다.
+    from src.collectors.collect_status import bot_wall_reason, real_detail_images, still_uncollected
+    _wall = bot_wall_reason(data)
+    if _wall:
+        # 큐(`/enrich/pending`)는 보정 축이 `pending`인 행만 집는다 — `failed`로 두면 재보강이 영영 안 온다.
+        #   시도 수는 올려서 같은 벽에 무한히 박지 않게(상한 ENRICH_MAX_ATTEMPTS — 넘으면 큐에서 빠진다).
+        extra["enrich_state"] = "pending"
+        extra["enrich_attempts"] = int(extra.get("enrich_attempts") or 0) + 1
+        extra["enrich_fail"] = {"at": _now_iso_w4(), "reason": _wall}
+        extra["enrich_rerun"] = True
+        extra["enrich_requeued_at"] = _now_iso_w4()
+        if isinstance(data.get("page_diag"), dict):
+            extra["page_diag"] = _clean_page_diag(data.get("page_diag"))
+        _update(item_id, seller_ids=ids, extra_json=_json.dumps(extra, ensure_ascii=False))
+        logger.warning("[enrich] item=%s %s", item_id, _wall)
+        return jsonify({"ok": False, "item_id": item_id, "error": _wall, "requeued": True}), 200
+    if isinstance(data.get("detail_images"), list):
+        data["detail_images"] = real_detail_images(data["detail_images"])
+    if isinstance(extra.get("detail_images"), list):
+        extra["detail_images"] = real_detail_images(extra["detail_images"])
+    extra.pop("enrich_fail", None)
+
     def _union(a, b):
         out, seen = [], set()
         for x in list(a or []) + list(b or []):
@@ -1104,6 +1127,9 @@ def collect_enrich():
         extra["image_check"] = _image_check(extra, data)
         if not extra["image_check"]["ok"]:
             logger.info("[enrich] item=%s 이미지 부족 — %s", item_id, extra["image_check"]["reason"])
+    # Y1: 「보강 필요」 배너 재료를 **실제 값으로** 다시 낸다(예전엔 price만 지웠다).
+    if "uncollected" in extra:
+        extra["uncollected"] = still_uncollected(extra)
     # 상태 배지 재계산(부분→성공).
     try:
         from src.collectors.collect_status import compute_collect_status as _ccs
@@ -1376,7 +1402,15 @@ def collect_from_extension():
                 _merged = {}
             from src.collectors.source_merge import incoming_from_payload as _inc, merge_by_source as _msrc
             _cfs = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
-            _incoming = _inc({**payload, "skus": _clean_skus(payload.get("skus"))}, images=images)
+            # Y1: 쓰레기 상세 이미지(가게 아이콘·추적 픽셀)는 **병합 전에** 뺀다 — 뒤에서 빼면 같은 페이로드가
+            #   매번 「바뀜」으로 보여 「이미 수집한 상품」이 「갱신됨」이 된다(f49t2c 계약이 잡음).
+            from src.collectors.collect_status import real_detail_images as _rdi, still_uncollected as _stu
+            _pl = {**payload, "skus": _clean_skus(payload.get("skus"))}
+            if isinstance(_pl.get("detail_images"), list):
+                _pl["detail_images"] = _rdi(_pl["detail_images"])
+            if isinstance(_merged.get("detail_images"), list):
+                _merged["detail_images"] = _rdi(_merged["detail_images"])
+            _incoming = _inc(_pl, images=images)
             _merged, _mchg, _mkept = _msrc(_merged, _incoming, _cfs, force=_force,
                                            path=("recollect" if _force else "collect-duplicate"))
             if "title" in _mchg:
@@ -1393,6 +1427,9 @@ def collect_from_extension():
                     _merged["uncollected"] = [f for f in (_merged.get("uncollected") or []) if f != "price"]
             if isinstance(payload.get("page_diag"), dict):
                 _merged["page_diag"] = _clean_page_diag(payload.get("page_diag"))
+            # Y1: 재수집도 같은 판정 — 배너 재료를 실제 값으로(쓰레기 상세 이미지는 위에서 병합 전에 뺐다).
+            if "uncollected" in _merged:
+                _merged["uncollected"] = _stu(_merged)
             if _force:
                 _merged["recollected"] = True
                 _merged["warnings"] = payload.get("warnings", [])

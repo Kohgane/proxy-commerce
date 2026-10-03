@@ -201,7 +201,9 @@ def test_option_block_auto_loads_and_renders_badges():
     assert 'data-role="cp-name-pick"' in html and "data-cp-name" in html
     assert 'data-role="cp-glossary"' in html
     j = html.index("갱신됐어요 · ")
-    assert "kgpLoadCoupangOptions()" in html[j:j + 400]                               # 재수집 뒤 다시 불러오기
+    # Y1(2026-10-04): 재수집 뒤엔 페이지를 통째로 다시 그린다(location.reload) — DOMContentLoaded 자동 불러오기
+    #   (위 `auto` 단언)가 쿠팡 옵션을 다시 부른다. 예전 제자리 호출은 헤더·배너를 옛 값으로 남겼다.
+    assert "location.reload()" in html[j:j + 600]
 
 
 def test_model_prefill_survives_the_50_char_title_cut():

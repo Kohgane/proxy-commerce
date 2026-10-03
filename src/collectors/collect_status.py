@@ -409,3 +409,75 @@ def enrich_badge(extra: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
             "title": ("가격까지 담겼어요 — 이미지·옵션은 PC 고가수집기가 채웁니다."
                       if ax["gate_ready"] else
                       "제목·링크만 담겼어요 — 가격·이미지는 PC 고가수집기가 채웁니다.")}
+
+
+# ── Y1(오너 2026-10-04) — 보강 결과 판정은 **실제 값**으로 ────────────────────────────────────────────
+import re as _re_y1
+
+# 상세 이미지 자리에 끼어드는 **가게 아이콘·추적 픽셀**(실측 301c02cd…: `…-24-24.png` 가게 아이콘 · `s.gif`).
+#   TB 아이콘 이름은 `<id>-<가로>-<세로>.<확장자>`, tps 리소스는 `tps-<가로>-<세로>` — 200px 이하만 쓰레기로 본다.
+_JUNK_RE = _re_y1.compile(r"(?:/s\.gif|spacer\.gif|blank\.gif|pixel\.gif)(?:$|[?_])", _re_y1.I)
+_DIM_RE = _re_y1.compile(r"(?:tps-|-)(\d{1,4})-(\d{1,4})\.(?:png|jpe?g|gif|webp)", _re_y1.I)
+
+
+def is_junk_asset(url) -> bool:
+    u = str(url or "").strip()
+    if not u:
+        return True
+    if _JUNK_RE.search(u):
+        return True
+    m = _DIM_RE.search(u)
+    if m:
+        try:
+            return int(m.group(1)) <= 200 and int(m.group(2)) <= 200
+        except ValueError:
+            return False
+    return False
+
+
+def real_detail_images(urls) -> list:
+    return [u for u in (urls or []) if isinstance(u, str) and not is_junk_asset(u)]
+
+
+def still_uncollected(extra: dict) -> list:
+    """`uncollected`(공유 글 초안이 「아직 없음」이라 적은 칸) 중 **지금도 실제로 비어 있는** 것만.
+    예전엔 보강·재수집이 `price`만 지웠다 — 이미지·옵션·상세가 채워져도 「보강 필요」 배너가 남았다."""
+    ex = extra or {}
+    out = []
+    for f in ex.get("uncollected") or []:
+        if f == "price":
+            p = str(ex.get("price") or "").strip()
+            empty = (not p) or p in ("0", "0.0", "0.00")
+        elif f == "images":
+            empty = not [u for u in (ex.get("images") or []) if isinstance(u, str) and u.strip()]
+        elif f == "options":
+            empty = not [o for o in (ex.get("options") or []) if isinstance(o, dict) and (o.get("values") or [])]
+        elif f == "description":
+            d = str(ex.get("description_ko") or ex.get("description") or "").strip()
+            empty = len(d) < 2 and not real_detail_images(ex.get("detail_images"))
+        else:
+            empty = not ex.get(f)
+        if empty:
+            out.append(f)
+    return out
+
+
+def bot_wall_reason(payload: dict) -> str:
+    """보강 페이로드가 **빈 페이지**(봇 확인·로그인 벽)에서 온 것인가 — 제목 길이·상세 셀렉터 적중 수로만 본다.
+    pass.tmall·pass.fliggy 리소스는 티몰 공통 비컨이라 근거로 쓰지 않는다(오너 Y1 교체). 진단이 없으면 판정 안 함."""
+    pd = (payload or {}).get("page_diag")
+    sel = pd.get("sel") if isinstance(pd, dict) else None
+    if not isinstance(sel, dict):
+        return ""
+    def _n(k):
+        try:
+            return int(sel.get(k) or 0)
+        except (TypeError, ValueError):
+            return 0
+    title_len = len(str((payload or {}).get("title") or "").strip())
+    # 갤러리·가격이 실려 왔으면 빈 페이지가 아니다(타일 초안 보강은 제목을 안 실어 보내기도 한다 — F49-T 계약).
+    got_data = bool((payload or {}).get("gallery") or (payload or {}).get("images")
+                    or (payload or {}).get("gallery_images") or str((payload or {}).get("price") or "").strip())
+    if title_len == 0 and _n("title") == 0 and _n("detail") == 0 and not got_data:
+        return "보강 실패: 봇 확인 페이지로 보임 — 제목 0자 · 상세 셀렉터 0개(이번 결과는 버리고 다시 보강)"
+    return ""

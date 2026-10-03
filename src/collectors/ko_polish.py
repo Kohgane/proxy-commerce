@@ -86,6 +86,10 @@ def save_rules_override(r: dict | None) -> None:
         for k in ("replace", "colors", "replace_ko"):
             if k in r and not all(isinstance(x, list) and len(x) == 2 for x in r[k]):
                 raise ValueError(f"{k}는 [원문, 한국어] 쌍 목록이어야 합니다")
+        for row in r.get("title_fix_ko") or []:
+            if not (isinstance(row, list) and len(row) == 3 and isinstance(row[0], str)
+                    and isinstance(row[1], list) and isinstance(row[2], str)):
+                raise ValueError("title_fix_ko는 [원문, [오역 표기들], 바른 말] 목록이어야 합니다")
         for k in ("price_re", "ban_ko", "ban_cn", "promo_img", "detail_drop_lines", "strip_symbols", "delete_re"):
             for p in r.get(k) or []:
                 try:
@@ -188,11 +192,40 @@ def strip_cn(text: str, *, hits: dict | None = None) -> str:
                 hits.setdefault("delete", []).append(w)
     for p in r.get("price_re") or []:
         s = re.sub(p, " ", s)
+    # Y6: 영화·게임·애니 IP명은 번역기에 **보내지 않는다** — 星际穿越가 「스타트렉」으로 옮겨졌다(실측). 등록은 사전검증이 보류.
+    s = _drop_ip(s, hits)
     return _tidy(s)
 
 
-def polish_ko(text: str, *, hits: dict | None = None) -> str:
-    """번역 **후** 한국어 정리 — 판촉어·가격 문구 삭제, 빈 괄호·겹친 구분자 정리."""
+def title_fix(text: str, src: str, *, hits: dict | None = None) -> str:
+    """Y6(오너 2026-10-04) — 원문에 그 한자가 **있을 때만** 번역문의 오역 표기를 바른 말로(`title_fix_ko`).
+
+    실측: 【BLACKHOLES】黑洞小夜灯星际穿越电影周边摆件装饰模型手办宇宙 → 「블랙홀 미니 벽등」·「스타트렉」·「주변」.
+    원문을 보고 고치니 다른 상품의 「벽등」(진짜 벽등)은 건드리지 않는다. 긴 표기부터."""
+    s, src = str(text or ""), str(src or "")
+    if not src:
+        return s
+    for cn, wrongs, right in rules().get("title_fix_ko") or []:
+        if not cn or cn not in src or not right:
+            continue
+        for w in sorted([x for x in wrongs or [] if x and x != right], key=len, reverse=True):
+            if w in s and not (right in w):
+                s = s.replace(w, right)
+                if hits is not None:
+                    hits.setdefault("replace", []).append(f"{w}→{right}")
+    # 같은 바른 말이 두 번 생기면(「무드등 … 무드등」) 첫 번째만
+    for _cn, _w, right in rules().get("title_fix_ko") or []:
+        if right and re.search("[가-힣]", right) and s.count(right) > 1:
+            first = s.index(right) + len(right)
+            s = s[:first] + s[first:].replace(right, " ")
+    return s
+
+
+def polish_ko(text: str, *, hits: dict | None = None, src: str = "") -> str:
+    """번역 **후** 한국어 정리 — 판촉어·가격 문구 삭제, 빈 괄호·겹친 구분자 정리.
+
+    `src`(원문 제목)를 주면 Y6 오역 사전(`title_fix_ko`)도 적용하고, 원문에 IP명이 있었으면 그 자리의
+    꾸밈말(「영화 굿즈」)도 지운다(번역기에 IP명을 안 보내도 「영화 굿즈」는 남는다)."""
     r = rules()
     s = _strip_common(str(text or "").translate(_FW), r, hits)
     for w in sorted(r.get("delete_ko") or [], key=len, reverse=True):
@@ -206,12 +239,12 @@ def polish_ko(text: str, *, hits: dict | None = None) -> str:
             hits.setdefault("delete", []).append(f"가격문구×{n}")
     # 번역기 직역 바로잡기(懒人沙发 → 「게으른 사람 소파」 → 빈백 소파) — 긴 것부터
     _targets = set()
-    for src, ko in sorted(r.get("replace_ko") or [], key=lambda x: len(x[0]), reverse=True):
-        if src and src in s:
-            s = s.replace(src, ko)
+    for wrong, ko in sorted(r.get("replace_ko") or [], key=lambda x: len(x[0]), reverse=True):
+        if wrong and wrong in s:
+            s = s.replace(wrong, ko)
             _targets.add(ko)
             if hits is not None:
-                hits.setdefault("replace", []).append(f"{src}→{ko}")
+                hits.setdefault("replace", []).append(f"{wrong}→{ko}")
     # T2: 바로잡은 말이 한 제목에 두 번 생기면(「빈백 소파 … 빈백 소파 의자」) 첫 번째만 남긴다.
     for ko in _targets:
         # 한글로 바로잡은 말만(영문 브랜드 「SPORTLINK(SPORTLINK)는」의 괄호 표기는 쿠팡명 규칙이 읽는다 — 건드리지 않음)
@@ -226,8 +259,14 @@ def polish_ko(text: str, *, hits: dict | None = None) -> str:
             s = t
             if hits is not None:
                 hits.setdefault("delete", []).append("문장 꼬리")
+    if src:
+        s = title_fix(s, src, hits=hits)
     # T3: 상표 — 호환 표기만(맥세이프 호환…) · 레플리카 상표는 지운다(등록은 사전검증이 「상표 위험」으로 보류)
+    #   Y6: IP명(mode=ip)도 지우고, 원문이나 이 글에 IP가 있었으면 IP 꾸밈말(`ip_context_ko`)까지.
+    had_ip = bool(ip_hits(s) or (src and ip_hits(src)))
     s = trademark_fix(s)
+    if had_ip:
+        s = _drop_ip_context(s, hits)
     return _tidy(s)
 
 
@@ -275,8 +314,9 @@ def trademark_fix(text: str) -> str:
         if not names:
             continue
         pat = "|".join(re.escape(n) for n in names)
-        if mode in ("replica", "drop"):
+        if mode in ("replica", "drop", "ip"):
             # replica = 지우고 사전검증 보류(가구 레플리카) · drop = 지우기만(「迪奥棕 → 디올 브라운」 같은 색 이름 속 상표)
+            # ip = 영화·게임·애니 IP(Y6) — 지우고 사전검증 「상표 확인 보류」(라이선스 확인 전 등록 0)
             s = re.sub(pat, " ", s)
         elif mode == "compat" and label:
             s = re.sub(rf"(?:{pat})(?:\s*호환)?", f"{label} 호환", s)
@@ -295,6 +335,51 @@ def replica_hits(text: str) -> List[str]:
         if e.get("mode") == "replica" and any(n in s for n in _tm_names(e)):
             out.append(str(e.get("label") or ""))
     return out
+
+
+def fix_by_source(text: str, src: str) -> str:
+    """Y6 — 원문을 보고 하는 것**만**: 오역 사전(`title_fix_ko`) + IP명·IP 꾸밈말 삭제. 판촉 정리·호환 표기 같은
+    나머지 `polish_ko`는 안 한다(쿠팡명 규칙이 「애플 워치」를 따로 붙인다 — 「애플워치 호환」으로 바꾸면 안 됨)."""
+    s = str(text or "")
+    if not s or not src:
+        return s
+    t = title_fix(s, src)
+    if ip_hits(src) or ip_hits(t):
+        t = _drop_ip_context(_drop_ip(t))
+    return _tidy(t) if t != s else s
+
+
+def ip_hits(text: str) -> List[str]:
+    """Y6 — 영화·게임·애니 IP명(`trademarks` mode=ip: 星际穿越·漫威·迪士尼·宝可梦…)이 들어 있나 — 라벨 목록."""
+    s = str(text or "")
+    out = []
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") == "ip" and any(n in s for n in _tm_names(e)):
+            lab = str(e.get("label") or "")
+            if lab and lab not in out:
+                out.append(lab)
+    return out
+
+
+def _drop_ip(s: str, hits: dict | None = None) -> str:
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") != "ip":
+            continue
+        for n in _tm_names(e):
+            if n in s:
+                s = s.replace(n, " ")
+                if hits is not None:
+                    hits.setdefault("delete", []).append(f"IP:{e.get('label')}")
+    return s
+
+
+def _drop_ip_context(s: str, hits: dict | None = None) -> str:
+    for w in sorted(rules().get("ip_context_ko") or [], key=len, reverse=True):
+        if w and w in s:
+            s = re.sub(rf"(?<![가-힣]){re.escape(w)}(?![가-힣])", " ", s)
+            if hits is not None:
+                hits.setdefault("delete", []).append(f"IP 꾸밈말:{w}")
+    return s
 
 
 def expiry_hits(text: str) -> List[str]:
