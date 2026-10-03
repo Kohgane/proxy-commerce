@@ -779,6 +779,13 @@ class UploadDispatcher:
         if _rep:
             holds.append({"short": f"상표 위험({', '.join(_rep)})", "fix": "trademark",
                           "line": f"가구 레플리카 상표({', '.join(_rep)})가 들어 있어 등록을 보류합니다 — 쿠팡 지재권 신고 대상."})
+        # Y6(오너 2026-10-04): 영화·게임·애니 IP명(星际穿越·漫威·迪士尼·宝可梦…) — 제목에선 이미 지웠고(ko_polish),
+        #   등록은 라이선스 확인 전까지 보류. 원문 제목까지 본다(번역 제목엔 IP명이 없어도 원문에 있다).
+        _ip = _kp.ip_hits(_risk_text)
+        if _ip:
+            holds.append({"short": f"상표 확인 보류({', '.join(_ip)})", "fix": "trademark",
+                          "line": f"영화·게임·애니 IP({', '.join(_ip)})가 원문 제목에 있어요 — 상품명에선 지웠고, "
+                                  "정품·공식 라이선스인지 확인되기 전까지 등록을 보류합니다."})
         if market in _KO_OPTION_MARKETS:
             n = len(unresolved_option_values(pd))
             if n:

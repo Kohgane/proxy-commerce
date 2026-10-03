@@ -304,7 +304,7 @@ def _job(job: dict) -> tuple:
         src_t, brand = kp.title_for_translator(src, ex)
         try:
             out = tr.translate_product({"title": src_t or src, "description": ""})
-            ko = kp.polish_ko(str(out.get("title_ko") or "").strip())
+            ko = kp.polish_ko(str(out.get("title_ko") or "").strip(), src=src)   # Y6: 원문 보고 오역 사전·IP 삭제
             prov = str(out.get("provider") or "")
             if ko and ko != src and not foreign(ko) and prov not in ("none", "stub", ""):
                 if brand:

@@ -1976,6 +1976,9 @@ def mobile_list_ctx(item: dict) -> dict:
         _rp = _kp3.replica_hits(_rt)
         if _rp:
             risks.append(f"상표 위험({', '.join(_rp)}) — 등록 보류")
+        _ipl = _kp3.ip_hits(_rt)                       # Y6: 영화·게임·애니 IP — 사전검증과 같은 판정
+        if _ipl:
+            risks.append(f"상표 확인 보류({', '.join(_ipl)}) — 라이선스 확인 전 등록 보류")
     except Exception as exc:
         logger.warning("[M5] 위험 플래그 판정 실패: %s", exc)
     blocked = ""
@@ -3719,7 +3722,7 @@ def collect_bulk_translate():
                     _src_title, _brand = _t4t(title, extra)          # J0: 브랜드 한자는 번역기에 안 보낸다
                     out = translator.translate_product({"title": _src_title or title, "description": desc})
                     title_ko = (out.get("title_ko") or "").strip() or title
-                    title_ko = _polish(title_ko) or title_ko          # T1: 판촉 직역 제거
+                    title_ko = _polish(title_ko, src=title) or title_ko   # T1: 판촉 직역 제거 · Y6: 원문 보고 오역 사전·IP 삭제
                     if _brand and title_ko != title:
                         title_ko = _attach(title_ko, _brand)
                         extra["brand_romanized"] = {k: _brand[k] for k in ("han", "latin", "field")}
@@ -12967,7 +12970,7 @@ def collect_translate_audit_backfill():
             fields = {}
             ko = str(ex.get("title_ko") or "")
             if ko and ko != src:
-                new = polish_ko(ko) or ko
+                new = polish_ko(ko, src=src) or ko   # Y6: 원문 보고 오역 사전(小夜灯 → 무드등)·IP명 삭제
                 if new != ko:
                     ex.setdefault("title_polish_before", ko)
                     ex["title_ko"] = new
@@ -13012,7 +13015,9 @@ def _coupang_name_input(item: dict, ex: dict) -> dict:
     """F53 — 쿠팡 상품명 재료(저장된 값 그대로): 번역 제목 · 원문 제목 · 브랜드 · 옵션 원문 · SKU."""
     from src.collectors.ko_polish import polish_ko as _polish   # T1: 옛 행의 「재고 있음」 같은 판촉 직역도 여기서 걷힌다
     _tk = str(ex.get("title_ko") or ex.get("title") or item.get("title") or "")
-    return {"title_ko": _polish(_tk) or _tk,
+    _src = str(ex.get("title") or item.get("title") or "")
+    return {"title_ko": _polish(_tk, src=_src) or _tk,
+            "title_src": _src,                         # Y6: 쿠팡명도 원문 보고 오역 사전(小夜灯 → 무드등) 먼저
             "title_original": str(ex.get("title_original") or ex.get("title_en") or ""),
             # J0: 브랜드 필드가 비어도 제목 앞 병음 브랜드(LANXIAOJIE)가 판정됐으면 그걸 브랜드로 — 쿠팡명에서 빠지지 않게.
             "brand": str(ex.get("brand") or (ex.get("brand_romanized") or {}).get("latin") or ""),
