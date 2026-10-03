@@ -23,7 +23,7 @@ def test_api_registry_has_required_keys():
     """필수 API 키가 레지스트리에 등록되어야 함."""
     from src.utils.env_catalog import API_REGISTRY
     names = {k.name for k in API_REGISTRY}
-    required = {"coupang_wing", "naver_commerce", "elevenst", "exchange_rate", "amazon_paapi", "rakuten"}
+    required = {"coupang_wing", "naver_commerce_chezgoga", "naver_commerce_gocosmos", "elevenst", "exchange_rate", "amazon_paapi", "rakuten"}
     assert required.issubset(names), f"누락된 키: {required - names}"
 
 

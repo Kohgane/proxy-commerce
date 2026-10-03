@@ -64,8 +64,11 @@ class TestPrevalidateEnvAliases:
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")
         monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
-        monkeypatch.setenv("SMARTSTORE_APPROVED", "1")   # v61 STEP3: 게이트 통과 후 env-alias 검증
+        from src.seller_console import smartstore_routing as SR   # V: 게이트 = 토큰 실측 → 발급 OK로 두고 env-alias 검증
+        SR.reset_cache()
+        monkeypatch.setattr(SR, "_issue", lambda st: {"state": "ok", "raw": "토큰 발급 OK", "count": 0, "count_raw": ""})
         r = self._prevalidate("smartstore")
+        SR.reset_cache()
         assert r.ok is True
 
 

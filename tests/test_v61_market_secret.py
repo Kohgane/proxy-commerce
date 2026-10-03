@@ -72,26 +72,28 @@ def test_wc_find_by_sku_empty_returns_none():
 
 # ── STEP3 스마트스토어 게이트 ──
 def test_smartstore_blocked_until_approved(monkeypatch):
+    """V(2026-10-03): 게이트 = 토큰 실측. 안 나오면 **보류**(전송 0) + 응답 원문, 나오면 통과."""
+    from src.seller_console import smartstore_routing as SR
     from src.seller_console.upload_dispatcher import UploadDispatcher, smartstore_approved
-    monkeypatch.delenv("SMARTSTORE_APPROVED", raising=False)
-    for _k in ("SMARTSTORE_CHEZGOGA_APPROVED", "SMARTSTORE_GOCOSMOS_APPROVED"):
-        monkeypatch.delenv(_k, raising=False)
+    SR.reset_cache()
+    monkeypatch.setattr(SR, "_issue", lambda st: {"state": "fail", "raw": 'HTTP 403: {"code":"GW.IP_NOT_ALLOWED"}',
+                                                  "count": None, "count_raw": ""})
     assert smartstore_approved() is False
     d = UploadDispatcher()
     r = d._prevalidate_market({"title": "x", "price": "1000"}, "smartstore")
-    assert r.ok is False and r.error_code == "smartstore_pending_review"
-    # U0b(오너 2026-10-02 정정): 문구 「커머스API 미승인 — 신청 대기」 · 막힘이 아니라 **보류**로 보인다(전송은 여전히 0)
-    assert "커머스API 미승인 — 신청 대기" in r.message and r.hold is True
-    # 승인 플래그 켜면 통과(게이트 해제 — 이후 env 검증 단계로)
-    monkeypatch.setenv("SMARTSTORE_APPROVED", "1")
+    assert r.ok is False and r.error_code == "smartstore_token_failed" and r.hold is True
+    assert r.message == '토큰 발급 실패 — HTTP 403: {"code":"GW.IP_NOT_ALLOWED"}' and "미승인" not in r.message
+    SR.reset_cache()
+    monkeypatch.setattr(SR, "_issue", lambda st: {"state": "ok", "raw": "토큰 발급 OK", "count": 3, "count_raw": ""})
     assert smartstore_approved() is True
     r2 = d._prevalidate_market({"title": "x", "price": "1000"}, "smartstore")
-    assert r2.error_code != "smartstore_pending_review"    # 게이트 통과(이후 env 검증)
+    assert r2.error_code != "smartstore_token_failed"    # 게이트 통과(이후 env 검증)
+    SR.reset_cache()
 
 
 def test_smartstore_pending_badge_in_template():
     tpl = Path("src/seller_console/templates/collect_history.html").read_text(encoding="utf-8")
-    assert "m.pending" in tpl and "심사중" in tpl and "disabled" in tpl
+    assert "m.pending" in tpl and "m.pending_note" in tpl and "disabled" in tpl
 
 
 # ── STEP4 11st 진단 ──

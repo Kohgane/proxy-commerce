@@ -38,6 +38,10 @@ os.environ.setdefault("KGP_SHORT_LINK_RESOLVE", "0")
 #   워커를 재는 계약은 OPTION_TRANSLATE_AUTO_SYNC=1 + 번역기 목킹으로 명시적으로 돌린다.
 os.environ.setdefault("OPTION_TRANSLATE_AUTO_OFF", "1")
 
+# V(2026-10-03): 스마트스토어 승인은 **토큰을 실제로 발급해 보고** 판정한다(운영 기본 ON).
+#   테스트에서 켜 두면 계약마다 네이버에 토큰 요청을 보낸다 — 끄고, 판정을 재는 계약은 `_issue`를 목킹한다.
+os.environ.setdefault("SMARTSTORE_LIVE_PROBE", "0")
+
 
 # ──────────────────────────────────────────────────────────
 # v86-K: KGP_REQUIRE_BROWSER — 인프라 부재 시 '조용한 skip' 금지(실패로 전환).

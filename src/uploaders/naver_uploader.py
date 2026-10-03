@@ -214,9 +214,17 @@ class NaverSmartStoreUploader(BaseUploader):
         업로드/읽기 진단이 같은 값을 쓰도록 NAVER_COMMERCE_* 를 폴백으로 허용한다.
         """
         self.account = (account or '').strip().lower() or None
-        self.client_id = self._acct_env('NAVER_CLIENT_ID') or os.getenv('NAVER_COMMERCE_CLIENT_ID', '')
-        self.client_secret = (self._acct_env('NAVER_CLIENT_SECRET')
-                              or os.getenv('NAVER_COMMERCE_CLIENT_SECRET', ''))
+        _pfx = self.ACCOUNT_PREFIXES.get(self.account or '')
+        if _pfx:
+            # V1''(오너 2026-10-03): 스토어 계정은 **자기 이름만** 읽는다 — `NAVER_<STORE>_CLIENT_ID/SECRET`.
+            #   예전엔 없으면 공용 NAVER_CLIENT_ID(= 네이버 **로그인** OAuth 키와 같은 이름)·NAVER_COMMERCE_*로
+            #   떨어져, 두 스토어가 한 앱 키를 쓰거나 로그인 키로 토큰을 청하는 일이 조용히 났다.
+            self.client_id = os.getenv(f'{_pfx}_CLIENT_ID', '').strip()
+            self.client_secret = os.getenv(f'{_pfx}_CLIENT_SECRET', '').strip()
+        else:
+            self.client_id = self._acct_env('NAVER_CLIENT_ID') or os.getenv('NAVER_COMMERCE_CLIENT_ID', '')
+            self.client_secret = (self._acct_env('NAVER_CLIENT_SECRET')
+                                  or os.getenv('NAVER_COMMERCE_CLIENT_SECRET', ''))
         self.channel_id = self._acct_env('NAVER_CHANNEL_ID')
         # 출고지/반품지 주소 ID — env 우선, 미설정이면 정본 실증값(계정별).
         _addr = self.DEFAULT_ADDRESS_IDS.get(self.account or '', {})
@@ -233,12 +241,6 @@ class NaverSmartStoreUploader(BaseUploader):
         self._access_token = None
         self._token_expires = 0
         self.token_error = ''          # 발급 실패 원문(조용한 실패 금지 — 호출부가 그대로 노출)
-        # 스마트스토어는 보통 **스토어별 앱**이다. 계정 접두 키가 없어 공용 키로 떨어지면
-        #   두 스토어가 같은 자격을 쓰게 되므로 경고를 남긴다(조용한 혼입 방지).
-        if self.account and self.client_id and not os.getenv(
-                f"{self.ACCOUNT_PREFIXES.get(self.account, 'NAVER')}_CLIENT_ID", '').strip():
-            logger.warning('%s 전용 자격(%s_CLIENT_ID) 미설정 — 공용 키로 발급합니다(스토어 혼입 주의).',
-                           self.account, self.ACCOUNT_PREFIXES.get(self.account, 'NAVER'))
 
     def _acct_env(self, base_env: str, default: str = '') -> str:
         """계정 접두 우선 env 읽기 — 쿠팡 `_ship_env`와 동형 규약(계정 간 혼입 방지).
@@ -318,10 +320,14 @@ class NaverSmartStoreUploader(BaseUploader):
         """
         body = {'productStatusTypes': list(statuses or ['SALE', 'WAIT', 'OUTOFSTOCK']), 'page': 1, 'size': 1}
         res = self._api_request('POST', '/v1/products/search', data=body)
+        self.count_error = ''
         if not isinstance(res, dict) or 'error' in res:
+            self.count_error = str((res or {}).get('error') if isinstance(res, dict) else res)[:200]
             logger.warning('[스스 한도] %s 상품 수 조회 실패: %s', self.account, (res or {}).get('error') if isinstance(res, dict) else res)
             return None
         n = res.get('totalElements')
+        if n is None:
+            self.count_error = f'응답에 totalElements 없음: {str(res)[:160]}'
         try:
             return int(n) if n is not None else None
         except (TypeError, ValueError):
@@ -705,7 +711,7 @@ class NaverSmartStoreUploader(BaseUploader):
         """이 계정이 읽는 자격 env 이름(설정 안내용). 계정 접두가 있으면 그것을 먼저 안내한다."""
         prefix = self.ACCOUNT_PREFIXES.get(self.account or '')
         if prefix:
-            return f'{prefix}_CLIENT_ID/{prefix}_CLIENT_SECRET (또는 공용 NAVER_COMMERCE_CLIENT_ID/SECRET)'
+            return f'{prefix}_CLIENT_ID/{prefix}_CLIENT_SECRET'
         return 'NAVER_COMMERCE_CLIENT_ID / NAVER_COMMERCE_CLIENT_SECRET'
 
     def _api_request(self, method: str, path: str, data: dict = None) -> dict:
