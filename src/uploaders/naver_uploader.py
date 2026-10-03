@@ -221,6 +221,15 @@ class NaverSmartStoreUploader(BaseUploader):
             #   떨어져, 두 스토어가 한 앱 키를 쓰거나 로그인 키로 토큰을 청하는 일이 조용히 났다.
             self.client_id = os.getenv(f'{_pfx}_CLIENT_ID', '').strip()
             self.client_secret = os.getenv(f'{_pfx}_CLIENT_SECRET', '').strip()
+            if not (self.client_id and self.client_secret):
+                # V 추가: 공용 NAVER_COMMERCE_* 가 **실측으로 이 스토어 앱**이라고 확정됐을 때만 승격(캐시만 본다 — 네트워크 0).
+                try:
+                    from src.seller_console.smartstore_routing import promoted_store
+                    if promoted_store() == self.account:
+                        self.client_id = os.getenv('NAVER_COMMERCE_CLIENT_ID', '').strip()
+                        self.client_secret = os.getenv('NAVER_COMMERCE_CLIENT_SECRET', '').strip()
+                except Exception:
+                    pass
         else:
             self.client_id = self._acct_env('NAVER_CLIENT_ID') or os.getenv('NAVER_COMMERCE_CLIENT_ID', '')
             self.client_secret = (self._acct_env('NAVER_CLIENT_SECRET')

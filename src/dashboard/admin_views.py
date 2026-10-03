@@ -1243,7 +1243,8 @@ def _build_smartstore_probe(force: bool = False) -> dict:
     try:
         from src.seller_console import smartstore_routing as sr
         limit = int(sr.rules().get("limit") or 1000)
-        return {"available": True, "limit": limit, "rows": sr.probe_all(force=force)}
+        rows = sr.probe_all(force=force)
+        return {"available": True, "limit": limit, "rows": rows, "common": sr.identify_common_key()}
     except Exception as exc:
         logger.warning("스마트스토어 실측 블록 실패: %s", exc)
         return {"available": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
@@ -2801,9 +2802,14 @@ _DIAGNOSTICS_TEMPLATE = """
           </div>
           {% if not r.ok %}<div class="small mt-1" style="word-break:break-word" data-role="ss-probe-raw"><code>{{ r.raw }}</code></div>{% endif %}
           {% if r.ok and r.count is none %}<div class="small mt-1" style="word-break:break-word"><code>{{ r.count_raw }}</code></div>{% endif %}
+          {% if r.key_src %}<div class="small mt-1" data-role="ss-probe-key">키: {{ r.key_src }}</div>{% endif %}
           <div class="small text-muted mt-1" data-role="ss-probe-via">경로: {{ r.via or '—' }} · 확인 {{ r.at }}</div>
         </div>
         {% endfor %}
+        {% set cm = smartstore_probe.common %}
+        <div class="small mt-2" data-role="ss-common-key">공용 키(NAVER_COMMERCE_*) 주인:
+          <strong>{{ {'identified': cm.store and (cm.store == 'chezgoga' and '셰고가' or '고코스모스'), 'ambiguous': '정하지 못함', 'none': '두 스토어와 안 맞음', 'fail': '실측 실패', 'no_key': '키 없음', 'off': '실측 꺼짐'}.get(cm.state, cm.state) }}</strong>
+          <span class="text-muted" style="word-break:break-word">— {{ cm.evidence }}{% if cm.channels_raw %} · channels: <code>{{ cm.channels_raw }}</code>{% endif %}</span></div>
         <div class="text-muted small">토큰 = 그 스토어 키로 커머스API 토큰을 실제로 발급해 본 결과(10분마다 다시). 상품 수 = 판매중·판매대기·품절 합계(products/search).</div>
         {% else %}
         <div class="text-muted small">확인하지 못했어요: <code>{{ smartstore_probe.error }}</code></div>

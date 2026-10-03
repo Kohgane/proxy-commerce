@@ -20,6 +20,8 @@ _TOKEN = "tok-SECRET-VALUE-123"
 def _fresh(monkeypatch):
     monkeypatch.setenv("SMARTSTORE_LIVE_PROBE", "1")
     for k in ("NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET", "NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET",
+              "NAVER_CHEZGOGA_SHIP_ADDRESS_ID", "NAVER_CHEZGOGA_RETURN_ADDRESS_ID",
+              "NAVER_GOCOSMOS_SHIP_ADDRESS_ID", "NAVER_GOCOSMOS_RETURN_ADDRESS_ID",
               "NAVER_CHEZGOGA_CLIENT_ID", "NAVER_CHEZGOGA_CLIENT_SECRET", "NAVER_GOCOSMOS_CLIENT_ID", "NAVER_GOCOSMOS_CLIENT_SECRET"):
         monkeypatch.delenv(k, raising=False)
     SR.reset_cache()
@@ -187,7 +189,8 @@ def test_store_reads_only_its_own_key_names(monkeypatch):
     assert (up.client_id, up.client_secret) == ("", "")
     calls = _naver(monkeypatch, ok_stores=("chezgoga",))
     assert SR.status_text("chezgoga").startswith("키 없음 — NAVER_CHEZGOGA_CLIENT_ID/NAVER_CHEZGOGA_CLIENT_SECRET 를 설정")
-    assert "NAVER_COMMERCE" not in SR.status_text("chezgoga") and not calls
+    assert "(또는 공용" not in SR.status_text("chezgoga")
+    assert not any(c[0] == "token" and c[1] == "chezgoga" for c in calls)
     _keys(monkeypatch, "chezgoga")
     assert N(account="chezgoga").client_id == "chezgoga-id"
 
@@ -209,3 +212,64 @@ def test_matrix_and_health_name_the_same_keys(monkeypatch):
     for st in ("chezgoga", "gocosmos"):
         assert set(health[f"smartstore_{st}"]["required_env"]) <= set(reg[f"naver_commerce_{st}"])
         assert "MARKET_API_RELAY_URL" in reg[f"naver_commerce_{st}"]
+
+
+# ── V 추가(오너 2026-10-03 15:02): 공용 NAVER_COMMERCE_* = 어느 스토어 앱? → 실측 후 그 스토어로 승격 ─────────
+
+def _common_naver(monkeypatch, *, book, count=1000):
+    """공용 키(client_id='common-id')만 토큰이 나온다. 주소록 응답은 `book`."""
+    calls = []
+
+    def tok(self):
+        calls.append(("token", self.account, self.client_id))
+        if self.client_id == "common-id":
+            return _TOKEN
+        self.token_error = "HTTP 401: invalid_client"
+        return ""
+
+    def api(self, m, p, data=None):
+        calls.append((m, p, self.account))
+        if p.startswith("/v1/seller/addressbooks-for-page"):
+            return book
+        if p == "/v1/seller/channels":
+            return [{"channelNo": 1, "name": "셰고가 스토어"}]
+        return {"totalElements": count}
+    monkeypatch.setattr(N, "_get_access_token", tok)
+    monkeypatch.setattr(N, "_api_request", api)
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "common-id")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "$2a$10$commonsecretsalt00000000")
+    return calls
+
+
+def test_common_key_owner_is_measured_from_the_address_book_and_promoted(monkeypatch):
+    calls = _common_naver(monkeypatch, book={"contents": [{"addressBookNo": 107519271}, {"addressBookNo": 107519270}]})
+    ident = SR.identify_common_key()
+    assert ident["state"] == "identified" and ident["store"] == "chezgoga"
+    assert "107519271" in ident["evidence"] and "셰고가 스토어" in ident["channels_raw"]
+    rows = {p["store"]: p for p in SR.probe_all()}
+    cz, gc = rows["chezgoga"], rows["gocosmos"]
+    assert cz["ok"] and cz["count"] == 1000 and cz["key_src"].startswith("NAVER_COMMERCE_* (실측: 주소록에 셰고가 주소 ID")
+    assert gc["state"] == "no_creds"
+    assert SR.status_text("gocosmos") == ("키 없음 — NAVER_GOCOSMOS_CLIENT_ID/NAVER_GOCOSMOS_CLIENT_SECRET 를 설정하세요"
+                                          "(발급 요청은 보내지 않았어요) · NAVER_COMMERCE_*는 실측상 셰고가 앱")
+    assert ("POST", "/v1/products/search", "chezgoga") in calls and ("POST", "/v1/products/search", "gocosmos") not in calls
+    # 실제 업로드 경로도 같은 키(캐시만 — 네트워크 0)
+    n = len(calls)
+    assert N(account="chezgoga").client_id == "common-id" and N(account="gocosmos").client_id == ""
+    assert len(calls) == n
+
+
+def test_no_promotion_when_ambiguous_or_unmatched(monkeypatch):
+    _common_naver(monkeypatch, book={"contents": [{"addressBookNo": 107519271}, {"addressBookNo": 107987297}]})
+    assert SR.identify_common_key()["state"] == "ambiguous"
+    assert not SR.approved("chezgoga") and not SR.approved("gocosmos") and SR.promoted_store() == ""
+    SR.reset_cache()
+    _common_naver(monkeypatch, book={"contents": [{"addressBookNo": 1075192710}]})          # 자릿수 겹침은 일치 아님
+    assert SR.identify_common_key()["state"] == "none" and not SR.approved("chezgoga")
+
+
+def test_own_store_keys_win_over_the_common_key(monkeypatch):
+    calls = _common_naver(monkeypatch, book={"contents": [{"addressBookNo": 107519271}]})
+    _keys(monkeypatch, "chezgoga")
+    SR.probe("chezgoga")
+    assert ("token", "chezgoga", "chezgoga-id") in calls and not any(c[0] == "token" and c[2] == "common-id" for c in calls)

@@ -58,6 +58,7 @@ def reset_cache() -> None:
         _cache.update(at=0.0, rules=None)
         _counts.clear()
         _probes.clear()
+        _ident.update(at=0.0, out=None)
 
 
 def store_label(store: str) -> str:
@@ -68,6 +69,85 @@ def _live_on() -> bool:
     return str(os.getenv("SMARTSTORE_LIVE_PROBE", "1")).strip().lower() not in ("0", "false", "no", "off")
 
 
+_COMMON_KEY = "smartstore:common_key"
+_ident: dict = {"at": 0.0, "out": None}
+
+
+def _common_creds() -> tuple:
+    return (os.getenv("NAVER_COMMERCE_CLIENT_ID", "").strip(), os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "").strip())
+
+
+def identify_common_key(*, force: bool = False) -> dict:
+    """V 추가(오너 2026-10-03): 공용 `NAVER_COMMERCE_*` 키가 **어느 스토어 앱**인지 API로 실측(10분 캐시).
+
+    그 키로 토큰을 받아 `GET /v1/seller/addressbooks-for-page`(판매자 주소록)를 읽고, 스토어별 정본 주소 ID
+    (출고지·반품지 — 업로더 `DEFAULT_ADDRESS_IDS`·env)가 응답에 들어 있는지 본다. **정확히 한 스토어만** 맞으면 그 스토어.
+    둘 다/아무것도 안 맞으면 정하지 않는다(지어내지 않음). `GET /v1/seller/channels` 원문 앞부분도 근거로 남긴다.
+    → `{state, store, evidence, channels_raw, at}` · state: identified · ambiguous · none · fail · no_key · off
+    """
+    now = time.monotonic()
+    with _lock:
+        if _ident["out"] is not None and not force and now - _ident["at"] < _COUNT_TTL:
+            return _ident["out"]
+    from datetime import datetime, timedelta, timezone
+    at = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S KST")
+    cid, sec = _common_creds()
+    out = {"state": "no_key", "store": "", "evidence": "NAVER_COMMERCE_CLIENT_ID/SECRET 없음", "channels_raw": "", "at": at}
+    if not _live_on():
+        out.update(state="off", evidence="실측 꺼짐 — SMARTSTORE_LIVE_PROBE=0")
+    elif cid and sec:
+        try:
+            out = dict(out, **_identify(cid, sec))
+        except Exception as exc:
+            out.update(state="fail", evidence=f"확인 중 오류: {type(exc).__name__}: {str(exc)[:160]}")
+    with _lock:
+        _ident.update(at=now, out=out)
+    if out["state"] not in ("off",):
+        logger.info("[스스 공용 키] %s — %s", out["state"], out["evidence"][:200])
+        try:
+            from src.db import image_translate_queue_pg as st
+            st.state_set(_COMMON_KEY, dict(out))
+        except Exception as exc:
+            logger.debug("[스스 공용 키] 기록 실패(계속): %s", exc)
+    return out
+
+
+def _identify(cid: str, sec: str) -> dict:
+    import json as _json
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader
+    up = NaverSmartStoreUploader(account=None)
+    up.client_id, up.client_secret = cid, sec
+    if not up._get_access_token():
+        return {"state": "fail", "evidence": "토큰 발급 실패 — " + (up.token_error or "사유 원문 없음")}
+    book = up._api_request("GET", "/v1/seller/addressbooks-for-page?page=1")
+    if not isinstance(book, dict) or "error" in book:
+        return {"state": "fail", "evidence": "주소록 조회 실패 — " + str((book or {}).get("error") if isinstance(book, dict) else book)[:200]}
+    text = _json.dumps(book, ensure_ascii=False)
+    hits = {}
+    for st in STORES:
+        sup = NaverSmartStoreUploader(account=st)
+        ids = [str(i) for i in (sup.ship_address_id, sup.return_address_id) if str(i or "").strip()]
+        found = [i for i in ids if re.search(r"(?<!\d)" + re.escape(i) + r"(?!\d)", text)]
+        if found:
+            hits[st] = found
+    ch = up._api_request("GET", "/v1/seller/channels")
+    ch_raw = _json.dumps(ch, ensure_ascii=False)[:300] if ch is not None else ""
+    if len(hits) == 1:
+        st = next(iter(hits))
+        return {"state": "identified", "store": st, "channels_raw": ch_raw,
+                "evidence": f"주소록에 {store_label(st)} 주소 ID {', '.join(hits[st])} 있음"}
+    if len(hits) > 1:
+        return {"state": "ambiguous", "channels_raw": ch_raw,
+                "evidence": "주소록에 두 스토어 주소 ID가 다 있음 — " + "; ".join(f"{store_label(k)} {', '.join(v)}" for k, v in hits.items())}
+    return {"state": "none", "channels_raw": ch_raw, "evidence": "주소록에 두 스토어 주소 ID가 없음(앞부분: " + text[:120] + ")"}
+
+
+def promoted_store() -> str:
+    """캐시된 실측만 본다(네트워크 0) — 공용 키가 실측으로 확정된 스토어. 없으면 빈 값."""
+    out = _ident.get("out") or {}
+    return out.get("store", "") if out.get("state") == "identified" else ""
+
+
 def _issue(store: str) -> dict:
     """그 스토어 키로 토큰을 **실제로** 발급해 본다 → `{state, raw, count, count_raw}`. 토큰 값은 밖으로 안 낸다.
 
@@ -76,19 +156,34 @@ def _issue(store: str) -> dict:
     """
     if not _live_on():
         return {"state": "off", "raw": "실측 꺼짐 — SMARTSTORE_LIVE_PROBE=0이라 토큰을 발급해 보지 않았어요",
-                "count": None, "count_raw": ""}
+                "count": None, "count_raw": "", "key_src": ""}
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
     from src.market_relay import route_text
     up = NaverSmartStoreUploader(account=store or None)
     via = route_text("smartstore", up._TOKEN_URL)
+    key_src = ""
+    _own = os.getenv(f"{up.ACCOUNT_PREFIXES.get(store, 'NAVER')}_CLIENT_ID", "").strip() if store else ""
+    if store and not _own and up.client_id and up.client_id == _common_creds()[0]:   # 업로더가 이미 승격한 경우
+        key_src = f"NAVER_COMMERCE_* (실측: {(identify_common_key().get('evidence') or '')})"
+    if store and not (up.client_id and up.client_secret):
+        ident = identify_common_key()
+        if ident.get("state") == "identified" and ident.get("store") == store:
+            up.client_id, up.client_secret = _common_creds()
+            key_src = f"NAVER_COMMERCE_* (실측: {ident['evidence']})"
+        else:
+            note = {"identified": f"NAVER_COMMERCE_*는 실측상 {store_label(ident.get('store', ''))} 앱",
+                    "ambiguous": "NAVER_COMMERCE_*가 어느 스토어 앱인지 정하지 못함", "none": "NAVER_COMMERCE_*는 두 스토어 주소록과 안 맞음",
+                    "fail": "NAVER_COMMERCE_* 실측 실패"}.get(ident.get("state"), "")
+            return {"state": "no_creds", "raw": "키 없음 — " + up._cred_env_hint() + " 를 설정하세요(발급 요청은 보내지 않았어요)"
+                    + (f" · {note}" if note else ""), "count": None, "count_raw": "", "via": via, "env": _env_names(up), "key_src": ""}
     if not (up.client_id and up.client_secret):
         return {"state": "no_creds", "raw": "키 없음 — " + up._cred_env_hint() + " 를 설정하세요(발급 요청은 보내지 않았어요)",
-                "count": None, "count_raw": "", "via": via, "env": _env_names(up)}
+                "count": None, "count_raw": "", "via": via, "env": _env_names(up), "key_src": ""}
     if not up._get_access_token():
         return {"state": "fail", "raw": up.token_error or "사유 원문 없음", "count": None, "count_raw": "",
-                "via": via, "env": _env_names(up)}
+                "via": via, "env": _env_names(up), "key_src": key_src}
     n = up.count_products(rules().get("limit_statuses") or None)
-    return {"state": "ok", "raw": "토큰 발급 OK", "count": n, "via": via, "env": _env_names(up),
+    return {"state": "ok", "raw": "토큰 발급 OK", "count": n, "via": via, "env": _env_names(up), "key_src": key_src,
             "count_raw": "" if n is not None else (getattr(up, "count_error", "") or "응답에 totalElements 없음")}
 
 
@@ -121,7 +216,7 @@ def probe(store: str = "", *, force: bool = False) -> dict:
         try:
             from src.db import image_translate_queue_pg as st
             snap = st.state_get(_PROBE_KEY) or {}
-            snap[store or "_default"] = {k: out.get(k) for k in ("label", "state", "raw", "count", "count_raw", "at", "via")}
+            snap[store or "_default"] = {k: out.get(k) for k in ("label", "state", "raw", "count", "count_raw", "at", "via", "key_src")}
             st.state_set(_PROBE_KEY, snap)
         except Exception as exc:
             logger.debug("[스스 실측] 기록 실패(계속): %s", exc)
@@ -131,6 +226,7 @@ def probe(store: str = "", *, force: bool = False) -> dict:
 def probe_all(*, force: bool = False) -> list:
     """두 스토어를 나란히 확인(화면이 두 번 기다리지 않게)."""
     from concurrent.futures import ThreadPoolExecutor
+    identify_common_key(force=force)          # 공용 키 주인을 먼저 정해 두 스토어가 같은 판정을 본다
     with ThreadPoolExecutor(max_workers=len(STORES)) as ex:
         return list(ex.map(lambda st: probe(st, force=force), STORES))
 
