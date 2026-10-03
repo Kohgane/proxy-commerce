@@ -521,6 +521,10 @@ def _render_diagnostics(issued_magic_link: str | None):
 
     # V(2026-10-03): 스마트스토어 두 스토어 토큰 실측·상품 수(10분 캐시)
     smartstore_probe = _build_smartstore_probe()
+    # W0(2026-10-03): 계정별 실제로 읽는 키의 출처(이름만)
+    account_keys = _build_account_keys()
+    # W2(2026-10-03): 워커 실행 서비스(게이트·리스·서비스별 기록)
+    workers_status = _build_workers_status()
 
     # v87-W7a: 서버 AI 예산 가드 현황(읽기 전용)
     ai_budget = _build_ai_budget_status()
@@ -592,6 +596,8 @@ def _render_diagnostics(issued_magic_link: str | None):
         pricing_status=pricing_status,
         ai_budget=ai_budget,
         smartstore_probe=smartstore_probe,
+        account_keys=account_keys,
+        workers_status=workers_status,
         translate_stats=translate_stats,
         message_log=message_log,
         cs_bot_status=cs_bot_status,
@@ -1248,6 +1254,85 @@ def _build_smartstore_probe(force: bool = False) -> dict:
     except Exception as exc:
         logger.warning("스마트스토어 실측 블록 실패: %s", exc)
         return {"available": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+
+def _build_account_keys() -> dict:
+    """W0(오너 2026-10-03): 쿠팡 고가네·우주대행 / 스스 셰고가·고코스모스 — 업로더가 **실제로 읽는** 키의 출처.
+    값은 싣지 않는다(이름·출처·업체코드만). 실패는 그대로 적는다."""
+    out = {"coupang": [], "naver": [], "error": ""}
+    try:
+        from src.pipeline.coupang_replicate import coupang_key_source
+        out["coupang"] = [coupang_key_source(a) for a in ("gogane", "woojoo")]
+    except Exception as exc:
+        out["error"] += f"쿠팡: {type(exc).__name__}: {str(exc)[:120]} "
+    try:
+        from src.seller_console import smartstore_routing as sr
+        out["naver"] = sr.naver_key_report()
+    except Exception as exc:
+        out["error"] += f"네이버: {type(exc).__name__}: {str(exc)[:120]}"
+    return out
+
+
+def _build_workers_status() -> dict:
+    """W2: 이 서비스의 워커 게이트 · 워커별 리스 보유 서비스 · 서비스별 마지막 실행."""
+    try:
+        from src.services import workers as W
+        snap = W.snapshot()
+        try:
+            from src.order_alerts.naver_worker import poll_enabled
+            snap["naver_poll"] = "켜짐(NAVER_ORDER_POLL=1)" if poll_enabled() else "꺼짐(NAVER_ORDER_POLL 미설정 — 운영 알림은 LinkLynk)"
+        except Exception:
+            snap["naver_poll"] = "확인 실패"
+        return snap
+    except Exception as exc:
+        return {"service": "?", "enabled": False, "gate": "", "workers": [], "naver_poll": "",
+                "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+
+
+@admin_panel_bp.get("/diagnostics/naver-orders")
+def diagnostics_naver_orders():
+    """W1 캐너리 — 그 스토어의 최근 N일(기본 7) 결제완료 주문을 API로 당겨 목록으로(스마트스토어센터 숫자와 대조용).
+    구매자 이름·전화는 싣지 않는다(PII 미보관 약속). 텔레그램 발송 여부는 LinkLynk 서버 기록이라 여기서 모른다 —
+    이 목록과 텔레그램 알림을 대조해 빠진 줄이 재발송 대상."""
+    from datetime import datetime, timedelta, timezone
+    from flask import request as _rq
+    store = (_rq.args.get("store") or "chezgoga").strip().lower()
+    try:
+        days = max(1, min(14, int(_rq.args.get("days") or 7)))
+    except ValueError:
+        days = 7
+    rows, err = [], ""
+    try:
+        from src.order_alerts.naver_order_poller import NaverOrderPoller
+        p = NaverOrderPoller(store=store)
+        now = datetime.now(timezone.utc)
+        rows = p.fetch_window(now - timedelta(days=days), now)
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {str(exc)[:300]}"
+    total = sum(float(r.get("total_price") or 0) for r in rows)
+    try:
+        from src.seller_console.smartstore_routing import store_label
+        label = store_label(store)
+    except Exception:
+        label = store
+    return render_template_string(_NAVER_ORDERS_TEMPLATE, store=store, store_label=label, days=days, rows=rows,
+                                  err=err, total=total)
+
+
+_NAVER_ORDERS_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>네이버 주문 대조</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:960px" data-role="naver-orders">
+<h5>스마트스토어 {{ store_label }} — 최근 {{ days }}일 결제완료 주문</h5>
+<p class="small text-muted">API로 당긴 목록입니다. 스마트스토어센터 주문 수와 대조하고, 텔레그램에 없는 줄이 재발송 대상입니다(구매자 정보는 싣지 않음).</p>
+{% if err %}<div class="alert alert-danger small" style="word-break:break-word" data-role="naver-orders-err">조회 실패 — <code>{{ err }}</code></div>
+{% else %}<p data-role="naver-orders-count"><strong>{{ rows|length }}건</strong> · 합계 {{ '{:,.0f}'.format(total) }}원</p>
+{% for r in rows %}<div class="border-bottom py-2" data-role="naver-order-row">
+<div class="d-flex gap-2"><strong class="flex-grow-1" style="word-break:break-word">{{ r.product_names|join(', ') or '(상품명 없음)' }}</strong>
+<span class="text-nowrap">{{ '{:,.0f}'.format(r.total_price) }}원</span></div>
+<div class="small text-muted" style="word-break:break-all">결제 {{ r.created_at or '—' }} · 수량 {{ r.quantities|join(',') }} · {{ r.status or '—' }}<br>
+주문번호 {{ r.order_number or '—' }} · 상품주문번호 {{ r.order_id or '—' }}</div></div>{% endfor %}{% endif %}
+<a href="/admin/diagnostics#workers-status">← 진단으로</a></div></body></html>"""
 
 
 @admin_panel_bp.post("/diagnostics/smartstore-recheck")
@@ -2777,6 +2862,57 @@ _DIAGNOSTICS_TEMPLATE = """
             </div>
           {% endfor %}
         </div>
+      </div>
+    </div>
+
+    <!-- W2(2026-10-03): 워커 실행 서비스 -->
+    <div class="card mb-4" id="workers-status" data-role="workers-status">
+      <div class="card-header fw-bold">⚙️ 워커 실행 서비스</div>
+      <div class="card-body">
+        <div class="small mb-2">이 서비스 <code>{{ workers_status.service }}</code> —
+          {% if workers_status.enabled %}<span class="badge bg-success">워커 켬</span>{% else %}<span class="badge bg-secondary">접수만</span>{% endif %}
+          <span class="text-muted">({{ workers_status.gate }})</span></div>
+        {% for w in workers_status.workers %}
+        <div class="border-bottom py-2" data-role="worker-row" data-worker="{{ w.name }}">
+          <div class="d-flex flex-wrap gap-2 align-items-center"><strong>{{ w.desc }}</strong>
+            <span class="ms-auto small">{% if w.lease_service %}지금 실행: <code>{{ w.lease_service }}</code>{% else %}지금 실행 중 아님{% endif %}</span></div>
+          {% if w.runs %}{% for svc, r in w.runs.items() %}
+          <div class="small text-muted" data-role="worker-run">{{ svc }} · 마지막 {{ r.last_at[:19] }}Z · 오늘 {{ r.runs_today }}회/{{ r.items_today }}건{% if r.note %} · {{ r.note }}{% endif %}</div>
+          {% endfor %}{% else %}<div class="small text-muted">실행 기록 없음</div>{% endif %}
+        </div>
+        {% endfor %}
+        <div class="small mt-2">네이버 주문 폴러: {{ workers_status.naver_poll }} ·
+          주문 대조: <a href="/admin/diagnostics/naver-orders?store=chezgoga&days=7">셰고가 7일</a> /
+          <a href="/admin/diagnostics/naver-orders?store=gocosmos&days=7">고코스모스 7일</a></div>
+        {% if workers_status.error %}<div class="small text-danger">확인 실패: <code>{{ workers_status.error }}</code></div>{% endif %}
+      </div>
+    </div>
+
+    <!-- W0(2026-10-03): 계정 키 출처 — 업로더가 실제로 읽는 이름(값 없음) -->
+    <div class="card mb-4" id="account-keys" data-role="account-keys">
+      <div class="card-header fw-bold">🔑 계정 키 출처</div>
+      <div class="card-body">
+        {% for c in account_keys.coupang %}
+        <div class="border-bottom py-2" data-role="acct-key-row" data-account="{{ c.account }}">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <strong>쿠팡 — {{ c.label }}</strong>
+            <span class="badge {{ 'bg-success' if c.ready else 'bg-danger' }}">{{ '키 있음' if c.ready else '키 없음' }}</span>
+            <span class="ms-auto small text-nowrap">업체코드 {{ c.vendor_id or '—' }}</span>
+          </div>
+          <div class="small mt-1">키 출처 = <strong>{{ c.key_source }}</strong>{% if c.key_env %} <code>{{ c.key_env }}</code>{% endif %} · 배송지 <code>{{ c.ship_source }}</code></div>
+          {% if c.note %}<div class="small mt-1 text-danger" style="word-break:break-word">⚠ {{ c.note }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        {% for n in account_keys.naver %}
+        <div class="border-bottom py-2" data-role="acct-key-row" data-account="{{ n.store }}">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <strong>스마트스토어 — {{ n.label }}</strong>
+            <span class="badge {{ 'bg-success' if (n.own or n.common_promoted) else 'bg-danger' }}">{{ '키 있음' if (n.own or n.common_promoted) else '키 없음' }}</span>
+          </div>
+          <div class="small mt-1" style="word-break:break-word">{{ n.note }} · 자기 키 이름 <code>{{ n.own_env }}</code></div>
+        </div>
+        {% endfor %}
+        {% if account_keys.error %}<div class="small text-danger">확인 실패: <code>{{ account_keys.error }}</code></div>{% endif %}
       </div>
     </div>
 

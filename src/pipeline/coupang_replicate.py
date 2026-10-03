@@ -60,8 +60,8 @@ def _prefixed_ready(prefix: str) -> bool:
 def resolve_base_account() -> Optional[str]:
     """무접두 COUPANG_*(ACCESS_KEY/SECRET_KEY/VENDOR_ID)가 있으면 **VENDOR_ID로 어느 계정인지 판별**.
 
-    Render 기존 키를 두 계정 중 VENDOR_ID 일치하는 **하나에만** 귀속(양쪽 동시 ready·중복 이중화 금지).
-    무접두 키 없음 or VENDOR_ID가 두 계정과 불일치 → None(미상 — 어느 계정에도 부여 안 함, 정직).
+    「이 자격이 **누구 것인가**」라는 사실 질문이다 — 업체코드가 두 계정과 안 맞으면 None(남의 키일 수 있다:
+    다른 셀러가 연동 화면에 넣은 자기 키). 고가네가 무접두 키를 **쓰는** 규칙(W0 기본 계정)은 `_account_creds`가 따로 한다.
     반환: "gogane" | "woojoo" | None.
     """
     if not all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY")):
@@ -71,6 +71,46 @@ def resolve_base_account() -> Optional[str]:
         if vid and vid == meta["vendor_id"]:
             return acct
     return None
+
+
+def _base_is_default_gogane() -> bool:
+    """W0(오너 2026-10-03): **고가네 = 기본 계정.** 무접두 키가 우주대행 업체코드만 아니면 고가네가 쓴다
+    (Render 싱가포르: 고가네 API 키는 무접두로만 있고 COUPANG_GOGANE_*엔 배송·반품·VENDOR_USER_ID만)."""
+    if not all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY")):
+        return False
+    return os.getenv("COUPANG_VENDOR_ID", "").strip() != COUPANG_ACCOUNTS["woojoo"]["vendor_id"]
+
+
+def base_vendor_note() -> Optional[str]:
+    """무접두 VENDOR_ID가 기본 계정(고가네)과 다르면 경고 문장. 값(키)은 안 싣는다 — VENDOR_ID만."""
+    if not all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY")):
+        return None
+    vid = os.getenv("COUPANG_VENDOR_ID", "").strip()
+    if vid == COUPANG_ACCOUNTS["gogane"]["vendor_id"]:
+        return None
+    if vid == COUPANG_ACCOUNTS["woojoo"]["vendor_id"]:
+        return f"무접두 COUPANG_VENDOR_ID가 우주대행({vid}) — 고가네 기본 키로 쓰지 않음(우주대행은 COUPANG_WOOJOO_*만)"
+    return f"무접두 COUPANG_VENDOR_ID({vid})가 두 계정(A01381223/A01504840)과 불일치 — 고가네(기본 계정)로 쓰는 중, 확인 필요"
+
+
+def coupang_key_source(account: str) -> dict:
+    """W0 진단 — 그 계정이 **실제로** 읽는 키·배송지 출처(값 없음, 이름만).
+    → `{account, label, key_source, key_env, vendor_id, ship_source, ready, note}`"""
+    meta = COUPANG_ACCOUNTS.get(account) or {}
+    pfx = meta.get("prefix", "")
+    own = bool(os.getenv(f"{pfx}_ACCESS_KEY", "").strip() or os.getenv(f"{pfx}_ACCESS", "").strip())
+    access, secret, vendor = _account_creds(account)
+    if own:
+        src, env = "계정 접두", f"{pfx}_ACCESS_KEY/_SECRET_KEY"
+    elif access and secret:
+        src, env = "기본(무접두)", "COUPANG_ACCESS_KEY/_SECRET_KEY"
+    else:
+        src, env = "없음", ""
+    ship_own = bool(os.getenv(f"{pfx}_RETURN_CENTER_CODE", "").strip() or os.getenv(f"{pfx}_OUTBOUND_SHIPPING_PLACE_CODE", "").strip())
+    return {"account": account, "label": meta.get("label", account), "key_source": src, "key_env": env,
+            "vendor_id": vendor, "ship_source": f"{pfx}_*" if ship_own else "무접두 COUPANG_*(기본 계정일 때만)",
+            "ready": bool(access and secret and vendor),
+            "note": (base_vendor_note() if src == "기본(무접두)" else None)}
 
 # sourcing_map 후보 경로(LinkLynk/Bluehost 계보 — 이 서버엔 없을 수 있음).
 _SOURCING_MAP_CANDIDATES = [
@@ -491,7 +531,8 @@ def access_status() -> dict:
     base_acct = resolve_base_account()          # "gogane"|"woojoo"|None
     accounts = {}
     for acct, meta in COUPANG_ACCOUNTS.items():
-        accounts[meta["label"]] = _prefixed_ready(meta["prefix"]) or (base_acct == acct)
+        # W0: 업로더가 실제로 읽는 키(`_account_creds`)로 판정 — 판정기를 둘 두지 않는다.
+        accounts[meta["label"]] = _prefixed_ready(meta["prefix"]) or all(_account_creds(acct)[:2])
     base_label = COUPANG_ACCOUNTS[base_acct]["label"] if base_acct else None
     base_present = all(os.getenv(f"COUPANG_{k}") for k in ("VENDOR_ID", "ACCESS_KEY", "SECRET_KEY"))
     rr = relay_ready()
@@ -504,8 +545,7 @@ def access_status() -> dict:
         # 무접두 COUPANG_* 판별 결과(정직): 어느 계정인지 or 미상. base_present이나 base_account None이면
         #   VENDOR_ID가 두 계정과 불일치 → 오너 확인 필요(가짜 귀속 0).
         "base_key": {"present": base_present, "resolved_account": base_label,
-                     "note": None if not base_present or base_label
-                             else "무접두 COUPANG_VENDOR_ID가 두 계정(A01381223/A01504840)과 불일치 — 오너 확인"},
+                     "note": base_vendor_note() if base_present else None},
         "relay": relay,                        # 쿠팡 IP 허용용 릴레이(고정 IP)
         "relay_mode": rr["mode"],              # 감지된 릴레이 규약(mkt.php or 구 /relay or None)
         "missing": [m for m, ok in [
@@ -868,7 +908,8 @@ def _account_creds(account: str):
     access = pick("ACCESS_KEY", "ACCESS")
     secret = pick("SECRET_KEY", "SECRET")
     vendor = pick("VENDOR_ID", "VENDOR") or meta.get("vendor_id", "")
-    if (not access or not secret) and resolve_base_account() == account:  # 무접두 COUPANG_* 흡수 계정
+    # W0: 무접두 흡수는 **고가네(기본 계정)만**. 우주대행은 COUPANG_WOOJOO_*만(오너 2026-10-03).
+    if (not access or not secret) and account == "gogane" and _base_is_default_gogane():
         access = access or os.getenv("COUPANG_ACCESS_KEY", "").strip()
         secret = secret or os.getenv("COUPANG_SECRET_KEY", "").strip()
         vendor = vendor or os.getenv("COUPANG_VENDOR_ID", "").strip()

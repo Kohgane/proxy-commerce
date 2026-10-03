@@ -115,6 +115,13 @@ if os.getenv("SMARTSTORE_LIVE_PROBE", "1").strip().lower() not in ("0", "false",
     import threading as _ss_threading
     _ss_threading.Thread(target=_smartstore_boot_probe, name="smartstore-boot-probe", daemon=True).start()
 
+# W1·W2(2026-10-03): 네이버 주문 폴러 워커 — NAVER_ORDER_POLL=1 + WORKERS_ENABLED 서비스에서만(기본 꺼짐).
+try:
+    from src.order_alerts.naver_worker import start_if_enabled as _naver_poll_start
+    logger.info("네이버 주문 폴러: %s", _naver_poll_start())
+except Exception as _npexc:
+    logger.warning("네이버 주문 폴러 시작 실패(계속): %s", _npexc)
+
 app = Flask(__name__)
 
 # 프록시(Render/nginx) 뒤에서 X-Forwarded-Proto/Host를 신뢰하여 scheme/host를 올바르게 반영

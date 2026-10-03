@@ -151,6 +151,31 @@ def _identify(cid: str, sec: str) -> dict:
     return {"state": "none", "channels_raw": ch_raw, "evidence": "주소록에 두 스토어 주소 ID가 없음(앞부분: " + text[:120] + ")"}
 
 
+def naver_key_report() -> list:
+    """W0 진단 — 스토어별로 **실제 읽는 키 이름**과 상태(값은 안 싣는다).
+    → `[{store, label, own_env, own, common_promoted, mismatch, note}]`
+    - own: `NAVER_<STORE>_CLIENT_ID/SECRET` 둘 다 있음
+    - common_promoted: 자기 키가 없고 공용 `NAVER_COMMERCE_*`가 실측으로 이 스토어 앱
+    - mismatch: 자기 키와 공용 키가 **둘 다** 있는데 이 스토어가 공용 키 주인인데 값이 다름(같은 앱인데 키가 둘)
+    """
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader as _N
+    cid, sec = _common_creds()
+    owner = promoted_store()
+    out = []
+    for st in STORES:
+        pfx = _N.ACCOUNT_PREFIXES.get(st, "")
+        oid, osec = os.getenv(f"{pfx}_CLIENT_ID", "").strip(), os.getenv(f"{pfx}_CLIENT_SECRET", "").strip()
+        own = bool(oid and osec)
+        mismatch = bool(own and cid and sec and owner == st and (oid != cid or osec != sec))
+        note = ("자기 키 사용" if own else ("공용 NAVER_COMMERCE_* 사용(실측: 이 스토어 앱)" if owner == st and cid and sec
+                                           else "키 없음"))
+        if mismatch:
+            note += " · ⚠ NAVER_COMMERCE_*와 값이 다름(같은 앱인데 키가 둘 — 자기 키를 씀)"
+        out.append({"store": st, "label": store_label(st), "own_env": f"{pfx}_CLIENT_ID/_SECRET", "own": own,
+                    "common_promoted": (not own) and owner == st and bool(cid and sec), "mismatch": mismatch, "note": note})
+    return out
+
+
 def promoted_store() -> str:
     """캐시된 실측만 본다(네트워크 0) — 공용 키가 실측으로 확정된 스토어. 없으면 빈 값."""
     out = _ident.get("out") or {}

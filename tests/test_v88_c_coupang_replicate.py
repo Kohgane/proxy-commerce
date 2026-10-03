@@ -237,17 +237,27 @@ def test_base_key_resolves_to_single_account_by_vendor_id(monkeypatch):
     assert st["base_key"]["resolved_account"] == "고가네"
 
 
-def test_base_key_unknown_vendor_is_honest_no_attribution(monkeypatch):
-    # 무접두 키는 있으나 VENDOR_ID가 두 계정과 불일치 → 어느 계정에도 부여 안 함(정직).
+def test_base_key_unknown_vendor_goes_to_default_account_with_warning(monkeypatch):
+    # W0(오너 2026-10-03): 고가네 = 기본 계정 — VENDOR_ID가 안 맞아도 무접두는 고가네 몫, 대신 경고를 단다.
+    #   (v88 계약 「어느 계정에도 부여 안 함」은 오너 결정으로 바뀜.) 우주대행엔 절대 안 붙는다.
     _clear_coupang(monkeypatch)
     monkeypatch.setenv("COUPANG_VENDOR_ID", "A09999999")
     monkeypatch.setenv("COUPANG_ACCESS_KEY", "x")
     monkeypatch.setenv("COUPANG_SECRET_KEY", "y")
-    assert CR.resolve_base_account() is None
+    assert CR.resolve_base_account() is None                        # 「누구 것인가」는 여전히 모름(사실 판정)
     st = CR.access_status()
-    assert st["coupang_accounts"] == {"고가네": False, "우주대행": False}
-    assert st["base_key"]["present"] is True and st["base_key"]["resolved_account"] is None
-    assert "불일치" in (st["base_key"]["note"] or "")
+    assert st["coupang_accounts"] == {"고가네": True, "우주대행": False}  # 쓰기는 기본 계정 고가네
+    assert "불일치" in (st["base_key"]["note"] or "") and "고가네(기본 계정)로 쓰는 중" in st["base_key"]["note"]
+
+
+def test_base_key_with_woojoo_vendor_is_used_by_nobody(monkeypatch):
+    _clear_coupang(monkeypatch)
+    monkeypatch.setenv("COUPANG_VENDOR_ID", "A01504840")
+    monkeypatch.setenv("COUPANG_ACCESS_KEY", "x")
+    monkeypatch.setenv("COUPANG_SECRET_KEY", "y")
+    assert CR.resolve_base_account() == "woojoo"                    # 사실: 우주대행 키
+    assert CR.access_status()["coupang_accounts"] == {"고가네": False, "우주대행": False}   # 하지만 아무도 안 씀
+    assert "우주대행은 COUPANG_WOOJOO_*만" in CR.base_vendor_note()
 
 
 def test_prefixed_woojoo_credentials_ready(monkeypatch):
