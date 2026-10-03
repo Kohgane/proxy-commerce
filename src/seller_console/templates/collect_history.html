@@ -629,6 +629,17 @@ if (_chOnce('hover_warm')) (function () {
 if (_chOnce('keydown')) document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeItemDrawer(); });
 if (_chOnce('message')) window.addEventListener('message', function (e) {
   if (e.data && e.data.kgp === 'preview-saved') _kgpDrawerDirty = true;
+  // Y1: 재수집이 끝나면 드로어 헤더·그 행 제목을 **새 값으로**(닫을 때 목록도 다시 읽는다).
+  if (e.data && e.data.kgp === 'item-updated' && e.origin === location.origin) {
+    _kgpDrawerDirty = true;
+    if (e.data.title) {
+      document.getElementById('kgpDrawerTitle').textContent = e.data.title;
+      document.querySelectorAll('.kgp-open-drawer[data-id="' + CSS.escape(String(e.data.id || '')) + '"]').forEach(function (el) {
+        el.setAttribute('data-title', e.data.title);
+        if (el.tagName === 'A' && !el.querySelector('img')) el.textContent = e.data.title;
+      });
+    }
+  }
   if (e.data && e.data.kgp === 'drawer-close') closeItemDrawer();   // v39 F: 수집 실패 빈 상태 '수집 이력으로'
   if (e.data && e.data.kgp === 'preview-ready') {                    // 렌더 성공 신호 → 백지 감시 해제
     _kgpDrawerReady = true;

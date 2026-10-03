@@ -11,7 +11,7 @@
     <a href="/seller/collect/history" class="text-decoration-none text-muted small">← 수집 이력으로 돌아가기</a>
     <span class="text-muted small">
       <i class="bi bi-translate"></i> <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.domain }}</a>
-      · {{ item.collected_at[:16] if item.collected_at else "" }}
+      · {{ item.collected_at|kst if item.collected_at else "" }}
     </span>
   </div>
 
@@ -47,6 +47,13 @@
       {# C-T3: 공유 텍스트 수집분 — **무엇이 아직 없는지**를 먼저 말한다.
          공유 글엔 제목·링크만 들어 있어 가격·이미지·옵션은 비어 있다. 그 빈칸이 "0원"이나
          "이미지 없음"으로 조용히 앉으면 셀러가 수집된 줄 안다 — 그래서 맨 위에서 밝힌다. #}
+      {# Y1: 빈 페이지 보강은 「완료」가 아니다 — 버린 이유와 재보강 대기를 먼저 말한다. #}
+      {% if extra and extra.get('enrich_fail') %}
+      <div class="kgp-esec mb-3" data-etab="basic" data-role="enrich-fail">
+        <div class="pc-status pc-status-warning"><i class="bi bi-arrow-repeat"></i>
+          <span>{{ extra.get('enrich_fail', {}).get('reason') }} <span class="small text-muted">· {{ extra.get('enrich_fail', {}).get('at')|kst }}</span></span></div>
+      </div>
+      {% endif %}
       {% set _unc = (extra.get('uncollected') if extra else []) or [] %}
       {% if _unc %}
       {% set _unc_ko = {'price': '가격', 'images': '이미지', 'options': '옵션', 'description': '상세설명'} %}
@@ -173,7 +180,7 @@
             <span><i class="bi bi-chat-square-text" style="color:var(--teal)"></i> 리뷰 <strong>{{ _rc }}</strong>건</span>
             {% if _rating|string|trim %}<span class="text-muted">·</span>
             <span><i class="bi bi-star-half" style="color:var(--teal)"></i> 평점 <strong>{{ _rating }}</strong> / 5</span>{% endif %}
-            {% if extra.get('recollected_at') %}<span class="text-muted" style="font-size:.74rem">· 최근 갱신 {{ extra.get('recollected_at')[:16] }}</span>{% endif %}
+            {% if extra.get('recollected_at') %}<span class="text-muted" style="font-size:.74rem">· 최근 갱신 {{ extra.get('recollected_at')|kst }}</span>{% endif %}
           {% else %}
             <span class="text-muted"><i class="bi bi-dash-circle"></i> 리뷰 0건 수신 — 이 상품 페이지에서 리뷰·평점을 찾지 못했어요</span>
           {% endif %}
@@ -499,7 +506,7 @@
         <span class="text-muted" id="recollectState">새 탭에서 고가수집기 버튼을 누르면 더 정확한 출처의 값으로 바뀝니다 · 직접 고친 칸은 그대로</span>
       </div>
       <div class="mt-1" data-role="merge-log" id="mergeLog">{% if _ml %}
-        <span class="text-muted">마지막 갱신 {{ (_ml.at or '')[:16]|replace('T',' ') }}:</span>
+        <span class="text-muted">마지막 갱신 {{ (_ml.at or '')|kst }}:</span>
         {% for f, why in (_ml.changed or {}).items() %}<span class="me-2">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} {{ why }}</span>{% endfor %}
         {% for f, why in (_ml.kept or {}).items() %}<span class="me-2 text-muted">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} 유지 — {{ why }}</span>{% endfor %}
       {% endif %}</div>
@@ -2600,9 +2607,11 @@ function kgpEnrichRetry() {
           if (s && s.ok && s.recollected_at && s.recollected_at >= req) {
             clearInterval(t);
             var ch = (s.last_merge && s.last_merge.changed) ? Object.keys(s.last_merge.changed).length : 0;
-            say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> 갱신됐어요 · ' + ch + '개 필드</span> — 새로고침하면 반영된 값이 보입니다');
-            // F48-d: 재수집 뒤 쿠팡 필수 옵션을 바로 다시 불러온다(칸 0개로 남지 않게).
-            if (typeof kgpLoadCoupangOptions === 'function') kgpLoadCoupangOptions();
+            say('<span style="color:var(--success)"><i class="bi bi-check-circle"></i> 갱신됐어요 · ' + ch + '개 필드</span> — 화면을 새 값으로 다시 그립니다');
+            // Y1(오너 2026-10-04): 「새로고침하면」이라 해 놓고 아무도 안 그렸다 — 헤더·목록·배너가 옛 값으로 남았다.
+            //   부모(목록 드로어)에 새 제목을 알리고, 이 화면은 저장값으로 다시 그린다(같은 소스).
+            try { if (window.parent && window.parent !== window) window.parent.postMessage({kgp: 'item-updated', id: id, title: s.title || ''}, location.origin); } catch (e) { /* 단독 페이지 */ }
+            setTimeout(function () { location.reload(); }, 600);
             b.disabled = false; return;
           }
         } catch (e) { /* 다음 틱 */ }

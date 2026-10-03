@@ -49,6 +49,23 @@ bp = Blueprint(
     static_url_path="/static",
 )
 
+
+@bp.app_template_filter("kst")
+def _kst_filter(value) -> str:
+    """Y1(오너 2026-10-04): 화면 시각은 **KST**로. 저장값은 UTC ISO(「16:05」가 실제론 01:05였다).
+    시간대가 없는 값은 UTC로 읽는다(저장 규약). 못 읽으면 앞 16자 그대로(지어내지 않음)."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        d = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw[:16].replace("T", " ")
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=_tz.utc)
+    return d.astimezone(_tz(_td(hours=9))).strftime("%Y-%m-%d %H:%M") + " KST"
+
 # ---------------------------------------------------------------------------
 # 인증 stub — Phase 24 OAuth 연결 전까지 환경변수로 제어
 # ---------------------------------------------------------------------------
@@ -8065,6 +8082,13 @@ def collect_preview_by_id(item_id: str):
         extra = json.loads(item.get("extra_json") or "{}")
     except Exception:
         pass
+    # Y1: 「보강 필요」 배너는 **지금 실제로 비어 있는 칸**만(예전 저장값이 다 찬 칸까지 계속 말했다 — 오너 51건 중 5건).
+    try:
+        from src.collectors.collect_status import still_uncollected as _stu
+        if extra.get("uncollected"):
+            extra["uncollected"] = _stu(extra)
+    except Exception:
+        pass
 
     # v39 D: 과거 수집분에 남아있을 수 있는 플레이스홀더 토큰을 편집 프리필 직전에 제거(렌더 안전망).
     try:
@@ -12595,6 +12619,8 @@ def collect_item_state(item_id: str):
         # F49-T 2부-c: 드로어 「원본에서 다시 수집」이 들여다본다 — 요청 뒤에 갱신됐는지·무엇이 바뀌었는지.
         "recollect_requested_at": ex.get("recollect_requested_at") or "",
         "recollected_at": ex.get("recollected_at") or "",
+        # Y1: 재수집 뒤 드로어 헤더·목록 행이 같은 값을 쓰게(목록과 같은 표시 규칙: 번역 제목 → 원문 → 행 제목).
+        "title": str(ex.get("title_ko") or row.get("title") or ex.get("title") or ""),
         "last_merge": (list(ex.get("merge_log") or [])[-1:] or [None])[0],
         "missing": [{"label": f["label"], "reason": f.get("reason") or ""}
                     for f in st.get("fields") or [] if f.get("count", True) and not f.get("ok") and not f.get("na")],

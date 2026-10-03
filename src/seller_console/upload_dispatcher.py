@@ -126,6 +126,13 @@ def build_dispatch_payload(product_data: Dict[str, Any],
                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """S2: 아래 빌더 결과에 **마켓 상세 규칙**(한국어만·가게 줄 뺌)을 얹는다 — 단건·일괄·재등록 세 경로 공통."""
     pd = apply_outbound_text(_build_dispatch_payload(product_data, item))
+    # Y1: 가게 아이콘·추적 픽셀은 마켓에 상세 이미지로 보내지 않는다(저장값은 그대로).
+    try:
+        from src.collectors.collect_status import real_detail_images
+        if isinstance(pd.get("detail_images"), list):
+            pd["detail_images"] = real_detail_images(pd["detail_images"])
+    except Exception as exc:
+        logger.warning("[등록] 상세 이미지 정리 실패(빌더 값 그대로): %s", exc)
     # U4: 옵션이 아닌 값(보증·서비스·안내 문구)과 그 SKU는 **보내지 않는다**(전 마켓 같은 자리). 저장값은 그대로.
     try:
         pd = drop_non_option_values(pd)

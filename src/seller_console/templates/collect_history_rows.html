@@ -75,7 +75,7 @@
     {% set _src = {'extension':'확장','chrome_extension':'확장','bookmarklet':'북마클릿','quick':'즉시','manual':'수동','bulk':'벌크','bulk_collect':'벌크'} %}
     <span class="badge ch-badge-src">{{ _src.get(it.source, it.source or '-') }}</span>
   </td>
-  <td class="text-muted small" data-label="수집 시각">{{ it.collected_at[:16] if it.collected_at else "-" }}</td>
+  <td class="text-muted small" data-label="수집 시각">{{ it.collected_at|kst if it.collected_at else "-" }}</td>
   {# v64 STEP7: 상태 = 행당 배지 1개, 의미 토큰만(성공=청록·부분=주황·실패=적·보관=먹muted). 부트스트랩 색 남용 제거. #}
   <td data-label="상태">
     {% if it.status == "archived" %}
