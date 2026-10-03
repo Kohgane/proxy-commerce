@@ -106,10 +106,16 @@ def test_snapshot_kept_in_app_state_without_the_token(monkeypatch):
     from src.db import image_translate_queue_pg as Q
     _keys(monkeypatch, "chezgoga", "gocosmos")
     _naver(monkeypatch, ok_stores=("gocosmos",), count=5)
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "proxy-commerce")
+    Q.state_set("smartstore:probe", {"proxy-commerce-sg": {"gocosmos": {"state": "no_creds"}}, "gocosmos": {"state": "old"}})
     SR.probe_all(force=True)
     snap = Q.state_get("smartstore:probe")
-    assert snap["gocosmos"]["count"] == 5 and snap["gocosmos"]["state"] == "ok"
-    assert snap["chezgoga"]["state"] == "fail" and "client_id 불일치" in snap["chezgoga"]["raw"]
+    mine = snap["proxy-commerce"]
+    assert mine["gocosmos"]["count"] == 5 and mine["gocosmos"]["state"] == "ok"
+    assert mine["chezgoga"]["state"] == "fail" and "client_id 불일치" in mine["chezgoga"]["raw"]
+    assert snap["proxy-commerce-sg"]["gocosmos"]["state"] == "no_creds"     # 다른 서비스 기록은 덮지 않는다
+    assert "gocosmos" not in snap                                           # 옛 평면 기록은 정리
+    assert "proxy-commerce" in Q.state_get("smartstore:common_key")
     assert _TOKEN not in str(snap)
 
 

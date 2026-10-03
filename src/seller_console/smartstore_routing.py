@@ -73,6 +73,12 @@ _COMMON_KEY = "smartstore:common_key"
 _ident: dict = {"at": 0.0, "out": None}
 
 
+def _svc() -> str:
+    """기록 칸 이름 — 같은 DB를 여러 Render 서비스(본·sg·staging)가 쓴다. 서로 덮어쓰지 않게 서비스별로 남긴다
+    (10-03 실측: 릴레이 env가 없는 서비스의 「직결」 결과가 본 서비스의 실측을 덮었다)."""
+    return (os.getenv("RENDER_SERVICE_NAME") or "local").strip() or "local"
+
+
 def _common_creds() -> tuple:
     return (os.getenv("NAVER_COMMERCE_CLIENT_ID", "").strip(), os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "").strip())
 
@@ -106,7 +112,10 @@ def identify_common_key(*, force: bool = False) -> dict:
         logger.info("[스스 공용 키] %s — %s", out["state"], out["evidence"][:200])
         try:
             from src.db import image_translate_queue_pg as st
-            st.state_set(_COMMON_KEY, dict(out))
+            snap = st.state_get(_COMMON_KEY) or {}
+            snap = {k: v for k, v in snap.items() if isinstance(v, dict) and "state" not in v}   # 옛 평면 기록은 버린다
+            snap[_svc()] = dict(out)
+            st.state_set(_COMMON_KEY, snap)
         except Exception as exc:
             logger.debug("[스스 공용 키] 기록 실패(계속): %s", exc)
     return out
@@ -216,7 +225,11 @@ def probe(store: str = "", *, force: bool = False) -> dict:
         try:
             from src.db import image_translate_queue_pg as st
             snap = st.state_get(_PROBE_KEY) or {}
-            snap[store or "_default"] = {k: out.get(k) for k in ("label", "state", "raw", "count", "count_raw", "at", "via", "key_src")}
+            mine = snap.get(_svc())
+            mine = dict(mine) if isinstance(mine, dict) and "state" not in mine else {}
+            snap = {k: v for k, v in snap.items() if k not in STORES and k != "_default"}            # 옛 평면 기록은 버린다
+            mine[store or "_default"] = {k: out.get(k) for k in ("label", "state", "raw", "count", "count_raw", "at", "via", "key_src")}
+            snap[_svc()] = mine
             st.state_set(_PROBE_KEY, snap)
         except Exception as exc:
             logger.debug("[스스 실측] 기록 실패(계속): %s", exc)
