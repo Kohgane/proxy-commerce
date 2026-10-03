@@ -296,8 +296,14 @@
       <div class="kgp-esec mb-2 kgp-etab-hide" data-etab="options">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <label class="form-label small fw-semibold mb-0">옵션{{ src_badge('options') }} <span class="text-muted fw-normal">(예: 색상, 사이즈 — 값은 쉼표로 구분)</span></label>
-          <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
+          <span class="d-flex gap-1">
+            {# Y2(오너 2026-10-04): 상품명 탭 「한국어로 번역」과 같은 자리 — 옵션 **축 이름 + 값**을 한 번에(규칙 → 번역기, 하루 상한 안). #}
+            <button type="button" class="btn btn-ghost btn-sm py-0" id="btnOptionsKo" data-role="options-translate" onclick="translateOptionsKo()">
+              <i class="bi bi-translate"></i> 한국어로 번역</button>
+            <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
+          </span>
         </div>
+        <div class="small mb-2 d-none" data-role="options-translate-out" id="optionsKoOut"></div>
         <div id="optionRows" class="vstack gap-2"></div>
         {# F49-T 2부 — 수집된 **SKU 실물**(조합·원가·참고가·재고). 원가 = 优惠前, 참고가 = 平台加补后(원가 계산 미사용).
            재고 0은 등록 대상에서 빠진다 — 사유를 그 줄에 적는다. #}
@@ -1394,6 +1400,20 @@ async function aiDescribe() {
 }
 
 // v39 D: 제목·상세 한국어 번역(온디맨드). 무료 카운터 연동. 키 미설정이면 정직 안내(원문 유지·가짜 번역 0).
+async function translateOptionsKo() {
+  // Y2: 이 상품 하나를 지금 옮긴다(축 이름 용어집 → 값 규칙 → 번역기). 결과 원문을 그대로 말하고, 옮겨졌으면 다시 그린다.
+  var b = document.getElementById('btnOptionsKo'), out = document.getElementById('optionsKoOut');
+  if (!_ITEM_ID) return;
+  b.disabled = true; out.classList.remove('d-none'); out.textContent = '옵션을 한국어로 옮기는 중…';
+  try {
+    var r = await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/translate-now', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    var d = await r.json();
+    if (d.ok) { out.textContent = '옮겼어요' + (d.reason ? ' — ' + d.reason : '') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 500); return; }
+    out.textContent = '옮기지 못했어요 — ' + (d.reason || d.error || d.status || '사유 원문 없음');
+  } catch (e) { out.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
+  b.disabled = false;
+}
+
 async function translateToKo() {
   const btn = document.getElementById('btnTranslateKo');
   btn.disabled = true; const _old = btn.innerHTML; btn.innerHTML = '번역 중...';

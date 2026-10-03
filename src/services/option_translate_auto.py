@@ -120,7 +120,9 @@ def rule_pass(extra: dict) -> dict:
         nm = str(o.get("name") or "").strip()
         nk = str(o.get("name_ko") or "").strip()
         if nm and not (nk and not foreign(nk)):
-            r = _rule(nm) if foreign(nm) else nm
+            # Y2: 축 **이름**은 옵션 이름 용어집이 먼저(大小·尺寸·尺码→사이즈, 颜色·颜色分类→색상) — 쿠팡 필수 옵션과 같은 말.
+            from src.uploaders.coupang_options import OPTION_NAME_GLOSSARY as _ONG
+            r = _ONG.get(nm) or (_rule(nm) if foreign(nm) else nm)
             if r and r != nk:
                 o["name_ko"] = r
                 changed = True
