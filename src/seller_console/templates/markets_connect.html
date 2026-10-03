@@ -94,14 +94,38 @@
           </div>
 
           {% if m.market == 'coupang' %}
-          <!-- v45: 쿠팡 정직 안내(판매자당 키 1개·수정 한도·반영 지연) -->
+          <!-- v45·X0: 쿠팡 정직 안내 — 키는 **쿠팡 판매자 계정마다** 1개(계정이 여럿이면 계정마다 따로) -->
           <div class="mc-note mc-note-coupang mb-3">
             <div class="small fw-semibold mb-1"><i class="bi bi-info-circle"></i> 쿠팡 연동 전 알아두기</div>
             <ul class="small mb-0 ps-3">
-              <li>쿠팡 API 키는 <strong>판매자당 1개</strong>예요 — 다른 셀러툴과 <strong>동시 연동은 안 돼요</strong>(한 곳에서만 사용).</li>
+              <li>쿠팡 API 키는 <strong>쿠팡 판매자 계정마다 1개</strong>예요 — 한 계정의 키를 다른 셀러툴과 <strong>동시 연동하면 안 돼요</strong>. 계정이 여럿이면 <strong>계정마다 따로</strong> 연동돼요.</li>
               <li>연동 정보 <strong>수정은 주 10회로 제한</strong>되고, 바꾼 값이 <strong>반영되기까지 최대 30분</strong> 걸릴 수 있어요.</li>
             </ul>
           </div>
+          {% if coupang_accounts %}
+          {# X0(오너 2026-10-04): 계정별 카드 — 키는 서버 환경변수(값 표시 0), 배송 프로필은 계정마다 불러오기·저장. #}
+          <div class="mc-acct-grid mb-3" data-role="coupang-account-cards">
+            {% for a in coupang_accounts %}
+            <div class="mc-acct" data-role="coupang-account-card" data-account="{{ a.account }}">
+              <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                <strong>{{ a.label }}</strong><span class="text-muted small">{{ a.vendor_id }}</span>
+                <span class="mc-badge {{ 'on' if a.ready else 'off' }} ms-auto"><span class="mc-dot {{ 'on' if a.ready else 'off' }}"></span> {{ '키 있음' if a.ready else '키 없음' }}</span>
+              </div>
+              <div class="small text-muted mb-2 mc-acct-break">API 키 — 서버 환경변수{% if a.key_env %} <code>{{ a.key_env }}</code>{% endif %} · {{ a.key_source }}</div>
+              {% if a.note %}<div class="small mb-2 mc-acct-warn"><i class="bi bi-exclamation-triangle"></i> {{ a.note }}</div>{% endif %}
+              <div class="mc-kv mb-2">
+                {% for f in a.fields %}{% if f.env in ('COUPANG_VENDOR_USER_ID','COUPANG_OUTBOUND_SHIPPING_PLACE_CODE','COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE','COUPANG_RETURN_CENTER_CODE','COUPANG_RETURN_ADDRESS') %}
+                <div class="kv" data-env="{{ f.env }}"><div class="k">{{ f.label }}</div>
+                  <div class="v">{{ f.value or '미설정' }}{% if f.source %}<div class="small text-muted mc-acct-break">{{ f.source }}</div>{% endif %}</div></div>
+                {% endif %}{% endfor %}
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm w-100" data-action="acct-lookup" data-account="{{ a.account }}">
+                <i class="bi bi-download"></i> 쿠팡에서 출고지·반품지 불러오기 ({{ a.label }})</button>
+              <div class="small mt-2 d-none" data-role="acct-lookup-out"></div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
           {% endif %}
 
           <!-- 마스킹된 연동 정보 요약(민감정보 마스킹) -->
@@ -229,6 +253,44 @@
 
 {% block extra_js %}
 <script>
+// X0: 계정별 불러오기 → 고르기 → 그 계정 프로필로 저장(DB). 값은 쿠팡 응답 그대로, 칸은 주소 유형(OVERSEA)으로 나눈다.
+document.querySelectorAll('[data-action="acct-lookup"]').forEach(function (btn) {
+  btn.addEventListener('click', async function () {
+    const acct = btn.dataset.account;
+    const out = btn.parentElement.querySelector('[data-role="acct-lookup-out"]');
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+    out.classList.remove('d-none'); out.textContent = '쿠팡에 묻는 중…'; btn.disabled = true;
+    try {
+      const r = await fetch(`/seller/markets/connect/coupang/${acct}/lookup`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      const d = await r.json();
+      btn.disabled = false;
+      if (!d.ok) { out.innerHTML = '<div style="color:var(--danger);word-break:break-word" data-role="acct-lookup-err">불러오지 못했어요 — ' + esc(d.error) + '</div>'; return; }
+      const outs = (d.outbound_places || {}).entries || [];
+      const rets = (d.return_centers || {}).entries || [];
+      const group = (title, name, rows, codeOf) => rows.length ? '<div class="mc-acct-pick mb-2"><div class="fw-semibold">' + title + '</div>' +
+        rows.map((e, i) => '<label><input type="radio" name="' + name + '-' + acct + '" value="' + i + '"' + (rows.length === 1 ? ' checked' : '') + '> <span>' +
+          esc(e.label || '') + ' <code>' + esc(codeOf(e)) + '</code>' + (e.address_type ? ' · ' + esc(e.address_type) : '') + '</span></label>').join('') + '</div>' : '';
+      const ov = outs.filter((e) => (e.values || {}).COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE);
+      const dom = outs.filter((e) => (e.values || {}).COUPANG_OUTBOUND_SHIPPING_PLACE_CODE);
+      out.innerHTML = '<div data-role="acct-lookup-list">' +
+        group('구매대행 출고지 (해외 · OVERSEA)', 'ov', ov, (e) => e.values.COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE) +
+        group('국내 출고지', 'dom', dom, (e) => e.values.COUPANG_OUTBOUND_SHIPPING_PLACE_CODE) +
+        group('반품지', 'ret', rets, (e) => (e.values || {}).COUPANG_RETURN_CENTER_CODE || '') +
+        (!ov.length ? '<div class="small" style="color:var(--warn)">해외(OVERSEA) 출고지가 없어요 — 쿠팡 윙에서 해외 주소 출고지를 먼저 만들어 주세요.</div>' : '') +
+        '<button type="button" class="btn btn-primary btn-sm w-100 mt-1" data-action="acct-save">고른 값을 ' + esc(btn.textContent.match(/\(([^)]+)\)/)?.[1] || acct) + ' 계정에 저장</button></div>';
+      out.querySelector('[data-action="acct-save"]').addEventListener('click', async function () {
+        const pick = (name, rows) => { const el = out.querySelector('input[name="' + name + '-' + acct + '"]:checked'); return el ? rows[+el.value] : null; };
+        const values = Object.assign({}, (pick('ret', rets) || {}).values || {});
+        const o = pick('ov', ov); if (o) values.COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE = o.values.COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE;
+        const m = pick('dom', dom); if (m) values.COUPANG_OUTBOUND_SHIPPING_PLACE_CODE = m.values.COUPANG_OUTBOUND_SHIPPING_PLACE_CODE;
+        const r2 = await fetch(`/seller/markets/connect/coupang/${acct}/profile`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({values})});
+        const d2 = await r2.json();
+        if (d2.ok) { if (typeof pcToast === 'function') pcToast('저장했어요 — 등록은 이 값을 먼저 씁니다.', 'success'); location.reload(); }
+        else { out.insertAdjacentHTML('beforeend', '<div style="color:var(--danger)">' + esc(d2.error) + '</div>'); }
+      });
+    } catch (e) { btn.disabled = false; out.textContent = '네트워크 오류 — ' + (e && e.message || e); }
+  });
+});
 function copyServerIp(btn) {
   var ip = (document.getElementById('serverIp') || {}).textContent || '';
   if (!ip) return;

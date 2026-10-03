@@ -148,8 +148,15 @@ def _map_row(row: dict, candidates: Dict[str, tuple]) -> dict:
 
 
 def _uploader(account: str):
+    """X0: 계정이면 **그 계정의 키**(`_account_creds` — 우주대행은 COUPANG_WOOJOO_*만)로 만든다.
+    예전엔 `CoupangUploader(account=…)`라 배송 칸만 계정 접두, API 키는 무접두(고가네)였다 —
+    우주대행으로 불러와도 고가네 출고지가 나왔다(볼트 대기함 69)."""
     from src.uploaders.coupang_uploader import CoupangUploader
-    return CoupangUploader(account=account) if account else CoupangUploader()
+    if not account:
+        return CoupangUploader()
+    from src.pipeline.coupang_replicate import _account_creds
+    access, secret, vendor = _account_creds(account)
+    return CoupangUploader(access_key=access, secret_key=secret, vendor_id=vendor, account=account)
 
 
 def _fetch_one(up, path: str, candidates: Dict[str, tuple]) -> dict:

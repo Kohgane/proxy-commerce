@@ -16,7 +16,7 @@ def test_coupang_note_present_and_scoped():
 
 
 def test_coupang_note_content():
-    assert "판매자당 1개" in TPL
+    assert "쿠팡 판매자 계정마다 1개" in TPL and "판매자당 1개" not in TPL      # X0: 사용자 1명 = 계정 N개
     assert "동시 연동" in TPL
     assert "주 10회" in TPL
     assert "최대 30분" in TPL

@@ -125,13 +125,26 @@ def _market_desc_source(pd: Dict[str, Any]) -> str:
 def build_dispatch_payload(product_data: Dict[str, Any],
                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """S2: 아래 빌더 결과에 **마켓 상세 규칙**(한국어만·가게 줄 뺌)을 얹는다 — 단건·일괄·재등록 세 경로 공통."""
-    pd = _build_dispatch_payload(product_data, item)
+    pd = apply_outbound_text(_build_dispatch_payload(product_data, item))
+    # U4: 옵션이 아닌 값(보증·서비스·안내 문구)과 그 SKU는 **보내지 않는다**(전 마켓 같은 자리). 저장값은 그대로.
+    try:
+        pd = drop_non_option_values(pd)
+    except Exception as exc:
+        logger.warning("[등록] 옵션 아닌 값 정리 실패(빌더 값 그대로): %s", exc)
+    return pd
+
+
+def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """**마켓에 나갈 글자**(상세·검색어) — 등록 빌더와 사전검증이 같은 함수를 쓴다(X2: 사전검증만 원문을 봤다).
+
+    상세: 한국어만·가게 줄 뺌(`market_description`). 검색어: 지금 상품명에 있는 낱말만(`clean_tags`). 저장값은 그대로.
+    """
+    pd = dict(pd or {})
     try:
         pd["description"] = market_description(_market_desc_source(pd))
     except Exception as exc:
         logger.warning("[등록] 상세 정리 실패(빌더 값 그대로): %s", exc)
     # U1(오너 2026-10-02): 검색어 — 옛 번역 제목을 낱말로 자른 값이 남아 16401838524에 「미야케·아키라의」가 실렸다.
-    #   **지금 상품명에 있는 낱말만** · 지어낸 이름·상표·조사 꼬리 빼기(`ko_polish.clean_tags`). 저장값은 그대로.
     try:
         from src.collectors import ko_polish as _kp
         _title_now = str(pd.get("title_ko") or pd.get("title") or "")
@@ -140,11 +153,6 @@ def build_dispatch_payload(product_data: Dict[str, Any],
                 pd[_k] = _kp.clean_tags(pd[_k], _title_now)
     except Exception as exc:
         logger.warning("[등록] 검색어 정리 실패(빌더 값 그대로): %s", exc)
-    # U4: 옵션이 아닌 값(보증·서비스·안내 문구)과 그 SKU는 **보내지 않는다**(전 마켓 같은 자리). 저장값은 그대로.
-    try:
-        pd = drop_non_option_values(pd)
-    except Exception as exc:
-        logger.warning("[등록] 옵션 아닌 값 정리 실패(빌더 값 그대로): %s", exc)
     return pd
 
 
@@ -518,6 +526,8 @@ class PrevalidationResult:
     missing_envs: List[str] = field(default_factory=list)
     # R2 — 「막힘」이 아니라 **보류**(재료가 덜 왔다 — 보강·번역하면 풀린다). 화면이 「보류」로 말한다.
     hold: bool = False
+    # X2 — 보류를 푸는 방법(pc·translate·price…) — 화면이 「번역하고 다시 검증」 같은 버튼을 고른다.
+    fixes: List[str] = field(default_factory=list)
 
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
@@ -778,7 +788,9 @@ class UploadDispatcher:
         # U1(오너 2026-10-02): 한국 마켓에 나가는 칸에 한자·가나가 남으면 **보류**(원문 폴백 금지).
         #   쿠팡은 업로더 사전검증이 **보낼 몸통 그대로** 재고(옵션·고시정보까지), 여기선 나머지 한국 마켓의 상품명·상세·검색어.
         if market in _KO_OPTION_MARKETS and market != "coupang":
-            _fx = outbound_foreign_fields(pd)
+            # X2(오너 2026-10-04 캐너리): 예전엔 화면이 보낸 **원문 상세**(타오바오 가게 줄 「菲尚丽家旗舰店 …」)를 봤다 —
+            #   등록은 그 줄을 빼고 보내는데 사전검증만 「원문 남음 — 상세」로 보류했다. 이제 **나갈 글자**로 본다.
+            _fx = outbound_foreign_fields(apply_outbound_text(pd))
             if _fx:
                 holds.append({"short": "원문(외국어) 남음 — " + "·".join(dict.fromkeys(f for f, _v in _fx)),
                               "fix": "translate",
@@ -948,6 +960,7 @@ class UploadDispatcher:
                 message=readiness_message(holds),
                 hint=readiness_hint(holds),
                 details=[h["line"] for h in holds],
+                fixes=list(dict.fromkeys(h.get("fix", "") for h in holds if h.get("fix"))),
             )
 
         # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)

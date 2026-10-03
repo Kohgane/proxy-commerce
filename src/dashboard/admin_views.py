@@ -1335,6 +1335,59 @@ _NAVER_ORDERS_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <a href="/admin/diagnostics#workers-status">← 진단으로</a></div></body></html>"""
 
 
+@admin_panel_bp.get("/diagnostics/coupang-meta")
+def diagnostics_coupang_meta():
+    """X1(오너 2026-10-04): 같은 상품명·같은 카테고리를 **계정마다** 쿠팡에 물어 원문을 나란히.
+    키·권한 문제(한 계정만 실패)인지 카테고리 문제(둘 다 실패)인지 가른다. 키 값은 안 싣는다."""
+    from flask import request as _rq
+    from src.pipeline.coupang_replicate import COUPANG_ACCOUNTS, _account_creds
+    from src.uploaders.coupang_uploader import CoupangUploader, _record_meta_probe
+    name = (_rq.args.get("name") or "").strip()
+    cat = (_rq.args.get("category") or "").strip()
+    rows = []
+    for acct, meta in COUPANG_ACCOUNTS.items():
+        a, sk, vid = _account_creds(acct)
+        row = {"account": acct, "label": meta["label"], "vendor_id": vid, "predict": "", "category": cat,
+               "meta_ok": None, "raw": ""}
+        if not (a and sk):
+            row["raw"] = "키 없음 — 부르지 않았어요"
+            rows.append(row)
+            continue
+        try:
+            up = CoupangUploader(access_key=a, secret_key=sk, vendor_id=vid, account=acct)
+            if name and not cat:
+                row["predict"] = up.predict_category(name) or "(예측 실패)"
+            code = cat or (row["predict"] if row["predict"] and row["predict"] != "(예측 실패)" else "")
+            row["category"] = code
+            if code:
+                m = up.get_category_meta(code)
+                row["meta_ok"] = bool(m)
+                row["raw"] = "OK — 속성 %d개" % len(m.get("attributes") or []) if m else up.meta_error(code)
+                if m:
+                    _record_meta_probe(acct, vid, code, True, "OK")
+        except Exception as exc:
+            row["raw"] = f"{type(exc).__name__}: {str(exc)[:300]}"
+        rows.append(row)
+    return render_template_string(_COUPANG_META_TEMPLATE, rows=rows, name=name, cat=cat)
+
+
+_COUPANG_META_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>쿠팡 카테고리 메타 비교</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px" data-role="coupang-meta">
+<h5>쿠팡 카테고리 메타 — 계정별 비교</h5>
+<form class="d-flex flex-wrap gap-2 mb-3" method="get">
+<input class="form-control form-control-sm" style="max-width:320px" name="name" placeholder="상품명(카테고리 예측)" value="{{ name }}">
+<input class="form-control form-control-sm" style="max-width:160px" name="category" placeholder="카테고리 코드" value="{{ cat }}">
+<button class="btn btn-sm btn-outline-secondary">계정마다 물어보기</button></form>
+{% for r in rows %}<div class="border-bottom py-2" data-role="coupang-meta-row" data-account="{{ r.account }}">
+<div class="d-flex flex-wrap gap-2"><strong>{{ r.label }}</strong><span class="text-muted small">{{ r.vendor_id }}</span>
+{% if r.meta_ok %}<span class="badge bg-success ms-auto">메타 OK</span>{% elif r.meta_ok is sameas false %}<span class="badge bg-danger ms-auto">메타 실패</span>{% endif %}</div>
+<div class="small">카테고리 {{ r.category or '—' }}{% if r.predict %} (예측 {{ r.predict }}){% endif %}</div>
+<div class="small" style="word-break:break-word"><code>{{ r.raw }}</code></div></div>{% endfor %}
+<a href="/admin/diagnostics#account-keys">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.post("/diagnostics/smartstore-recheck")
 def diagnostics_smartstore_recheck():
     """캐시(10분)를 건너뛰고 지금 다시 발급해 본다."""
@@ -2912,6 +2965,7 @@ _DIAGNOSTICS_TEMPLATE = """
           <div class="small mt-1" style="word-break:break-word">{{ n.note }} · 자기 키 이름 <code>{{ n.own_env }}</code></div>
         </div>
         {% endfor %}
+        <div class="small mt-2">카테고리 메타 계정별 비교: <a href="/admin/diagnostics/coupang-meta">상품명·카테고리로 물어보기</a></div>
         {% if account_keys.error %}<div class="small text-danger">확인 실패: <code>{{ account_keys.error }}</code></div>{% endif %}
       </div>
     </div>
