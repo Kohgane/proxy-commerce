@@ -1310,21 +1310,28 @@ def diagnostics_naver_orders():
     except Exception as exc:
         err = f"{type(exc).__name__}: {str(exc)[:300]}"
     total = sum(float(r.get("total_price") or 0) for r in rows)
-    return render_template_string(_NAVER_ORDERS_TEMPLATE, store=store, days=days, rows=rows, err=err, total=total)
+    try:
+        from src.seller_console.smartstore_routing import store_label
+        label = store_label(store)
+    except Exception:
+        label = store
+    return render_template_string(_NAVER_ORDERS_TEMPLATE, store=store, store_label=label, days=days, rows=rows,
+                                  err=err, total=total)
 
 
 _NAVER_ORDERS_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>네이버 주문 대조</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:960px" data-role="naver-orders">
-<h5>스마트스토어 {{ store }} — 최근 {{ days }}일 결제완료 주문</h5>
+<h5>스마트스토어 {{ store_label }} — 최근 {{ days }}일 결제완료 주문</h5>
 <p class="small text-muted">API로 당긴 목록입니다. 스마트스토어센터 주문 수와 대조하고, 텔레그램에 없는 줄이 재발송 대상입니다(구매자 정보는 싣지 않음).</p>
 {% if err %}<div class="alert alert-danger small" style="word-break:break-word" data-role="naver-orders-err">조회 실패 — <code>{{ err }}</code></div>
 {% else %}<p data-role="naver-orders-count"><strong>{{ rows|length }}건</strong> · 합계 {{ '{:,.0f}'.format(total) }}원</p>
-<div class="table-responsive"><table class="table table-sm"><thead><tr><th>결제</th><th>주문번호</th><th>상품주문번호</th><th>상품</th><th>수량</th><th>금액</th><th>상태</th></tr></thead><tbody>
-{% for r in rows %}<tr data-role="naver-order-row"><td class="text-nowrap small">{{ r.created_at }}</td><td>{{ r.order_number }}</td><td>{{ r.order_id }}</td>
-<td class="small">{{ r.product_names|join(', ') }}</td><td>{{ r.quantities|join(',') }}</td><td class="text-nowrap">{{ '{:,.0f}'.format(r.total_price) }}</td><td class="small">{{ r.status }}</td></tr>{% endfor %}
-</tbody></table></div>{% endif %}
+{% for r in rows %}<div class="border-bottom py-2" data-role="naver-order-row">
+<div class="d-flex gap-2"><strong class="flex-grow-1" style="word-break:break-word">{{ r.product_names|join(', ') or '(상품명 없음)' }}</strong>
+<span class="text-nowrap">{{ '{:,.0f}'.format(r.total_price) }}원</span></div>
+<div class="small text-muted" style="word-break:break-all">결제 {{ r.created_at or '—' }} · 수량 {{ r.quantities|join(',') }} · {{ r.status or '—' }}<br>
+주문번호 {{ r.order_number or '—' }} · 상품주문번호 {{ r.order_id or '—' }}</div></div>{% endfor %}{% endif %}
 <a href="/admin/diagnostics#workers-status">← 진단으로</a></div></body></html>"""
 
 
