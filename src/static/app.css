@@ -1684,7 +1684,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* X0(2026-10-04): 마켓 연동 › 쿠팡 계정별 카드 */
 .mc-acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-3); }
 .mc-acct { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); background: var(--surface); min-width: 0; }
-.mc-acct .mc-kv .v { word-break: break-word; }
+.mc-acct .mc-kv .kv .v { word-break: break-word; white-space: normal; overflow: visible; }
 .mc-acct-pick label { display: flex; gap: 6px; align-items: flex-start; word-break: break-word; }
 .mc-acct-break { word-break: break-word; }
 .mc-acct-warn { color: var(--danger); word-break: break-word; }
@@ -1917,6 +1917,8 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   font-size: .86rem; line-height: 1.65;
 }
 .mc-note-mark { width: 34px; height: 34px; flex: none; }
+/* X0: 쿠팡 사전 고지는 제목+목록 세로 — 위 flex가 제목을 한 글자씩 세로로 쪼갰다(390px 실측). */
+.mc-note.mc-note-coupang { display: block; }
 /* ★ 6-f-2: 이 마크는 **인라인 SVG**다 — 외부 파일이 아니다.
    아이콘 하나에 404·CSP·배포 아티팩트 리스크를 지불할 이유가 없다(오너 판단).
    색은 클래스로 준다: SVG 프레젠테이션 속성은 `var()`를 못 받는다(6-d 가이드 일러스트 전례). */
