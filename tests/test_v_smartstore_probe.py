@@ -166,6 +166,7 @@ def test_naver_calls_are_locked_to_the_relay_when_deployed(monkeypatch):
     assert not sent
     assert mr.route_for("smartstore", N._TOKEN_URL)["via"] == "direct"
     monkeypatch.setenv("MARKET_API_RELAY_URL", "http://158.247.231.248/mkt")
+    monkeypatch.setitem(mr._RELAY_IP_CACHE, "ip", None)        # 앞 테스트가 남긴 프로세스 캐시를 비운다
     r = mr.route_for("smartstore", N._TOKEN_URL)
     assert r == {"via": "relay", "host": "158.247.231.248", "ip": "158.247.231.248"}
     assert mr.route_text("smartstore") == "릴레이 경유(MARKET_API_RELAY_URL · 158.247.231.248 → 나가는 IP 158.247.231.248)"
@@ -173,7 +174,9 @@ def test_naver_calls_are_locked_to_the_relay_when_deployed(monkeypatch):
 
 
 def test_probe_reports_the_actual_route(monkeypatch):
+    from src import market_relay as mr
     monkeypatch.setenv("MARKET_API_RELAY_URL", "http://158.247.231.248/mkt")
+    monkeypatch.setitem(mr._RELAY_IP_CACHE, "ip", None)
     monkeypatch.delenv("MARKET_RELAY_IP", raising=False)
     _keys(monkeypatch, "gocosmos")
     _naver(monkeypatch, ok_stores=("gocosmos",))
