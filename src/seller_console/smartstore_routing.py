@@ -113,7 +113,7 @@ def identify_common_key(*, force: bool = False) -> dict:
         try:
             from src.db import image_translate_queue_pg as st
             snap = st.state_get(_COMMON_KEY) or {}
-            snap = {k: v for k, v in snap.items() if isinstance(v, dict) and "state" not in v}   # 옛 평면 기록은 버린다
+            snap = {k: v for k, v in snap.items() if isinstance(v, dict)}   # 옛 평면 기록(값이 글자)은 버린다 · 다른 서비스 칸은 둔다
             snap[_svc()] = dict(out)
             st.state_set(_COMMON_KEY, snap)
         except Exception as exc:
