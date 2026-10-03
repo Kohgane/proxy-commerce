@@ -86,3 +86,11 @@ def test_rule_moves_are_reported_when_translator_fails(monkeypatch):
     assert r["status"] == "failed" and r["reason"].startswith("규칙으로 4개 옮겨 저장") and "朦胧月光款" in r["reason"]
     o = json.loads(S.get(iid, seller_ids={"owner-y2-rule"})["extra_json"])["options"]
     assert o[0]["name_ko"] == "사이즈" and o[0]["values_ko"] == ["소형", "대형"] and o[1]["name_ko"] == "색상"
+
+
+def test_saved_korean_is_shown_under_each_option_row():
+    """Y2 캡처: 번역 뒤 다시 그려도 칸엔 원문(大小 / 小号, 大号)만 보여 「안 됐다」로 보였다 — 저장된 한국어를 한 줄로."""
+    from pathlib import Path
+    html = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
+    assert "function _optKoLine(o)" in html and "data-role', 'opt-ko'" in html
+    assert "addOptionRow(o.name, o.values, o.ko)" in html and "'아직(' + v + ')'" in html

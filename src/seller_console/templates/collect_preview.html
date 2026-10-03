@@ -901,7 +901,20 @@ function _initOptions() {
     name: o.name || '',
     values: Array.isArray(o.values) ? o.values.join(', ')
           : (o.value !== undefined ? String(o.value) : ''),
+    ko: _optKoLine(o),
   }));
+}
+
+// Y2(오너 2026-10-04): 저장된 한국어(축 이름 name_ko · 값 values_ko)를 행 아래 한 줄로 보인다 — 「한국어로 번역」을
+//   눌러도 칸엔 원문이 그대로라 「안 됐다」로 보였다(캡처). 칸은 원문 그대로 두고(등록이 원문 → 한국어로 바꿔 보냄),
+//   못 옮긴 값은 「아직」이라고 말한다.
+function _optKoLine(o) {
+  if (!o) return '';
+  var vs = Array.isArray(o.values) ? o.values.map(v => (v && typeof v === 'object') ? (v.name || '') : String(v || '')) : [];
+  var ks = Array.isArray(o.values_ko) ? o.values_ko : [];
+  if (!o.name_ko && !ks.some(k => k)) return '';
+  var vals = vs.map((v, i) => { var k = String(ks[i] || '').trim(); return (k && k !== v) ? k : '아직(' + v + ')'; });
+  return (o.name_ko || o.name || '') + ': ' + vals.join(', ');
 }
 
 function addImageRow(url) {
@@ -1270,7 +1283,7 @@ function dpInit() {
   dpSelectMarket('common');
 }
 
-function addOptionRow(name, values) {
+function addOptionRow(name, values, ko) {
   const wrap = document.getElementById('optionRows');
   const row = document.createElement('div');
   row.className = 'input-group input-group-sm opt-row';
@@ -1278,8 +1291,16 @@ function addOptionRow(name, values) {
     <input type="text" class="form-control opt-name kgp-w-xs" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
     <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: Black, White)" value="${escapeHtml(values || '')}">
     <button class="btn btn-ghost" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
-  row.querySelector('button').addEventListener('click', () => row.remove());
   wrap.appendChild(row);
+  var koLine = null;
+  if (ko) {
+    koLine = document.createElement('div');
+    koLine.className = 'small text-muted opt-ko';
+    koLine.setAttribute('data-role', 'opt-ko');
+    koLine.textContent = '한국어 — ' + ko;
+    wrap.appendChild(koLine);
+  }
+  row.querySelector('button').addEventListener('click', () => { row.remove(); if (koLine) koLine.remove(); });
 }
 
 function refreshPrimaryImage() {
@@ -1510,7 +1531,7 @@ function initEditor() {
   _initImages().forEach(addImageRow);
   if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
   var _opts = _initOptions();
-  _opts.forEach(o => addOptionRow(o.name, o.values));
+  _opts.forEach(o => addOptionRow(o.name, o.values, o.ko));
   // v58 STEP2 / v67 STEP3: 옵션 없음 배지 — 무옵션(단일 상품)과 추출 실패를 구분(정직).
   //   핵심 필드(가격·이미지)를 제대로 읽었으면 = 옵션 UI 없는 단일 상품 → 중립('단일 상품').
   //   핵심도 못 읽었으면 = 추출 실패 → 경고색('옵션 미수집').
