@@ -388,6 +388,12 @@ def expiry_hits(text: str) -> List[str]:
     return [w for w in (rules().get("expiry_block") or []) if w and w in s]
 
 
+def cn_plug_hits(text: str) -> List[str]:
+    """Y8(오너 2026-10-04): 중국 표준 콘센트(五孔·国标插座) — 국내 콘센트와 규격이 달라 쓸 수 없고 전기용품 KC 대상 → 소싱 제외."""
+    s = str(text or "")
+    return [w for w in (rules().get("cn_plug_block") or []) if w and w in s]
+
+
 def invented_names(src: str, ko: str) -> List[str]:
     """번역 결과에 **원문에 없는** 고유명이 생겼나(「三宅艺创」 → 「미야케 아키라」). `invented_names` 표:
     [만들어진 이름, 원문에 있으면 괜찮은 표기들]."""

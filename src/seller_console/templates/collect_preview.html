@@ -918,7 +918,8 @@ function _optKoLine(o) {
   var vs = Array.isArray(o.values) ? o.values.map(v => (v && typeof v === 'object') ? (v.name || '') : String(v || '')) : [];
   var ks = Array.isArray(o.values_ko) ? o.values_ko : [];
   if (!o.name_ko && !ks.some(k => k)) return '';
-  var vals = vs.map((v, i) => { var k = String(ks[i] || '').trim(); return (k && k !== v) ? k : '아직(' + v + ')'; });
+  // Y8: 원문에 한자·가나가 없는 값(분해한 「화이트」·「PD65W」, 「S」)은 옮길 게 없다 — 「아직」이 아니다
+  var vals = vs.map((v, i) => { var k = String(ks[i] || '').trim(); return (k && k !== v) ? k : (/[\u3040-\u30ff\u3400-\u9fff]/.test(v) ? '아직(' + v + ')' : v); });
   return (o.name_ko || o.name || '') + ': ' + vals.join(', ');
 }
 

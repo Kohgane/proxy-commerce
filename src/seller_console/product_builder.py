@@ -73,6 +73,9 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "ship_ratio_override": ex.get("ship_ratio_override") or None,
         # Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트)를 「그래도 등록」으로 푼 기록 — 그 장 주소에만 유효
         "rep_image_override": ex.get("rep_image_override") or None,
+        # Y8: 축 분해 전 원본 옵션(五孔 같은 차단 어휘는 분해 뒤 값엔 없다) · 분해 기록
+        "options_src": ex.get("options_src") if isinstance(ex.get("options_src"), list) else [],
+        "option_split": ex.get("option_split") if isinstance(ex.get("option_split"), dict) else {},
         "ship_route": str(ex.get("ship_route") or ""),
         # Z 후속2: 옵션 값을 왜 못 옮겼나(번역기 응답 원문) — 「옵션 값 n개 미해석」 보류 문구가 싣는다
         "option_translate_diag": ex.get("option_translate_diag") if isinstance(ex.get("option_translate_diag"), dict) else {},          # Z5 후속: 중국발 발주 경로(상품) — 없으면 계정 설정

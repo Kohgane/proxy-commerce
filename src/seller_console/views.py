@@ -2001,10 +2001,13 @@ def mobile_list_ctx(item: dict) -> dict:
     try:
         from src.collectors import ko_polish as _kp3
         _rt = " ".join([str(product.get("title_src") or ""), str(product.get("title") or "")]
-                       + [str(v) for o in (product.get("options") or []) if isinstance(o, dict)
-                          for v in (o.get("values") or [])])
+                       + [str(v) for o in ((product.get("options") or []) + (product.get("options_src") or []))
+                          if isinstance(o, dict) for v in (o.get("values") or [])])
         if _kp3.expiry_hits(_rt):
             risks.append("유통기한 임박·떨이 소싱 — 등록 차단")
+        _pl = _kp3.cn_plug_hits(_rt)                   # Y8: 중국 표준 콘센트(五孔·国标插座) — 소싱 제외
+        if _pl:
+            risks.append(f"중국 표준 콘센트({', '.join(_pl)}) — 소싱 제외(국내 콘센트 규격 다름·KC 대상)")
         _rp = _kp3.replica_hits(_rt)
         if _rp:
             risks.append(f"상표 위험({', '.join(_rp)}) — 등록 보류")
@@ -3372,7 +3375,7 @@ def collect_prevalidate():
             #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
             try:
                 _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
-                for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override"):
+                for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override", "option_split", "options_src"):
                     if _sx.get(_k):
                         product_data[_k] = _sx[_k]
             except Exception:
