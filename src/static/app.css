@@ -2259,3 +2259,11 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* D3-6 ⑥ — 벤치 카드 결과 그림: 작게 보고 누르면 원본 새 탭 */
 .bench-shot { max-width: var(--bench-shot-max); width: 100%; height: auto; }
 .bench-shot-link { display: inline-block; cursor: zoom-in; }
+
+/* Z5 후속(2026-10-04): 발주 경로 기본값 화면 · 폰 카드 배송비 판정 줄 */
+.ship-route { max-width: 560px; padding: var(--space-3, 24px) var(--space-2, 16px); }
+.ship-route .sr-opt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--radius, 12px); background: var(--surface); }
+.ship-route .sr-save { min-height: 48px; }
+.m5-ship { margin-top: 8px; font-size: .92rem; color: var(--text-muted); word-break: break-word; }
+.m5-ship select { min-height: 44px; margin-top: 6px; width: 100%; }
