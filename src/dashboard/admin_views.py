@@ -1352,6 +1352,38 @@ def _page_url(uid: str, item_id: str, kind: str, idx: int) -> str:
     return urls[idx] if 0 <= idx < len(urls) else ""
 
 
+@admin_panel_bp.get("/diagnostics/taobao-mtop")
+def diagnostics_taobao_mtop():
+    """Z3(오너 2026-10-04) 실측 — 이 서버 IP에서 타오바오 모바일 상세 API를 익명으로 부를 수 있나(조회만, 무료).
+    `q` = e.tb.cn 공유 링크·상품 주소·상품번호(줄마다 하나, 최대 5). 결과는 숫자와 ret 코드만(쿠키·토큰 값 0)."""
+    from flask import request as _rq
+    from src.collectors import taobao_mtop as T
+    qs = [x.strip() for x in (_rq.args.get("q") or "").splitlines() if x.strip()][:5]
+    rows = []
+    for q in qs:
+        try:
+            rows.append(T.probe(q))
+        except Exception as exc:
+            rows.append({"input": q[:80], "item_id": "", "how": f"{type(exc).__name__}: {str(exc)[:120]}", "log": [],
+                         "detail": None, "desc_images": None})
+    return render_template_string(_TAOBAO_MTOP_TEMPLATE, rows=rows, q="\n".join(qs))
+
+
+_TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>타오바오 모바일 API 실측</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px" data-role="taobao-mtop">
+<h5>타오바오 모바일 상세 API — 이 서버에서 익명으로 되나</h5>
+<form method="get" class="mb-3"><textarea class="form-control form-control-sm" name="q" rows="3" placeholder="e.tb.cn 링크·상품 주소·상품번호(줄마다 하나, 최대 5)">{{ q }}</textarea>
+<button class="btn btn-sm btn-outline-secondary mt-2">실측(조회만 · 무료)</button></form>
+{% for r in rows %}<div class="border-bottom py-2 small" data-role="mtop-row" style="word-break:break-all">
+<div><strong>{{ r.input }}</strong> → 상품번호 {{ r.item_id or '없음' }} ({{ r.how }})</div>
+{% for l in r.log %}<div class="text-muted">{{ l }}</div>{% endfor %}
+{% if r.detail %}<div data-role="mtop-numbers">제목 {{ r.detail.title_len }}자 「{{ r.detail.title }}」 · 가격 {{ r.detail.price or '—' }} · 갤러리 {{ r.detail.gallery }} · SKU {{ r.detail.skus }} · 옵션 축 {{ r.detail.axes }}/값 {{ r.detail.values }} · 상세 이미지 {{ r.desc_images if r.desc_images is not none else '—' }}</div>
+{% elif r.item_id %}<div class="text-danger">상세 응답 없음 — 위 ret 코드가 사유</div>{% endif %}</div>{% endfor %}
+<a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.get("/diagnostics/ocr-precheck")
 def diagnostics_ocr_precheck():
     """Z3-2(오너 2026-10-04): 무료 로컬 OCR(RapidOCR) 「한자 있나」 판정을 **운영 라벨**(텐센트가 실제로 번역함 = 글자 있음 /
