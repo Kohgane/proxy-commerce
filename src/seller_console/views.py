@@ -2600,6 +2600,10 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 _g, _d = _its.drop_cross_duplicates(product_data.get("images") or [],
                                                     product_data.get("detail_images") or [])
                 product_data["images"], product_data["detail_images"] = _g, _d
+                # Y7: 사전검증 판정(대표 사진·이미지 0장)도 **나갈 목록 그대로** — 화면이 렌더 때 받은 목록은 묵었을 수 있다
+                #   (「이 장을 대표로」 누른 직후 재검증).
+                if _g:
+                    product_data["images_effective"] = list(_g)
                 _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
     except Exception as exc:
         logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
@@ -3188,6 +3192,94 @@ def collect_ship_ratio_override(item_id):
     return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+def coupang_exposure_data(item: dict) -> dict:
+    """Y7(오너 2026-10-04) — 「쿠팡 노출」: 쿠팡 검색 카드(대표 1장 · 상품명 2줄 · 가격) + 상세 상단 줄(대표+추가 이미지) +
+    대표 사진 자동 판정. **등록이 보낼 목록 그대로**(`effective_images` — 번역본 사용·대표 지정·프로모션 제외 반영)."""
+    from .product_builder import build_product
+    from .upload_dispatcher import UploadDispatcher
+    from src.services import image_translate_store as its
+    from src.services import coupang_image_check as cic
+    iid = str(item.get("id") or "")
+    product = build_product(item, seller_id=_seller_id())
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    originals = list(product.get("images") or [])
+    plan = {p["idx"]: p for p in its.effective_plan(ex, originals=originals, item_id=iid)}
+    eff = its.effective_images(ex, originals=originals, item_id=iid)
+    order = [i for i, _u in its.rep_first([(p["idx"], p) for p in plan.values() if not p.get("promo_excluded")]
+                                          or [(p["idx"], p) for p in plan.values()], originals, ex)]
+    strip = [{"idx": i, "url": eff[n] if n < len(eff) else plan[i]["url"], "original": plan[i]["original"],
+              "source": plan[i]["source"], "translatable": plan[i]["translatable"], "use": plan[i]["use"],
+              "rep": n == 0} for n, i in enumerate(order)]
+    price, why = UploadDispatcher.sell_price_in(dict(product), "KRW", "coupang")
+    rep = eff[0] if eff else ""
+    chk = cic.check_url(rep) if rep else {"state": "unknown", "why": "이미지 0장", "flags": []}
+    ov = ex.get("rep_image_override") if isinstance(ex.get("rep_image_override"), dict) else {}
+    hold = cic.hold(dict(product, images_effective=eff, rep_image_override=ov), "coupang") if rep else None
+    return {"ok": True, "name": product.get("coupang_name") or product.get("title") or "",
+            "price": int(price) if price else None, "price_why": "" if price else (why or "판매가를 못 냈어요"),
+            "rep": rep, "rep_original": strip[0]["original"] if strip else "", "strip": strip[:10], "check": chk,
+            "hold": hold, "override": ov if ov and ov.get("url") == rep else None}
+
+
+@bp.get("/collect/<item_id>/coupang-exposure")
+def collect_coupang_exposure(item_id):
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    return jsonify(coupang_exposure_data(item))
+
+
+@bp.post("/collect/<item_id>/rep-image")
+def collect_rep_image(item_id):
+    """Y7: 「이 장을 대표로」 — 원본 주소로 적는다(`rep_image`). 원본 배열·번역본 idx·CDN 표는 건드리지 않는다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    originals = [u for u in (ex.get("images") or []) if u]
+    try:
+        idx = int((request.get_json(silent=True) or {}).get("idx"))
+    except (TypeError, ValueError):
+        idx = -1
+    if not 0 <= idx < len(originals):
+        return jsonify({"ok": False, "error": "그 장을 찾지 못했어요."}), 400
+    if idx == 0:
+        ex.pop("rep_image", None)
+    else:
+        ex["rep_image"] = originals[idx]
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    if not ok:
+        return jsonify({"ok": False, "error": "저장하지 못했어요."}), 502
+    logger.info("[쿠팡 대표 사진] item=%s 대표 → %d번째", item_id, idx + 1)
+    return jsonify(coupang_exposure_data(_get_owned_item(item_id) or item))
+
+
+@bp.post("/collect/<item_id>/rep-image-override")
+def collect_rep_image_override(item_id):
+    """Y7: 대표 사진 보류(500px 미만·텍스트 있음)를 **그래도 등록**으로 푼다 — 그 장에만(대표를 바꾸면 다시 잰다)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    d = coupang_exposure_data(item)
+    if not d.get("rep"):
+        return jsonify({"ok": False, "error": "대표 사진이 없어요."}), 400
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    rec = {"url": d["rep"], "at": datetime.now(timezone.utc).isoformat(), "by": str(session.get("email") or _seller_id()),
+           "line": (d.get("hold") or {}).get("line", "")}
+    ex["rep_image_override"] = rec
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    logger.warning("[쿠팡 대표 사진] 그래도 등록 — item=%s by=%s · %s", item_id, rec["by"], rec["line"])
+    return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
 @bp.post("/collect/<item_id>/ship-route")
 def collect_ship_route(item_id):
     """Z5 후속: 이 상품의 중국발 발주 경로(direct=중국 현지 직접 발송 · forwarder=배대지 경유 · 빈 값=계정 설정)."""
@@ -3277,10 +3369,12 @@ def collect_prevalidate():
         product_data.setdefault("seller_id", _seller_id())
         if data.get("item_id"):
             # Z5: 「그래도 등록」은 저장된 기록이 정본 — 화면이 렌더 때 받은 상품엔 없을 수 있다(누른 직후 재검증)
+            #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
             try:
-                _ov = (json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}).get("ship_ratio_override")
-                if _ov:
-                    product_data["ship_ratio_override"] = _ov
+                _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
+                for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override"):
+                    if _sx.get(_k):
+                        product_data[_k] = _sx[_k]
             except Exception:
                 pass
         if data.get("refresh_from_store") and data.get("item_id"):
@@ -3294,6 +3388,14 @@ def collect_prevalidate():
             _auto = _optauto.translate_now(_seller_id(), str(data["item_id"]))
             if _auto.get("status") in ("done", "queued"):
                 product_data = _merge_stored_translation(product_data, str(data["item_id"]))
+            # Z 후속2: 방금 번역이 남긴 「값마다 왜 못 옮겼나」로 다시 잰다(앞에서 실은 건 번역 전 기록)
+            try:
+                _dx = (json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}).get("option_translate_diag")
+                if _dx:
+                    product_data["option_translate_diag"] = _dx
+            except Exception:
+                pass
+            if _auto.get("status") in ("done", "queued", "failed"):
                 with mc.seller_market_env(_seller_id(), markets):
                     results = dispatcher.prevalidate(product_data, markets)
         if _rc is not None and not _rc["ok"]:

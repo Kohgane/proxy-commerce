@@ -1,0 +1,103 @@
+{# Y7(오너 2026-10-04) — 「쿠팡 노출」: 쿠팡 검색 카드(대표 1장 정사각·상품명 2줄·가격) + 상세 상단 줄(대표+추가 이미지) +
+   대표 사진 자동 판정. 편집 화면 탭·폰 M5 공용. 데이터는 /seller/collect/<id>/coupang-exposure 하나(등록이 보낼 목록 그대로).
+   필요: cpx_item_id #}
+<section class="cpx" data-role="cpx" data-item="{{ cpx_item_id }}" aria-live="polite">
+  <div class="cpx-head">
+    <span class="cpx-legend">쿠팡 노출 미리보기</span>
+    <div class="cpx-view" role="group" aria-label="보기 전환">
+      <button type="button" class="cpx-vbtn is-on" data-view="out" data-role="cpx-view-out" aria-pressed="true">나갈 사진</button>
+      <button type="button" class="cpx-vbtn" data-view="orig" data-role="cpx-view-orig" aria-pressed="false">원본</button>
+    </div>
+  </div>
+  <div class="cpx-body" data-role="cpx-body">쿠팡 검색 카드로 만드는 중…</div>
+</section>
+<script>
+(function () {
+  var root = document.currentScript.previousElementSibling;
+  if (!root || root.getAttribute('data-role') !== 'cpx') return;
+  var itemId = root.getAttribute('data-item');
+  var body = root.querySelector('[data-role=cpx-body]');
+  var view = 'out', last = null;
+  var base = '/seller/collect/' + encodeURIComponent(itemId);
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  function won(n) { return Number(n).toLocaleString('ko-KR') + '원'; }
+  function call(url, payload) {
+    return fetch(url, payload === undefined ? {credentials: 'same-origin'} :
+      {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
+      .then(function (r) { return r.json(); });
+  }
+  function checkLines(c) {
+    if (!c || c.state !== 'ok') return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown">판정 못 함 — ' + esc((c && c.why) || '이미지를 읽지 못했어요') + '</li>';
+    var out = [];
+    out.push('<li class="cpx-ck ' + (c.small ? 'is-bad' : 'is-ok') + '" data-role="cpx-check-size">' +
+             (c.small ? '반려 예상 — 500px 미만(' : '크기 ') + c.w + '×' + c.h + 'px' + (c.small ? ')' : ' · 500px 이상') + '</li>');
+    out.push('<li class="cpx-ck ' + (c.square ? 'is-ok' : 'is-warn') + '" data-role="cpx-check-square">' +
+             (c.square ? '정사각' : '정사각 아님 — 검색 카드엔 가운데를 잘라 보여요(위 카드가 잘린 모습)') + '</li>');
+    out.push('<li class="cpx-ck ' + (c.text ? 'is-bad' : (c.text === false ? 'is-ok' : 'is-unk')) + '" data-role="cpx-check-text">' +
+             (c.text ? '텍스트 있음 — 반려 가능(읽은 글자 「' + esc(c.seen) + '」)'
+                     : (c.text === false ? '글자·워터마크 안 보임' : '글자 판정 못 함(OCR 엔진 없음)')) + '</li>');
+    out.push('<li class="cpx-ck is-info" data-role="cpx-check-white">흰 배경 ' + c.white_pct + '%(가장자리 띠 기준)</li>');
+    return out.join('');
+  }
+  function render(d) {
+    last = d;
+    if (!d || !d.ok) { body.textContent = (d && d.error) || '불러오지 못했어요.'; return; }
+    var s0 = (d.strip || [])[0] || {};
+    var repSrc = view === 'orig' ? (s0.original || d.rep) : d.rep;
+    var card = '<div class="cpx-card" data-role="cpx-card">' +
+      '<div class="cpx-thumb">' + (repSrc ? '<img src="' + esc(repSrc) + '" alt="대표 사진" referrerpolicy="no-referrer">' : '<span>사진 없음</span>') + '</div>' +
+      '<div class="cpx-name" data-role="cpx-name">' + esc(d.name) + '</div>' +
+      '<div class="cpx-price" data-role="cpx-price">' + (d.price ? won(d.price) : '<span class="cpx-muted">가격 미산정 — ' + esc(d.price_why) + '</span>') + '</div></div>' +
+      '<p class="cpx-cap">쿠팡 검색 결과 카드(예상). ' + (view === 'orig' ? '지금은 <b>원본</b>을 보는 중 — 등록엔 「나갈 사진」이 나가요.' : '등록이 보낼 첫 장 그대로예요.') + '</p>';
+    var hold = '';
+    if (d.override) {
+      hold = '<p class="cpx-ov" data-role="cpx-override-done">그래도 등록 — 기록됨(' + esc(d.override.by) + ')</p>';
+    } else if (d.hold) {
+      hold = '<div class="cpx-hold" data-role="cpx-hold"><p>' + esc(d.hold.line) + '</p>' +
+             '<button type="button" class="btn btn-ghost btn-sm" data-role="cpx-override">그래도 등록</button></div>';
+    }
+    var strip = (d.strip || []).map(function (s, n) {
+      var src = view === 'orig' ? s.original : s.url;
+      return '<figure class="cpx-tile' + (s.rep ? ' is-rep' : '') + '" data-role="cpx-tile" data-idx="' + s.idx + '">' +
+        '<img src="' + esc(src) + '" alt="' + (n + 1) + '번째" referrerpolicy="no-referrer" loading="lazy">' +
+        '<figcaption>' + (s.rep ? '<span class="cpx-badge" data-role="cpx-rep-badge">대표</span>' : '<span class="cpx-n">' + (n + 1) + '</span>') +
+        (s.source === 'translated' ? '<span class="cpx-src">번역본</span>' : '') + '</figcaption>' +
+        (s.rep ? '' : '<button type="button" class="cpx-act" data-role="cpx-rep" data-idx="' + s.idx + '">이 장을 대표로</button>') +
+        (s.translatable ? '<button type="button" class="cpx-act" data-role="cpx-use" data-idx="' + s.idx + '" data-use="' + (s.use ? '0' : '1') + '">' +
+                          (s.use ? '원본으로' : '번역본으로') + '</button>' : '') +
+        '</figure>';
+    }).join('');
+    body.innerHTML = card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
+      '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>';
+  }
+  function load() { body.textContent = '쿠팡 검색 카드로 만드는 중…'; call(base + '/coupang-exposure').then(render).catch(function () { body.textContent = '불러오지 못했어요 — 다시 열어 주세요.'; }); }
+  root.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button');
+    if (!b || !root.contains(b)) return;
+    var role = b.getAttribute('data-role');
+    if (b.hasAttribute('data-view')) {
+      view = b.getAttribute('data-view');
+      root.querySelectorAll('.cpx-vbtn').forEach(function (x) { var on = x === b; x.classList.toggle('is-on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+      render(last);
+    } else if (role === 'cpx-rep') {
+      b.disabled = true; b.textContent = '바꾸는 중…';
+      call(base + '/rep-image', {idx: +b.getAttribute('data-idx')}).then(render);
+    } else if (role === 'cpx-use') {
+      var f = {}; f[b.getAttribute('data-idx')] = b.getAttribute('data-use') === '1';
+      b.disabled = true;
+      call(base + '/image-use', {flags: f, kind: 'gallery'}).then(load);
+    } else if (role === 'cpx-override') {
+      b.disabled = true; b.textContent = '기록하는 중…';
+      call(base + '/rep-image-override', {}).then(load);
+    }
+  });
+  // 보일 때 한 번(편집 화면은 탭이 숨어 있다 — 대표 사진 내려받기·OCR을 안 볼 때 돌리지 않는다)
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); load(); }
+    });
+    io.observe(root);
+  } else { load(); }
+  window.kgpCpxReload = load;
+})();
+</script>

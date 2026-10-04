@@ -26,6 +26,8 @@ os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
 #   합성 PNG를 쓰는데, RapidOCR가 깔린 환경에선 「한자 없음」으로 건너뛰어 텐센트 경로를 못 잰다(깔렸는지에 따라
 #   결과가 갈리면 안 된다). 사전판정 계약(test_z3_image_budget)은 스스로 켠다.
 os.environ.setdefault("IMAGE_OCR_PRECHECK", "0")
+# Y7: 쿠팡 대표 사진 판정(이미지 내려받기 + OCR)도 기본 끔 — 켜는 테스트는 직접 켠다(네트워크 0)
+os.environ.setdefault("COUPANG_IMAGE_CHECK", "0")
 # F51-b: 판매가 환율(`price.sell_fx_rates`)은 FX_USE_LIVE가 **명시적 0**일 때만 실시간을 안 본다(운영 = 실시간).
 #   테스트는 네트워크·앞 테스트의 환율 캐시에 따라 값이 바뀌면 안 되므로 0으로 고정한다.
 #   옛 `_build_fx_rates`는 미설정 = 0이었으므로 기존 경로엔 변화가 없다.

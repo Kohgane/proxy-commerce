@@ -1358,7 +1358,11 @@ def diagnostics_taobao_mtop():
     `q` = e.tb.cn 공유 링크·상품 주소·상품번호(줄마다 하나, 최대 5). 결과는 숫자와 ret 코드만(쿠키·토큰 값 0)."""
     from flask import request as _rq
     from src.collectors import taobao_mtop as T
-    qs = [x.strip() for x in (_rq.args.get("q") or "").splitlines() if x.strip()][:5]
+    import re as _re
+    lines = [x.strip() for x in (_rq.args.get("q") or "").splitlines() if x.strip()]
+    # Z 후속2(오너 2026-10-04 20:39): 공유 문구를 통째로 붙이면 「点击链接直接打开」 같은 줄도 한 건이 됐다 —
+    #   링크나 상품번호가 있는 줄만 잰다(그 줄 안에서 링크 하나는 `item_id_from`이 공유 수집과 같은 추출로 뽑는다).
+    qs = ([x for x in lines if _re.search(r"https?://|^\d{6,15}$", x)] or lines)[:5]
     via = "relay" if _rq.args.get("via") == "relay" else "direct"
     rows = []
     for q in qs:

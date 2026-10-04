@@ -29,18 +29,31 @@ def item_id_from(arg: str, s=None) -> tuple:
     arg = str(arg or "").strip()
     if re.fullmatch(r"\d{6,15}", arg):
         return arg, "직접 입력"
+    # Z 후속2(오너 2026-10-04 20:39 실측): 공유 문구 통째로 넘기면 InvalidSchema/InvalidURL —
+    #   공유 수집과 같은 추출(parse_share_text: 상품 링크 우선 → https?://\S+)로 링크 하나만 뽑는다.
+    if not re.match(r"https?://\S+$", arg):
+        from src.collectors.share_text import url_from_input
+        picked = url_from_input(arg)
+        if not picked:
+            m = re.search(r"https?://\S+", arg)
+            picked = m.group(0) if m else ""
+        if not picked:
+            return "", "입력에서 링크를 찾지 못했어요(https://… 또는 숫자 상품 ID)"
+        arg, pre = picked, f"뽑은 링크 {picked[:60]} · "
+    else:
+        pre = ""
     m = re.search(r"[?&]id=(\d{6,15})", arg)
     if m:
-        return m.group(1), "주소의 id="
+        return m.group(1), pre + "주소의 id="
     s = s or _session()
     try:
         r = s.get(arg, timeout=15, allow_redirects=True)
         body = r.text[:200000]
     except Exception as exc:                                    # noqa: BLE001
-        return "", f"단축 링크 열기 실패 {type(exc).__name__}"
+        return "", f"{pre}단축 링크 열기 실패 {type(exc).__name__}"
     m = re.search(r"[?&]id=(\d{6,15})", r.url) or re.search(r"[?&]id=(\d{6,15})", body) \
         or re.search(r"item[_.]?id[\"'=:\s]+(\d{6,15})", body, re.I)
-    return (m.group(1) if m else ""), f"HTTP {r.status_code} · 최종 주소 {r.url[:80]} · 본문 {len(body)}자"
+    return (m.group(1) if m else ""), f"{pre}HTTP {r.status_code} · 최종 주소 {r.url[:80]} · 본문 {len(body)}자"
 
 
 class RelaySession:
