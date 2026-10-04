@@ -1513,7 +1513,7 @@ class CoupangUploader(BaseUploader):
 
     def _key_names_hint(self) -> str:
         """Z1: 401일 때 **어느 이름의 키로 서명했는지**(값 없음) — 「키 쌍은 맞는데 왜」를 바로 가른다."""
-        if not self.account:
+        if not getattr(self, 'account', None):
             return ' (서명 키 = 무접두 COUPANG_ACCESS_KEY · COUPANG_SECRET_KEY)'
         try:
             from src.pipeline.coupang_replicate import coupang_key_source
@@ -1536,7 +1536,7 @@ class CoupangUploader(BaseUploader):
         if not self.access_key or not self.secret_key:
             # Z1: 계정 키를 서명 전에 막았으면(두 이름 다른 값·섞인 쌍·깨진 값) 그 사유를 그대로.
             why = ''
-            if self.account:
+            if getattr(self, 'account', None):
                 try:
                     from src.pipeline.coupang_replicate import account_cred_problem
                     why = account_cred_problem(self.account)
@@ -1547,7 +1547,7 @@ class CoupangUploader(BaseUploader):
         date = datetime.now(timezone.utc).strftime('%y%m%dT%H%M%SZ')
         signature = self._generate_hmac_signature(method, path, date)
         # Z1(오너 2026-10-04): 서명한 문장(시크릿 없음)과 액세스 키 끝 4자 — 고가네·우주대행 같은 요청을 나란히 비교.
-        self.last_sign = {'account': self.account or '', 'vendor_id': str(self.vendor_id or ''),
+        self.last_sign = {'account': getattr(self, 'account', None) or '', 'vendor_id': str(self.vendor_id or ''),
                           'access_tail': f'…{str(self.access_key)[-4:]} ({len(str(self.access_key))}자)',
                           'secret_len': len(str(self.secret_key)),
                           'message': date + method + path.replace('?', '', 1), 'status': None}
