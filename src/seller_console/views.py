@@ -2225,6 +2225,13 @@ def guide_iphone_use():
                            shortcut_link="", host=_share_base().split("://", 1)[-1])
 
 
+@bp.get("/guide/iphone/photos")
+def guide_iphone_photos():
+    """화면 D(Z3, 오너 2026-10-04) — 「폰에서 사진·옵션 넣기」(공개). PC가 없는 유저가 등록까지 가는 수동 경로."""
+    return render_template("guide_iphone.html", screen="photos", shots=_iphone_shots(("d1", "d2", "d3")),
+                           shortcut_link="", host=_share_base().split("://", 1)[-1])
+
+
 @bp.route("/admin/ko-polish", methods=["GET", "POST"])
 def admin_ko_polish():
     """T1(오너 2026-09-30-H) — 번역 정리 규칙표(판촉어 삭제·용어 치환·표시광고 금칙) — **재배포 없이** 고친다.
@@ -2943,6 +2950,146 @@ def _merge_stored_translation(product_data: dict, item_id: str) -> dict:
     if ex.get("title_ko"):
         out["title_ko"] = ex["title_ko"]
     return out
+
+
+# ── Z3(c)(오너 2026-10-04): 폰만 쓰는 유저의 최후 경로 — 사진·옵션을 폰에서 직접 넣는다 ─────────────
+#   PC 확장이 없으면 사진·옵션이 영영 빈칸이라 등록이 안 됐다. 타오바오 앱에서 사진을 길게 눌러 저장 → 앨범에서 올린다.
+#   올린 사진·적은 옵션은 「직접 수정」으로 적어 둔다 — 뒤에 보강이 돌아도 덮지 않는다(source_merge 규칙).
+MANUAL_PHOTO_MAX = 20                       # 한 번에 올릴 장 수
+MANUAL_PHOTO_BYTES = 10 * 1024 * 1024       # 한 장 크기
+MANUAL_OPTION_AXES = 3
+MANUAL_SKU_MAX = 60
+
+
+def _save_manual_extra(item_id: str, ex: dict, **row) -> bool:
+    from . import collect_history_store as _chs
+    from src.collectors.collect_status import still_uncollected as _stu
+    if "uncollected" in ex:
+        ex["uncollected"] = _stu(ex)
+    return bool(_chs.update(item_id, seller_ids=_seller_identities(),
+                            extra_json=json.dumps(ex, ensure_ascii=False), **row))
+
+
+@bp.post("/collect/<item_id>/manual-photos")
+def collect_manual_photos(item_id):
+    """앨범에서 고른 사진 여러 장 → Cloudinary → 이 상품 갤러리 끝에. 실패한 장은 사유 그대로(가짜 성공 0)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    files = [f for f in request.files.getlist("photos") if f and f.filename]
+    if not files:
+        return jsonify({"ok": False, "error": "올릴 사진을 골라 주세요."}), 400
+    if len(files) > MANUAL_PHOTO_MAX:
+        return jsonify({"ok": False, "error": f"한 번에 {MANUAL_PHOTO_MAX}장까지 올릴 수 있어요(고른 장 {len(files)})."}), 400
+    from src.media.image_pipeline import upload_bytes
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    added, failed = [], []
+    for i, f in enumerate(files, 1):
+        raw = f.read()
+        if not raw:
+            failed.append(f"{i}번째: 빈 파일")
+            continue
+        if len(raw) > MANUAL_PHOTO_BYTES:
+            failed.append(f"{i}번째: {len(raw) // 1024 // 1024}MB — 10MB 이하만")
+            continue
+        if not (str(f.mimetype or "").startswith("image/") or raw[:4] in (b"\xff\xd8\xff\xe0", b"\xff\xd8\xff\xe1", b"\x89PNG")
+                or raw[:3] == b"\xff\xd8\xff"):
+            failed.append(f"{i}번째: 사진 파일이 아니에요({f.mimetype or '형식 모름'})")
+            continue
+        try:
+            up = upload_bytes(raw, folder="manual")
+        except Exception as exc:                          # noqa: BLE001
+            up = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        if up.get("ok") and up.get("secure_url"):
+            added.append(up["secure_url"])
+        else:
+            failed.append(f"{i}번째: 올리지 못했어요 — {up.get('error') or '주소를 못 받음'}")
+    if not added:
+        return jsonify({"ok": False, "error": "한 장도 올리지 못했어요.", "failed": failed}), 502
+    imgs = [u for u in (ex.get("images") or []) if isinstance(u, str) and u]
+    ex["images"] = imgs + [u for u in added if u not in imgs]
+    ex.setdefault("field_sources", {})["images"] = "manual"
+    man = dict(ex.get("manual_fields") or {}) if isinstance(ex.get("manual_fields"), dict) else {}
+    man["images"] = datetime.now(timezone.utc).isoformat()
+    ex["manual_fields"] = man
+    ex["manual_photos"] = int(ex.get("manual_photos") or 0) + len(added)
+    ok = _save_manual_extra(item_id, ex, image_url=ex["images"][0])
+    logger.info("[폰 사진 추가] item=%s 올림=%d 실패=%d 저장=%s", item_id, len(added), len(failed), ok)
+    return jsonify({"ok": ok, "added": len(added), "failed": failed, "images_count": len(ex["images"]),
+                    "error": "" if ok else "사진은 올렸지만 상품에 저장하지 못했어요."}), (200 if ok else 502)
+
+
+def _manual_options(raw) -> tuple:
+    """`[{name, values}]` 정리 → (옵션, 오류). 값은 쉼표·줄바꿈으로 나뉜 문자열이어도 된다."""
+    opts, errs = [], []
+    for o in (raw or [])[:MANUAL_OPTION_AXES + 1]:
+        if not isinstance(o, dict):
+            continue
+        name = str(o.get("name") or "").strip()[:25]
+        vals = o.get("values")
+        if isinstance(vals, str):
+            vals = re.split(r"[,，、\n]+", vals)
+        vals = list(dict.fromkeys(str(v).strip()[:30] for v in (vals or []) if str(v).strip()))
+        if not name and not vals:
+            continue
+        if not name:
+            errs.append("옵션 이름(예: 색상)이 비었어요")
+        elif not vals:
+            errs.append(f"「{name}」 값이 비었어요")
+        else:
+            opts.append({"name": name, "values": vals})
+    if len(opts) > MANUAL_OPTION_AXES:
+        errs.append(f"옵션 축은 {MANUAL_OPTION_AXES}개까지예요")
+    return opts[:MANUAL_OPTION_AXES], errs
+
+
+@bp.post("/collect/<item_id>/manual-options")
+def collect_manual_options(item_id):
+    """옵션 축·값 직접 입력 → 옵션 + SKU(조합마다 **같은 가격** — 화면에 그렇게 적는다). 「직접 수정」으로 표시."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    opts, errs = _manual_options(data.get("options"))
+    if errs or not opts:
+        return jsonify({"ok": False, "error": " · ".join(errs) or "옵션을 하나 이상 적어 주세요."}), 400
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    price_in = str(data.get("price") or "").replace(",", "").strip()
+    price = price_in or str(ex.get("price") or item.get("price") or "").strip()
+    try:
+        if float(price) <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "가격이 없어요 — 옵션 가격(모든 옵션 같음)을 적어 주세요."}), 400
+    import itertools
+    combos = list(itertools.product(*[o["values"] for o in opts]))
+    if len(combos) > MANUAL_SKU_MAX:
+        return jsonify({"ok": False, "error": f"옵션 조합이 {len(combos)}개예요 — {MANUAL_SKU_MAX}개 이하로 줄여 주세요."}), 400
+    cur = str(ex.get("currency") or item.get("currency") or "")
+    ex["options"] = opts
+    ex["skus"] = [{"spec": list(c), "price": price, "currency": cur, "source": "manual_same_price"} for c in combos]
+    ex["sku_price_note"] = "직접 입력 — 모든 옵션 같은 가격"
+    fs = ex.setdefault("field_sources", {})
+    fs["options"] = fs["sku"] = "manual"
+    man = dict(ex.get("manual_fields") or {}) if isinstance(ex.get("manual_fields"), dict) else {}
+    man["options"] = man["sku"] = datetime.now(timezone.utc).isoformat()
+    ex["manual_fields"] = man
+    if price_in:
+        ex["price"] = price_in
+    ok = _save_manual_extra(item_id, ex)
+    logger.info("[폰 옵션 입력] item=%s 축=%d 조합=%d 저장=%s", item_id, len(opts), len(combos), ok)
+    return jsonify({"ok": ok, "options": opts, "sku_count": len(combos), "price": price, "currency": cur,
+                    "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
 @bp.post("/collect/<item_id>/translate-now")
