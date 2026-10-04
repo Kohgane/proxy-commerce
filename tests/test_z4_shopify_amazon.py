@@ -92,3 +92,21 @@ def test_bulk_ui_shows_amazon_counts():
     from pathlib import Path
     h = Path("src/seller_console/templates/manual_collect.html").read_text(encoding="utf-8")
     assert 'data-role="amazon-check"' in h and "존재하지 않는 상품 ${data.amazon.not_found}" in h
+
+
+def test_taobao_mtop_probe_page_numbers_only(monkeypatch):
+    """Z3 실측 화면 — 숫자·ret만(쿠키·토큰 값 0). 네트워크는 대역."""
+    from src.collectors import taobao_mtop as T
+    monkeypatch.setattr(T, "probe", lambda q: {"input": q, "item_id": "733241700286", "how": "주소의 id=",
+                                               "log": ["1차: HTTP 200 · ret=['FAIL_SYS_TOKEN_EMPTY::令牌为空'] · 토큰 쿠키 없음",
+                                                       "2차: HTTP 200 · ret=['SUCCESS::调用成功'] · 토큰 쿠키 있음"],
+                                               "detail": {"title_len": 18, "title": "格斯潘懒人沙发", "price": "798",
+                                                          "gallery": 5, "skus": 4, "axes": 2, "values": 5}, "desc_images": 12})
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"], s["user_role"] = "owner", "admin"
+    h = c.get("/admin/diagnostics/taobao-mtop?q=https://item.taobao.com/item.htm?id=733241700286").get_data(as_text=True)
+    assert 'data-role="mtop-numbers"' in h and "갤러리 5" in h and "SKU 4" in h and "상세 이미지 12" in h
+    assert T.summarize({"data": {"item": {"title": "ab", "images": [1, 2]}, "skuBase": {"skus": [1], "props": [{"values": [1, 2]}]}}}) == \
+        {"title_len": 2, "title": "ab", "price": "", "gallery": 2, "skus": 1, "axes": 1, "values": 2}
