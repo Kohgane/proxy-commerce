@@ -819,12 +819,18 @@ class UploadDispatcher:
         from src.collectors import ko_polish as _kp
         _risk_text = " ".join([str(pd.get("title_src") or ""), str(pd.get("title") or ""),
                                str(pd.get("coupang_name") or "")]
-                              + [str(v) for o in (pd.get("options") or []) if isinstance(o, dict)
-                                 for v in (o.get("values") or [])])
+                              + [str(v) for o in ((pd.get("options") or []) + (pd.get("options_src") or []))
+                                 if isinstance(o, dict) for v in (o.get("values") or [])])
         _exp = _kp.expiry_hits(_risk_text)
         if _exp:
             holds.append({"short": "유통기한 임박·떨이 소싱 — 등록 차단", "fix": "block",
                           "line": f"「{_exp[0]}」 — 유통기한 임박·떨이 상품은 등록하지 않습니다(번역도 하지 않음)."})
+        # Y8(오너 2026-10-04): 五孔·国标插座 = 중국 표준 콘센트 — 국내 콘센트에 안 맞고 전기용품 KC 대상 → 소싱 제외(등록 차단)
+        _plug = _kp.cn_plug_hits(_risk_text)
+        if _plug:
+            holds.append({"short": f"중국 표준 콘센트({', '.join(_plug)}) — 소싱 제외", "fix": "block",
+                          "line": f"「{_plug[0]}」 — 중국 표준(国标) 콘센트·멀티탭은 국내 콘센트 규격과 달라 쓸 수 없고 "
+                                  "전기용품 KC 인증 대상이라 소싱하지 않습니다."})
         _rep = _kp.replica_hits(_risk_text)
         if _rep:
             holds.append({"short": f"상표 위험({', '.join(_rep)})", "fix": "trademark",

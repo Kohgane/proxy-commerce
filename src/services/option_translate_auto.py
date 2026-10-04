@@ -85,6 +85,13 @@ def rule_pass(extra: dict) -> dict:
     """
     changed = False
     pending: list = []
+    # Y8(오너 2026-10-04): 광고문형 옵션 값(「✅弹簧线ꙮPD65W…【7五孔+1A1C】⭐…」)은 번역 전에 **축으로 분해**(SKU 1:1 검증 통과 시만)
+    try:
+        from src.collectors import option_split as _osp
+        if _osp.apply(extra) is not None:
+            changed = True
+    except Exception as exc:
+        logger.warning("[옵션 분해] 실패(원래대로): %s", exc)
     for o in (extra.get("options") or []) if isinstance(extra.get("options"), list) else []:
         if not isinstance(o, dict):
             continue

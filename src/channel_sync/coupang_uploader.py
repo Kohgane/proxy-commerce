@@ -123,7 +123,9 @@ def with_sku_prices(product_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def prepared_input(product_data: Dict[str, Any]) -> Dict[str, Any]:
     """사전검증·등록·옵션 블록이 **같이** 지나는 입력 정리 — F48-c 선택 → F51 SKU별 판매가."""
-    return with_sku_prices(with_choices(product_data))
+    # Y8: 분해로 축이 3개를 넘으면 쿠팡 속성 3개 제한에 맞춰 3번째부터 「사양」 한 축으로(못 이으면 그대로 → 계획이 보류)
+    from src.collectors.option_split import cap_axes
+    return with_sku_prices(with_choices(cap_axes(product_data)))
 
 
 def option_form(product_data: Dict[str, Any]) -> Dict[str, Any]:
