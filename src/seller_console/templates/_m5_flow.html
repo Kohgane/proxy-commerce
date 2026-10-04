@@ -16,6 +16,15 @@
     <div class="m5-row" data-role="m5-coupang-name"><span class="m5-k">쿠팡 상품명</span>
       <span class="m5-v">{{ m5.coupang_name or "(규칙안을 만들 재료가 없어요)" }}</span></div>
     {% for w in m5.coupang_warnings %}<div class="m5-warn">{{ w }}</div>{% endfor %}
+    {# Z5 후속: 배송비 판정 — 「부피 미확인」·「요율 미설정」도 숨기지 않고 그대로. 중국발이면 발주 경로를 고른다. #}
+    {% if m5.ship_line %}<div class="m5-ship" data-role="m5-ship-line">배송비 판정: {{ m5.ship_line }}
+      {% if m5.ship_origin == 'cn' %}
+      <select class="form-select" id="m5ShipRoute" data-role="m5-ship-route" aria-label="발주 경로">
+        <option value="" {{ 'selected' if not m5.ship_route }}>계정 기본{{ ' (' ~ m5.ship_routes[m5.ship_route_default] ~ ')' if m5.ship_route_default else ' (미설정)' }}</option>
+        {% for k, label in m5.ship_routes.items() %}<option value="{{ k }}" {{ 'selected' if m5.ship_route == k }}>{{ label }}</option>{% endfor %}
+      </select>
+      <a class="small" href="/seller/settings/ship-route">계정 기본 바꾸기</a>
+      {% endif %}</div>{% endif %}
     {% if m5.sku_rows %}
     <table class="m5-sku" data-role="m5-sku">
       <thead><tr><th>옵션</th><th class="m5-num">가격</th></tr></thead>
@@ -193,6 +202,15 @@
   var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go');
   var checksEl = document.getElementById('m5Checks'), doneEl = document.getElementById('m5Done');
 
+  // Z5 후속: 발주 경로를 바꾸면 저장하고 다시 그린다(배송비 판정 줄이 그 요율로 바뀐다).
+  var shipSel = document.getElementById('m5ShipRoute');
+  if (shipSel) shipSel.addEventListener('change', async function () {
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/ship-route', {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({route: shipSel.value})});
+      if ((await r.json()).ok) location.reload();
+    } catch (e) { /* 그대로 둔다 */ }
+  });
   // Z3(c): 폰 수동 경로 — 사진(앨범 여러 장) · 옵션 직접 입력. 저장되면 다시 그린다(카드·계획이 렌더 시점 값이라).
   var photoIn = document.getElementById('m5Photos'), photoSt = document.getElementById('m5PhotoState');
   if (photoIn) photoIn.addEventListener('change', async function () {

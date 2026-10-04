@@ -2036,7 +2036,20 @@ def mobile_list_ctx(item: dict) -> dict:
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product,
-            "risks": risks}
+            "risks": risks, **_m5_ship(product)}
+
+
+def _m5_ship(product: dict) -> dict:
+    """Z5 후속: 폰 카드 「배송비 판정」 한 줄 + 중국발이면 발주 경로 고르기(상품 > 계정 설정)."""
+    try:
+        from .shipping_ratio import ROUTES, account_route, estimate, origin_of
+        est = estimate(product, _seller_id())
+        origin = origin_of(product)
+        return {"ship_line": est.get("line") or "", "ship_origin": origin, "ship_routes": ROUTES,
+                "ship_route": str(product.get("ship_route") or ""), "ship_route_default": account_route(_seller_id())}
+    except Exception as exc:
+        logger.warning("[M5] 배송비 판정 실패: %s", exc)
+        return {"ship_line": "", "ship_origin": "", "ship_routes": {}, "ship_route": "", "ship_route_default": ""}
 
 
 def coupang_preview_data(item: dict) -> dict:
@@ -3173,6 +3186,51 @@ def collect_ship_ratio_override(item_id):
     ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
     logger.warning("[배송비 비율] 그래도 등록 — item=%s by=%s · %s", item_id, rec["by"], rec["line"])
     return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
+@bp.post("/collect/<item_id>/ship-route")
+def collect_ship_route(item_id):
+    """Z5 후속: 이 상품의 중국발 발주 경로(direct=중국 현지 직접 발송 · forwarder=배대지 경유 · 빈 값=계정 설정)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    from .shipping_ratio import ROUTES
+    route = str((request.get_json(force=True, silent=True) or {}).get("route") or "")
+    if route and route not in ROUTES:
+        return jsonify({"ok": False, "error": "발주 경로는 「중국 현지 직접 발송」 또는 「배대지 경유」"}), 400
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    if route:
+        ex["ship_route"] = route
+    else:
+        ex.pop("ship_route", None)
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    return jsonify({"ok": ok, "route": route}), (200 if ok else 502)
+
+
+@bp.route("/settings/ship-route", methods=["GET", "POST"])
+def settings_ship_route():
+    """Z5 후속: 계정 기본 발주 경로(중국발) — 상품에서 따로 고르지 않으면 이 값으로 배송비 요율을 고른다."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+    from .shipping_ratio import ROUTES, account_route, save_account_route
+    msg = ""
+    if request.method == "POST":
+        try:
+            save_account_route(_seller_id(), str(request.form.get("route") or ""))
+            msg = "저장했어요."
+        except ValueError as exc:
+            msg = str(exc)
+    envs = {r: f"SHIPPING_RATE_KRW_PER_KG_CN_{r.upper()}" for r in ROUTES}
+    set_envs = {r: bool(os.getenv(n, "").strip()) for r, n in envs.items()}
+    return render_template("ship_route_settings.html", routes=ROUTES, current=account_route(_seller_id()),
+                           envs=envs, set_envs=set_envs, msg=msg,
+                           cn_generic=bool(os.getenv("SHIPPING_RATE_KRW_PER_KG_CN", "").strip()))
 
 
 @bp.post("/collect/<item_id>/translate-now")

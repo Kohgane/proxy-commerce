@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 #                        → {status, content_type, body_b64}
 #   서명은 **호출부에서 원 URL 기준으로 이미 끝난다**(쿠팡 CEA는 path+query로 서명). 릴레이는
 #   헤더·바디를 무가공 전달하므로 서명이 유효하다 — 여기서 URL을 바꾸거나 헤더를 만지면 안 된다.
-_API_RELAY_ALLOWED_HOSTS = {"api-gateway.coupang.com", "api.commerce.naver.com"}
+# Z3(2026-10-04): h5api.m.taobao.com — 타오바오 모바일 상세 API(조회만, 서울 IP 실측·서버측 수집). mkt.php와 같은 집합.
+_API_RELAY_ALLOWED_HOSTS = {"api-gateway.coupang.com", "api.commerce.naver.com", "h5api.m.taobao.com"}
 
 # IP 화이트리스트가 걸린 마켓 — 이 마켓의 요청은 **토큰 발급까지 포함해** 반드시 릴레이를 타야 한다.
 #   v87-S7 실측: 쿠팡은 릴레이로 그린이었는데 스마트스토어만 GW.IP_NOT_ALLOWED였다. 원인은 상품 API가
@@ -258,8 +259,13 @@ def _api_relay_send(method, url, headers, json_body, data, timeout):
         body = base64.b64decode(out.get("body_b64") or "").decode("utf-8", "replace")
     except Exception as exc:                                   # noqa: BLE001 — 형식 위반은 릴레이 문제
         raise RelayError("릴레이 오류: body_b64를 해석하지 못했습니다") from exc
-    return RelayResponse(int(out["status"]), body,
-                         headers={"Content-Type": out.get("content_type") or ""})
+    hdrs = {"Content-Type": out.get("content_type") or ""}
+    # Z3: 새 mkt.php는 Set-Cookie·Location을 돌려준다(옛 릴레이면 키가 없다 — 그대로 빈 값)
+    if out.get("set_cookie"):
+        hdrs["Set-Cookie"] = list(out.get("set_cookie") or [])
+    if out.get("location"):
+        hdrs["Location"] = str(out.get("location"))
+    return RelayResponse(int(out["status"]), body, headers=hdrs)
 
 
 def _relay_markets() -> set:

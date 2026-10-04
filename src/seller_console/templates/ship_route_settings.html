@@ -1,0 +1,19 @@
+{% extends "_base_app.html" %}
+{% block title %}발주 경로 기본값 — 고가브릿지{% endblock %}
+{% block content %}
+{# Z5 후속(오너 2026-10-04): 중국발 배송비 판정의 요율을 고르는 기본값. 상품에서 따로 고르면 그게 이긴다. #}
+<div class="ship-route mx-auto" data-role="ship-route-settings">
+  <h1 class="pc-h2">중국발 발주 경로 — 계정 기본값</h1>
+  <p class="text-muted">상품에서 따로 고르지 않으면 이 경로의 요율로 배송비 비율을 잽니다. 요율이 비어 있으면 판정은 건너뜁니다(막지 않음).</p>
+  <form method="post" class="vstack gap-2">
+    <label class="sr-opt"><input type="radio" name="route" value="" {{ 'checked' if not current }}> 정하지 않음</label>
+    {% for k, label in routes.items() %}
+    <label class="sr-opt" data-route="{{ k }}"><input type="radio" name="route" value="{{ k }}" {{ 'checked' if current == k }}> {{ label }}
+      <span class="small text-muted">— 요율 <code>{{ envs[k] }}</code> {{ '설정됨' if set_envs[k] else '미설정' }}</span></label>
+    {% endfor %}
+    <button class="btn btn-primary sr-save" type="submit">저장</button>
+  </form>
+  {% if msg %}<p class="mt-2" data-role="ship-route-msg">{{ msg }}</p>{% endif %}
+  <p class="small text-muted mt-3">경로별 요율이 없으면 <code>SHIPPING_RATE_KRW_PER_KG_CN</code>({{ '설정됨' if cn_generic else '미설정' }})을 씁니다. 부피 계수는 <code>SHIPPING_VOL_DIVISOR_CN_DIRECT</code>·<code>…_FORWARDER</code>(없으면 6000).</p>
+</div>
+{% endblock %}
