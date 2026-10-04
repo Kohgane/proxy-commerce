@@ -2284,7 +2284,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .cpx-cap { margin: var(--space-2) 0; font-size: .85rem; color: var(--text-muted); }
 .cpx-checks { list-style: none; padding: 0; margin: 0 0 var(--space-2); display: grid; gap: 4px; }
 .cpx-ck { font-size: .9rem; padding-left: var(--space-3); position: relative; word-break: break-word; color: var(--text); }
-.cpx-ck::before { content: ""; position: absolute; left: 0; top: .5em; width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.cpx-ck::before { content: ""; position: absolute; left: 0; top: .25em; width: 3px; height: 1em; border-radius: 2px; background: var(--border); }   /* 기하 점 대신 짧은 세로선(v40s5 결정) */
 .cpx-ck.is-ok::before { background: var(--teal); }
 .cpx-ck.is-warn::before { background: var(--warn); }
 .cpx-ck.is-bad { color: var(--danger); }
