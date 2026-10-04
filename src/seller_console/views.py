@@ -1748,8 +1748,13 @@ def collect_share():
     raw, src = _share_pick(inp)
     final_url = inp["final_url"]
     # T5: 단축어 버전 — GET(단축어)인데 v<2면 옛 단축어(판단 로직이 든 것). 안드로이드 POST는 해당 없음.
-    from .help_settings import SHORTCUT_VERSION, bump_share_version, ios_shortcut_url, record_share_arrival
-    old_shortcut = request.method == "GET" and inp["v"] < SHORTCUT_VERSION
+    from .help_settings import (SHORTCUT_VERSION, bump_share_version, ios_shortcut_link_version, ios_shortcut_url,
+                                record_share_arrival)
+    # Z2(오너 2026-10-04, 「구버전」 무한 루프): 운영 기록 — 오늘 담긴 공유 6건은 전부 `?text=`만(v 없음 → 0)으로 왔다.
+    #   iCloud 링크로 다시 깔아도 같은 단축어 → 또 「구버전」. **링크의 단축어가 실제로 더 새 버전일 때만** 띄운다:
+    #   v를 **실제로 실어 보냈고** 그 값이 오너가 적어 둔 링크 버전보다 낮을 때. 링크 버전 모름(0)이면 안 띄운다.
+    _link_v = ios_shortcut_link_version()
+    old_shortcut = (request.method == "GET" and "v" in request.args and _link_v > 0 and inp["v"] < _link_v)
     _arrival = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "method": request.method,
                 "v": inp["v"], "qlen": len(request.query_string or b""), "text_len": len(inp["text"]),
                 "clip_len": len(inp["clip"]), "keys": ",".join(sorted(request.values.keys()))[:80],
@@ -2280,16 +2285,17 @@ def guide_iphone_make():
     msg, err = "", ""
     if request.method == "POST":
         try:
-            saved = save_ios_shortcut_url(request.form.get("shortcut_url", ""))
+            saved = save_ios_shortcut_url(request.form.get("shortcut_url", ""), request.form.get("shortcut_version", ""))
             msg = "저장했어요 — 설치 화면의 버튼이 이 링크로 열립니다." if saved else "지웠어요 — 설치 화면은 「준비 중」으로 보입니다."
         except ValueError as exc:
             err = str(exc)
-    from .help_settings import share_arrivals, share_version_counts
+    from .help_settings import ios_shortcut_link_version, share_arrivals, share_version_counts
     # T5: 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`(clip이 맨 뒤 — 인코딩 없이 와도 서버가 되살린다).
     return render_template("guide_iphone_make.html",
                            share_url=f"{_share_base()}/seller/collect/share?v=2&text=",
                            share_in_url=f"{_share_base()}/seller/collect/share-in", share_base=_share_base(),
-                           shortcut_link=ios_shortcut_url(), msg=msg, err=err,
+                           shortcut_link=ios_shortcut_url(), shortcut_link_version=ios_shortcut_link_version(),
+                           msg=msg, err=err,
                            version_counts=share_version_counts(), arrivals=share_arrivals(),
                            shots=_iphone_shots(("a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3", "c4", "c5", "c6")))
 

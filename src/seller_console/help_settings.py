@@ -27,12 +27,26 @@ def ios_shortcut_url() -> str:
     return v or os.getenv("IOS_SHORTCUT_URL", "").strip()
 
 
-def save_ios_shortcut_url(url: str) -> str:
-    """빈 문자열이면 지운다(「준비 중」으로 돌아간다). 모양이 틀리면 ValueError."""
+def ios_shortcut_link_version() -> int:
+    """Z2(오너 2026-10-04): 지금 iCloud 링크에 든 단축어가 **URL에 싣는 v** — 오너가 링크와 함께 적는다. 모르면 0.
+    서버는 링크 안의 단축어를 볼 수 없다 → 이 값이 없으면 「구버전 — 다시 설치」를 띄우지 않는다(같은 링크로 무한 루프)."""
+    try:
+        return int((_st().state_get(_KEY) or {}).get("version") or 0)
+    except Exception:
+        return 0
+
+
+def save_ios_shortcut_url(url: str, version=None) -> str:
+    """빈 문자열이면 지운다(「준비 중」으로 돌아간다). 모양이 틀리면 ValueError.
+    `version` = 그 링크의 단축어가 싣는 v(비우면 「모름」 — 구버전 배너 안 띄움)."""
     u = str(url or "").strip()
     if u and not _ICLOUD_RE.match(u):
         raise ValueError("iCloud 단축어 링크(https://www.icloud.com/shortcuts/…)만 넣을 수 있어요.")
-    _st().state_set(_KEY, {"url": u})
+    try:
+        ver = int(str(version).strip()) if version not in (None, "") else 0
+    except ValueError:
+        raise ValueError("단축어 버전은 숫자만(예: 2) — 모르면 비워 두세요.")
+    _st().state_set(_KEY, {"url": u, "version": ver if u else 0})
     return u
 
 

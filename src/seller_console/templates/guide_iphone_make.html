@@ -101,7 +101,7 @@
     <div class="op-card-body small">
       <div class="fw-semibold mb-1">단축어 버전별 도착 수</div>
       {% if version_counts %}
-      {% for k, n in version_counts|dictsort %}<span class="pc-badge {{ 'pc-badge-on' if k == 'v2' else 'pc-badge-muted' }} me-1">{{ "새 단축어(v2)" if k == "v2" else ("옛 단축어" if k == "v0" else k) }} {{ n }}</span>{% endfor %}
+      {% for k, n in version_counts|dictsort %}<span class="pc-badge {{ 'pc-badge-on' if k == 'v2' else 'pc-badge-muted' }} me-1">{{ "v=2로 옴" if k == "v2" else ("v 없이 옴(text만)" if k == "v0" else k) }} {{ n }}</span>{% endfor %}
       {% else %}<span class="text-muted">아직 도착 기록이 없어요.</span>{% endif %}
     </div>
   </div>
@@ -112,6 +112,11 @@
         <label for="shortcutUrl" class="fw-semibold small">단축어 설치 링크(iCloud)</label>
         <input id="shortcutUrl" name="shortcut_url" type="url" class="form-control" value="{{ shortcut_link }}"
                placeholder="https://www.icloud.com/shortcuts/…" data-role="shortcut-input">
+        <label for="shortcutVer" class="fw-semibold small">이 링크의 단축어가 보내는 v (URL의 <code>v=</code> 숫자)</label>
+        <input id="shortcutVer" name="shortcut_version" inputmode="numeric" class="form-control" value="{{ shortcut_link_version or '' }}"
+               placeholder="모르면 비워 두기" data-role="shortcut-version">
+        <div class="small text-muted" data-role="shortcut-version-help">유저 화면의 「단축어가 구버전입니다 — 다시 설치」는 <strong>여기 적은 v보다 낮은 v를 실제로 보낸 단축어</strong>에만 떠요.
+          비워 두면 아무에게도 안 떠요(링크 속 단축어를 서버가 볼 수 없어서 — 같은 링크로 다시 깔아도 또 뜨는 루프가 있었어요).</div>
         <div class="d-flex gap-2 align-items-center flex-wrap">
           <button class="btn btn-primary btn-sm" type="submit">저장</button>
           <span class="small text-muted">비우고 저장하면 설치 화면은 「준비 중」으로 돌아가요.</span>
