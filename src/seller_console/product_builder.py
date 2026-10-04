@@ -69,6 +69,10 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         # T3: 원문 제목(상표·유통기한 어휘 판정용 — 번역·정리 전 글자에 있다)
         "title_src": str(ex.get("title") or it.get("title") or ""),
         "coupang_name": str(ex.get("coupang_name") or ""),
+        # Z5: 배송비 비율 보류를 「그래도 등록」으로 푼 기록(있으면 그 보류는 안 건다) · 치수 재료
+        "ship_ratio_override": ex.get("ship_ratio_override") or None,
+        "detail_specs": ex.get("detail_specs") if isinstance(ex.get("detail_specs"), list) else [],
+        "seller_id": seller_id,
         "coupang_name_source": "manual" if ex.get("coupang_name") else "",
         "coupang_brand_pos": str(ex.get("coupang_brand_pos") or ""),
         "price": price, "price_original": price, "currency": str(ex.get("currency") or it.get("currency") or ""),

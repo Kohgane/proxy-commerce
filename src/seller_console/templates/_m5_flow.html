@@ -309,7 +309,10 @@
              (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') +
              // X2: 번역으로 풀리는 보류엔 버튼 하나 — 이 상품을 지금 옮기고 같은 마켓으로 다시 검증한다.
              (r.hold && (r.fixes || []).indexOf('translate') >= 0
-               ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '') + '</div>';
+               ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '') +
+             // Z5: 배송비 비율 보류 옆에 「그래도 등록」 하나 — 누르면 사유를 기록하고 다시 검증한다.
+             (r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0
+               ? '<div><button type="button" class="m5-fix" data-role="m5-ship-override">그래도 등록</button></div>' : '') + '</div>';
       });
       if (d.auto_translate) {
         var at = d.auto_translate;
@@ -318,6 +321,15 @@
           : '자동 번역을 시도했지만 옮기지 못했어요 — ' + esc(at.reason || at.status) + '.') + '</div>' + h;
       }
       checksEl.innerHTML = h;
+      checksEl.querySelectorAll('[data-role="m5-ship-override"]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true; b.textContent = '기록하는 중…';
+          post('/seller/collect/' + encodeURIComponent(itemId) + '/ship-ratio-override', {}).then(function (t) {
+            if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
+            checkBtn.click();
+          });
+        });
+      });
       checksEl.querySelectorAll('[data-role="m5-translate-recheck"]').forEach(function (b) {
         b.addEventListener('click', function () {
           b.disabled = true; b.textContent = '번역하는 중…';

@@ -597,6 +597,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("상표를 뺀 상품으로 다시 확인")
     if any(h["fix"] == "price" for h in holds):
         fixes.append("편집 화면에서 판매가 직접 입력")
+    if any(h["fix"] == "ship_ratio" for h in holds):
+        fixes.append("원가·크기를 확인하거나 「그래도 등록」")
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
 
 
@@ -787,6 +789,16 @@ class UploadDispatcher:
             holds.append({"short": f"상표 확인 보류({', '.join(_ip)})", "fix": "trademark",
                           "line": f"영화·게임·애니 IP({', '.join(_ip)})가 원문 제목에 있어요 — 상품명에선 지웠고, "
                                   "정품·공식 라이선스인지 확인되기 전까지 등록을 보류합니다."})
+        # Z5(오너 2026-10-04): 추정 배송비(부피무게 × 배대지 요율)가 원가의 N%를 넘으면 보류 — 「그래도 등록」으로 푼다.
+        #   치수·무게를 못 읽은 상품은 막지 않는다(부피 미확인 — 재지 못한 것을 막지 않음).
+        if market in _KO_OPTION_MARKETS:
+            try:
+                from .shipping_ratio import hold as _ship_hold
+                _sh = _ship_hold(pd, str(pd.get("seller_id") or ""))
+            except Exception:
+                _sh = None
+            if _sh:
+                holds.append(_sh)
         if market in _KO_OPTION_MARKETS:
             n = len(unresolved_option_values(pd))
             if n:
@@ -861,7 +873,7 @@ class UploadDispatcher:
                 if _lim["full"]:
                     return PrevalidationResult(
                         market=market, ok=False, hold=True, error_code="smartstore_limit_full",
-                        message=f"보류 — 한도 {_lim['limit']:,} 도달 ({_lim['text']})",
+                        message=f"보류: 스토어 한도 — {_lim['limit']:,} 도달 ({_lim['text']}) · 다른 마켓은 그대로 진행돼요",
                         hint="스토어당 판매중·판매대기·품절 합계 1,000이 상한이에요 — 자리가 생기면 다시 사전검증해 주세요.")
 
         # 토큰/환경변수 검증

@@ -86,7 +86,7 @@ def test_full_store_is_held(monkeypatch):
     _open(monkeypatch, "chezgoga", count=1000)
     r = UploadDispatcher().prevalidate({"title": "키보드", "price": "10", "images": ["/x.png"]}, ["smartstore:chezgoga"])[0]
     assert r.hold is True and r.error_code == "smartstore_limit_full"
-    assert r.message == "보류 — 한도 1,000 도달 (셰고가 1,000/1,000)"
+    assert r.message == "보류: 스토어 한도 — 1,000 도달 (셰고가 1,000/1,000) · 다른 마켓은 그대로 진행돼요"
     assert not any(w in r.message + r.hint for w in ("삭제", "판매중지", "내리"))       # 볼트: 정리 권유 없음
 
 
@@ -124,7 +124,8 @@ def test_picker_groups_by_business_with_defaults(monkeypatch):
     assert [m["code"] for m in rows[:4]] == ["coupang:gogane", "smartstore:chezgoga", "coupang:woojoo", "smartstore:gocosmos"]
     assert [m["group_label"] for m in rows[:4]] == ["고가네", "고가네", "우주대행", "우주대행"]
     by = {m["code"]: m for m in rows}
-    assert by["coupang:gogane"]["checked"] and by["coupang:woojoo"]["checked"]                 # 쿠팡 둘 다
+    # Z5(오너 2026-10-04): 기본 체크 = 우주대행 묶음만 — 고가네 쿠팡은 손으로 켤 때만
+    assert not by["coupang:gogane"]["checked"] and by["coupang:woojoo"]["checked"]
     assert by["smartstore:gocosmos"]["checked"] and "자동 배정" in by["smartstore:gocosmos"]["note"]
     assert by["smartstore:gocosmos"]["limit_text"] == "고코스모스 778/1,000"
     assert not by["smartstore:chezgoga"]["checked"] and by["smartstore:chezgoga"]["pending"]     # 미승인 — 체크 안 함

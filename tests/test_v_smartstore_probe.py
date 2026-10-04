@@ -95,7 +95,7 @@ def test_limit_full_and_count_failure_raw(monkeypatch):
     _keys(monkeypatch, "chezgoga")
     _naver(monkeypatch, ok_stores=("chezgoga",), count=1000)
     r = UploadDispatcher().prevalidate({"title": "키보드", "price": "10", "images": ["/x.png"]}, ["smartstore:chezgoga"])[0]
-    assert r.hold is True and r.message == "보류 — 한도 1,000 도달 (셰고가 1,000/1,000)"
+    assert r.hold is True and r.message == "보류: 스토어 한도 — 1,000 도달 (셰고가 1,000/1,000) · 다른 마켓은 그대로 진행돼요"
     SR.reset_cache()
     _naver(monkeypatch, ok_stores=("chezgoga",), count=None)
     st = SR.limit_state("chezgoga")

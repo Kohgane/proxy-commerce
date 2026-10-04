@@ -1,0 +1,12 @@
+{
+ "version": "2026-10-04-Z5",
+ "note": "Z5 배송비 비율 보류 — 부피무게 = 가로×세로×높이(cm) ÷ divisor. 제목·옵션·상세에서 치수를 못 읽으면 아래 표(키워드 → 대형 기본값)로 추정, 표에도 없으면 「부피 미확인」(통과). 기본값은 **추정**이다 — 관리자 화면(/seller/admin/shipping-size)에서 고친다(재배포 없이).",
+ "divisor": 6000,
+ "size_defaults": [
+  {"label": "소파", "keywords": ["沙发", "소파", "sofa", "懒人", "빈백", "beanbag"], "dims_cm": [90, 80, 70], "weight_kg": 15},
+  {"label": "의자", "keywords": ["椅", "의자", "체어", "chair"], "dims_cm": [70, 60, 50], "weight_kg": 10},
+  {"label": "매트리스", "keywords": ["床垫", "매트리스", "mattress"], "dims_cm": [120, 50, 50], "weight_kg": 20},
+  {"label": "캐리어", "keywords": ["行李箱", "拉杆箱", "캐리어", "luggage", "suitcase"], "dims_cm": [75, 50, 30], "weight_kg": 6},
+  {"label": "유모차", "keywords": ["婴儿车", "推车", "유모차", "stroller"], "dims_cm": [85, 50, 40], "weight_kg": 9}
+ ]
+}
