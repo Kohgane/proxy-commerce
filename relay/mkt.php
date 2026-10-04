@@ -47,6 +47,7 @@ $RELAY_KEY = kgp_relay_key();
 $ALLOWED_HOSTS = [
     'api-gateway.coupang.com',
     'api.commerce.naver.com',
+    'h5api.m.taobao.com',   // Z3(2026-10-04): 타오바오 모바일 상세 API(조회만) — 서울 IP 실측·서버측 수집
 ];
 
 $TIMEOUT_SEC = 30;
@@ -121,6 +122,8 @@ $curlHeaders[] = 'Content-Length: ' . strlen($body);
 $curlHeaders[] = 'Expect:';             // curl 기본 100-continue 억제(빈 헤더로 제거)
 
 // ── 전송 ────────────────────────────────────────────────────────────────────
+$respSetCookie = [];
+$respLocation = '';
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_CUSTOMREQUEST  => $method,
@@ -130,6 +133,17 @@ curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HEADER         => false,
     CURLOPT_FOLLOWLOCATION => false,
+    // Z3(2026-10-04): 응답 헤더 중 **Set-Cookie·Location만** 돌려준다 — 타오바오 mtop은 첫 응답의
+    //   `_m_h5_tk` 쿠키로 서명한다(이게 없으면 토큰 왕복이 안 된다). 다른 헤더는 싣지 않는다.
+    CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$respSetCookie, &$respLocation) {
+        $l = trim($line);
+        if (stripos($l, 'set-cookie:') === 0) {
+            $respSetCookie[] = trim(substr($l, 11));
+        } elseif (stripos($l, 'location:') === 0) {
+            $respLocation = trim(substr($l, 9));
+        }
+        return strlen($line);
+    },
     CURLOPT_TIMEOUT        => $TIMEOUT_SEC,
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_SSL_VERIFYPEER => true,
@@ -151,4 +165,6 @@ echo json_encode([
     'status'       => $status,
     'content_type' => $ctype,
     'body_b64'     => base64_encode((string) $respBody),
+    'set_cookie'   => $respSetCookie,
+    'location'     => $respLocation,
 ], JSON_UNESCAPED_UNICODE);

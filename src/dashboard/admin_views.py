@@ -1359,14 +1359,15 @@ def diagnostics_taobao_mtop():
     from flask import request as _rq
     from src.collectors import taobao_mtop as T
     qs = [x.strip() for x in (_rq.args.get("q") or "").splitlines() if x.strip()][:5]
+    via = "relay" if _rq.args.get("via") == "relay" else "direct"
     rows = []
     for q in qs:
         try:
-            rows.append(T.probe(q))
+            rows.append(T.probe(q, via=via))
         except Exception as exc:
             rows.append({"input": q[:80], "item_id": "", "how": f"{type(exc).__name__}: {str(exc)[:120]}", "log": [],
                          "detail": None, "desc_images": None})
-    return render_template_string(_TAOBAO_MTOP_TEMPLATE, rows=rows, q="\n".join(qs))
+    return render_template_string(_TAOBAO_MTOP_TEMPLATE, rows=rows, q="\n".join(qs), via=via)
 
 
 _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -1375,9 +1376,11 @@ _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 <body class="p-3"><div class="container" style="max-width:820px" data-role="taobao-mtop">
 <h5>타오바오 모바일 상세 API — 이 서버에서 익명으로 되나</h5>
 <form method="get" class="mb-3"><textarea class="form-control form-control-sm" name="q" rows="3" placeholder="e.tb.cn 링크·상품 주소·상품번호(줄마다 하나, 최대 5)">{{ q }}</textarea>
+<div class="mt-2 small"><label class="me-3"><input type="radio" name="via" value="direct" {{ 'checked' if via != 'relay' else '' }}> 직결(이 서버 IP)</label>
+<label><input type="radio" name="via" value="relay" {{ 'checked' if via == 'relay' else '' }}> relay2(서울 IP · mkt.php 새 판 필요)</label></div>
 <button class="btn btn-sm btn-outline-secondary mt-2">실측(조회만 · 무료)</button></form>
 {% for r in rows %}<div class="border-bottom py-2 small" data-role="mtop-row" style="word-break:break-all">
-<div><strong>{{ r.input }}</strong> → 상품번호 {{ r.item_id or '없음' }} ({{ r.how }})</div>
+<div><strong>{{ r.input }}</strong> → 상품번호 {{ r.item_id or '없음' }} ({{ r.how }}) · 경로 {{ r.via or '직결' }}</div>
 {% for l in r.log %}<div class="text-muted">{{ l }}</div>{% endfor %}
 {% if r.detail %}<div data-role="mtop-numbers">제목 {{ r.detail.title_len }}자 「{{ r.detail.title }}」 · 가격 {{ r.detail.price or '—' }} · 갤러리 {{ r.detail.gallery }} · SKU {{ r.detail.skus }} · 옵션 축 {{ r.detail.axes }}/값 {{ r.detail.values }} · 상세 이미지 {{ r.desc_images if r.desc_images is not none else '—' }}</div>
 {% elif r.item_id %}<div class="text-danger">상세 응답 없음 — 위 ret 코드가 사유</div>{% endif %}</div>{% endfor %}

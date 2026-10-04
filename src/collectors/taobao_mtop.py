@@ -43,6 +43,37 @@ def item_id_from(arg: str, s=None) -> tuple:
     return (m.group(1) if m else ""), f"HTTP {r.status_code} · 최종 주소 {r.url[:80]} · 본문 {len(body)}자"
 
 
+class RelaySession:
+    """relay2(서울 IP) 경유 — mkt.php가 돌려주는 Set-Cookie로 쿠키를 손으로 들고 다닌다(`_m_h5_tk` 왕복)."""
+
+    def __init__(self):
+        self.jar = {}
+        self.cookies = self
+
+    def get(self, name, default=None):                       # requests 쿠키 jar 흉내(`s.cookies.get`)
+        return self.jar.get(name, default)
+
+    def request(self, url, params=None, timeout=20):
+        from urllib.parse import urlencode
+        from src.market_relay import _api_relay_send
+        full = url + ("?" + urlencode(params) if params else "")
+        hdrs = {"User-Agent": UA, "Referer": "https://h5.m.taobao.com/", "Accept": "*/*"}
+        if self.jar:
+            hdrs["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.jar.items())
+        r = _api_relay_send("GET", full, hdrs, None, None, timeout)
+        for c in (r.headers or {}).get("Set-Cookie") or []:
+            kv = str(c).split(";", 1)[0]
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                self.jar[k.strip()] = v.strip()
+        return r
+
+
+def _get(s, url, params, timeout=20):
+    return s.request(url, params=params, timeout=timeout) if isinstance(s, RelaySession) \
+        else s.get(url, params=params, timeout=timeout)
+
+
 def mtop(s, api: str, data: dict, v: str = "6.0") -> tuple:
     payload = json.dumps(data, separators=(",", ":"))
     log = []
@@ -53,7 +84,7 @@ def mtop(s, api: str, data: dict, v: str = "6.0") -> tuple:
         params = {"jsv": "2.7.2", "appKey": APPKEY, "t": t, "sign": sign, "api": api, "v": v,
                   "type": "json", "dataType": "json", "data": payload}
         try:
-            r = s.get(f"https://h5api.m.taobao.com/h5/{api}/{v}/", params=params, timeout=20)
+            r = _get(s, f"https://h5api.m.taobao.com/h5/{api}/{v}/", params)
         except Exception as exc:                                # noqa: BLE001
             log.append(f"{attempt}차: {type(exc).__name__}")
             return None, log
@@ -85,10 +116,12 @@ def summarize(j: dict) -> dict:
             "values": sum(len(p.get("values") or []) for p in props)}
 
 
-def probe(arg: str) -> dict:
-    s = _session()
-    iid, how = item_id_from(arg, s)
-    out = {"input": arg[:80], "item_id": iid, "how": how, "log": [], "detail": None, "desc_images": None}
+def probe(arg: str, via: str = "direct") -> dict:
+    """`via`: direct(이 서버 IP) | relay(relay2 서울 IP — mkt.php에 h5api 허용·Set-Cookie 전달이 깔려 있어야)."""
+    s = RelaySession() if via == "relay" else _session()
+    iid, how = item_id_from(arg, _session() if via == "relay" else s)   # 단축 링크는 직결로 편다(e.tb.cn은 릴레이 허용 밖)
+    out = {"input": arg[:80], "item_id": iid, "how": how, "log": [], "detail": None, "desc_images": None,
+           "via": "relay2(서울)" if via == "relay" else "직결(이 서버)"}
     if not iid:
         return out
     j, log = mtop(s, "mtop.taobao.detail.getdetail", {"itemNumId": iid})

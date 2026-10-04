@@ -97,7 +97,7 @@ def test_bulk_ui_shows_amazon_counts():
 def test_taobao_mtop_probe_page_numbers_only(monkeypatch):
     """Z3 실측 화면 — 숫자·ret만(쿠키·토큰 값 0). 네트워크는 대역."""
     from src.collectors import taobao_mtop as T
-    monkeypatch.setattr(T, "probe", lambda q: {"input": q, "item_id": "733241700286", "how": "주소의 id=",
+    monkeypatch.setattr(T, "probe", lambda q, via="direct": {"input": q, "item_id": "733241700286", "how": "주소의 id=",
                                                "log": ["1차: HTTP 200 · ret=['FAIL_SYS_TOKEN_EMPTY::令牌为空'] · 토큰 쿠키 없음",
                                                        "2차: HTTP 200 · ret=['SUCCESS::调用成功'] · 토큰 쿠키 있음"],
                                                "detail": {"title_len": 18, "title": "格斯潘懒人沙发", "price": "798",
@@ -110,3 +110,29 @@ def test_taobao_mtop_probe_page_numbers_only(monkeypatch):
     assert 'data-role="mtop-numbers"' in h and "갤러리 5" in h and "SKU 4" in h and "상세 이미지 12" in h
     assert T.summarize({"data": {"item": {"title": "ab", "images": [1, 2]}, "skuBase": {"skus": [1], "props": [{"values": [1, 2]}]}}}) == \
         {"title_len": 2, "title": "ab", "price": "", "gallery": 2, "skus": 1, "axes": 1, "values": 2}
+
+
+def test_relay_session_carries_the_h5_token_cookie(monkeypatch):
+    """Z3: relay2 경유 — mkt.php 새 판이 돌려주는 Set-Cookie(`_m_h5_tk`)를 다음 요청에 싣는다(토큰 왕복)."""
+    import src.market_relay as MR
+    from src.collectors import taobao_mtop as T
+    sent = []
+
+    def fake_send(method, url, headers, json_body, data, timeout):
+        sent.append(dict(headers))
+        if len(sent) == 1:
+            return MR.RelayResponse(200, '{"ret":["FAIL_SYS_TOKEN_EMPTY::令牌为空"]}',
+                                    headers={"Set-Cookie": ["_m_h5_tk=abc123_999; Path=/", "_m_h5_tk_enc=zz; Path=/"]})
+        return MR.RelayResponse(200, '{"ret":["SUCCESS::调用成功"],"data":{"item":{"title":"格斯潘懒人沙发","images":[1,2,3]}}}')
+    monkeypatch.setattr(MR, "_api_relay_send", fake_send)
+    j, log = T.mtop(T.RelaySession(), "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+    assert "Cookie" not in sent[0] and "_m_h5_tk=abc123_999" in sent[1]["Cookie"]
+    assert T.summarize(j)["gallery"] == 3 and "SUCCESS" in log[-1]
+
+
+def test_relay_allowlist_matches_mkt_php():
+    from pathlib import Path
+    from src.market_relay import _API_RELAY_ALLOWED_HOSTS
+    php = Path("relay/mkt.php").read_text(encoding="utf-8")
+    assert "h5api.m.taobao.com" in _API_RELAY_ALLOWED_HOSTS and "'h5api.m.taobao.com'," in php
+    assert "'set_cookie'   => $respSetCookie," in php and "CURLOPT_HEADERFUNCTION" in php
