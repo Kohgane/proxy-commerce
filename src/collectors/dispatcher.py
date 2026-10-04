@@ -64,8 +64,21 @@ class CollectorDispatcher:
             except Exception as exc:
                 logger.warning("어댑터 실패, 범용으로 폴백: %s — %s", domain, exc)
 
+        # Z4(오너 2026-10-04): 등록 어댑터가 없는 브랜드 공식몰 — `/products/<handle>`이면 Shopify JSON 먼저.
+        from .adapters.shopify_generic import NotShopify, ShopifyGenericAdapter, looks_like_shopify_product
+        if looks_like_shopify_product(url):
+            try:
+                return ShopifyGenericAdapter().fetch(url)
+            except NotShopify as exc:
+                logger.info("Shopify 아님(%s) — 범용 수집기로: %s", exc, domain)
+            except Exception as exc:
+                logger.warning("Shopify 수집 실패(%s: %s) — 범용 수집기로: %s", type(exc).__name__, exc, domain)
+
         logger.info("범용 수집기 사용: %s", domain)
-        return self.fallback.fetch(url)
+        result = self.fallback.fetch(url)
+        if not (result.title or result.images):
+            result.extraction_method = "unsupported"           # 「미지원 사이트」 — Shopify도 아니고 범용으로도 못 읽음
+        return result
 
     def _get_adapter(self, domain: str):
         """도메인에 맞는 어댑터 반환 (www. 처리 포함)."""

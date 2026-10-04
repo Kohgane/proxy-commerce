@@ -327,6 +327,8 @@ async function bulkCollect() {
     const data = await resp.json();
     if (!data.ok) { kgpInlineError('bulkResult', data, { retry: () => bulkCollect() }); return; }
     let html = `<div class="pc-status pc-status-info small mb-2">전체 ${data.total}개 · 성공 <strong>${data.success}</strong> · 실패 ${data.total - data.success}</div>`;
+    // Z4: 아마존 주소 존재 확인 — 404는 담지 않는다(AI가 만든 링크 대비). 로봇 확인 화면은 「확인 불가」(단정 안 함).
+    if (data.amazon) html += `<div class="small mb-2" data-role="amazon-check">아마존 링크: 있음 ${data.amazon.exists} · <strong>존재하지 않는 상품 ${data.amazon.not_found}</strong> · 확인 불가 ${data.amazon.unknown}</div>`;
     html += '<ul class="list-group">';
     (data.results || []).forEach(r => {
       if (r.ok) {
@@ -349,7 +351,9 @@ async function bulkCollect() {
           <span><i class="bi bi-check-circle" style="color:var(--success)"></i> ${escapeHtml(r.title)}${note}${ext}</span>
           <a href="${r.preview_url}" class="btn btn-sm btn-ghost py-0"><i class="bi bi-box-arrow-up-right"></i> 확인·등록</a></li>`;
       } else {
-        html += `<li class="list-group-item"><span class="small"><i class="bi bi-exclamation-triangle" style="color:var(--warn)"></i> ${escapeHtml(r.url)} — ${escapeHtml(kgpFriendlyError(r.error || '실패'))}</span></li>`;
+        // Z4: 404는 사람 말 그대로(친절 문구로 바꾸면 「존재하지 않는 상품」이 흐려진다)
+        const why = r.not_found ? r.error : kgpFriendlyError(r.error || '실패');
+        html += `<li class="list-group-item"${r.not_found ? ' data-role="amazon-not-found"' : ''}><span class="small"><i class="bi bi-exclamation-triangle" style="color:var(--warn)"></i> ${escapeHtml(r.url)} — ${escapeHtml(why)}</span></li>`;
       }
     });
     html += '</ul>';

@@ -386,8 +386,33 @@ def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
     source: Optional[str] = None
     warnings: list = []
 
+    # 0) Z4(오너 2026-10-04): 브랜드 공식몰(등록 수집기 없는 도메인)의 `/products/<handle>` → Shopify JSON 먼저.
+    try:
+        from src.collectors.adapters.shopify_generic import NotShopify, ShopifyGenericAdapter, looks_like_shopify_product
+        from urllib.parse import urlparse as _urlparse
+        from src.seller_console.collectors.dispatcher import DOMAIN_MAP as _DM
+        _host = (_urlparse(url).netloc or "").lower().removeprefix("www.")
+        if looks_like_shopify_product(url) and not any(_host == d or _host.endswith("." + d) for d in _DM):
+            try:
+                _sp = ShopifyGenericAdapter().fetch(url)
+                cand = _scraped_to_draft(_sp)
+                cand["skus"] = list((_sp.raw_meta or {}).get("skus") or [])
+                cand["options"] = list(_sp.options or [])
+                # 상품 JSON엔 가게 통화가 없다 — USD로 짐작하지 않는다(v42 1-1 규칙). 화면이 「통화 확인」으로 말한다.
+                cand["currency"] = ""
+                cand["price_status"] = "needs_check"
+                warnings.append("Shopify 상품 JSON엔 통화가 없어요 — 가게 통화를 확인해 주세요")
+                if _draft_is_meaningful(cand):
+                    draft, source = cand, "shopify-json"
+            except NotShopify as exc:
+                logger.info("Shopify 아님(%s) — 다음 수집기로: %s", exc, url[:80])
+    except Exception as exc:
+        logger.debug("Shopify 수집 실패: %s", exc)
+
     # 1) 도메인 dispatcher
     try:
+        if draft is not None:
+            raise StopIteration                              # Shopify JSON으로 이미 채웠다
         from src.seller_console.collectors.dispatcher import collect as dispatcher_collect
 
         result = dispatcher_collect(url)
@@ -404,6 +429,8 @@ def _collect_real_draft(url: str, translate: bool = True) -> Optional[dict]:
                 draft = cand
                 source = result.source
                 warnings = list(result.warnings or [])
+    except StopIteration:
+        pass
     except Exception as exc:
         logger.debug("dispatcher 수집 실패: %s", exc)
 
@@ -3409,7 +3436,17 @@ def collect_bulk():
     # C-F1: 판단은 **한 곳**(`collect_input`)에서만 한다 — 입구마다 제 나름대로 하면
     #   같은 공유 텍스트가 단건에선 초안이 되고 일괄에선 "실패"가 된다(오너 실측).
     from src.collectors.share_collect import collect_input
+    from src.collectors import amazon_check as _amz
+    amz = {"exists": 0, "not_found": 0, "unknown": 0}
     for block in urls:
+        # Z4(오너 2026-10-04): 아마존 주소는 **있는 상품인지 먼저** — AI가 만든 링크는 404다. 404면 담지 않는다.
+        if _amz.is_amazon(block) and _amz.asin(block):
+            _chk = _amz.check(block.strip().split()[0])
+            amz[_chk["state"]] += 1
+            if _chk["state"] == "not_found":
+                results.append({"url": block[:200], "ok": False, "not_found": True, "asin": _chk["asin"],
+                                "error": "존재하지 않는 상품(아마존 404) — 담지 않았어요"})
+                continue
         try:
             r = collect_input(block, seller_id=_seller_id(), source="bulk", translate=True)
         except Exception as exc:
@@ -3435,7 +3472,10 @@ def collect_bulk():
         })
         success += 1
 
-    return jsonify({"ok": True, "total": len(urls), "success": success, "results": results})
+    out = {"ok": True, "total": len(urls), "success": success, "results": results}
+    if sum(amz.values()):
+        out["amazon"] = amz                                   # 존재/404/확인 불가 개수(화면 요약 줄)
+    return jsonify(out)
 
 
 @bp.post("/collect/bulk-upload")
