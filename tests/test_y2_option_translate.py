@@ -94,3 +94,15 @@ def test_saved_korean_is_shown_under_each_option_row():
     html = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert "function _optKoLine(o)" in html and "data-role', 'opt-ko'" in html
     assert "addOptionRow(o.name, o.values, o.ko)" in html and "'아직(' + v + ')'" in html
+
+
+def test_desktop_title_translate_also_moves_options_and_hold_card_buttons():
+    """Y2 실측(10-04 19:24): 편집 화면 「한국어로 번역」이 제목만 갱신 — 옵션 값도 같은 버튼에서.
+    데스크톱 사전검증 보류 카드에도 「번역하고 다시 검증」(폰 M5와 같은 동작) · 배송비 비율 「그래도 등록」."""
+    from pathlib import Path
+    h = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
+    i = h.index("async function translateToKo()")
+    body = h[i:i + 2500]
+    assert "/translate-now" in body and "옵션을 한국어로 옮겼어요" in body
+    assert 'data-role="pv-translate-recheck"' in h and 'data-role="pv-ship-override"' in h
+    assert "refresh_from_store: !!window._kgpRefreshFromStore" in h
