@@ -22,6 +22,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 셀러 콘솔 인증 강제는 운영 기본 ON(SELLER_CONSOLE_AUTH 미설정 시 "1"). 단 테스트는
 # 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+# Z3-2: 이미지 번역 전 로컬 OCR 사전판정은 운영 기본 ON. 테스트는 기본 OFF — 파이프라인 계약들이 글자 없는
+#   합성 PNG를 쓰는데, RapidOCR가 깔린 환경에선 「한자 없음」으로 건너뛰어 텐센트 경로를 못 잰다(깔렸는지에 따라
+#   결과가 갈리면 안 된다). 사전판정 계약(test_z3_image_budget)은 스스로 켠다.
+os.environ.setdefault("IMAGE_OCR_PRECHECK", "0")
 # F51-b: 판매가 환율(`price.sell_fx_rates`)은 FX_USE_LIVE가 **명시적 0**일 때만 실시간을 안 본다(운영 = 실시간).
 #   테스트는 네트워크·앞 테스트의 환율 캐시에 따라 값이 바뀌면 안 되므로 0으로 고정한다.
 #   옛 `_build_fx_rates`는 미설정 = 0이었으므로 기존 경로엔 변화가 없다.

@@ -2773,17 +2773,21 @@ def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> lis
         return markets
     base = {m.get("code"): m for m in markets}
     cp_checked = bool((base.get("coupang") or {}).get("checked"))
+    # Z5(오너 2026-10-04): 기본 체크 = **우주대행 묶음**(쿠팡 우주대행 + 스마트스토어 고코스모스). 고가네 묶음은 해제 —
+    #   오너가 손으로 켤 때만. `MARKET_DEFAULT_BUSINESS`로 바꾼다(gogane|woojoo). 키·토큰이 없는 줄은 체크하지 않는다.
+    default_biz = (os.getenv("MARKET_DEFAULT_BUSINESS", "woojoo") or "woojoo").strip().lower()
     out = []
     for biz, biz_label in _BUSINESS_LABELS:
         c = cps.get(biz)
         if c and "coupang" in base:
             out.append({"code": c["code"], "label": c["label"], "connected": c["ready"],
-                        "checked": cp_checked and c["ready"], "account": c["account"], "missing": c["missing"],
+                        "checked": cp_checked and c["ready"] and biz == default_biz,
+                        "account": c["account"], "missing": c["missing"],
                         "group": biz, "group_label": biz_label, "note": "" if c["ready"] else "키 없음"})
         st = sss.get(biz)
         if st and "smartstore" in base:
             out.append({"code": st["code"], "label": st["label"], "connected": st["ready"],
-                        "checked": bool(st["assigned"] and st["approved"] and st["ready"]),
+                        "checked": bool(biz == default_biz and st["approved"] and st["ready"]),
                         "account": st["store"], "missing": [] if st["ready"] else ["스토어 키"],
                         "group": biz, "group_label": biz_label, "note": st["note"],
                         "pending": not st["approved"], "pending_head": st.get("pending_head") or "",
@@ -3120,6 +3124,30 @@ def collect_manual_options(item_id):
                     "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+@bp.post("/collect/<item_id>/ship-ratio-override")
+def collect_ship_ratio_override(item_id):
+    """Z5: 「배송비 비율 n% — 보류」를 **그래도 등록**으로 푼다(오너·그 분 모두). 누가·언제·무슨 사유였는지 남긴다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from .product_builder import build_product
+    from .shipping_ratio import estimate
+    est = estimate(build_product(item, seller_id=_seller_id()), _seller_id())
+    rec = {"at": datetime.now(timezone.utc).isoformat(), "by": str(session.get("email") or _seller_id()),
+           "line": est.get("line") or "", "ratio_pct": est.get("ratio_pct")}
+    ex["ship_ratio_override"] = rec
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    logger.warning("[배송비 비율] 그래도 등록 — item=%s by=%s · %s", item_id, rec["by"], rec["line"])
+    return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
 @bp.post("/collect/<item_id>/translate-now")
 def collect_translate_now(item_id):
     """X2: 「번역하고 다시 검증」 — 이 상품 하나를 지금 옮긴다(규칙 → 번역기, 하루 상한 안). 결과 원문 그대로."""
@@ -3161,6 +3189,15 @@ def collect_prevalidate():
         # S1(오너 2026-10-02): 등록이 보낼 **그 이미지 배열**로 재고, 마켓 관점 도달도 **여기서** 본다 —
         #   예전엔 사전검증 「통과」 뒤 등록에서야 「상세 1번째 — 우리 서버 주소」로 막혔다(R2와 같은 교훈).
         product_data, _wp, _rc = _outbound_images(dict(product_data), data.get("item_id"))
+        product_data.setdefault("seller_id", _seller_id())
+        if data.get("item_id"):
+            # Z5: 「그래도 등록」은 저장된 기록이 정본 — 화면이 렌더 때 받은 상품엔 없을 수 있다(누른 직후 재검증)
+            try:
+                _ov = (json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}).get("ship_ratio_override")
+                if _ov:
+                    product_data["ship_ratio_override"] = _ov
+            except Exception:
+                pass
         if data.get("refresh_from_store") and data.get("item_id"):
             product_data = _merge_stored_translation(product_data, str(data["item_id"]))
         with mc.seller_market_env(_seller_id(), markets):

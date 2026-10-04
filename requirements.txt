@@ -40,3 +40,9 @@ tencentcloud-sdk-python-common>=3.1.175,<4
 #   실측 설치 용량: opencv-python-headless 162MB · numpy 73MB (압축 wheel 62MB·17MB).
 opencv-python-headless>=4.10,<5
 numpy>=1.26,<3
+# Z3-2(2026-10-04): RapidOCR 의존 — rapidocr_onnxruntime 자체는 Dockerfile이 --no-deps로(비-headless cv2 회피)
+onnxruntime>=1.17,<2
+pyclipper>=1.3,<2
+Shapely>=2.0,<3
+six>=1.16
+tqdm>=4.60

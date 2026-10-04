@@ -179,6 +179,33 @@ def failure_breakdown(since) -> list:
         return [(r[0], int(r[1]), is_no_text(r[0])) for r in cur.fetchall()]
 
 
+def labeled_pages(limit: int = 60) -> list:
+    """Z3-2: 텐센트가 이미 판정한 장 — `[(user_id, item_id, kind, idx, has_text)]`.
+    done = 글자 있었음(번역됨) · 「그릴 줄 없음/无文本」 = 글자 없었음. 로컬 OCR 정확도를 **운영 라벨로** 재는 재료."""
+    out = []
+    if not _enabled():
+        with _LOCK:
+            for r in _MEM_Q:
+                reason = str(r.get("reason") or "")
+                if "로컬 판정" in reason:
+                    continue
+                if r["status"] == "done":
+                    out.append((r["user_id"], r["item_id"], r["kind"], int(r["idx"]), True))
+                elif is_no_text(reason) or "글자 없는 사진" in reason:
+                    out.append((r["user_id"], r["item_id"], r["kind"], int(r["idx"]), False))
+        return out[:limit]
+    with pg.query() as cur:
+        cur.execute("SELECT user_id, item_id, kind, idx, status, coalesce(reason,'') FROM image_translate_queue "
+                    "WHERE status='done' OR reason LIKE %s OR reason LIKE %s OR reason LIKE %s "
+                    "ORDER BY finished_at DESC NULLS LAST LIMIT %s",
+                    ("%그릴 줄이 없습니다%", "%无文本%", "%글자 없는 사진%", int(limit)))
+        for uid, iid, kind, idx, st, reason in cur.fetchall():
+            if "로컬 판정" in reason:
+                continue                                   # 우리 판정으로 건너뛴 장은 라벨이 아니다(순환)
+            out.append((uid, iid, kind, int(idx), st == "done"))
+    return out
+
+
 # ── 전역 작은 상태 ────────────────────────────────────────────────────────────
 
 def state_get(key: str) -> dict:

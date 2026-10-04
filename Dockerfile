@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 # Install dependencies first (layer cache)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Z3-2(2026-10-04): 무료 로컬 OCR(RapidOCR — 이미지 번역 전 「한자 있나」 판정). **--no-deps**로 넣는다:
+#   패키지 메타가 비-headless `opencv-python`을 끌어오는데, 그게 headless cv2를 덮으면 서버에 libGL이 없어
+#   `import cv2`가 죽는다(위 F43 주석). 나머지 의존(onnxruntime·pyclipper·Shapely·six·tqdm)은 requirements에 명시.
+RUN pip install --no-cache-dir --no-deps rapidocr_onnxruntime==1.4.4
 
 # Copy application source
 COPY src/ ./src/

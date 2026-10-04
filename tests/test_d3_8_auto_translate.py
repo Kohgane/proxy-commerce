@@ -152,17 +152,22 @@ def test_failures_count_toward_the_cap(monkeypatch, auto):
 # ④ 실패 20장 → 일시정지 → 재개
 def test_twenty_failures_pause_until_owner_resumes(monkeypatch, auto):
     A, q, calls = auto
-    calls["fail_urls"].update({f"https://img.alicdn.com/g{i}.jpg" for i in range(25)})
+    # Z3-2: 건당 상한 16장(대표1+갤러리5+상세10) — 20장 실패를 만들려면 상품 둘(16+16=32장)
+    calls["fail_urls"].update({f"https://img.alicdn.com/g{i}.jpg" for i in range(6)}
+                              | {f"https://img.alicdn.com/d{i}.jpg" for i in range(10)})
     seller = "u-d38-pause"
     c = _client(monkeypatch, seller)
-    iid = _draft(c, gallery=25, detail=0)
+    iid = _draft(c, gallery=6, detail=10)
+    iid2 = _draft(c, url=TB.replace("id=", "id=9"), gallery=6, detail=10)
     st = c.get(f"/seller/image-translate/auto?item={iid}").get_json()
     assert st["paused"] is True and st["failed_since_resume"] == 20 and "20장" in st["pause_reason"]
-    assert q.counts(iid)["queued"] == 5 and calls["tc"] == 20                     # 20장에서 멈췄다
+    left = q.counts(iid)["queued"] + q.counts(iid2)["queued"]
+    assert left == 12 and calls["tc"] == 20                                        # 20장에서 멈췄다
     calls["fail_urls"].clear()
     r = c.post("/seller/image-translate/auto/resume").get_json()
     assert r["ok"] and r["paused"] is False
-    assert q.counts(iid)["done"] == 5 and q.counts(iid)["queued"] == 0
+    assert q.counts(iid)["queued"] + q.counts(iid2)["queued"] == 0
+    assert q.counts(iid)["done"] + q.counts(iid2)["done"] == 12
 
 
 # ⑤ 토글 · 설정 화면
