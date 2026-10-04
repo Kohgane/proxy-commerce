@@ -105,4 +105,4 @@ def test_desktop_title_translate_also_moves_options_and_hold_card_buttons():
     body = h[i:i + 2500]
     assert "/translate-now" in body and "옵션을 한국어로 옮겼어요" in body
     assert 'data-role="pv-translate-recheck"' in h and 'data-role="pv-ship-override"' in h
-    assert "refresh_from_store: !!window._kgpRefreshFromStore" in h
+    assert "refresh_from_store: !!window._kgpRefreshFromStore" in h and 'data-role="pv-only-holds"' in h

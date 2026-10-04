@@ -2153,7 +2153,10 @@ function renderPrevalidateResults(results) {
   html += '</div>';
 
   if (_validatedMarkets.length === 0) {
-    html += '<div class="pc-status pc-status-warning">통과한 마켓이 없습니다. 설정을 확인하세요.</div>';
+    // Y2 후속: 보류만 남았으면 「설정 확인」이 아니라 위 버튼으로 풀 수 있다고 말한다.
+    html += results.some(r => r.hold)
+      ? '<div class="pc-status pc-status-warning" data-role="pv-only-holds">통과한 마켓이 아직 없어요 — 위 보류는 버튼(번역하고 다시 검증 · 그래도 등록)이나 보강으로 풀 수 있어요.</div>'
+      : '<div class="pc-status pc-status-warning">통과한 마켓이 없습니다. 설정을 확인하세요.</div>';
     document.getElementById('btnConfirmUpload').disabled = true;
   } else {
     document.getElementById('btnConfirmUpload').disabled = false;
