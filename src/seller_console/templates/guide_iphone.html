@@ -1,5 +1,5 @@
 {% extends "_base_app.html" %}
-{% block title %}{{ "아이폰으로 상품 담기" if screen == "install" else "상품 담는 법" }} — 고가브릿지{% endblock %}
+{% block title %}{{ "아이폰으로 상품 담기" if screen == "install" else ("폰에서 사진·옵션 넣기" if screen == "photos" else "상품 담는 법") }} — 고가브릿지{% endblock %}
 {% block content %}
 {# M3-iOS 보충(오너 2026-09-28) — 문구는 오너 원문 그대로. 유저는 폰·컴퓨터에 익숙하지 않다:
    한 화면에 한 동작 · 캡처 1장씩 · 전문용어 0. 로그인 없이 본다(설치 전에 보는 화면).
@@ -22,6 +22,7 @@
   <nav class="ig-tabs" aria-label="안내 단계">
     <a href="/seller/guide/iphone" class="ig-tab {{ 'is-on' if screen == 'install' }}">처음 한 번 설정</a>
     <a href="/seller/guide/iphone/use" class="ig-tab {{ 'is-on' if screen == 'use' }}">상품 담는 법</a>
+    <a href="/seller/guide/iphone/photos" class="ig-tab {{ 'is-on' if screen == 'photos' }}">사진·옵션 넣기</a>
   </nav>
 
   {% if screen == "install" %}
@@ -67,6 +68,23 @@
     </ul>
   </section>
 
+  {% elif screen == "photos" %}
+  {# 화면 D(Z3, 오너 2026-10-04): PC 없는 유저 — 사진·옵션을 폰에서 직접. 타오바오 앱 화면 이름은 오너 실기기 캡처로 확정한다. #}
+  <h1 class="ig-title">폰에서 사진·옵션 넣기</h1>
+  <p class="ig-note" data-role="photos-why">사진과 옵션은 PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 이렇게 넣으면 등록까지 됩니다.</p>
+  <section class="ig-step" data-role="step-d1">
+    <div class="ig-num">1</div>
+    <div class="ig-body"><p>타오바오 앱 상품 화면에서 사진을 눌러 크게 연 뒤, 사진을 길게 누르고 「保存图片(이미지 저장)」을 누릅니다. 올릴 사진마다 반복합니다. <span class="ig-verify" data-role="unverified">(캡처 참고)</span></p>{{ shot("d1") }}</div>
+  </section>
+  <section class="ig-step" data-role="step-d2">
+    <div class="ig-num">2</div>
+    <div class="ig-body"><p>「담았어요」 화면(또는 목록에서 그 상품)의 「사진 추가」를 누르고, 앨범에서 저장한 사진을 여러 장 고릅니다.</p>{{ shot("d2") }}</div>
+  </section>
+  <section class="ig-step" data-role="step-d3">
+    <div class="ig-num">3</div>
+    <div class="ig-body"><p>「옵션 직접 입력」에 옵션 이름(예: 색상)과 값(쉼표로: 블랙, 화이트)을 적고 「옵션 저장」 → 「등록으로」를 누릅니다.</p>
+      <p>→ 지금은 모든 옵션이 한 가격으로 올라가요(옵션별로 다른 가격은 아직 못 넣어요).</p>{{ shot("d3") }}</div>
+  </section>
   {% else %}
   <h1 class="ig-title">상품 담는 법</h1>
   <section class="ig-step" data-role="step-b1">
@@ -82,7 +100,7 @@
     <div class="ig-body">
       <p>나오는 목록을 옆으로 밀어 「고가브릿지수집」을 누릅니다. <span class="ig-verify" data-role="unverified">(캡처 참고)</span></p>
       <p>→ 사파리가 열리고 「담았어요」 화면이 나오면 성공입니다. 제목과 가격이 보입니다.</p>
-      <p>→ 사진이 없거나 1장뿐인 건 정상입니다. 컴퓨터에서 고가수집기를 켜면 나머지 사진과 옵션이 자동으로 채워집니다.</p>
+      <p>→ 사진이 없거나 1장뿐인 건 정상입니다. 나머지 사진과 옵션은 PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 <a href="/seller/guide/iphone/photos">폰에서 사진·옵션 넣기</a>를 보세요.</p>
       {{ shot("b3") }}
     </div>
   </section>

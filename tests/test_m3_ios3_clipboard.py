@@ -44,7 +44,8 @@ def test_empty_input_names_who_did_not_hand_it_over(client, src, route, why):
 def test_old_shortcut_without_src_is_routed_by_server_and_told_to_reinstall(client):
     """T5(2026-09-30-H): 경로는 **서버가 정한다** — src 없는 옛 단축어도 「공유 시트」로 보이고, 재설치 안내가 뜬다."""
     h = client.get("/seller/collect/share?text=" + quote("新中式")).get_data(as_text=True)
-    assert "경로: 공유 시트" in h and "「新中式」" in h and 'data-role="share-oldver"' in h
+    # Z2(2026-10-04): v를 안 실은 단축어엔 재설치 안내를 안 띄운다(같은 링크로 다시 깔아도 또 뜨던 루프)
+    assert "경로: 공유 시트" in h and "「新中式」" in h and 'data-role="share-oldver"' not in h
 
 
 def test_parts_log_has_lengths_and_scrubbed_previews(client, caplog):

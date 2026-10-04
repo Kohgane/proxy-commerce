@@ -1335,6 +1335,49 @@ _NAVER_ORDERS_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <a href="/admin/diagnostics#workers-status">← 진단으로</a></div></body></html>"""
 
 
+@admin_panel_bp.get("/diagnostics/coupang-sign")
+def diagnostics_coupang_sign():
+    """Z1(오너 2026-10-04, 우주대행 401 Invalid signature): **같은 읽기 요청**(반품지 목록 GET)을 계정마다 그 계정
+    키로 보내 상태·서명문(시크릿 없음)·키 이름·응답 원문을 나란히. 한 계정만 401이면 그 계정 키 쌍 문제다."""
+    from src.pipeline.coupang_replicate import COUPANG_ACCOUNTS, _account_creds, account_cred_problem, coupang_key_source
+    from src.seller_console.coupang_shipping_lookup import RETURN_CENTERS_PATH
+    from src.uploaders.coupang_uploader import CoupangUploader
+    rows = []
+    for acct, meta in COUPANG_ACCOUNTS.items():
+        ks = coupang_key_source(acct)
+        a, sk, vid = _account_creds(acct)
+        row = {"account": acct, "label": meta["label"], "ks": ks, "status": None, "message": "", "raw": ""}
+        if not (a and sk):
+            row["raw"] = ("서명 전에 막음 — " + account_cred_problem(acct)) if account_cred_problem(acct) else "키 없음 — 부르지 않았어요"
+            rows.append(row)
+            continue
+        try:
+            up = CoupangUploader(access_key=a, secret_key=sk, vendor_id=vid, account=acct)
+            res = up._api_request("GET", RETURN_CENTERS_PATH.format(vendor_id=vid))
+            ls = getattr(up, "last_sign", {}) or {}
+            row["status"], row["message"] = ls.get("status"), ls.get("message", "")
+            row["raw"] = str(res.get("error"))[:600] if isinstance(res, dict) and res.get("error") else "OK — 응답 받음"
+        except Exception as exc:
+            row["raw"] = f"{type(exc).__name__}: {str(exc)[:300]}"
+        rows.append(row)
+    return render_template_string(_COUPANG_SIGN_TEMPLATE, rows=rows)
+
+
+_COUPANG_SIGN_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>쿠팡 서명 비교</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px" data-role="coupang-sign">
+<h5>쿠팡 서명 — 계정별 같은 요청(반품지 목록 GET)</h5>
+<p class="small text-muted">키 값은 싣지 않아요(액세스 키 끝 4자·시크릿 길이만). 서명문 = 시각 + 메서드 + 경로(+쿼리)이고 시크릿은 들어가지 않아요.</p>
+{% for r in rows %}<div class="border-bottom py-2" data-role="coupang-sign-row" data-account="{{ r.account }}">
+<div class="d-flex flex-wrap gap-2"><strong>{{ r.label }}</strong><span class="text-muted small">{{ r.ks.vendor_id }}</span>
+{% if r.status %}<span class="badge {{ 'bg-success' if r.status < 400 else 'bg-danger' }} ms-auto">HTTP {{ r.status }}</span>{% endif %}</div>
+<div class="small" style="word-break:break-all">액세스 <code>{{ r.ks.access_env or '없음' }}</code> {{ r.ks.access_tail }} · 시크릿 <code>{{ r.ks.secret_env or '없음' }}</code> {{ r.ks.secret_len }}자 · 업체코드 <code>{{ r.ks.vendor_env }}</code></div>
+{% if r.message %}<div class="small" style="word-break:break-all">서명문 <code>{{ r.message }}</code></div>{% endif %}
+<div class="small" style="word-break:break-word"><code>{{ r.raw }}</code></div></div>{% endfor %}
+<a href="/admin/diagnostics#account-keys">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.get("/diagnostics/coupang-meta")
 def diagnostics_coupang_meta():
     """X1(오너 2026-10-04): 같은 상품명·같은 카테고리를 **계정마다** 쿠팡에 물어 원문을 나란히.
@@ -2952,7 +2995,7 @@ _DIAGNOSTICS_TEMPLATE = """
             <span class="badge {{ 'bg-success' if c.ready else 'bg-danger' }}">{{ '키 있음' if c.ready else '키 없음' }}</span>
             <span class="ms-auto small text-nowrap">업체코드 {{ c.vendor_id or '—' }}</span>
           </div>
-          <div class="small mt-1">키 출처 = <strong>{{ c.key_source }}</strong>{% if c.key_env %} <code>{{ c.key_env }}</code>{% endif %} · 배송지 <code>{{ c.ship_source }}</code></div>
+          <div class="small mt-1" style="word-break:break-all">키 출처 = <strong>{{ c.key_source }}</strong> · 액세스 <code>{{ c.access_env or '없음' }}</code> {{ c.access_tail }} · 시크릿 <code>{{ c.secret_env or '없음' }}</code>{% if c.secret_len %} {{ c.secret_len }}자{% endif %} · 업체코드 <code>{{ c.vendor_env or '없음' }}</code> · 배송지 <code>{{ c.ship_source }}</code>{% if c.blocked %} <span class="badge bg-danger">서명 전 차단</span>{% endif %}</div>
           {% if c.note %}<div class="small mt-1 text-danger" style="word-break:break-word">⚠ {{ c.note }}</div>{% endif %}
         </div>
         {% endfor %}
@@ -2965,7 +3008,7 @@ _DIAGNOSTICS_TEMPLATE = """
           <div class="small mt-1" style="word-break:break-word">{{ n.note }} · 자기 키 이름 <code>{{ n.own_env }}</code></div>
         </div>
         {% endfor %}
-        <div class="small mt-2">카테고리 메타 계정별 비교: <a href="/admin/diagnostics/coupang-meta">상품명·카테고리로 물어보기</a></div>
+        <div class="small mt-2">계정별 비교: <a href="/admin/diagnostics/coupang-sign">같은 요청 서명 비교(반품지 목록)</a> · <a href="/admin/diagnostics/coupang-meta">카테고리 메타(상품명·카테고리)</a></div>
         {% if account_keys.error %}<div class="small text-danger">확인 실패: <code>{{ account_keys.error }}</code></div>{% endif %}
       </div>
     </div>

@@ -539,7 +539,8 @@ class PrevalidationResult:
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
 _KO_OPTION_MARKETS = ("coupang", "smartstore", "elevenst")
-PC_ENRICH_LINE = "PC 확장에서 보강 필요 — 컴퓨터에서 고가수집기를 켜면 자동으로 채워집니다."
+PC_ENRICH_LINE = ("PC 확장에서 보강 필요 — PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. "
+                  "폰만 쓰면 담은 화면의 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.")
 
 
 def outbound_foreign_fields(pd: Dict[str, Any]) -> List[tuple]:

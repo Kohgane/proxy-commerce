@@ -1511,6 +1511,18 @@ class CoupangUploader(BaseUploader):
         ).hexdigest()
         return signature
 
+    def _key_names_hint(self) -> str:
+        """Z1: 401일 때 **어느 이름의 키로 서명했는지**(값 없음) — 「키 쌍은 맞는데 왜」를 바로 가른다."""
+        if not getattr(self, 'account', None):
+            return ' (서명 키 = 무접두 COUPANG_ACCESS_KEY · COUPANG_SECRET_KEY)'
+        try:
+            from src.pipeline.coupang_replicate import coupang_key_source
+            ks = coupang_key_source(self.account)
+            return (f" (서명 키 = {ks['access_env'] or '?'} {ks['access_tail']} · {ks['secret_env'] or '?'} "
+                    f"{ks['secret_len']}자 — 같은 쌍인지 Wing 「API 키」와 대조)")
+        except Exception:
+            return ''
+
     def _api_request(self, method: str, path: str, data: dict = None) -> dict:
         """Coupang Wing API에 요청을 전송한다.
 
@@ -1522,10 +1534,25 @@ class CoupangUploader(BaseUploader):
         · 5xx=원문 실어 반환. 조립 헬퍼는 `BaseUploader` 단일 소스(재구현 금지).
         """
         if not self.access_key or not self.secret_key:
-            return {'error': 'Missing Coupang API credentials'}
+            # Z1: 계정 키를 서명 전에 막았으면(두 이름 다른 값·섞인 쌍·깨진 값) 그 사유를 그대로.
+            why = ''
+            if getattr(self, 'account', None):
+                try:
+                    from src.pipeline.coupang_replicate import account_cred_problem
+                    why = account_cred_problem(self.account)
+                except Exception:
+                    why = ''
+            return {'error': f'쿠팡 키 사용 안 함 — {why}' if why else 'Missing Coupang API credentials'}
         url = self.API_BASE + path
         date = datetime.now(timezone.utc).strftime('%y%m%dT%H%M%SZ')
         signature = self._generate_hmac_signature(method, path, date)
+        # Z1(오너 2026-10-04): 서명한 문장(시크릿 없음)과 액세스 키 끝 4자 — 고가네·우주대행 같은 요청을 나란히 비교.
+        self.last_sign = {'account': getattr(self, 'account', None) or '', 'vendor_id': str(self.vendor_id or ''),
+                          'access_tail': f'…{str(self.access_key)[-4:]} ({len(str(self.access_key))}자)',
+                          'secret_len': len(str(self.secret_key)),
+                          'message': date + method + path.replace('?', '', 1), 'status': None}
+        logger.info('쿠팡 서명 — 계정=%s 업체=%s 액세스=%s 서명문=%r', self.last_sign['account'] or '무접두',
+                    self.last_sign['vendor_id'], self.last_sign['access_tail'], self.last_sign['message'])
         auth_header = (
             f'CEA algorithm=HmacSHA256, access-key={self.access_key}, '
             f'signed-date={date}, signature={signature}'
@@ -1551,6 +1578,7 @@ class CoupangUploader(BaseUploader):
                 _kw = ({'data': body} if isinstance(body, (bytes, bytearray)) else {'json': body})
                 resp = relay_request(method, url, headers=headers, timeout=30,
                                      market="coupang", key=str(self.vendor_id or ""), **_kw)
+                self.last_sign['status'] = resp.status_code
                 if resp.status_code == 429:
                     last = self._fail_detail(stage, attempt + 1, status=429,
                                              body=self._resp_body(resp))
@@ -1560,8 +1588,9 @@ class CoupangUploader(BaseUploader):
                 if resp.status_code == 401:
                     last = self._fail_detail(stage, attempt + 1, status=401,
                                              body=self._resp_body(resp))
-                    logger.error('쿠팡 인증 실패 — %s', last)
-                    return {'error': f'쿠팡 인증 실패 — {last}'}
+                    logger.error('쿠팡 인증 실패 — %s · 서명문=%r · 액세스=%s', last,
+                                 self.last_sign['message'], self.last_sign['access_tail'])
+                    return {'error': f'쿠팡 인증 실패 — {last}{self._key_names_hint()}'}
                 if resp.status_code >= 500:
                     last = self._fail_detail(stage, attempt + 1, status=resp.status_code,
                                              body=self._resp_body(resp))

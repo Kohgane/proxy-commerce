@@ -1748,8 +1748,13 @@ def collect_share():
     raw, src = _share_pick(inp)
     final_url = inp["final_url"]
     # T5: 단축어 버전 — GET(단축어)인데 v<2면 옛 단축어(판단 로직이 든 것). 안드로이드 POST는 해당 없음.
-    from .help_settings import SHORTCUT_VERSION, bump_share_version, ios_shortcut_url, record_share_arrival
-    old_shortcut = request.method == "GET" and inp["v"] < SHORTCUT_VERSION
+    from .help_settings import (SHORTCUT_VERSION, bump_share_version, ios_shortcut_link_version, ios_shortcut_url,
+                                record_share_arrival)
+    # Z2(오너 2026-10-04, 「구버전」 무한 루프): 운영 기록 — 오늘 담긴 공유 6건은 전부 `?text=`만(v 없음 → 0)으로 왔다.
+    #   iCloud 링크로 다시 깔아도 같은 단축어 → 또 「구버전」. **링크의 단축어가 실제로 더 새 버전일 때만** 띄운다:
+    #   v를 **실제로 실어 보냈고** 그 값이 오너가 적어 둔 링크 버전보다 낮을 때. 링크 버전 모름(0)이면 안 띄운다.
+    _link_v = ios_shortcut_link_version()
+    old_shortcut = (request.method == "GET" and "v" in request.args and _link_v > 0 and inp["v"] < _link_v)
     _arrival = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "method": request.method,
                 "v": inp["v"], "qlen": len(request.query_string or b""), "text_len": len(inp["text"]),
                 "clip_len": len(inp["clip"]), "keys": ",".join(sorted(request.values.keys()))[:80],
@@ -2225,6 +2230,13 @@ def guide_iphone_use():
                            shortcut_link="", host=_share_base().split("://", 1)[-1])
 
 
+@bp.get("/guide/iphone/photos")
+def guide_iphone_photos():
+    """화면 D(Z3, 오너 2026-10-04) — 「폰에서 사진·옵션 넣기」(공개). PC가 없는 유저가 등록까지 가는 수동 경로."""
+    return render_template("guide_iphone.html", screen="photos", shots=_iphone_shots(("d1", "d2", "d3")),
+                           shortcut_link="", host=_share_base().split("://", 1)[-1])
+
+
 @bp.route("/admin/ko-polish", methods=["GET", "POST"])
 def admin_ko_polish():
     """T1(오너 2026-09-30-H) — 번역 정리 규칙표(판촉어 삭제·용어 치환·표시광고 금칙) — **재배포 없이** 고친다.
@@ -2273,16 +2285,17 @@ def guide_iphone_make():
     msg, err = "", ""
     if request.method == "POST":
         try:
-            saved = save_ios_shortcut_url(request.form.get("shortcut_url", ""))
+            saved = save_ios_shortcut_url(request.form.get("shortcut_url", ""), request.form.get("shortcut_version", ""))
             msg = "저장했어요 — 설치 화면의 버튼이 이 링크로 열립니다." if saved else "지웠어요 — 설치 화면은 「준비 중」으로 보입니다."
         except ValueError as exc:
             err = str(exc)
-    from .help_settings import share_arrivals, share_version_counts
+    from .help_settings import ios_shortcut_link_version, share_arrivals, share_version_counts
     # T5: 동작 셋 — `v=2&text=[단축어 입력]&clip=[클립보드]`(clip이 맨 뒤 — 인코딩 없이 와도 서버가 되살린다).
     return render_template("guide_iphone_make.html",
                            share_url=f"{_share_base()}/seller/collect/share?v=2&text=",
                            share_in_url=f"{_share_base()}/seller/collect/share-in", share_base=_share_base(),
-                           shortcut_link=ios_shortcut_url(), msg=msg, err=err,
+                           shortcut_link=ios_shortcut_url(), shortcut_link_version=ios_shortcut_link_version(),
+                           msg=msg, err=err,
                            version_counts=share_version_counts(), arrivals=share_arrivals(),
                            shots=_iphone_shots(("a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3", "c4", "c5", "c6")))
 
@@ -2943,6 +2956,168 @@ def _merge_stored_translation(product_data: dict, item_id: str) -> dict:
     if ex.get("title_ko"):
         out["title_ko"] = ex["title_ko"]
     return out
+
+
+# ── Z3(c)(오너 2026-10-04): 폰만 쓰는 유저의 최후 경로 — 사진·옵션을 폰에서 직접 넣는다 ─────────────
+#   PC 확장이 없으면 사진·옵션이 영영 빈칸이라 등록이 안 됐다. 타오바오 앱에서 사진을 길게 눌러 저장 → 앨범에서 올린다.
+#   올린 사진·적은 옵션은 「직접 수정」으로 적어 둔다 — 뒤에 보강이 돌아도 덮지 않는다(source_merge 규칙).
+MANUAL_PHOTO_MAX = 20                       # 한 번에 올릴 장 수
+MANUAL_PHOTO_BYTES = 10 * 1024 * 1024       # 한 장 크기
+MANUAL_OPTION_AXES = 3
+MANUAL_SKU_MAX = 60
+
+
+def _save_manual_extra(item_id: str, ex: dict, **row) -> bool:
+    from . import collect_history_store as _chs
+    from src.collectors.collect_status import still_uncollected as _stu
+    if "uncollected" in ex:
+        ex["uncollected"] = _stu(ex)
+    return bool(_chs.update(item_id, seller_ids=_seller_identities(),
+                            extra_json=json.dumps(ex, ensure_ascii=False), **row))
+
+
+@bp.post("/collect/<item_id>/manual-photos")
+def collect_manual_photos(item_id):
+    """앨범에서 고른 사진 여러 장 → Cloudinary → 이 상품 갤러리 끝에. 실패한 장은 사유 그대로(가짜 성공 0)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    files = [f for f in request.files.getlist("photos") if f and f.filename]
+    if not files:
+        return jsonify({"ok": False, "error": "올릴 사진을 골라 주세요."}), 400
+    if len(files) > MANUAL_PHOTO_MAX:
+        return jsonify({"ok": False, "error": f"한 번에 {MANUAL_PHOTO_MAX}장까지 올릴 수 있어요(고른 장 {len(files)})."}), 400
+    from src.media.image_pipeline import upload_bytes
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    added, failed = [], []
+    for i, f in enumerate(files, 1):
+        raw = f.read()
+        if not raw:
+            failed.append(f"{i}번째: 빈 파일")
+            continue
+        if len(raw) > MANUAL_PHOTO_BYTES:
+            failed.append(f"{i}번째: {len(raw) // 1024 // 1024}MB — 10MB 이하만")
+            continue
+        if not (str(f.mimetype or "").startswith("image/") or raw[:4] in (b"\xff\xd8\xff\xe0", b"\xff\xd8\xff\xe1", b"\x89PNG")
+                or raw[:3] == b"\xff\xd8\xff"):
+            failed.append(f"{i}번째: 사진 파일이 아니에요({f.mimetype or '형식 모름'})")
+            continue
+        try:
+            up = upload_bytes(raw, folder="manual")
+        except Exception as exc:                          # noqa: BLE001
+            up = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        if up.get("ok") and up.get("secure_url"):
+            added.append(up["secure_url"])
+        else:
+            failed.append(f"{i}번째: 올리지 못했어요 — {up.get('error') or '주소를 못 받음'}")
+    if not added:
+        return jsonify({"ok": False, "error": "한 장도 올리지 못했어요.", "failed": failed}), 502
+    imgs = [u for u in (ex.get("images") or []) if isinstance(u, str) and u]
+    ex["images"] = imgs + [u for u in added if u not in imgs]
+    ex.setdefault("field_sources", {})["images"] = "manual"
+    man = dict(ex.get("manual_fields") or {}) if isinstance(ex.get("manual_fields"), dict) else {}
+    man["images"] = datetime.now(timezone.utc).isoformat()
+    ex["manual_fields"] = man
+    ex["manual_photos"] = int(ex.get("manual_photos") or 0) + len(added)
+    ok = _save_manual_extra(item_id, ex, image_url=ex["images"][0])
+    logger.info("[폰 사진 추가] item=%s 올림=%d 실패=%d 저장=%s", item_id, len(added), len(failed), ok)
+    return jsonify({"ok": ok, "added": len(added), "failed": failed, "images_count": len(ex["images"]),
+                    "error": "" if ok else "사진은 올렸지만 상품에 저장하지 못했어요."}), (200 if ok else 502)
+
+
+def _manual_options(raw) -> tuple:
+    """`[{name, values}]` 정리 → (옵션, 오류). 값은 쉼표·줄바꿈으로 나뉜 문자열이어도 된다."""
+    opts, errs = [], []
+    for o in (raw or [])[:MANUAL_OPTION_AXES + 1]:
+        if not isinstance(o, dict):
+            continue
+        name = str(o.get("name") or "").strip()[:25]
+        vals = o.get("values")
+        if isinstance(vals, str):
+            vals = re.split(r"[,，、\n]+", vals)
+        vals = list(dict.fromkeys(str(v).strip()[:30] for v in (vals or []) if str(v).strip()))
+        if not name and not vals:
+            continue
+        if not name:
+            errs.append("옵션 이름(예: 색상)이 비었어요")
+        elif not vals:
+            errs.append(f"「{name}」 값이 비었어요")
+        else:
+            opts.append({"name": name, "values": vals})
+    if len(opts) > MANUAL_OPTION_AXES:
+        errs.append(f"옵션 축은 {MANUAL_OPTION_AXES}개까지예요")
+    return opts[:MANUAL_OPTION_AXES], errs
+
+
+def _manual_title(ex: dict, title: str) -> None:
+    from src.collectors import ko_polish as _kp
+    if _kp.has_foreign(title):
+        ex["title"] = title                      # 중국어로 적었으면 원문 칸 — 번역(자동 번역·「번역하고 다시 검증」)이 옮긴다
+        ex.pop("title_ko", None)
+    else:
+        ex["title"] = ex.get("title") or title
+        ex["title_ko"] = title
+    ex.setdefault("field_sources", {})["title"] = "manual"
+    man = dict(ex.get("manual_fields") or {}) if isinstance(ex.get("manual_fields"), dict) else {}
+    man["title"] = datetime.now(timezone.utc).isoformat()
+    ex["manual_fields"] = man
+
+
+@bp.post("/collect/<item_id>/manual-options")
+def collect_manual_options(item_id):
+    """옵션 축·값 직접 입력 → 옵션 + SKU(조합마다 **같은 가격** — 화면에 그렇게 적는다). 「직접 수정」으로 표시."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    title_in = re.sub(r"\s+", " ", str(data.get("title") or "")).strip()[:100]
+    opts, errs = _manual_options(data.get("options"))
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    if title_in and not opts and not errs:
+        # 상품명만(공유 링크엔 제목이 없다 — 쿠팡 상품명을 만들 재료). 「직접 수정」으로 적는다.
+        _manual_title(ex, title_in)
+        ok = _save_manual_extra(item_id, ex, title=title_in)
+        return jsonify({"ok": ok, "title": title_in, "sku_count": 0, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+    if errs or not opts:
+        return jsonify({"ok": False, "error": " · ".join(errs) or "옵션을 하나 이상 적어 주세요."}), 400
+    if title_in:
+        _manual_title(ex, title_in)
+    price_in = str(data.get("price") or "").replace(",", "").strip()
+    price = price_in or str(ex.get("price") or item.get("price") or "").strip()
+    try:
+        if float(price) <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "가격이 없어요 — 옵션 가격(모든 옵션 같음)을 적어 주세요."}), 400
+    import itertools
+    combos = list(itertools.product(*[o["values"] for o in opts]))
+    if len(combos) > MANUAL_SKU_MAX:
+        return jsonify({"ok": False, "error": f"옵션 조합이 {len(combos)}개예요 — {MANUAL_SKU_MAX}개 이하로 줄여 주세요."}), 400
+    cur = str(ex.get("currency") or item.get("currency") or "")
+    ex["options"] = opts
+    ex["skus"] = [{"spec": list(c), "price": price, "currency": cur, "source": "manual_same_price"} for c in combos]
+    ex["sku_price_note"] = "직접 입력 — 모든 옵션 같은 가격"
+    fs = ex.setdefault("field_sources", {})
+    fs["options"] = fs["sku"] = "manual"
+    man = dict(ex.get("manual_fields") or {}) if isinstance(ex.get("manual_fields"), dict) else {}
+    man["options"] = man["sku"] = datetime.now(timezone.utc).isoformat()
+    ex["manual_fields"] = man
+    if price_in:
+        ex["price"] = price_in
+    ok = _save_manual_extra(item_id, ex, **({"title": title_in} if title_in else {}))
+    logger.info("[폰 옵션 입력] item=%s 축=%d 조합=%d 저장=%s", item_id, len(opts), len(combos), ok)
+    return jsonify({"ok": ok, "options": opts, "sku_count": len(combos), "price": price, "currency": cur,
+                    "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
 @bp.post("/collect/<item_id>/translate-now")
@@ -9283,7 +9458,10 @@ def _coupang_account_dispatch(product_data, account):
     from .upload_dispatcher import draft_url
     ak, sk, vid = _account_creds(account)
     if not (ak and sk):
-        return {"success": False, "error": f"{account} 쿠팡 자격 미설정(env) — 등록 불가"}
+        from src.pipeline.coupang_replicate import account_cred_problem
+        why = account_cred_problem(account)      # Z1: 서명 전에 막은 사유(섞인 쌍 등)면 그대로
+        return {"success": False, "error": (f"{account} 쿠팡 키 사용 안 함 — {why}" if why
+                                            else f"{account} 쿠팡 자격 미설정(env) — 등록 불가")}
     # P2: 계정별 출고지/반품지 env(COUPANG_GOGANE_*/COUPANG_WOOJOO_*) 라우팅 + 구매대행 통관(pccNeeded·고시).
     up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid,
                          account=account, overseas_purchased=True)

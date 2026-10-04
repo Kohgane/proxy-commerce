@@ -103,7 +103,8 @@ def test_connect_page_shows_two_account_cards_and_new_wording(env, monkeypatch):
     h = c.get("/seller/markets/connect").get_data(as_text=True)
     assert h.count('data-role="coupang-account-card"') == 2
     assert 'data-account="gogane"' in h and 'data-account="woojoo"' in h and "A01504840" in h
-    assert "COUPANG_WOOJOO_ACCESS_KEY/_SECRET_KEY" in h and "w-ak" not in h and "w-sk" not in h
+    # Z1: 고정 문구가 아니라 **실제로 읽은 이름** 각각
+    assert "COUPANG_WOOJOO_ACCESS_KEY · COUPANG_WOOJOO_SECRET_KEY" in h and "w-ak" not in h and "w-sk" not in h
     assert "쿠팡 판매자 계정마다 1개" in h and "판매자당 1개" not in h
     assert "쿠팡에서 출고지·반품지 불러오기 (우주대행)" in h
 

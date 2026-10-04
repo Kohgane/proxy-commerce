@@ -48,7 +48,7 @@ def test_iphone_shortcut_get_makes_one_cny_draft_waiting_for_enrich(client, monk
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert 'data-state="draft"' in body and "新中式双人书桌" in body
-    assert 'data-role="share-enrich"' in body and "컴퓨터에서 고가수집기를 켜면" in body
+    assert 'data-role="share-enrich"' in body and "PC 크롬 + 고가수집기가 있는 계정만" in body   # Z3: 정직 문구
     # 오너 보충: 큰 글자 · 버튼 2개(목록 보기 · 하나 더 담기)만
     assert body.count('sd-btn"') == 2 and 'data-role="btn-list"' in body and 'data-role="btn-more"' in body
     rows = _rows(seller)

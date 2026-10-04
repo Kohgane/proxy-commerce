@@ -31,12 +31,49 @@
     {% endif %}
     {% for r in m5.risks or [] %}<div class="m5-needs" data-role="m5-risk"><span class="pc-badge pc-badge-danger">{{ r }}</span></div>{% endfor %}
     {% if m5.needs_pc %}
-    <div class="m5-needs" data-role="m5-needs-pc">PC 확장에서 보강 필요 — {{ m5.missing|join(", ") }}.
-      컴퓨터에서 고가수집기를 켜면 자동으로 채워집니다.</div>
+    {# Z3(오너 2026-10-04): 「컴퓨터에서 켜면 자동」은 PC가 없는 유저에겐 거짓 약속이었다 — 누구에게 되는지 그대로. #}
+    <div class="m5-needs" data-role="m5-needs-pc">비어 있어요 — {{ m5.missing|join(", ") }}.
+      PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 바로 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.</div>
     {% endif %}
   </div>
 
-  <fieldset class="m5-markets" data-role="m5-markets">
+  {# Z3(c): 폰만으로 등록까지 — 타오바오 앱에서 사진을 길게 눌러 저장 → 여기서 앨범 사진 고르기 · 옵션은 직접 적기.
+     넣은 값은 「직접 수정」이라 뒤에 보강이 돌아도 덮지 않는다. #}
+  <section class="m5-manual" data-role="m5-manual" data-item="{{ m5.item_id }}" {% if not m5.needs_pc %}hidden{% endif %}>
+    <div class="m5-legend">폰에서 사진·옵션 넣기</div>
+    <label class="btn btn-ghost m5-btn m5-photo-btn" data-role="m5-photo-add">
+      <i class="bi bi-images"></i> 사진 추가 (앨범에서 여러 장)
+      <input type="file" id="m5Photos" accept="image/*" multiple hidden>
+    </label>
+    <p class="m5-note" data-role="m5-photo-help">사진 {{ m5.images_count }}장 있음 · 타오바오 앱에서 사진을 길게 눌러 「保存图片(이미지 저장)」 → 여기서 고르세요.
+      <a href="/seller/guide/iphone/photos">그림으로 보기</a></p>
+    <div id="m5PhotoState" class="m5-note" data-role="m5-photo-state" aria-live="polite"></div>
+
+    {% if m5.title == "(제목 없음)" %}
+    <div class="m5-legend m5-legend-sub">상품명</div>
+    <input class="form-control m5-title-in" id="m5TitleIn" maxlength="100" placeholder="예: 빈백 소파 1인용 (중국어로 적어도 돼요)" data-role="m5-title-in">
+    {% endif %}
+    <div class="m5-legend m5-legend-sub">옵션 직접 입력</div>
+    <div id="m5OptRows" data-role="m5-opt-rows">
+      {% set _opts = (m5.product.get('options') or []) if m5.product.get('options') is sequence else [] %}
+      {% for i in range(2) %}{% set o = _opts[i] if _opts|length > i else {} %}
+      <div class="m5-opt" data-role="m5-opt-row">
+        <input class="form-control m5-opt-name" placeholder="{{ '옵션 이름 (예: 색상)' if i == 0 else '옵션 이름 (예: 사이즈) — 없으면 비워 두기' }}"
+               value="{{ (o.get('name_ko') or o.get('name') or '') if o else '' }}" maxlength="25">
+        {# 사전의 .values는 메서드다 — 꼭 o.get('values')로(o.values는 500, Z3 캡처가 잡음) #}
+        {% set _vals = ((o.get('values_ko') or o.get('values') or []) if o else []) %}
+        <input class="form-control m5-opt-vals" placeholder="값을 쉼표로 (예: 블랙, 화이트)"
+               value="{{ (_vals if _vals is not string else [_vals])|map('string')|join(', ') }}">
+      </div>{% endfor %}
+    </div>
+    <label class="m5-note m5-opt-price" for="m5OptPrice">옵션 가격 — 모든 옵션 같은 가격({{ m5.currency or '통화' }})</label>
+    <input class="form-control" id="m5OptPrice" inputmode="decimal" value="{{ m5.price }}" placeholder="예: 798">
+    <button type="button" class="btn btn-ghost m5-btn" id="m5OptSave" data-role="m5-opt-save">{{ '상품명·옵션 저장' if m5.title == "(제목 없음)" else '옵션 저장' }}</button>
+    <div id="m5OptState" class="m5-note" data-role="m5-opt-state" aria-live="polite"></div>
+    <a class="btn btn-primary m5-btn" href="#m5Markets" data-role="m5-to-register">등록으로</a>
+  </section>
+
+  <fieldset class="m5-markets" id="m5Markets" data-role="m5-markets">
     <legend class="m5-legend">등록할 마켓</legend>
     {% set _g = namespace(last='') %}
     {% for m in m5.markets %}
@@ -70,6 +107,13 @@
 </section>
 <style>
   .m5 { text-align: left; margin-top: 8px; }
+  .m5-manual { margin: 14px 0 4px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg, 16px);
+               background: var(--surface); }
+  .m5-legend-sub { margin-top: 14px; }
+  .m5-photo-btn { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .m5-opt { display: grid; gap: 6px; margin-bottom: 10px; }
+  .m5-opt .form-control, #m5OptPrice, .m5-title-in { min-height: 48px; font-size: 1rem; }
+  .m5-opt-price { display: block; margin-top: 4px; }
   .m5-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 16px);
              padding: 14px; box-shadow: var(--shadow-sm); }
   .m5-thumb { display: block; width: 100%; max-height: 300px; object-fit: contain; background: var(--bg);
@@ -148,6 +192,40 @@
   var blocked = root.getAttribute('data-blocked') === '1';
   var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go');
   var checksEl = document.getElementById('m5Checks'), doneEl = document.getElementById('m5Done');
+
+  // Z3(c): 폰 수동 경로 — 사진(앨범 여러 장) · 옵션 직접 입력. 저장되면 다시 그린다(카드·계획이 렌더 시점 값이라).
+  var photoIn = document.getElementById('m5Photos'), photoSt = document.getElementById('m5PhotoState');
+  if (photoIn) photoIn.addEventListener('change', async function () {
+    if (!photoIn.files || !photoIn.files.length) return;
+    var fd = new FormData();
+    Array.prototype.forEach.call(photoIn.files, function (f) { fd.append('photos', f); });
+    photoSt.textContent = '사진 ' + photoIn.files.length + '장 올리는 중…';
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/manual-photos', {method: 'POST', body: fd});
+      var d = await r.json();
+      var fail = (d.failed || []).length ? ' · 못 올린 장: ' + d.failed.join(' / ') : '';
+      if (d.ok) { photoSt.textContent = d.added + '장 올렸어요(지금 ' + d.images_count + '장)' + fail + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); }
+      else photoSt.textContent = '올리지 못했어요 — ' + (d.error || '사유 원문 없음') + fail;
+    } catch (e) { photoSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
+    photoIn.value = '';
+  });
+  var optSave = document.getElementById('m5OptSave'), optSt = document.getElementById('m5OptState');
+  if (optSave) optSave.addEventListener('click', async function () {
+    var rows = Array.prototype.map.call(document.querySelectorAll('[data-role=m5-opt-row]'), function (row) {
+      return {name: row.querySelector('.m5-opt-name').value, values: row.querySelector('.m5-opt-vals').value};
+    });
+    optSave.disabled = true; optSt.textContent = '저장 중…';
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/manual-options', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({options: rows, price: (document.getElementById('m5OptPrice') || {}).value || '',
+                              title: (document.getElementById('m5TitleIn') || {}).value || ''})});
+      var d = await r.json();
+      if (d.ok) { optSt.textContent = (d.sku_count ? '옵션 ' + d.sku_count + '개 조합 저장(모두 ' + d.price + ' ' + d.currency + ')' : '상품명 저장') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); return; }
+      optSt.textContent = '저장하지 못했어요 — ' + (d.error || '사유 원문 없음');
+    } catch (e) { optSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
+    optSave.disabled = false;
+  });
   var okMarkets = [];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }

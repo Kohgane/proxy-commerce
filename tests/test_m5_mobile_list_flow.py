@@ -54,7 +54,8 @@ def test_share_result_shows_card_markets_and_steps(client):
     assert re.search(r'value="coupang" checked', h) and 'value="smartstore"' in h     # 쿠팡 기본 · 여럿
     assert 'data-role="m5-check"' in h and re.search(r'data-role="m5-register" disabled', h)   # 검증 전엔 등록 닫힘
     need = re.search(r'data-role="m5-needs-pc">(.*?)</div>', h, re.S).group(1)
-    assert "PC 확장에서 보강 필요" in need and "SKU" in need and "사진" in need
+    # Z3(2026-10-04): 「PC 확장에서 보강 필요」 → 누구에게 자동인지 + 폰 수동 경로
+    assert "비어 있어요" in need and "SKU" in need and "사진" in need and "「사진 추가」" in need
     assert 'data-role="share-enrich"' in h and h.count('sd-btn"') == 2                  # 옛 계약 유지
 
 

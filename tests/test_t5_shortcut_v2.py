@@ -2,7 +2,9 @@
 
   ① 서버가 text·clip을 둘 다 받아 판단한다(공유 글에 링크 있으면 그것 → 없으면 클립보드의 링크)
   ② 결과 화면 「경로」·로그도 서버 기준
-  ③ v 없거나 <2 = 옛 단축어 → 결과 화면에 「단축어가 구버전입니다」 + 재설치 버튼(담기와 상관없이)
+  ③ Z2(2026-10-04) 개정: 「구버전」은 **v를 실제로 보냈고** 그 값이 오너가 적어 둔 링크 버전보다 낮을 때만.
+     v 없이 온 공유(운영 실측: 오늘 담긴 6건 전부 `?text=`만)나 링크 버전 모름이면 안 띄운다 — 같은 링크로 다시 깔아도
+     또 뜨던 무한 루프(오너 실측)
   ④ 단축어엔 「URL 인코딩」 수식이 없어 **인코딩 없이** 온다 — text 속 `&`가 갈라져도 되살린다
   ⑤ 로그인 왕복에도 v·고른 값이 남는다 · v별 도착 수가 화면 C에 보인다
 """
@@ -57,10 +59,10 @@ def _state(h):
 
 # (v, text, clip) → (상태, 경로(실패 때만 화면에 뜸), 구버전 안내)
 MATRIX = [
-    (None, SHARE, None, "draft", "", True),
-    (None, None, CLIP, "draft", "", True),         # 판단은 서버 몫 — v가 없어도 clip은 읽고, 구버전 안내만 뜬다
-    ("1", SHARE, "", "draft", "", True),
-    ("1", "", "", "failed", "둘 다 비어 있음", True),
+    (None, SHARE, None, "draft", "", False),       # Z2: v 없이 와도 담기고, 구버전 안내는 안 뜬다(루프 원인)
+    (None, None, CLIP, "draft", "", False),        # 판단은 서버 몫 — v가 없어도 clip은 읽는다
+    ("1", SHARE, "", "draft", "", False),          # 링크 버전을 모르면(기본) 안 띄운다
+    ("1", "", "", "failed", "둘 다 비어 있음", False),
     ("2", SHARE, "", "draft", "", False),
     ("2", "", CLIP, "draft", "", False),
     ("2", TITLE_ONLY, CLIP, "draft", "", False),   # 공유 글엔 제목만 — 클립보드의 링크로
@@ -122,10 +124,24 @@ def test_version_counts_show_on_make_screen(client):
     with c.session_transaction() as s:
         s["user_id"], s["user_role"] = "owner", "admin"
     h = c.get("/seller/guide/iphone/make").get_data(as_text=True)
-    assert 'data-role="make-version-counts"' in h and "새 단축어(v2)" in h
+    # Z2: 라벨은 「무엇이 왔나」만(v=2로 옴 · v 없이 옴) — 「옛 단축어」라고 단정하지 않는다 + 링크 버전 칸
+    assert 'data-role="make-version-counts"' in h and "v=2로 옴" in h and "v 없이 옴(text만)" in h
+    assert 'data-role="shortcut-version"' in h
 
 
 def test_android_post_has_no_old_version_notice(client):
     h = client.post("/seller/collect/share", data={"title": "淘宝", "text": SHARE},
                     headers={"Sec-Fetch-Site": "none"}).get_data(as_text=True)
     assert 'data-state="draft"' in h and 'data-role="share-oldver"' not in h
+
+
+def test_reinstall_notice_only_when_the_link_is_really_newer(client, monkeypatch):
+    """Z2: 오너가 화면 C에 「이 링크의 단축어 v=2」를 적어 둔 뒤에만 — v=1을 **실어 보낸** 단축어에게 다시 설치를 권한다."""
+    from src.seller_console import help_settings as H
+    H.save_ios_shortcut_url("https://www.icloud.com/shortcuts/abcdef0123456789", "2")
+    try:
+        assert _state(client.get(_q("1", SHARE, "")).get_data(as_text=True))[2] is True
+        assert _state(client.get(_q(None, SHARE, None)).get_data(as_text=True))[2] is False   # v 안 실음 = 판단 안 함
+        assert _state(client.get(_q("2", SHARE, "")).get_data(as_text=True))[2] is False
+    finally:
+        H.save_ios_shortcut_url("")

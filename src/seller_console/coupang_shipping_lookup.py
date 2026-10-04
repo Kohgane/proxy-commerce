@@ -225,8 +225,13 @@ def fetch(account: str = "") -> dict:
     vendor_id = str(getattr(up, "vendor_id", "") or "").strip()
     if not (getattr(up, "access_key", "") and getattr(up, "secret_key", "") and vendor_id):
         # **가짜로 불러온 척 하지 않는다.** 자격이 없으면 부를 수 없다.
+        #   Z1: 키가 있는데 서명 전에 막았으면(섞인 쌍·두 이름 다른 값·깨진 값) 그 사유를 그대로.
+        why = ""
+        if acct:
+            from src.pipeline.coupang_replicate import account_cred_problem
+            why = account_cred_problem(acct)
         return {"ok": False, "account": acct, "vendor_id": vendor_id,
-                "reason": "쿠팡 API 키와 업체코드를 먼저 저장해 주세요."}
+                "reason": (f"쿠팡 키 사용 안 함 — {why}" if why else "쿠팡 API 키와 업체코드를 먼저 저장해 주세요.")}
 
     ret = _fetch_one(up, RETURN_CENTERS_PATH.format(vendor_id=vendor_id),
                      RETURN_FIELD_CANDIDATES)
