@@ -332,19 +332,28 @@ def _job(job: dict) -> tuple:
             errors.append(f"상품명 {type(exc).__name__}: {exc}")
     vals = want_vals[:budget]
     mapping = {}
+    why_by_val: dict = {v: f"오늘 옵션 번역 상한({ENV_CAP}={daily_cap()}) 몫이 모자라 이번엔 안 보냄"
+                        for v in want_vals[budget:]}
     if vals:
         sent += len(vals)
         try:
             out = tr.translate_options([{"name": "", "values": vals}])
             opt = (out.get("options") or [{}])[0]
+            diag = out.get("diag") or {}
             for v, k in zip(opt.get("values") or [], opt.get("values_ko") or []):
                 k = str(k or "").strip()
                 if k and k != v and not foreign(k):
                     mapping[v] = k
+                else:
+                    # Z 후속2: 값마다 왜 못 옮겼는지(번역기 응답 원문·시도 이력) — 보류 문구가 그대로 싣는다
+                    why_by_val[v] = diag.get(v) or (f"{out.get('provider') or '번역기'}가 「{k[:40]}」로 돌려줌 — 한자·가나 남음"
+                                                    if k and k != v else f"{out.get('provider') or '번역기'}가 원문 그대로 돌려줌")
             if not mapping:
                 errors.append(f"옵션 값을 하나도 못 옮김(번역기 {out.get('provider') or '없음'})")
         except Exception as exc:
             errors.append(f"옵션 {type(exc).__name__}: {exc}")
+            for v in vals:
+                why_by_val[v] = f"번역기 호출 예외 {type(exc).__name__}: {str(exc)[:160]}"
     moved += len(mapping)
     # 저장 직전 다시 읽는다 — 그 사이 오너가 고쳤을 수 있다(오너 값 우선: 이미 한국어인 자리는 안 덮음).
     row, ex2 = _load(item_id, uid)
@@ -370,6 +379,8 @@ def _job(job: dict) -> tuple:
     if mapping:
         ex2["options_translated"] = True
     ex2["options_auto_translated_at"] = datetime.now(timezone.utc).isoformat()
+    ex2["option_translate_diag"] = {"at": ex2["options_auto_translated_at"],
+                                    "values": {v: w[:300] for v, w in why_by_val.items() if v not in mapping}}
     store.update(item_id, seller_ids={uid}, extra_json=json.dumps(ex2, ensure_ascii=False), **fields)
     left = need - granted
     if moved == 0:

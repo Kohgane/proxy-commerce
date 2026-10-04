@@ -62,3 +62,23 @@ def han_text(raw: bytes) -> tuple:
 
 def has_han(raw: bytes):
     return han_text(raw)[0]
+
+
+def all_text(raw: bytes) -> tuple:
+    """Y7: `(글자 있음?, 읽은 글자 앞 40자)` — 한자만이 아니라 **아무 글자**(영문 워터마크 「INTERSTELLAR」 포함).
+
+    확신 0.5 이상 조각을 이어 공백 빼고 두 글자 이상이면 「있음」. 엔진 없음·못 읽음·꺼짐이면 `(None, "")`.
+    `IMAGE_OCR_PRECHECK=0`(텐센트 사전판정 끄기)과는 따로 켠다 — 대표 사진 판정은 `COUPANG_IMAGE_CHECK`가 쥔다.
+    """
+    if not raw:
+        return None, ""
+    eng = engine()
+    if eng is None:
+        return None, ""
+    try:
+        res, _ = eng(raw)
+    except Exception as exc:                               # noqa: BLE001
+        logger.warning("[OCR 글자 판정] 읽기 실패: %s: %s", type(exc).__name__, str(exc)[:80])
+        return None, ""
+    txt = " ".join(str(r[1]) for r in (res or []) if len(r) > 2 and float(r[2] or 0) >= MIN_SCORE)
+    return len(re.sub(r"\s+", "", txt)) >= 2, txt[:40]

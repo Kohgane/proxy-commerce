@@ -32,6 +32,7 @@
         <button type="button" class="kgp-etab-chip" data-etab="keywords" onclick="kgpEtab('keywords')"><i class="bi bi-hash"></i> 키워드</button>
         <button type="button" class="kgp-etab-chip" data-etab="thumb" onclick="kgpEtab('thumb')"><i class="bi bi-images"></i> 썸네일</button>
         <button type="button" class="kgp-etab-chip" data-etab="imgko" onclick="kgpEtab('imgko')"><i class="bi bi-translate"></i> 이미지 번역</button>
+        <button type="button" class="kgp-etab-chip" data-etab="cpx" onclick="kgpEtab('cpx')" data-role="cpx-tab"><i class="bi bi-shop"></i> 쿠팡 노출</button>
         <button type="button" class="kgp-etab-chip" data-etab="detail" onclick="kgpEtab('detail')"><i class="bi bi-layout-text-window"></i> 상세페이지</button>
         <button type="button" class="kgp-etab-chip" data-etab="upload" onclick="kgpEtab('upload')"><i class="bi bi-box-arrow-up-right"></i> 업로드</button>
       </div>
@@ -467,6 +468,10 @@
         </div>
       </div>
 
+      {# Y7: 쿠팡 검색 카드·상세 상단 줄·대표 사진 판정(폰 M5와 같은 조각) #}
+      <div class="kgp-esec kgp-etab-hide" data-etab="cpx">
+        {% set cpx_item_id = item.id %}{% include "_coupang_exposure.html" %}
+      </div>
       <div class="kgp-esec kgp-etab-hide" data-etab="upload">
         <label class="form-label small fw-semibold d-block mb-2"><i class="bi bi-box-arrow-up-right"></i> 마켓에 등록</label>
         <p class="text-muted small mb-2">편집을 마쳤다면 마켓을 골라 한 번에 등록하세요. 연결된 마켓·목표 마진율은 등록 창에서 선택합니다.</p>
@@ -2145,6 +2150,7 @@ function renderPrevalidateResults(results) {
           ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger')}
           ${(r.hold && (r.fixes || []).indexOf('translate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-translate-recheck">번역하고 다시 검증</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-ship-override">그래도 등록</button>' : ''}
+          ${(r.hold && (r.fixes || []).indexOf('rep_image') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-rep-override">대표 사진 그래도 등록</button>' : ''}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
           ${renderActionLink(r.action_url)}
         </div>
@@ -2179,6 +2185,16 @@ function renderPrevalidateResults(results) {
       if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
       runPrevalidate();
     } catch (e) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
+  // Y7: 쿠팡 대표 사진 보류 — 「쿠팡 노출」 탭에서 대표를 바꾸거나, 이 장 그대로 「그래도 등록」
+  el.querySelectorAll('[data-role="pv-rep-override"]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '기록하는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/rep-image-override', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+      if (!t.ok) { b.disabled = false; b.textContent = '대표 사진 그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
+      if (window.kgpCpxReload) window.kgpCpxReload();
+      runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = '대표 사진 그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
   }));
 }
 

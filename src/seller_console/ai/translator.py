@@ -868,6 +868,12 @@ class AITranslator:
             size += len(pre) + 1
         if cur:
             batches.append(cur)
+        # Z 후속2(오너 2026-10-04 20:39): 못 옮긴 값마다 **왜**를 남긴다 — 번역기 응답 원문·시도 이력.
+        #   「옵션 값 1개 미해석」만으론 범인을 못 찾는다(보류 문구가 이걸 그대로 싣는다).
+        diag: dict = {}
+        for batch in batches[12:]:
+            for t, _pre in batch:
+                diag[t] = "한 번에 보내는 12묶음을 넘어 이번엔 안 보냄(다음 번역에서)"
         for batch in batches[:12]:                  # 한 번에 최대 12묶음(≈180값) — 나머지는 다음 번역에서
             out = self.translate_product({"title": "", "description": "\n".join(p for _t, p in batch)})
             prov = out.get("provider", "none")
@@ -877,6 +883,18 @@ class AITranslator:
                 for (t, _pre), ko in zip(batch, ko_lines):
                     mapping[t] = _kp.polish_ko(ko) or ko
                 provider, translated = prov, True
+            else:
+                tries = " · ".join(f"{a.get('provider')}: {('건너뜀 ' if a.get('skipped') else '')}{str(a.get('error') or '실패')[:120]}"
+                                   for a in (out.get("attempts") or []) if not a.get("ok"))
+                if prov == "stub":
+                    why = "설정된 번역기 없음(번역 키 0개 — 원문 유지)"
+                elif ok:
+                    why = (f"{prov} 응답 줄 수 어긋남(보낸 {len(batch)}줄 · 받은 {len(ko_lines)}줄) — "
+                           f"응답 원문 「{str(out.get('description_ko') or '')[:160]}」")
+                else:
+                    why = f"번역기 실패({prov}) — " + (tries or str(out.get("translate_error") or out.get("error") or "사유 없음")[:200])
+                for t, _pre in batch:
+                    diag[t] = why
         for t in uniq:
             mapping.setdefault(t, t)                # 못 옮긴 값은 원문 그대로(가짜 번역 0) — 등록 단계가 값 단위로 보류
         out_opts = []
@@ -886,7 +904,7 @@ class AITranslator:
             out_opts.append({
                 "name": nm, "name_ko": mapping.get(nm, nm),
                 "values": vals, "values_ko": [mapping.get(v, v) for v in vals]})
-        return {"options": out_opts, "provider": provider, "translated": translated}
+        return {"options": out_opts, "provider": provider, "translated": translated, "diag": diag}
 
     def _translate_mymemory(self, title: str, description: str) -> dict:
         """v87-W7: MyMemory 무료 번역 API(무키·무가입). 제목·상세 각각 요청, 한국어로.

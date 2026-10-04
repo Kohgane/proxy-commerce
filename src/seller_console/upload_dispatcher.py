@@ -583,6 +583,51 @@ def unresolved_option_values(product: Dict[str, Any]) -> List[str]:
         return []
 
 
+def unresolved_why_line(pd: Dict[str, Any], values: List[str]) -> str:
+    """Z 후속2(오너 2026-10-04 20:39): 「옵션 값 n개 미해석」만으론 범인을 못 찾는다 —
+    **어떤 값이 왜**(번역기 응답 원문·시도 이력, 마지막 시도 시각)와 **Papago 오늘 남은 몫**을 그대로 싣는다."""
+    diag = pd.get("option_translate_diag") if isinstance(pd.get("option_translate_diag"), dict) else {}
+    whys = diag.get("values") if isinstance(diag.get("values"), dict) else {}
+    parts = []
+    # Y8(오너 2026-10-04 20:44): 번역은 됐는데 **30자 초과**로 남는 값이 있다 — 그땐 해석 체인의 사유가 진짜 이유다.
+    #   번역본이 없을 때만 번역기 기록(응답 원문·시도 이력)을 붙인다.
+    try:
+        from src.uploaders.coupang_options import resolve_option_value, value_ko_map
+        vko = value_ko_map(pd)
+        ov = pd.get("option_value_overrides") if isinstance(pd.get("option_value_overrides"), dict) else {}
+    except Exception:
+        resolve_option_value, vko, ov = None, {}, {}
+    for v in values[:3]:
+        why = ""
+        if resolve_option_value is not None:
+            try:
+                why = resolve_option_value(v, values_ko=vko.get(v, ""), override=ov.get(v, "")).get("why") or ""
+            except Exception:
+                why = ""
+        has_ko = bool(vko.get(v)) and vko.get(v) != v           # 번역본이 실제로 있나(실패면 원문이 그대로 적혀 있다)
+        tr = whys.get(v) or ("" if has_ko else "번역기 기록 없음(아직 번역기에 안 보냄)")
+        if why and tr and not has_ko:
+            why = f"{why} · 번역기: {tr}"
+        parts.append(f"「{v[:30]}」 — {why or tr or '사유 미상'}")
+    more = f" 외 {len(values) - 3}개" if len(values) > 3 else ""
+    at = ""
+    if diag.get("at"):
+        try:
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+            at = " · 마지막 시도 " + _dt.fromisoformat(str(diag["at"])).astimezone(_tz(_td(hours=9))).strftime("%m-%d %H:%M KST")
+        except Exception:
+            at = ""
+    try:
+        from .ai.translator import papago_chars_today, papago_daily_limit
+        lim = papago_daily_limit()
+        used = papago_chars_today()
+        pap = (f"Papago 오늘 남은 몫 {max(lim - used, 0):,}/{lim:,}자(PAPAGO_DAILY_CHAR_LIMIT)" if lim
+               else f"Papago 일한도 없음(오늘 {used:,}자 씀)")
+    except Exception:
+        pap = "Papago 남은 몫 확인 실패"
+    return " · ".join(parts) + more + at + " · " + pap
+
+
 def readiness_message(holds: List[Dict[str, str]]) -> str:
     """「사전검증 — 보류: 이미지 0장·판매가 없음 → PC 확장에서 보강 후」 — 무엇이 모자라고 어디서 채우는지 한 줄."""
     if any(h["fix"] == "block" for h in holds):
@@ -599,6 +644,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("편집 화면에서 판매가 직접 입력")
     if any(h["fix"] == "ship_ratio" for h in holds):
         fixes.append("원가·크기를 확인하거나 「그래도 등록」")
+    if any(h["fix"] == "rep_image" for h in holds):
+        fixes.append("「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」")
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
 
 
@@ -799,11 +846,23 @@ class UploadDispatcher:
                 _sh = None
             if _sh:
                 holds.append(_sh)
+        # Y7(오너 2026-10-04): 쿠팡 대표 사진(등록이 보낼 첫 장) — 긴 변 500px 미만·글자/워터마크면 보류(「그래도 등록」으로 푼다).
+        #   못 재면(다운로드·엔진 없음) 막지 않는다.
+        if str(market or "").startswith("coupang") and imgs:
+            try:
+                from src.services.coupang_image_check import hold as _rep_hold
+                _rh = _rep_hold(pd, market)
+            except Exception:
+                _rh = None
+            if _rh:
+                holds.append(_rh)
         if market in _KO_OPTION_MARKETS:
-            n = len(unresolved_option_values(pd))
+            _un = unresolved_option_values(pd)
+            n = len(_un)
             if n:
-                holds.append({"short": f"옵션 값 {n}개 미해석", "fix": "translate",
-                              "line": f"옵션 값 {n}개를 아직 한국어로 옮기지 못했어요 — 그 값의 SKU는 등록할 수 없어요."})
+                holds.append({"short": f"옵션 값 {n}개 미해석(「{_un[0][:20]}」{' 등' if n > 1 else ''})", "fix": "translate",
+                              "line": f"옵션 값 {n}개를 아직 한국어로 옮기지 못했어요 — 그 값의 SKU는 등록할 수 없어요. "
+                                      + unresolved_why_line(pd, _un)})
         # U4 역질문(답 없음 → 보류): 옵션 아닌 SKU를 빼면 가격이 남지 않는 상품 — 기본 SKU 가격으로 채우지 않는다.
         try:
             from src.uploaders.coupang_options import non_option_hold

@@ -2267,3 +2267,40 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .ship-route .sr-save { min-height: 48px; }
 .m5-ship { margin-top: 8px; font-size: .92rem; color: var(--text-muted); word-break: break-word; }
 .m5-ship select { min-height: 44px; margin-top: 6px; width: 100%; }
+
+/* Y7(오너 2026-10-04) — 「쿠팡 노출」: 검색 카드(대표 정사각 가운데 자르기·상품명 2줄·가격) + 판정 줄 + 상세 상단 줄. 편집 탭·폰 M5 공용. */
+.cpx { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); margin: var(--space-3) 0; max-width: 100%; }
+.cpx-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+.cpx-legend { font-family: var(--font-display); font-weight: 700; color: var(--text); }
+.cpx-view { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.cpx-vbtn { min-height: 44px; padding: 0 var(--space-3); border: 0; background: transparent; color: var(--text-muted); font-size: .9rem; }
+.cpx-vbtn.is-on { background: var(--ink); color: var(--cream); }
+.cpx-card { width: min(220px, 62vw); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; box-shadow: var(--shadow-sm); }
+.cpx-thumb { aspect-ratio: 1 / 1; background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cpx-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
+.cpx-name { padding: var(--space-2) var(--space-2) 0; font-size: .9rem; line-height: 1.35; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.7em; }
+.cpx-price { padding: 2px var(--space-2) var(--space-2); font-weight: 800; color: var(--text); }
+.cpx-muted { font-weight: 400; font-size: .82rem; color: var(--text-muted); }
+.cpx-cap { margin: var(--space-2) 0; font-size: .85rem; color: var(--text-muted); }
+.cpx-checks { list-style: none; padding: 0; margin: 0 0 var(--space-2); display: grid; gap: 4px; }
+.cpx-ck { font-size: .9rem; padding-left: var(--space-3); position: relative; word-break: break-word; color: var(--text); }
+.cpx-ck::before { content: ""; position: absolute; left: 0; top: .25em; width: 3px; height: 1em; border-radius: 2px; background: var(--border); }   /* 기하 점 대신 짧은 세로선(v40s5 결정) */
+.cpx-ck.is-ok::before { background: var(--teal); }
+.cpx-ck.is-warn::before { background: var(--warn); }
+.cpx-ck.is-bad { color: var(--danger); }
+.cpx-ck.is-bad::before { background: var(--danger); }
+.cpx-ck.is-info::before { background: var(--gold); }
+.cpx-hold { border-left: 3px solid var(--danger); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-2); background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
+.cpx-hold p { margin: 0 0 var(--space-2); font-size: .9rem; word-break: break-word; }
+.cpx-hold .btn { min-height: 44px; border: 1px solid var(--danger); background: var(--surface); color: var(--danger); border-radius: 999px; padding: 0 var(--space-3); }
+.cpx-ov { font-size: .88rem; color: var(--text-muted); margin-bottom: var(--space-2); }
+.cpx-slabel { font-size: .85rem; color: var(--text-muted); margin-bottom: 4px; }
+.cpx-strip { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: 4px; max-width: 100%; }
+.cpx-tile { flex: 0 0 104px; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.cpx-tile img { width: 104px; height: 104px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); }
+.cpx-tile.is-rep img { border: 2px solid var(--teal); }
+.cpx-tile figcaption { display: flex; gap: 4px; align-items: center; font-size: .78rem; color: var(--text-muted); }
+.cpx-badge { background: var(--teal); color: var(--on-accent); border-radius: 999px; padding: 0 8px; font-weight: 700; }
+.cpx-src { color: var(--gold-ink); }
+.cpx-act { min-height: 44px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); font-size: .78rem; color: var(--text); padding: 0 4px; white-space: nowrap; }
+.cpx-act:hover { border-color: var(--teal); }

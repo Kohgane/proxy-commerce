@@ -400,9 +400,31 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
     # T3: 프로모션 의심 장은 기본 제외(오너가 「그래도 넣기」를 켠 장은 넣는다). 전부 빠지면 대표 이미지가
     #   없어 등록이 막히므로 그땐 빼지 않는다(요약에 그대로 보인다).
     drop = {i for i in range(len(originals)) if promo_excluded(by_idx.get(i) or {})}
+    pairs = list(enumerate(out))
     if drop and len(drop) < len(out):
-        out = [u for i, u in enumerate(out) if i not in drop]
-    return out
+        pairs = [(i, u) for i, u in pairs if i not in drop]
+    return [u for _i, u in rep_first(pairs, originals, ex, kind)]
+
+
+def rep_index(extra: dict, originals: list, kind: str = "gallery") -> int:
+    """Y7(오너 2026-10-04): 「이 장을 대표로」 — 원본 주소(`rep_image`)로 적는다(번역본 idx·CDN 표는 그대로 둠).
+    원본 목록에 없으면(그 장을 지웠거나 다시 수집) 0 = 원래 첫 장."""
+    if kind != "gallery":
+        return 0
+    rep = str((extra or {}).get("rep_image") or "")
+    try:
+        return originals.index(rep) if rep else 0
+    except ValueError:
+        return 0
+
+
+def rep_first(pairs: list, originals: list, extra: dict, kind: str = "gallery") -> list:
+    """`[(원본 idx, 값)]`에서 대표로 고른 장을 맨 앞으로(나머지 순서는 그대로)."""
+    r = rep_index(extra, originals, kind)
+    if r <= 0:
+        return pairs
+    head = [p for p in pairs if p[0] == r]
+    return head + [p for p in pairs if p[0] != r] if head else pairs
 
 
 # 번역본이 아닌 **원본**을 CDN에 올린 주소. 원본 배열(`images`)은 건드리지 않는다 —
@@ -514,6 +536,7 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
             logger.warning("[이미지번역] 현황 조회 실패(표시만 영향): %s", exc)
 
     cdn_map = origin_cdn_map(ex, kind)
+    _rep = rep_index(ex, originals, kind)
     plan = []
     for i, orig in enumerate(originals):
         e = by_idx.get(i) or {}
@@ -531,6 +554,7 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
         use = bool(usable and e.get("use"))
         plan.append({
             "idx": i, "original": orig, "kind": kind,
+            "rep": i == _rep,                # Y7: 쿠팡에 대표로 나갈 장(순서는 원본 idx 그대로 — 토글이 idx로 짚는다)
             "translated_url": _eurl if usable else "",
             "url": (_eurl if use else _origin_or_cdn(orig, cdn_map, i)),
             "source": "translated" if use else "original",

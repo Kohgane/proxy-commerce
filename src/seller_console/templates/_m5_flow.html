@@ -107,6 +107,9 @@
     <div id="m5CpBody" class="m5-note">쿠팡 기준으로 만드는 중…</div>
   </section>
 
+  {# Y7(오너 2026-10-04): 쿠팡 노출 — 검색 카드(대표 정사각·상품명 2줄·가격)·대표 사진 판정·「이 장을 대표로」 #}
+  {% set cpx_item_id = m5.item_id %}{% include "_coupang_exposure.html" %}
+
   {% if m5.blocked %}<p class="m5-block" data-role="m5-blocked">{{ m5.blocked }}</p>{% endif %}
   <button type="button" class="btn btn-ghost m5-btn" id="m5Check" data-role="m5-check">사전검증</button>
   <div id="m5Checks" class="m5-checks" data-role="m5-checks" aria-live="polite"></div>
@@ -330,7 +333,10 @@
                ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '') +
              // Z5: 배송비 비율 보류 옆에 「그래도 등록」 하나 — 누르면 사유를 기록하고 다시 검증한다.
              (r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0
-               ? '<div><button type="button" class="m5-fix" data-role="m5-ship-override">그래도 등록</button></div>' : '') + '</div>';
+               ? '<div><button type="button" class="m5-fix" data-role="m5-ship-override">그래도 등록</button></div>' : '') +
+             // Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트) — 위 「쿠팡 노출」에서 대표를 바꾸거나 여기서 「그래도 등록」
+             (r.hold && (r.fixes || []).indexOf('rep_image') >= 0
+               ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override">대표 사진 그래도 등록</button></div>' : '') + '</div>';
       });
       if (d.auto_translate) {
         var at = d.auto_translate;
@@ -344,6 +350,16 @@
           b.disabled = true; b.textContent = '기록하는 중…';
           post('/seller/collect/' + encodeURIComponent(itemId) + '/ship-ratio-override', {}).then(function (t) {
             if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
+            checkBtn.click();
+          });
+        });
+      });
+      checksEl.querySelectorAll('[data-role="m5-rep-override"]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true; b.textContent = '기록하는 중…';
+          post('/seller/collect/' + encodeURIComponent(itemId) + '/rep-image-override', {}).then(function (t) {
+            if (!t.ok) { b.disabled = false; b.textContent = '대표 사진 그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
+            if (window.kgpCpxReload) window.kgpCpxReload();
             checkBtn.click();
           });
         });
