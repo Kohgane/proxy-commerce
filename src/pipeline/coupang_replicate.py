@@ -16,6 +16,7 @@ sourcing_map(ASIN→소싱 URL, LinkLynk/Bluehost 계보)으로 조인 → 소�
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -26,6 +27,8 @@ from typing import Iterable, Optional
 from src.collectors.product_key import normalize_product_key
 # 재사용: 금지어 사전(취급금지 term 필터).
 from src.ai.forbidden_terms import check_forbidden_terms
+
+logger = logging.getLogger(__name__)
 
 # ── 상수 (오너 확정 사실) ──────────────────────────────────────────────────────
 DEFAULT_MARGIN_RATE = 27.4          # 오너 확정 목표 마진율(%).
@@ -98,19 +101,30 @@ def coupang_key_source(account: str) -> dict:
     → `{account, label, key_source, key_env, vendor_id, ship_source, ready, note}`"""
     meta = COUPANG_ACCOUNTS.get(account) or {}
     pfx = meta.get("prefix", "")
-    own = bool(os.getenv(f"{pfx}_ACCESS_KEY", "").strip() or os.getenv(f"{pfx}_ACCESS", "").strip())
-    access, secret, vendor = _account_creds(account)
-    if own:
-        src, env = "계정 접두", f"{pfx}_ACCESS_KEY/_SECRET_KEY"
-    elif access and secret:
-        src, env = "기본(무접두)", "COUPANG_ACCESS_KEY/_SECRET_KEY"
+    d = _cred_detail(account)
+    a_env, s_env = d["access_env"], d["secret_env"]
+    if a_env.startswith(f"{pfx}_") and s_env.startswith(f"{pfx}_"):
+        src = "계정 접두"
+    elif a_env and s_env and not d["problems"]:
+        src = "기본(무접두)"
+    elif a_env or s_env:
+        src = "섞임"
     else:
-        src, env = "없음", ""
+        src = "없음"
+    # Z1: 「접두 이름 둘」이 아니라 **실제로 읽은 이름**을 각각(액세스·시크릿·업체코드). 값은 길이와 끝 4자만.
+    env = " · ".join(x for x in (a_env, s_env) if x)
     ship_own = bool(os.getenv(f"{pfx}_RETURN_CENTER_CODE", "").strip() or os.getenv(f"{pfx}_OUTBOUND_SHIPPING_PLACE_CODE", "").strip())
+    notes = list(d["problems"])
+    if src == "기본(무접두)" and base_vendor_note():
+        notes.append(base_vendor_note())
     return {"account": account, "label": meta.get("label", account), "key_source": src, "key_env": env,
-            "vendor_id": vendor, "ship_source": f"{pfx}_*" if ship_own else "무접두 COUPANG_*(기본 계정일 때만)",
-            "ready": bool(access and secret and vendor),
-            "note": (base_vendor_note() if src == "기본(무접두)" else None)}
+            "access_env": a_env, "secret_env": s_env, "vendor_env": d["vendor_env"],
+            "access_tail": (f"…{d['access'][-4:]} ({len(d['access'])}자)" if d["access"] else ""),
+            "secret_len": len(d["secret"]),
+            "vendor_id": d["vendor"], "ship_source": f"{pfx}_*" if ship_own else "무접두 COUPANG_*(기본 계정일 때만)",
+            "ready": bool(d["access"] and d["secret"] and d["vendor"] and not d["problems"]),
+            "blocked": bool(d["problems"]),
+            "note": " · ".join(notes) or None}
 
 # sourcing_map 후보 경로(LinkLynk/Bluehost 계보 — 이 서버엔 없을 수 있음).
 _SOURCING_MAP_CANDIDATES = [
@@ -894,26 +908,70 @@ _COUPANG_SP_PATH = "/v2/providers/seller_api/apis/api/v1/marketplace/seller-prod
 _COUPANG_ACCOUNT_META = "_kgp_pilot_account"   # 판별된 소속 계정 캐시(재틱 재판별 방지)
 
 
-def _account_creds(account: str):
-    """계정(gogane/woojoo) → (access, secret, vendor_id). 접두(표준/축약 접미) 우선 + 무접두 base 폴백."""
+_CRED_SUFFIXES = (("access", ("ACCESS_KEY", "ACCESS")), ("secret", ("SECRET_KEY", "SECRET")),
+                  ("vendor", ("VENDOR_ID", "VENDOR")))
+# 키 값 안에 있으면 서명이 틀어지는 글자 — 따옴표 · 공백(가운데) · 보이지 않는 글자(zero-width·BOM).
+_CRED_BAD = re.compile("[\"'`\\s\u200b-\u200f\u2028\u2029\u2060\ufeff]")
+_KIND_KO = {"access": "액세스 키", "secret": "시크릿 키", "vendor": "업체코드"}
+
+
+def _cred_detail(account: str) -> dict:
+    """Z1(오너 2026-10-04, 우주대행 401 Invalid signature) — 그 계정이 **실제로 읽는** 이름과 값, 그리고 서명 전에
+    막아야 할 문제. 값은 이 모듈 밖으로 나가지 않는다(`coupang_key_source`는 이름·길이·끝 4자만 싣는다).
+
+    문제(있으면 키를 안 쓴다 — 틀린 서명을 쿠팡에 보내지 않음):
+      · 같은 키가 두 이름(`_ACCESS_KEY`·`_ACCESS`)에 **서로 다른 값** — 어느 쪽이 짝인지 모른다
+      · 액세스·시크릿이 **다른 접두**에서 옴(계정 접두 + 무접두) — 두 계정 키가 섞인 쌍
+      · 값에 따옴표·가운데 공백·보이지 않는 글자
+    """
     meta = COUPANG_ACCOUNTS.get(account) or {}
     pfx = meta.get("prefix", "")
-
-    def pick(*names):
-        for n in names:
-            v = os.getenv(f"{pfx}_{n}", "").strip()
-            if v:
-                return v
-        return ""
-    access = pick("ACCESS_KEY", "ACCESS")
-    secret = pick("SECRET_KEY", "SECRET")
-    vendor = pick("VENDOR_ID", "VENDOR") or meta.get("vendor_id", "")
+    label = meta.get("label", account)
+    out = {"account": account, "label": label, "prefix": pfx, "problems": []}
+    for kind, sfx in _CRED_SUFFIXES:
+        found = [(f"{pfx}_{s}", os.getenv(f"{pfx}_{s}", "").strip()) for s in sfx] if pfx else []
+        found = [(n, v) for n, v in found if v]
+        if len({v for _n, v in found}) > 1:
+            out["problems"].append(f"{label} {_KIND_KO[kind]}가 두 이름에 서로 다른 값으로 있어요 — "
+                                   f"{found[0][0]} · {found[1][0]} (하나만 남기세요)")
+        out[kind] = found[0][1] if found else ""
+        out[f"{kind}_env"] = found[0][0] if found else ""
+    if not out["vendor"] and meta.get("vendor_id"):
+        out["vendor"], out["vendor_env"] = meta["vendor_id"], "코드 기본값"
     # W0: 무접두 흡수는 **고가네(기본 계정)만**. 우주대행은 COUPANG_WOOJOO_*만(오너 2026-10-03).
-    if (not access or not secret) and account == "gogane" and _base_is_default_gogane():
-        access = access or os.getenv("COUPANG_ACCESS_KEY", "").strip()
-        secret = secret or os.getenv("COUPANG_SECRET_KEY", "").strip()
-        vendor = vendor or os.getenv("COUPANG_VENDOR_ID", "").strip()
-    return access, secret, vendor
+    if (not out["access"] or not out["secret"]) and account == "gogane" and _base_is_default_gogane():
+        for kind, name in (("access", "COUPANG_ACCESS_KEY"), ("secret", "COUPANG_SECRET_KEY")):
+            if not out[kind]:
+                out[kind], out[f"{kind}_env"] = os.getenv(name, "").strip(), name
+        if out["vendor_env"] == "코드 기본값" and os.getenv("COUPANG_VENDOR_ID", "").strip():
+            out["vendor"], out["vendor_env"] = os.getenv("COUPANG_VENDOR_ID", "").strip(), "COUPANG_VENDOR_ID"
+    a_env, s_env = out["access_env"], out["secret_env"]
+    if a_env and s_env and a_env.startswith(f"{pfx}_") != s_env.startswith(f"{pfx}_"):
+        out["problems"].append(f"키 쌍 불일치 — 액세스 키는 {a_env}, 시크릿 키는 {s_env}에서 읽었어요"
+                               "(두 계정 키가 섞인 쌍은 쿠팡이 「Invalid signature」로 거절합니다)")
+    for kind in ("access", "secret"):
+        v = out[kind]
+        if v and (_CRED_BAD.search(v) or not v.isascii()):
+            out["problems"].append(f"{out[kind + '_env']} 값에 따옴표·공백·보이지 않는 글자가 섞여 있어요"
+                                   f"(길이 {len(v)}) — Render에서 값만 다시 붙여 넣으세요")
+    return out
+
+
+def account_cred_problem(account: str) -> str:
+    """서명 전에 막은 사유(없으면 빈 문자열) — 화면·등록 실패 문장에 그대로."""
+    return " · ".join(_cred_detail(account)["problems"]) if account in COUPANG_ACCOUNTS else ""
+
+
+def _account_creds(account: str):
+    """계정(gogane/woojoo) → (access, secret, vendor_id). 접두(표준/축약 접미) 우선 + 무접두 base 폴백(고가네만).
+
+    Z1: 문제(두 이름 다른 값 · 섞인 쌍 · 깨진 값)가 있으면 **키를 비워** 돌려준다 — 틀린 서명을 쿠팡에 보내지
+    않는다. 사유는 `account_cred_problem`(업로더 「자격 없음」 문장이 그걸 싣는다)."""
+    d = _cred_detail(account)
+    if d["problems"]:
+        logger.warning("[쿠팡 키] %s 서명 전 차단 — %s", d["label"], " · ".join(d["problems"]))
+        return "", "", d["vendor"]
+    return d["access"], d["secret"], d["vendor"]
 
 
 def ready_accounts() -> list:

@@ -9283,7 +9283,10 @@ def _coupang_account_dispatch(product_data, account):
     from .upload_dispatcher import draft_url
     ak, sk, vid = _account_creds(account)
     if not (ak and sk):
-        return {"success": False, "error": f"{account} 쿠팡 자격 미설정(env) — 등록 불가"}
+        from src.pipeline.coupang_replicate import account_cred_problem
+        why = account_cred_problem(account)      # Z1: 서명 전에 막은 사유(섞인 쌍 등)면 그대로
+        return {"success": False, "error": (f"{account} 쿠팡 키 사용 안 함 — {why}" if why
+                                            else f"{account} 쿠팡 자격 미설정(env) — 등록 불가")}
     # P2: 계정별 출고지/반품지 env(COUPANG_GOGANE_*/COUPANG_WOOJOO_*) 라우팅 + 구매대행 통관(pccNeeded·고시).
     up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid,
                          account=account, overseas_purchased=True)
