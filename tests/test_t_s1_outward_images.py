@@ -116,4 +116,5 @@ def test_screens_send_item_id_to_prevalidate():
     m5 = Path("src/seller_console/templates/_m5_flow.html").read_text(encoding="utf-8")
     pv = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert "markets: markets, item_id: itemId" in m5
-    assert "JSON.stringify({product: buildProductData(), markets, item_id: _ITEM_ID})" in pv
+    # Y2 후속(2026-10-04): 같은 몸통에 refresh_from_store가 붙었다 — item_id를 싣는다는 계약은 그대로
+    assert "JSON.stringify({product: buildProductData(), markets, item_id: _ITEM_ID," in pv

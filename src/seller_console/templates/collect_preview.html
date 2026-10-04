@@ -1446,6 +1446,16 @@ async function translateToKo() {
     });
     const out = await resp.json();
     if (!out.ok) { pcToast(kgpFriendlyError(out), 'error'); return; }
+    // Y2 실측(오너 10-04 19:24): 이 버튼은 제목·상세만 옮겼고 옵션 값은 그대로였다 — 옵션 축·값도 같은 버튼에서.
+    let optMoved = false;
+    if ((_EXTRA.options || []).length) {
+      try {
+        const o = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/translate-now', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+        optMoved = !!(o.ok || o.saved);
+        if (!optMoved) pcToast('옵션은 옮기지 못했어요 — ' + (o.reason || o.error || ''), 'warning');
+      } catch (e) { /* 제목 결과는 그대로 */ }
+    }
+    if (optMoved && !(out.translated > 0)) { pcToast('옵션을 한국어로 옮겼어요.', 'success'); setTimeout(() => window.location.reload(), 700); return; }
     if ((out.translated || 0) > 0) {
       // 실제 번역됨 → 저장된 title_ko/description_ko 반영 위해 편집기 리로드(원문은 '되돌리기'로 보존).
       pcToast('한국어로 번역했습니다.', 'success');
@@ -2068,8 +2078,10 @@ async function runPrevalidate() {
     const resp = await fetch('/seller/collect/prevalidate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({product: buildProductData(), markets, item_id: _ITEM_ID}),
+      body: JSON.stringify({product: buildProductData(), markets, item_id: _ITEM_ID,
+                            refresh_from_store: !!window._kgpRefreshFromStore}),
     });
+    window._kgpRefreshFromStore = false;
     const data = await resp.json();
     btn.disabled = false;
     btn.textContent = '사전검증 →';
@@ -2131,6 +2143,8 @@ function renderPrevalidateResults(results) {
           <div class="fw-semibold">${r.market_label || r.market} ${badge}${reach}</div>
           <div class="text-muted small">${r.message}</div>
           ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger')}
+          ${(r.hold && (r.fixes || []).indexOf('translate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-translate-recheck">번역하고 다시 검증</button>' : ''}
+          ${(r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-ship-override">그래도 등록</button>' : ''}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
           ${renderActionLink(r.action_url)}
         </div>
@@ -2139,13 +2153,33 @@ function renderPrevalidateResults(results) {
   html += '</div>';
 
   if (_validatedMarkets.length === 0) {
-    html += '<div class="pc-status pc-status-warning">통과한 마켓이 없습니다. 설정을 확인하세요.</div>';
+    // Y2 후속: 보류만 남았으면 「설정 확인」이 아니라 위 버튼으로 풀 수 있다고 말한다.
+    html += results.some(r => r.hold)
+      ? '<div class="pc-status pc-status-warning" data-role="pv-only-holds">통과한 마켓이 아직 없어요 — 위 보류는 버튼(번역하고 다시 검증 · 그래도 등록)이나 보강으로 풀 수 있어요.</div>'
+      : '<div class="pc-status pc-status-warning">통과한 마켓이 없습니다. 설정을 확인하세요.</div>';
     document.getElementById('btnConfirmUpload').disabled = true;
   } else {
     document.getElementById('btnConfirmUpload').disabled = false;
     html += `<div class="pc-status pc-status-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${_validatedMarkets.join(', ')}</div>`;
   }
   el.innerHTML = html;
+  // Y2·Z5(오너 2026-10-04): 보류 카드에서 바로 — 번역(옵션 축·값 포함)하고 다시 검증 / 배송비 비율 「그래도 등록」.
+  el.querySelectorAll('[data-role="pv-translate-recheck"]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '번역하는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/translate-now', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+      if (!t.ok && !t.saved) { b.disabled = false; b.textContent = '번역하고 다시 검증'; pcToast('옮기지 못했어요 — ' + (t.reason || t.error || ''), 'warning'); return; }
+      window._kgpRefreshFromStore = true; runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = '번역하고 다시 검증'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
+  el.querySelectorAll('[data-role="pv-ship-override"]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '기록하는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/ship-ratio-override', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+      if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
+      runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
 }
 
 // ── 실제 업로드 ──
