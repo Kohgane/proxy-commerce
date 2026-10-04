@@ -55,13 +55,15 @@
     {% endif %}
     <div class="m5-legend m5-legend-sub">옵션 직접 입력</div>
     <div id="m5OptRows" data-role="m5-opt-rows">
-      {% set _opts = (m5.product.options or []) if m5.product.options is iterable else [] %}
+      {% set _opts = (m5.product.get('options') or []) if m5.product.get('options') is sequence else [] %}
       {% for i in range(2) %}{% set o = _opts[i] if _opts|length > i else {} %}
       <div class="m5-opt" data-role="m5-opt-row">
         <input class="form-control m5-opt-name" placeholder="{{ '옵션 이름 (예: 색상)' if i == 0 else '옵션 이름 (예: 사이즈) — 없으면 비워 두기' }}"
-               value="{{ (o.name_ko or o.name) if o else '' }}" maxlength="25">
+               value="{{ (o.get('name_ko') or o.get('name') or '') if o else '' }}" maxlength="25">
+        {# 사전의 .values는 메서드다 — 꼭 o.get('values')로(o.values는 500, Z3 캡처가 잡음) #}
+        {% set _vals = ((o.get('values_ko') or o.get('values') or []) if o else []) %}
         <input class="form-control m5-opt-vals" placeholder="값을 쉼표로 (예: 블랙, 화이트)"
-               value="{{ ((o.values_ko if (o and o.values_ko) else (o.values or [])) if o else [])|join(', ') }}">
+               value="{{ (_vals if _vals is not string else [_vals])|map('string')|join(', ') }}">
       </div>{% endfor %}
     </div>
     <label class="m5-note m5-opt-price" for="m5OptPrice">옵션 가격 — 모든 옵션 같은 가격({{ m5.currency or '통화' }})</label>

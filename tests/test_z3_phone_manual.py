@@ -129,3 +129,15 @@ def test_title_can_be_typed_on_the_phone():
     d = c.post(f"/seller/collect/{iid}/manual-options", json={"title": "格斯潘懒人沙发", "options": []}).get_json()
     ex = _ex(S, iid, seller)
     assert ex["title"] == "格斯潘懒人沙发" and "title_ko" not in ex           # 중국어는 원문 칸 → 번역이 옮긴다
+
+
+def test_phone_page_renders_after_options_are_saved():
+    """Z3 캡처가 잡은 500 — 옵션이 생긴 뒤 폰 화면이 `o.values`(사전 메서드)에서 터졌다."""
+    seller = "owner-z3-render"
+    iid, _S = _item(seller)
+    c = _client(seller)
+    assert c.post(f"/seller/collect/{iid}/manual-options", json={
+        "title": "빈백 소파", "options": [{"name": "색상", "values": "블랙, 그레이"}], "price": "798"}).get_json()["ok"]
+    r = c.get(f"/seller/m/item/{iid}")
+    h = r.get_data(as_text=True)
+    assert r.status_code == 200 and 'value="블랙, 그레이"' in h and "SKU 2개" in h
