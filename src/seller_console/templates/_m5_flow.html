@@ -49,6 +49,10 @@
       <a href="/seller/guide/iphone/photos">그림으로 보기</a></p>
     <div id="m5PhotoState" class="m5-note" data-role="m5-photo-state" aria-live="polite"></div>
 
+    {% if m5.title == "(제목 없음)" %}
+    <div class="m5-legend m5-legend-sub">상품명</div>
+    <input class="form-control m5-title-in" id="m5TitleIn" maxlength="100" placeholder="예: 빈백 소파 1인용 (중국어로 적어도 돼요)" data-role="m5-title-in">
+    {% endif %}
     <div class="m5-legend m5-legend-sub">옵션 직접 입력</div>
     <div id="m5OptRows" data-role="m5-opt-rows">
       {% set _opts = (m5.product.options or []) if m5.product.options is iterable else [] %}
@@ -62,7 +66,7 @@
     </div>
     <label class="m5-note m5-opt-price" for="m5OptPrice">옵션 가격 — 모든 옵션 같은 가격({{ m5.currency or '통화' }})</label>
     <input class="form-control" id="m5OptPrice" inputmode="decimal" value="{{ m5.price }}" placeholder="예: 798">
-    <button type="button" class="btn btn-ghost m5-btn" id="m5OptSave" data-role="m5-opt-save">옵션 저장</button>
+    <button type="button" class="btn btn-ghost m5-btn" id="m5OptSave" data-role="m5-opt-save">{{ '상품명·옵션 저장' if m5.title == "(제목 없음)" else '옵션 저장' }}</button>
     <div id="m5OptState" class="m5-note" data-role="m5-opt-state" aria-live="polite"></div>
     <a class="btn btn-primary m5-btn" href="#m5Markets" data-role="m5-to-register">등록으로</a>
   </section>
@@ -106,7 +110,7 @@
   .m5-legend-sub { margin-top: 14px; }
   .m5-photo-btn { display: flex; align-items: center; justify-content: center; gap: 8px; }
   .m5-opt { display: grid; gap: 6px; margin-bottom: 10px; }
-  .m5-opt .form-control, #m5OptPrice { min-height: 48px; font-size: 1rem; }
+  .m5-opt .form-control, #m5OptPrice, .m5-title-in { min-height: 48px; font-size: 1rem; }
   .m5-opt-price { display: block; margin-top: 4px; }
   .m5-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 16px);
              padding: 14px; box-shadow: var(--shadow-sm); }
@@ -212,9 +216,10 @@
     try {
       var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/manual-options', {method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({options: rows, price: (document.getElementById('m5OptPrice') || {}).value || ''})});
+        body: JSON.stringify({options: rows, price: (document.getElementById('m5OptPrice') || {}).value || '',
+                              title: (document.getElementById('m5TitleIn') || {}).value || ''})});
       var d = await r.json();
-      if (d.ok) { optSt.textContent = '옵션 ' + d.sku_count + '개 조합 저장(모두 ' + d.price + ' ' + d.currency + ') · 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); return; }
+      if (d.ok) { optSt.textContent = (d.sku_count ? '옵션 ' + d.sku_count + '개 조합 저장(모두 ' + d.price + ' ' + d.currency + ')' : '상품명 저장') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); return; }
       optSt.textContent = '저장하지 못했어요 — ' + (d.error || '사유 원문 없음');
     } catch (e) { optSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
     optSave.disabled = false;

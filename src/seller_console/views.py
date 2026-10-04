@@ -3048,6 +3048,20 @@ def _manual_options(raw) -> tuple:
     return opts[:MANUAL_OPTION_AXES], errs
 
 
+def _manual_title(ex: dict, title: str) -> None:
+    from src.collectors import ko_polish as _kp
+    if _kp.has_foreign(title):
+        ex["title"] = title                      # 중국어로 적었으면 원문 칸 — 번역(자동 번역·「번역하고 다시 검증」)이 옮긴다
+        ex.pop("title_ko", None)
+    else:
+        ex["title"] = ex.get("title") or title
+        ex["title_ko"] = title
+    ex.setdefault("field_sources", {})["title"] = "manual"
+    man = dict(ex.get("manual_fields") or {}) if isinstance(ex.get("manual_fields"), dict) else {}
+    man["title"] = datetime.now(timezone.utc).isoformat()
+    ex["manual_fields"] = man
+
+
 @bp.post("/collect/<item_id>/manual-options")
 def collect_manual_options(item_id):
     """옵션 축·값 직접 입력 → 옵션 + SKU(조합마다 **같은 가격** — 화면에 그렇게 적는다). 「직접 수정」으로 표시."""
@@ -3057,13 +3071,21 @@ def collect_manual_options(item_id):
     if not item:
         return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
     data = request.get_json(force=True, silent=True) or {}
+    title_in = re.sub(r"\s+", " ", str(data.get("title") or "")).strip()[:100]
     opts, errs = _manual_options(data.get("options"))
-    if errs or not opts:
-        return jsonify({"ok": False, "error": " · ".join(errs) or "옵션을 하나 이상 적어 주세요."}), 400
     try:
         ex = json.loads(item.get("extra_json") or "{}") or {}
     except Exception:
         ex = {}
+    if title_in and not opts and not errs:
+        # 상품명만(공유 링크엔 제목이 없다 — 쿠팡 상품명을 만들 재료). 「직접 수정」으로 적는다.
+        _manual_title(ex, title_in)
+        ok = _save_manual_extra(item_id, ex, title=title_in)
+        return jsonify({"ok": ok, "title": title_in, "sku_count": 0, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+    if errs or not opts:
+        return jsonify({"ok": False, "error": " · ".join(errs) or "옵션을 하나 이상 적어 주세요."}), 400
+    if title_in:
+        _manual_title(ex, title_in)
     price_in = str(data.get("price") or "").replace(",", "").strip()
     price = price_in or str(ex.get("price") or item.get("price") or "").strip()
     try:
@@ -3086,7 +3108,7 @@ def collect_manual_options(item_id):
     ex["manual_fields"] = man
     if price_in:
         ex["price"] = price_in
-    ok = _save_manual_extra(item_id, ex)
+    ok = _save_manual_extra(item_id, ex, **({"title": title_in} if title_in else {}))
     logger.info("[폰 옵션 입력] item=%s 축=%d 조합=%d 저장=%s", item_id, len(opts), len(combos), ok)
     return jsonify({"ok": ok, "options": opts, "sku_count": len(combos), "price": price, "currency": cur,
                     "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)

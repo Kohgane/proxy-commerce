@@ -113,3 +113,19 @@ def test_screen_d_guide_is_public():
     h = app.test_client().get("/seller/guide/iphone/photos").get_data(as_text=True)
     assert "폰에서 사진·옵션 넣기" in h and all(f'data-role="step-d{k}"' in h for k in (1, 2, 3))
     assert "保存图片" in h and "「사진 추가」" in h and "「등록으로」" in h
+
+
+def test_title_can_be_typed_on_the_phone():
+    """공유 링크엔 제목이 없다(오늘 share 3건 전부 「제목 없음」) — 상품명이 없으면 쿠팡 상품명을 못 만든다."""
+    seller = "owner-z3-title"
+    iid, S = _item(seller)
+    c = _client(seller)
+    h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    assert 'data-role="m5-title-in"' in h and "상품명·옵션 저장" in h
+    d = c.post(f"/seller/collect/{iid}/manual-options", json={"title": "빈백 소파 1인용 라운지 체어"}).get_json()
+    assert d["ok"] and d["sku_count"] == 0
+    ex = _ex(S, iid, seller)
+    assert ex["title_ko"] == "빈백 소파 1인용 라운지 체어" and "title" in ex["manual_fields"]
+    d = c.post(f"/seller/collect/{iid}/manual-options", json={"title": "格斯潘懒人沙发", "options": []}).get_json()
+    ex = _ex(S, iid, seller)
+    assert ex["title"] == "格斯潘懒人沙发" and "title_ko" not in ex           # 중국어는 원문 칸 → 번역이 옮긴다
