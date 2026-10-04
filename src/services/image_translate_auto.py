@@ -27,6 +27,8 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 
 ENV_CAP = "IMAGE_TRANSLATE_DAILY_CAP"
+# Z3-2(오너 2026-10-04): 건당 상한 = 대표 1 + 갤러리 5(갤러리 0~5번) + 상세 10. 넘는 장은 원본 유지.
+PER_ITEM_CAP = {"gallery": 6, "detail": 10}
 DEFAULT_CAP = 200
 FAIL_PAUSE_AT = 20
 SOURCES = ("taobao", "tmall", "1688")
@@ -161,11 +163,17 @@ def enqueue_after_enrich(user_id: str, item_id: str, url: str, extra: dict) -> i
         for e in (extra.get(key) or []):
             if isinstance(e, dict) and e.get("status") in ("done", "skipped"):
                 done.add((kind, int(e.get("idx", -1))))
-    pages = []
+    pages, over = [], 0
     for key, kind in (("images", "gallery"), ("detail_images", "detail")):
+        cap = PER_ITEM_CAP[kind]
         for i, u in enumerate([u for u in (extra.get(key) or []) if u]):
+            if i >= cap:
+                over += 1                       # Z3-2: 건당 상한 넘는 장은 원본 그대로(보내지 않는다)
+                continue
             if (kind, i) not in done:
                 pages.append((kind, i))
+    if over:
+        logger.info("[이미지번역·자동] item=%s 건당 상한(대표1+갤러리5+상세10) 넘는 %d장은 원본 유지", item_id, over)
     n = _q().enqueue(user_id, item_id, pages) if pages else 0
     if n:
         logger.info("[이미지번역·자동] 접수 item=%s %s장(갤러리+상세)", item_id, n)
@@ -287,14 +295,32 @@ def translate_page(url: str, *, idx: int, kind: str, item_id: str, seller_id: st
     from src.services import image_translate_tencent as tc
     from src.services.image_bench_axes import brand_tokens
 
-    res = tc.translate_image(url=url)            # 박스+원문(렌더본은 쓰지 않는다)
+    from src.services import image_translate_budget as budget
+    from src.services import image_text_precheck as precheck
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Z3-2 ① 무료 로컬 OCR 먼저 — 한자가 없다고 **확신**하면 텐센트에 안 보낸다(모르면 예전처럼 보냄).
+    raw0, _why0 = tc.fetch_image(url)
+    has, seen = precheck.han_text(raw0) if raw0 else (None, "")
+    if has is False:
+        budget.record_skip("ocr")
+        return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "local-ocr", "ms": 0, "at": now_iso,
+                "reason": "글자 없는 사진(로컬 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
+    # ② 월 예산(계정 전체 하나) — 넘으면 보내지 않고 원본으로 등록을 계속한다.
+    m = budget.mode()
+    ok_send, spent, cap = budget.can_send(m)
+    if not ok_send:
+        budget.record_skip("budget")
+        return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "budget", "ms": 0, "at": now_iso,
+                "reason": f"이번 달 이미지 번역 예산 소진(${spent:.2f}/${cap:.0f}) — 원본으로 등록합니다"}
+    res = tc.translate_image(url=url, mode=m)    # 박스+원문(렌더본은 쓰지 않는다)
+    budget.record_call(m, bool(res.get("ok")))
     if not res.get("ok"):
         return istore.build_entry(idx, res, item_id=item_id, seller_id=seller_id, kind=kind)
     lines = res.get("lines") or []
     if not lines:
         return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "d3", "ms": int(res.get("ms") or 0),
                 "reason": "이미지에 번역할 글자가 없습니다 — 원본을 씁니다", "at": datetime.now(timezone.utc).isoformat()}
-    raw, why = tc.fetch_image(url)
+    raw, why = (raw0, _why0) if raw0 else tc.fetch_image(url)
     if not raw:
         return istore.build_entry(idx, {"ok": False, "vendor": "d3", "error_class": "FetchFailed",
                                         "error_message": f"원본을 받지 못했습니다: {why}"},

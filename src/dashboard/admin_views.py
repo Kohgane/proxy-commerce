@@ -528,6 +528,11 @@ def _render_diagnostics(issued_magic_link: str | None):
 
     # v87-W7a: 서버 AI 예산 가드 현황(읽기 전용)
     ai_budget = _build_ai_budget_status()
+    try:                                                   # Z3-2: 이미지 번역 이번 달 n장 / $x (청구서 안 봐도 되게)
+        from src.services import image_translate_budget as _itb
+        image_budget_line = _itb.status_line()
+    except Exception as exc:
+        image_budget_line = f"이미지 번역 장부를 읽지 못했어요 — {type(exc).__name__}"
 
     # v87-W7a branch②: 번역 계측(사유코드별 + 최근 실패 원 응답) 읽기 전용
     translate_stats = _build_translate_stats()
@@ -594,7 +599,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         messenger_health=messenger_health,
         market_health=market_health,
         pricing_status=pricing_status,
-        ai_budget=ai_budget,
+        ai_budget=ai_budget, image_budget_line=image_budget_line,
         smartstore_probe=smartstore_probe,
         account_keys=account_keys,
         workers_status=workers_status,
@@ -1333,6 +1338,126 @@ _NAVER_ORDERS_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <div class="small text-muted" style="word-break:break-all">결제 {{ r.created_at or '—' }} · 수량 {{ r.quantities|join(',') }} · {{ r.status or '—' }}<br>
 주문번호 {{ r.order_number or '—' }} · 상품주문번호 {{ r.order_id or '—' }}</div></div>{% endfor %}{% endif %}
 <a href="/admin/diagnostics#workers-status">← 진단으로</a></div></body></html>"""
+
+
+def _page_url(uid: str, item_id: str, kind: str, idx: int) -> str:
+    import json as _json
+    from src.seller_console import collect_history_store as store
+    row = store.get(item_id, seller_ids={uid}) or {}
+    try:
+        ex = _json.loads(row.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    urls = [u for u in (ex.get("images" if kind == "gallery" else "detail_images") or []) if u]
+    return urls[idx] if 0 <= idx < len(urls) else ""
+
+
+@admin_panel_bp.get("/diagnostics/ocr-precheck")
+def diagnostics_ocr_precheck():
+    """Z3-2(오너 2026-10-04): 무료 로컬 OCR(RapidOCR) 「한자 있나」 판정을 **운영 라벨**(텐센트가 실제로 번역함 = 글자 있음 /
+    「그릴 줄 없음」 = 없음)로 잰다 — 무료, 텐센트 호출 0. 놓친 장(글자 있는데 「없음」)이 곧 한자가 남은 채 나갈 장이다."""
+    from flask import request as _rq
+    from src.db import image_translate_queue_pg as q
+    from src.services import image_text_precheck as P
+    from src.services import image_translate_tencent as tc
+    n = max(1, min(int(_rq.args.get("n") or 60), 120))
+    rows, cm = [], {"tp": 0, "fn": 0, "tn": 0, "fp": 0, "unknown": 0, "nourl": 0}
+    for uid, iid, kind, idx, label in q.labeled_pages(n):
+        url = _page_url(uid, iid, kind, idx)
+        if not url:
+            cm["nourl"] += 1
+            continue
+        raw, why = tc.fetch_image(url)
+        pred, seen = P.han_text(raw) if raw else (None, "")
+        if pred is None:
+            cm["unknown"] += 1
+        elif label:
+            cm["tp" if pred else "fn"] += 1
+        else:
+            cm["fp" if pred else "tn"] += 1
+        rows.append({"url": url, "label": label, "pred": pred, "seen": seen, "why": "" if raw else why})
+    pos, neg = cm["tp"] + cm["fn"], cm["tn"] + cm["fp"]
+    summary = (f"글자 있는 장 {pos}장 중 맞힘 {cm['tp']}(놓침 {cm['fn']}) · 없는 장 {neg}장 중 맞힘 {cm['tn']}(헛판정 {cm['fp']}) · "
+               f"판정 못 함 {cm['unknown']} · 주소 없음 {cm['nourl']}"
+               + ("" if P.engine() else f" · 엔진 없음: {P.engine_error()}"))
+    return render_template_string(_OCR_PRECHECK_TEMPLATE, rows=rows, summary=summary)
+
+
+_OCR_PRECHECK_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>로컬 OCR 판정 정확도</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px" data-role="ocr-precheck">
+<h5>무료 로컬 OCR — 「한자 있나」 판정 정확도(운영 라벨)</h5>
+<p data-role="ocr-summary"><strong>{{ summary }}</strong></p>
+<p class="small text-muted">라벨 = 텐센트가 실제로 번역함(글자 있음) / 「그릴 줄 없음」(없음). 놓침은 한자가 남은 채 나갈 장, 헛판정은 돈만 더 쓰는 장.</p>
+{% for r in rows %}<div class="border-bottom py-1 small" data-role="ocr-row" style="word-break:break-all">
+<span class="badge {{ 'bg-secondary' if r.pred is none else ('bg-success' if r.pred == r.label else 'bg-danger') }}">{{ '판정 못 함' if r.pred is none else ('맞음' if r.pred == r.label else '틀림') }}</span>
+라벨 {{ '글자 있음' if r.label else '없음' }} · 판정 {{ '있음' if r.pred else ('없음' if r.pred is sameas false else '—') }}
+{% if r.seen %} · 읽은 글자 「{{ r.seen }}」{% endif %}{% if r.why %} · {{ r.why }}{% endif %}<br><a href="{{ r.url }}" target="_blank" rel="noreferrer">{{ r.url[:90] }}</a></div>{% endfor %}
+<a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
+
+
+@admin_panel_bp.route("/diagnostics/image-mode-compare", methods=["GET", "POST"])
+def diagnostics_image_mode_compare():
+    """Z3-2: 같은 사진 5장을 pro(Mode 0)와 lite(Mode 1)로 각각 — **유료**(5×($0.04+$0.02)=$0.30), 오너가 누를 때만.
+    결과는 텐센트 원문(줄 수·번역문)을 나란히. 장부에도 그대로 적는다(월 예산 안에서)."""
+    from flask import request as _rq
+    from src.services import image_translate_budget as B
+    from src.services import image_translate_tencent as tc
+    item = (_rq.values.get("item") or "").strip()
+    rows, err = [], ""
+    if _rq.method == "POST":
+        urls = []
+        if item:
+            from src.db import pg as _pg
+            from src.seller_console import collect_history_store as store
+            try:
+                import json as _json
+                row = None
+                if _pg.pg_enabled():
+                    with _pg.query() as cur:
+                        cur.execute("SELECT user_id FROM collect_history WHERE id::text=%s", (item,))
+                        r0 = cur.fetchone()
+                    row = store.get(item, seller_ids={r0[0]}) if r0 else None
+                else:
+                    row = store.get(item)
+                ex = _json.loads((row or {}).get("extra_json") or "{}") or {}
+                urls = ([u for u in (ex.get("images") or []) if u] + [u for u in (ex.get("detail_images") or []) if u])[:5]
+            except Exception as exc:
+                err = f"상품을 못 읽었어요 — {type(exc).__name__}"
+        if not urls and not err:
+            err = "사진이 있는 상품 ID를 넣어 주세요."
+        for u in urls:
+            pair = {"url": u}
+            for m in (0, 1):
+                ok_send, spent, cap = B.can_send(m)
+                if not ok_send:
+                    pair[m] = {"ok": False, "text": f"월 예산 소진(${spent:.2f}/${cap:.0f}) — 안 보냄"}
+                    continue
+                res = tc.translate_image(url=u, mode=m)
+                B.record_call(m, bool(res.get("ok")))
+                lines = res.get("lines") or []
+                pair[m] = {"ok": bool(res.get("ok")), "n": len(lines), "ms": res.get("ms"),
+                           "text": " / ".join(f"{(l.get('source') or '')[:14]}→{(l.get('target') or '')[:14]}" for l in lines[:6])
+                           if res.get("ok") else (res.get("error_message") or res.get("error_class") or "실패")}
+            rows.append(pair)
+    return render_template_string(_IMAGE_MODE_TEMPLATE, rows=rows, item=item, err=err, line=B.status_line())
+
+
+_IMAGE_MODE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>이미지 번역 pro·lite 비교</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px" data-role="image-mode-compare">
+<h5>이미지 번역 — 같은 사진 pro(Mode 0) · lite(Mode 1)</h5>
+<p class="small">{{ line }}</p>
+<form method="post" class="d-flex flex-wrap gap-2 mb-3"><input class="form-control form-control-sm" style="max-width:360px" name="item" placeholder="상품 ID(사진 앞 5장)" value="{{ item }}">
+<button class="btn btn-sm btn-outline-danger">5장 비교하기 — 유료 약 $0.30</button></form>
+{% if err %}<div class="alert alert-warning small">{{ err }}</div>{% endif %}
+{% for r in rows %}<div class="border-bottom py-2 small" data-role="mode-row" style="word-break:break-word">
+<a href="{{ r.url }}" target="_blank" rel="noreferrer">사진</a>
+<div><strong>pro</strong> {{ r[0].n if r[0].n is defined else '' }}줄 · {{ r[0].text }}</div>
+<div><strong>lite</strong> {{ r[1].n if r[1].n is defined else '' }}줄 · {{ r[1].text }}</div></div>{% endfor %}
+<a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
 
 
 @admin_panel_bp.get("/diagnostics/coupang-sign")
@@ -3047,6 +3172,15 @@ _DIAGNOSTICS_TEMPLATE = """
         {% else %}
         <div class="text-muted small">확인하지 못했어요: <code>{{ smartstore_probe.error }}</code></div>
         {% endif %}
+      </div>
+    </div>
+
+    <!-- Z3-2(2026-10-04): 텐센트 이미지 번역 월 장부 — 계정 전체 하나(TENCENT_IMAGE_MONTHLY_BUDGET_USD) -->
+    <div class="card mb-4" id="image-budget" data-role="image-budget">
+      <div class="card-body small" style="word-break:break-word">
+        <strong>{{ image_budget_line }}</strong>
+        <div class="text-muted mt-1">pro/lite 같은 사진 비교: <a href="/admin/diagnostics/image-mode-compare">사진 5장 비교(유료 $0.30)</a> ·
+          무료 로컬 판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a></div>
       </div>
     </div>
 
