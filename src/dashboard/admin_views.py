@@ -1429,6 +1429,43 @@ _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 <a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
 
 
+@admin_panel_bp.get("/diagnostics/qoo10")
+def diagnostics_qoo10():
+    """R2(오너 2026-10-05): Qoo10 재팬 뼈대 — 키 상태(env 이름만) · 가이드로 확정할 명세 · 가격 엔진 설정 · 가격 미리보기(원가·무게 입력)."""
+    from flask import request as _rq
+    from src.markets import qoo10 as Q
+    from src.pricing import export_price as P
+    cost, kg = (_rq.args.get("cost") or "").strip(), (_rq.args.get("kg") or "").strip()
+    quote = None
+    if cost:
+        try:
+            quote = P.quote(cost, market="qoo10", weight_kg=float(kg) if kg else None)
+        except ValueError:
+            quote = {"state": "unknown", "why": "무게는 숫자(kg)"}
+    env_rows = [(n, "설정됨" if os.getenv(n, "").strip() else "없음")
+                for n in (*Q.ENV_KEYS, Q.ENV_CERT, "QOO10_FEE_PCT", P.ship_env("JP"), "EXPORT_MARGIN_PCT")]
+    return render_template_string(_QOO10_TEMPLATE, st=Q.status(), gaps=Q.spec_gaps(), env_rows=env_rows,
+                                  margin=P.margin_pct(), quote=quote, cost=cost, kg=kg)
+
+
+_QOO10_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Qoo10 재팬 준비 상태</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px;overflow-wrap:anywhere;word-break:break-word" data-role="qoo10-diag">
+<h5>Qoo10 재팬 — 준비 상태(R2 뼈대)</h5>
+<p data-role="qoo10-status"><strong>{{ st.line }}</strong></p>
+<table class="table table-sm small"><tbody>{% for n, v in env_rows %}<tr><td><code>{{ n }}</code></td><td>{{ v }}</td></tr>{% endfor %}
+<tr><td>마진율</td><td>{{ margin }}%(EXPORT_MARGIN_PCT, 기본 27)</td></tr></tbody></table>
+<h6>가이드로 확정할 것(이 전엔 호출하지 않음)</h6>
+<ul class="small" data-role="qoo10-gaps">{% for g in gaps %}<li>{{ g }}</li>{% endfor %}</ul>
+<h6>판매가 미리보기</h6>
+<form method="get" class="row g-2 small mb-2"><div class="col"><input class="form-control form-control-sm" name="cost" value="{{ cost }}" placeholder="국내 소싱가(원)"></div>
+<div class="col"><input class="form-control form-control-sm" name="kg" value="{{ kg }}" placeholder="청구 무게(kg)"></div>
+<div class="col-auto"><button class="btn btn-sm btn-outline-secondary">계산</button></div></form>
+{% if quote %}<p class="small" data-role="qoo10-quote">{{ quote.line if quote.state == 'ok' else '보류 — ' ~ quote.why }}</p>{% endif %}
+<a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.get("/diagnostics/ocr-precheck")
 def diagnostics_ocr_precheck():
     """Z3-2(오너 2026-10-04): 무료 로컬 OCR(RapidOCR) 「한자 있나」 판정을 **운영 라벨**(텐센트가 실제로 번역함 = 글자 있음 /
