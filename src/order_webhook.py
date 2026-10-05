@@ -1249,6 +1249,9 @@ except Exception as _diagnostic_token_bp_exc:
 try:
     from .legal.views import legal_bp
     app.register_blueprint(legal_bp)
+    # L1(오너 2026-10-05): 공개 페이지(/pricing · /terms · /privacy · /contact) + 공통 푸터 site_info
+    from .public_site.views import bp as _public_bp
+    app.register_blueprint(_public_bp)
     logger.info("Legal Blueprint 등록 완료")
 except Exception as _legal_bp_exc:
     logger.warning("Legal Blueprint 등록 실패: %s", _legal_bp_exc)
@@ -1435,8 +1438,14 @@ def lane_gate():
 def _render_landing():
     from src.version import get_current_phase
     version = os.getenv('APP_VERSION', 'dev')
+    try:                                             # L1: 실측 숫자 3개 · 연동/준비 중 마켓(공개 페이지 blueprint가 단일 출처)
+        from src.public_site.views import landing_context
+        l1 = landing_context()
+    except Exception as exc:                         # noqa: BLE001 — 랜딩은 숫자 없이도 뜬다(「—」)
+        logger.warning("L1 랜딩 재료 실패: %s", exc)
+        l1 = {}
     return render_template('landing.html', version=version, current_phase=get_current_phase(),
-                           lang=_visitor_lang(), show_region_banner=_show_region_banner())
+                           lang=_visitor_lang(), show_region_banner=_show_region_banner(), **l1)
 
 
 @app.get('/i18n/set')

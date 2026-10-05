@@ -47,5 +47,7 @@ def test_owner_action_table_present():
 
 def test_privacy_route_actually_served():
     # 재사용하는 개인정보 페이지가 실제 라우트로 존재(죽은 URL 금지).
-    legal = Path("src/legal/views.py").read_text(encoding="utf-8")
-    assert '"/privacy"' in legal or "'/privacy'" in legal
+    #   L1(2026-10-05): 본문이 src/public_site로 옮겨 — 소스 문자열 대신 실제로 200이 나는지 본다.
+    from src.order_webhook import app
+    r = app.test_client().get("/privacy")
+    assert r.status_code == 200 and "개인정보처리방침" in r.get_data(as_text=True)

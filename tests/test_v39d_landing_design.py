@@ -34,8 +34,9 @@ def test_mockup_structure_present(client):
 def test_console_shot_and_pipeline(client):
     html = client.get("/").get_data(as_text=True)
     # 콘솔 미리보기 샷(브라우저 크롬 바 + 사이드 + KPI + 행)
-    assert 'class="shot ' in html and 'class="shot-bar"' in html
-    assert 'class="kpis"' in html and 'class="prow"' in html
+    # L1(2026-10-05): 지어낸 숫자(총 수집 128 등)가 박힌 콘솔 목업 → DB 실측 숫자 + 실제 화면 3장
+    assert 'data-role="l1-shots"' in html and 'data-role="l1-stats"' in html
+    assert 'class="kpis"' not in html and '<div class="v">128</div>' not in html
     # 5단계 파이프라인
     assert 'class="steps5"' in html
     for n in ("01", "02", "03", "04", "05"):
@@ -63,7 +64,7 @@ def test_tokens_single_source_no_hardcoded_brand_hex():
 def test_real_data_no_fake_reviews_or_numbers(client):
     html = client.get("/").get_data(as_text=True)
     # 지원 마켓(실데이터) 노출
-    for m in ("쿠팡", "스마트스토어", "Shopify", "Amazon"):
+    for m in ("쿠팡", "스마트스토어", "Shopify", "WooCommerce"):   # L1: 지금 연동되는 마켓만(Amazon은 미연동)
         assert m in html
     # 가짜 셀러 수·후기 수치 날조 금지
     assert not re.search(r"[\d,]{2,}\s*명", html), "가짜 셀러 수"
@@ -74,7 +75,7 @@ def test_preserves_required_hooks(client):
     html = client.get("/").get_data(as_text=True)
     assert "For Beginners" in html and "/seller/start" in html
     assert "/privacy" in html and "/terms" in html
-    assert "/seller/billing" in html
+    assert "/pricing" in html                  # L1: 공개 /pricing
     # 옛 글러브/지구본/구브랜드 0
     for bad in ("글러브", "globe", "코고가네", "KOHgogane"):
         assert bad not in TPL

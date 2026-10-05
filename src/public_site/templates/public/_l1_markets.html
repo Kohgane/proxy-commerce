@@ -1,0 +1,23 @@
+{# L1 — 연동 마켓(지금 동작) · 준비 중(정직 표기 — 신청·심사 단계) #}
+<section class="block" id="connect" data-role="l1-markets"><div class="wrap">
+  <div class="sec-head reveal">
+    <div class="kick">Connects with</div>
+    <h2 class="serif">연동 마켓</h2>
+    <p>각 마켓은 셀러 본인 API 키로 직접 연동합니다.</p>
+  </div>
+  <div class="l1-mk">
+    <div class="l1-mk-col reveal"><h4>지금 연동</h4><ul>{% for m in l1_live %}<li data-role="market-live">{{ m }}</li>{% endfor %}</ul></div>
+    <div class="l1-mk-col soon reveal"><h4>준비 중</h4><ul>{% for m in l1_soon %}<li data-role="market-soon">{{ m }} <span>준비 중</span></li>{% endfor %}</ul></div>
+  </div>
+</div></section>
+<style>
+  .l1-mk { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .l1-mk-col { background: var(--surface, #fff); border: 1px solid var(--border); border-radius: var(--radius-lg, 16px); padding: 18px; }
+  .l1-mk-col h4 { font-size: .95rem; margin: 0 0 8px; color: var(--teal); }
+  .l1-mk-col.soon h4 { color: var(--text-muted); }
+  .l1-mk-col ul { list-style: none; margin: 0; padding: 0; }
+  .l1-mk-col li { padding: 8px 0; border-top: 1px solid var(--border); font-weight: 700; }
+  .l1-mk-col.soon li { color: var(--text-muted); font-weight: 600; }
+  .l1-mk-col li span { font-size: .75rem; border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 1px 8px; margin-left: 6px; }
+  @media (max-width: 760px) { .l1-mk { grid-template-columns: 1fr; } }
+</style>

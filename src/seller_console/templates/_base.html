@@ -355,6 +355,8 @@
       </script>
       {% endif %}
       {% block content %}{% endblock %}
+      {# L1: 공통 푸터(사업자 정보·약관·개인정보) — 랜딩·공개 페이지와 같은 조각 #}
+      <footer class="mt-4 border-top">{% set foot_dark = False %}{% include "public/_site_footer.html" %}</footer>
     </main>
   </div>
 </div>

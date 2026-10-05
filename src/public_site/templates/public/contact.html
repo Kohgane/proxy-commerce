@@ -1,0 +1,14 @@
+{% extends "public/_public_base.html" %}
+{% block title %}문의{% endblock %}{% block page_title %}문의{% endblock %}
+{% block page %}
+{% set _si = site_info or {} %}
+<div class="kick">Contact</div>
+<h1>문의</h1>
+<p class="lead">서비스·제휴·계정 삭제·개인정보 열람 요청은 아래로 보내 주세요. 스팸을 막으려고 입력 폼은 두지 않았습니다.</p>
+<div class="pub-card" data-role="contact-card">
+  {% if _si.email %}<p data-role="contact-email"><strong>이메일</strong><br><a href="mailto:{{ _si.email }}">{{ _si.email }}</a></p>{% endif %}
+  {% if _si.telegram %}<p data-role="contact-telegram"><strong>텔레그램</strong><br><a href="{{ _si.telegram }}" rel="noopener">{{ _si.telegram|replace('https://', '') }}</a></p>{% endif %}
+  {% if not _si.email and not _si.telegram %}<p data-role="contact-none">연락 창구를 정리하고 있어요. 그동안은 로그인 뒤 콘솔의 도움말에서 문의해 주세요.</p>{% endif %}
+  <p class="meta" style="margin:0">운영: {{ _si.name }} · 대표 {{ _si.ceo }} · 사업자등록번호 {{ _si.reg_no }}</p>
+</div>
+{% endblock %}

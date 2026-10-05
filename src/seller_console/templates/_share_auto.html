@@ -14,7 +14,8 @@
         if (d.state === 'done' || d.state === 'manual') {
           el.setAttribute('data-state', d.state);
           el.textContent = d.line;
-          if (d.state === 'done') { setTimeout(function () { location.reload(); }, 1200); }
+          // 다시 불러오기(reload)는 공유 주소를 또 보내 「이미 담은 상품이에요」가 된다 — 채워진 검수 화면으로 간다
+          if (d.state === 'done') { setTimeout(function () { location.replace('/seller/m/item/' + encodeURIComponent(id)); }, 1200); }
           return;
         }
         if (n < 20) { setTimeout(tick, 3000); }

@@ -234,6 +234,19 @@
 </div>
 {% endif %}
 
+<!-- L1: 서비스 정보(약관·개인정보·플랜·문의 — 공개 페이지) -->
+<div class="op-card border-0 shadow-sm mb-3" data-role="service-info">
+  <div class="op-card-body">
+    <h6 class="fw-semibold mb-3"><i class="bi bi-info-circle"></i> 서비스 정보</h6>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-ghost btn-sm" href="/terms">이용약관</a>
+      <a class="btn btn-ghost btn-sm" href="/privacy">개인정보처리방침</a>
+      <a class="btn btn-ghost btn-sm" href="/pricing">플랜</a>
+      <a class="btn btn-ghost btn-sm" href="/contact">문의</a>
+    </div>
+  </div>
+</div>
+
 <script>
 async function confirmDeactivate() {
   if (!(await pcConfirm('정말 탈퇴하시겠습니까? 계정이 비활성화됩니다.', {title: '회원 탈퇴', confirmLabel: '탈퇴'}))) return;

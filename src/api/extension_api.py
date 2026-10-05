@@ -1877,6 +1877,9 @@ def share_collect_core(raw: str, *, url: str, seller_id: str, seller_ids, final_
             "enrich_state": res.get("enrich_state", ""),
             "resolve_gap": res.get("resolve_gap", ""),
             "message": res.get("message") or "수집됐습니다.",
+            # Z3 자동 경로가 켜져 시작됐으면 담았어요 카드가 결과를 폴링한다(L1 캡처 중 발견: 이 키가 빠져
+            #   카드가 늘 「PC 크롬에서 채워져요」만 보였다 — `_share_auto.html`이 한 번도 안 떴음)
+            "auto_enrich": bool(res.get("auto_enrich")),
         })
     return out, res
 
