@@ -74,7 +74,9 @@ def test_real_via_call_reuses_and_keeps_raw(monkeypatch):
 
     def tr(url, params):
         calls.append(params["num_iid"])
-        return 200, REAL.read_text(encoding="utf-8")
+        raw = json.loads(REAL.read_text(encoding="utf-8"))
+        raw["cache"] = 0             # 실측 원문은 cache=1(10-04 데이터) — 하루 지나면 cache=no 재호출이 맞게 돈다(시계에 묶이지 않게)
+        return 200, json.dumps(raw, ensure_ascii=False)
     r = O.fetch_detail("652874751412", transport=tr)
     assert r["state"] == "ok" and len(r["payload"]["skus"]) == 8 and calls == ["652874751412"]
     assert O.fetch_detail("652874751412", transport=tr)["reused"] is True and calls == ["652874751412"]
