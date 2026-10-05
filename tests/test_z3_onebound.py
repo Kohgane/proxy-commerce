@@ -305,3 +305,19 @@ def test_docs_memo_exists():
     doc = (Path(__file__).parent.parent / "docs" / "z3-onebound.md").read_text(encoding="utf-8")
     for w in ("0.023", "ONEBOUND_KEY", "ONEBOUND_SECRET", "TAOBAO_DETAIL_PROVIDER", "ONEBOUND_DAILY_CAP", "login_required"):
         assert w in doc
+
+
+def test_app_boot_does_not_import_site_adapters():
+    """#835 CI 실측: 부팅 startup_check가 `src.collectors` 패키지를 import하면 `__init__`이 사이트 어댑터 전부를 끌고 와
+    어댑터의 import 시점 ADAPTER_DRY_RUN이 굳어 dry-run 계약 4건이 실네트워크로 돌았다 — 부팅은 env만 본다."""
+    import subprocess
+    import sys
+    code = ("import sys, src.order_webhook; "
+            "print(int('src.collectors.adapters.yoshida_kaban_adapter' in sys.modules))")
+    for env_extra in ({}, {"TAOBAO_DETAIL_PROVIDER": "mtop", "TAOBAO_MTOP_AUTO": "0"}):
+        import os
+        env = {k: v for k, v in os.environ.items() if k not in ("TAOBAO_DETAIL_PROVIDER", "TAOBAO_MTOP_AUTO", "ADAPTER_DRY_RUN")}
+        env.update(env_extra)
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env,
+                             cwd=str(Path(__file__).parent.parent), timeout=120)
+        assert out.stdout.strip().splitlines()[-1] == "0", out.stderr[-600:]

@@ -24,17 +24,20 @@ logger = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 
 
+def _onebound() -> bool:
+    # ★ `src.collectors` 패키지를 import하지 않고 env만 본다 — 이 함수는 앱 부팅(`order_webhook` → startup_check)에서
+    #   불린다. 패키지 `__init__`이 사이트 어댑터 전부를 import하고, 어댑터들은 import 시점에 ADAPTER_DRY_RUN을 굳힌다
+    #   (#835 CI 실측: 부팅에서 끌려와 dry-run 어댑터 계약 4건이 실네트워크로 돎). 판정은 `taobao_provider.provider()`와 같다.
+    return os.getenv("TAOBAO_DETAIL_PROVIDER", "mtop").strip().lower() == "onebound"
+
+
 def enabled() -> bool:
-    if os.getenv("TAOBAO_MTOP_AUTO", "0").strip() == "1":
-        return True
-    from src.collectors import taobao_provider as P
-    return P.provider() == "onebound"
+    return os.getenv("TAOBAO_MTOP_AUTO", "0").strip() == "1" or _onebound()
 
 
 def effective_route() -> str:
     """실제로 상세를 가져올 길 — onebound면 `onebound`, 아니면 mtop 경로(direct·relay·proxy)."""
-    from src.collectors import taobao_provider as P
-    return "onebound" if P.provider() == "onebound" else route()
+    return "onebound" if _onebound() else route()
 
 
 def route() -> str:
