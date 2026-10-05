@@ -1,0 +1,76 @@
+{
+ "api": "mtop.taobao.detail.getdetail",
+ "v": "6.0",
+ "ret": [
+  "SUCCESS::调用成功"
+ ],
+ "data": {
+  "item": {
+   "itemId": "733241700286",
+   "title": "格斯潘懒人沙发单人卧室可躺可睡榻榻米",
+   "images": [
+    "//img.alicdn.com/imgextra/i1/a1.jpg",
+    "//img.alicdn.com/imgextra/i2/a2.jpg",
+    "//img.alicdn.com/imgextra/i3/a3.jpg",
+    "//img.alicdn.com/imgextra/i4/a4.jpg",
+    "//img.alicdn.com/imgextra/i1/a5.jpg"
+   ]
+  },
+  "skuBase": {
+   "props": [
+    {
+     "pid": "1627207",
+     "name": "颜色分类",
+     "values": [
+      {
+       "vid": "11",
+       "name": "灰色"
+      },
+      {
+       "vid": "12",
+       "name": "米白"
+      }
+     ]
+    },
+    {
+     "pid": "20509",
+     "name": "尺寸",
+     "values": [
+      {
+       "vid": "21",
+       "name": "单人"
+      },
+      {
+       "vid": "22",
+       "name": "加大"
+      }
+     ]
+    }
+   ],
+   "skus": [
+    {
+     "skuId": "5001",
+     "propPath": "1627207:11;20509:21"
+    },
+    {
+     "skuId": "5002",
+     "propPath": "1627207:11;20509:22"
+    },
+    {
+     "skuId": "5003",
+     "propPath": "1627207:12;20509:22"
+    },
+    {
+     "skuId": "5004",
+     "propPath": "1627207:12;20509:21"
+    }
+   ]
+  },
+  "apiStack": [
+   {
+    "name": "esi",
+    "value": "{\"price\": {\"price\": {\"priceText\": \"798-998\"}}, \"skuCore\": {\"sku2info\": {\"0\": {\"price\": {\"priceText\": \"798-998\"}, \"quantity\": \"40\"}, \"5001\": {\"price\": {\"priceText\": \"798\"}, \"quantity\": \"12\"}, \"5002\": {\"price\": {\"priceText\": \"898\"}, \"quantity\": \"9\"}, \"5003\": {\"price\": {\"priceText\": \"998\"}, \"quantity\": \"5\"}, \"5004\": {\"price\": {\"priceText\": \"898\"}, \"quantity\": \"14\"}}}}"
+   }
+  ]
+ }
+}

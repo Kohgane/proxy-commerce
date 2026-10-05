@@ -305,6 +305,13 @@ def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
         r = collect_from_share_text(raw, seller_id=seller_id, source=source,
                                     translate=translate, final_url=final_url)
         r["kind"] = "share_draft" if r.get("ok") else "failed"   # timings는 r에 이미 실려 있다
+        # Z3 자동 경로(오너 2026-10-05): 켜져 있으면 서버가 mtop으로 사진·옵션을 채운다(백그라운드, 실패 시 (c) 수동 사유)
+        if r.get("ok") and r.get("item_id"):
+            try:
+                from src.services import taobao_auto as _ta
+                r["auto_enrich"] = _ta.kick(seller_id, str(r["item_id"]))
+            except Exception as exc:                            # noqa: BLE001
+                logger.warning("[Z3 자동] 시작 실패: %s", exc)
         if alt_key_url:
             r["alt_key_url"] = alt_key_url      # 호출부 중복 조회용(같은 상품의 단축 링크 형태)
         return r

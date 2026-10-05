@@ -39,7 +39,8 @@
       편집 화면의 「한국어 번역」을 누르거나 값을 직접 넣어 주세요(이 값의 SKU는 등록 전에 멈춥니다).</div>
     {% endif %}
     {% for r in m5.risks or [] %}<div class="m5-needs" data-role="m5-risk"><span class="pc-badge pc-badge-danger">{{ r }}</span></div>{% endfor %}
-    {% if m5.needs_pc %}
+    {% if m5.auto_enrich and m5.auto_enrich.line %}<div class="m5-needs" data-role="m5-auto-enrich" data-state="{{ m5.auto_enrich.state }}">{{ m5.auto_enrich.line }}</div>{% endif %}
+    {% if m5.needs_pc and not (m5.auto_enrich and m5.auto_enrich.state == 'manual') %}
     {# Z3(오너 2026-10-04): 「컴퓨터에서 켜면 자동」은 PC가 없는 유저에겐 거짓 약속이었다 — 누구에게 되는지 그대로. #}
     <div class="m5-needs" data-role="m5-needs-pc">비어 있어요 — {{ m5.missing|join(", ") }}.
       PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 바로 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.</div>
