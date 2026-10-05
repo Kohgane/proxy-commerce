@@ -1372,8 +1372,30 @@ def diagnostics_taobao_mtop():
             rows.append({"input": q[:80], "item_id": "", "how": f"{type(exc).__name__}: {str(exc)[:120]}", "log": [],
                          "detail": None, "desc_images": None})
     from src.services import taobao_auto as _ta
+    from src.services import mtop_stats as _ms
+    for r in rows:                                   # 진단에서도 첫 성공 응답이면 픽스처 표본으로 남긴다
+        if r.get("raw_detail"):
+            _ms.save_sample(r.pop("raw_detail"), item_id=str(r.get("item_id") or ""), route=via)
+    try:
+        stats, first = _ms.summary(3), _ms.first_items()
+    except Exception:
+        stats, first = None, []
     return render_template_string(_TAOBAO_MTOP_TEMPLATE, rows=rows, q="\n".join(qs), via=via,
-                                  proxy=T.proxy_label(), auto=("켜짐 · 경로 " + _ta.route()) if _ta.enabled() else "꺼짐(TAOBAO_MTOP_AUTO)")
+                                  proxy=T.proxy_label(), auto=("켜짐 · 경로 " + _ta.route()) if _ta.enabled() else "꺼짐(TAOBAO_MTOP_AUTO)",
+                                  stats=stats, first=first, sample=_ms.sample(), labels=T.VIAS)
+
+
+@admin_panel_bp.get("/diagnostics/taobao-mtop/sample.json")
+def diagnostics_taobao_mtop_sample():
+    """Z3-C: 성공한 getdetail 실제 응답 1건 — 재구성 픽스처(`tests/fixtures/taobao_mtop/getdetail_success.json`)를 이걸로 바꾼다."""
+    from flask import Response
+    from src.services import mtop_stats as _ms
+    smp = _ms.sample()
+    if not smp.get("raw"):
+        return Response('{"error": "아직 성공한 응답이 없어요"}', status=404, mimetype="application/json")
+    import json as _json
+    return Response(_json.dumps(smp["raw"], ensure_ascii=False, indent=1), mimetype="application/json",
+                    headers={"Content-Disposition": "attachment; filename=getdetail_success.json"})
 
 
 _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -1387,9 +1409,20 @@ _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 <label data-role="mtop-via-proxy"><input type="radio" name="via" value="proxy" {{ 'checked' if via == 'proxy' else '' }}> 프록시(한국 주거 · {{ proxy }})</label></div>
 <div class="small text-muted mt-1" data-role="mtop-auto">자동 경로: {{ auto }} · 호출 간격 2~3초 · 호출당 최대 3회 · x5 핸드셰이크 → 토큰 왕복 → getdetail</div>
 <button class="btn btn-sm btn-outline-secondary mt-2">실측(조회만 · 무료)</button></form>
+{% if stats %}<div class="border rounded p-2 mb-3 small" data-role="mtop-stats"><strong>자동 경로 3일 누적</strong>({{ stats.days|join(', ') }}, KST) —
+시도 {{ stats.total.tried }} · 성공 {{ stats.total.ok }}{% if stats.total.rate is not none %}({{ stats.total.rate }}%){% endif %} · RGV587 {{ stats.total.rgv587 }} · punish {{ stats.total.punish }} · 빈 응답 {{ stats.total.empty }} · 오류 {{ stats.total.error }}
+{% for k, r in stats.routes|dictsort %}<div data-role="mtop-stats-route">{{ labels.get(k, k) }}: 시도 {{ r.tried }} · 성공 {{ r.ok }}({{ r.rate }}%) · RGV587 {{ r.rgv587 }} · punish {{ r.punish }} · 빈 응답 {{ r.empty }} · 오류 {{ r.error }}</div>{% endfor %}
+{% if first %}<div class="mt-1"><strong>첫 {{ first|length }}건</strong> — 담은 시각 → 준비 완료 시각(KST)</div>
+{% for e in first %}<div data-role="mtop-first">{{ e.collected_kst }} → {{ e.done_kst }}{% if e.took_sec is not none %} ({{ e.took_sec }}초){% endif %} · {{ '완료' if e.state == 'done' else '수동으로(' ~ e.kind ~ ')' }} · {{ labels.get(e.route, e.route) }}</div>{% endfor %}{% endif %}
+<div class="mt-1" data-role="mtop-sample">실측 성공 응답 표본: {% if sample.raw %}<a href="/admin/diagnostics/taobao-mtop/sample.json">getdetail_success.json 내려받기</a>({{ sample.route }} · 상품 {{ sample.item_id }}) — 재구성 픽스처 교체용{% else %}아직 없음{% endif %}</div></div>{% endif %}
 {% for r in rows %}<div class="border-bottom py-2 small" data-role="mtop-row" style="word-break:break-all">
 <div><strong>{{ r.input }}</strong> → 상품번호 {{ r.item_id or '없음' }} ({{ r.how }}) · 경로 {{ r.via or '직결' }}</div>
 {% for l in r.log %}<div class="text-muted">{{ l }}</div>{% endfor %}
+{% for h in r.handshakes or [] %}<details class="mt-1" data-role="mtop-handshake" {{ 'open' if not r.detail else '' }}><summary>x5 핸드셰이크 {{ loop.index }} — HTTP {{ h.status }} · x5referer 꼬리 {{ '붙임' if h.tail else '없음' }} · 주소 {{ h.url_len }}자{% if h.planted %} · 본문 JS 쿠키 {{ h.planted|join(', ') }}{% endif %}</summary>
+<div class="text-muted">요청 주소: {{ h.url }}</div>
+<div>응답 헤더(쿠키 값은 글자 수만):</div><pre class="small mb-1" style="white-space:pre-wrap">{{ h.headers|join('\n') or '(없음 — relay2는 Set-Cookie·Location만 돌아옴)' }}</pre>
+<div>본문 앞 500자(전체 {{ h.body_len }}자):</div><pre class="small mb-1" style="white-space:pre-wrap">{{ h.body_head or '(빈 본문)' }}</pre>
+<div class="text-muted">쿠키통(이름@도메인): {{ h.cookies|join(' · ') or '비었음' }}</div></details>{% endfor %}
 {% if r.detail %}<div data-role="mtop-numbers">제목 {{ r.detail.title_len }}자 「{{ r.detail.title }}」 · 가격 {{ r.detail.price or '—' }} · 갤러리 {{ r.detail.gallery }} · SKU {{ r.detail.skus }} · 옵션 축 {{ r.detail.axes }}/값 {{ r.detail.values }} · 상세 이미지 {{ r.desc_images if r.desc_images is not none else '—' }}</div>
 {% elif r.item_id %}<div class="text-danger" data-role="mtop-fail">{% if r.state == 'blocked' %}막힘 → 자동 경로라면 (c) 수동(폰 사진·옵션 직접 입력)으로 — {{ r.reason }}{% else %}상세 응답 없음 — {{ r.reason or '위 ret 코드가 사유' }}{% endif %}</div>{% endif %}</div>{% endfor %}
 <a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""

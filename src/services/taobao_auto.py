@@ -65,8 +65,13 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
         except T.NoProxy:
             iid = ""
     if not iid:
-        rec = {"state": "manual", "reason": "상품번호를 못 찾았어요(단축 링크를 펴지 못함)", "route": via, "at": now}
+        rec = {"state": "manual", "reason": "상품번호를 못 찾았어요(단축 링크를 펴지 못함)", "route": via, "at": now, "kind": "error"}
         _mark(item_id, user_id, rec)
+        try:
+            from src.services import mtop_stats as _ms
+            _ms.record(via, "error")
+        except Exception:
+            pass
         return rec
     with _LOCK:
         res = T.fetch(iid, via)
@@ -79,7 +84,18 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
                           "detail_images": len(res["payload"]["detail_images"])}}
     else:
         rec = {"state": "manual", "reason": res["reason"], "route": via, "at": now}
+    rec["kind"] = res.get("kind") or ("ok" if res["state"] == "ok" else "error")
     _mark(item_id, user_id, rec)
+    # Z3-C: 집계(경로·갈래) · 첫 10건 담은 시각 → 준비 완료 시각 · 첫 성공 응답 1건(픽스처 교체용)
+    try:
+        from src.services import mtop_stats as _ms
+        _ms.record(via, rec["kind"])
+        _ms.note_item({"item_id": item_id, "collected_at": str(row.get("collected_at") or ""), "done_at": now,
+                       "state": rec["state"], "kind": rec["kind"], "route": via, "reason": rec.get("reason", "")[:120]})
+        if res["state"] == "ok" and res.get("raw"):
+            _ms.save_sample(res["raw"], item_id=iid, route=via)
+    except Exception as exc:                                    # noqa: BLE001 — 집계 실패가 수집을 막지 않는다
+        logger.warning("[Z3 집계] 기록 실패: %s", exc)
     logger.info("[Z3 자동] item=%s 상품=%s 경로=%s → %s %s", item_id, iid, via, rec["state"], rec.get("reason", ""))
     return rec
 

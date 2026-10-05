@@ -53,7 +53,7 @@ def test_x5_handshake_then_token_then_detail():
     assert "_____tmd_____/page/set_x5referer?rand=" in hs_url and "&x5referer=https%3A%2F%2Fh5api.m.taobao.com" in hs_url
     assert s.calls[2][1].get("x5sec") == "x5abc"                         # 같은 쿠키통으로 원 요청 재시도
     assert "sign=" in s.calls[3][0] and s.calls[3][1].get("_m_h5_tk", "").startswith("tok123")
-    assert "x5 핸드셰이크 스크립트 → set_x5referer GET HTTP 200 · x5sec 쿠키 받음" in r["log"][0]
+    assert "x5 핸드셰이크 스크립트 → set_x5referer GET HTTP 200 · x5referer 꼬리 붙임 · x5sec 쿠키 받음(헤더)" in r["log"][0]
     p = T.enrich_payload(r["json"], json.loads(_fx("getdesc_success.json")))
     assert p["title"] == "格斯潘懒人沙发单人卧室可躺可睡榻榻米" and len(p["images"]) == 5
     assert p["images"][0] == "https://img.alicdn.com/imgextra/i1/a1.jpg"
@@ -110,7 +110,7 @@ def test_proxy_only_on_mtop_sessions(monkeypatch):
     s = T.session_for("proxy")
     assert s.proxies == {"http": "http://user:secret@kr.proxy.example:8000", "https": "http://user:secret@kr.proxy.example:8000"}
     assert s.trust_env is False
-    assert T.session_for("direct").proxies == {} and T.proxy_label() == "설정됨"   # 화면엔 자격·호스트 0
+    assert T.session_for("direct").proxies == {} and T.proxy_label() == "설정됨 · sticky 표기 없음(그대로 사용)"   # 화면엔 자격·호스트 0
     # 이 env를 읽는 곳은 mtop 모듈 하나뿐 — 쿠팡·네이버·릴레이·업로더는 안 탄다
     hits = [p for p in Path("src").rglob("*.py") if "TAOBAO_PROXY_URL" in p.read_text(encoding="utf-8")]
     assert sorted(str(p) for p in hits) == ["src/collectors/taobao_mtop.py", "src/services/taobao_auto.py"]
@@ -130,7 +130,7 @@ def test_diag_page_has_proxy_radio_and_never_prints_credentials(monkeypatch):
     with c.session_transaction() as s:
         s["user_id"], s["user_role"] = "owner", "admin"
     h = c.get("/admin/diagnostics/taobao-mtop", query_string={"q": "733241700286", "via": "proxy"}).get_data(as_text=True)
-    assert 'data-role="mtop-via-proxy"' in h and 'value="proxy" checked' in h and "프록시(한국 주거 · 설정됨)" in h
+    assert 'data-role="mtop-via-proxy"' in h and 'value="proxy" checked' in h and "프록시(한국 주거 · 설정됨" in h
     assert "secret" not in h and "kr.proxy.example" not in h
     assert "(c) 수동" in h and "자동 경로: 꺼짐(TAOBAO_MTOP_AUTO)" in h
 
@@ -152,7 +152,7 @@ def test_auto_run_fills_draft_through_same_merge(monkeypatch):
     fake = FakeSession([_R(_fx("x5_referer.txt")), _R("", 200, {"x5sec": "x"}),
                         _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "t_1"}), _R(_fx("getdetail_success.json")),
                         _R(_fx("getdesc_success.json"))])
-    monkeypatch.setattr(T, "session_for", lambda via: fake)
+    monkeypatch.setattr(T, "session_for", lambda via, **kw: fake)
     rec = A.run(seller, iid, via="relay")
     assert rec["state"] == "done" and rec["counts"] == {"images": 5, "skus": 4, "detail_images": 2}
     ex = json.loads(S.get(iid, seller_ids={seller})["extra_json"])
@@ -165,7 +165,7 @@ def test_auto_run_blocked_falls_to_manual_and_m5_says_why(monkeypatch):
     from src.services import taobao_auto as A
     seller = "owner-z3-manual"
     iid = _share_item(seller)
-    monkeypatch.setattr(T, "session_for", lambda via: FakeSession([_R(_fx("rgv587_punish.json"))]))
+    monkeypatch.setattr(T, "session_for", lambda via, **kw: FakeSession([_R(_fx("rgv587_punish.json"))]))
     rec = A.run(seller, iid, via="direct")
     assert rec["state"] == "manual" and "RGV587" in rec["reason"]
     from src.order_webhook import app
@@ -188,3 +188,148 @@ def test_auto_is_off_by_default_and_kick_needs_flag(monkeypatch):
     import time
     time.sleep(0.05)
     assert started == [("u", "i")]
+
+
+# ── Z3-H(오너 2026-10-05 15:51 실측: set_x5referer GET 200 · x5sec 없음 ×3) ─────────────────────────────
+
+def test_tail_is_appended_whatever_the_script_concatenates():
+    """후보 1: 스크립트가 `+ x5referer`로 잇든 `+ encodeURIComponent(location.href)`로 잇든 — URL이 `x5referer=`로 끝나면
+    원 요청 **전체 URL**을 encodeURIComponent 규칙으로 붙인다."""
+    from src.collectors import taobao_mtop as T
+    orig = "https://h5api.m.taobao.com/h5/mtop.taobao.detail.getdetail/6.0/?jsv=2.7.2&appKey=12574478&t=1&sign=ab&data=%7B%7D"
+    for js in ('window.location.href = "https://h5api.m.taobao.com:443/h/_____tmd_____/page/set_x5referer?rand=1&uuid=u&_lgt_=g&x5referer=" + x5referer;',
+               "location.href='https://h5api.m.taobao.com:443/h/_____tmd_____/page/set_x5referer?rand=1&x5referer=' + encodeURIComponent(window.location.href)",
+               'window.location = "https://h5api.m.taobao.com:443/h/_____tmd_____/page/set_x5referer?x5referer=" + x5referer'):
+        u = T.x5_handshake_url(js, orig)
+        assert u.endswith("x5referer=https%3A%2F%2Fh5api.m.taobao.com%2Fh5%2Fmtop.taobao.detail.getdetail%2F6.0%2F%3Fjsv%3D2.7.2%26appKey%3D12574478%26t%3D1%26sign%3Dab%26data%3D%257B%257D"), js
+    u = T.x5_handshake_url('window.location.href = "https://h5api.m.taobao.com/_____tmd_____/page/set_x5referer?a=1&x5referer=already";', orig)
+    assert u.endswith("x5referer=already")                                # 이미 값이 있으면 덧붙이지 않는다
+
+
+def test_x5sec_from_body_js_is_planted_and_retry_carries_it():
+    """후보 2: 핸드셰이크 응답이 헤더가 아니라 본문 JS(document.cookie)로 x5sec을 심는 경우 — 쿠키통에 넣고 원 요청에 싣는다."""
+    from src.collectors import taobao_mtop as T
+    hs_body = ('<script>document.cookie = "x5sec=7b2268357469676865727d0a1234567890abcdef; path=/; domain=.taobao.com";'
+               'window.location.replace(decodeURIComponent(x5referer));</script>')
+    s = FakeSession([_R(_fx("x5_referer.txt")), _R(hs_body),
+                     _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "tok_1"}), _R(_fx("getdetail_success.json"))])
+    r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+    assert r["state"] == "ok" and "x5sec 쿠키 받음(본문 JS)" in r["log"][0]
+    assert s.calls[2][1]["x5sec"].startswith("7b2268357469")                 # 재시도에 실렸다
+    hd = r["handshakes"][0]
+    assert hd["planted"] == ["x5sec"] and hd["tail"] is True and hd["status"] == 200
+    assert "x5sec=<" in hd["body_head"] and "7b2268357469" not in hd["body_head"]   # 진단엔 값 대신 글자 수
+
+
+def test_requests_jar_with_two_domains_does_not_crash():
+    """후보 3: 같은 이름이 .taobao.com·h5api.m.taobao.com 둘에 있으면 requests `.get`이 CookieConflictError — 이름으로 읽는다."""
+    import requests
+    from src.collectors import taobao_mtop as T
+    s = requests.Session()
+    s.cookies.set("_m_h5_tk", "a_1", domain=".taobao.com", path="/")
+    s.cookies.set("_m_h5_tk", "b_2", domain="h5api.m.taobao.com", path="/")
+    with __import__("pytest").raises(requests.cookies.CookieConflictError):
+        s.cookies.get("_m_h5_tk")
+    assert T.cookie_value(s, "_m_h5_tk") in ("a_1", "b_2")
+    assert sorted(T._cookie_domains(s)) == ["_m_h5_tk@.taobao.com/", "_m_h5_tk@h5api.m.taobao.com/"]
+
+
+def test_relay_keeps_every_set_cookie_line():
+    """후보 3(릴레이): mkt.php가 Set-Cookie를 여러 줄 다 돌려주고, 앱 쿠키통이 전부 받는다(첫 줄만이면 x5sec 누락)."""
+    import src.market_relay as MR
+    from src.collectors import taobao_mtop as T
+    from pathlib import Path
+    assert "$respSetCookie[] = trim(substr($l, 11));" in Path("relay/mkt.php").read_text(encoding="utf-8")
+    import pytest
+    mp = pytest.MonkeyPatch()
+    mp.setattr(MR, "_api_relay_send", lambda *a: MR.RelayResponse(200, "", headers={"Set-Cookie": [
+        "cna=abc123456; Domain=.taobao.com; Path=/", "x5sec=7b22abcdef0123456789; Domain=.taobao.com; Path=/; HttpOnly"]}))
+    try:
+        rs = T.RelaySession()
+        rs.request("https://h5api.m.taobao.com/x")
+        assert rs.jar == {"cna": "abc123456", "x5sec": "7b22abcdef0123456789"}
+    finally:
+        mp.undo()
+
+
+def test_handshake_to_slider_is_punish_not_retry():
+    from src.collectors import taobao_mtop as T
+    s = FakeSession([_R(_fx("x5_referer.txt")),
+                     _R('<script>location.href="https://h5api.m.taobao.com/_____tmd_____/punish?x5secdata=zz&x5step=2"</script>')])
+    r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+    assert r["state"] == "blocked" and r["kind"] == "punish" and "슬라이더" in r["reason"] and len(s.calls) == 2
+
+
+def test_handshake_twice_without_cookie_says_so_and_diag_shows_headers_and_body(monkeypatch):
+    from src.collectors import taobao_mtop as T
+    hs_page = _R("<html><body>ok</body></html>")
+    hs_page.headers = {"Content-Type": "text/html", "Set-Cookie": "t=abcdef123456; Domain=.taobao.com; Path=/"}
+    s = FakeSession([_R(_fx("x5_referer.txt")), hs_page, _R(_fx("x5_referer.txt")), _R("<html/>"), _R(_fx("x5_referer.txt"))])
+    r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+    assert r["state"] == "error" and r["kind"] == "empty" and "x5sec 미발급" in r["reason"] and len(r["handshakes"]) == 2
+    hd = r["handshakes"][0]
+    assert "Content-Type: text/html" in hd["headers"] and "Set-Cookie: t=<12자>; Domain=.taobao.com; Path=/" in hd["headers"]
+    assert hd["body_head"] == "<html><body>ok</body></html>"
+    monkeypatch.setattr(T, "probe", lambda q, via="direct": {"input": q, "item_id": "1", "how": "직접 입력", "log": r["log"], "detail": None,
+                                                           "desc_images": None, "via": T.VIAS[via], "state": r["state"], "kind": r["kind"],
+                                                           "reason": r["reason"], "handshakes": r["handshakes"]})
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as ss:
+        ss["user_id"], ss["user_role"] = "owner", "admin"
+    h = c.get("/admin/diagnostics/taobao-mtop", query_string={"q": "1", "via": "direct"}).get_data(as_text=True)
+    assert 'data-role="mtop-handshake"' in h and "Set-Cookie: t=&lt;12자&gt;; Domain=.taobao.com; Path=/" in h
+    assert "abcdef123456" not in h and "본문 앞 500자" in h
+
+
+# ── Z3-P 프록시 sticky ──────────────────────────────────────────────────────────
+
+def test_proxy_sticky_session_changes_per_item(monkeypatch):
+    from src.collectors import taobao_mtop as T
+    monkeypatch.setenv("TAOBAO_PROXY_URL", "http://user1:pass_country-kr_session-AAAAAAAA_lifetime-30m@geo.example:12321")
+    assert T.proxy_label() == "설정됨 · 건마다 sticky 세션 교체"
+    a = T.session_for("proxy", sticky="k3m9p2xa").proxies["https"]
+    b = T.session_for("proxy", sticky="q8w2e4rt").proxies["https"]
+    assert "_session-k3m9p2xa_lifetime-30m@" in a and "_session-q8w2e4rt_" in b and "AAAAAAAA" not in a + b
+    seen = []
+    monkeypatch.setattr(T, "session_for", lambda via, sticky="": (seen.append(sticky), FakeSession([_R(_fx("rgv587_punish.json"))]))[1])
+    T.fetch("1", "proxy")
+    T.fetch("2", "proxy")
+    assert len(seen) == 2 and seen[0] != seen[1] and all(len(x) == 8 for x in seen)   # 건마다 새 세션
+
+
+# ── Z3-C 집계 ───────────────────────────────────────────────────────────────────
+
+def test_auto_stats_routes_first_ten_and_sample(monkeypatch):
+    from src.collectors import taobao_mtop as T
+    from src.services import taobao_auto as A
+    from src.services import mtop_stats as MS
+    from src.db import image_translate_queue_pg as st
+    for k in ("mtop_auto:first10", "mtop_auto:recent", "mtop_auto:sample_detail"):
+        st.state_set(k, {})
+    before = MS.summary(3)["total"]
+    seller = "owner-z3-stats"
+    ok_item, rgv_item = _share_item(seller), _share_item(seller)
+    monkeypatch.setattr(T, "session_for", lambda via, **kw: FakeSession([
+        _R(_fx("x5_referer.txt")), _R("", 200, {"x5sec": "x"}), _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "t_1"}),
+        _R(_fx("getdetail_success.json")), _R(_fx("getdesc_success.json"))]))
+    A.run(seller, ok_item, via="relay")
+    monkeypatch.setattr(T, "session_for", lambda via, **kw: FakeSession([
+        _R('{"ret":["RGV587_ERROR::SM::哎哟喂,被挤爆啦,请稍后重试!"],"data":{}}')]))
+    A.run(seller, rgv_item, via="direct")
+    s = MS.summary(3)
+    assert s["total"]["tried"] - before["tried"] == 2 and s["total"]["ok"] - before["ok"] == 1
+    assert s["total"]["rgv587"] - before["rgv587"] == 1 and s["routes"]["relay"]["rate"] == 100
+    first = MS.first_items()
+    assert [e["item_id"] for e in first] == [ok_item, rgv_item] and first[0]["state"] == "done" and first[1]["kind"] == "rgv587"
+    assert first[0]["took_sec"] is not None and "→" not in first[0]["collected_kst"]
+    smp = MS.sample()
+    assert smp["raw"]["data"]["item"]["itemId"] == "733241700286" and smp["route"] == "relay"
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as ss:
+        ss["user_id"], ss["user_role"] = "owner", "admin"
+    h = c.get("/admin/diagnostics/taobao-mtop").get_data(as_text=True)
+    assert 'data-role="mtop-stats"' in h and "relay2(서울): 시도" in h and 'data-role="mtop-first"' in h
+    d = c.get("/admin/diagnostics/taobao-mtop/sample.json")
+    assert d.status_code == 200 and d.get_json()["data"]["item"]["title"].startswith("格斯潘")
