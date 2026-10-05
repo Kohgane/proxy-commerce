@@ -1,9 +1,9 @@
 {# L1 공통 푸터 — 랜딩·공개 페이지·셀러 콘솔. env가 빈 칸은 숨긴다(플레이스홀더·env 이름 노출 0). foot_dark=True면 먹 배경용. #}
 {% set _si = site_info or {} %}
 <div class="site-foot{{ ' is-dark' if foot_dark else '' }}" data-role="site-footer">
-  <nav class="site-foot-links" aria-label="서비스 정보">
+  {% if foot_links is not defined or foot_links %}<nav class="site-foot-links" aria-label="서비스 정보">
     <a href="/pricing">플랜</a><a href="/terms">이용약관</a><a href="/privacy"><strong>개인정보처리방침</strong></a><a href="/contact">문의</a>
-  </nav>
+  </nav>{% endif %}
   <p class="site-foot-biz">
     <span>상호 {{ _si.name }}</span><span>대표 {{ _si.ceo }}</span><span data-role="biz-reg-no">사업자등록번호 {{ _si.reg_no }}</span>
     {% if _si.mailorder_no %}<span data-role="biz-mailorder">통신판매업신고번호 {{ _si.mailorder_no }}</span>{% endif %}
