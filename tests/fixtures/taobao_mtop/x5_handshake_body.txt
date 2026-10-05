@@ -1,0 +1,10 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title></title></head><body>
+<script>
+/*                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        */
+var uuid = "f2b9c8e1a7d34c6b";
+var rand = "Q9xk2TfR";
+var url = decodeURIComponent(x5referer);
+var jump = url + "&x5step=2&uuid=" + uuid + "&rand=" + rand;
+window.location.replace(jump);
+</script>
+</body></html>

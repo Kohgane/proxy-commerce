@@ -48,12 +48,12 @@ def test_x5_handshake_then_token_then_detail():
         _R(_fx("getdetail_success.json")),                               # 3차: 서명 붙여 성공
     ])
     r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "733241700286"})
-    assert r["state"] == "ok" and len(r["log"]) == 3
+    assert r["state"] == "ok" and [l for l in r["log"] if "차 요청" not in l][2].startswith("3차: HTTP 200 · ret=['SUCCESS")
     hs_url, hs_cookies = s.calls[1]
     assert "_____tmd_____/page/set_x5referer?rand=" in hs_url and "&x5referer=https%3A%2F%2Fh5api.m.taobao.com" in hs_url
     assert s.calls[2][1].get("x5sec") == "x5abc"                         # 같은 쿠키통으로 원 요청 재시도
     assert "sign=" in s.calls[3][0] and s.calls[3][1].get("_m_h5_tk", "").startswith("tok123")
-    assert "x5 핸드셰이크 스크립트 → set_x5referer GET HTTP 200 · x5referer 꼬리 붙임 · x5sec 쿠키 받음(헤더)" in r["log"][0]
+    assert "x5 핸드셰이크 스크립트 → set_x5referer GET HTTP 200 · x5referer 꼬리 붙임 · x5 계열 쿠키 x5sec(헤더)" in r["log"][0]
     p = T.enrich_payload(r["json"], json.loads(_fx("getdesc_success.json")))
     assert p["title"] == "格斯潘懒人沙发单人卧室可躺可睡榻榻米" and len(p["images"]) == 5
     assert p["images"][0] == "https://img.alicdn.com/imgextra/i1/a1.jpg"
@@ -214,7 +214,7 @@ def test_x5sec_from_body_js_is_planted_and_retry_carries_it():
     s = FakeSession([_R(_fx("x5_referer.txt")), _R(hs_body),
                      _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "tok_1"}), _R(_fx("getdetail_success.json"))])
     r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
-    assert r["state"] == "ok" and "x5sec 쿠키 받음(본문 JS)" in r["log"][0]
+    assert r["state"] == "ok" and "x5 계열 쿠키 x5sec(본문 JS)" in r["log"][0]
     assert s.calls[2][1]["x5sec"].startswith("7b2268357469")                 # 재시도에 실렸다
     hd = r["handshakes"][0]
     assert hd["planted"] == ["x5sec"] and hd["tail"] is True and hd["status"] == 200
@@ -266,7 +266,7 @@ def test_handshake_twice_without_cookie_says_so_and_diag_shows_headers_and_body(
     hs_page.headers = {"Content-Type": "text/html", "Set-Cookie": "t=abcdef123456; Domain=.taobao.com; Path=/"}
     s = FakeSession([_R(_fx("x5_referer.txt")), hs_page, _R(_fx("x5_referer.txt")), _R("<html/>"), _R(_fx("x5_referer.txt"))])
     r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
-    assert r["state"] == "error" and r["kind"] == "empty" and "x5sec 미발급" in r["reason"] and len(r["handshakes"]) == 2
+    assert r["state"] == "error" and r["kind"] == "empty" and "핸드셰이크 2번 뒤에도 스크립트 응답" in r["reason"] and len(r["handshakes"]) == 2
     hd = r["handshakes"][0]
     assert "Content-Type: text/html" in hd["headers"] and "Set-Cookie: t=<12자>; Domain=.taobao.com; Path=/" in hd["headers"]
     assert hd["body_head"] == "<html><body>ok</body></html>"
@@ -279,7 +279,7 @@ def test_handshake_twice_without_cookie_says_so_and_diag_shows_headers_and_body(
         ss["user_id"], ss["user_role"] = "owner", "admin"
     h = c.get("/admin/diagnostics/taobao-mtop", query_string={"q": "1", "via": "direct"}).get_data(as_text=True)
     assert 'data-role="mtop-handshake"' in h and "Set-Cookie: t=&lt;12자&gt;; Domain=.taobao.com; Path=/" in h
-    assert "abcdef123456" not in h and "본문 앞 500자" in h
+    assert "abcdef123456" not in h and "응답 본문(전체" in h
 
 
 # ── Z3-P 프록시 sticky ──────────────────────────────────────────────────────────
@@ -333,3 +333,52 @@ def test_auto_stats_routes_first_ten_and_sample(monkeypatch):
     assert 'data-role="mtop-stats"' in h and "relay2(서울): 시도" in h and 'data-role="mtop-first"' in h
     d = c.get("/admin/diagnostics/taobao-mtop/sample.json")
     assert d.status_code == 200 and d.get_json()["data"]["item"]["title"].startswith("格斯潘")
+
+
+# ── Z3-H2(오너 2026-10-05 17:04 실측: 꼬리 붙임 · GET 200 · 쿠키통 x5secdata@.taobao.com · 3차 스크립트) ───────
+
+def _hs_page():
+    r = _R(_fx("x5_handshake_body.txt"), 200, {"x5secdata": "xd7b2268357469676865727d0a1234567890abcdef"})
+    r.headers = {"Content-Type": "text/html;charset=UTF-8",
+                 "Set-Cookie": ["x5secdata=xd7b2268357469676865727d0a1234567890abcdef; Domain=.taobao.com; Path=/"]}
+    return r
+
+
+def test_x5secdata_counts_and_retry_goes_to_jump_url():
+    from src.collectors import taobao_mtop as T
+    assert len(_fx("x5_handshake_body.txt")) == 987
+    s = FakeSession([_R(_fx("x5_referer.txt")), _hs_page(),
+                     _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "tok_1"}), _R(_fx("getdetail_success.json"))])
+    r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "733241700286"})
+    assert r["state"] == "ok"
+    first_api = s.calls[0][0]
+    jump_call, jump_cookies = s.calls[2]
+    assert jump_call == first_api + "&x5step=2&uuid=f2b9c8e1a7d34c6b&rand=Q9xk2TfR"   # 원 URL이 아니라 jump URL
+    assert "x5secdata" in jump_cookies                                              # 재시도에 실렸다
+    assert "x5 계열 쿠키 x5secdata(헤더) · jump URL 재현함 → 그 주소로 재시도" in r["log"][0]
+    assert any(l.startswith("2차 요청: jump URL · 실은 x5 계열 쿠키 x5secdata") for l in r["log"])
+    hd = r["handshakes"][0]
+    assert hd["got"] == ["x5secdata"] and hd["jump"].endswith("uuid=f2b9c8e1a7d34c6b&rand=Q9xk2TfR")
+    assert hd["body_len"] == 987 and len(hd["body_head"]) >= 980                     # 본문 전부(500자 컷 없음)
+    assert T.enrich_payload(r["json"])["title"].startswith("格斯潘")
+
+
+def test_still_script_compares_rand_uuid(monkeypatch):
+    from src.collectors import taobao_mtop as T
+    same = _fx("x5_referer.txt")
+    s = FakeSession([_R(same), _hs_page(), _R(same), _hs_page(), _R(same)])
+    r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+    assert r["state"] == "error" and "쿠키 미반영" in r["reason"]
+    assert any(l.startswith("판정: rand/uuid 1차와 같음 → 쿠키 미반영") for l in r["log"])
+    other = same.replace("rand=Q9xk2TfR", "rand=ZZnew111").replace("uuid=8b1f0c3e5d7a4e21", "uuid=99aa88bb77cc66dd")
+    s2 = FakeSession([_R(same), _hs_page(), _R(other), _hs_page(), _R(other)])
+    r2 = T.mtop_ex(s2, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+    assert "IP 평판" in r2["reason"] and any("1차 Q9xk2TfR/8b1f0c3e5d7a4e21 · 지금 ZZnew111/99aa88bb77cc66dd" in l for l in r2["log"])
+
+
+def test_jump_url_refuses_to_guess():
+    from src.collectors import taobao_mtop as T
+    hs = "https://h5api.m.taobao.com/h5/_____tmd_____/page/set_x5referer?rand=r&uuid=u&x5referer=https%3A%2F%2Fa.b%2F%3Fx%3D1"
+    assert T.jump_url('var j = decodeURIComponent(x5referer) + "&u=1"; location.href = j;', hs) == "https://a.b/?x=1&u=1"
+    assert T.jump_url("location.href = buildUrl(x5referer, Date.now());", hs) == ""      # 모르는 계산 → 재현 안 함
+    assert T.x5_ids(hs) == ("r", "u")

@@ -225,7 +225,7 @@ def body_cookies(body: str) -> dict:
 
 def _mask(text: str) -> str:
     """진단용 — 쿠키 값은 글자 수로만(`x5sec=<84자>`). 이름·도메인·경로·나머지 본문은 그대로."""
-    t = re.sub(r"\b(x5sec|_m_h5_tk(?:_enc)?|cookie2|t|_tb_token_|cna|isg|l)\s*=\s*([^;,\s\"']{4,})",
+    t = re.sub(r"\b(x5sec\w*|_m_h5_tk(?:_enc)?|cookie2|t|_tb_token_|cna|isg|l)\s*=\s*([^;,\s\"'&]{4,})",
                lambda m: f"{m.group(1)}=<{len(m.group(2))}자>", str(text or ""))
     return re.sub(r"""(document\.cookie\s*=\s*["']\s*[A-Za-z0-9_]+\s*=\s*)([^;"']{4,})""",
                   lambda m: f"{m.group(1)}<{len(m.group(2))}자>", t)
@@ -259,6 +259,109 @@ def _blocked(j: dict, body: str) -> str:
     return ""
 
 
+# ── Z3-H2(오너 2026-10-05 17:04 실측: 꼬리 붙임 · GET 200 · 쿠키통 x5secdata@.taobao.com · 「x5sec 미발급」 → 3차 스크립트) ──
+#   ① 성공 판정은 이름 하나(x5sec)가 아니라 **x5sec* · _m_h5_tk* 계열 아무거나** 새로 생겼나
+#   ② 핸드셰이크 응답 스크립트가 만드는 **jump URL**을 그대로 재현해 그 주소로 재시도(원 URL이 아니라)
+#   ③ 그래도 스크립트면 1차·3차 핸드셰이크 URL의 rand/uuid 비교 — 같으면 쿠키 미반영, 다르면 IP 평판
+_X5_COOKIE = re.compile(r"^(x5sec\w*|_m_h5_tk\w*)$")
+
+
+def _ends(u: str, head: int = 110, tail: int = 90) -> str:
+    """진단용 긴 주소 — 앞(경로)과 뒤(이어 붙인 파라미터)를 둘 다 보인다."""
+    u = str(u or "")
+    return u if len(u) <= head + tail + 1 else u[:head] + "…" + u[-tail:]
+
+
+def x5_cookie_names(s) -> list:
+    """쿠키통에서 x5sec*·_m_h5_tk* 계열 이름(값 없이)."""
+    if isinstance(s, RelaySession):
+        names = list(s.jar)
+    else:
+        try:
+            names = [c.name for c in s.cookies] if not isinstance(s.cookies, dict) else list(s.cookies)
+        except Exception:
+            names = []
+    return sorted({n for n in names if _X5_COOKIE.match(str(n))})
+
+
+def x5_ids(url: str) -> tuple:
+    """set_x5referer URL의 (rand, uuid) — 비교용."""
+    from urllib.parse import parse_qs, urlparse
+    q = parse_qs(urlparse(str(url or "")).query)
+    return (q.get("rand", [""])[0], q.get("uuid", [""])[0])
+
+
+_JS_STR = r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\''
+
+
+def _js_unquote(tok: str) -> str:
+    body = tok[1:-1]
+    return re.sub(r"\\(.)", lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), body)
+
+
+def _split_plus(expr: str) -> list:
+    """`a + "b" + c` → 조각(문자열 리터럴 안의 +는 안 자른다)."""
+    out, cur, i = [], "", 0
+    while i < len(expr):
+        m = re.match(_JS_STR, expr[i:])
+        if m:
+            cur += m.group(0)
+            i += len(m.group(0))
+            continue
+        ch = expr[i]
+        if ch == "+":
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+        i += 1
+    out.append(cur.strip())
+    return [x for x in out if x]
+
+
+def jump_url(body: str, page_url: str) -> str:
+    """핸드셰이크 응답 스크립트가 이동하는 주소를 **문자열 이어 붙이기만** 재현한다 — 리터럴 · var 값 ·
+    location.href(=이 페이지 주소) · 쿼리의 x5referer 값 · encodeURIComponent/decodeURIComponent.
+    그 밖의 계산이 섞이면 재현하지 않는다(빈 문자열 — 추측 금지, 진단 본문으로 사람이 본다)."""
+    from urllib.parse import unquote, urlparse
+    b = str(body or "")[:20000]
+    env = {"location.href": page_url, "window.location.href": page_url, "document.URL": page_url,
+           "location.search": "?" + urlparse(page_url).query}
+    raw = re.search(r"[?&]x5referer=([^&#]*)", page_url)
+    if raw:                       # 브라우저 스크립트의 x5referer 변수 = 쿼리의 **날 값**(인코딩 그대로) — 한 번만 풀린다
+        env["x5referer"] = raw.group(1)
+
+    def ev(expr: str):
+        parts = _split_plus(expr.strip().rstrip(";"))
+        if not parts:
+            return None
+        out = ""
+        for p in parts:
+            p = p.strip()
+            m = re.fullmatch(r"(encodeURIComponent|decodeURIComponent|unescape|escape)\((.+)\)", p, re.S)
+            if m:
+                inner = ev(m.group(2))
+                if inner is None:
+                    return None
+                out += quote(inner, safe="-_.!~*'()") if m.group(1) in ("encodeURIComponent", "escape") else unquote(inner)
+            elif re.fullmatch(_JS_STR, p, re.S):
+                out += _js_unquote(p)
+            elif p in env:
+                out += env[p]
+            else:
+                return None
+        return out
+    for m in re.finditer(r"(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]+)", b):
+        v = ev(m.group(2))
+        if v is not None:
+            env[m.group(1)] = v
+    for m in re.finditer(r"(?:window\.)?location(?:\.href)?\s*=\s*([^;\n]+)|(?:window\.)?location\.(?:replace|assign)\(\s*([^;\n]+?)\s*\)\s*;?", b):
+        v = ev(m.group(1) or m.group(2))
+        if v and v.startswith("http") and "_____tmd_____/page/set_x5referer" not in v:
+            return v
+    return ""
+
+
 def _kind(state: str, reason: str) -> str:
     """집계용 갈래 — ok · punish · rgv587 · empty(JSON 아님·빈 응답) · error."""
     if state == "ok":
@@ -268,7 +371,7 @@ def _kind(state: str, reason: str) -> str:
         return "punish"
     if "RGV587" in r:
         return "rgv587"
-    if "JSON 아닌" in r or "비었" in r or "x5sec" in r:
+    if "JSON 아닌" in r or "비었" in r or "x5sec" in r or "스크립트 응답" in r:
         return "empty"
     return "error"
 
@@ -280,6 +383,8 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
     log: list = []
     hs_diag: list = []
     base = f"https://h5api.m.taobao.com/h5/{api}/{v}/"
+    jump = ""                     # Z3-H2: 핸드셰이크 스크립트가 보내는 주소 — 있으면 다음 시도는 그리로
+    first_ids = None
 
     def done(state, reason, j=None):
         return {"json": j, "log": log, "state": state, "kind": _kind(state, reason), "reason": reason, "handshakes": hs_diag}
@@ -290,8 +395,11 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
         params = {"jsv": "2.7.2", "appKey": APPKEY, "t": t, "sign": sign, "api": api, "v": v,
                   "type": "json", "dataType": "json", "data": payload}
         full = base + "?" + urlencode(params)
+        target, via_jump = (jump, True) if jump else (full, False)
+        jump = ""
+        carried = x5_cookie_names(s)
         try:
-            r = _get_url(s, full)
+            r = _get_url(s, target)
         except Exception as exc:                                # noqa: BLE001
             log.append(f"{attempt}차: {type(exc).__name__}")
             return done("error", f"요청 실패 {type(exc).__name__}")
@@ -300,33 +408,43 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
             j = r.json()
         except Exception:
             j = None
+        if via_jump or carried:
+            log.append(f"{attempt}차 요청: {'jump URL' if via_jump else '원 URL(재서명)'} · 실은 x5 계열 쿠키 {', '.join(carried) or '없음'}")
         if j is None:
             hs = x5_handshake_url(body, full)
+            ids = x5_ids(hs) if hs else None
+            if ids and first_ids is None:
+                first_ids = ids
             if hs and len(hs_diag) < 2:
+                before = set(x5_cookie_names(s))
                 try:
                     hr = _get_url(s, hs)
                 except Exception as exc:                        # noqa: BLE001
                     log.append(f"{attempt}차: x5 핸드셰이크 GET 실패 {type(exc).__name__}")
                     return done("error", "x5 핸드셰이크 GET 실패")
                 hbody = hr.text or ""
-                from_hdr = bool(cookie_value(s, "x5sec"))
+                from_hdr = sorted(set(x5_cookie_names(s)) - before)
                 planted = []
-                for k, val in body_cookies(hbody).items():      # 후보 2: 본문 JS가 심는 쿠키
+                for k, val in body_cookies(hbody).items():      # 본문 JS가 심는 쿠키
                     if not cookie_value(s, k):
                         _set_cookie(s, k, val)
                         planted.append(k)
-                have = bool(cookie_value(s, "x5sec"))
-                src = "헤더" if from_hdr else ("본문 JS" if have else "")
+                got = sorted(set(x5_cookie_names(s)) - before)
+                src = "헤더" if from_hdr else ("본문 JS" if got else "")
                 tail = "x5referer=" in hs and not hs.endswith("x5referer=")
-                hs_diag.append({"url": hs[:180] + ("…" if len(hs) > 180 else ""), "tail": tail, "url_len": len(hs),
+                jump = jump_url(hbody, hs)
+                hs_diag.append({"url": _ends(hs), "tail": tail, "url_len": len(hs),
                                 "status": hr.status_code, "headers": _headers_view(hr),
-                                "body_head": _mask(hbody[:500]), "body_len": len(hbody),
-                                "planted": planted, "cookies": _cookie_domains(s)})
+                                "body_head": _mask(hbody[:4000]), "body_len": len(hbody),
+                                "planted": planted, "cookies": _cookie_domains(s), "got": got,
+                                "jump": _ends(jump),
+                                "rand_uuid": "/".join(x or "—" for x in ids) if ids else ""})
                 log.append(f"{attempt}차: HTTP {r.status_code} · x5 핸드셰이크 스크립트 → set_x5referer GET HTTP {hr.status_code}"
-                           f" · x5referer 꼬리 {'붙임' if tail else '없음'} · x5sec 쿠키 {('받음(' + src + ')') if have else '없음'}")
-                # 핸드셰이크가 쿠키 대신 사람 확인(슬라이더) 쪽으로 보내면 — 두드려 봐야 같다 → (c) 수동
+                           f" · x5referer 꼬리 {'붙임' if tail else '없음'}"
+                           f" · x5 계열 쿠키 {(', '.join(got) + '(' + src + ')') if got else '새로 받은 것 없음'}"
+                           f" · jump URL {'재현함 → 그 주소로 재시도' if jump else '재현 못 함(원 URL 재시도)'}")
                 loc = str(((getattr(hr, "headers", None) or {}).get("Location")) or "")
-                if not have and (_PUNISH_RE.search(loc) or _PUNISH_RE.search(hbody[:20000])):
+                if not got and (_PUNISH_RE.search(loc) or _PUNISH_RE.search(hbody[:20000])):
                     return done("blocked", "사람 확인(punish/captcha) 요구 — x5 핸드셰이크가 슬라이더 페이지로 보냄")
                 continue
             why = _blocked(None, body)
@@ -334,7 +452,13 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
             if why:
                 return done("blocked", why)
             if hs:
-                return done("error", "x5 핸드셰이크를 2번 했는데도 스크립트 응답(x5sec 미발급) — 진단의 핸드셰이크 헤더·본문 참고")
+                # ③ 1차와 지금의 rand/uuid — 같으면 우리 쿠키가 반영 안 됨, 다르면 서버가 새로 막은 것(IP 평판)
+                same = (ids == first_ids) if (ids and first_ids) else None
+                verdict = ("rand/uuid 1차와 같음 → 쿠키 미반영(재시도에 x5 쿠키가 안 먹음)" if same
+                           else "rand/uuid 1차와 다름 → 새로 발급 = IP 평판(이 IP는 계속 막힘)" if same is False
+                           else "rand/uuid 비교 불가(핸드셰이크 URL에 없음)")
+                log.append(f"판정: {verdict} · 1차 {'/'.join(first_ids or ('—', '—'))} · 지금 {'/'.join(ids or ('—', '—'))}")
+                return done("error", f"x5 핸드셰이크 2번 뒤에도 스크립트 응답 — {verdict}")
             return done("error", "JSON 아닌 응답(핸드셰이크 스크립트도 아님)")
         ret = j.get("ret") or []
         log.append(f"{attempt}차: HTTP {r.status_code} · ret={ret[:2]} · 토큰 쿠키 {'있음' if tk else '없음'}")

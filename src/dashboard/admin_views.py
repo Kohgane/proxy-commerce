@@ -1418,10 +1418,11 @@ _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 {% for r in rows %}<div class="border-bottom py-2 small" data-role="mtop-row" style="word-break:break-all">
 <div><strong>{{ r.input }}</strong> → 상품번호 {{ r.item_id or '없음' }} ({{ r.how }}) · 경로 {{ r.via or '직결' }}</div>
 {% for l in r.log %}<div class="text-muted">{{ l }}</div>{% endfor %}
-{% for h in r.handshakes or [] %}<details class="mt-1" data-role="mtop-handshake" {{ 'open' if not r.detail else '' }}><summary>x5 핸드셰이크 {{ loop.index }} — HTTP {{ h.status }} · x5referer 꼬리 {{ '붙임' if h.tail else '없음' }} · 주소 {{ h.url_len }}자{% if h.planted %} · 본문 JS 쿠키 {{ h.planted|join(', ') }}{% endif %}</summary>
-<div class="text-muted">요청 주소: {{ h.url }}</div>
+{% for h in r.handshakes or [] %}<details class="mt-1" data-role="mtop-handshake" {{ 'open' if not r.detail else '' }}><summary>x5 핸드셰이크 {{ loop.index }} — HTTP {{ h.status }} · x5referer 꼬리 {{ '붙임' if h.tail else '없음' }} · 주소 {{ h.url_len }}자 · x5 계열 쿠키 {{ (h.got or [])|join(', ') or '새로 받은 것 없음' }}{% if h.planted %} · 본문 JS 쿠키 {{ h.planted|join(', ') }}{% endif %}</summary>
+<div class="text-muted">요청 주소: {{ h.url }}{% if h.rand_uuid %} · rand/uuid {{ h.rand_uuid }}{% endif %}</div>
+<div class="text-muted" data-role="mtop-jump">jump URL: {{ h.jump or '재현 못 함 — 아래 본문 스크립트 참고(원 URL로 재시도)' }}</div>
 <div>응답 헤더(쿠키 값은 글자 수만):</div><pre class="small mb-1" style="white-space:pre-wrap">{{ h.headers|join('\n') or '(없음 — relay2는 Set-Cookie·Location만 돌아옴)' }}</pre>
-<div>본문 앞 500자(전체 {{ h.body_len }}자):</div><pre class="small mb-1" style="white-space:pre-wrap">{{ h.body_head or '(빈 본문)' }}</pre>
+<div>응답 본문(전체 {{ h.body_len }}자{% if h.body_len > 4000 %} 중 앞 4000자{% endif %} · 쿠키 값은 글자 수로 가림):</div><pre class="small mb-1" style="white-space:pre-wrap">{{ h.body_head or '(빈 본문)' }}</pre>
 <div class="text-muted">쿠키통(이름@도메인): {{ h.cookies|join(' · ') or '비었음' }}</div></details>{% endfor %}
 {% if r.detail %}<div data-role="mtop-numbers">제목 {{ r.detail.title_len }}자 「{{ r.detail.title }}」 · 가격 {{ r.detail.price or '—' }} · 갤러리 {{ r.detail.gallery }} · SKU {{ r.detail.skus }} · 옵션 축 {{ r.detail.axes }}/값 {{ r.detail.values }} · 상세 이미지 {{ r.desc_images if r.desc_images is not none else '—' }}</div>
 {% elif r.item_id %}<div class="text-danger" data-role="mtop-fail">{% if r.state == 'blocked' %}막힘 → 자동 경로라면 (c) 수동(폰 사진·옵션 직접 입력)으로 — {{ r.reason }}{% else %}상세 응답 없음 — {{ r.reason or '위 ret 코드가 사유' }}{% endif %}</div>{% endif %}</div>{% endfor %}
