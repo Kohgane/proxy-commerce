@@ -29,10 +29,12 @@
     <table class="m5-sku" data-role="m5-sku">
       <thead><tr><th>옵션</th><th class="m5-num">가격</th></tr></thead>
       <tbody>
-      {% for r in m5.sku_rows %}<tr><td>{{ r.label }}</td><td class="m5-num">{{ r.price or "—" }} {{ r.currency if r.price }}</td></tr>{% endfor %}
+      {% for r in m5.sku_rows %}<tr{% if r.excluded %} class="m5-sku-off" data-role="m5-sku-excluded"{% endif %}><td>{{ r.label }}{% if r.excluded %}<div class="m5-sku-why">{{ r.excluded }}</div>{% endif %}</td><td class="m5-num">{{ r.price or "—" }} {{ r.currency if r.price }}</td></tr>{% endfor %}
       </tbody>
     </table>
     {% if m5.sku_count > m5.sku_rows|length %}<div class="m5-note">외 {{ m5.sku_count - m5.sku_rows|length }}개</div>{% endif %}
+    {% if m5.excluded_count %}<div class="m5-note" data-role="m5-excluded-note">국내 판매 제외 {{ m5.excluded_count }}개 — 쿠팡·스마트스토어 등록 대상에서 빠져요(회색 줄)</div>{% endif %}
+    {% if m5.plug_note %}<div class="m5-note" data-role="m5-plug-note">{{ m5.plug_note }}</div>{% endif %}
     {% endif %}
     {% if m5.unresolved %}
     <div class="m5-needs" data-role="m5-unresolved">옵션 값 {{ m5.unresolved|length }}개를 아직 한국어로 옮기지 못했어요 —
@@ -140,6 +142,8 @@
   .m5-warn { color: var(--warn); font-size: .9rem; }
   .m5-sku { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; font-size: .95rem; }
   .m5-sku th, .m5-sku td { border-top: 1px solid var(--border); padding: 6px 4px; word-break: break-word; }
+  .m5-sku tr.m5-sku-off td { color: var(--text-muted); }
+  .m5-sku-why { font-size: .82rem; color: var(--text-muted); }
   .m5-sku th { color: var(--text-muted); font-weight: 600; }
   .m5-num { text-align: right; width: 38%; }
   .m5-note { color: var(--text-muted); font-size: .9rem; margin-top: 4px; }
@@ -335,6 +339,9 @@
              // Z5: 배송비 비율 보류 옆에 「그래도 등록」 하나 — 누르면 사유를 기록하고 다시 검증한다.
              (r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0
                ? '<div><button type="button" class="m5-fix" data-role="m5-ship-override">그래도 등록</button></div>' : '') +
+             // Y8: 전압/플러그 불일치(모든 옵션이 110V·해외 플러그) — 확인했다면 「그래도 등록」
+             (r.hold && (r.fixes || []).indexOf('voltage') >= 0
+               ? '<div><button type="button" class="m5-fix" data-role="m5-voltage-override">전압·플러그 그래도 등록</button></div>' : '') +
              // Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트) — 위 「쿠팡 노출」에서 대표를 바꾸거나 여기서 「그래도 등록」
              (r.hold && (r.fixes || []).indexOf('rep_image') >= 0
                ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override">대표 사진 그래도 등록</button></div>' : '') + '</div>';
@@ -351,6 +358,15 @@
           b.disabled = true; b.textContent = '기록하는 중…';
           post('/seller/collect/' + encodeURIComponent(itemId) + '/ship-ratio-override', {}).then(function (t) {
             if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
+            checkBtn.click();
+          });
+        });
+      });
+      checksEl.querySelectorAll('[data-role="m5-voltage-override"]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true; b.textContent = '기록하는 중…';
+          post('/seller/collect/' + encodeURIComponent(itemId) + '/voltage-override', {}).then(function (t) {
+            if (!t.ok) { b.disabled = false; b.textContent = '전압·플러그 그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
             checkBtn.click();
           });
         });

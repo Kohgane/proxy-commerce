@@ -8,9 +8,10 @@
 - 타임아웃 15초, 재시도는 **5xx·타임아웃만 1회**. 4xx·error_code≠"0000"은 재시도 0.
 - 한도 `ONEBOUND_DAILY_CAP`(기본 60, 계정 전체) — 넘으면 **호출 전에** 「온바운드 일일 한도」.
 - 원문 JSON은 상품당 최신 1건 보관(재파싱·분쟁 대비). 같은 상품을 24시간 안에 다시 담으면 **보관본 재사용**(호출 0) —
-  진단의 「새로 받기」만 재호출.
-- 캐시: 응답 `cache`=1이고 `data_update`가 하루 넘게 지났으면 「가격 기준 {data_update}」를 카드에 적는다.
-  캐시 우회 파라미터는 문서(open.onebound.cn — 이 컨테이너 egress 차단)에서 이름을 확인 못 해 **쓰지 않는다**(추측 금지).
+  진단의 「새로 받기」만 재호출(`cache=no`, 보관본을 덮어씀).
+- 캐시 우회 = **`cache=no`**(오너 실측 2026-10-05 — 테스트 페이지 「캐시 업데이트」의 Request address. 기본은 미지정 = 캐시 허용).
+  자동 경로는 응답 `cache`=1이고 `data_update`(베이징 시각)가 24시간 넘었을 때만 `cache=no`로 **1회** 재호출(한도 1회로 셈).
+  그 재호출이 실패하면 받은 캐시 값을 쓰고 카드에 「가격 기준 {data_update}」.
 
 필드 매핑은 오너 지시(2026-10-05, 실측 응답 기준)를 그대로 따른다 — `normalize` 주석. 출력은 기존 getdetail 파서
 (`taobao_mtop.enrich_payload`)와 같은 키 + 공급자 전용 칸(`provider` 아래) → 뒤 파이프라인은 그대로.
@@ -34,6 +35,7 @@ UNIT_PRICE = "0.023元/회"
 TIMEOUT = 15
 REUSE_HOURS = 24
 _KST = timezone(timedelta(hours=9))
+_CST = timezone(timedelta(hours=8))            # 온바운드 data_update·server_time은 베이징 시각
 _RAW = "onebound:raw:"           # + num_iid → {raw, at, bytes, ms}
 _LAST = "onebound:last"          # 마지막으로 받은 상품번호(진단 내려받기)
 _PIXEL = re.compile(r"(?:^|//)(?:[\w-]+\.)*o0b\.cn/", re.I)        # 추적 픽셀(i.php?t.png…)
@@ -68,11 +70,14 @@ def _take() -> bool:
 
 
 def parse_api_info(s: Any) -> Dict[str, Any]:
-    """`"today: max:10 all[=++];expires:2026-10-08"` → `{max: 10, expires: "2026-10-08"}`. 못 읽으면 빈 칸(호출은 계속)."""
+    """`"today:1 max:10 all[1=1+0+0];expires:2026-10-08"` → `{today: 1, max: 10, expires: "2026-10-08"}`.
+    `today: max:10`처럼 오늘 수가 비면 today=None. 못 읽어도 호출은 계속."""
     s = str(s or "")
+    t = re.search(r"today\s*:\s*(\d+)", s)
     m = re.search(r"max\s*:\s*(\d+)", s)
     e = re.search(r"expires\s*:\s*(\d{4}-\d{2}-\d{2})", s)
-    return {"max": int(m.group(1)) if m else None, "expires": e.group(1) if e else "", "raw": s[:120]}
+    return {"today": int(t.group(1)) if t else None, "max": int(m.group(1)) if m else None,
+            "expires": e.group(1) if e else "", "raw": s[:120]}
 
 
 def mask(raw: Any) -> Any:
@@ -131,6 +136,22 @@ def _truthy(v: Any) -> bool:
     return v is True or str(v).strip().lower() in ("1", "true", "yes")
 
 
+UNLISTED = "미기재"
+
+
+def _listed(v: Any):
+    """배송비·무게 칸 — null·""·0·숫자 아님 → 「미기재」, 그 밖엔 숫자(float)."""
+    f = _float(v)
+    return UNLISTED if (f is None or f == 0) else f
+
+
+def _brand(v: Any) -> Optional[str]:
+    b = str(v or "").strip()
+    if not b or b.lower() in ("other", "others", "none", "null") or b in ("其他", "其它", "无", "无品牌", "other/其他", "other/其它"):
+        return None
+    return None if re.fullmatch(r"(?i)other\s*/\s*其[他它]", b) else b
+
+
 def _dedup(urls) -> List[str]:
     out, seen = [], set()
     for u in urls:
@@ -141,12 +162,19 @@ def _dedup(urls) -> List[str]:
     return out
 
 
+def stale_cache(raw: Any, now=None) -> bool:
+    """응답이 캐시(cache=1)이고 data_update가 24시간 넘었나 — 자동 경로의 `cache=no` 재호출 조건."""
+    if not isinstance(raw, dict) or not _truthy(raw.get("cache")):
+        return False
+    return _stale(str(raw.get("data_update") or ((raw.get("item") or {}).get("data_update") if isinstance(raw.get("item"), dict) else "") or ""), now)
+
+
 def _stale(data_update: str, now=None) -> bool:
     """`data_update`가 하루 넘게 지났나. 못 읽으면 True(기준 날짜를 보이는 편이 안전)."""
     s = str(data_update or "").strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
-            t = datetime.strptime(s[:19], fmt).replace(tzinfo=_KST)
+            t = datetime.strptime(s[:19], fmt).replace(tzinfo=_CST)
             return (now or datetime.now(timezone.utc)) - t > timedelta(days=1)
         except ValueError:
             continue
@@ -166,10 +194,15 @@ def normalize(raw: dict, now=None) -> Dict[str, Any]:
       seller_info.shop_name / nick → shop_name · num → stock_total(sales·total_sold는 안 믿음)
     """
     from src.collectors.collect_status import real_detail_images
-    item = (raw or {}).get("item") or {}
+    item = (raw or {}).get("item") if isinstance((raw or {}).get("item"), dict) else {}
     notes: List[str] = []
     imgs = _dedup([item.get("pic_url")] + [x.get("url") for x in (item.get("item_imgs") or []) if isinstance(x, dict)])
     desc = [u for u in _dedup(u for u in (item.get("desc_img") or []) if isinstance(u, str)) if not _PIXEL.search(u)]
+    if not desc:                                   # desc_img가 비면 desc(html)의 <img src>에서(o0b.cn 픽셀 제외)
+        found = re.findall(r"""<img[^>]+src\s*=\s*["']([^"']+)["']""", str(item.get("desc") or ""), re.I)
+        desc = [u for u in _dedup(found) if not _PIXEL.search(u)]
+        if desc:
+            notes.append(f"desc_img 비어 desc(html)에서 상세 사진 {len(desc)}장")
     desc = real_detail_images(desc)
     plist = item.get("props_list") if isinstance(item.get("props_list"), dict) else {}
     pv_name: Dict[str, tuple] = {}
@@ -208,7 +241,9 @@ def normalize(raw: dict, now=None) -> Dict[str, Any]:
     opt_imgs = {}
     # 옵션값 사진 — 실측(오너 2026-10-05, 652874751412): prop_imgs.prop_img[] = [{"properties": "pid:vid", "url": …}],
     #   props_img = {"pid:vid": url}. 둘 다 http://로 올 수 있어 https 보정. prop_img가 우선, props_img는 빈 자리만 채운다.
-    pimg = (item.get("prop_imgs") or {}).get("prop_img") if isinstance(item.get("prop_imgs"), dict) else None
+    # 실측(667810641388): prop_imgs · props_imgs(복수형) 둘 다 올 수 있다 — prop_imgs 우선, 없으면 props_imgs.
+    _pi = item.get("prop_imgs") if isinstance(item.get("prop_imgs"), dict) and (item["prop_imgs"].get("prop_img")) else item.get("props_imgs")
+    pimg = _pi.get("prop_img") if isinstance(_pi, dict) else None
     pairs = [(x.get("properties"), x.get("url")) for x in (pimg or []) if isinstance(x, dict)]
     if isinstance(item.get("props_img"), dict):
         pairs += list(item["props_img"].items())
@@ -228,9 +263,15 @@ def normalize(raw: dict, now=None) -> Dict[str, Any]:
     provider = {
         "name": "onebound", "price_cny": price, "original_price_cny": _float(item.get("orginal_price")),
         "desc_images": desc, "spec_table": spec_table, "option_images": opt_imgs,
-        "video_url": _https(video.get("url")) if isinstance(video, dict) else "",
+        "video_url": (_https(video.get("url")) or None) if isinstance(video, dict) else None,
         "origin_city": str(item.get("location") or ""), "is_tmall": _truthy(item.get("tmall")),
         "shop_name": str(seller.get("shop_name") or item.get("nick") or ""), "stock_total": _int(item.get("num")),
+        # 타입 관용(실측: total_sold 1호 int 0 · 2호 str "6") — 판매수는 참고만(믿지 않음)
+        "total_sold": _int(item.get("total_sold")), "sales": _int(item.get("sales")),
+        # 배송비·무게: null·""·0은 「미기재」 — Z5 배송비 계산에 0으로 넣지 않는다(부피·규격표 추정 경로 그대로)
+        **{k: _listed(item.get(k)) for k in ("post_fee", "express_fee", "ems_fee", "freight", "item_weight")},
+        # 브랜드: other/其他·빈 값은 브랜드 없음(None) — Y6 IP 게이트·상품명에 넘기지 않는다(병합 페이로드엔 원래 안 실음)
+        "brand": _brand(item.get("brand")),
         "cache": cache, "data_update": data_update,
         "price_asof": data_update if (cache and _stale(data_update, now)) else "",
         "api_info": parse_api_info((raw or {}).get("api_info")), "parse_notes": notes,
@@ -292,13 +333,14 @@ def _get(params: dict, transport=None):
     raise last_exc or RuntimeError("재시도 뒤에도 응답 없음")
 
 
-def call(num_iid: str, *, refresh: bool = False, transport=None) -> Dict[str, Any]:
-    """`{ok, kind, why, raw, ms, bytes, reused}`. 24시간 안 보관본이 있으면 재사용(refresh=True면 재호출)."""
+def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transport=None) -> Dict[str, Any]:
+    """`{ok, kind, why, raw, ms, bytes, reused}`. 24시간 안 보관본이 있으면 재사용(refresh=True면 재호출).
+    `no_cache`=True면 `cache=no`(온바운드 캐시 우회) — 「새로 받기」·자동 경로의 하루 넘은 캐시 재호출."""
     iid = str(num_iid or "").strip()
     if not iid:
         return {"ok": False, "kind": "provider_fail", "why": "상품번호 해석 실패", "raw": None, "ms": 0, "bytes": 0}
     rec = stored(iid)
-    if rec.get("raw") and not refresh and _fresh(rec) and not item_id_mismatch(rec["raw"], iid):
+    if rec.get("raw") and not (refresh or no_cache) and _fresh(rec) and not item_id_mismatch(rec["raw"], iid):
         return {"ok": True, "kind": "ok", "why": "", "raw": rec["raw"], "ms": 0, "bytes": int(rec.get("bytes") or 0),
                 "reused": True, "at": rec.get("at")}
     miss = keys_missing()
@@ -311,6 +353,8 @@ def call(num_iid: str, *, refresh: bool = False, transport=None) -> Dict[str, An
                 "ms": 0, "bytes": 0}
     params = {"key": os.getenv(ENV_KEY, "").strip(), "secret": os.getenv(ENV_SECRET, "").strip(),
               "num_iid": iid, "is_promotion": "1", "lang": "zh-CN"}
+    if no_cache:
+        params["cache"] = "no"
     t0 = time.monotonic()
     try:
         status, text = _get(params, transport)
@@ -325,8 +369,8 @@ def call(num_iid: str, *, refresh: bool = False, transport=None) -> Dict[str, An
     except Exception:
         raw = None
     code = str((raw or {}).get("error_code") or "") if isinstance(raw, dict) else ""
-    logger.info("[onebound] num_iid=%s HTTP %s · error_code=%s · cache=%s · execution_time=%s · %d바이트 · %dms",
-                iid, status, code or "—", (raw or {}).get("cache") if isinstance(raw, dict) else "—",
+    logger.info("[onebound] num_iid=%s%s HTTP %s · error_code=%s · cache=%s · execution_time=%s · %d바이트 · %dms",
+                iid, " (cache=no)" if no_cache else "", status, code or "—", (raw or {}).get("cache") if isinstance(raw, dict) else "—",
                 (raw or {}).get("execution_time") if isinstance(raw, dict) else "—", nbytes, ms)
     if not isinstance(raw, dict):
         return {"ok": False, "kind": "provider_fail", "why": f"온바운드 HTTP {status} · JSON 아닌 응답({nbytes}바이트)",
@@ -345,8 +389,18 @@ def call(num_iid: str, *, refresh: bool = False, transport=None) -> Dict[str, An
 
 def fetch_detail(num_iid: str, *, refresh: bool = False, transport=None) -> Dict[str, Any]:
     """`taobao_mtop.fetch`와 같은 모양 — `{state: ok|manual, kind, reason, payload, raw, ms, bytes, reused}`."""
-    c = call(num_iid, refresh=refresh, transport=transport)
-    base = {"raw": c.get("raw"), "ms": c.get("ms", 0), "bytes": c.get("bytes", 0), "reused": bool(c.get("reused"))}
+    c = call(num_iid, refresh=refresh, no_cache=refresh, transport=transport)
+    bypassed = bool(refresh)
+    # 자동 경로: 새로 받은 응답이 캐시(cache=1)이고 data_update가 24시간 넘었으면 cache=no로 1회만 다시(한도 1회로 셈).
+    if c["ok"] and not c.get("reused") and not refresh and stale_cache(c["raw"]):
+        c2 = call(num_iid, no_cache=True, transport=transport)
+        logger.info("[onebound] num_iid=%s 하루 넘은 캐시 → cache=no 재호출 %s", num_iid, "성공" if c2["ok"] else c2["why"])
+        if c2["ok"]:
+            c2["bytes"] = int(c2.get("bytes") or 0) + int(c.get("bytes") or 0)
+            c2["ms"] = int(c2.get("ms") or 0) + int(c.get("ms") or 0)
+            c, bypassed = c2, True
+    base = {"raw": c.get("raw"), "ms": c.get("ms", 0), "bytes": c.get("bytes", 0), "reused": bool(c.get("reused")),
+            "bypassed": bypassed}
     if not c["ok"]:
         return {"state": "manual", "kind": c["kind"], "reason": c["why"], "payload": None, **base}
     payload = normalize(c["raw"])

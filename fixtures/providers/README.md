@@ -5,6 +5,10 @@
   SKU 8 · tmall false · shop_name 佑安居 · cache 1 · data_update 2026-10-04 20:54:24 · api_info max 10 / expires 2026-10-08.
   계약: `tests/test_z3_onebound.py::test_real_652874751412_parses_as_owner_counted`.
   실측으로 확인된 모양: `prop_imgs.prop_img[] = [{"properties": "pid:vid", "url": …}]` · `props_img = {"pid:vid": url}` — 둘 다 http://로 올 수 있음.
+- `onebound_item_get_667810641388.json` — **오너 실측 2호 원문**(운영 Render 「내려받기」, client_ip = Render 출구). 제습기 —
+  110V/220V × 미·영·호·국내 플러그 × 흑백 8 SKU(전 298元·재고 45~50) · cache 0 · api_info today 1/max 10/expires 2026-10-08 ·
+  1호와 타입 차이(total_sold "6" · video.url null · 배송비/무게 null·"" · brand other/其他 · props_imgs 복수형 · 모르는 키 _ddf 등).
+  계약: `tests/test_z3_onebound.py::test_real2_…` · Y8 전압·플러그 `tests/test_y8_voltage_plug.py`.
 - `onebound_item_get_reconstructed.json` — **재구성**(값은 지어낸 것) — 실측에 없는 갈래(캐시 하루 이내·SKU 재고 0·
   error_code 실패·5xx 재시도 등) 로직 계약용. 키 모양은 위 실측과 같다.
 - 진단 `/admin/diagnostics/taobao-provider`의 「원문 내려받기」(키 가림)로 받은 파일도 같은 모양이다.

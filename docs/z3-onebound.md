@@ -13,7 +13,7 @@
 |---|---|
 | `TAOBAO_DETAIL_PROVIDER` | `mtop`(기본) · `onebound`. onebound면 이 설정만으로 담기 자동 수집이 켜진다(`TAOBAO_MTOP_AUTO` 불필요·건드리지 않음) |
 | `ONEBOUND_KEY` · `ONEBOUND_SECRET` | 비면 부팅 경고 + 담기 건은 「공급자 키 미설정」 수동 카드(mtop으로 조용히 안 감). 값은 로그·화면에 안 남김 |
-| `ONEBOUND_DAILY_CAP` | 기본 60 — **계정 전체** 하루 호출 상한. 넘으면 호출 전에 「온바운드 일일 한도」 보류 |
+| `ONEBOUND_DAILY_CAP` | 기본 60 — **계정 전체** 하루 호출 상한(`cache=no` 재호출도 1회로 셈). 넘으면 호출 전에 「온바운드 일일 한도」 보류 |
 
 ## 흐름
 폰 담기(share `?text=`) → 상품번호(e.tb.cn은 기존 해석 재사용 — 실패면 「상품번호 해석 실패」) → item_get → 정규화 →
@@ -27,9 +27,17 @@
   진단 「새로 받기」만 재호출.
 
 ## 캐시
-응답 `cache`=1이고 `data_update`가 하루 넘게 지났으면 카드에 「가격 기준 {data_update}」.
-캐시 우회 파라미터는 **아직 미확인**(오너 2026-10-05 — API 테스트 페이지 파라미터 표에서 확인 예정). 그 전까지 「새로 받기」는
-**재호출만**(우리 24시간 보관본을 건너뜀 — 온바운드가 캐시를 줄 수는 있음). 이름을 받으면 그때 교체한다(추측 금지).
+캐시 우회 = **`cache=no`**(오너 실측 2026-10-05 — 테스트 페이지 「캐시 업데이트」 체크 시 Request address `…&is_promotion=1&cache=no&&lang=zh-CN&…`).
+기본은 미지정 = 캐시 허용.
+- 진단 「새로 받기」 → `cache=no`로 호출(유료 1회) · 보관본을 덮어쓴다.
+- 자동 경로: 응답 `cache`=1이고 `data_update`(베이징 시각)가 24시간 넘었을 때만 `cache=no`로 **1회** 재호출 — 일일 한도에 1회로 더한다.
+  재호출이 실패하면 받은 캐시 값을 쓰고 카드에 「가격 기준 {data_update}」.
+- 24시간 보관본 재사용 규칙은 그대로(「새로 받기」만 건너뜀).
+
+## 타입 관용(실측 1호·2호 차이)
+total_sold·sales: int/str 모두 정수로(참고만) · video.url null → 「동영상 없음」 · post_fee·express_fee·ems_fee·freight·item_weight:
+null·""·0 → **「미기재」**(Z5 배송비 계산에 0으로 넣지 않음) · brand `other/其他` → 브랜드 없음(Y6·상품명에 안 넘김) ·
+prop_imgs 없으면 props_imgs(복수형) · desc_img 비면 desc(html) `<img src>`(o0b.cn 제외) · 모르는 키는 무시하되 보관 원문엔 남김.
 
 ## 상품번호 검사(캐시 오염 방어)
 응답 `item.num_iid` ≠ 요청 `num_iid`(또는 응답에 없음)면 **실패**(「온바운드 응답 상품번호 불일치(요청 … ≠ 응답 …)」) — 보관도 안 한다.
@@ -46,3 +54,9 @@ sales/total_sold는 안 믿는다.
 `/admin/diagnostics/taobao-provider` — e.tb.cn 링크·상품번호 → 원문(키 가림) · 정규화 결과 · 캐시·data_update · api_info 한도/만료 ·
 오늘 호출 수/CAP · 「새로 받기」 · 원문 내려받기. mtop 실측(`/admin/diagnostics/taobao-mtop`)은 판정 코드
 (`login_required` · `rgv587` · `x5_loop` · `ok`)와 출구 IP 줄.
+
+## Y8 전압·플러그(온바운드 상품에서 처음 실측 — 667810641388 제습기)
+옵션 값의 110V·220V·100V·110-220V와 国内用·美规·英规·澳规·欧规… 토큰을 「전압/플러그」 축으로 분리(`src/collectors/voltage_plug.py`).
+국내 마켓(쿠팡 고가네·우주대행·스마트스토어·11번가)만: 110V(·100V) 전용·플러그 G/A/I형 SKU는 등록에서 빠지고(M5 회색 줄),
+220V+중국 플러그 SKU가 하나라도 있으면 상세 **맨 위**에 플러그 안내 + 표준 구매대행 고지(문구 = `src/seller_console/notice_texts.py`).
+모든 SKU가 제외면 「전압/플러그 불일치」 보류 → 「그래도 등록」. 멀티탭 자체(五孔·国标插座)는 별개 규칙 그대로.
