@@ -1,7 +1,6 @@
-"""Z3-B(오너 2026-10-05) — 판정 코드(login_required · rgv587 · x5_loop · ok) + 외부 공급자 onebound 어댑터.
+"""Z3-B(오너 2026-10-05) — mtop 판정 코드(login_required · rgv587 · x5_loop · ok) · 출구 IP 줄 · 코드별 집계.
 
-네트워크 0. 판정은 `tests/fixtures/taobao_mtop/`의 재구성·실측 본문, 공급자 파서는 `fixtures/providers/onebound_item_get.json`
-(재구성 — 실응답 받으면 그 파일만 교체하고 이 테스트를 다시 돌린다).
+네트워크 0. 판정 본문은 `tests/fixtures/taobao_mtop/`(출처는 그 폴더 README). 공급자 계약은 test_z3_onebound.py.
 """
 from __future__ import annotations
 
@@ -10,14 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_z3_mtop_auto import FakeSession, _R, _fx, _share_item
-
-ONEBOUND_FX = Path(__file__).parent.parent / "fixtures" / "providers" / "onebound_item_get.json"
-
-
-def _onebound_text():
-    return ONEBOUND_FX.read_text(encoding="utf-8")
-
+from tests.test_z3_mtop_auto import FakeSession, _R, _fx
 
 # ── 1) 판정 코드 ─────────────────────────────────────────────────────────────────
 
@@ -115,151 +107,7 @@ def test_diag_proxy_login_required_shows_exit_and_conclusion(monkeypatch):
     assert "× ④ 로그인 요구 없음" in h
 
 
-# ── 2) onebound 공급자 ──────────────────────────────────────────────────────────
-
-def test_onebound_parser_fixture_all_keys():
-    from src.collectors import taobao_mtop as T
-    from src.collectors import taobao_provider as P
-    p = P.normalize(json.loads(_onebound_text()))
-    mtop_keys = set(T.enrich_payload({"data": {}}).keys())
-    assert mtop_keys <= set(p.keys())                                   # 뒤 파이프라인이 받는 키 전부
-    assert isinstance(p["price"], float) and p["price"] == 39.9 and p["currency"] == "CNY"
-    assert p["images"][0] == "https://img.alicdn.com/imgextra/i1/0/O1CN01main.jpg" and len(p["images"]) == 3   # pic_url 중복 제거
-    assert p["detail_images"] == ["https://img.alicdn.com/imgextra/i4/0/O1CN01desc1.jpg",
-                                  "https://img.alicdn.com/imgextra/i4/0/O1CN01desc2.jpg"]
-    assert p["options"] == [{"name": "颜色分类", "values": ["白色", "黑色"]}, {"name": "尺码", "values": ["S", "M"]}]
-    assert [k["spec"] for k in p["skus"]] == [["白色", "S"], ["白色", "M"], ["黑色", "S"], ["黑色", "M"]]
-    assert all(isinstance(k["price"], float) for k in p["skus"]) and p["skus"][1]["stock"] == 0
-    assert p["source_path"] == "onebound" and p["parse_notes"] == []
-
-
-def test_onebound_unknown_sku_shape_is_reported_not_guessed():
-    from src.collectors import taobao_provider as P
-    raw = json.loads(_onebound_text())
-    raw["item"]["skus"] = [{"price": "1"}]                             # 확인 안 된 모양
-    p = P.normalize(raw)
-    assert p["skus"] == [] and p["parse_notes"] and "실응답 확인" in p["parse_notes"][0]
-
-
-def _keys(monkeypatch, cap="100"):
-    monkeypatch.setenv("ONEBOUND_KEY", "kkk_test_key_1234")
-    monkeypatch.setenv("ONEBOUND_SECRET", "sss_test_secret_5678")
-    monkeypatch.setenv("ONEBOUND_DAILY_CAP", cap)
-
-
-def test_onebound_daily_cap_holds(monkeypatch):
-    from src.collectors import taobao_provider as P
-    from src.db import option_translate_queue_pg as q
-    _keys(monkeypatch, cap="2")
-    used = P.used_today()
-    monkeypatch.setenv("ONEBOUND_DAILY_CAP", str(used + 1))
-    calls = []
-    tr = lambda url, params: (calls.append(params["num_iid"]) or (200, _onebound_text()))
-    assert P.fetch_detail("733241700286", transport=tr)["state"] == "ok"
-    r = P.fetch_detail("733241700286", transport=tr)
-    assert r["state"] == "manual" and r["kind"] == "provider_cap" and r["reason"].startswith("일일 한도")
-    assert calls == ["733241700286"]                                    # 한도 넘으면 호출 자체를 안 함
-    assert q.day_count(P._day_key()) == used + 1
-
-
-def test_onebound_keys_missing_and_boot_warning(monkeypatch):
-    from src.collectors import taobao_provider as P
-    from src.services import taobao_auto as A
-    monkeypatch.delenv("ONEBOUND_KEY", raising=False)
-    monkeypatch.delenv("ONEBOUND_SECRET", raising=False)
-    monkeypatch.setenv("TAOBAO_DETAIL_PROVIDER", "onebound")
-    assert "키 미설정" in A.startup_check() and A.enabled()
-    r = P.fetch_detail("1", transport=lambda u, p: pytest.fail("키 없으면 호출 안 함"))
-    assert r["state"] == "manual" and "키 미설정" in r["reason"]
-    from src.order_webhook import app
-    c = app.test_client()
-    with c.session_transaction() as ss:
-        ss["user_id"], ss["user_role"] = "owner", "admin"
-    h = c.get("/admin/diagnostics/taobao-mtop").get_data(as_text=True)
-    assert 'data-role="mtop-via-provider"' in h and "키 미설정 — ONEBOUND_KEY · ONEBOUND_SECRET" in h
-
-
-def test_onebound_error_code_is_provider_fail(monkeypatch):
-    from src.collectors import taobao_provider as P
-    _keys(monkeypatch)
-    r = P.fetch_detail("1", transport=lambda u, p: (200, '{"error":"item-not-found","reason":"商品不存在","error_code":"2000"}'))
-    assert r["state"] == "manual" and r["kind"] == "provider_fail" and "error_code 2000" in r["reason"]
-
-
-def test_auto_onebound_fills_share_draft_and_never_calls_mtop(monkeypatch):
-    """완료 조건 2: 공급자 onebound + 키 → 담기 1건이 가격·옵션·사진까지 자동으로(같은 병합)."""
-    from src.collectors import taobao_mtop as T
-    from src.collectors import taobao_provider as P
-    from src.services import taobao_auto as A
-    from src.services import mtop_stats as MS
-    from src.seller_console import collect_history_store as S
-    _keys(monkeypatch)
-    monkeypatch.setenv("TAOBAO_DETAIL_PROVIDER", "onebound")
-    monkeypatch.delenv("TAOBAO_MTOP_AUTO", raising=False)
-    monkeypatch.setattr(T, "fetch", lambda *a, **k: pytest.fail("onebound면 mtop을 부르지 않는다"))
-    real_call = P.call
-    monkeypatch.setattr(P, "call", lambda iid, transport=None: real_call(iid, transport=lambda u, p: (200, _onebound_text())))
-    before = MS.summary(3)["routes"].get("onebound", {}).get("ok", 0)
-    seller = "owner-z3b"
-    iid = _share_item(seller)
-    rec = A.run(seller, iid)
-    assert rec["state"] == "done" and rec["route"] == "onebound" and rec["kind"] == "ok"
-    assert rec["counts"] == {"images": 3, "skus": 4, "detail_images": 2} and rec["provider_bytes"] > 0
-    ex = json.loads(S.get(iid, seller_ids={seller})["extra_json"])
-    assert len(ex["images"]) == 3 and len(ex["skus"]) == 4 and "parse_notes" not in ex
-    assert MS.summary(3)["routes"]["onebound"]["ok"] - before == 1
-    from src.order_webhook import app
-    c = app.test_client()
-    with c.session_transaction() as ss:
-        ss["user_id"] = seller
-    assert c.get(f"/seller/collect/{iid}/auto-enrich").get_json()["state"] == "done"
-
-
-def test_auto_onebound_failure_goes_manual_with_code(monkeypatch):
-    from src.collectors import taobao_mtop as T
-    from src.collectors import taobao_provider as P
-    from src.services import taobao_auto as A
-    _keys(monkeypatch)
-    monkeypatch.setenv("TAOBAO_DETAIL_PROVIDER", "onebound")
-    monkeypatch.setattr(T, "fetch", lambda *a, **k: pytest.fail("mtop 재시도 금지"))
-    monkeypatch.setattr(P, "call", lambda iid, transport=None: {"ok": False, "kind": "provider_cap",
-                                                                "why": "일일 한도 — 오늘 100건 다 씀(ONEBOUND_DAILY_CAP), 내일 다시",
-                                                                "raw": None, "ms": 0, "size": 0})
-    seller = "owner-z3b-fail"
-    iid = _share_item(seller)
-    rec = A.run(seller, iid)
-    assert rec["state"] == "manual" and rec["kind"] == "provider_cap"
-    from src.order_webhook import app
-    c = app.test_client()
-    with c.session_transaction() as ss:
-        ss["user_id"] = seller
-    d = c.get(f"/seller/collect/{iid}/auto-enrich").get_json()
-    assert d["state"] == "manual" and d["line"].startswith("자동 수집 실패(provider_cap) — 일일 한도")
-
-
-def test_diag_provider_radio_shows_raw_masked_norm_and_billing(monkeypatch):
-    from src.collectors import taobao_mtop as T
-    from src.collectors import taobao_provider as P
-    from src.db import image_translate_queue_pg as st
-    st.state_set(P._SAMPLE, {})
-    _keys(monkeypatch)
-    raw = json.loads(_onebound_text())
-    raw["api_info"] = "secret=sss_test_secret_5678"                     # 응답에 시크릿이 섞여 와도
-    monkeypatch.setattr(T, "item_id_from", lambda arg, s=None: ("733241700286", "직접 입력"))
-    real_call = P.call
-    monkeypatch.setattr(P, "call", lambda iid, transport=None: real_call(iid, transport=lambda u, p: (200, json.dumps(raw))))
-    from src.order_webhook import app
-    c = app.test_client()
-    with c.session_transaction() as ss:
-        ss["user_id"], ss["user_role"] = "owner", "admin"
-    h = c.get("/admin/diagnostics/taobao-mtop", query_string={"q": "733241700286", "via": "provider"}).get_data(as_text=True)
-    assert 'data-role="provider-norm"' in h and "옵션 颜色分类: 白色 / 黑色" in h and "가격 39.9 CNY" in h
-    assert 'data-role="provider-raw"' in h and "sss_test_secret_5678" not in h and "kkk_test_key_1234" not in h
-    assert "과금 단위: 상품 1건 = item_get 호출 1회" in h
-    d = c.get("/admin/diagnostics/taobao-mtop/onebound-sample.json")
-    assert d.status_code == 200 and d.get_json()["item"]["num_iid"] == "733241700286"
-    assert "sss_test_secret_5678" not in d.get_data(as_text=True)
-
+# ── onebound 공급자 계약은 tests/test_z3_onebound.py ─────────────────────────────
 
 def test_z3l_memo_names_no_cookie_guess():
     """Z3-L은 설계 메모만 — 쿠키 이름은 실측 뒤(추측 금지)."""

@@ -2005,7 +2005,9 @@ def mobile_list_ctx(item: dict) -> dict:
                           if isinstance(o, dict) for v in (o.get("values") or [])])
         if _kp3.expiry_hits(_rt):
             risks.append("유통기한 임박·떨이 소싱 — 등록 차단")
-        _pl = _kp3.cn_plug_hits(_rt)                   # Y8: 중국 표준 콘센트(五孔·国标插座) — 소싱 제외
+        # Y8: 중국 표준 콘센트(五孔·国标插座) — 소싱 제외. Z3-B: 규격표(공급자 props) 값도 본다(이 판정에만)
+        _pl = _kp3.cn_plug_hits(_rt + " " + " ".join(str(x) for sp in (product.get("detail_specs") or [])
+                                                      if isinstance(sp, (list, tuple)) for x in sp))
         if _pl:
             risks.append(f"중국 표준 콘센트({', '.join(_pl)}) — 소싱 제외(국내 콘센트 규격 다름·KC 대상)")
         _rp = _kp3.replica_hits(_rt)
@@ -2053,7 +2055,8 @@ def _m5_auto(ex: dict) -> dict:
                         "아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요."}
     if st == "done":
         c = rec.get("counts") or {}
-        return {"state": "done", "line": f"서버가 자동으로 채웠어요 — 사진 {c.get('images', 0)}장 · SKU {c.get('skus', 0)}개 · 상세 이미지 {c.get('detail_images', 0)}장"}
+        return {"state": "done", "line": f"서버가 자동으로 채웠어요 — 사진 {c.get('images', 0)}장 · SKU {c.get('skus', 0)}개 · 상세 이미지 {c.get('detail_images', 0)}장"
+                                         + (f" · 가격 기준 {rec['price_asof']}" if rec.get("price_asof") else "")}
     try:
         from src.services import taobao_auto as _ta
         if _ta.enabled() and str(ex.get("enrich_state") or "") == "pending":

@@ -826,7 +826,9 @@ class UploadDispatcher:
             holds.append({"short": "유통기한 임박·떨이 소싱 — 등록 차단", "fix": "block",
                           "line": f"「{_exp[0]}」 — 유통기한 임박·떨이 상품은 등록하지 않습니다(번역도 하지 않음)."})
         # Y8(오너 2026-10-04): 五孔·国标插座 = 중국 표준 콘센트 — 국내 콘센트에 안 맞고 전기용품 KC 대상 → 소싱 제외(등록 차단)
-        _plug = _kp.cn_plug_hits(_risk_text)
+        # Z3-B: 규격표(공급자 props) 값도 본다 — 五孔·国标插座는 규격표에 적히는 일이 많다(이 판정에만)
+        _plug = _kp.cn_plug_hits(_risk_text + " " + " ".join(str(x) for sp in (pd.get("detail_specs") or [])
+                                                              if isinstance(sp, (list, tuple)) for x in sp))
         if _plug:
             holds.append({"short": f"중국 표준 콘센트({', '.join(_plug)}) — 소싱 제외", "fix": "block",
                           "line": f"「{_plug[0]}」 — 중국 표준(国标) 콘센트·멀티탭은 국내 콘센트 규격과 달라 쓸 수 없고 "

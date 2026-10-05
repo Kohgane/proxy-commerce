@@ -1,7 +1,11 @@
 # 외부 공급자 응답 픽스처 (Z3-B)
 
-- `onebound_item_get.json` — **재구성**(2026-10-05). onebound 문서(open.onebound.cn)는 이 컨테이너에서 egress 차단이라
-  원문 대조를 못 했다. 키는 웹 검색 결과로 확인된 것만 썼다(`src/collectors/taobao_provider.py`의 `FIELDS_SOURCE`).
-  값(제목·가격·SKU)은 지어낸 것.
-- **교체 방법:** 키를 넣고 `/admin/diagnostics/taobao-mtop?via=provider`로 1건 실측 → 화면의 「item_get 실응답 내려받기」
-  (키·시크릿은 가려서 저장됨)를 이 파일로 덮어쓰고 `pytest tests/test_z3b_provider.py`. 모양이 다르면 파서 테스트가 먼저 깨진다.
+- `onebound_item_get_652874751412.json` — **오너 실측 응답**(첨부 txt의 Result Object). ★아직 이 레포에 없음:
+  2026-10-05 브리프 메시지에 원문이 실려 오지 않았다. 파일을 이 이름으로 넣으면 `tests/test_z3_onebound.py`의
+  실측 계약(제목·가격 480.0·사진 5·상세 19·축 2(几人坐 8 / 颜色分类 1)·SKU 8·is_tmall False·가게 「佑安居」)이 돈다 —
+  그 전엔 그 테스트는 **사유를 밝히고 건너뛴다**(그린으로 세지 않음).
+  진단 `/admin/diagnostics/taobao-provider`의 「원문 내려받기」(키 가림)로 받은 파일도 같은 모양이다.
+- `onebound_item_get_reconstructed.json` — **재구성**(값은 지어낸 것). 키 모양은 오너 지시(2026-10-05)의 필드 매핑을
+  따른다: `props[]{name,value}` · `props_list{"pid:vid":"축:값"}` · `skus.sku[]{price,quantity,properties,sku_id}` ·
+  `prop_imgs.prop_img[]` · `desc_img`(o0b.cn 추적 픽셀 1장 포함) · `video.url` · `location` · `tmall` · `seller_info.shop_name` ·
+  `cache` · `data_update` · `api_info`. 단 `prop_img` 원소의 키(`properties`·`url`)는 지시에 이름이 없어 **확인 전**.

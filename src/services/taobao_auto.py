@@ -61,6 +61,26 @@ def startup_check() -> str:
     return msg
 
 
+def _keep_provider(item_id: str, user_id: str, payload: dict) -> None:
+    """공급자 전용 칸을 병합 **뒤에** 남긴다(공용 병합 `apply_enrich`는 그대로): 규격표는 기존 `detail_specs`가
+    비었을 때만(Z5 무게·치수 재료) · 원산지·티몰·동영상·총재고·옵션값 사진·캐시 기준은 `provider_detail`에."""
+    from src.seller_console import collect_history_store as store
+    row = store.get(item_id, seller_ids={user_id})
+    if not row:
+        return
+    try:
+        ex = json.loads(row.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    pv = dict(payload.get("provider") or {})
+    if payload.get("detail_specs") and not ex.get("detail_specs"):
+        ex["detail_specs"] = payload["detail_specs"]
+    ex["provider_detail"] = {k: pv.get(k) for k in ("name", "price_cny", "original_price_cny", "origin_city", "is_tmall",
+                                                   "video_url", "stock_total", "option_images", "cache", "data_update",
+                                                   "price_asof", "parse_notes")}
+    store.update(item_id, seller_ids={user_id}, extra_json=json.dumps(ex, ensure_ascii=False))
+
+
 def _mark(item_id: str, user_id: str, rec: dict) -> None:
     from src.seller_console import collect_history_store as store
     row = store.get(item_id, seller_ids={user_id})
@@ -95,7 +115,8 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
         except T.NoProxy:
             iid = ""
     if not iid:
-        rec = {"state": "manual", "reason": "상품번호를 못 찾았어요(단축 링크를 펴지 못함)", "route": via, "at": now, "kind": "error"}
+        rec = {"state": "manual", "route": via, "at": now, "kind": "error",
+               "reason": ("상품번호 해석 실패" if via == "onebound" else "상품번호를 못 찾았어요(단축 링크를 펴지 못함)")}
         _mark(item_id, user_id, rec)
         try:
             from src.services import mtop_stats as _ms
@@ -111,8 +132,10 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
             res = T.fetch(iid, via)
     if res["state"] == "ok":
         from src.api.extension_api import apply_enrich
-        payload = {k: v for k, v in res["payload"].items() if k != "parse_notes"}
+        payload = {k: v for k, v in res["payload"].items() if k != "provider"}
         body, _code = apply_enrich(item_id, {user_id}, user_id, payload)
+        if body.get("ok") and res["payload"].get("provider"):
+            _keep_provider(item_id, user_id, res["payload"])
         rec = {"state": "done" if body.get("ok") else "manual", "route": via, "at": now,
                "reason": "" if body.get("ok") else str(body.get("error") or "병합 실패"),
                "counts": {"images": len(res["payload"]["images"]), "skus": len(res["payload"]["skus"]),
@@ -121,7 +144,11 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
         rec = {"state": "manual", "reason": res["reason"], "route": via, "at": now}
     rec["kind"] = res.get("kind") or ("ok" if res["state"] == "ok" else "error")
     if via == "onebound":                                       # Z3-B: 공급자 호출 크기·시간
-        rec["provider_ms"], rec["provider_bytes"] = int(res.get("ms") or 0), int(res.get("size") or 0)
+        rec["provider_ms"], rec["provider_bytes"] = int(res.get("ms") or 0), int(res.get("bytes") or 0)
+        rec["provider_reused"] = bool(res.get("reused"))
+        pv = ((res.get("payload") or {}).get("provider") or {})
+        if pv.get("price_asof"):
+            rec["price_asof"] = pv["price_asof"]                # 캐시 응답이 하루 넘음 → 카드에 「가격 기준 …」
     if via == "proxy":                                          # Z3-P: 상품당 프록시 경유 바이트 · 쓴 session
         rec["proxy_bytes"], rec["session"] = int(res.get("bytes") or 0), res.get("session", "")
         logger.info("[Z3 프록시] item=%s 상품=%s session=%s 바이트=%d 결과=%s", item_id, iid, rec["session"],
