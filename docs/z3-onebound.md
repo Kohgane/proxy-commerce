@@ -28,14 +28,18 @@
 
 ## 캐시
 응답 `cache`=1이고 `data_update`가 하루 넘게 지났으면 카드에 「가격 기준 {data_update}」.
-캐시 우회 파라미터는 공식 문서(open.onebound.cn)에서 이름을 확인해야 하는데 이 작업 환경에서 문서가 차단돼 **확인 못 함 → 쓰지 않는다**(추측 금지).
-문서에 있는 이름을 받으면 그 파라미터로 「새로 받기」를 캐시 우회로 바꾼다.
+캐시 우회 파라미터는 **아직 미확인**(오너 2026-10-05 — API 테스트 페이지 파라미터 표에서 확인 예정). 그 전까지 「새로 받기」는
+**재호출만**(우리 24시간 보관본을 건너뜀 — 온바운드가 캐시를 줄 수는 있음). 이름을 받으면 그때 교체한다(추측 금지).
+
+## 상품번호 검사(캐시 오염 방어)
+응답 `item.num_iid` ≠ 요청 `num_iid`(또는 응답에 없음)면 **실패**(「온바운드 응답 상품번호 불일치(요청 … ≠ 응답 …)」) — 보관도 안 한다.
+24시간 보관본을 재사용할 때도 같은 검사를 지난다.
 
 ## 필드 매핑(오너 지시)
 title · price/orginal_price → price_cny/original_price_cny(float) · pic_url+item_imgs[].url → images(https 보정) ·
 desc_img → 상세 이미지(o0b.cn 추적 픽셀·Y1 쓰레기 제외) · desc(html) 파싱 안 함 · props[] → 규격표(`detail_specs`, Z5 무게·치수 재료,
 五孔/国标插座 판정에도 포함) · props_list + skus.sku[].properties → 축별 값·SKU 가격/재고(properties_name 안 씀) ·
-prop_imgs.prop_img → 옵션값 사진 · video.url · location(표기만) · tmall · seller_info.shop_name/nick · num(총재고).
+prop_imgs.prop_img[{properties, url}] + props_img{pid:vid: url} → 옵션값 사진(http:// → https://, 실측 확인) · video.url · location(표기만) · tmall · seller_info.shop_name/nick · num(총재고).
 sales/total_sold는 안 믿는다.
 
 ## 진단

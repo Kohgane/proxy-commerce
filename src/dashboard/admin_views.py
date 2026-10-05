@@ -1450,7 +1450,8 @@ _TAOBAO_PROVIDER_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charse
 가격 {{ p.price_cny }} CNY{% if p.original_price_cny %} (원가 {{ p.original_price_cny }}){% endif %}
 캐시 {{ '예' if p.cache else '아니오' }} · data_update {{ p.data_update or '—' }}{% if p.price_asof %} → 카드에 「가격 기준 {{ p.price_asof }}」{% endif %}
 사진 {{ row.norm.images|length }}장 · 상세 사진 {{ row.norm.detail_images|length }}장 · 동영상 {{ '있음' if p.video_url else '없음' }}
-가게 {{ p.shop_name or '—' }} · 티몰 {{ '예' if p.is_tmall else '아니오' }} · 출고지 {{ p.origin_city or '—' }} · 총재고 {{ p.stock_total if p.stock_total is not none else '—' }}
+{% for v, u in (p.option_images or {}).items() %}옵션값 사진 {{ v }} → {{ u }}
+{% endfor %}가게 {{ p.shop_name or '—' }} · 티몰 {{ '예' if p.is_tmall else '아니오' }} · 출고지 {{ p.origin_city or '—' }} · 총재고 {{ p.stock_total if p.stock_total is not none else '—' }}
 {% for o in row.norm.options %}옵션 축 {{ o.name }}({{ o['values']|length }}): {{ o['values']|join(' / ') }}
 {% endfor %}SKU {{ row.norm.skus|length }}개
 {% for k in row.norm.skus %}  {{ k.sku_id }} · {{ k.spec|join(' + ') }} · {{ k.price }} · 재고 {{ k.stock if k.stock is not none else '모름' }}

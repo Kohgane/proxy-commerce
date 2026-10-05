@@ -1,8 +1,7 @@
 """Z3-B(오너 2026-10-05) — 온바운드(万邦) item_get 공급자: 파서 · 실패 원문 · 한도 · 24시간 재사용 · api_info · 자동 담기 · 진단.
 
 네트워크 0(대역 transport). 픽스처 출처는 `fixtures/providers/README.md`:
-  - `onebound_item_get_652874751412.json` = 오너 실측 응답 — **레포에 아직 없음**(브리프 메시지에 원문이 안 실려 옴).
-    없으면 그 계약은 사유를 밝히고 건너뛴다(그린으로 세지 않는다 — PR·보고에 「미완」).
+  - `onebound_item_get_652874751412.json` = 오너 실측 응답(2026-10-05 [Z3-B 후속]으로 투입 — 원문 그대로).
   - `onebound_item_get_reconstructed.json` = 오너 지시 필드 매핑대로 만든 재구성(값은 지어낸 것).
 """
 from __future__ import annotations
@@ -19,8 +18,14 @@ REAL = FX / "onebound_item_get_652874751412.json"
 RECON = FX / "onebound_item_get_reconstructed.json"
 
 
-def _recon_text():
-    return RECON.read_text(encoding="utf-8")
+def _recon_text(num_iid: str = ""):
+    """재구성 응답 — `num_iid`를 주면 응답 item.num_iid를 그 번호로(요청·응답 상품번호 일치 검사를 통과하게)."""
+    t = RECON.read_text(encoding="utf-8")
+    if num_iid:
+        raw = json.loads(t)
+        raw["item"]["num_iid"] = num_iid
+        t = json.dumps(raw, ensure_ascii=False)
+    return t
 
 
 def _keys(monkeypatch, cap="60"):
@@ -37,19 +42,66 @@ def _fresh_store(num_iid):
 
 # ── 실측 응답(오너 첨부) ──────────────────────────────────────────────────────────
 
-@pytest.mark.skipif(not REAL.exists(), reason="오너 실측 응답 fixtures/providers/onebound_item_get_652874751412.json 미수령 "
-                                              "— 브리프 메시지에 원문이 안 실려 옴(파일을 넣으면 돈다)")
 def test_real_652874751412_parses_as_owner_counted():
+    """오너 실측 응답(원문 그대로) — 오너가 센 기대값과 1:1."""
     from src.collectors import taobao_provider_onebound as O
-    p = O.normalize(json.loads(REAL.read_text(encoding="utf-8")))
+    raw = json.loads(REAL.read_text(encoding="utf-8"))
+    assert raw["error_code"] == "0000" and len(raw["item"]["desc_img"]) == 20 and not O.item_id_mismatch(raw, "652874751412")
+    p = O.normalize(raw)
     pv = p["provider"]
-    assert p["title"] and pv["price_cny"] == 480.0
-    assert len(p["images"]) == 5 and all(u.startswith("https:") for u in p["images"])
-    assert len(p["detail_images"]) == 19 and not any("o0b.cn" in u for u in p["detail_images"])
+    assert p["title"].startswith("奶油风布艺沙发") and pv["price_cny"] == 480.0 == p["price"]
+    assert len(p["images"]) == 5 and all(u.startswith("https://img.alicdn.com/") for u in p["images"])
+    assert len(p["detail_images"]) == 19 and not any("o0b.cn" in u for u in p["detail_images"])   # 20 − 추적 픽셀 1
     axes = {o["name"]: o["values"] for o in p["options"]}
-    assert len(axes) == 2 and len(axes["几人坐"]) == 8 and len(axes["颜色分类"]) == 1
-    assert len(p["skus"]) == 8 and all(k["sku_id"] and k["stock"] is not None for k in p["skus"])
-    assert pv["is_tmall"] is False and pv["shop_name"] == "佑安居"
+    assert list(axes) == ["几人坐", "颜色分类"] and len(axes["几人坐"]) == 8 and axes["颜色分类"] == ["乳白色 尺寸颜色可定制"]
+    assert len(p["skus"]) == 8 and p["skus"][0] == {"spec": ["脚踏90*60*48cm", "乳白色 尺寸颜色可定制"], "price": 480.0,
+                                                   "stock": 200, "sku_id": "4881047531343"}
+    assert p["skus"][1]["stock"] == 135 and all(k["sku_id"] for k in p["skus"])
+    assert pv["is_tmall"] is False and pv["shop_name"] == "佑安居" and pv["stock_total"] == 1527
+    assert pv["cache"] is True and pv["data_update"] == "2026-10-04 20:54:24"
+    assert pv["api_info"]["max"] == 10 and pv["api_info"]["expires"] == "2026-10-08"
+    assert pv["option_images"] == {"乳白色 尺寸颜色可定制":
+                                   "https://img.alicdn.com/imgextra/i1/2568161054/O1CN017GTZ4h1Jem9Qra1ap_!!2568161054.jpg"}  # http → https
+    assert pv["origin_city"] == "江苏南通" and pv["video_url"].startswith("https://cloud.video.taobao.com/")
+    assert len(p["detail_specs"]) == 22 and p["detail_specs"][0] == ["品牌", "#0 工厂"] and pv["parse_notes"] == []
+
+
+def test_real_via_call_reuses_and_keeps_raw(monkeypatch):
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    _fresh_store("652874751412")
+    calls = []
+
+    def tr(url, params):
+        calls.append(params["num_iid"])
+        return 200, REAL.read_text(encoding="utf-8")
+    r = O.fetch_detail("652874751412", transport=tr)
+    assert r["state"] == "ok" and len(r["payload"]["skus"]) == 8 and calls == ["652874751412"]
+    assert O.fetch_detail("652874751412", transport=tr)["reused"] is True and calls == ["652874751412"]
+
+
+def test_num_iid_mismatch_fails_and_is_not_stored(monkeypatch):
+    """요청 상품번호와 응답 item.num_iid가 다르면 실패(캐시 오염 방어) — 보관도 안 한다."""
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    _fresh_store("999000111")
+    r = O.fetch_detail("999000111", transport=lambda u, p: (200, REAL.read_text(encoding="utf-8")))
+    assert r["state"] == "manual" and r["kind"] == "provider_fail"
+    assert r["reason"] == "온바운드 응답 상품번호 불일치(요청 999000111 ≠ 응답 652874751412) — 캐시 오염 의심, 쓰지 않음"
+    assert not O.stored("999000111").get("raw")
+    raw = json.loads(REAL.read_text(encoding="utf-8"))
+    del raw["item"]["num_iid"]
+    assert O.item_id_mismatch(raw, "652874751412").startswith("온바운드 응답에 상품번호 없음")
+
+
+def test_props_img_dict_and_http_to_https():
+    """props_img = {"pid:vid": url}만 와도 옵션값 사진을 읽는다 · http:// → https://."""
+    from src.collectors import taobao_provider_onebound as O
+    raw = json.loads(REAL.read_text(encoding="utf-8"))
+    del raw["item"]["prop_imgs"]
+    assert O.normalize(raw)["provider"]["option_images"] == {
+        "乳白色 尺寸颜色可定制": "https://img.alicdn.com/imgextra/i1/2568161054/O1CN017GTZ4h1Jem9Qra1ap_!!2568161054.jpg"}
+    assert O._https("http://a.b/c.jpg") == "https://a.b/c.jpg" and O._https("//a.b/c.jpg") == "https://a.b/c.jpg"
 
 
 # ── 파서(재구성 픽스처) ──────────────────────────────────────────────────────────
@@ -138,11 +190,11 @@ def test_retry_once_on_5xx_only(monkeypatch):
     from src.collectors import taobao_provider_onebound as O
     _keys(monkeypatch)
     _fresh_store("222")
-    seq = [(502, "bad gateway"), (200, _recon_text())]
+    seq = [(502, "bad gateway"), (200, _recon_text("222"))]
     r = O.fetch_detail("222", transport=lambda u, p: seq.pop(0))
     assert r["state"] == "ok" and seq == []
     _fresh_store("223")
-    seq4 = [(403, "forbidden"), (200, _recon_text())]
+    seq4 = [(403, "forbidden"), (200, _recon_text("223"))]
     r4 = O.fetch_detail("223", transport=lambda u, p: seq4.pop(0))
     assert r4["state"] == "manual" and len(seq4) == 1                # 4xx는 재시도 안 함
 
@@ -170,12 +222,12 @@ def test_same_item_within_24h_reuses_stored_raw(monkeypatch):
 
     def tr(url, params):
         calls.append(1)
-        return 200, _recon_text()
+        return 200, _recon_text(params["num_iid"])
     assert O.fetch_detail("444", transport=tr)["reused"] is False
     again = O.fetch_detail("444", transport=tr)
     assert again["state"] == "ok" and again["reused"] is True and calls == [1]     # 24시간 재담기 → 호출 0
     assert O.fetch_detail("444", refresh=True, transport=tr)["reused"] is False and calls == [1, 1]   # 「새로 받기」만
-    assert O.stored("444")["raw"]["item"]["num_iid"] == "733241700286"              # 원문 보관(상품당 최신 1건)
+    assert O.stored("444")["raw"]["item"]["num_iid"] == "444"                       # 원문 보관(상품당 최신 1건)
 
 
 def test_keys_missing_is_its_own_failure_and_boot_warning(monkeypatch):

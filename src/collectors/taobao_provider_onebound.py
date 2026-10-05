@@ -95,8 +95,22 @@ def mask(raw: Any) -> Any:
 # ── 정규화 ─────────────────────────────────────────────────────────────────────
 
 def _https(u: Any) -> str:
+    """「//…」 · 「http://…」 → https(오너 실측: prop_img·props_img가 http://로 오는 경우 있음)."""
     u = str(u or "").strip()
-    return "https:" + u if u.startswith("//") else u
+    if u.startswith("//"):
+        return "https:" + u
+    return "https://" + u[7:] if u.lower().startswith("http://") else u
+
+
+def item_id_mismatch(raw: Any, num_iid: str) -> str:
+    """응답 item.num_iid ≠ 요청 상품번호면 사유(캐시 오염 방어) — 같으면 빈 문자열."""
+    got = str((((raw or {}).get("item") or {}) if isinstance(raw, dict) else {}).get("num_iid") or "").strip()
+    want = str(num_iid or "").strip()
+    if not got:
+        return f"온바운드 응답에 상품번호 없음(요청 {want}) — 캐시 오염 의심, 쓰지 않음"
+    if got != want:
+        return f"온바운드 응답 상품번호 불일치(요청 {want} ≠ 응답 {got}) — 캐시 오염 의심, 쓰지 않음"
+    return ""
 
 
 def _float(v: Any) -> Optional[float]:
@@ -192,11 +206,16 @@ def normalize(raw: dict, now=None) -> Dict[str, Any]:
         skus.append({"spec": spec, "price": "" if p is None else p, "stock": _int(k.get("quantity")),
                      "sku_id": str(k.get("sku_id") or "")})
     opt_imgs = {}
+    # 옵션값 사진 — 실측(오너 2026-10-05, 652874751412): prop_imgs.prop_img[] = [{"properties": "pid:vid", "url": …}],
+    #   props_img = {"pid:vid": url}. 둘 다 http://로 올 수 있어 https 보정. prop_img가 우선, props_img는 빈 자리만 채운다.
     pimg = (item.get("prop_imgs") or {}).get("prop_img") if isinstance(item.get("prop_imgs"), dict) else None
-    # ★ prop_img 원소의 키(`properties`·`url`)는 오너 지시에 이름이 없어 **실응답 픽스처로 확인 전** — 둘 다 있을 때만 읽는다.
-    for x in pimg or []:
-        if isinstance(x, dict) and x.get("properties") in pv_name and x.get("url"):
-            opt_imgs[pv_name[x["properties"]][1]] = _https(x["url"])
+    pairs = [(x.get("properties"), x.get("url")) for x in (pimg or []) if isinstance(x, dict)]
+    if isinstance(item.get("props_img"), dict):
+        pairs += list(item["props_img"].items())
+    for pv, url in pairs:
+        pv = str(pv or "").strip()
+        if pv in pv_name and url and pv_name[pv][1] not in opt_imgs:
+            opt_imgs[pv_name[pv][1]] = _https(url)
     spec_table = [[str(p.get("name") or "").strip(), str(p.get("value") or "").strip()]
                   for p in (item.get("props") or []) if isinstance(p, dict) and str(p.get("name") or "").strip()]
     price = _float(item.get("price"))
@@ -279,7 +298,7 @@ def call(num_iid: str, *, refresh: bool = False, transport=None) -> Dict[str, An
     if not iid:
         return {"ok": False, "kind": "provider_fail", "why": "상품번호 해석 실패", "raw": None, "ms": 0, "bytes": 0}
     rec = stored(iid)
-    if rec.get("raw") and not refresh and _fresh(rec):
+    if rec.get("raw") and not refresh and _fresh(rec) and not item_id_mismatch(rec["raw"], iid):
         return {"ok": True, "kind": "ok", "why": "", "raw": rec["raw"], "ms": 0, "bytes": int(rec.get("bytes") or 0),
                 "reused": True, "at": rec.get("at")}
     miss = keys_missing()
@@ -316,6 +335,10 @@ def call(num_iid: str, *, refresh: bool = False, transport=None) -> Dict[str, An
         said = str(raw.get("reason") or raw.get("error") or "").strip()            # 원문 그대로(번역 안 함)
         return {"ok": False, "kind": "provider_fail", "why": f"온바운드 {code or '응답 코드 없음'}" + (f": {said[:160]}" if said else ""),
                 "raw": raw, "ms": ms, "bytes": nbytes}
+    bad = item_id_mismatch(raw, iid)                     # 다른 상품 응답은 보관도 안 한다
+    if bad:
+        logger.warning("[onebound] %s", bad)
+        return {"ok": False, "kind": "provider_fail", "why": bad, "raw": raw, "ms": ms, "bytes": nbytes}
     _store(iid, raw, nbytes, ms)
     return {"ok": True, "kind": "ok", "why": "", "raw": raw, "ms": ms, "bytes": nbytes, "reused": False}
 
