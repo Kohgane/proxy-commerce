@@ -8,8 +8,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
-KINDS = ("ok", "rgv587", "punish", "empty", "error")
-ROUTES = ("direct", "relay", "proxy")
+# Z3-B: login_required(익명 거부 — IP 무관) · x5_loop(핸드셰이크 뒤 다시 1단계 스크립트). 옛 「login」 카운터는 읽기만(합산).
+KINDS = ("ok", "login_required", "rgv587", "x5_loop", "punish", "empty", "proxy_auth", "proxy_conn", "proxy_timeout",
+         "proxy_unset", "provider_cap", "provider_fail", "error")
+LABELS = {"ok": "성공", "login_required": "로그인 요구", "rgv587": "RGV587", "x5_loop": "x5 루프", "punish": "사람 확인",
+          "empty": "빈 응답", "proxy_auth": "프록시 인증", "proxy_conn": "프록시 연결", "proxy_timeout": "프록시 시간초과",
+          "proxy_unset": "프록시 미설정", "provider_cap": "공급자 일일 한도", "provider_fail": "공급자 실패", "error": "오류"}
+ROUTES = ("direct", "relay", "proxy", "onebound")
 _KST = timezone(timedelta(hours=9))
 _FIRST = "mtop_auto:first10"
 _RECENT = "mtop_auto:recent"
@@ -24,10 +29,12 @@ def _key(day: str, route: str, kind: str) -> str:
     return f"mtop_auto:{day}:{route}:{kind}"
 
 
-def record(route: str, kind: str, now=None) -> None:
+def record(route: str, kind: str, now=None, nbytes: int = 0) -> None:
     from src.db import option_translate_queue_pg as q
     kind = kind if kind in KINDS else "error"
     q.take_n(_key(_day(now), route, kind), 10 ** 9, 1)
+    if nbytes > 0:                                   # Z3-P: 프록시 경유 바이트(트라이얼 100MB)
+        q.take_n(_key(_day(now), route, "bytes"), 10 ** 15, int(nbytes))
 
 
 def summary(days: int = 3, now=None) -> Dict:
@@ -39,13 +46,16 @@ def summary(days: int = 3, now=None) -> Dict:
     total = {k: 0 for k in KINDS}
     for r in ROUTES:
         row = {k: sum(q.day_count(_key(d, r, k)) for d in ds) for k in KINDS}
+        row["login_required"] += sum(q.day_count(_key(d, r, "login")) for d in ds)   # Z3-P 시절 이름
         row["tried"] = sum(row[k] for k in KINDS)
+        row["bytes"] = sum(q.day_count(_key(d, r, "bytes")) for d in ds)
         if row["tried"]:
             row["rate"] = round(row["ok"] / row["tried"] * 100)
             routes[r] = row
             for k in KINDS:
                 total[k] += row[k]
     total["tried"] = sum(total[k] for k in KINDS)
+    total["bytes"] = sum(r["bytes"] for r in routes.values())
     total["rate"] = round(total["ok"] / total["tried"] * 100) if total["tried"] else None
     return {"days": ds, "routes": routes, "total": total}
 

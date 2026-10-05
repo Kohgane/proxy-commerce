@@ -1,0 +1,27 @@
+{# Z3-P(오너 2026-10-05): 서버 자동 수집(mtop)이 켜진 담기 — 뒤에서 도는 결과를 이 카드가 직접 확인한다(3초 간격, 최대 60초).
+   실패면 사유 코드(punish·login·proxy_auth …)와 사유 + (c) 수동 경로 안내. #}
+<p class="sd-note" data-role="share-auto" data-item="{{ out.item_id }}" data-state="running">서버가 사진·옵션을 채우는 중이에요(몇 초).</p>
+<script>
+(function () {
+  var el = document.querySelector('[data-role=share-auto]');
+  if (!el) return;
+  var id = el.getAttribute('data-item'), n = 0;
+  function tick() {
+    n += 1;
+    fetch('/seller/collect/' + encodeURIComponent(id) + '/auto-enrich', {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.state === 'done' || d.state === 'manual') {
+          el.setAttribute('data-state', d.state);
+          el.textContent = d.line;
+          if (d.state === 'done') { setTimeout(function () { location.reload(); }, 1200); }
+          return;
+        }
+        if (n < 20) { setTimeout(tick, 3000); }
+        else { el.setAttribute('data-state', 'timeout'); el.textContent = '아직 끝나지 않았어요 — 잠시 뒤 목록에서 다시 열어 주세요.'; }
+      })
+      .catch(function () { if (n < 20) setTimeout(tick, 3000); });
+  }
+  setTimeout(tick, 2500);
+})();
+</script>
