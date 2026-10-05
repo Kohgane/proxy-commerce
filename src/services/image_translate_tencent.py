@@ -160,18 +160,35 @@ def region() -> str:
     return os.getenv("TENCENT_REGION", "").strip()
 
 
+def _download(url: str, proxies=None) -> bytes:
+    """원본 바이트 — base64는 원본의 4/3이라 원본 단계에서 미리 끊어 9M 상한을 넘기지 않게. `proxies`가 있으면 그 프록시로."""
+    limit = int(MAX_BASE64_BYTES * 3 / 4) + 1
+    if proxies:
+        import requests
+        r = requests.get(url, headers={"User-Agent": "gogabridj/1.0"}, proxies=proxies, timeout=DOWNLOAD_TIMEOUT_SEC, stream=True)
+        r.raise_for_status()
+        return r.raw.read(limit)
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "gogabridj/1.0"})
+    with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT_SEC) as resp:
+        return resp.read(limit)
+
+
 def fetch_image(url: str) -> tuple:
     """이미지를 **우리가** 내려받는다. 반환 `(bytes, 오류문자열)` — 하나만 채워진다.
 
     F25: 공급사가 URL 입력을 거절해서(위 ① 참고) 우리가 받아 base64로 보낸다.
     받는 데도 예산이 있다 — 소싱처가 느린 날 여기서 워커를 잡으면 F22와 같은 자리다.
     """
-    import urllib.request
+    # Z3-P: 타오바오 주거 프록시는 **mtop(핸드셰이크·h5api)만** — 이미지는 직결(트라이얼 100MB 절약).
+    #   TAOBAO_PROXY_SCOPE=all(디버그)일 때만 타오바오 이미지가 프록시를 탄다.
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "gogabridj/1.0"})
-        with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT_SEC) as resp:
-            # base64는 원본의 4/3이다 — 원본 단계에서 미리 끊어 9M 상한을 넘기지 않게.
-            raw = resp.read(int(MAX_BASE64_BYTES * 3 / 4) + 1)
+        from src.collectors.taobao_mtop import image_proxies
+        px = image_proxies(url)
+    except Exception:
+        px = None
+    try:
+        raw = _download(url, proxies=px)
     except Exception as exc:
         return b"", f"이미지를 내려받지 못했습니다({type(exc).__name__})"
     if not raw:

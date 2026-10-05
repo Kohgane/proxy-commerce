@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -110,13 +111,15 @@ def test_proxy_only_on_mtop_sessions(monkeypatch):
     s = T.session_for("proxy")
     assert s.proxies == {"http": "http://user:secret@kr.proxy.example:8000", "https": "http://user:secret@kr.proxy.example:8000"}
     assert s.trust_env is False
-    assert T.session_for("direct").proxies == {} and T.proxy_label() == "설정됨 · sticky 표기 없음(그대로 사용)"   # 화면엔 자격·호스트 0
+    assert T.session_for("direct").proxies == {} and T.proxy_label() == "설정됨 · 상품마다 고정 세션(lifetime 30m) · 국가 지정 없음 · 범위 mtop"
     # 이 env를 읽는 곳은 mtop 모듈 하나뿐 — 쿠팡·네이버·릴레이·업로더는 안 탄다
     hits = [p for p in Path("src").rglob("*.py") if "TAOBAO_PROXY_URL" in p.read_text(encoding="utf-8")]
     assert sorted(str(p) for p in hits) == ["src/collectors/taobao_mtop.py", "src/services/taobao_auto.py"]
     # 프록시 세션을 만드는 모듈(taobao_mtop)을 들여오는 곳 = 진단 화면·자동 경로뿐 — 마켓 업로더·릴레이는 안 들여온다
     from tests._ast_probe import importers_of
-    assert importers_of("taobao_mtop") == ["src/dashboard/admin_views.py", "src/services/taobao_auto.py"]
+    # Z3-P: 이미지 내려받기(텐센트)는 SCOPE 판정(image_proxies)만 묻는다 — 기본 mtop이면 직결
+    assert importers_of("taobao_mtop") == ["src/dashboard/admin_views.py", "src/services/image_translate_tencent.py",
+                                           "src/services/taobao_auto.py"]
 
 
 def test_diag_page_has_proxy_radio_and_never_prints_credentials(monkeypatch):
@@ -173,7 +176,7 @@ def test_auto_run_blocked_falls_to_manual_and_m5_says_why(monkeypatch):
     with c.session_transaction() as s:
         s["user_id"] = seller
     h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
-    assert 'data-role="m5-auto-enrich" data-state="manual"' in h and "자동 수집 실패 — 사람 확인(punish/captcha) 요구" in h
+    assert 'data-role="m5-auto-enrich" data-state="manual"' in h and "자동 수집 실패(punish) — 사람 확인(punish/captcha) 요구" in h
     assert "「사진 추가」·「옵션 직접 입력」" in h
 
 
@@ -266,7 +269,7 @@ def test_handshake_twice_without_cookie_says_so_and_diag_shows_headers_and_body(
     hs_page.headers = {"Content-Type": "text/html", "Set-Cookie": "t=abcdef123456; Domain=.taobao.com; Path=/"}
     s = FakeSession([_R(_fx("x5_referer.txt")), hs_page, _R(_fx("x5_referer.txt")), _R("<html/>"), _R(_fx("x5_referer.txt"))])
     r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
-    assert r["state"] == "error" and r["kind"] == "empty" and "핸드셰이크 2번 뒤에도 스크립트 응답" in r["reason"] and len(r["handshakes"]) == 2
+    assert r["state"] == "error" and r["kind"] == "x5_loop" and r["reason"].startswith("x5 루프") and len(r["handshakes"]) == 2
     hd = r["handshakes"][0]
     assert "Content-Type: text/html" in hd["headers"] and "Set-Cookie: t=<12자>; Domain=.taobao.com; Path=/" in hd["headers"]
     assert hd["body_head"] == "<html><body>ok</body></html>"
@@ -284,18 +287,146 @@ def test_handshake_twice_without_cookie_says_so_and_diag_shows_headers_and_body(
 
 # ── Z3-P 프록시 sticky ──────────────────────────────────────────────────────────
 
-def test_proxy_sticky_session_changes_per_item(monkeypatch):
+IPR_ROT = "http://u9fk2:Abc123xyz_country-kr@geo.iproyal.com:12321"
+IPR_STICKY = "http://u9fk2:Abc123xyz_country-kr_session-Ad8BTgRy_lifetime-30m@geo.iproyal.com:12321"
+
+
+@pytest.mark.parametrize("raw", [IPR_ROT, IPR_STICKY])
+def test_proxy_url_normalised_from_either_form(monkeypatch, raw):
+    """Z3-P: 오너가 session 붙은 값/안 붙은 값 어느 쪽을 넣어도 같은 base · 상품별 결정적 session."""
     from src.collectors import taobao_mtop as T
-    monkeypatch.setenv("TAOBAO_PROXY_URL", "http://user1:pass_country-kr_session-AAAAAAAA_lifetime-30m@geo.example:12321")
-    assert T.proxy_label() == "설정됨 · 건마다 sticky 세션 교체"
-    a = T.session_for("proxy", sticky="k3m9p2xa").proxies["https"]
-    b = T.session_for("proxy", sticky="q8w2e4rt").proxies["https"]
-    assert "_session-k3m9p2xa_lifetime-30m@" in a and "_session-q8w2e4rt_" in b and "AAAAAAAA" not in a + b
+    monkeypatch.setenv("TAOBAO_PROXY_URL", raw)
+    monkeypatch.delenv("TAOBAO_PROXY_SESSION_LIFETIME", raising=False)
+    pp = T.proxy_parts()
+    assert pp == {"scheme": "http", "user": "u9fk2", "base_pass": "Abc123xyz_country-kr", "host": "geo.iproyal.com",
+                  "port": 12321, "country": "kr"}
+    sid = T.session_id("733241700286")
+    assert sid == T.session_id("733241700286") and sid != T.session_id("1077964821879") and re.fullmatch(r"[0-9a-f]{8}", sid)
+    assert T.proxy_url(sid) == f"http://u9fk2:Abc123xyz_country-kr_session-{sid}_lifetime-30m@geo.iproyal.com:12321"
+    assert T.proxy_url() == "http://u9fk2:Abc123xyz_country-kr@geo.iproyal.com:12321"            # 세션 없이 = 회전
+    assert T.masked_proxy(sid) == f"http://u9fk2:Abc…@geo.iproyal.com:12321 · session {sid} · lifetime 30m"
+    assert "123xyz" not in T.masked_proxy(sid) and "123xyz" not in T.proxy_label()
+    monkeypatch.setenv("TAOBAO_PROXY_SESSION_LIFETIME", "10m")
+    assert T.proxy_url(sid).endswith(f"_session-{sid}_lifetime-10m@geo.iproyal.com:12321")
+
+
+def test_same_item_same_session_handshake_and_detail(monkeypatch):
+    """같은 상품의 핸드셰이크·getdetail·getdesc는 한 세션(= 같은 IP) · 다른 상품은 다른 세션."""
+    from src.collectors import taobao_mtop as T
+    monkeypatch.setenv("TAOBAO_PROXY_URL", IPR_STICKY)
+    made = []
+
+    def fake_session_for(via, sticky=""):
+        fs = FakeSession([_R(_fx("x5_referer.txt")), _R("", 200, {"x5secdata": "xd7b22abcdef0123456789"}),
+                          _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "t_1"}), _R(_fx("getdetail_success.json")),
+                          _R(_fx("getdesc_success.json"))])
+        made.append((via, sticky, fs))
+        return fs
+    monkeypatch.setattr(T, "session_for", fake_session_for)
+    r1 = T.fetch("733241700286", "proxy")
+    r2 = T.fetch("733241700286", "proxy")
+    T.fetch("1077964821879", "proxy")
+    assert r1["state"] == "ok" and r1["session"] == r2["session"] == T.session_id("733241700286")
+    assert made[2][1] == T.session_id("1077964821879") != made[0][1]
+    assert len(made[0][2].calls) == 5 and made[0][2] is not made[1][2]        # 한 상품의 5번 호출이 한 세션에서
+    assert r1["bytes"] > 0
+
+
+def test_scope_mtop_keeps_images_direct(monkeypatch):
+    """SCOPE=mtop(기본)이면 이미지 내려받기에 proxies가 안 들어간다 · all이면 타오바오 이미지만."""
+    from src.services import image_translate_tencent as TC
+    monkeypatch.setenv("TAOBAO_PROXY_URL", IPR_STICKY)
     seen = []
-    monkeypatch.setattr(T, "session_for", lambda via, sticky="": (seen.append(sticky), FakeSession([_R(_fx("rgv587_punish.json"))]))[1])
-    T.fetch("1", "proxy")
-    T.fetch("2", "proxy")
-    assert len(seen) == 2 and seen[0] != seen[1] and all(len(x) == 8 for x in seen)   # 건마다 새 세션
+    monkeypatch.setattr(TC, "_download", lambda url, proxies=None: (seen.append(proxies), b"\x89PNG" + b"0" * 64)[1])
+    monkeypatch.delenv("TAOBAO_PROXY_SCOPE", raising=False)
+    TC.fetch_image("https://img.alicdn.com/imgextra/i1/a.jpg")
+    assert seen == [None]
+    monkeypatch.setenv("TAOBAO_PROXY_SCOPE", "all")
+    TC.fetch_image("https://img.alicdn.com/imgextra/i1/a.jpg")
+    TC.fetch_image("https://res.cloudinary.com/x/a.jpg")                    # 타오바오 이미지가 아니면 all이어도 직결
+    assert seen[1]["https"].startswith("http://u9fk2:") and seen[2] is None
+
+
+def test_proxy_failures_are_not_ip_blocks():
+    """407 → proxy_auth · 타임아웃 → proxy_timeout · 연결 실패 → proxy_conn (「IP 차단」과 다른 사유 코드)."""
+    import requests
+    from src.collectors import taobao_mtop as T
+
+    class _PS(FakeSession):
+        def __init__(self, exc=None, replies=()):
+            super().__init__(list(replies))
+            self.proxies = {"https": "http://u:p@geo.iproyal.com:12321"}
+            self.exc = exc
+
+        def get(self, url, timeout=None, **kw):
+            if self.exc:
+                raise self.exc
+            return super().get(url, timeout=timeout)
+    for exc, kind in ((requests.exceptions.ProxyError("Tunnel connection failed: 407 Proxy Authentication Required"), "proxy_auth"),
+                      (requests.exceptions.ConnectTimeout("timed out"), "proxy_timeout"),
+                      (requests.exceptions.ProxyError("Cannot connect to proxy"), "proxy_conn")):
+        r = T.mtop_ex(_PS(exc), "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+        assert r["kind"] == kind, (exc, r)
+    r = T.mtop_ex(_PS(replies=[_R("", 407)]), "mtop.taobao.detail.getdetail", {"itemNumId": "1"})   # HTTP 407 응답도
+    assert r["kind"] == "proxy_auth" and r["reason"].startswith("프록시 인증 실패(407)")
+
+
+def test_login_required_is_its_own_block_and_stages():
+    from src.collectors import taobao_mtop as T
+    login = _R('<script>var loginUrl="https://login.m.taobao.com/login.htm?redirectURL=xx&uuid=ab12"; location.href=loginUrl;</script>',
+               200, {"x5secdata": "xd7b22abcdef0123456789"})
+    s = FakeSession([_R(_fx("x5_referer.txt")), login])
+    r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+    assert r["state"] == "blocked" and r["kind"] == "login_required"
+    assert r["reason"] == "로그인 요구 — 익명 수집 불가(IP 무관). 외부 API 또는 로그인 쿠키 경로 필요."
+    assert r["stages"] == {"rgv587": False, "script": True, "x5": True, "login": True, "detail": False}
+    assert [ok for _n, ok in T.verdict(r["stages"])] == [True, True, True, False, False]
+
+
+def test_route_proxy_without_url_fails_loudly(monkeypatch, caplog):
+    from src.collectors import taobao_mtop as T
+    from src.services import taobao_auto as A
+    monkeypatch.delenv("TAOBAO_PROXY_URL", raising=False)
+    monkeypatch.setenv("TAOBAO_MTOP_AUTO", "1")
+    monkeypatch.setenv("TAOBAO_MTOP_ROUTE", "proxy")
+    assert "relay2로 돌리지 않고" in A.startup_check()
+    assert T.fetch("1", "proxy")["kind"] == "proxy_unset"
+    monkeypatch.setenv("TAOBAO_MTOP_ROUTE", "relay2")
+    assert A.route() == "relay"
+
+
+def test_diag_proxy_shows_exit_ip_session_bytes_and_five_stages(monkeypatch):
+    from src.collectors import taobao_mtop as T
+    monkeypatch.setenv("TAOBAO_PROXY_URL", IPR_STICKY)
+    monkeypatch.setattr(T, "exit_ip", lambda sticky="": {"ok": True, "ip": "121.134.5.6", "country": "KR", "bytes": 320})
+    monkeypatch.setattr(T, "item_id_from", lambda arg, s=None: ("733241700286", "직접 입력"))
+    monkeypatch.setattr(T, "session_for", lambda via, sticky="": FakeSession([
+        _R(_fx("x5_referer.txt")), _R("", 200, {"x5secdata": "xd7b22abcdef0123456789"}),
+        _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "t_1"}), _R(_fx("getdetail_success.json")), _R(_fx("getdesc_success.json"))]))
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as ss:
+        ss["user_id"], ss["user_role"] = "owner", "admin"
+    h = c.get("/admin/diagnostics/taobao-mtop", query_string={"q": "733241700286", "via": "proxy"}).get_data(as_text=True)
+    sid = T.session_id("733241700286")
+    assert 'data-role="mtop-exit"' in h and "121.134.5.6" in h and "KR" in h
+    assert f"session {sid}" in h and "Abc…" in h and "123xyz" not in h
+    assert 'data-role="mtop-stages"' in h and h.count("○") >= 5 and 'data-role="mtop-bytes"' in h
+    assert "TAOBAO_MTOP_ROUTE=proxy" in h and "TAOBAO_MTOP_AUTO=1" in h               # 숫자 나오면 전환 안내
+
+
+def test_auto_proxy_records_bytes_and_session(monkeypatch):
+    from src.collectors import taobao_mtop as T
+    from src.services import taobao_auto as A
+    from src.services import mtop_stats as MS
+    monkeypatch.setenv("TAOBAO_PROXY_URL", IPR_STICKY)
+    before = MS.summary(3)["total"].get("bytes", 0)
+    seller = "owner-z3p"
+    iid = _share_item(seller)
+    monkeypatch.setattr(T, "session_for", lambda via, sticky="": FakeSession([_R(_fx("rgv587_punish.json"))]))
+    rec = A.run(seller, iid, via="proxy")
+    assert rec["state"] == "manual" and rec["session"] == T.session_id("733241700286") and rec["proxy_bytes"] > 0
+    assert MS.summary(3)["total"]["bytes"] - before == rec["proxy_bytes"]
 
 
 # ── Z3-C 집계 ───────────────────────────────────────────────────────────────────
@@ -338,7 +469,7 @@ def test_auto_stats_routes_first_ten_and_sample(monkeypatch):
 # ── Z3-H2(오너 2026-10-05 17:04 실측: 꼬리 붙임 · GET 200 · 쿠키통 x5secdata@.taobao.com · 3차 스크립트) ───────
 
 def _hs_page():
-    r = _R(_fx("x5_handshake_body.txt"), 200, {"x5secdata": "xd7b2268357469676865727d0a1234567890abcdef"})
+    r = _R(_fx("x5_handshake_jump.txt"), 200, {"x5secdata": "xd7b2268357469676865727d0a1234567890abcdef"})
     r.headers = {"Content-Type": "text/html;charset=UTF-8",
                  "Set-Cookie": ["x5secdata=xd7b2268357469676865727d0a1234567890abcdef; Domain=.taobao.com; Path=/"]}
     return r
@@ -346,7 +477,7 @@ def _hs_page():
 
 def test_x5secdata_counts_and_retry_goes_to_jump_url():
     from src.collectors import taobao_mtop as T
-    assert len(_fx("x5_handshake_body.txt")) == 987
+    assert len(_fx("x5_handshake_jump.txt")) == 987
     s = FakeSession([_R(_fx("x5_referer.txt")), _hs_page(),
                      _R(_fx("token_empty.json"), 200, {"_m_h5_tk": "tok_1"}), _R(_fx("getdetail_success.json"))])
     r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "733241700286"})
@@ -363,17 +494,16 @@ def test_x5secdata_counts_and_retry_goes_to_jump_url():
     assert T.enrich_payload(r["json"])["title"].startswith("格斯潘")
 
 
-def test_still_script_compares_rand_uuid(monkeypatch):
+def test_still_script_after_handshakes_is_x5_loop_not_ip_reputation():
+    """Z3-B: rand/uuid로 「IP 평판」을 점치던 판정은 폐기 — 로그인 표지 없이 다시 1단계 스크립트면 x5_loop."""
     from src.collectors import taobao_mtop as T
     same = _fx("x5_referer.txt")
-    s = FakeSession([_R(same), _hs_page(), _R(same), _hs_page(), _R(same)])
-    r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
-    assert r["state"] == "error" and "쿠키 미반영" in r["reason"]
-    assert any(l.startswith("판정: rand/uuid 1차와 같음 → 쿠키 미반영") for l in r["log"])
     other = same.replace("rand=Q9xk2TfR", "rand=ZZnew111").replace("uuid=8b1f0c3e5d7a4e21", "uuid=99aa88bb77cc66dd")
-    s2 = FakeSession([_R(same), _hs_page(), _R(other), _hs_page(), _R(other)])
-    r2 = T.mtop_ex(s2, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
-    assert "IP 평판" in r2["reason"] and any("1차 Q9xk2TfR/8b1f0c3e5d7a4e21 · 지금 ZZnew111/99aa88bb77cc66dd" in l for l in r2["log"])
+    for third in (same, other):
+        s = FakeSession([_R(same), _hs_page(), _R(same), _hs_page(), _R(third)])
+        r = T.mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": "1"})
+        assert r["state"] == "error" and r["kind"] == "x5_loop" and r["reason"] == T.X5_LOOP_WHY
+        assert not any("IP 평판" in l or "rand/uuid 1차" in l for l in r["log"]) and "IP 평판" not in r["reason"]
 
 
 def test_jump_url_refuses_to_guess():
@@ -382,3 +512,27 @@ def test_jump_url_refuses_to_guess():
     assert T.jump_url('var j = decodeURIComponent(x5referer) + "&u=1"; location.href = j;', hs) == "https://a.b/?x=1&u=1"
     assert T.jump_url("location.href = buildUrl(x5referer, Date.now());", hs) == ""      # 모르는 계산 → 재현 안 함
     assert T.x5_ids(hs) == ("r", "u")
+
+
+def test_share_card_polls_auto_result_with_code(monkeypatch):
+    """Z3-P 5): 자동 경로가 켜진 담기 — 담았어요 카드가 결과를 확인, 실패면 사유 코드까지."""
+    from pathlib import Path
+    from src.collectors import taobao_mtop as T
+    from src.services import taobao_auto as A
+    part = Path("src/seller_console/templates/_share_auto.html").read_text(encoding="utf-8")
+    assert "/auto-enrich" in part and 'data-role="share-auto"' in part
+    seller = "owner-z3p-card"
+    iid = _share_item(seller)
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = seller
+    monkeypatch.delenv("TAOBAO_MTOP_AUTO", raising=False)
+    assert c.get(f"/seller/collect/{iid}/auto-enrich").get_json()["state"] == "off"
+    monkeypatch.setenv("TAOBAO_MTOP_AUTO", "1")
+    assert c.get(f"/seller/collect/{iid}/auto-enrich").get_json()["state"] == "running"
+    monkeypatch.delenv("TAOBAO_PROXY_URL", raising=False)
+    monkeypatch.setenv("TAOBAO_MTOP_ROUTE", "proxy")
+    A.run(seller, iid)                                                    # 프록시 미설정 → 조용한 폴백 없이 실패 표기
+    d = c.get(f"/seller/collect/{iid}/auto-enrich").get_json()
+    assert d["state"] == "manual" and d["kind"] == "proxy_unset" and d["line"].startswith("자동 수집 실패(proxy_unset) — 프록시 미설정")

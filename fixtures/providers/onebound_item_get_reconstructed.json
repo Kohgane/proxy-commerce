@@ -1,0 +1,52 @@
+{
+ "item": {
+  "num_iid": "733241700286",
+  "title": "格斯潘 懒人沙发 单人 可折叠",
+  "price": "128.00",
+  "orginal_price": "168.00",
+  "nick": "示例店铺nick",
+  "num": "200",
+  "location": "浙江 金华",
+  "tmall": false,
+  "detail_url": "https://item.taobao.com/item.htm?id=733241700286",
+  "pic_url": "//img.alicdn.com/imgextra/i1/0/O1CN01main.jpg",
+  "item_imgs": [
+   {"url": "//img.alicdn.com/imgextra/i1/0/O1CN01main.jpg"},
+   {"url": "//img.alicdn.com/imgextra/i2/0/O1CN01side.jpg"},
+   {"url": "https://img.alicdn.com/imgextra/i3/0/O1CN01back.jpg"}
+  ],
+  "desc_img": [
+   "//img.alicdn.com/imgextra/i4/0/O1CN01desc1.jpg",
+   "https://o0b.cn/i.php?t.png&rid=gw-1.demo&p=1",
+   "//img.alicdn.com/imgextra/i4/0/O1CN01desc2.jpg"
+  ],
+  "desc": "<p><img src=\"//img.alicdn.com/imgextra/i4/0/O1CN01desc1.jpg\"></p>",
+  "props": [
+   {"name": "品牌", "value": "格斯潘"},
+   {"name": "面料", "value": "科技布"}
+  ],
+  "props_list": {
+   "122216343:3285954": "几人坐:单人",
+   "122216343:3285955": "几人坐:双人",
+   "1627207:28320": "颜色分类:灰色"
+  },
+  "prop_imgs": {"prop_img": [{"properties": "1627207:28320", "url": "//img.alicdn.com/imgextra/i5/0/O1CN01gray.jpg"}]},
+  "skus": {
+   "sku": [
+    {"price": "128.00", "orginal_price": "168.00", "quantity": "50", "sku_id": "5100000001",
+     "properties": "122216343:3285954;1627207:28320", "properties_name": "122216343:3285954:几人坐:单人;1627207:28320:颜色分类:灰色"},
+    {"price": "198.00", "orginal_price": "238.00", "quantity": "0", "sku_id": "5100000002",
+     "properties": "122216343:3285955;1627207:28320", "properties_name": "122216343:3285955:几人坐:双人;1627207:28320:颜色分类:灰色"}
+   ]
+  },
+  "video": {"url": "//cloud.video.taobao.com/play/u/0/p/1/e/6/t/1/demo.mp4"},
+  "seller_info": {"shop_name": "示例家居店", "nick": "示例店铺nick"}
+ },
+ "error": "",
+ "reason": "",
+ "error_code": "0000",
+ "cache": 1,
+ "data_update": "2026-10-01 09:00:00",
+ "execution_time": "0.512",
+ "api_info": "today: max:10 all[=++];expires:2026-10-08"
+}

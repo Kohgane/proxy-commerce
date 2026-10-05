@@ -33,6 +33,13 @@ try:
     logger.info(boot_env_report())
 except Exception:
     pass
+# Z3-P/Z3-B: 타오바오 자동 경로 부팅 1줄 — proxy인데 프록시 주소가 비면 경고(조용한 relay2 폴백 없음),
+#   공급자 onebound인데 키가 비면 경고(그 건은 수동 카드)
+try:
+    from src.services.taobao_auto import startup_check as _z3_startup
+    _z3_startup()
+except Exception:
+    pass
 
 # PG-only 전환: 1차 저장소 = Supabase Postgres. 부팅 시 연결·스키마 부트스트랩(성공 시 'DB 연결: Supabase OK').
 #   프로덕션(APP_ENV=production)에서 DATABASE_URL이 없거나 연결 실패면 **조용한 폴백 대신 부팅 실패**

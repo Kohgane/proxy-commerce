@@ -2005,7 +2005,9 @@ def mobile_list_ctx(item: dict) -> dict:
                           if isinstance(o, dict) for v in (o.get("values") or [])])
         if _kp3.expiry_hits(_rt):
             risks.append("유통기한 임박·떨이 소싱 — 등록 차단")
-        _pl = _kp3.cn_plug_hits(_rt)                   # Y8: 중국 표준 콘센트(五孔·国标插座) — 소싱 제외
+        # Y8: 중국 표준 콘센트(五孔·国标插座) — 소싱 제외. Z3-B: 규격표(공급자 props) 값도 본다(이 판정에만)
+        _pl = _kp3.cn_plug_hits(_rt + " " + " ".join(str(x) for sp in (product.get("detail_specs") or [])
+                                                      if isinstance(sp, (list, tuple)) for x in sp))
         if _pl:
             risks.append(f"중국 표준 콘센트({', '.join(_pl)}) — 소싱 제외(국내 콘센트 규격 다름·KC 대상)")
         _rp = _kp3.replica_hits(_rt)
@@ -2047,10 +2049,14 @@ def _m5_auto(ex: dict) -> dict:
     rec = ex.get("auto_enrich") if isinstance(ex.get("auto_enrich"), dict) else {}
     st = str(rec.get("state") or "")
     if st == "manual":
-        return {"state": "manual", "line": f"자동 수집 실패 — {rec.get('reason') or '사유 없음'}. 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요."}
+        code = str(rec.get("kind") or "")
+        return {"state": "manual", "kind": code,
+                "line": f"자동 수집 실패{('(' + code + ')') if code else ''} — {str(rec.get('reason') or '사유 없음').rstrip('.')}. "
+                        "아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요."}
     if st == "done":
         c = rec.get("counts") or {}
-        return {"state": "done", "line": f"서버가 자동으로 채웠어요 — 사진 {c.get('images', 0)}장 · SKU {c.get('skus', 0)}개 · 상세 이미지 {c.get('detail_images', 0)}장"}
+        return {"state": "done", "line": f"서버가 자동으로 채웠어요 — 사진 {c.get('images', 0)}장 · SKU {c.get('skus', 0)}개 · 상세 이미지 {c.get('detail_images', 0)}장"
+                                         + (f" · 가격 기준 {rec['price_asof']}" if rec.get("price_asof") else "")}
     try:
         from src.services import taobao_auto as _ta
         if _ta.enabled() and str(ex.get("enrich_state") or "") == "pending":
@@ -3299,6 +3305,22 @@ def collect_rep_image_override(item_id):
     ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
     logger.warning("[쿠팡 대표 사진] 그래도 등록 — item=%s by=%s · %s", item_id, rec["by"], rec["line"])
     return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
+@bp.get("/collect/<item_id>/auto-enrich")
+def collect_auto_enrich_state(item_id):
+    """Z3-P: 담았어요 카드가 뒤에서 도는 서버 자동 수집 결과를 확인 — `{state: running|done|manual|off, kind, line}`."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    info = _m5_auto(ex) or {"state": "off", "line": ""}
+    return jsonify({"ok": True, **info})
 
 
 @bp.post("/collect/<item_id>/ship-route")

@@ -62,28 +62,108 @@ def _pace() -> None:
     _LAST[0] = time.monotonic()
 
 
-_STICKY_RE = re.compile(r"(_session-)([A-Za-z0-9]+)")
+# Z3-P(오너 2026-10-05, IPRoyal Residential): `http://<user>:<pass>_country-kr[_session-XXXXXXXX_lifetime-30m]@geo.iproyal.com:12321`
+#   오너가 session 붙은 값/안 붙은 값 어느 쪽을 넣어도 — 비밀번호에서 `_session-…`·`_lifetime-…`를 떼어 base로 두고,
+#   **상품마다 결정적 session id**(상품 키 sha1 앞 8자)를 붙인다. 같은 상품의 핸드셰이크 → getdetail은 같은 session(= 같은 IP).
+_SESSION_PART = re.compile(r"_session-[A-Za-z0-9]+")
+_LIFETIME_PART = re.compile(r"_lifetime-[0-9]+[smhd]?")
+
+
+def proxy_parts() -> dict:
+    """`{scheme, user, base_pass, host, port, country}` — 미설정이면 빈 dict. 값은 화면·로그에 그대로 안 낸다."""
+    from urllib.parse import unquote, urlsplit
+    raw = os.getenv("TAOBAO_PROXY_URL", "").strip()
+    if not raw:
+        return {}
+    u = urlsplit(raw if "://" in raw else "http://" + raw)
+    pw = unquote(u.password or "")
+    base = _LIFETIME_PART.sub("", _SESSION_PART.sub("", pw))
+    m = re.search(r"_country-([a-z]{2})", base, re.I)
+    return {"scheme": u.scheme or "http", "user": unquote(u.username or ""), "base_pass": base,
+            "host": u.hostname or "", "port": u.port, "country": (m.group(1).lower() if m else "")}
+
+
+def session_id(key: str) -> str:
+    """상품 키 → IPRoyal session id(영숫자 8자, 결정적). 같은 상품은 늘 같은 IP 세션."""
+    return hashlib.sha1(str(key or "").encode("utf-8")).hexdigest()[:8]
+
+
+def session_lifetime() -> str:
+    v = os.getenv("TAOBAO_PROXY_SESSION_LIFETIME", "30m").strip() or "30m"
+    return v if re.fullmatch(r"[0-9]+[smhd]", v) else "30m"
 
 
 def proxy_url(sticky: str = "") -> str:
-    """`TAOBAO_PROXY_URL`. Z3-P(오너 2026-10-05): IPRoyal 주거 sticky — 비밀번호의 `_session-<id>`를 **상품 1건마다** 새 id로
-    바꿔 그 건 안에선 같은 IP, 건이 바뀌면 다른 IP. `_session-`이 없으면 그대로 쓴다."""
-    p = os.getenv("TAOBAO_PROXY_URL", "").strip()
-    if p and sticky:
-        p = _STICKY_RE.sub(lambda m: m.group(1) + sticky, p, count=1)
-    return p
+    """정규화한 프록시 URL. `sticky`(session id)가 있으면 `_session-<id>_lifetime-<lt>`를 붙인다(없으면 회전 모드)."""
+    pp = proxy_parts()
+    if not pp:
+        return ""
+    pw = pp["base_pass"] + (f"_session-{sticky}_lifetime-{session_lifetime()}" if sticky else "")
+    port = f":{pp['port']}" if pp["port"] else ""
+    return f"{pp['scheme']}://{quote(pp['user'], safe='')}:{quote(pw, safe='')}@{pp['host']}{port}"
+
+
+def masked_proxy(sticky: str = "") -> str:
+    """화면·로그용 — 비밀번호는 앞 3자 + 「…」. session id는 그대로."""
+    pp = proxy_parts()
+    if not pp:
+        return "미설정(TAOBAO_PROXY_URL)"
+    port = f":{pp['port']}" if pp["port"] else ""
+    tail = f" · session {sticky} · lifetime {session_lifetime()}" if sticky else " · 회전(세션 없음)"
+    return f"{pp['scheme']}://{pp['user']}:{pp['base_pass'][:3]}…@{pp['host']}{port}{tail}"
 
 
 def new_sticky() -> str:
+    """(옛 호출부 호환) 키 없이 부를 때 — 무작위 8자. 자동 경로는 `session_id(상품 키)`를 쓴다."""
     return "".join(random.choice("abcdefghijkmnpqrstuvwxyz23456789") for _ in range(8))
 
 
-def proxy_label() -> str:
-    """화면용 — 자격(user:pass)·호스트는 절대 안 보인다. 설정 여부와 sticky 교체 여부만."""
+def proxy_scope() -> str:
+    """`TAOBAO_PROXY_SCOPE` — mtop(기본: 핸드셰이크·h5api만) | all(이미지까지, 디버그)."""
+    return "all" if os.getenv("TAOBAO_PROXY_SCOPE", "mtop").strip().lower() == "all" else "mtop"
+
+
+def image_proxies(url: str):
+    """이미지 내려받기에 프록시를 쓸지 — SCOPE=all이고 타오바오 이미지일 때만. 기본(mtop)은 None(직결)."""
+    if proxy_scope() != "all":
+        return None
+    host = (re.match(r"https?://([^/]+)", str(url or "")) or [None, ""])[1].lower()
+    if not re.search(r"(alicdn|taobao|tmall)\.com$", host):
+        return None
     p = proxy_url()
-    if not p:
+    return {"http": p, "https": p} if p else None
+
+
+def proxy_label() -> str:
+    """화면용 — 자격·호스트는 안 보인다. 설정 여부 · 세션 방식 · 국가 · 범위."""
+    pp = proxy_parts()
+    if not pp:
         return "미설정(TAOBAO_PROXY_URL)"
-    return "설정됨 · 건마다 sticky 세션 교체" if _STICKY_RE.search(p) else "설정됨 · sticky 표기 없음(그대로 사용)"
+    return (f"설정됨 · 상품마다 고정 세션(lifetime {session_lifetime()})"
+            + (f" · 국가 {pp['country']}" if pp["country"] else " · 국가 지정 없음") + f" · 범위 {proxy_scope()}")
+
+
+def _is_proxy(s) -> bool:
+    return not isinstance(s, RelaySession) and bool(getattr(s, "proxies", None))
+
+
+def proxy_error(exc) -> tuple:
+    """프록시 연결 실패를 「IP 차단」과 가른다 → `(code, 사유)`. code: proxy_auth(407) · proxy_timeout · proxy_conn."""
+    txt = f"{type(exc).__name__}: {exc}"
+    try:
+        import requests
+        is_timeout = isinstance(exc, requests.exceptions.Timeout)
+    except Exception:
+        is_timeout = False
+    if "407" in txt or "Proxy Authentication" in txt:
+        return "proxy_auth", "프록시 인증 실패(407) — TAOBAO_PROXY_URL 아이디·비밀번호 확인"
+    if is_timeout or "timed out" in txt.lower():
+        return "proxy_timeout", "프록시 시간 초과 — 프록시 서버 응답 없음"
+    return "proxy_conn", f"프록시 연결 실패 — {type(exc).__name__}"
+
+
+def bytes_used(s) -> int:
+    return int(getattr(s, "_kgp_bytes", 0) or 0)
 
 
 class NoProxy(RuntimeError):
@@ -162,7 +242,21 @@ class RelaySession:
 
 def _get_url(s, full: str, timeout=20):
     _pace()
-    return s.request(full, timeout=timeout) if isinstance(s, RelaySession) else s.get(full, timeout=timeout)
+    r = s.request(full, timeout=timeout) if isinstance(s, RelaySession) else s.get(full, timeout=timeout)
+    # Z3-P: 경유 바이트(요청 줄 + 응답 본문·헤더) — 트라이얼 100MB라 상품당으로 센다
+    try:
+        hdr = sum(len(str(k)) + len(str(v)) for k, v in (getattr(r, "headers", None) or {}).items())
+        body = len(getattr(r, "content", b"") or b"") or len((getattr(r, "text", "") or "").encode("utf-8"))
+        s._kgp_bytes = bytes_used(s) + len(full) + 200 + hdr + body
+    except Exception:
+        pass
+    if _is_proxy(s) and getattr(r, "status_code", 0) == 407:
+        raise _ProxyAuth("407 Proxy Authentication Required")
+    return r
+
+
+class _ProxyAuth(RuntimeError):
+    pass
 
 
 def x5_handshake_url(body: str, original_url: str) -> str:
@@ -256,13 +350,16 @@ def _blocked(j: dict, body: str) -> str:
         return "사람 확인(punish/captcha) 요구 — " + (ret[:60] or "슬라이더 페이지")
     if "RGV587" in ret:
         return "접속 차단(RGV587) — " + ret[:60]
+    if not j and "RGV587" in str(body or "")[:20000]:          # Z3-B: 본문에 RGV587(JSON 아닌 응답)
+        return "접속 차단(RGV587) — 본문"
     return ""
 
 
 # ── Z3-H2(오너 2026-10-05 17:04 실측: 꼬리 붙임 · GET 200 · 쿠키통 x5secdata@.taobao.com · 「x5sec 미발급」 → 3차 스크립트) ──
 #   ① 성공 판정은 이름 하나(x5sec)가 아니라 **x5sec* · _m_h5_tk* 계열 아무거나** 새로 생겼나
 #   ② 핸드셰이크 응답 스크립트가 만드는 **jump URL**을 그대로 재현해 그 주소로 재시도(원 URL이 아니라)
-#   ③ 그래도 스크립트면 1차·3차 핸드셰이크 URL의 rand/uuid 비교 — 같으면 쿠키 미반영, 다르면 IP 평판
+#   ③ Z3-B(오너 실측 2026-10-05): 핸드셰이크 본문이 login_jump → 「로그인 요구」(IP 무관 — 집·LTE·주거 프록시 모두 같음).
+#      로그인 표지 없이 getdetail이 다시 1단계 스크립트면 「x5_loop」. (rand/uuid로 IP 평판을 점치던 판정은 폐기)
 _X5_COOKIE = re.compile(r"^(x5sec\w*|_m_h5_tk\w*)$")
 
 
@@ -363,10 +460,14 @@ def jump_url(body: str, page_url: str) -> str:
 
 
 def _kind(state: str, reason: str) -> str:
-    """집계용 갈래 — ok · punish · rgv587 · empty(JSON 아님·빈 응답) · error."""
+    """집계용 갈래 — ok · login_required · rgv587 · x5_loop · punish · empty(JSON 아님·빈 응답) · proxy_* · error."""
     if state == "ok":
         return "ok"
     r = str(reason or "")
+    for pre, k in (("프록시 인증 실패", "proxy_auth"), ("프록시 시간 초과", "proxy_timeout"), ("프록시 연결 실패", "proxy_conn"),
+                   ("로그인 요구", "login_required"), ("x5 루프", "x5_loop")):
+        if r.startswith(pre):
+            return k
     if r.startswith("사람 확인"):
         return "punish"
     if "RGV587" in r:
@@ -374,6 +475,24 @@ def _kind(state: str, reason: str) -> str:
     if "JSON 아닌" in r or "비었" in r or "x5sec" in r or "스크립트 응답" in r:
         return "empty"
     return "error"
+
+
+# Z3-B(오너 2026-10-05 실측 — 프록시·LTE·집 PC 모두): 987자 스크립트가
+#   `login_jump = href.replace("set_x5referer","login_jump"); location = loginUrl + uuid + "&redirectURL=" + login_jump`
+#   → 익명 세션 거부. 표지는 오너가 지정한 세 개만(추측으로 넓히지 않는다).
+LOGIN_MARKERS = ("login_jump", "login.m.taobao.com/login.htm", "login.taobao.com/member/login.jhtml")
+
+
+def login_required(body: str, j=None) -> bool:
+    url = ""
+    if isinstance(j, dict) and isinstance(j.get("data"), dict):
+        url = str(j["data"].get("url") or "")
+    text = str(body or "")[:20000] + " " + url
+    return any(m in text for m in LOGIN_MARKERS)
+
+
+LOGIN_WHY = "로그인 요구 — 익명 수집 불가(IP 무관). 외부 API 또는 로그인 쿠키 경로 필요."
+X5_LOOP_WHY = "x5 루프 — 핸드셰이크 뒤에도 getdetail이 다시 1단계 리다이렉트 스크립트(로그인 표지는 없음)"
 
 
 def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
@@ -384,10 +503,22 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
     hs_diag: list = []
     base = f"https://h5api.m.taobao.com/h5/{api}/{v}/"
     jump = ""                     # Z3-H2: 핸드셰이크 스크립트가 보내는 주소 — 있으면 다음 시도는 그리로
-    first_ids = None
+    # Z3-P 판정 다섯 단계(진단): ① RGV587 없음 ② set_x5referer 스크립트 ③ x5secdata 획득 ④ 로그인 요구 없음 ⑤ 상세 JSON
+    stages = {"rgv587": False, "script": False, "x5": False, "login": False, "detail": False}
 
     def done(state, reason, j=None):
-        return {"json": j, "log": log, "state": state, "kind": _kind(state, reason), "reason": reason, "handshakes": hs_diag}
+        if j is not None and state == "ok":
+            stages["detail"] = True
+        return {"json": j, "log": log, "state": state, "kind": _kind(state, reason), "reason": reason, "handshakes": hs_diag,
+                "stages": dict(stages), "bytes": bytes_used(s)}
+
+    def req_fail(exc, what):
+        if _is_proxy(s) or isinstance(exc, _ProxyAuth):
+            code, why = proxy_error(exc)
+            log.append(f"{what}: {why}")
+            return done("error", why)
+        log.append(f"{what}: {type(exc).__name__}")
+        return done("error", f"요청 실패 {type(exc).__name__}")
     for attempt in range(1, MAX_TRIES + 1):
         tk = cookie_value(s, "_m_h5_tk")
         t = str(int(time.time() * 1000))
@@ -401,8 +532,7 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
         try:
             r = _get_url(s, target)
         except Exception as exc:                                # noqa: BLE001
-            log.append(f"{attempt}차: {type(exc).__name__}")
-            return done("error", f"요청 실패 {type(exc).__name__}")
+            return req_fail(exc, f"{attempt}차")
         body = r.text or ""
         try:
             j = r.json()
@@ -413,13 +543,15 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
         if j is None:
             hs = x5_handshake_url(body, full)
             ids = x5_ids(hs) if hs else None
-            if ids and first_ids is None:
-                first_ids = ids
+            if hs:
+                stages["script"] = True
             if hs and len(hs_diag) < 2:
                 before = set(x5_cookie_names(s))
                 try:
                     hr = _get_url(s, hs)
                 except Exception as exc:                        # noqa: BLE001
+                    if _is_proxy(s) or isinstance(exc, _ProxyAuth):
+                        return req_fail(exc, f"{attempt}차 x5 핸드셰이크 GET")
                     log.append(f"{attempt}차: x5 핸드셰이크 GET 실패 {type(exc).__name__}")
                     return done("error", "x5 핸드셰이크 GET 실패")
                 hbody = hr.text or ""
@@ -430,6 +562,8 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
                         _set_cookie(s, k, val)
                         planted.append(k)
                 got = sorted(set(x5_cookie_names(s)) - before)
+                if any(n.startswith("x5sec") for n in x5_cookie_names(s)):
+                    stages["x5"] = True
                 src = "헤더" if from_hdr else ("본문 JS" if got else "")
                 tail = "x5referer=" in hs and not hs.endswith("x5referer=")
                 jump = jump_url(hbody, hs)
@@ -444,24 +578,34 @@ def mtop_ex(s, api: str, data: dict, v: str = "6.0") -> dict:
                            f" · x5 계열 쿠키 {(', '.join(got) + '(' + src + ')') if got else '새로 받은 것 없음'}"
                            f" · jump URL {'재현함 → 그 주소로 재시도' if jump else '재현 못 함(원 URL 재시도)'}")
                 loc = str(((getattr(hr, "headers", None) or {}).get("Location")) or "")
+                if login_required(hbody) or login_required(loc):
+                    stages["login"] = True
+                    log.append(f"{attempt}차: 핸드셰이크 본문이 로그인 요구(login_jump) — 재시도해도 같다(IP 무관), 여기서 멈춤")
+                    return done("blocked", LOGIN_WHY)
                 if not got and (_PUNISH_RE.search(loc) or _PUNISH_RE.search(hbody[:20000])):
                     return done("blocked", "사람 확인(punish/captcha) 요구 — x5 핸드셰이크가 슬라이더 페이지로 보냄")
                 continue
+            if login_required(body):
+                stages["login"] = True
+                log.append(f"{attempt}차: HTTP {r.status_code} · 로그인 요구(login_jump)")
+                return done("blocked", LOGIN_WHY)
+            if "RGV587" in body[:20000]:
+                stages["rgv587"] = True
             why = _blocked(None, body)
             log.append(f"{attempt}차: HTTP {r.status_code} · JSON 아님 · 앞 {body[:100]!r}")
             if why:
                 return done("blocked", why)
             if hs:
-                # ③ 1차와 지금의 rand/uuid — 같으면 우리 쿠키가 반영 안 됨, 다르면 서버가 새로 막은 것(IP 평판)
-                same = (ids == first_ids) if (ids and first_ids) else None
-                verdict = ("rand/uuid 1차와 같음 → 쿠키 미반영(재시도에 x5 쿠키가 안 먹음)" if same
-                           else "rand/uuid 1차와 다름 → 새로 발급 = IP 평판(이 IP는 계속 막힘)" if same is False
-                           else "rand/uuid 비교 불가(핸드셰이크 URL에 없음)")
-                log.append(f"판정: {verdict} · 1차 {'/'.join(first_ids or ('—', '—'))} · 지금 {'/'.join(ids or ('—', '—'))}")
-                return done("error", f"x5 핸드셰이크 2번 뒤에도 스크립트 응답 — {verdict}")
+                log.append("판정: x5_loop — 핸드셰이크 뒤 getdetail이 다시 1단계 스크립트")
+                return done("error", X5_LOOP_WHY)
             return done("error", "JSON 아닌 응답(핸드셰이크 스크립트도 아님)")
         ret = j.get("ret") or []
         log.append(f"{attempt}차: HTTP {r.status_code} · ret={ret[:2]} · 토큰 쿠키 {'있음' if tk else '없음'}")
+        if any("RGV587" in str(x) for x in ret):
+            stages["rgv587"] = True
+        if login_required("", j):
+            stages["login"] = True
+            return done("blocked", LOGIN_WHY)
         if any("SUCCESS" in str(x) for x in ret):
             return done("ok", "", j)
         why = _blocked(j, body)
@@ -496,38 +640,125 @@ def summarize(j: dict) -> dict:
 VIAS = {"direct": "직결(이 서버)", "relay": "relay2(서울)", "proxy": "프록시(한국 주거)"}
 
 
+def norm_via(via: str) -> str:
+    v = str(via or "").strip().lower()
+    return "relay" if v == "relay2" else v
+
+
 def session_for(via: str, sticky: str = ""):
     """mtop 경로 전용 세션 — via=proxy일 때만 주거 프록시를 싣는다(`sticky` = 이 건의 IPRoyal 세션 id)."""
+    via = norm_via(via)
     if via == "relay":
         return RelaySession()
     return _session(proxy=(via == "proxy"), sticky=sticky)
 
 
-def probe(arg: str, via: str = "direct") -> dict:
-    """`via`: direct · relay(relay2 서울 IP — mkt.php 새 판) · proxy(`TAOBAO_PROXY_URL`)."""
-    out = {"input": arg[:80], "item_id": "", "how": "", "log": [], "detail": None, "desc_images": None,
-           "via": VIAS.get(via, via), "state": "", "reason": "", "kind": "", "handshakes": []}
+def resolver_session(via: str):
+    """단축 링크(e.tb.cn) 펴기용 — 기본은 **직결**(트래픽 절약, h5api가 아니라 프록시 범위 밖). SCOPE=all이면 프록시."""
+    if norm_via(via) == "proxy" and proxy_scope() == "all":
+        return _session(proxy=True)
+    return _session()
+
+
+def exit_ip(sticky: str = "") -> dict:
+    """Z3-P 진단: 이 세션의 프록시 출구 IP(icanhazip, 수십 바이트) + 국가(직결로 ipinfo — 프록시 바이트 0)."""
     try:
-        s = session_for(via, sticky=new_sticky() if via == "proxy" else "")
+        s = _session(proxy=True, sticky=sticky)
     except NoProxy as exc:
-        out.update(how=str(exc), state="error", reason="프록시 미설정 — TAOBAO_PROXY_URL")
+        return {"ok": False, "why": str(exc)}
+    try:
+        r = s.get("https://ipv4.icanhazip.com", timeout=15)
+        ip = (r.text or "").strip()[:45]
+        nbytes = len(r.content or b"") + 300
+    except Exception as exc:                                    # noqa: BLE001
+        code, why = proxy_error(exc)
+        return {"ok": False, "code": code, "why": why}
+    country = ""
+    try:
+        import requests
+        c = requests.get(f"https://ipinfo.io/{ip}/country", timeout=8)
+        country = (c.text or "").strip()[:2] if c.status_code == 200 else ""
+    except Exception:
+        country = ""
+    return {"ok": bool(ip), "ip": ip, "country": country or "확인 못 함", "bytes": nbytes}
+
+
+def exit_line(via: str, sticky: str = "") -> dict:
+    """Z3-B: 경로마다 출구 IP 한 줄 — 비교용. `{ok, ip, country, how, bytes}`.
+    proxy=icanhazip(프록시 경유 실측) · direct=icanhazip(이 서버 직결 실측) ·
+    relay=릴레이는 허용 호스트(타오바오)만 통과라 icanhazip 불가 → 설정·DNS에서 파생한 릴레이 서버 주소(실측 아님이라고 적는다)."""
+    via = norm_via(via)
+    if via == "proxy":
+        e = exit_ip(sticky)
+        return {**e, "how": "프록시 경유 icanhazip 실측"}
+    if via == "relay":
+        try:
+            from src.market_relay import relay_outbound_ip
+            ip = relay_outbound_ip()
+        except Exception:
+            ip = ""
+        return {"ok": bool(ip), "ip": ip or "확인 못 함", "country": "", "bytes": 0,
+                "how": "relay2 서버 주소(설정·DNS 파생 — 실측 아님, 릴레이가 icanhazip을 안 통과시킴)"}
+    if os.getenv("TAOBAO_EXIT_IP_CHECK", "1").strip() == "0":
+        return {"ok": False, "ip": "", "country": "", "bytes": 0, "how": "직결 출구 확인 꺼짐(TAOBAO_EXIT_IP_CHECK=0)"}
+    try:
+        import requests
+        r = requests.get("https://ipv4.icanhazip.com", timeout=8)
+        ip = (r.text or "").strip()[:45] if r.status_code == 200 else ""
+    except Exception as exc:                                    # noqa: BLE001
+        return {"ok": False, "ip": "", "country": "", "bytes": 0, "how": f"직결 icanhazip 실패 {type(exc).__name__}"}
+    return {"ok": bool(ip), "ip": ip or "확인 못 함", "country": "", "bytes": 0, "how": "이 서버 직결 icanhazip 실측"}
+
+
+def verdict(stages: dict) -> list:
+    """다섯 단계 ○/× — 진단 화면 판정 줄."""
+    st = stages or {}
+    return [("① RGV587 없음", not st.get("rgv587")),
+            ("② set_x5referer 스크립트 받음", bool(st.get("script"))),
+            ("③ x5secdata 획득", bool(st.get("x5"))),
+            ("④ 로그인 요구 없음", not st.get("login")),
+            ("⑤ getdetail JSON에 가격·옵션", bool(st.get("detail")))]
+
+
+def probe(arg: str, via: str = "direct") -> dict:
+    """`via`: direct · relay(relay2 서울 IP — mkt.php 새 판) · proxy(`TAOBAO_PROXY_URL`, 상품마다 고정 세션)."""
+    via = norm_via(via)
+    out = {"input": arg[:80], "item_id": "", "how": "", "log": [], "detail": None, "desc_images": None,
+           "via": VIAS.get(via, via), "state": "", "reason": "", "kind": "", "handshakes": [],
+           "stages": {}, "bytes": 0, "session": "", "proxy": "", "exit": None}
+    if via == "proxy" and not proxy_parts():
+        out.update(how="프록시 미설정", state="error", kind="proxy_unset", reason="프록시 미설정 — TAOBAO_PROXY_URL")
         return out
-    # 단축 링크(e.tb.cn)는 relay 허용 밖 → 직결로 편다. 프록시면 프록시 세션으로.
-    iid, how = item_id_from(arg, s if not isinstance(s, RelaySession) else _session())
+    # 단축 링크(e.tb.cn)는 h5api가 아니다 → 직결로 편다(SCOPE=all이면 프록시).
+    iid, how = item_id_from(arg, resolver_session(via))
     out.update(item_id=iid, how=how)
     if not iid:
         return out
+    sticky = session_id(iid) if via == "proxy" else ""
+    out["exit"] = exit_line(via, sticky)                       # Z3-B: 경로마다 출구 IP(비교용)
+    if via == "proxy":
+        out["session"], out["proxy"] = sticky, masked_proxy(sticky)
+        if not out["exit"].get("ok"):
+            out.update(state="error", kind=out["exit"].get("code") or "proxy_conn", reason=out["exit"].get("why") or "출구 IP 확인 실패")
+            return out
+    s = session_for(via, sticky=sticky)
     r = mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": iid})
     out["log"] += r["log"]
     out["state"], out["reason"], out["kind"], out["handshakes"] = r["state"], r["reason"], r["kind"], r["handshakes"]
+    out["stages"] = r.get("stages") or {}
     out["detail"] = summarize(r["json"]) if r["state"] == "ok" else None
-    if r["state"] != "ok":
-        return out
-    out["raw_detail"] = r["json"]
-    d = mtop_ex(s, "mtop.taobao.detail.getdesc", {"id": iid, "type": "1"})
-    out["log"] += ["상세 " + x for x in d["log"]]
-    if d["json"]:
-        out["desc_images"] = len(desc_images(d["json"]))
+    if out["detail"] is not None:
+        out["stages"]["detail"] = bool(out["detail"].get("price") or out["detail"].get("skus") or out["detail"].get("axes"))
+    if r["state"] == "ok":
+        out["raw_detail"] = r["json"]
+        d = mtop_ex(s, "mtop.taobao.detail.getdesc", {"id": iid, "type": "1"})
+        out["log"] += ["상세 " + x for x in d["log"]]
+        if d["json"]:
+            out["desc_images"] = len(desc_images(d["json"]))
+    out["bytes"] = bytes_used(s) + ((out.get("exit") or {}).get("bytes") or 0)
+    if via == "proxy":
+        import logging as _lg
+        _lg.getLogger(__name__).info("[Z3 프록시] 진단 상품=%s session=%s 바이트=%d 결과=%s", iid, sticky, out["bytes"], out["kind"])
     return out
 
 
@@ -584,17 +815,26 @@ def enrich_payload(dj: dict, desc: dict | None = None) -> dict:
 
 
 def fetch(item_id: str, via: str) -> dict:
-    """자동 경로 한 건 — `{state: ok|blocked|error, kind, reason, payload, log, raw}`. 프록시면 이 건 전용 sticky 세션."""
+    """자동 경로 한 건 — `{state: ok|blocked|error, kind, reason, payload, log, raw, bytes, session}`.
+    프록시면 이 상품 전용 고정 세션(session_id(상품번호)) — 핸드셰이크·getdetail·getdesc 전부 같은 IP."""
+    via = norm_via(via)
+    sticky = session_id(item_id) if via == "proxy" else ""
+    if via == "proxy" and not proxy_parts():
+        return {"state": "error", "kind": "proxy_unset", "reason": "프록시 미설정 — TAOBAO_PROXY_URL", "payload": None,
+                "log": [], "bytes": 0, "session": ""}
     try:
-        s = session_for(via, sticky=new_sticky() if via == "proxy" else "")
+        s = session_for(via, sticky=sticky)
     except NoProxy:
-        return {"state": "error", "kind": "error", "reason": "프록시 미설정 — TAOBAO_PROXY_URL", "payload": None, "log": []}
+        return {"state": "error", "kind": "proxy_unset", "reason": "프록시 미설정 — TAOBAO_PROXY_URL", "payload": None,
+                "log": [], "bytes": 0, "session": ""}
     r = mtop_ex(s, "mtop.taobao.detail.getdetail", {"itemNumId": item_id})
     if r["state"] != "ok":
-        return {"state": r["state"], "kind": r["kind"], "reason": r["reason"], "payload": None, "log": r["log"]}
+        return {"state": r["state"], "kind": r["kind"], "reason": r["reason"], "payload": None, "log": r["log"],
+                "bytes": bytes_used(s), "session": sticky}
     d = mtop_ex(s, "mtop.taobao.detail.getdesc", {"id": item_id, "type": "1"})
     payload = enrich_payload(r["json"], d["json"] if d["state"] == "ok" else None)
     if not (payload["title"] and payload["images"]):
         return {"state": "error", "kind": "empty", "reason": "응답은 왔지만 제목·사진이 비었어요", "payload": None,
-                "log": r["log"] + d["log"]}
-    return {"state": "ok", "kind": "ok", "reason": "", "payload": payload, "log": r["log"] + d["log"], "raw": r["json"]}
+                "log": r["log"] + d["log"], "bytes": bytes_used(s), "session": sticky}
+    return {"state": "ok", "kind": "ok", "reason": "", "payload": payload, "log": r["log"] + d["log"], "raw": r["json"],
+            "bytes": bytes_used(s), "session": sticky}

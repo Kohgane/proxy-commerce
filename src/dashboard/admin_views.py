@@ -1364,6 +1364,7 @@ def diagnostics_taobao_mtop():
     #   링크나 상품번호가 있는 줄만 잰다(그 줄 안에서 링크 하나는 `item_id_from`이 공유 수집과 같은 추출로 뽑는다).
     qs = ([x for x in lines if _re.search(r"https?://|^\d{6,15}$", x)] or lines)[:5]
     via = _rq.args.get("via") if _rq.args.get("via") in ("relay", "proxy") else "direct"
+    from src.collectors import taobao_provider as _tp
     rows = []
     for q in qs:
         try:
@@ -1381,8 +1382,83 @@ def diagnostics_taobao_mtop():
     except Exception:
         stats, first = None, []
     return render_template_string(_TAOBAO_MTOP_TEMPLATE, rows=rows, q="\n".join(qs), via=via,
-                                  proxy=T.proxy_label(), auto=("켜짐 · 경로 " + _ta.route()) if _ta.enabled() else "꺼짐(TAOBAO_MTOP_AUTO)",
-                                  stats=stats, first=first, sample=_ms.sample(), labels=T.VIAS)
+                                  proxy=T.proxy_label(), auto=("켜짐 · 경로 " + _ta.effective_route()) if _ta.enabled() else "꺼짐(TAOBAO_MTOP_AUTO) — 또는 TAOBAO_DETAIL_PROVIDER=onebound",
+                                  stats=stats, first=first, sample=_ms.sample(), labels={**T.VIAS, "onebound": "공급자 API(onebound)"},
+                                  verdict=T.verdict, kind_labels=_ms.LABELS, kinds=_ms.KINDS,
+                                  prov=_tp.status(), prov_name=_tp.provider())
+
+
+@admin_panel_bp.get("/diagnostics/taobao-provider")
+def diagnostics_taobao_provider():
+    """Z3-B(오너 2026-10-05): 온바운드 item_get 1회(유료 0.023元) — e.tb.cn 링크·상품번호 → 원문(키 가림) · 정규화 결과 ·
+    캐시·data_update · api_info 한도/만료 · 오늘 호출 수/CAP. 24시간 안 보관본이 있으면 재사용(호출 0), 「새로 받기」만 재호출."""
+    import json as _json
+    from flask import request as _rq
+    from src.collectors import taobao_mtop as T
+    from src.collectors import taobao_provider as P
+    from src.collectors import taobao_provider_onebound as O
+    q = (_rq.values.get("q") or "").strip()[:500]
+    refresh = _rq.values.get("refresh") == "1"
+    row = None
+    if q:
+        iid, how = T.item_id_from(q, T.resolver_session("direct"))
+        row = {"input": q[:80], "item_id": iid, "how": how}
+        if not iid:
+            row.update(state="manual", kind="provider_fail", reason="상품번호 해석 실패")
+        else:
+            r = P.fetch_detail(iid, refresh=refresh)
+            row.update(state=r["state"], kind=r["kind"], reason=r["reason"], ms=r.get("ms"), bytes=r.get("bytes"),
+                       reused=r.get("reused"))
+            if r.get("raw") is not None:
+                row["raw_text"] = _json.dumps(O.mask(r["raw"]), ensure_ascii=False, indent=1)[:20000]
+                row["api"] = O.parse_api_info((r["raw"] or {}).get("api_info"))
+            if r["state"] == "ok":
+                row["norm"] = r["payload"]
+    return render_template_string(_TAOBAO_PROVIDER_TEMPLATE, q=q, row=row, st=P.status(), name=P.provider(),
+                                  used=O.used_today(), cap=O.daily_cap(), unit=O.UNIT_PRICE, last=O.last_num_iid())
+
+
+@admin_panel_bp.get("/diagnostics/taobao-provider/raw/<num_iid>.json")
+def diagnostics_taobao_provider_raw(num_iid):
+    """보관된 원문(상품당 최신 1건, 키 가림) — `fixtures/providers/onebound_item_get_<상품번호>.json` 교체·대조용."""
+    from flask import Response
+    from src.collectors import taobao_provider_onebound as O
+    import json as _json
+    rec = O.stored(num_iid)
+    if not rec.get("raw"):
+        return Response('{"error": "보관된 응답이 없어요"}', status=404, mimetype="application/json")
+    return Response(_json.dumps(O.mask(rec["raw"]), ensure_ascii=False, indent=1), mimetype="application/json",
+                    headers={"Content-Disposition": f"attachment; filename=onebound_item_get_{num_iid}.json"})
+
+
+_TAOBAO_PROVIDER_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>타오바오 상세 공급자</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px;overflow-wrap:anywhere;word-break:break-word" data-role="taobao-provider">
+<h5>타오바오 상세 — 온바운드 item_get</h5>
+<p class="small mb-1" data-role="provider-status">상세 공급자 <strong>{{ name }}</strong>(TAOBAO_DETAIL_PROVIDER) · {{ st.line }}</p>
+<p class="small text-muted" data-role="provider-cap">오늘 {{ used }}/{{ cap }}회(ONEBOUND_DAILY_CAP, 계정 전체) · 단가 {{ unit }} · 같은 상품 24시간 안 재담기는 보관본 재사용(호출 0)</p>
+<form method="get" class="mb-3"><input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="e.tb.cn 링크 또는 상품번호">
+<button class="btn btn-sm btn-outline-secondary mt-2">조회(보관본 있으면 재사용)</button>
+{% if q %}<button class="btn btn-sm btn-outline-secondary mt-2" name="refresh" value="1" data-role="provider-refresh">새로 받기(유료 1회)</button>{% endif %}</form>
+{% if row %}<div class="small" data-role="provider-row">
+<div><strong>{{ row.input }}</strong> → 상품번호 {{ row.item_id or '없음' }}{% if row.how %} ({{ row.how }}){% endif %}</div>
+{% if row.state == 'ok' %}<div data-role="provider-call">{{ '보관본 재사용 — 호출 0' if row.reused else ('item_get 1회 · ' ~ '{:,}'.format(row.bytes or 0) ~ '바이트 · ' ~ (row.ms or 0) ~ 'ms') }}</div>
+{% else %}<div class="text-danger" data-role="provider-fail">실패({{ row.kind }}) — {{ row.reason }} → 담기였다면 (c) 수동 카드(mtop 재시도 안 함)</div>{% endif %}
+{% if row.api %}<div data-role="provider-api">api_info: 일일 한도 {{ row.api.max if row.api.max is not none else '못 읽음' }} · 만료 {{ row.api.expires or '못 읽음' }}{% if row.api.raw %} <span class="text-muted">(원문 「{{ row.api.raw }}」)</span>{% endif %}</div>{% endif %}
+{% if row.norm %}{% set p = row.norm.provider %}<details open class="mt-1" data-role="provider-norm"><summary>정규화 결과(뒤 파이프라인이 받는 모양)</summary><pre class="small mb-1" style="white-space:pre-wrap">제목 {{ row.norm.title }}
+가격 {{ p.price_cny }} CNY{% if p.original_price_cny %} (원가 {{ p.original_price_cny }}){% endif %}
+캐시 {{ '예' if p.cache else '아니오' }} · data_update {{ p.data_update or '—' }}{% if p.price_asof %} → 카드에 「가격 기준 {{ p.price_asof }}」{% endif %}
+사진 {{ row.norm.images|length }}장 · 상세 사진 {{ row.norm.detail_images|length }}장 · 동영상 {{ '있음' if p.video_url else '없음' }}
+가게 {{ p.shop_name or '—' }} · 티몰 {{ '예' if p.is_tmall else '아니오' }} · 출고지 {{ p.origin_city or '—' }} · 총재고 {{ p.stock_total if p.stock_total is not none else '—' }}
+{% for o in row.norm.options %}옵션 축 {{ o.name }}({{ o['values']|length }}): {{ o['values']|join(' / ') }}
+{% endfor %}SKU {{ row.norm.skus|length }}개
+{% for k in row.norm.skus %}  {{ k.sku_id }} · {{ k.spec|join(' + ') }} · {{ k.price }} · 재고 {{ k.stock if k.stock is not none else '모름' }}
+{% endfor %}{% for sp in p.spec_table %}규격 {{ sp[0] }}: {{ sp[1] }}
+{% endfor %}{% if p.parse_notes %}못 읽음: {{ p.parse_notes|join(' · ') }}{% endif %}</pre></details>{% endif %}
+{% if row.raw_text %}<details data-role="provider-raw"><summary>응답 원문(키·시크릿 가림){% if row.item_id %} · <a href="/admin/diagnostics/taobao-provider/raw/{{ row.item_id }}.json">내려받기</a>{% endif %}</summary><pre class="small mb-1" style="white-space:pre-wrap">{{ row.raw_text }}</pre></details>{% endif %}
+</div>{% elif last %}<p class="small text-muted">마지막 보관 응답: 상품 {{ last }} · <a href="/admin/diagnostics/taobao-provider/raw/{{ last }}.json">원문 내려받기</a></p>{% endif %}
+<a href="/admin/diagnostics/taobao-mtop">← mtop 실측</a> · <a href="/admin/diagnostics">진단</a></div></body></html>"""
 
 
 @admin_panel_bp.get("/diagnostics/taobao-mtop/sample.json")
@@ -1406,17 +1482,27 @@ _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 <form method="get" class="mb-3"><textarea class="form-control form-control-sm" name="q" rows="3" placeholder="e.tb.cn 링크·상품 주소·상품번호(줄마다 하나, 최대 5)">{{ q }}</textarea>
 <div class="mt-2 small"><label class="me-3"><input type="radio" name="via" value="direct" {{ 'checked' if via == 'direct' else '' }}> 직결(이 서버 IP)</label>
 <label class="me-3"><input type="radio" name="via" value="relay" {{ 'checked' if via == 'relay' else '' }}> relay2(서울 IP · mkt.php 새 판 필요)</label>
-<label data-role="mtop-via-proxy"><input type="radio" name="via" value="proxy" {{ 'checked' if via == 'proxy' else '' }}> 프록시(한국 주거 · {{ proxy }})</label></div>
+<label class="me-3" data-role="mtop-via-proxy"><input type="radio" name="via" value="proxy" {{ 'checked' if via == 'proxy' else '' }}> 프록시(한국 주거 · {{ proxy }})</label>
+<a data-role="mtop-via-provider" href="/admin/diagnostics/taobao-provider">공급자 API(온바운드) → 별도 화면</a></div>
+<div class="small text-muted mt-1" data-role="provider-setting">상세 공급자: <strong>{{ prov_name }}</strong>(TAOBAO_DETAIL_PROVIDER){% if prov_name == 'onebound' %} · {{ prov.line }}{% endif %}</div>
 <div class="small text-muted mt-1" data-role="mtop-auto">자동 경로: {{ auto }} · 호출 간격 2~3초 · 호출당 최대 3회 · x5 핸드셰이크 → 토큰 왕복 → getdetail</div>
 <button class="btn btn-sm btn-outline-secondary mt-2">실측(조회만 · 무료)</button></form>
 {% if stats %}<div class="border rounded p-2 mb-3 small" data-role="mtop-stats"><strong>자동 경로 3일 누적</strong>({{ stats.days|join(', ') }}, KST) —
-시도 {{ stats.total.tried }} · 성공 {{ stats.total.ok }}{% if stats.total.rate is not none %}({{ stats.total.rate }}%){% endif %} · RGV587 {{ stats.total.rgv587 }} · punish {{ stats.total.punish }} · 빈 응답 {{ stats.total.empty }} · 오류 {{ stats.total.error }}
-{% for k, r in stats.routes|dictsort %}<div data-role="mtop-stats-route">{{ labels.get(k, k) }}: 시도 {{ r.tried }} · 성공 {{ r.ok }}({{ r.rate }}%) · RGV587 {{ r.rgv587 }} · punish {{ r.punish }} · 빈 응답 {{ r.empty }} · 오류 {{ r.error }}</div>{% endfor %}
+시도 {{ stats.total.tried }}{% for k in kinds %}{% if stats.total[k] %} · {{ kind_labels[k] }} {{ stats.total[k] }}{% endif %}{% endfor %}{% if stats.total.rate is not none %} · 성공률 {{ stats.total.rate }}%{% endif %}
+{% for k, r in stats.routes|dictsort %}<div data-role="mtop-stats-route">{{ labels.get(k, k) }}: 시도 {{ r.tried }}{% for c in kinds %}{% if c in ('ok', 'login_required', 'rgv587', 'x5_loop') or r[c] %} · <span data-code="{{ c }}">{{ kind_labels[c] }} {{ r[c] }}</span>{% endif %}{% endfor %} · 성공률 {{ r.rate }}%{% if r.bytes %} · <span data-role="mtop-stats-bytes">프록시 바이트 {{ '{:,}'.format(r.bytes) }}</span>{% endif %}</div>{% endfor %}
 {% if first %}<div class="mt-1"><strong>첫 {{ first|length }}건</strong> — 담은 시각 → 준비 완료 시각(KST)</div>
 {% for e in first %}<div data-role="mtop-first">{{ e.collected_kst }} → {{ e.done_kst }}{% if e.took_sec is not none %} ({{ e.took_sec }}초){% endif %} · {{ '완료' if e.state == 'done' else '수동으로(' ~ e.kind ~ ')' }} · {{ labels.get(e.route, e.route) }}</div>{% endfor %}{% endif %}
 <div class="mt-1" data-role="mtop-sample">실측 성공 응답 표본: {% if sample.raw %}<a href="/admin/diagnostics/taobao-mtop/sample.json">getdetail_success.json 내려받기</a>({{ sample.route }} · 상품 {{ sample.item_id }}) — 재구성 픽스처 교체용{% else %}아직 없음{% endif %}</div></div>{% endif %}
 {% for r in rows %}<div class="border-bottom py-2 small" data-role="mtop-row" style="word-break:break-all">
 <div><strong>{{ r.input }}</strong> → 상품번호 {{ r.item_id or '없음' }} ({{ r.how }}) · 경로 {{ r.via or '직결' }}</div>
+{% if r.proxy %}<div class="text-muted" data-role="mtop-proxy">프록시 {{ r.proxy }}</div>{% endif %}
+{% if r.exit %}<div data-role="mtop-exit">출구 IP {{ r.exit.ip or '—' }}{% if r.exit.country %} · 국가 {{ r.exit.country }}{% endif %}{% if r.exit.how %} · {{ r.exit.how }}{% endif %}{% if not r.exit.ok and r.exit.why %} · {{ r.exit.why }}{% endif %}</div>{% endif %}
+{% if r.kind == 'login_required' %}<div class="alert alert-warning py-1 small mb-1" data-role="mtop-conclusion"><strong>{{ r.reason }}</strong></div>{% elif r.kind == 'x5_loop' %}<div class="text-danger" data-role="mtop-conclusion">{{ r.reason }}</div>{% endif %}
+
+{% if r.stages %}<div data-role="mtop-stages">{% for name, ok in verdict(r.stages) %}<span class="me-2">{{ '○' if ok else '×' }} {{ name }}</span>{% endfor %}</div>{% endif %}
+{% if r.bytes %}<div class="text-muted" data-role="mtop-bytes">이 상품 경유 바이트 {{ '{:,}'.format(r.bytes) }}{% if r.session %} · session {{ r.session }}{% endif %}</div>{% endif %}
+{% if r.kind and r.kind.startswith('proxy_') %}<div class="text-danger" data-role="mtop-proxy-fail">프록시 문제({{ r.kind }}) — IP 차단과 다름: {{ r.reason }}</div>{% endif %}
+{% if r.detail and (r.via or '').startswith('프록시') and (r.detail.price or r.detail.skus) %}<div class="alert alert-success py-1 small" data-role="mtop-switch">숫자가 나왔어요 — Render env <code>TAOBAO_MTOP_ROUTE=proxy</code> · <code>TAOBAO_MTOP_AUTO=1</code>로 바꾸면 폰 담기에서 자동 수집합니다.</div>{% endif %}
 {% for l in r.log %}<div class="text-muted">{{ l }}</div>{% endfor %}
 {% for h in r.handshakes or [] %}<details class="mt-1" data-role="mtop-handshake" {{ 'open' if not r.detail else '' }}><summary>x5 핸드셰이크 {{ loop.index }} — HTTP {{ h.status }} · x5referer 꼬리 {{ '붙임' if h.tail else '없음' }} · 주소 {{ h.url_len }}자 · x5 계열 쿠키 {{ (h.got or [])|join(', ') or '새로 받은 것 없음' }}{% if h.planted %} · 본문 JS 쿠키 {{ h.planted|join(', ') }}{% endif %}</summary>
 <div class="text-muted">요청 주소: {{ h.url }}{% if h.rand_uuid %} · rand/uuid {{ h.rand_uuid }}{% endif %}</div>
@@ -1424,7 +1510,7 @@ _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 <div>응답 헤더(쿠키 값은 글자 수만):</div><pre class="small mb-1" style="white-space:pre-wrap">{{ h.headers|join('\n') or '(없음 — relay2는 Set-Cookie·Location만 돌아옴)' }}</pre>
 <div>응답 본문(전체 {{ h.body_len }}자{% if h.body_len > 4000 %} 중 앞 4000자{% endif %} · 쿠키 값은 글자 수로 가림):</div><pre class="small mb-1" style="white-space:pre-wrap">{{ h.body_head or '(빈 본문)' }}</pre>
 <div class="text-muted">쿠키통(이름@도메인): {{ h.cookies|join(' · ') or '비었음' }}</div></details>{% endfor %}
-{% if r.detail %}<div data-role="mtop-numbers">제목 {{ r.detail.title_len }}자 「{{ r.detail.title }}」 · 가격 {{ r.detail.price or '—' }} · 갤러리 {{ r.detail.gallery }} · SKU {{ r.detail.skus }} · 옵션 축 {{ r.detail.axes }}/값 {{ r.detail.values }} · 상세 이미지 {{ r.desc_images if r.desc_images is not none else '—' }}</div>
+{% if r.detail %}<div data-role="mtop-numbers">제목 {{ r.detail.title_len }}자 「{{ r.detail.title }}」 · 가격 {{ r.detail.price or '—' }} · 갤러리 {{ r.detail.gallery }} · SKU {{ r.detail.skus }} · 옵션 축 {{ r.detail.axes }}/값 {{ r.detail['values'] }} · 상세 이미지 {{ r.desc_images if r.desc_images is not none else '—' }}</div>
 {% elif r.item_id %}<div class="text-danger" data-role="mtop-fail">{% if r.state == 'blocked' %}막힘 → 자동 경로라면 (c) 수동(폰 사진·옵션 직접 입력)으로 — {{ r.reason }}{% else %}상세 응답 없음 — {{ r.reason or '위 ret 코드가 사유' }}{% endif %}</div>{% endif %}</div>{% endfor %}
 <a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
 

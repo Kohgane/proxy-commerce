@@ -30,6 +30,8 @@ os.environ.setdefault("IMAGE_OCR_PRECHECK", "0")
 os.environ.setdefault("COUPANG_IMAGE_CHECK", "0")
 # Z3 자동 경로: mtop 호출 간격(운영 2~3초)은 테스트에서 0 — 계약은 횟수·순서만 본다
 os.environ.setdefault("TAOBAO_MTOP_GAP_SEC", "0")
+# Z3-B: 진단 화면의 직결 출구 IP(icanhazip) — 테스트는 네트워크 0
+os.environ.setdefault("TAOBAO_EXIT_IP_CHECK", "0")
 # F51-b: 판매가 환율(`price.sell_fx_rates`)은 FX_USE_LIVE가 **명시적 0**일 때만 실시간을 안 본다(운영 = 실시간).
 #   테스트는 네트워크·앞 테스트의 환율 캐시에 따라 값이 바뀌면 안 되므로 0으로 고정한다.
 #   옛 `_build_fx_rates`는 미설정 = 0이었으므로 기존 경로엔 변화가 없다.

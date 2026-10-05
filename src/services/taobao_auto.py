@@ -8,6 +8,9 @@
 켜기: `TAOBAO_MTOP_AUTO=1`(기본 끔 — 진단 화면 실측으로 경로가 확정되기 전엔 아무것도 안 부른다).
 경로: `TAOBAO_MTOP_ROUTE` = direct | relay | proxy(기본 relay). proxy는 `TAOBAO_PROXY_URL`(한국 주거 회전형)이 있어야 한다.
 한 번에 한 건(잠금) — mtop 호출 간격 2~3초는 `taobao_mtop`이 지킨다.
+
+Z3-B: `TAOBAO_DETAIL_PROVIDER=onebound`면 상세를 외부 공급자(`taobao_provider`)로 — 이 설정만으로 자동 경로가 켜진다
+(TAOBAO_MTOP_AUTO 불필요). 공급자가 실패하면 (c) 수동 — mtop을 다시 부르지 않는다. 집계 경로 이름은 `onebound`.
 """
 from __future__ import annotations
 
@@ -21,13 +24,64 @@ logger = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 
 
+def _onebound() -> bool:
+    # ★ `src.collectors` 패키지를 import하지 않고 env만 본다 — 이 함수는 앱 부팅(`order_webhook` → startup_check)에서
+    #   불린다. 패키지 `__init__`이 사이트 어댑터 전부를 import하고, 어댑터들은 import 시점에 ADAPTER_DRY_RUN을 굳힌다
+    #   (#835 CI 실측: 부팅에서 끌려와 dry-run 어댑터 계약 4건이 실네트워크로 돎). 판정은 `taobao_provider.provider()`와 같다.
+    return os.getenv("TAOBAO_DETAIL_PROVIDER", "mtop").strip().lower() == "onebound"
+
+
 def enabled() -> bool:
-    return os.getenv("TAOBAO_MTOP_AUTO", "0").strip() == "1"
+    return os.getenv("TAOBAO_MTOP_AUTO", "0").strip() == "1" or _onebound()
+
+
+def effective_route() -> str:
+    """실제로 상세를 가져올 길 — onebound면 `onebound`, 아니면 mtop 경로(direct·relay·proxy)."""
+    return "onebound" if _onebound() else route()
 
 
 def route() -> str:
+    """`TAOBAO_MTOP_ROUTE` = direct | relay2(=relay) | proxy. 모르는 값이면 relay."""
     r = os.getenv("TAOBAO_MTOP_ROUTE", "relay").strip().lower()
+    r = "relay" if r == "relay2" else r
     return r if r in ("direct", "relay", "proxy") else "relay"
+
+
+def startup_check() -> str:
+    """부팅 1줄 — 자동 경로가 proxy인데 TAOBAO_PROXY_URL이 비면 경고(조용한 폴백 없음: 그 건들은 「프록시 미설정」으로 실패 표기)."""
+    if not enabled():
+        return ""
+    from src.collectors import taobao_mtop as T
+    from src.collectors import taobao_provider as P
+    if P.provider() == "onebound":
+        return P.startup_check()
+    if route() == "proxy" and not T.proxy_parts():
+        msg = "Z3 자동 경로: TAOBAO_MTOP_ROUTE=proxy인데 TAOBAO_PROXY_URL이 비었어요 — relay2로 돌리지 않고 「프록시 미설정」으로 실패 표기합니다"
+        logger.warning(msg)
+        return msg
+    msg = f"Z3 자동 경로: 켜짐 · 경로 {route()}" + (f" · {T.proxy_label()}" if route() == "proxy" else "")
+    logger.info(msg)
+    return msg
+
+
+def _keep_provider(item_id: str, user_id: str, payload: dict) -> None:
+    """공급자 전용 칸을 병합 **뒤에** 남긴다(공용 병합 `apply_enrich`는 그대로): 규격표는 기존 `detail_specs`가
+    비었을 때만(Z5 무게·치수 재료) · 원산지·티몰·동영상·총재고·옵션값 사진·캐시 기준은 `provider_detail`에."""
+    from src.seller_console import collect_history_store as store
+    row = store.get(item_id, seller_ids={user_id})
+    if not row:
+        return
+    try:
+        ex = json.loads(row.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    pv = dict(payload.get("provider") or {})
+    if payload.get("detail_specs") and not ex.get("detail_specs"):
+        ex["detail_specs"] = payload["detail_specs"]
+    ex["provider_detail"] = {k: pv.get(k) for k in ("name", "price_cny", "original_price_cny", "origin_city", "is_tmall",
+                                                   "video_url", "stock_total", "option_images", "cache", "data_update",
+                                                   "price_asof", "parse_notes")}
+    store.update(item_id, seller_ids={user_id}, extra_json=json.dumps(ex, ensure_ascii=False))
 
 
 def _mark(item_id: str, user_id: str, rec: dict) -> None:
@@ -47,7 +101,7 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
     """한 건 동기 실행 → 기록한 `auto_enrich` dict."""
     from src.collectors import taobao_mtop as T
     from src.seller_console import collect_history_store as store
-    via = via or route()
+    via = via or effective_route()
     now = datetime.now(timezone.utc).isoformat()
     row = store.get(item_id, seller_ids={user_id})
     if not row:
@@ -60,12 +114,12 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
     iid = str(ex.get("item_id_taobao") or ex.get("site_item_id") or "")
     if not iid:
         try:
-            s = T.session_for(via) if via != "relay" else T._session()
-            iid, _how = T.item_id_from(url, s)
+            iid, _how = T.item_id_from(url, T.resolver_session("direct" if via == "onebound" else via))  # 단축 링크는 직결
         except T.NoProxy:
             iid = ""
     if not iid:
-        rec = {"state": "manual", "reason": "상품번호를 못 찾았어요(단축 링크를 펴지 못함)", "route": via, "at": now, "kind": "error"}
+        rec = {"state": "manual", "route": via, "at": now, "kind": "error",
+               "reason": ("상품번호 해석 실패" if via == "onebound" else "상품번호를 못 찾았어요(단축 링크를 펴지 못함)")}
         _mark(item_id, user_id, rec)
         try:
             from src.services import mtop_stats as _ms
@@ -74,10 +128,17 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
             pass
         return rec
     with _LOCK:
-        res = T.fetch(iid, via)
+        if via == "onebound":
+            from src.collectors import taobao_provider as P
+            res = P.fetch_detail(iid)
+        else:
+            res = T.fetch(iid, via)
     if res["state"] == "ok":
         from src.api.extension_api import apply_enrich
-        body, _code = apply_enrich(item_id, {user_id}, user_id, res["payload"])
+        payload = {k: v for k, v in res["payload"].items() if k != "provider"}
+        body, _code = apply_enrich(item_id, {user_id}, user_id, payload)
+        if body.get("ok") and res["payload"].get("provider"):
+            _keep_provider(item_id, user_id, res["payload"])
         rec = {"state": "done" if body.get("ok") else "manual", "route": via, "at": now,
                "reason": "" if body.get("ok") else str(body.get("error") or "병합 실패"),
                "counts": {"images": len(res["payload"]["images"]), "skus": len(res["payload"]["skus"]),
@@ -85,14 +146,24 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
     else:
         rec = {"state": "manual", "reason": res["reason"], "route": via, "at": now}
     rec["kind"] = res.get("kind") or ("ok" if res["state"] == "ok" else "error")
+    if via == "onebound":                                       # Z3-B: 공급자 호출 크기·시간
+        rec["provider_ms"], rec["provider_bytes"] = int(res.get("ms") or 0), int(res.get("bytes") or 0)
+        rec["provider_reused"] = bool(res.get("reused"))
+        pv = ((res.get("payload") or {}).get("provider") or {})
+        if pv.get("price_asof"):
+            rec["price_asof"] = pv["price_asof"]                # 캐시 응답이 하루 넘음 → 카드에 「가격 기준 …」
+    if via == "proxy":                                          # Z3-P: 상품당 프록시 경유 바이트 · 쓴 session
+        rec["proxy_bytes"], rec["session"] = int(res.get("bytes") or 0), res.get("session", "")
+        logger.info("[Z3 프록시] item=%s 상품=%s session=%s 바이트=%d 결과=%s", item_id, iid, rec["session"],
+                    rec["proxy_bytes"], rec["kind"])
     _mark(item_id, user_id, rec)
     # Z3-C: 집계(경로·갈래) · 첫 10건 담은 시각 → 준비 완료 시각 · 첫 성공 응답 1건(픽스처 교체용)
     try:
         from src.services import mtop_stats as _ms
-        _ms.record(via, rec["kind"])
+        _ms.record(via, rec["kind"], nbytes=int(res.get("bytes") or 0) if via == "proxy" else 0)
         _ms.note_item({"item_id": item_id, "collected_at": str(row.get("collected_at") or ""), "done_at": now,
                        "state": rec["state"], "kind": rec["kind"], "route": via, "reason": rec.get("reason", "")[:120]})
-        if res["state"] == "ok" and res.get("raw"):
+        if res["state"] == "ok" and res.get("raw") and via != "onebound":
             _ms.save_sample(res["raw"], item_id=iid, route=via)
     except Exception as exc:                                    # noqa: BLE001 — 집계 실패가 수집을 막지 않는다
         logger.warning("[Z3 집계] 기록 실패: %s", exc)

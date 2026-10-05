@@ -23,14 +23,16 @@
   <p class="sd-title" data-role="share-title">{{ out.title or m5.title or "(제목 없음)" }}</p>
   {% if out.partial %}
   <p class="sd-line" data-role="share-price">{% if out.price %}가격 <strong>{{ out.price }} {{ out.currency }}</strong>{% else %}가격을 아직 못 읽었어요{% endif %}</p>
-  <p class="sd-note" data-role="share-enrich">나머지 사진과 옵션은 PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.</p>
+  {% if out.auto_enrich and out.item_id %}{% include "_share_auto.html" %}{% else %}
+  <p class="sd-note" data-role="share-enrich">나머지 사진과 옵션은 PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.</p>{% endif %}
   {% endif %}
   {% include "_m5_flow.html" %}
   {% elif out.ok %}
   <p class="sd-title" data-role="share-title">{{ out.title or "(제목 없음)" }}</p>
   {% if out.partial %}
   <p class="sd-line" data-role="share-price">{% if out.price %}가격 <strong>{{ out.price }} {{ out.currency }}</strong>{% else %}가격을 아직 못 읽었어요{% endif %}</p>
-  <p class="sd-note" data-role="share-enrich">나머지 사진과 옵션은 PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.</p>
+  {% if out.auto_enrich and out.item_id %}{% include "_share_auto.html" %}{% else %}
+  <p class="sd-note" data-role="share-enrich">나머지 사진과 옵션은 PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.</p>{% endif %}
   {% endif %}
   {% else %}
   <p class="sd-line" data-role="share-error">{{ out.error }}</p>
