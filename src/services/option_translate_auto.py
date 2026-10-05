@@ -85,6 +85,13 @@ def rule_pass(extra: dict) -> dict:
     """
     changed = False
     pending: list = []
+    # Y8 확장(오너 2026-10-05): 옵션 값 속 전압·플러그(110V·220V·国内用·美规·英规…)를 별도 축으로 — SKU마다 국내 판매 판정
+    try:
+        from src.collectors import voltage_plug as _vp
+        if (_vp.apply(extra) or {}).get("state") == "split":
+            changed = True
+    except Exception as exc:
+        logger.warning("[전압·플러그 분리] 실패(원래대로): %s", exc)
     # Y8(오너 2026-10-04): 광고문형 옵션 값(「✅弹簧线ꙮPD65W…【7五孔+1A1C】⭐…」)은 번역 전에 **축으로 분해**(SKU 1:1 검증 통과 시만)
     try:
         from src.collectors import option_split as _osp

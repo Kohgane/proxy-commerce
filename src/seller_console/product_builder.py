@@ -71,6 +71,9 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "coupang_name": str(ex.get("coupang_name") or ""),
         # Z5: 배송비 비율 보류를 「그래도 등록」으로 푼 기록(있으면 그 보류는 안 건다) · 치수 재료
         "ship_ratio_override": ex.get("ship_ratio_override") or None,
+        # Y8 전압·플러그: 분리 기록 · 「전압/플러그 불일치」 보류를 「그래도 등록」으로 푼 기록
+        "voltage_split": ex.get("voltage_split") if isinstance(ex.get("voltage_split"), dict) else {},
+        "voltage_override": ex.get("voltage_override") or None,
         # Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트)를 「그래도 등록」으로 푼 기록 — 그 장 주소에만 유효
         "rep_image_override": ex.get("rep_image_override") or None,
         # Y8: 축 분해 전 원본 옵션(五孔 같은 차단 어휘는 분해 뒤 값엔 없다) · 분해 기록

@@ -1,11 +1,14 @@
 # 외부 공급자 응답 픽스처 (Z3-B)
 
-- `onebound_item_get_652874751412.json` — **오너 실측 응답**(첨부 txt의 Result Object). ★아직 이 레포에 없음:
-  2026-10-05 브리프 메시지에 원문이 실려 오지 않았다. 파일을 이 이름으로 넣으면 `tests/test_z3_onebound.py`의
-  실측 계약(제목·가격 480.0·사진 5·상세 19·축 2(几人坐 8 / 颜色分类 1)·SKU 8·is_tmall False·가게 「佑安居」)이 돈다 —
-  그 전엔 그 테스트는 **사유를 밝히고 건너뛴다**(그린으로 세지 않음).
-  진단 `/admin/diagnostics/taobao-provider`의 「원문 내려받기」(키 가림)로 받은 파일도 같은 모양이다.
-- `onebound_item_get_reconstructed.json` — **재구성**(값은 지어낸 것). 키 모양은 오너 지시(2026-10-05)의 필드 매핑을
-  따른다: `props[]{name,value}` · `props_list{"pid:vid":"축:값"}` · `skus.sku[]{price,quantity,properties,sku_id}` ·
-  `prop_imgs.prop_img[]` · `desc_img`(o0b.cn 추적 픽셀 1장 포함) · `video.url` · `location` · `tmall` · `seller_info.shop_name` ·
-  `cache` · `data_update` · `api_info`. 단 `prop_img` 원소의 키(`properties`·`url`)는 지시에 이름이 없어 **확인 전**.
+- `onebound_item_get_652874751412.json` — **오너 실측 응답 원문**(2026-10-05 [Z3-B 후속] 투입, 첨부 txt의 Result Object 그대로).
+  오너 기대값: error_code 0000 · price 480.00 · item_imgs 5 · desc_img 20(o0b.cn 픽셀 제거 후 19) · 축 2(几人坐 8 / 颜色分类 1) ·
+  SKU 8 · tmall false · shop_name 佑安居 · cache 1 · data_update 2026-10-04 20:54:24 · api_info max 10 / expires 2026-10-08.
+  계약: `tests/test_z3_onebound.py::test_real_652874751412_parses_as_owner_counted`.
+  실측으로 확인된 모양: `prop_imgs.prop_img[] = [{"properties": "pid:vid", "url": …}]` · `props_img = {"pid:vid": url}` — 둘 다 http://로 올 수 있음.
+- `onebound_item_get_667810641388.json` — **오너 실측 2호 원문**(운영 Render 「내려받기」, client_ip = Render 출구). 제습기 —
+  110V/220V × 미·영·호·국내 플러그 × 흑백 8 SKU(전 298元·재고 45~50) · cache 0 · api_info today 1/max 10/expires 2026-10-08 ·
+  1호와 타입 차이(total_sold "6" · video.url null · 배송비/무게 null·"" · brand other/其他 · props_imgs 복수형 · 모르는 키 _ddf 등).
+  계약: `tests/test_z3_onebound.py::test_real2_…` · Y8 전압·플러그 `tests/test_y8_voltage_plug.py`.
+- `onebound_item_get_reconstructed.json` — **재구성**(값은 지어낸 것) — 실측에 없는 갈래(캐시 하루 이내·SKU 재고 0·
+  error_code 실패·5xx 재시도 등) 로직 계약용. 키 모양은 위 실측과 같다.
+- 진단 `/admin/diagnostics/taobao-provider`의 「원문 내려받기」(키 가림)로 받은 파일도 같은 모양이다.

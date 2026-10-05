@@ -1,8 +1,7 @@
 """Z3-B(오너 2026-10-05) — 온바운드(万邦) item_get 공급자: 파서 · 실패 원문 · 한도 · 24시간 재사용 · api_info · 자동 담기 · 진단.
 
 네트워크 0(대역 transport). 픽스처 출처는 `fixtures/providers/README.md`:
-  - `onebound_item_get_652874751412.json` = 오너 실측 응답 — **레포에 아직 없음**(브리프 메시지에 원문이 안 실려 옴).
-    없으면 그 계약은 사유를 밝히고 건너뛴다(그린으로 세지 않는다 — PR·보고에 「미완」).
+  - `onebound_item_get_652874751412.json` = 오너 실측 응답(2026-10-05 [Z3-B 후속]으로 투입 — 원문 그대로).
   - `onebound_item_get_reconstructed.json` = 오너 지시 필드 매핑대로 만든 재구성(값은 지어낸 것).
 """
 from __future__ import annotations
@@ -19,8 +18,14 @@ REAL = FX / "onebound_item_get_652874751412.json"
 RECON = FX / "onebound_item_get_reconstructed.json"
 
 
-def _recon_text():
-    return RECON.read_text(encoding="utf-8")
+def _recon_text(num_iid: str = ""):
+    """재구성 응답 — `num_iid`를 주면 응답 item.num_iid를 그 번호로(요청·응답 상품번호 일치 검사를 통과하게)."""
+    t = RECON.read_text(encoding="utf-8")
+    if num_iid:
+        raw = json.loads(t)
+        raw["item"]["num_iid"] = num_iid
+        t = json.dumps(raw, ensure_ascii=False)
+    return t
 
 
 def _keys(monkeypatch, cap="60"):
@@ -37,19 +42,66 @@ def _fresh_store(num_iid):
 
 # ── 실측 응답(오너 첨부) ──────────────────────────────────────────────────────────
 
-@pytest.mark.skipif(not REAL.exists(), reason="오너 실측 응답 fixtures/providers/onebound_item_get_652874751412.json 미수령 "
-                                              "— 브리프 메시지에 원문이 안 실려 옴(파일을 넣으면 돈다)")
 def test_real_652874751412_parses_as_owner_counted():
+    """오너 실측 응답(원문 그대로) — 오너가 센 기대값과 1:1."""
     from src.collectors import taobao_provider_onebound as O
-    p = O.normalize(json.loads(REAL.read_text(encoding="utf-8")))
+    raw = json.loads(REAL.read_text(encoding="utf-8"))
+    assert raw["error_code"] == "0000" and len(raw["item"]["desc_img"]) == 20 and not O.item_id_mismatch(raw, "652874751412")
+    p = O.normalize(raw)
     pv = p["provider"]
-    assert p["title"] and pv["price_cny"] == 480.0
-    assert len(p["images"]) == 5 and all(u.startswith("https:") for u in p["images"])
-    assert len(p["detail_images"]) == 19 and not any("o0b.cn" in u for u in p["detail_images"])
+    assert p["title"].startswith("奶油风布艺沙发") and pv["price_cny"] == 480.0 == p["price"]
+    assert len(p["images"]) == 5 and all(u.startswith("https://img.alicdn.com/") for u in p["images"])
+    assert len(p["detail_images"]) == 19 and not any("o0b.cn" in u for u in p["detail_images"])   # 20 − 추적 픽셀 1
     axes = {o["name"]: o["values"] for o in p["options"]}
-    assert len(axes) == 2 and len(axes["几人坐"]) == 8 and len(axes["颜色分类"]) == 1
-    assert len(p["skus"]) == 8 and all(k["sku_id"] and k["stock"] is not None for k in p["skus"])
-    assert pv["is_tmall"] is False and pv["shop_name"] == "佑安居"
+    assert list(axes) == ["几人坐", "颜色分类"] and len(axes["几人坐"]) == 8 and axes["颜色分类"] == ["乳白色 尺寸颜色可定制"]
+    assert len(p["skus"]) == 8 and p["skus"][0] == {"spec": ["脚踏90*60*48cm", "乳白色 尺寸颜色可定制"], "price": 480.0,
+                                                   "stock": 200, "sku_id": "4881047531343"}
+    assert p["skus"][1]["stock"] == 135 and all(k["sku_id"] for k in p["skus"])
+    assert pv["is_tmall"] is False and pv["shop_name"] == "佑安居" and pv["stock_total"] == 1527
+    assert pv["cache"] is True and pv["data_update"] == "2026-10-04 20:54:24"
+    assert pv["api_info"]["max"] == 10 and pv["api_info"]["expires"] == "2026-10-08"
+    assert pv["option_images"] == {"乳白色 尺寸颜色可定制":
+                                   "https://img.alicdn.com/imgextra/i1/2568161054/O1CN017GTZ4h1Jem9Qra1ap_!!2568161054.jpg"}  # http → https
+    assert pv["origin_city"] == "江苏南通" and pv["video_url"].startswith("https://cloud.video.taobao.com/")
+    assert len(p["detail_specs"]) == 22 and p["detail_specs"][0] == ["品牌", "#0 工厂"] and pv["parse_notes"] == []
+
+
+def test_real_via_call_reuses_and_keeps_raw(monkeypatch):
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    _fresh_store("652874751412")
+    calls = []
+
+    def tr(url, params):
+        calls.append(params["num_iid"])
+        return 200, REAL.read_text(encoding="utf-8")
+    r = O.fetch_detail("652874751412", transport=tr)
+    assert r["state"] == "ok" and len(r["payload"]["skus"]) == 8 and calls == ["652874751412"]
+    assert O.fetch_detail("652874751412", transport=tr)["reused"] is True and calls == ["652874751412"]
+
+
+def test_num_iid_mismatch_fails_and_is_not_stored(monkeypatch):
+    """요청 상품번호와 응답 item.num_iid가 다르면 실패(캐시 오염 방어) — 보관도 안 한다."""
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    _fresh_store("999000111")
+    r = O.fetch_detail("999000111", transport=lambda u, p: (200, REAL.read_text(encoding="utf-8")))
+    assert r["state"] == "manual" and r["kind"] == "provider_fail"
+    assert r["reason"] == "온바운드 응답 상품번호 불일치(요청 999000111 ≠ 응답 652874751412) — 캐시 오염 의심, 쓰지 않음"
+    assert not O.stored("999000111").get("raw")
+    raw = json.loads(REAL.read_text(encoding="utf-8"))
+    del raw["item"]["num_iid"]
+    assert O.item_id_mismatch(raw, "652874751412").startswith("온바운드 응답에 상품번호 없음")
+
+
+def test_props_img_dict_and_http_to_https():
+    """props_img = {"pid:vid": url}만 와도 옵션값 사진을 읽는다 · http:// → https://."""
+    from src.collectors import taobao_provider_onebound as O
+    raw = json.loads(REAL.read_text(encoding="utf-8"))
+    del raw["item"]["prop_imgs"]
+    assert O.normalize(raw)["provider"]["option_images"] == {
+        "乳白色 尺寸颜色可定制": "https://img.alicdn.com/imgextra/i1/2568161054/O1CN017GTZ4h1Jem9Qra1ap_!!2568161054.jpg"}
+    assert O._https("http://a.b/c.jpg") == "https://a.b/c.jpg" and O._https("//a.b/c.jpg") == "https://a.b/c.jpg"
 
 
 # ── 파서(재구성 픽스처) ──────────────────────────────────────────────────────────
@@ -138,11 +190,11 @@ def test_retry_once_on_5xx_only(monkeypatch):
     from src.collectors import taobao_provider_onebound as O
     _keys(monkeypatch)
     _fresh_store("222")
-    seq = [(502, "bad gateway"), (200, _recon_text())]
+    seq = [(502, "bad gateway"), (200, _recon_text("222"))]
     r = O.fetch_detail("222", transport=lambda u, p: seq.pop(0))
     assert r["state"] == "ok" and seq == []
     _fresh_store("223")
-    seq4 = [(403, "forbidden"), (200, _recon_text())]
+    seq4 = [(403, "forbidden"), (200, _recon_text("223"))]
     r4 = O.fetch_detail("223", transport=lambda u, p: seq4.pop(0))
     assert r4["state"] == "manual" and len(seq4) == 1                # 4xx는 재시도 안 함
 
@@ -170,12 +222,12 @@ def test_same_item_within_24h_reuses_stored_raw(monkeypatch):
 
     def tr(url, params):
         calls.append(1)
-        return 200, _recon_text()
+        return 200, _cache_raw(params["num_iid"], 0, 0)          # 캐시 아님(하루 넘은 캐시 재호출과 섞이지 않게)
     assert O.fetch_detail("444", transport=tr)["reused"] is False
     again = O.fetch_detail("444", transport=tr)
     assert again["state"] == "ok" and again["reused"] is True and calls == [1]     # 24시간 재담기 → 호출 0
     assert O.fetch_detail("444", refresh=True, transport=tr)["reused"] is False and calls == [1, 1]   # 「새로 받기」만
-    assert O.stored("444")["raw"]["item"]["num_iid"] == "733241700286"              # 원문 보관(상품당 최신 1건)
+    assert O.stored("444")["raw"]["item"]["num_iid"] == "444"                       # 원문 보관(상품당 최신 1건)
 
 
 def test_keys_missing_is_its_own_failure_and_boot_warning(monkeypatch):
@@ -210,8 +262,8 @@ def test_share_auto_collects_price_options_images_specs(monkeypatch):
     from src.seller_console import collect_history_store as S
     O = _auto_env(monkeypatch)
     real_call = O.call
-    monkeypatch.setattr(O, "call", lambda iid, refresh=False, transport=None:
-                        real_call(iid, refresh=refresh, transport=lambda u, p: (200, _recon_text())))
+    monkeypatch.setattr(O, "call", lambda iid, refresh=False, no_cache=False, transport=None:
+                        real_call(iid, refresh=refresh, no_cache=no_cache, transport=lambda u, p: (200, _recon_text())))
     before = MS.summary(3)["routes"].get("onebound", {}).get("ok", 0)
     seller = "owner-onebound"
     iid = _share_item(seller)
@@ -235,7 +287,7 @@ def test_share_auto_failure_card_carries_raw_reason(monkeypatch):
     from src.services import taobao_auto as A
     O = _auto_env(monkeypatch)
     real_call = O.call
-    monkeypatch.setattr(O, "call", lambda iid, refresh=False, transport=None: real_call(
+    monkeypatch.setattr(O, "call", lambda iid, refresh=False, no_cache=False, transport=None: real_call(
         iid, refresh=refresh, transport=lambda u, p: (200, '{"error_code":"4005","reason":"授权已过期","error":"key"}')))
     seller = "owner-onebound-fail"
     iid = _share_item(seller)
@@ -283,8 +335,8 @@ def test_diag_provider_page(monkeypatch):
     raw["echo"] = "secret=sss_test_secret_5678"                     # 응답에 시크릿이 섞여 와도
     monkeypatch.setattr(T, "item_id_from", lambda arg, s=None: ("733241700286", "e.tb.cn 펴기"))
     real_call = O.call
-    monkeypatch.setattr(O, "call", lambda iid, refresh=False, transport=None:
-                        real_call(iid, refresh=refresh, transport=lambda u, p: (200, json.dumps(raw))))
+    monkeypatch.setattr(O, "call", lambda iid, refresh=False, no_cache=False, transport=None:
+                        real_call(iid, refresh=refresh, no_cache=no_cache, transport=lambda u, p: (200, json.dumps(raw))))
     from src.order_webhook import app
     c = app.test_client()
     with c.session_transaction() as ss:
@@ -321,3 +373,125 @@ def test_app_boot_does_not_import_site_adapters():
         out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env,
                              cwd=str(Path(__file__).parent.parent), timeout=120)
         assert out.stdout.strip().splitlines()[-1] == "0", out.stderr[-600:]
+
+
+# ── 실측 2호(667810641388 · 운영 Render 내려받기) · 타입 관용 · cache=no ─────────────────────────
+
+REAL2 = FX / "onebound_item_get_667810641388.json"
+
+
+def test_real2_667810641388_parses_as_owner_counted():
+    from src.collectors import taobao_provider_onebound as O
+    raw = json.loads(REAL2.read_text(encoding="utf-8"))
+    assert raw["error_code"] == "0000" and raw["client_ip"] == "74.220.52.131" and not O.item_id_mismatch(raw, "667810641388")
+    p = O.normalize(raw)
+    pv = p["provider"]
+    assert pv["price_cny"] == 298.0 and len(p["images"]) == 5 and all(u.startswith("https://") for u in p["images"])
+    assert len(p["detail_images"]) == 17 and not any("o0b.cn" in u for u in p["detail_images"])   # 픽셀은 desc(html)에만
+    assert [(o["name"], len(o["values"])) for o in p["options"]] == [("颜色分类", 8)]
+    assert len(p["skus"]) == 8 and {k["price"] for k in p["skus"]} == {298.0}
+    assert all(45 <= k["stock"] <= 50 for k in p["skus"])
+    assert pv["is_tmall"] is False and pv["shop_name"] == "110V家电商贸城" and pv["cache"] is False and pv["price_asof"] == ""
+    assert pv["api_info"]["today"] == 1 and pv["api_info"]["max"] == 10 and pv["api_info"]["expires"] == "2026-10-08"
+    assert len(pv["option_images"]) == 8 and pv["parse_notes"] == []
+
+
+def test_type_tolerance_real2_vs_real1():
+    """실측 차이: total_sold int↔str · video.url null · 배송비·무게 null/""/0 → 「미기재」 · brand other/其他 → 없음."""
+    from src.collectors import taobao_provider_onebound as O
+    p1 = O.normalize(json.loads(REAL.read_text(encoding="utf-8")))["provider"]
+    p2 = O.normalize(json.loads(REAL2.read_text(encoding="utf-8")))["provider"]
+    assert p1["total_sold"] == 0 and p2["total_sold"] == 6 and p2["sales"] == 6
+    assert p2["video_url"] is None and p1["video_url"].startswith("https://")
+    for pv in (p1, p2):
+        assert pv["post_fee"] == pv["express_fee"] == pv["item_weight"] == O.UNLISTED == "미기재"
+    assert p2["freight"] == "미기재" and p2["brand"] is None and p1["brand"] == "#0 工厂"
+    assert O._listed("12.5") == 12.5 and O._brand("其他") is None and O._brand("other") is None
+
+
+def test_missing_keys_never_raise_and_fallbacks():
+    """키 누락에 KeyError 없음 · desc_img 비면 desc(html) <img>에서(o0b.cn 제외) · prop_imgs 없으면 props_imgs."""
+    from src.collectors import taobao_provider_onebound as O
+    raw = json.loads(REAL2.read_text(encoding="utf-8"))
+    raw["item"]["desc_img"] = []
+    del raw["item"]["prop_imgs"]
+    del raw["item"]["props_img"]
+    p = O.normalize(raw)
+    assert len(p["detail_images"]) == 17 and not any("o0b.cn" in u for u in p["detail_images"])
+    assert len(p["provider"]["option_images"]) == 8                              # props_imgs(복수형)에서
+    assert "desc(html)에서 상세 사진 17장" in p["provider"]["parse_notes"][0]
+    for bare in ({}, {"item": {}}, {"item": None}, {"item": {"num_iid": "1", "skus": None, "props_list": None, "video": None}}):
+        q = O.normalize(bare)
+        assert q["title"] == "" and q["skus"] == [] and q["options"] == []
+
+
+def test_unknown_keys_kept_in_stored_raw(monkeypatch):
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    _fresh_store("667810641388")
+    assert O.fetch_detail("667810641388", transport=lambda u, p: (200, REAL2.read_text(encoding="utf-8")))["state"] == "ok"
+    kept = O.stored("667810641388")["raw"]["item"]
+    assert kept["_ddf"] == "ykn1" and "suggestive_price" in kept and "url_log" in kept
+
+
+def _cache_raw(num_iid, cache, hours_old):
+    from datetime import datetime, timedelta, timezone
+    raw = json.loads(_recon_text(num_iid))
+    raw["cache"] = cache
+    raw["data_update"] = (datetime.now(timezone(timedelta(hours=8))) - timedelta(hours=hours_old)).strftime("%Y-%m-%d %H:%M:%S")
+    return json.dumps(raw, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("cache,hours_old,calls,second_no_cache", [
+    (0, 100, 1, None),          # 캐시 아님 → 1회, cache=no 안 붙음
+    (1, 2, 1, None),            # 캐시 + 신선(24h 안) → 1회
+    (1, 30, 2, True),           # 캐시 + 하루 초과 → cache=no로 1회 더(한도도 2회)
+])
+def test_auto_cache_bypass_only_when_cached_and_stale(monkeypatch, cache, hours_old, calls, second_no_cache):
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    iid = f"77{cache}{hours_old}"
+    _fresh_store(iid)
+    seen = []
+
+    def tr(url, params):
+        seen.append(dict(params))
+        if params.get("cache") == "no":
+            return 200, _cache_raw(iid, 0, 0)
+        return 200, _cache_raw(iid, cache, hours_old)
+    before = O.used_today()
+    r = O.fetch_detail(iid, transport=tr)
+    assert r["state"] == "ok" and len(seen) == calls and O.used_today() - before == calls
+    assert "cache" not in seen[0]                                               # 첫 호출엔 안 붙인다
+    if second_no_cache:
+        assert seen[1]["cache"] == "no" and r["bypassed"] is True and r["payload"]["provider"]["price_asof"] == ""
+    else:
+        assert r["bypassed"] is False
+
+
+def test_bypass_failure_keeps_cached_value_with_price_asof(monkeypatch):
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    _fresh_store("880001")
+
+    def tr(url, params):
+        if params.get("cache") == "no":
+            return 200, '{"error_code":"4000","reason":"busy"}'
+        return 200, _cache_raw("880001", 1, 40)
+    r = O.fetch_detail("880001", transport=tr)
+    assert r["state"] == "ok" and r["bypassed"] is False and r["payload"]["provider"]["price_asof"]
+
+
+def test_refresh_sends_cache_no_and_overwrites_store(monkeypatch):
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    _fresh_store("880002")
+    seen = []
+
+    def tr(url, params):
+        seen.append(dict(params))
+        return 200, _cache_raw("880002", 0, 0)
+    O.fetch_detail("880002", transport=tr)
+    assert O.fetch_detail("880002", transport=tr)["reused"] is True and len(seen) == 1   # 24h 재사용 그대로
+    r = O.fetch_detail("880002", refresh=True, transport=tr)
+    assert r["reused"] is False and r["bypassed"] is True and seen[-1]["cache"] == "no" and len(seen) == 2

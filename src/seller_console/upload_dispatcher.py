@@ -628,6 +628,56 @@ def unresolved_why_line(pd: Dict[str, Any], values: List[str]) -> str:
     return " · ".join(parts) + more + at + " · " + pap
 
 
+def _is_korea_market(market: str) -> bool:
+    m = str(market or "").lower()
+    return m in _KO_OPTION_MARKETS or m.startswith("coupang") or m.startswith("smartstore")
+
+
+def plug_notice_html() -> str:
+    from .notice_texts import PLUG_CN_LINES, PLUG_CN_TITLE
+    import html as _h
+    return ('<div class="kgp-plug-notice"><p><strong>' + _h.escape(PLUG_CN_TITLE) + "</strong></p>"
+            + "".join("<p>" + _h.escape(x) + "</p>" for x in PLUG_CN_LINES) + "</div>")
+
+
+def plug_notice_text() -> str:
+    from .notice_texts import PLUG_CN_LINES, PLUG_CN_TITLE
+    return "\n".join((PLUG_CN_TITLE,) + tuple(PLUG_CN_LINES))
+
+
+def korea_voltage_filter(payload: Dict[str, Any], market: str) -> Dict[str, Any]:
+    """Y8 전압·플러그(오너 2026-10-05) — **국내 마켓**(쿠팡 고가네·우주대행·스스·11번가)만: 판매 제외 SKU(110V·플러그 G/A/I)를
+    빼고, 남은 등록 SKU에 220V+중국 플러그가 있으면 상세 **맨 위**(첫 이미지·이미지 번역 결과물보다 위)에 플러그 안내 +
+    표준 구매대행 고지(이미 있으면 다시 넣지 않음). 상품명·옵션명엔 아무것도 붙이지 않는다. 저장값은 그대로."""
+    if not _is_korea_market(market):
+        return payload
+    try:
+        from src.collectors import voltage_plug as _vp
+        from .notice_texts import PURCHASE_AGENT_NOTICE
+        out = _vp.drop_excluded(payload)
+        if _vp.plug_notice_needed(out.get("skus")):
+            import html as _h
+            for key in ("description_html", "description"):
+                cur = str(out.get(key) or "")
+                if key == "description_html" and not cur.strip():
+                    continue
+                if key == "description_html":
+                    head = plug_notice_html()
+                    if PURCHASE_AGENT_NOTICE not in cur:
+                        head += '<p class="kgp-agent-notice">' + _h.escape(PURCHASE_AGENT_NOTICE) + "</p>"
+                    out[key] = head + cur
+                else:
+                    head = plug_notice_text()
+                    if PURCHASE_AGENT_NOTICE not in cur:
+                        head += "\n" + PURCHASE_AGENT_NOTICE
+                    out[key] = head + ("\n\n" + cur if cur.strip() else "")
+            out["plug_notice"] = True
+        return out
+    except Exception as exc:                                    # noqa: BLE001 — 필터 실패가 등록을 막지 않는다(보류 판정은 따로)
+        logger.warning("[등록] 전압·플러그 필터 실패(그대로): %s", exc)
+        return payload
+
+
 def readiness_message(holds: List[Dict[str, str]]) -> str:
     """「사전검증 — 보류: 이미지 0장·판매가 없음 → PC 확장에서 보강 후」 — 무엇이 모자라고 어디서 채우는지 한 줄."""
     if any(h["fix"] == "block" for h in holds):
@@ -646,6 +696,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("원가·크기를 확인하거나 「그래도 등록」")
     if any(h["fix"] == "rep_image" for h in holds):
         fixes.append("「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」")
+    if any(h["fix"] == "voltage" for h in holds):
+        fixes.append("전압·플러그를 확인하거나 「그래도 등록」")
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
 
 
@@ -854,6 +906,15 @@ class UploadDispatcher:
                 _sh = None
             if _sh:
                 holds.append(_sh)
+        # Y8 전압·플러그(오너 2026-10-05): 모든 SKU가 국내 판매 제외(110V·플러그 G/A/I)면 보류 — 「그래도 등록」으로 푼다.
+        if _is_korea_market(market):
+            try:
+                from src.collectors.voltage_plug import hold as _volt_hold
+                _vh = _volt_hold(pd)
+            except Exception:
+                _vh = None
+            if _vh:
+                holds.append(_vh)
         # Y7(오너 2026-10-04): 쿠팡 대표 사진(등록이 보낼 첫 장) — 긴 변 500px 미만·글자/워터마크면 보류(「그래도 등록」으로 푼다).
         #   못 재면(다운로드·엔진 없음) 막지 않는다.
         if str(market or "").startswith("coupang") and imgs:
@@ -1437,6 +1498,11 @@ class UploadDispatcher:
 
     @staticmethod
     def _payload_for_market(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
+        payload, localized = UploadDispatcher._payload_for_market_core(product_data, market)
+        return korea_voltage_filter(payload, market), localized
+
+    @staticmethod
+    def _payload_for_market_core(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
         payload = dict(product_data or {})
         # v86-N: 드로어 '상세페이지 꾸미기' 블록(detail_blocks)을 이 마켓의 description_html로 렌더.
         #   블록이 있으면(셀러의 명시적 상세 구성) 그것을 상세설명 HTML로 채운다 → 채널 브리지

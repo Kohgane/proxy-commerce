@@ -1408,7 +1408,7 @@ def diagnostics_taobao_provider():
         else:
             r = P.fetch_detail(iid, refresh=refresh)
             row.update(state=r["state"], kind=r["kind"], reason=r["reason"], ms=r.get("ms"), bytes=r.get("bytes"),
-                       reused=r.get("reused"))
+                       reused=r.get("reused"), bypassed=r.get("bypassed"))
             if r.get("raw") is not None:
                 row["raw_text"] = _json.dumps(O.mask(r["raw"]), ensure_ascii=False, indent=1)[:20000]
                 row["api"] = O.parse_api_info((r["raw"] or {}).get("api_info"))
@@ -1440,16 +1440,18 @@ _TAOBAO_PROVIDER_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charse
 <p class="small text-muted" data-role="provider-cap">오늘 {{ used }}/{{ cap }}회(ONEBOUND_DAILY_CAP, 계정 전체) · 단가 {{ unit }} · 같은 상품 24시간 안 재담기는 보관본 재사용(호출 0)</p>
 <form method="get" class="mb-3"><input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="e.tb.cn 링크 또는 상품번호">
 <button class="btn btn-sm btn-outline-secondary mt-2">조회(보관본 있으면 재사용)</button>
-{% if q %}<button class="btn btn-sm btn-outline-secondary mt-2" name="refresh" value="1" data-role="provider-refresh">새로 받기(유료 1회)</button>{% endif %}</form>
+{% if q %}<button class="btn btn-sm btn-outline-secondary mt-2" name="refresh" value="1" data-role="provider-refresh">새로 받기(cache=no · 유료 1회)</button>{% endif %}</form>
 {% if row %}<div class="small" data-role="provider-row">
 <div><strong>{{ row.input }}</strong> → 상품번호 {{ row.item_id or '없음' }}{% if row.how %} ({{ row.how }}){% endif %}</div>
-{% if row.state == 'ok' %}<div data-role="provider-call">{{ '보관본 재사용 — 호출 0' if row.reused else ('item_get 1회 · ' ~ '{:,}'.format(row.bytes or 0) ~ '바이트 · ' ~ (row.ms or 0) ~ 'ms') }}</div>
+{% if row.state == 'ok' %}<div data-role="provider-call">{{ '보관본 재사용 — 호출 0' if row.reused else ('item_get' ~ (' · cache=no(캐시 우회)' if row.bypassed else '') ~ ' · ' ~ '{:,}'.format(row.bytes or 0) ~ '바이트 · ' ~ (row.ms or 0) ~ 'ms') }}</div>
 {% else %}<div class="text-danger" data-role="provider-fail">실패({{ row.kind }}) — {{ row.reason }} → 담기였다면 (c) 수동 카드(mtop 재시도 안 함)</div>{% endif %}
-{% if row.api %}<div data-role="provider-api">api_info: 일일 한도 {{ row.api.max if row.api.max is not none else '못 읽음' }} · 만료 {{ row.api.expires or '못 읽음' }}{% if row.api.raw %} <span class="text-muted">(원문 「{{ row.api.raw }}」)</span>{% endif %}</div>{% endif %}
+{% if row.api %}<div data-role="provider-api">api_info: 오늘 {{ row.api.today if row.api.today is not none else '—' }} · 일일 한도 {{ row.api.max if row.api.max is not none else '못 읽음' }} · 만료 {{ row.api.expires or '못 읽음' }}{% if row.api.raw %} <span class="text-muted">(원문 「{{ row.api.raw }}」)</span>{% endif %}</div>{% endif %}
 {% if row.norm %}{% set p = row.norm.provider %}<details open class="mt-1" data-role="provider-norm"><summary>정규화 결과(뒤 파이프라인이 받는 모양)</summary><pre class="small mb-1" style="white-space:pre-wrap">제목 {{ row.norm.title }}
 가격 {{ p.price_cny }} CNY{% if p.original_price_cny %} (원가 {{ p.original_price_cny }}){% endif %}
 캐시 {{ '예' if p.cache else '아니오' }} · data_update {{ p.data_update or '—' }}{% if p.price_asof %} → 카드에 「가격 기준 {{ p.price_asof }}」{% endif %}
 사진 {{ row.norm.images|length }}장 · 상세 사진 {{ row.norm.detail_images|length }}장 · 동영상 {{ '있음' if p.video_url else '없음' }}
+{% for v, u in (p.option_images or {}).items() %}옵션값 사진 {{ v }} → {{ u }}
+{% endfor %}배송비 {{ p.post_fee }} · 무게 {{ p.item_weight }} · 브랜드 {{ p.brand or '없음' }} · 판매수 {{ p.total_sold if p.total_sold is not none else '—' }}(참고만)
 가게 {{ p.shop_name or '—' }} · 티몰 {{ '예' if p.is_tmall else '아니오' }} · 출고지 {{ p.origin_city or '—' }} · 총재고 {{ p.stock_total if p.stock_total is not none else '—' }}
 {% for o in row.norm.options %}옵션 축 {{ o.name }}({{ o['values']|length }}): {{ o['values']|join(' / ') }}
 {% endfor %}SKU {{ row.norm.skus|length }}개

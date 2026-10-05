@@ -80,7 +80,8 @@ def _keep_provider(item_id: str, user_id: str, payload: dict) -> None:
         ex["detail_specs"] = payload["detail_specs"]
     ex["provider_detail"] = {k: pv.get(k) for k in ("name", "price_cny", "original_price_cny", "origin_city", "is_tmall",
                                                    "video_url", "stock_total", "option_images", "cache", "data_update",
-                                                   "price_asof", "parse_notes")}
+                                                   "price_asof", "parse_notes", "total_sold", "sales", "post_fee",
+                                                   "express_fee", "ems_fee", "freight", "item_weight", "brand")}
     store.update(item_id, seller_ids={user_id}, extra_json=json.dumps(ex, ensure_ascii=False))
 
 

@@ -1981,10 +1981,20 @@ def mobile_list_ctx(item: dict) -> dict:
 
     for _s in skus:
         _ko_label(_s)                                   # 16개 전부 세되, 표는 5줄만
+    # Y8 전압·플러그: 판매 제외 SKU는 뒤로·회색·사유(등록 대상에서 빠짐 — 국내 마켓)
+    _ordered = sorted(skus, key=lambda s: bool(isinstance(s, dict) and s.get("sale_excluded")))
     sku_rows = [{"label": _ko_label(s) or "(이름 없음)",
                  "price": str((s or {}).get("price") or "") if isinstance(s, dict) else "",
-                 "currency": str((s or {}).get("currency") or ex.get("currency") or "") if isinstance(s, dict) else ""}
-                for s in skus[:5]]
+                 "currency": str((s or {}).get("currency") or ex.get("currency") or "") if isinstance(s, dict) else "",
+                 "excluded": str((s or {}).get("sale_excluded") or "") if isinstance(s, dict) else ""}
+                for s in _ordered[:5]]
+    try:
+        from src.collectors.voltage_plug import plug_notice_needed as _pnn
+        from .notice_texts import PLUG_CN_SHORT as _pcs
+        plug_note = _pcs if _pnn(skus) else ""
+    except Exception:
+        plug_note = ""
+    excluded_count = sum(1 for s in skus if isinstance(s, dict) and s.get("sale_excluded"))
 
     ax = enrich_axes(ex)
     has_price = bool(str(product.get("price") or "").strip() not in ("", "0", "0.0", "0.00"))
@@ -2038,6 +2048,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "currency": str(product.get("currency") or ""),
             "coupang_name": cp_name, "coupang_warnings": cp_warn,
             "sku_rows": sku_rows, "sku_count": len(skus), "missing": missing,
+            "plug_note": plug_note, "excluded_count": excluded_count,
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product,
@@ -2055,7 +2066,9 @@ def _m5_auto(ex: dict) -> dict:
                         "아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요."}
     if st == "done":
         c = rec.get("counts") or {}
+        _pd = ex.get("provider_detail") if isinstance(ex.get("provider_detail"), dict) else {}
         return {"state": "done", "line": f"서버가 자동으로 채웠어요 — 사진 {c.get('images', 0)}장 · SKU {c.get('skus', 0)}개 · 상세 이미지 {c.get('detail_images', 0)}장"
+                                         + (" · 동영상 없음" if _pd.get("name") and not _pd.get("video_url") else "")
                                          + (f" · 가격 기준 {rec['price_asof']}" if rec.get("price_asof") else "")}
     try:
         from src.services import taobao_auto as _ta
@@ -3219,6 +3232,28 @@ def collect_ship_ratio_override(item_id):
     return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+@bp.post("/collect/<item_id>/voltage-override")
+def collect_voltage_override(item_id):
+    """Y8 전압·플러그: 「전압/플러그 불일치」(모든 SKU 국내 판매 제외)를 **그래도 등록**으로 푼다. 누가·언제·무슨 사유였는지 남긴다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    reasons = sorted({str(k.get("sale_excluded")) for k in (ex.get("skus") or []) if isinstance(k, dict) and k.get("sale_excluded")})
+    rec = {"at": datetime.now(timezone.utc).isoformat(), "by": str(session.get("email") or _seller_id()),
+           "line": " · ".join(reasons)}
+    ex["voltage_override"] = rec
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    logger.warning("[전압·플러그] 그래도 등록 — item=%s by=%s · %s", item_id, rec["by"], rec["line"])
+    return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
 def coupang_exposure_data(item: dict) -> dict:
     """Y7(오너 2026-10-04) — 「쿠팡 노출」: 쿠팡 검색 카드(대표 1장 · 상품명 2줄 · 가격) + 상세 상단 줄(대표+추가 이미지) +
     대표 사진 자동 판정. **등록이 보낼 목록 그대로**(`effective_images` — 번역본 사용·대표 지정·프로모션 제외 반영)."""
@@ -3320,6 +3355,14 @@ def collect_auto_enrich_state(item_id):
     except Exception:
         ex = {}
     info = _m5_auto(ex) or {"state": "off", "line": ""}
+    if info.get("state") == "done":                     # Y8: 담았어요 카드엔 플러그 짧은 줄도(M5는 자기 줄이 따로 있다)
+        try:
+            from src.collectors.voltage_plug import plug_notice_needed as _pnn
+            from .notice_texts import PLUG_CN_SHORT as _pcs
+            if _pnn(ex.get("skus")):
+                info = dict(info, line=info["line"] + f" · {_pcs}", plug_note=_pcs)
+        except Exception:
+            pass
     return jsonify({"ok": True, **info})
 
 
@@ -3415,9 +3458,13 @@ def collect_prevalidate():
             #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
             try:
                 _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
-                for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override", "option_split", "options_src"):
+                for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override", "option_split", "options_src",
+                           "voltage_split", "voltage_override"):
                     if _sx.get(_k):
                         product_data[_k] = _sx[_k]
+                # Y8 전압·플러그: 분리됐으면 SKU 판매 판정(sale_excluded·plug_notice)은 저장본이 정본
+                if (_sx.get("voltage_split") or {}).get("state") == "split" and isinstance(_sx.get("skus"), list):
+                    product_data["skus"] = _sx["skus"]
             except Exception:
                 pass
         if data.get("refresh_from_store") and data.get("item_id"):
