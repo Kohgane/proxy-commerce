@@ -1,0 +1,48 @@
+{% extends "_base_app.html" %}
+{% block og_title %}{{ brand_name_ko|default('고가브릿지', true) }} — {% block page_title %}{% endblock %}{% endblock %}
+{% block head %}
+<link rel="privacy-policy" href="/privacy">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  body.bg-light { background: var(--paper) !important; color: var(--ink); margin: 0; line-height: 1.7; }
+  .pub-nav { position: sticky; top: 0; z-index: 20; background: var(--ink); border-bottom: 1px solid color-mix(in srgb, var(--gold) 25%, transparent); }
+  .pub-nav .in { max-width: 920px; margin: 0 auto; padding: 0 16px; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pub-nav .brand { display: flex; align-items: center; gap: 8px; color: var(--cream-on-dark, var(--cream)); text-decoration: none; font-weight: 800; }
+  .pub-nav .brand img { width: 28px; height: 28px; border-radius: 7px; }
+  .pub-nav .links { display: flex; gap: 14px; font-size: .88rem; overflow-x: auto; }
+  .pub-nav .links a { color: color-mix(in srgb, var(--cream-on-dark, var(--cream)) 80%, transparent); text-decoration: none; white-space: nowrap; }
+  .pub-nav .links a.on { color: var(--gold-bright, var(--gold)); font-weight: 700; }
+  .pub-main { max-width: 920px; margin: 0 auto; padding: var(--space-5, 40px) 16px var(--space-4, 32px); overflow-wrap: anywhere; }
+  .pub-main .kick { font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); font-weight: 700; }
+  .pub-main h1 { font-family: var(--font-display); font-weight: 900; letter-spacing: -.03em; font-size: clamp(28px, 6vw, 44px); margin: 6px 0 10px; }
+  .pub-main h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; margin: 28px 0 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .pub-main .lead { color: var(--text); font-size: 1.02rem; }
+  .pub-main .meta { color: var(--text-muted); font-size: .85rem; }
+  .pub-main ul, .pub-main ol { padding-left: 1.2em; }
+  .pub-main table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  .pub-main th, .pub-main td { border-top: 1px solid var(--border); padding: 8px 6px; text-align: left; vertical-align: top; }
+  .pub-card { background: var(--surface, #fff); border: 1px solid var(--border); border-radius: var(--radius-lg, 16px); padding: 18px; box-shadow: var(--shadow-sm); }
+  .pub-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: var(--radius-pill);
+    background: var(--orange); color: var(--on-accent); font-weight: 700; text-decoration: none; }
+  .pub-btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  .pub-foot { background: var(--cream); border-top: 1px solid var(--border); }
+  .pub-foot .in { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+</style>
+{% endblock %}
+{% block topnav %}{% endblock %}
+{% block main_class %}{% endblock %}
+{% block app_footer %}{% endblock %}
+{% block content %}
+<nav class="pub-nav"><div class="in">
+  <a class="brand" href="/"><img src="/seller/static/favicon.svg?v=183" alt="">{{ brand_name_ko|default('고가브릿지', true) }}</a>
+  <div class="links">
+    <a href="/pricing" class="{{ 'on' if page == 'pricing' }}">플랜</a>
+    <a href="/terms" class="{{ 'on' if page == 'terms' }}">약관</a>
+    <a href="/privacy" class="{{ 'on' if page == 'privacy' }}">개인정보</a>
+    <a href="/contact" class="{{ 'on' if page == 'contact' }}">문의</a>
+    <a href="/auth/login">로그인</a>
+  </div>
+</div></nav>
+<main class="pub-main" data-role="public-{{ page }}">{% block page %}{% endblock %}</main>
+<footer class="pub-foot"><div class="in">{% set foot_dark = False %}{% include "public/_site_footer.html" %}</div></footer>
+{% endblock %}

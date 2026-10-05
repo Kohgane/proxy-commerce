@@ -270,6 +270,10 @@
       <span class="mx-1">·</span>
       <a href="/terms" class="text-decoration-none text-secondary">이용약관</a>
     </div>
+    {# L1: 공통 푸터의 사업자 정보 — 콘솔은 사이드바 맨 아래(약관·개인정보 링크는 바로 위 줄이 이미 있어 조각의 링크 줄은 끔).
+       사이드바는 제 스크롤(100vh)이라 본문 높이를 늘리지 않는다(「한 화면」 계약 v40s6h·s6i 유지). 모바일은 드로어 안.
+       단독 blueprint 앱(테스트)에선 조각이 없어도 렌더. #}
+    <div class="mt-2 pt-2 border-top">{% set foot_dark = False %}{% set foot_links = False %}{% include "public/_site_footer.html" ignore missing %}</div>
   </nav>
 
   <div class="console-main">

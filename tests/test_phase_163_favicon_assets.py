@@ -74,8 +74,8 @@ def test_public_templates_use_cache_busted_favicon_links():
         Path("src/auth/templates/auth/diagnostic_token_issued.html"),
         Path("src/auth/templates/auth/reset.html"),
         Path("src/onboarding/templates/onboarding.html"),
-        Path("src/legal/templates/legal/privacy.html"),
-        Path("src/legal/templates/legal/terms.html"),
+        # L1(2026-10-05): /privacy·/terms 본문이 public_site로 옮겨 _base_app.html을 상속(파비콘·테마색은 그 머리말)
+        Path("src/templates/_base_app.html"),
         Path("src/shop/templates/shop/base.html"),
     ]
     for path in targets:

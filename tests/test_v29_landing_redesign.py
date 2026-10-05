@@ -35,13 +35,13 @@ def test_landing_scroll_narrative_sections(client):
     assert "IntersectionObserver" in TPL
     assert "prefers-reduced-motion" in TPL
     # 콘솔 미리보기 샷(평면 금지 — 제품이 곧 데모)
-    assert 'class="shot ' in TPL
+    assert 'public/_l1_landing.html' in TPL                 # L1(2026-10-05): 가짜 KPI 콘솔 목업 → 실제 화면 3장
 
 
 def test_landing_social_proof_real_no_fake_numbers(client):
     html = client.get("/").get_data(as_text=True)
     # 지원 마켓(실데이터) 노출
-    for m in ("쿠팡", "스마트스토어", "Shopify", "Amazon"):
+    for m in ("쿠팡", "스마트스토어", "Shopify", "WooCommerce"):   # L1: 지금 연동되는 마켓만(Amazon은 미연동)
         assert m in html
     # 가짜 셀러/수집 수치 날조 금지(예: "1,234명 셀러", "10,000+ 수집")
     assert not re.search(r"[\d,]{2,}\s*명", html), "가짜 셀러 수 노출"
@@ -53,7 +53,7 @@ def test_landing_core_ctas_present(client):
     assert "무료로 시작" in html              # 무료 시작 퍼널
     assert "For Beginners" in html             # 초보 온보딩 진입
     assert "/seller/start" in html
-    assert "/seller/billing" in html           # 요금제(가짜 혜택 없이 안내)
+    assert "/pricing" in html                  # 요금제(가짜 혜택 없이 안내) — L1: 공개 /pricing
 
 
 def test_landing_tokens_single_source_no_hardcoded_brand_hex():

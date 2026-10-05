@@ -1,0 +1,25 @@
+{# L1 공통 푸터 — 랜딩·공개 페이지·셀러 콘솔. env가 빈 칸은 숨긴다(플레이스홀더·env 이름 노출 0). foot_dark=True면 먹 배경용. #}
+{% set _si = site_info or {} %}
+<div class="site-foot{{ ' is-dark' if foot_dark else '' }}" data-role="site-footer">
+  {% if foot_links is not defined or foot_links %}<nav class="site-foot-links" aria-label="서비스 정보">
+    <a href="/pricing">플랜</a><a href="/terms">이용약관</a><a href="/privacy"><strong>개인정보처리방침</strong></a><a href="/contact">문의</a>
+  </nav>{% endif %}
+  <p class="site-foot-biz">
+    <span>상호 {{ _si.name }}</span><span>대표 {{ _si.ceo }}</span><span data-role="biz-reg-no">사업자등록번호 {{ _si.reg_no }}</span>
+    {% if _si.mailorder_no %}<span data-role="biz-mailorder">통신판매업신고번호 {{ _si.mailorder_no }}</span>{% endif %}
+    {% if _si.address %}<span data-role="biz-address">주소 {{ _si.address }}</span>{% endif %}
+    {% if _si.email %}<span data-role="biz-email">문의 <a href="mailto:{{ _si.email }}">{{ _si.email }}</a></span>{% endif %}
+  </p>
+  <p class="site-foot-ver" data-role="legal-version">{{ _si.legal_label }}</p>
+</div>
+<style>
+  .site-foot { font-size: .8rem; line-height: 1.7; color: var(--text-muted); padding: var(--space-3, 24px) 0; }
+  .site-foot a { color: inherit; }
+  .site-foot-links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 6px; }
+  .site-foot-links a { text-decoration: none; font-weight: 600; }
+  .site-foot-links a:hover { color: var(--teal); }
+  .site-foot-biz { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0; overflow-wrap: anywhere; }
+  .site-foot-ver { margin: 4px 0 0; }
+  .site-foot.is-dark { color: color-mix(in srgb, var(--cream-on-dark, var(--cream)) 60%, transparent); }
+  .site-foot.is-dark .site-foot-links a:hover { color: var(--gold-bright, var(--gold)); }
+</style>

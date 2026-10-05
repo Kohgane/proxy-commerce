@@ -1,0 +1,21 @@
+{% extends "public/_public_base.html" %}
+{% block title %}플랜{% endblock %}{% block page_title %}플랜{% endblock %}
+{% block page %}
+<div class="kick">Pricing</div>
+<h1>플랜</h1>
+<p class="lead" data-role="beta-line"><strong>지금은 전 기능 무료(베타)입니다.</strong> 결제 수단은 아직 붙어 있지 않아요 — 요금이 생기면 30일 전에 알려 드립니다.</p>
+<div class="pub-card" style="overflow-x:auto">
+<table data-role="plan-table">
+  <thead><tr><th></th><th>Free (베타)</th><th>Pro</th></tr></thead>
+  <tbody>
+    <tr><th>가격</th><td>무료</td><td data-role="pro-price">준비 중</td></tr>
+    <tr><th>월 수집</th><td data-role="free-items">{{ '{:,}'.format(free_items) }}건</td><td>준비 중</td></tr>
+    <tr><th>연동 마켓</th><td>2개</td><td>준비 중</td></tr>
+    <tr><th>이미지 글자 번역</th><td>월 한도 안에서(서비스 전체 예산 기준)</td><td>준비 중</td></tr>
+    <tr><th>등록 가능한 마켓</th><td colspan="2">{{ live|join(' · ') }}</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="meta">Pro는 가격·한도를 정하는 중이라 결제 버튼이 없습니다. 바뀌면 이 페이지와 이용약관에 먼저 적습니다.</p>
+<p style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px"><a class="pub-btn" href="/auth/signup">무료로 시작</a><a class="pub-btn ghost" href="/contact">문의</a></p>
+{% endblock %}

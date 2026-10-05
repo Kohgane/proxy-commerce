@@ -213,10 +213,11 @@
       <a href="#features">{{ 'Collect' if EN else '제품 수집' }}</a>
       <a href="#markets">{{ 'Multi-market' if EN else '멀티마켓 등록' }}</a>
       <a href="#editing">{{ 'Translate & edit' if EN else '번역·편집' }}</a>
-      <a href="#pricing">{{ 'Pricing' if EN else '요금' }}</a>
+      <a href="/pricing">{{ 'Pricing' if EN else '요금' }}</a>
+      <a href="/contact">{{ 'Contact' if EN else '문의' }}</a>
       <a href="/auth/login">{{ 'Log in' if EN else '로그인' }}</a>
     </div>
-    <a href="/seller/start" class="nav-cta">{{ 'Start free' if EN else '무료로 시작' }}</a>
+    <a href="/auth/signup" class="nav-cta">{{ 'Start free' if EN else '무료로 시작' }}</a>
   </div>
 </nav>
 
@@ -231,8 +232,8 @@
   <p class="sub">해외 상품을 수집하고, 번역·편집해서, 멀티마켓에 한 번에 올리는 1인 셀러의 다리.</p>
   {% endif %}
   <div class="hero-cta">
-    <a href="/seller/start" class="btn-gold">{{ 'Start free now' if EN else '지금 무료로 시작' }}</a>
-    <a href="/seller/" class="btn-line">{{ 'See the collector →' if EN else '고가수집기 둘러보기 →' }}</a>
+    <a href="/auth/signup" class="btn-gold">{{ 'Start free now' if EN else '지금 무료로 시작' }}</a>
+    <a href="/contact" class="btn-line">{{ 'Contact us →' if EN else '문의하기 →' }}</a>
   </div>
   <div class="trust">{{ 'No card · Coupang · SmartStore · Shopify · Multishop' if EN else '신용카드 없이 시작 · 쿠팡 · 스마트스토어 · Shopify · 멀티샵' }}
     · <a href="/seller/start">{{ 'For Beginners' if EN else 'For Beginners · 처음이신가요?' }}</a></div>
@@ -240,33 +241,8 @@
 </div></header>
 <div class="hero-fade"></div>
 
-<!-- CONSOLE SHOT -->
-<section class="shot-sec"><div class="wrap">
-  <div class="shot reveal" aria-hidden="true">
-    <div class="shot-bar"><i></i><i></i><i></i><span class="addr">{{ brand_name_ko|default('고가브릿지', true) }} · 셀러 콘솔</span></div>
-    <div class="shot-body">
-      <div class="side">
-        <div class="si"><span class="ic"></span>{{ 'Home' if EN else '홈(대시보드)' }}</div>
-        <div class="si"><span class="ic"></span>{{ 'AI sourcing' if EN else 'AI 소싱·등록' }}</div>
-        <div class="si"><span class="ic"></span>{{ 'Collect' if EN else '상품 수집' }}</div>
-        <div class="si on"><span class="ic"></span>{{ 'Collected' if EN else '수집한 상품' }}</div>
-        <div class="si"><span class="ic"></span>{{ 'Orders' if EN else '주문 관리' }}</div>
-        <div class="si"><span class="ic"></span>{{ 'Markets' if EN else '마켓 연동' }}</div>
-      </div>
-      <div class="main">
-        <h3 class="serif">{{ 'Collected items' if EN else '수집 이력' }}</h3>
-        <div class="mlead">{{ 'Collected via extension · bookmarklet · URL' if EN else '크롬 확장 · 북마클릿 · URL로 수집된 상품' }}</div>
-        <div class="kpis">
-          <div class="kpi"><div class="l">{{ 'Total' if EN else '총 수집' }}</div><div class="v">128</div></div>
-          <div class="kpi accent"><div class="l">{{ 'Today' if EN else '오늘' }}</div><div class="v">12</div></div>
-          <div class="kpi"><div class="l">{{ 'Domains' if EN else '도메인' }}</div><div class="v">9</div></div>
-        </div>
-        <div class="prow"><div class="thumb"></div><div class="t"><b>PACKS STROLL BAG — 吉田カバン</b><span>yoshidakaban.com · {{ 'extension' if EN else '확장 수집' }}</span></div><span class="tag">{{ 'translated' if EN else '번역 완료' }}</span></div>
-        <div class="prow"><div class="thumb"></div><div class="t"><b>{{ 'Philips power strip 3-outlet 2m' if EN else '필립스 멀티탭 3구 2m 세트' }}</b><span>temu.com · {{ 'price check' if EN else '가격 확인 필요' }}</span></div><span class="tag warn">{{ 'check' if EN else '확인 필요' }}</span></div>
-      </div>
-    </div>
-  </div>
-</div></section>
+<!-- L1: 요약 · 흐름 · 실측 숫자 · 실제 화면 3장(가짜 KPI 목업 제거 — 2026-10-05) -->
+{% include "public/_l1_landing.html" %}
 
 <!-- 3-FEATURE -->
 <section class="block" id="features"><div class="wrap">
@@ -317,19 +293,8 @@
   <div class="visual reveal"><img src="{{ ICON }}" alt=""><div class="cap">{{ 'Metal type on digital hanji' if EN else '디지털 한지 위의 금속활자' }}</div></div>
 </div></section>
 
-<!-- SUPPORTED MARKETS -->
-<section class="block"><div class="wrap">
-  <div class="sec-head reveal">
-    <div class="kick">Connects with</div>
-    <h2 class="serif">{{ 'Your markets, supported' if EN else '주요 마켓을 지원합니다' }}</h2>
-    <p>{{ 'Connect each market with your own API keys.' if EN else '각 마켓은 본인 API 키로 직접 연동합니다.' }}</p>
-  </div>
-  <div class="feat">
-    <a href="/seller/markets/connect" class="fcard reveal" style="text-decoration:none;color:inherit;"><h4 class="serif">{{ 'Domestic' if EN else '국내 마켓' }}</h4><p>{{ 'Coupang · SmartStore · 11st' if EN else '쿠팡 · 스마트스토어 · 11번가' }}</p><div class="ln"></div></a>
-    <a href="/seller/markets/connect" class="fcard reveal" style="text-decoration:none;color:inherit;"><h4 class="serif">{{ 'Global' if EN else '해외 마켓' }}</h4><p>Shopify · WooCommerce · Amazon</p><div class="ln"></div></a>
-    <a href="/seller/markets/connect" class="fcard reveal" style="text-decoration:none;color:inherit;"><h4 class="serif">{{ 'Multishop' if EN else '멀티샵' }}</h4><p>{{ 'Kogane Multishop relay' if EN else '코가네멀티샵 연동' }}</p><div class="ln"></div></a>
-  </div>
-</div></section>
+<!-- L1: 연동 마켓 · 준비 중(정직 표기) -->
+{% include "public/_l1_markets.html" %}
 
 <!-- PRICING -->
 <section class="block" id="pricing" style="background:var(--cream);"><div class="wrap">
@@ -343,8 +308,8 @@
       <span><i class="bi bi-check-lg"></i> {{ 'Your own market keys' if EN else '내 마켓 키로 연동' }}</span>
     </div>
     <div class="cta">
-      <a href="/seller/start" class="btn-gold">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
-      <a href="/seller/billing" class="btn-line" style="color:var(--ink);border-color:var(--border);">{{ 'See plans' if EN else '요금제 보기' }}</a>
+      <a href="/auth/signup" class="btn-gold">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
+      <a href="/pricing" class="btn-line" style="color:var(--ink);border-color:var(--border);">{{ 'See plans' if EN else '요금제 보기' }}</a>
     </div>
   </div>
 </div></section>
@@ -354,7 +319,7 @@
   <div class="band reveal">
     <h2 class="serif">{{ 'Ready to bridge?' if EN else '다리를 놓을 준비가 되셨나요?' }}</h2>
     <p>{{ 'Sign up → first collect → first upload — all today.' if EN else '가입 → 첫 수집 → 첫 업로드까지, 오늘 안에.' }}</p>
-    <a href="/seller/start" class="btn-ink">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
+    <a href="/auth/signup" class="btn-ink">{{ 'Start free' if EN else '무료로 시작하기' }}</a>
   </div>
 </div></section>
 
@@ -362,14 +327,14 @@
   <div class="inner">
     <div class="foot-brand"><img src="{{ ICON }}" alt="">{{ brand_name_ko|default('고가브릿지', true) }} · {{ BRAND }}</div>
     <div class="d-flex flex-wrap align-items-center gap-3">
+      <a href="/seller/">{{ 'Seller console' if EN else '셀러 콘솔' }}</a>
       <a href="/seller/about">{{ 'About' if EN else '소개' }}</a>
       <a href="/seller/start">{{ 'Get started' if EN else '시작하기' }}</a>
-      <a href="/privacy">개인정보처리방침</a>
-      <a href="/terms">이용약관</a>
       <span>{{ 'Overseas reselling · multi-market SaaS · © 2026' if EN else '해외 상품 구매대행 · 멀티마켓 SaaS · © 2026' }}</span>
       {% if footer_version %}<span class="small">{{ footer_version }}</span>{% endif %}
     </div>
   </div>
+  <div class="inner">{% set foot_dark = True %}{% include "public/_site_footer.html" %}</div>
 </footer>
 </div>
 

@@ -78,7 +78,7 @@ def test_no_emoji_no_globe_iconset():
 
 def test_preserves_hooks_and_real_data(client):
     html = client.get("/").get_data(as_text=True)
-    for m in ("쿠팡", "스마트스토어", "Shopify", "Amazon"):
+    for m in ("쿠팡", "스마트스토어", "Shopify", "WooCommerce"):   # L1: 지금 연동되는 마켓만(Amazon은 미연동)
         assert m in html
-    assert "For Beginners" in html and "/privacy" in html and "/terms" in html and "/seller/billing" in html
+    assert "For Beginners" in html and "/privacy" in html and "/terms" in html and "/pricing" in html   # L1: 공개 /pricing
     assert 'href="/auth/login"' in html and "로그인" in html

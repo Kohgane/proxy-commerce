@@ -50,7 +50,7 @@ TESTS = ROOT / "tests"
 _READERS = {"getsource", "read_text", "read", "open"}
 
 #: 실측 상한(2026-09-21). **내려갈 때만 고친다** — 올리는 커밋은 곧 핀을 들여온 커밋이다.
-PIN_CEILING = 297
+PIN_CEILING = 296
 #: `inspect.getsource`는 목표가 **0**이다(오늘 일곱을 만든 도구).
 GETSOURCE_CEILING = 35
 

@@ -536,3 +536,24 @@ def test_share_card_polls_auto_result_with_code(monkeypatch):
     A.run(seller, iid)                                                    # 프록시 미설정 → 조용한 폴백 없이 실패 표기
     d = c.get(f"/seller/collect/{iid}/auto-enrich").get_json()
     assert d["state"] == "manual" and d["kind"] == "proxy_unset" and d["line"].startswith("자동 수집 실패(proxy_unset) — 프록시 미설정")
+
+
+def test_share_route_card_shows_auto_block_when_kicked(monkeypatch):
+    """L1 캡처 중 발견: share_collect_core가 `auto_enrich`를 결과에 안 실어 담았어요 카드가 자동 수집 줄을 한 번도 못 띄웠다."""
+    from urllib.parse import quote
+    from src.services import taobao_auto as A
+    monkeypatch.setattr(A, "kick", lambda u, i: True)
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "owner-share-auto"
+    text = "【淘宝】迷你除湿机 https://item.taobao.com/item.htm?id=667810641388 点击链接直接打开"
+    h = c.get("/seller/collect/share?v=2&text=" + quote(text)).get_data(as_text=True)
+    assert 'data-role="share-auto"' in h and 'data-role="share-enrich"' not in h
+    # 끝나면 채워진 검수 화면으로 — 공유 주소 다시 불러오기(=중복 담기 「이미 담은 상품이에요」) 금지
+    from pathlib import Path
+    part = Path("src/seller_console/templates/_share_auto.html").read_text(encoding="utf-8")
+    assert "location.replace('/seller/m/item/'" in part and "location.reload()" not in part
+    monkeypatch.setattr(A, "kick", lambda u, i: False)                     # 꺼져 있으면 기존 안내 그대로
+    h2 = c.get("/seller/collect/share?v=2&text=" + quote(text.replace("667810641388", "667810641399"))).get_data(as_text=True)
+    assert 'data-role="share-auto"' not in h2 and 'data-role="share-enrich"' in h2
