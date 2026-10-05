@@ -114,7 +114,9 @@ def test_proxy_only_on_mtop_sessions(monkeypatch):
     # 이 env를 읽는 곳은 mtop 모듈 하나뿐 — 쿠팡·네이버·릴레이·업로더는 안 탄다
     hits = [p for p in Path("src").rglob("*.py") if "TAOBAO_PROXY_URL" in p.read_text(encoding="utf-8")]
     assert sorted(str(p) for p in hits) == ["src/collectors/taobao_mtop.py", "src/services/taobao_auto.py"]
-    assert "proxies" not in Path("src/market_relay.py").read_text(encoding="utf-8")
+    # 프록시 세션을 만드는 모듈(taobao_mtop)을 들여오는 곳 = 진단 화면·자동 경로뿐 — 마켓 업로더·릴레이는 안 들여온다
+    from tests._ast_probe import importers_of
+    assert importers_of("taobao_mtop") == ["src/dashboard/admin_views.py", "src/services/taobao_auto.py"]
 
 
 def test_diag_page_has_proxy_radio_and_never_prints_credentials(monkeypatch):

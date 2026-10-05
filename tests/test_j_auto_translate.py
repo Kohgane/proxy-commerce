@@ -123,7 +123,9 @@ def test_extension_collect_runs_rules_then_queues(monkeypatch):
     assert o["values_ko"][0] == kp.option_value(VRSUK[0])["value"]               # 저장 전에 규칙이 돌았다
     assert oq.counts()["queued"] == 1                                             # 남은 값 → 큐(워커는 테스트에서 끔)
     from tests._ast_probe import calls_in
-    assert "_auto_translate_options" in calls_in(ext.collect_enrich)              # 보강 완료 자리도 같은 입구
+    # Z3 자동 경로(2026-10-05): `/enrich` 본체를 `apply_enrich`로 뺐다 — 확장·서버 mtop 보강이 같은 함수를 지난다
+    assert "apply_enrich" in calls_in(ext.collect_enrich)
+    assert "_auto_translate_options" in calls_in(ext.apply_enrich)               # 보강 완료 자리도 같은 입구
 
 
 # ③ 큐: 상한·일시정지 ─────────────────────────────────────────────────────
