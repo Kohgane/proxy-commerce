@@ -948,11 +948,17 @@ def collect_enrich():
             ids.add(str(_u.email))
     except Exception:
         pass
+    out, code = apply_enrich(item_id, ids, seller_id_val, data)
+    return jsonify(out), code
+
+
+def apply_enrich(item_id: str, ids: set, seller_id_val: str, data: dict) -> tuple:
+    """`/enrich` 병합 본체 — 확장(브라우저)이 보낸 값과 Z3 서버 mtop 경로가 **같은 병합**을 지난다. → `(응답 dict, HTTP 상태)`."""
     import json as _json
     from src.seller_console.collect_history_store import get as _get, update as _update
     item = _get(item_id, seller_ids=ids)
     if not item:
-        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+        return {"ok": False, "error": "항목을 찾을 수 없습니다."}, 404
     try:
         extra = _json.loads(item.get("extra_json") or "{}")
     except Exception:
@@ -974,7 +980,7 @@ def collect_enrich():
             extra["page_diag"] = _clean_page_diag(data.get("page_diag"))
         _update(item_id, seller_ids=ids, extra_json=_json.dumps(extra, ensure_ascii=False))
         logger.warning("[enrich] item=%s %s", item_id, _wall)
-        return jsonify({"ok": False, "item_id": item_id, "error": _wall, "requeued": True}), 200
+        return {"ok": False, "item_id": item_id, "error": _wall, "requeued": True}, 200
     if isinstance(data.get("detail_images"), list):
         data["detail_images"] = real_detail_images(data["detail_images"])
     if isinstance(extra.get("detail_images"), list):
@@ -1162,8 +1168,8 @@ def collect_enrich():
     st = extra.get("collect_status") or {}
     # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
     logger.info("[enrich] item=%s changed=%s status=%s rep=%s", item_id, changed, st.get("status"), bool(rep))
-    return jsonify({"ok": bool(ok), "item_id": item_id, "changed": changed,
-                    "status": st.get("status"), "filled": st.get("filled"), "total": st.get("total")})
+    return {"ok": bool(ok), "item_id": item_id, "changed": changed,
+            "status": st.get("status"), "filled": st.get("filled"), "total": st.get("total")}, 200
 
 
 @extension_bp.post("/extension")

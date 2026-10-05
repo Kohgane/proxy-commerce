@@ -1,0 +1,2 @@
+var x5referer = encodeURIComponent(window.location.href);
+window.location.href = "https://h5api.m.taobao.com:443/h5/mtop.taobao.detail.getdetail/6.0/_____tmd_____/page/set_x5referer?rand=Q9xk2TfR&uuid=8b1f0c3e5d7a4e21&_lgt_=a1b2c3d4e5f60718&x5referer=" + x5referer;

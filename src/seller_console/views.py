@@ -2039,7 +2039,25 @@ def mobile_list_ctx(item: dict) -> dict:
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product,
-            "risks": risks, **_m5_ship(product)}
+            "risks": risks, "auto_enrich": _m5_auto(ex), **_m5_ship(product)}
+
+
+def _m5_auto(ex: dict) -> dict:
+    """Z3 자동 경로(오너 2026-10-05) — 서버 mtop 보강 상태 한 줄. 켜졌을 때만 「채우는 중」, 실패면 사유 + (c) 수동."""
+    rec = ex.get("auto_enrich") if isinstance(ex.get("auto_enrich"), dict) else {}
+    st = str(rec.get("state") or "")
+    if st == "manual":
+        return {"state": "manual", "line": f"자동 수집 실패 — {rec.get('reason') or '사유 없음'}. 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요."}
+    if st == "done":
+        c = rec.get("counts") or {}
+        return {"state": "done", "line": f"서버가 자동으로 채웠어요 — 사진 {c.get('images', 0)}장 · SKU {c.get('skus', 0)}개 · 상세 이미지 {c.get('detail_images', 0)}장"}
+    try:
+        from src.services import taobao_auto as _ta
+        if _ta.enabled() and str(ex.get("enrich_state") or "") == "pending":
+            return {"state": "running", "line": "서버가 사진·옵션을 채우는 중이에요(몇 초 — 새로고침하면 보여요)."}
+    except Exception:
+        pass
+    return {}
 
 
 def _m5_ship(product: dict) -> dict:
