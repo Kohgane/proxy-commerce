@@ -19,6 +19,9 @@
 | 라쿠텐 | rakuten.co.jp · rakuten.com | ✓ | ✓ | ✓ | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 미검증 | — |
 | 야후쇼핑(재팬) | shopping.yahoo.co.jp · paypaymall.yahoo.co.jp | ✓ | ✓ | ✓ | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 미검증 | — |
 | 요시다카반 | yoshidakaban.com | ✓ | ✓ | ✓ | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 미검증 | — |
+| 올리브영 | oliveyoung.co.kr | ✓ | ✓ | ✓ | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 미검증 | — |
+| 스마트스토어 | smartstore.naver.com · brand.naver.com | ✓ | ✓ | ✓ | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 미검증 | — |
+| 쿠팡 | coupang.com(국내) | ✓ | ✓ | ✓ | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 픽스처 필요 | 미검증 | — |
 
 ## 오너 스냅샷 요청 목록 (미검증 마켓)
 각 사이트의 **상품 상세 1곳**에서 확장 팝업 '진단 스냅샷 저장'으로 스냅샷을 커밋하면 하네스 계약을 추가한다.
@@ -33,6 +36,9 @@
 - [ ] **라쿠텐** (`rakuten.co.jp · rakuten.com`) → `fixtures/realpages/rakuten-detail.html` + `.expected.json`
 - [ ] **야후쇼핑(재팬)** (`shopping.yahoo.co.jp · paypaymall.yahoo.co.jp`) → `fixtures/realpages/yahoo-detail.html` + `.expected.json`
 - [ ] **요시다카반** (`yoshidakaban.com`) → `fixtures/realpages/yoshida-detail.html` + `.expected.json`
+- [ ] **올리브영** (`oliveyoung.co.kr`) → `fixtures/realpages/oliveyoung-detail.html` + `.expected.json`
+- [ ] **스마트스토어** (`smartstore.naver.com · brand.naver.com`) → `fixtures/realpages/smartstore-detail.html` + `.expected.json`
+- [ ] **쿠팡** (`coupang.com(국내)`) → `fixtures/realpages/coupang-detail.html` + `.expected.json`
 
 ## 수리 우선순위 (× 칸 중 3핵심=제목·가격·갤러리 미달)
 픽스처 도착 순서대로 마켓당 1커밋(하네스 계약 동반)으로 어댑터/제네릭 보강. 현재 검증 완료: **아마존·테무(완전), 알리(부분·상세/리뷰 남음)**.

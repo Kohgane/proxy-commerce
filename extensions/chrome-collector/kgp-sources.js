@@ -35,6 +35,11 @@
     { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", re: /(^|\.)rakuten\.(co\.jp|com)$/, currency: "JPY" },
     { id: "yahoo", label: "야후쇼핑(재팬)", re: /(shopping\.yahoo\.co\.jp|paypaymall\.yahoo\.co\.jp)$/, currency: "JPY" },
     { id: "yoshida", label: "요시다카반", re: /(^|\.)yoshidakaban\.com$/, currency: "JPY" },
+    // R1(오너 2026-10-05 역직구): 한국 소싱처 — 올리브영(국내몰만, global.oliveyoung.com=USD 제외) ·
+    //   스마트스토어/브랜드스토어 · 쿠팡(국내 www·m만, tw.coupang.com=대만 TWD 제외). 셋 다 원화 단일.
+    { id: "oliveyoung", label: "올리브영", re: /(^|\.)oliveyoung\.co\.kr$/, currency: "KRW" },
+    { id: "smartstore", label: "스마트스토어", re: /^(m\.)?(smartstore|brand)\.naver\.com$/, currency: "KRW" },
+    { id: "coupang", label: "쿠팡", re: /^(www\.|m\.)?coupang\.com$/, currency: "KRW" },
   ];
 
   // URL/문자열 → 호스트명(소문자). 쿼리·해시·경로·프로토콜 제거(트래킹 파라미터 자연 무시).

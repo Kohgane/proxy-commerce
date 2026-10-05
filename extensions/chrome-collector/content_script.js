@@ -2168,6 +2168,9 @@ const _KGP_LEGACY_SOURCES = [
   { id: "rakuten", label: "라쿠텐(Rakuten Fashion 포함)", test: (h) => /(^|\.)rakuten\.(co\.jp|com)$/.test(h) },
   { id: "yahoo", label: "야후쇼핑(재팬)", test: (h) => /(shopping\.yahoo\.co\.jp|paypaymall\.yahoo\.co\.jp)$/.test(h) },
   { id: "yoshida", label: "요시다카반", test: (h) => /(^|\.)yoshidakaban\.com$/.test(h) },
+  { id: "oliveyoung", label: "올리브영", test: (h) => /(^|\.)oliveyoung\.co\.kr$/.test(h) },          // R1 한국 소싱처
+  { id: "smartstore", label: "스마트스토어", test: (h) => /^(m\.)?(smartstore|brand)\.naver\.com$/.test(h) },
+  { id: "coupang", label: "쿠팡", test: (h) => /^(www\.|m\.)?coupang\.com$/.test(h) },
 ];
 const KGP_DEFAULT_SOURCES = (typeof KGPSources !== "undefined" && KGPSources.SOURCES)
   ? KGPSources.SOURCES.map((s) => ({ id: s.id, label: s.label, test: (h) => s.re.test(h) }))

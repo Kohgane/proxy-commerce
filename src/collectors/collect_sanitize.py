@@ -66,6 +66,10 @@ _DOMAIN_CURRENCY = [
     (re.compile(r"(^|\.)amazon\.ca$", re.I), "CAD"),
     (re.compile(r"(^|\.)amazon\.com\.au$", re.I), "AUD"),
     (re.compile(r"(^|\.)(taobao|tmall|1688)\.com$", re.I), "CNY"),
+    # R1(2026-10-05 역직구): 한국 소싱처 — 원화 단일. global.oliveyoung.com(USD)·tw.coupang.com(TWD)은 안 잡힌다.
+    (re.compile(r"(^|\.)oliveyoung\.co\.kr$", re.I), "KRW"),
+    (re.compile(r"^(m\.)?(smartstore|brand)\.naver\.com$", re.I), "KRW"),
+    (re.compile(r"^(www\.|m\.)?coupang\.com$", re.I), "KRW"),
 ]
 
 

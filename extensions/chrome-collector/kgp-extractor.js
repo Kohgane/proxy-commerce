@@ -1746,6 +1746,11 @@
     if (/(^|\.)amazon\.ca$/.test(host)) return "CAD";
     if (/(^|\.)amazon\.com\.au$/.test(host)) return "AUD";
     if (/(^|\.)(taobao|tmall|1688)\.com$/.test(host)) return "CNY";
+    // R1(2026-10-05): 한국 소싱처 — 원화 단일(올리브영 국내몰 · 스마트스토어/브랜드스토어 · 쿠팡 국내).
+    //   global.oliveyoung.com(USD)·tw.coupang.com(TWD)은 패턴이 안 잡는다(추측 금지).
+    if (/(^|\.)oliveyoung\.co\.kr$/.test(host)) return "KRW";
+    if (/^(m\.)?(smartstore|brand)\.naver\.com$/.test(host)) return "KRW";
+    if (/^(www\.|m\.)?coupang\.com$/.test(host)) return "KRW";
     // 테무는 다국가 단일 도메인 — **국가 경로(/kr)** 가 명시된 경우만 확정(그 외는 미확정 → 기호/로케일).
     if (/(^|\.)temu\.com$/.test(host)) return /^\/kr(\/|$)/.test(path) ? "KRW" : "";
     return "";
@@ -1777,6 +1782,7 @@
     if (/(^|[^a-z])ja(-|[^a-z]|$)|\/jp(\/|$|-)|(^|\.)jp\./.test(hint)) return "JPY";
     if (/(^|[^a-z])zh(-|[^a-z]|$)|(^|\.)cn\./.test(hint)) return "CNY";
     // 도메인 TLD/레지스트리 기본값.
+    if (/\.(co\.kr|kr)$/.test(host)) return "KRW";   // R1: `kr.` 접두만 보던 힌트가 `.co.kr` 끝 호스트를 놓쳤다
     if (/(^|\.)(taobao|tmall|1688)\.com$/.test(host)) return "CNY";
     if (/(^|\.)amazon\.co\.jp$/.test(host) || /(^|\.)rakuten\.(co\.jp|com)$/.test(host)
         || /(^|\.)yoshidakaban\.com$/.test(host) || /yahoo\.co\.jp$/.test(host)) return "JPY";
