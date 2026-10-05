@@ -55,6 +55,16 @@ DEFAULT_SOURCING_SITES = [
     {"id": "yoshida", "label": "요시다카반", "domains": "yoshidakaban.com", "adapter": False,
      "note": "목록 버튼 하네스 검증(yoshida-list) — 상세 추출은 스냅샷 필요",
      "coverage": {"level": "unverified", "needs_snapshot": True}},
+    # R1(오너 2026-10-05 역직구): 한국 소싱처 — 통화(원화)·버튼만. 상세 추출 어댑터는 실페이지 스냅샷이 온 뒤(R1-b).
+    {"id": "oliveyoung", "label": "올리브영", "domains": "oliveyoung.co.kr", "adapter": False,
+     "note": "R1 역직구 — 원화 확정 · 상세 추출은 스냅샷 필요",
+     "coverage": {"level": "unverified", "needs_snapshot": True}},
+    {"id": "smartstore", "label": "스마트스토어", "domains": "smartstore.naver.com · brand.naver.com", "adapter": False,
+     "note": "R1 역직구 — 원화 확정 · 상세 추출은 스냅샷 필요",
+     "coverage": {"level": "unverified", "needs_snapshot": True}},
+    {"id": "coupang", "label": "쿠팡", "domains": "coupang.com(국내)", "adapter": False,
+     "note": "R1 역직구 — 원화 확정 · 상세 추출은 스냅샷 필요",
+     "coverage": {"level": "unverified", "needs_snapshot": True}},
 ]
 
 
