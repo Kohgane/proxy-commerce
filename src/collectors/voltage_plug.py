@@ -5,7 +5,7 @@
       「黑色220V 国内用」 → 색상 「黑色」 + 「220V」(등록 가능 · 상세 맨 위 플러그 안내 — `notice_texts`).
 
 토큰(오너 표):
-  전압  110V · 220V · 100V · 110-220V(겸용)
+  전압  110V · 220V · 100V · 110-220V·宽电压(겸용 — 숫자 없이 「宽电压」만 적혀도 110-220V)
   플러그 国内用|国标 → CN · 美规|美国|台湾|日本|加拿大 → A형(110V권) · 英规|香港|澳门|英国 → G형 · 澳规|澳洲 → I형 ·
         欧规|欧标|韩国|韩规 → F/C형
 판매 필터:
@@ -23,6 +23,8 @@ from typing import Dict, List, Optional
 
 AXIS_NAME = "전압/플러그"
 _VOLT = re.compile(r"(110\s*[-~/～]\s*220\s*[Vv伏]|(?<!\d)(?:100|110|220)\s*[Vv伏])")
+# 숫자 없는 전압 낱말(오너 표) — 값 속에 있으면 그 전압으로 본다. 숫자 토큰(_VOLT)이 함께 있으면 숫자가 먼저.
+VOLT_WORDS = (("110-220V", ("宽电压",)),)
 PLUGS = (("CN", ("国内用", "国标")),
          ("A", ("美规", "美国", "台湾", "日本", "加拿大")),
          ("G", ("英规", "香港", "澳门", "英国")),
@@ -44,6 +46,11 @@ def parse(value: str) -> Dict:
     m = _VOLT.search(s)
     voltage = _volt_norm(m.group(0)) if m else None
     rest = _VOLT.sub(" ", s)
+    for v, words in VOLT_WORDS:
+        for w in sorted(words, key=len, reverse=True):
+            if w in rest:
+                rest = rest.replace(w, " ")
+                voltage = voltage or v
     found = []
     for cls, words in PLUGS:
         for w in sorted(words, key=len, reverse=True):

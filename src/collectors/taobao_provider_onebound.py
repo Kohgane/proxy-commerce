@@ -12,6 +12,7 @@
 - 캐시 우회 = **`cache=no`**(오너 실측 2026-10-05 — 테스트 페이지 「캐시 업데이트」의 Request address. 기본은 미지정 = 캐시 허용).
   자동 경로는 응답 `cache`=1이고 `data_update`(베이징 시각)가 24시간 넘었을 때만 `cache=no`로 **1회** 재호출(한도 1회로 셈).
   그 재호출이 실패하면 받은 캐시 값을 쓰고 카드에 「가격 기준 {data_update}」.
+  `ONEBOUND_REFRESH_STALE`(기본 1)=0이면 이 자동 재호출을 하지 않는다(체험 기간 10/8 전엔 오너가 0으로 둠).
 
 필드 매핑은 오너 지시(2026-10-05, 실측 응답 기준)를 그대로 따른다 — `normalize` 주석. 출력은 기존 getdetail 파서
 (`taobao_mtop.enrich_payload`)와 같은 키 + 공급자 전용 칸(`provider` 아래) → 뒤 파이프라인은 그대로.
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 ENDPOINT = "https://api-gw.onebound.cn/taobao/item_get/"
 ENV_KEY, ENV_SECRET, ENV_CAP = "ONEBOUND_KEY", "ONEBOUND_SECRET", "ONEBOUND_DAILY_CAP"
+ENV_REFRESH_STALE = "ONEBOUND_REFRESH_STALE"
 DEFAULT_CAP = 60
 UNIT_PRICE = "0.023元/회"
 TIMEOUT = 15
@@ -45,6 +47,12 @@ _PIXEL = re.compile(r"(?:^|//)(?:[\w-]+\.)*o0b\.cn/", re.I)        # 추적 픽�
 
 def keys_missing() -> List[str]:
     return [k for k in (ENV_KEY, ENV_SECRET) if not os.getenv(k, "").strip()]
+
+
+def refresh_stale() -> bool:
+    """`ONEBOUND_REFRESH_STALE`(기본 1) — 0이면 하루 넘은 캐시여도 자동 `cache=no` 재호출을 하지 않는다
+    (체험 키 일 10회 동안 오너가 0으로 둠 — 2026-10-08까지). 「새로 받기」(진단)는 이 값과 무관하게 `cache=no`."""
+    return os.getenv(ENV_REFRESH_STALE, "1").strip().lower() not in ("0", "false", "no", "off")
 
 
 def daily_cap() -> int:
@@ -392,7 +400,8 @@ def fetch_detail(num_iid: str, *, refresh: bool = False, transport=None) -> Dict
     c = call(num_iid, refresh=refresh, no_cache=refresh, transport=transport)
     bypassed = bool(refresh)
     # 자동 경로: 새로 받은 응답이 캐시(cache=1)이고 data_update가 24시간 넘었으면 cache=no로 1회만 다시(한도 1회로 셈).
-    if c["ok"] and not c.get("reused") and not refresh and stale_cache(c["raw"]):
+    # `ONEBOUND_REFRESH_STALE=0`이면 재호출 없이 받은 캐시 값을 쓴다(카드에 「가격 기준 {data_update}」).
+    if c["ok"] and not c.get("reused") and not refresh and stale_cache(c["raw"]) and refresh_stale():
         c2 = call(num_iid, no_cache=True, transport=transport)
         logger.info("[onebound] num_iid=%s 하루 넘은 캐시 → cache=no 재호출 %s", num_iid, "성공" if c2["ok"] else c2["why"])
         if c2["ok"]:

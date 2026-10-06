@@ -2028,6 +2028,7 @@ def mobile_list_ctx(item: dict) -> dict:
             risks.append(f"상표 확인 보류({', '.join(_ipl)}) — 라이선스 확인 전 등록 보류")
     except Exception as exc:
         logger.warning("[M5] 위험 플래그 판정 실패: %s", exc)
+    brand_values = _brand_value_rows(product)            # F: 옵션 값·규격표 값의 상표 — 보류 아님, 값만 바꿀 말 제안
     blocked = ""
     if ax["is_draft"] and not ax["gate_ready"]:
         blocked = "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다."
@@ -2052,7 +2053,92 @@ def mobile_list_ctx(item: dict) -> dict:
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product,
-            "risks": risks, "auto_enrich": _m5_auto(ex), **_m5_ship(product)}
+            "risks": risks, "brand_values": brand_values, "auto_enrich": _m5_auto(ex), **_m5_ship(product)}
+
+
+def _brand_value_rows(product: dict) -> list:
+    """F(오너 2026-10-06) — 등록에 실제로 나가는 옵션 값(해석 체인 결과)·규격표 값에 상표·브랜드 색 이름이 있나.
+    운영 실측: 쿠팡 고가네 16401838524 옵션 「디올 블루 미디 스커트」가 통과(상표 게이트가 상품명만 봤다).
+    걸리면 상품은 보류하지 않고 값마다 바꿀 말을 낸다 — `{kind: option|spec, orig, where, value, suggest, hits, applicable, why}`.
+    옵션은 `orig`(원문 값) → `option_value_overrides`로, 규격표는 그 칸 값을 바꾼다(`/collect/<id>/brand-value-fix`)."""
+    try:
+        from src.collectors import ko_polish as _kp
+        from src.uploaders.coupang_options import resolve_option_value, value_ko_map
+        vko = value_ko_map(product)
+        ov = product.get("option_value_overrides") if isinstance(product.get("option_value_overrides"), dict) else {}
+        opts = [o for o in (product.get("options") or []) if isinstance(o, dict)]
+        cand = []                                           # (kind, orig, where, 나가는 값)
+        for k in product.get("skus") or []:
+            spec = k.get("spec") if isinstance(k, dict) else None
+            for i, v in enumerate(spec if isinstance(spec, list) else []):
+                o = opts[i] if i < len(opts) else {}
+                cand.append(("option", str(v), str(o.get("name_ko") or o.get("name") or "옵션"), str(v)))
+        for o in opts:
+            for v in o.get("values") or []:
+                sv = str(v.get("name") if isinstance(v, dict) else v)
+                cand.append(("option", sv, str(o.get("name_ko") or o.get("name") or "옵션"), sv))
+        for sp in product.get("detail_specs") or []:
+            if isinstance(sp, (list, tuple)) and len(sp) >= 2:
+                cand.append(("spec", str(sp[1]), f"규격표 {sp[0]}", str(sp[1])))
+        rows, seen = [], set()
+        for kind, orig, where, v in cand:
+            if (kind, orig) in seen or not orig.strip():
+                continue
+            seen.add((kind, orig))
+            out = v
+            if kind == "option":
+                out = resolve_option_value(v, values_ko=vko.get(v, ""), override=ov.get(v, "")).get("value") or v
+            for r in _kp.brand_value_suggestions([(where, out)]):
+                rows.append(dict(r, kind=kind, orig=orig))
+        return rows
+    except Exception as exc:
+        logger.warning("[M5] 옵션 값 상표 판정 실패(막지 않음): %s", exc)
+        return []
+
+
+@bp.post("/collect/<item_id>/brand-value-fix")
+def collect_brand_value_fix(item_id: str):
+    """F — 카드의 「제안대로 바꾸기」: 서버가 같은 판정(`_brand_value_rows`)을 다시 돌려 바꿀 수 있는 값만 적용한다.
+    옵션 = `option_value_overrides[원문] = 제안`(해석 순서 0번 — 원문·SKU는 그대로) · 규격표 = 그 칸 값(원본은 `detail_specs_src`)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from .product_builder import build_product
+    rows = _brand_value_rows(build_product(item, seller_id=_seller_id()))
+    todo = [r for r in rows if r["applicable"]]
+    if not todo:
+        return jsonify({"ok": False, "error": "바꿀 수 있는 값이 없어요 — 남은 값은 직접 넣어 주세요.", "rows": rows}), 400
+    import copy as _copy
+    import datetime as _dt
+    ov = dict(ex.get("option_value_overrides") or {})
+    specs = [list(sp) if isinstance(sp, (list, tuple)) else sp for sp in (ex.get("detail_specs") or [])]
+    applied = []
+    for r in todo:
+        if r["kind"] == "option":
+            ov[r["orig"]] = r["suggest"]
+        else:
+            ex.setdefault("detail_specs_src", _copy.deepcopy(ex.get("detail_specs") or []))
+            for sp in specs:
+                if isinstance(sp, list) and len(sp) >= 2 and str(sp[1]) == r["orig"]:
+                    sp[1] = r["suggest"]
+        applied.append({"kind": r["kind"], "value": r["value"], "suggest": r["suggest"]})
+    ex["option_value_overrides"] = ov
+    if specs:
+        ex["detail_specs"] = specs
+    ex["brand_value_fix"] = {"at": _dt.datetime.now(_dt.timezone.utc).isoformat(), "applied": applied,
+                             "left": [r["value"] for r in rows if not r["applicable"]]}
+    from . import collect_history_store
+    ok = collect_history_store.update(item_id, seller_id=item.get("seller_id") or _seller_id(),
+                                      extra_json=json.dumps(ex, ensure_ascii=False))
+    if not ok:
+        return jsonify({"ok": False, "error": "저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요."}), 502
+    return jsonify({"ok": True, "applied": applied, "left": ex["brand_value_fix"]["left"]})
 
 
 def _m5_auto(ex: dict) -> dict:

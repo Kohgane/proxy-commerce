@@ -41,6 +41,15 @@
       편집 화면의 「한국어 번역」을 누르거나 값을 직접 넣어 주세요(이 값의 SKU는 등록 전에 멈춥니다).</div>
     {% endif %}
     {% for r in m5.risks or [] %}<div class="m5-needs" data-role="m5-risk"><span class="pc-badge pc-badge-danger">{{ r }}</span></div>{% endfor %}
+    {# F(오너 2026-10-06): 옵션 값·규격표 값의 상표·브랜드 색 이름 — 상품은 보류하지 않고 그 값만 바꿀 말을 낸다. #}
+    {% if m5.brand_values %}
+    <div class="m5-needs" data-role="m5-brand-values"><span class="pc-badge pc-badge-off">옵션 값에 상표 이름 — 바꿀 말 제안</span>
+      <ul>{% for b in m5.brand_values %}<li data-role="m5-brand-value" data-applicable="{{ '1' if b.applicable else '0' }}">{{ b.where }}: 「{{ b.value }}」 →
+        {% if b.applicable %}「<strong>{{ b.suggest }}</strong>」{% else %}{{ b.why }}{% endif %}</li>{% endfor %}</ul>
+      {% if m5.brand_values|selectattr('applicable')|list %}<button type="button" class="m5-fix" data-role="m5-brand-fix">제안대로 바꾸기</button>{% endif %}
+      <div class="m5-note" data-role="m5-brand-state">상품은 보류하지 않아요 — 그대로 두면 이 값이 마켓에 그대로 나가요.</div>
+    </div>
+    {% endif %}
     {% if m5.auto_enrich and m5.auto_enrich.line %}<div class="m5-needs" data-role="m5-auto-enrich" data-state="{{ m5.auto_enrich.state }}">{{ m5.auto_enrich.line }}</div>{% endif %}
     {% if m5.needs_pc and not (m5.auto_enrich and m5.auto_enrich.state == 'manual') %}
     {# Z3(오너 2026-10-04): 「컴퓨터에서 켜면 자동」은 PC가 없는 유저에겐 거짓 약속이었다 — 누구에게 되는지 그대로. #}
@@ -251,6 +260,19 @@
       optSt.textContent = '저장하지 못했어요 — ' + (d.error || '사유 원문 없음');
     } catch (e) { optSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
     optSave.disabled = false;
+  });
+  // F: 옵션 값 상표 — 「제안대로 바꾸기」(서버가 같은 판정으로 다시 골라 적용) → 다시 그린다.
+  var brandBtn = root.querySelector('[data-role=m5-brand-fix]'), brandSt = root.querySelector('[data-role=m5-brand-state]');
+  if (brandBtn) brandBtn.addEventListener('click', async function () {
+    brandBtn.disabled = true; brandSt.textContent = '바꾸는 중…';
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/brand-value-fix', {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: '{}'});
+      var d = await r.json();
+      if (d.ok) { brandSt.textContent = d.applied.length + '개 값을 바꿨어요' + (d.left.length ? ' · 직접 넣을 값 ' + d.left.length + '개' : '') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); return; }
+      brandSt.textContent = '바꾸지 못했어요 — ' + (d.error || '사유 원문 없음');
+    } catch (e) { brandSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
+    brandBtn.disabled = false;
   });
   var okMarkets = [];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
