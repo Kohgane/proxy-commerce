@@ -291,6 +291,10 @@ def test_u0_missing_account_keys_say_so_and_non_admin_sees_one_coupang(monkeypat
     monkeypatch.setattr(V, "_is_admin_user", lambda: True)
     rows = V._with_coupang_accounts([{"code": "coupang", "checked": True}])
     assert [m["code"] for m in rows] == ["coupang:gogane", "coupang:woojoo"]
+    from src.seller_console import market_pick as MP                           # Z5 후속: 기본 체크는 market_pick
+    from src.db import image_translate_queue_pg as _st
+    _st.reset_for_tests()
+    MP.apply_checks(rows, "shared")
     assert [m["checked"] for m in rows] == [False, True]                      # 키 있는 계정 하나만 기본 체크
 
 

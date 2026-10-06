@@ -2041,8 +2041,8 @@ def mobile_list_ctx(item: dict) -> dict:
         logger.warning("[M5] 마켓 연결 상태 조회 실패: %s", exc)
     from .upload_dispatcher import MARKET_LABELS
     markets = [{"code": m, "label": MARKET_LABELS.get(m, m), "connected": bool(connected.get(m)),
-                "checked": m == "coupang"} for m in _M5_MARKETS]
-    markets = _with_coupang_accounts(markets, product)
+                "checked": False} for m in _M5_MARKETS]
+    markets, market_pick = _market_rows(markets, product)
     return {"item_id": str(item.get("id") or ""), "title": product["title"] or "(제목 없음)",
             "thumb": product["thumbnail"], "images_count": len(images),
             "price": str(product.get("price") or "") if has_price else "",
@@ -2052,7 +2052,8 @@ def mobile_list_ctx(item: dict) -> dict:
             "plug_note": plug_note, "excluded_count": excluded_count,
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
-            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "product": product,
+            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
+            "product": product,
             "risks": risks, "brand_values": brand_values, "auto_enrich": _m5_auto(ex), **_m5_ship(product)}
 
 
@@ -2774,6 +2775,9 @@ def collect_upload():
 
     if not markets:
         return jsonify({"ok": False, "error": "업로드 대상 마켓을 선택하세요."}), 400
+    _acct_err = _account_codes_forbidden(markets)
+    if _acct_err:
+        return _acct_err
 
     # F40-b: 주소 채우기는 **공용 빌더 한 자리**에서, 그리고 아래 이미지·도달성 `try` **밖에서**.
     #   예전엔 그 블록 안에 있었는데 블록의 except가 모든 예외를 삼켜, 앞쪽에서 무엇 하나
@@ -2856,6 +2860,12 @@ def collect_upload():
     try:
         from . import market_credentials as mc
 
+        # Z5 후속: 이번 등록에서 고른 마켓을 기억 → 다음 카드의 처음 체크(계정 단위)
+        try:
+            from . import market_pick as _mp
+            _mp.save_last(_mp.scope(_seller_id(), _shared_markets()), markets)
+        except Exception as _mpe:
+            logger.warning("[마켓 선택] 지난 선택 기억 실패(등록은 진행): %s", _mpe)
         with mc.seller_market_env(_seller_id(), markets):
             result = dispatcher.dispatch(product_data, markets)
         rd = result.to_dict()
@@ -2913,6 +2923,42 @@ def _persist_upload_status(item_id, result_dict) -> None:
 _BUSINESS_LABELS = (("gogane", "고가네"), ("woojoo", "우주대행"))
 
 
+def _shared_markets() -> bool:
+    """Z5 후속(오너 2026-10-06): 오너 서버의 공유 마켓(쿠팡 고가네·우주대행 · 스마트스토어 셰고가·고코스모스)을 쓰는 사람 —
+    관리자 + 가족(`FAMILY_EMAILS`). 공개 가입자는 아니다(L1 이후 누구나 가입한다)."""
+    try:
+        admin = _is_admin_user()
+    except Exception:
+        admin = False
+    from flask import has_request_context
+    from .market_pick import is_shared
+    return is_shared(str(session.get("email") or "") if has_request_context() else "", admin)
+
+
+def _account_codes_forbidden(markets):
+    """계정·스토어 코드(`coupang:woojoo`·`smartstore:gocosmos`)는 오너 서버의 공유 마켓 — 관리자·가족만.
+    화면에서 숨기는 것만으론 부족하다(직접 호출이 남는다). 해당 없으면 None."""
+    acct = [str(m) for m in (markets or []) if ":" in str(m)]
+    if acct and not _shared_markets():
+        return jsonify({"ok": False, "error": "이 계정에서는 공유 마켓 계정으로 등록할 수 없어요.",
+                        "markets": acct}), 403
+    return None
+
+
+def _market_rows(markets: list, product: Optional[dict] = None):
+    """검수 카드·데스크톱 공용 마켓 줄 — `(rows, pick)`. 공유 마켓이면 계정·스토어 줄로 펼치고, 그 밖의 마켓은
+    **연결된 것만**(쿠팡 고가네·우주대행·셰고가·고코스모스·Shopify·WC). 체크박스는 전부 토글(disabled 0).
+    기본 체크 = 지난 등록 → 설정 → 우주대행 묶음(`market_pick`)."""
+    from . import market_pick as _mp
+    shared = _shared_markets()
+    rows = _with_coupang_accounts([dict(m) for m in markets], product)
+    if shared:
+        rows = [m for m in rows if m.get("group") or m.get("connected")]
+    pick = _mp.apply_checks(rows, _mp.scope(_seller_id(), shared), shared=shared)
+    pick["label"] = _mp.source_label(pick["source"]) if shared or pick["source"] != "bundle" else ""
+    return rows, pick
+
+
 def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> list:
     """U0·U0b(오너 2026-10-02 정정): 관리자 화면이면 「쿠팡」「스마트스토어」 한 줄씩을 **사업자 축**으로 펼친다 —
     고가네 = 쿠팡 고가네 + 스마트스토어 셰고가 · 우주대행 = 쿠팡 우주대행 + 스마트스토어 고코스모스.
@@ -2921,11 +2967,7 @@ def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> lis
     그 스토어 토큰이 실제로 발급될 때만(V). 안 나오는 스토어는 응답 원문이 보이고(체크하면 사전검증이 보류라고 말한다).
     다른 셀러에겐 원래 한 줄씩 그대로(계정·스토어는 오너 서버 설정).
     """
-    try:
-        admin = _is_admin_user()
-    except Exception:
-        admin = False
-    if not admin:
+    if not _shared_markets():
         return markets
     try:
         from .market_cred_view import coupang_account_choices
@@ -2942,22 +2984,19 @@ def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> lis
     if not cps and not sss:
         return markets
     base = {m.get("code"): m for m in markets}
-    cp_checked = bool((base.get("coupang") or {}).get("checked"))
-    # Z5(오너 2026-10-04): 기본 체크 = **우주대행 묶음**(쿠팡 우주대행 + 스마트스토어 고코스모스). 고가네 묶음은 해제 —
-    #   오너가 손으로 켤 때만. `MARKET_DEFAULT_BUSINESS`로 바꾼다(gogane|woojoo). 키·토큰이 없는 줄은 체크하지 않는다.
-    default_biz = (os.getenv("MARKET_DEFAULT_BUSINESS", "woojoo") or "woojoo").strip().lower()
+    # Z5 후속(오너 2026-10-06): 기본 체크는 여기서 정하지 않는다 — `_market_rows` → `market_pick.apply_checks`
+    #   (지난 등록 → 설정 「기본 등록 마켓」 → 우주대행 묶음). 줄은 전부 토글 가능(묶음 강제 없음).
     out = []
     for biz, biz_label in _BUSINESS_LABELS:
         c = cps.get(biz)
         if c and "coupang" in base:
-            out.append({"code": c["code"], "label": c["label"], "connected": c["ready"],
-                        "checked": cp_checked and c["ready"] and biz == default_biz,
+            out.append({"code": c["code"], "label": c["label"], "connected": c["ready"], "checked": False,
                         "account": c["account"], "missing": c["missing"],
                         "group": biz, "group_label": biz_label, "note": "" if c["ready"] else "키 없음"})
         st = sss.get(biz)
         if st and "smartstore" in base:
             out.append({"code": st["code"], "label": st["label"], "connected": st["ready"],
-                        "checked": bool(biz == default_biz and st["approved"] and st["ready"]),
+                        "checked": False,
                         "account": st["store"], "missing": [] if st["ready"] else ["스토어 키"],
                         "group": biz, "group_label": biz_label, "note": st["note"],
                         "pending": not st["approved"], "pending_head": st.get("pending_head") or "",
@@ -3477,6 +3516,33 @@ def collect_ship_route(item_id):
     return jsonify({"ok": ok, "route": route}), (200 if ok else 502)
 
 
+@bp.route("/settings", methods=["GET", "POST"])
+def settings_markets():
+    """Z5 후속(오너 2026-10-06): 계정 설정 「기본 등록 마켓」 — 검수 카드·데스크톱의 처음 체크.
+    계정 단위(공유 마켓이면 한 벌 · 자기 키 셀러는 셀러별) — Stage 6 전까지 사용자별 아님."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+    from . import market_pick as _mp
+    from . import market_credentials as mc
+    from .upload_dispatcher import MARKET_LABELS
+    shared = _shared_markets()
+    sc = _mp.scope(_seller_id(), shared)
+    conn = mc.connected_markets(_seller_id(), _M5_MARKETS)
+    base = [{"code": m, "label": MARKET_LABELS.get(m, m), "connected": bool(conn.get(m)), "checked": False}
+            for m in _M5_MARKETS]
+    msg = ""
+    if request.method == "POST":
+        allowed = {m["code"] for m in _market_rows(base)[0]}
+        codes = [c for c in request.form.getlist("codes") if c in allowed]
+        _mp.save_default(sc, codes, by=str(session.get("email") or _seller_id()))
+        msg = "저장했어요 — 다음 카드부터 이 마켓이 처음 체크돼요." if codes else "설정을 비웠어요."
+    rows, pick = _market_rows(base)
+    names = {m["code"]: m["label"] for m in rows}
+    return render_template("market_settings.html", rows=rows, saved=_mp.get_default(sc), msg=msg,
+                           pick_label=pick["label"] or ("쿠팡" if pick["codes"] else ""), pick_codes=pick["codes"],
+                           pick_names=[names.get(c, c) for c in pick["codes"]])
+
+
 @bp.route("/settings/ship-route", methods=["GET", "POST"])
 def settings_ship_route():
     """Z5 후속: 계정 기본 발주 경로(중국발) — 상품에서 따로 고르지 않으면 이 값으로 배송비 요율을 고른다."""
@@ -3526,6 +3592,9 @@ def collect_prevalidate():
         return jsonify({"ok": False, "error": "상품 데이터가 필요합니다."}), 400
     if not markets:
         return jsonify({"ok": False, "error": "검증할 마켓을 선택하세요."}), 400
+    _acct_err = _account_codes_forbidden(markets)
+    if _acct_err:
+        return _acct_err
 
     dispatcher = _get_upload_dispatcher()
     if dispatcher is None:
@@ -8792,6 +8861,11 @@ def collect_preview_by_id(item_id: str):
         market_desc_dropped = _kp_s2.drop_detail_lines(_d_src)[1]
     except Exception:
         market_desc_preview, market_desc_dropped = "", []
+    # Z5 후속(오너 2026-10-06): 데스크톱도 폰 카드와 같은 마켓 줄·기본 체크(`_market_rows`)
+    _desk_rows, _desk_pick = _market_rows(
+        [{"code": m, "label": m, "connected": bool((market_connected or {}).get(m)), "checked": False}
+         for m in ("shopify", "coupang", "smartstore", "elevenst", "woocommerce")],
+        extra if isinstance(extra, dict) else None)
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
@@ -8809,9 +8883,9 @@ def collect_preview_by_id(item_id: str):
         fx_is_mock=fx_is_mock,
         fx_updated=fx_updated,
         market_connected=market_connected,
-        coupang_accounts=_with_coupang_accounts([{"code": "coupang", "label": "쿠팡", "checked": False},
-                                                 {"code": "smartstore", "label": "스마트스토어", "checked": False}],
-                                                extra if isinstance(extra, dict) else None),
+        coupang_accounts=_desk_rows,
+        market_show=[m["code"] for m in _desk_rows], market_checked=_desk_pick["codes"],
+        market_pick_label=_desk_pick["label"],
         category_options=CATEGORY_OPTIONS,
         current_category=cur_cat,
         category_suggestion=cat_suggestion,

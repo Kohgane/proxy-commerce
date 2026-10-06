@@ -105,12 +105,20 @@ def test_default_bundle_is_woojoo(monkeypatch):
          "ready": True, "approved": True, "assigned": True, "note": "", "limit_text": "셰고가 850/1,000"},
         {"code": "smartstore:gocosmos", "store": "gocosmos", "label": "스마트스토어 — 고코스모스", "business": "woojoo",
          "ready": True, "approved": True, "assigned": False, "note": "", "limit_text": "고코스모스 881/1,000"}])
+    # Z5 후속(2026-10-06): 기본 체크는 `market_pick.apply_checks`가 정한다(지난 등록 → 설정 → 묶음) — 묶음 판정만 여기서
+    from src.seller_console import market_pick as MP
+    from src.db import image_translate_queue_pg as st
+    st.reset_for_tests()
     base = [{"code": m, "label": m, "connected": True, "checked": m == "coupang"} for m in ("coupang", "smartstore", "elevenst")]
-    by = {m["code"]: m for m in V._with_coupang_accounts(base, {})}
+    rows = V._with_coupang_accounts(base, {})
+    MP.apply_checks(rows, "shared")
+    by = {m["code"]: m for m in rows}
     assert by["coupang:woojoo"]["checked"] and by["smartstore:gocosmos"]["checked"]          # 우주대행 묶음 둘 다
     assert not by["coupang:gogane"]["checked"] and not by["smartstore:chezgoga"]["checked"]   # 고가네 묶음은 손으로
     monkeypatch.setenv("MARKET_DEFAULT_BUSINESS", "gogane")
-    by = {m["code"]: m for m in V._with_coupang_accounts(base, {})}
+    rows = V._with_coupang_accounts(base, {})
+    MP.apply_checks(rows, "shared")
+    by = {m["code"]: m for m in rows}
     assert by["coupang:gogane"]["checked"] and not by["coupang:woojoo"]["checked"]
 
 

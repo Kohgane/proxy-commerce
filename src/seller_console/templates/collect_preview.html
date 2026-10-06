@@ -685,8 +685,9 @@
           </div>
           {% macro mtile(code, label, chkid) %}
           {% set ok = (market_connected or {}).get(code) %}
+          {% if market_show is not defined or code in market_show %}
           <label class="market-tile {{ 'is-on' if ok else 'is-off' }}" for="{{ chkid }}">
-            <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}">
+            <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}"{% if code in (market_checked or []) %} checked{% endif %}>
             <span class="market-name">{{ label }}</span>
             {% if ok %}
             <span class="market-badge on" title="API 키가 입력됨 — 실제 연결은 ‘사전검증/등록’에서 확인됩니다"><i class="bi bi-check-circle"></i> 키 설정됨</span>
@@ -695,7 +696,9 @@
                title="API 키 미입력 — 클릭해 연결" onclick="event.stopPropagation()"><i class="bi bi-x-circle"></i> 미설정</a>
             {% endif %}
           </label>
+          {% endif %}
           {% endmacro %}
+          {% if market_pick_label %}<p class="small text-muted mb-2" data-role="market-pick-source">처음 체크: {{ market_pick_label }} · <a href="/seller/settings">기본 등록 마켓 바꾸기</a></p>{% endif %}
           <div class="market-grid mb-4" id="marketCheckboxes">
             {{ mtile('shopify', 'Shopify', 'chkShopify') }}
             {# U0·U0b: 쿠팡 두 계정·스마트스토어 두 스토어(오너 서버·관리자) — 사업자 축으로 묶어 고른 계정·스토어 키로 등록 #}

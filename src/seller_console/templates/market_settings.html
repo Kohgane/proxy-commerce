@@ -1,0 +1,22 @@
+{% extends "_base_app.html" %}
+{% block title %}기본 등록 마켓 — 고가브릿지{% endblock %}
+{% block content %}
+{# Z5 후속(오너 2026-10-06): 검수 카드·데스크톱 검수 화면에서 처음 체크해 둘 마켓. 묶음 강제 없음 — 카드에서 언제든 바꾼다.
+   순서: 지난 등록에서 고른 마켓 → 여기 값 → (둘 다 없으면) 우주대행 묶음. 여기 저장하면 「지난 등록」 기억은 지운다. #}
+<div class="ship-route mx-auto" data-role="market-settings">
+  <h1 class="pc-h2">기본 등록 마켓</h1>
+  <p class="text-muted">상품을 검수할 때 처음부터 체크해 둘 마켓이에요. 카드에서 언제든 켜고 끌 수 있어요.</p>
+  <p class="small text-muted" data-role="market-settings-now">지금 처음 체크: <strong>{{ pick_label or "없음" }}</strong>{% if pick_codes %} — {{ pick_names|join(", ") }}{% endif %}</p>
+  <form method="post" class="vstack gap-2">
+    {% for m in rows %}
+    <label class="sr-opt" data-market="{{ m.code }}"><input type="checkbox" name="codes" value="{{ m.code }}" {{ 'checked' if m.code in saved }}> {{ m.label }}
+      {% if not m.connected %}<span class="small text-muted">— 키 없음</span>{% elif m.pending %}<span class="small text-muted">— {{ m.pending_head or '승인 대기' }}</span>{% endif %}</label>
+    {% endfor %}
+    <button class="btn btn-primary sr-save" type="submit">저장</button>
+  </form>
+  {% if msg %}<p class="mt-2" data-role="market-settings-msg">{{ msg }}</p>{% endif %}
+  <p class="small text-muted mt-3">아무것도 고르지 않고 저장하면 설정을 비워요 — 그때는 지난 등록에서 고른 마켓, 그것도 없으면 우주대행 묶음(쿠팡 우주대행 + 스마트스토어 고코스모스)을 체크해요.
+    마켓마다 걸리는 보류(배송비 비율·스토어 한도·상표·전압)는 그 마켓만 멈추고 다른 마켓 등록은 그대로 진행돼요.</p>
+  <p class="small"><a href="/seller/settings/ship-route">중국발 발주 경로 기본값</a></p>
+</div>
+{% endblock %}
