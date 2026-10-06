@@ -48,6 +48,9 @@ def test_notice_constants_exact():
     ("银色110-220V欧规", "110-220V", "F/C", "银色"),
     ("白色100V日本", "100V", "A", "白色"),
     ("白色", None, None, "白色"),
+    ("黑色宽电压国内用", "110-220V", "CN", "黑色"),        # 宽电压 = 겸용(숫자 없이)
+    ("白色宽电压", "110-220V", None, "白色"),
+    ("灰色宽电压110-220V欧规", "110-220V", "F/C", "灰色"),
 ])
 def test_parse_tokens(value, voltage, plug, rest):
     from src.collectors import voltage_plug as V
@@ -201,3 +204,16 @@ def test_rule_pass_runs_split_and_m5_card(monkeypatch):
     assert d["state"] == "done" and "동영상 없음" in d["line"] and "220V · 중국식 플러그" in d["line"]
     r = c.post(f"/seller/collect/{iid}/voltage-override", json={})
     assert r.status_code == 200 and json.loads(S.get(iid, seller_ids={seller})["extra_json"])["voltage_override"]["line"]
+
+
+def test_wide_voltage_is_dual_and_sellable_with_notice():
+    """D(오너 2026-10-06): 宽电压 = 110-220V 겸용 — 중국 플러그면 등록 가능 + 플러그 안내, 플러그 토큰 없으면 그대로."""
+    from src.collectors import voltage_plug as V
+    assert "宽电压" in dict(V.VOLT_WORDS)["110-220V"]
+    assert V.verdict("110-220V", "CN") == {"sellable": True, "reason": "", "notice": True}
+    ex = {"options": [{"name": "颜色分类", "values": ["白色宽电压国内用", "白色110V美规"]}],
+          "skus": [{"spec": ["白色宽电压国内用"], "price": "100", "stock": 5},
+                   {"spec": ["白色110V美规"], "price": "100", "stock": 5}]}
+    rec = V.apply(ex)
+    assert rec["state"] == "split" and rec["sellable"] == 1 and rec["excluded"] == 1 and rec["plug_notice"] is True
+    assert ex["options"][-1]["values"][0] == "110-220V" and ex["skus"][0]["voltage"] == "110-220V"

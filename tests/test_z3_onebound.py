@@ -355,6 +355,32 @@ def test_diag_provider_page(monkeypatch):
     assert 'href="/admin/diagnostics/taobao-provider"' in m
 
 
+def test_diag_refresh_button_sends_cache_no(monkeypatch):
+    """진단 「새로 받기」(refresh=1) → 실제 요청 params에 cache=no · REFRESH_STALE 상태 한 줄."""
+    from src.collectors import taobao_mtop as T
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    monkeypatch.setenv("ONEBOUND_REFRESH_STALE", "0")
+    _fresh_store("733241700287")
+    seen = []
+    monkeypatch.setattr(T, "item_id_from", lambda arg, s=None: ("733241700287", "숫자"))
+    real_call = O.call
+
+    def tr(u, p):
+        seen.append(dict(p))
+        return 200, _cache_raw("733241700287", 0, 0)
+    monkeypatch.setattr(O, "call", lambda iid, refresh=False, no_cache=False, transport=None:
+                        real_call(iid, refresh=refresh, no_cache=no_cache, transport=tr))
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as ss:
+        ss["user_id"], ss["user_role"] = "owner", "admin"
+    h = c.get("/admin/diagnostics/taobao-provider", query_string={"q": "733241700287"}).get_data(as_text=True)
+    assert "cache" not in seen[-1] and "ONEBOUND_REFRESH_STALE): 끔" in h
+    c.get("/admin/diagnostics/taobao-provider", query_string={"q": "733241700287", "refresh": "1"})
+    assert seen[-1]["cache"] == "no" and len(seen) == 2
+
+
 def test_docs_memo_exists():
     doc = (Path(__file__).parent.parent / "docs" / "z3-onebound.md").read_text(encoding="utf-8")
     for w in ("0.023", "ONEBOUND_KEY", "ONEBOUND_SECRET", "TAOBAO_DETAIL_PROVIDER", "ONEBOUND_DAILY_CAP", "login_required"):
@@ -482,6 +508,38 @@ def test_bypass_failure_keeps_cached_value_with_price_asof(monkeypatch):
         return 200, _cache_raw("880001", 1, 40)
     r = O.fetch_detail("880001", transport=tr)
     assert r["state"] == "ok" and r["bypassed"] is False and r["payload"]["provider"]["price_asof"]
+
+
+@pytest.mark.parametrize("env", ["0", "false", "off"])
+def test_refresh_stale_off_skips_auto_recall(monkeypatch, env):
+    """ONEBOUND_REFRESH_STALE=0 — 하루 넘은 캐시여도 자동 cache=no 재호출 0(체험 기간 오너 설정), 「가격 기준」 표시.
+    「새로 받기」(refresh)는 이 값과 무관하게 cache=no."""
+    from src.collectors import taobao_provider_onebound as O
+    _keys(monkeypatch)
+    monkeypatch.setenv("ONEBOUND_REFRESH_STALE", env)
+    iid = "8800" + str(len(env)) + "9"
+    _fresh_store(iid)
+    seen = []
+
+    def tr(url, params):
+        seen.append(dict(params))
+        return 200, _cache_raw(iid, 1, 30)
+    before = O.used_today()
+    r = O.fetch_detail(iid, transport=tr)
+    assert r["state"] == "ok" and len(seen) == 1 and "cache" not in seen[0] and O.used_today() - before == 1
+    assert r["bypassed"] is False and r["payload"]["provider"]["price_asof"]          # 캐시 값 그대로 + 기준 시각
+    r2 = O.fetch_detail(iid, refresh=True, transport=tr)
+    assert seen[-1]["cache"] == "no" and r2["bypassed"] is True and len(seen) == 2
+
+
+def test_refresh_stale_default_on(monkeypatch):
+    from src.collectors import taobao_provider_onebound as O
+    monkeypatch.delenv("ONEBOUND_REFRESH_STALE", raising=False)
+    assert O.refresh_stale() is True
+    monkeypatch.setenv("ONEBOUND_REFRESH_STALE", "1")
+    assert O.refresh_stale() is True
+    monkeypatch.setenv("ONEBOUND_REFRESH_STALE", "0")
+    assert O.refresh_stale() is False
 
 
 def test_refresh_sends_cache_no_and_overwrites_store(monkeypatch):

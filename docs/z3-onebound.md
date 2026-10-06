@@ -14,6 +14,7 @@
 | `TAOBAO_DETAIL_PROVIDER` | `mtop`(기본) · `onebound`. onebound면 이 설정만으로 담기 자동 수집이 켜진다(`TAOBAO_MTOP_AUTO` 불필요·건드리지 않음) |
 | `ONEBOUND_KEY` · `ONEBOUND_SECRET` | 비면 부팅 경고 + 담기 건은 「공급자 키 미설정」 수동 카드(mtop으로 조용히 안 감). 값은 로그·화면에 안 남김 |
 | `ONEBOUND_DAILY_CAP` | 기본 60 — **계정 전체** 하루 호출 상한(`cache=no` 재호출도 1회로 셈). 넘으면 호출 전에 「온바운드 일일 한도」 보류 |
+| `ONEBOUND_REFRESH_STALE` | 기본 1 — **0이면** 하루 넘은 캐시여도 자동 `cache=no` 재호출을 하지 않는다(받은 캐시 값 + 카드 「가격 기준 {data_update}」). 체험 키(일 10회, 2026-10-08까지) 동안 오너가 0으로 둔다. 「새로 받기」는 이 값과 무관하게 `cache=no` |
 
 ## 흐름
 폰 담기(share `?text=`) → 상품번호(e.tb.cn은 기존 해석 재사용 — 실패면 「상품번호 해석 실패」) → item_get → 정규화 →
@@ -30,7 +31,7 @@
 캐시 우회 = **`cache=no`**(오너 실측 2026-10-05 — 테스트 페이지 「캐시 업데이트」 체크 시 Request address `…&is_promotion=1&cache=no&&lang=zh-CN&…`).
 기본은 미지정 = 캐시 허용.
 - 진단 「새로 받기」 → `cache=no`로 호출(유료 1회) · 보관본을 덮어쓴다.
-- 자동 경로: 응답 `cache`=1이고 `data_update`(베이징 시각)가 24시간 넘었을 때만 `cache=no`로 **1회** 재호출 — 일일 한도에 1회로 더한다.
+- 자동 경로: 응답 `cache`=1이고 `data_update`(베이징 시각)가 24시간 넘었을 때만 `cache=no`로 **1회** 재호출 — 일일 한도에 1회로 더한다. `ONEBOUND_REFRESH_STALE=0`이면 이 재호출을 하지 않는다.
   재호출이 실패하면 받은 캐시 값을 쓰고 카드에 「가격 기준 {data_update}」.
 - 24시간 보관본 재사용 규칙은 그대로(「새로 받기」만 건너뜀).
 

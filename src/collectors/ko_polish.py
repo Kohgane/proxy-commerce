@@ -382,6 +382,78 @@ def _drop_ip_context(s: str, hits: dict | None = None) -> str:
     return s
 
 
+# ── F(오너 2026-10-06): 옵션 값·규격표 값의 상표 게이트 ─────────────────────────────────────────────
+# 운영 실측: 쿠팡 고가네 16401838524 옵션 「디올 블루 미디 스커트」가 통과됐다 — 상표 게이트가 상품명만 봤다.
+# 옵션 값·규격표 값에 걸리면 **상품은 보류하지 않고** 그 값만 바꿀 말을 제안한다(검수 카드에 표시 · 오너가 누르면 적용).
+# 브랜드 색 이름 치환표(코드 상수 — 원격 JSON 아님). 원문(중문)도 같은 표. 바꿀 말 ""는 삭제.
+BRAND_COLOR_SUBS = (
+    ("디올 블루", "딥 블루"), ("迪奥蓝", "딥 블루"), ("Dior Blue", "딥 블루"),
+    ("티파니 블루", "민트 블루"), ("蒂芙尼蓝", "민트 블루"), ("Tiffany Blue", "민트 블루"),
+    ("에르메스 오렌지", "브라이트 오렌지"), ("爱马仕橙", "브라이트 오렌지"), ("Hermes Orange", "브라이트 오렌지"),
+    ("샤넬 블랙", "블랙"), ("香奈儿黑", "블랙"), ("Chanel Black", "블랙"),
+    ("구찌 그린", "딥 그린"), ("古驰绿", "딥 그린"), ("Gucci Green", "딥 그린"),
+    ("팬톤", ""), ("潘通", ""), ("Pantone", ""),
+)
+_BRAND_SUB_RX: list = []
+
+
+def _brand_sub_rx() -> list:
+    if not _BRAND_SUB_RX:
+        for key, rep in BRAND_COLOR_SUBS:
+            pat = r"\s*".join(re.escape(w) for w in key.split())          # 「디올블루」·「디올  블루」도
+            if _HAN.search(key):
+                pat += "色?"                                            # 迪奥蓝色 → 딥 블루
+            _BRAND_SUB_RX.append((re.compile(pat, re.I), rep, key))
+    return _BRAND_SUB_RX
+
+
+def brand_value_fix(value: str) -> Dict:
+    """값 하나 → `{value, suggest, hits}`. 브랜드 색 이름은 표대로 바꾸고, 그 밖의 상표명(`trademarks` drop·ip·replica —
+    디올·샤넬·디즈니…)은 빼서 제안한다. 걸린 게 없으면 `hits=[]`·`suggest==value`. 다 빼면 `suggest=""`(직접 입력)."""
+    s = str(value or "")
+    hits: List[str] = []
+    for rx, rep, key in _brand_sub_rx():
+        if rx.search(s):
+            s = rx.sub(f" {rep} " if rep else " ", s)
+            hits.append(key)
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") not in ("drop", "ip", "replica"):
+            continue
+        for n in _tm_names(e):
+            if n in s:
+                s = s.replace(n, " ")
+                lab = str(e.get("label") or n)
+                if lab not in hits:
+                    hits.append(lab)
+    return {"value": str(value or ""), "suggest": _tidy(s) if hits else str(value or ""), "hits": hits}
+
+
+def brand_value_suggestions(values) -> List[Dict]:
+    """[(어디, 값)…] → 걸린 값만 `{where, value, suggest, hits, applicable, why}`. 같은 값은 한 번.
+    `applicable`=False면(다 지워짐·한자 남음·30자 초과) 「값을 직접 넣어 주세요」."""
+    out: List[Dict] = []
+    seen = set()
+    for where, v in values or []:
+        v = str(v or "").strip()
+        if not v or v in seen:
+            continue
+        seen.add(v)
+        r = brand_value_fix(v)
+        if not r["hits"]:
+            continue
+        sug = r["suggest"]
+        why = ""
+        if not sug:
+            why = "상표 이름을 빼면 남는 말이 없어요 — 값을 직접 넣어 주세요"
+        elif _HAN.search(sug):
+            why = "한자가 남아요 — 한국어 값을 직접 넣어 주세요"
+        elif len(sug) > MAX_OPTION_VALUE:
+            why = f"{MAX_OPTION_VALUE}자를 넘어요 — 값을 직접 넣어 주세요"
+        out.append({"where": str(where or ""), "value": v, "suggest": sug, "hits": r["hits"],
+                    "applicable": not why, "why": why})
+    return out
+
+
 def expiry_hits(text: str) -> List[str]:
     """유통기한 임박·떨이 소싱 어휘(临期·过期·清仓·尾货…) — 찾은 낱말."""
     s = str(text or "")
