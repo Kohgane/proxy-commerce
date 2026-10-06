@@ -140,7 +140,7 @@ def _client(seller):
     from src.order_webhook import app
     c = app.test_client()
     with c.session_transaction() as s:
-        s["user_id"] = seller
+        s["user_id"] = seller; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만 — 오너 세션 모양
     return c
 
 

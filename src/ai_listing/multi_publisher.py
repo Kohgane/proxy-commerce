@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+import contextvars
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -198,8 +199,10 @@ def publish_to_markets(
 
     completed: List[PublishJob] = []
 
+    # Z6: 워커 스레드도 호출자의 컨텍스트(셀러 자격 격리 겹)를 그대로 본다 — 안 그러면 스레드 안에서
+    #   오너 전역 환경변수가 다시 보인다. 마켓마다 컨텍스트 사본 하나(같은 사본은 동시 실행 불가).
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_publish_to_market, job): job for job in jobs}
+        futures = {executor.submit(contextvars.copy_context().run, _publish_to_market, job): job for job in jobs}
         for future in as_completed(futures):
             try:
                 result_job = future.result()
@@ -212,7 +215,9 @@ def publish_to_markets(
 
     # 실패한 잡을 큐에 재시도 요청
     failed_markets = [j.market for j in completed if j.status == "failed"]
-    if failed_markets:
+    # Z6: 격리된(공개 가입자) 등록은 재시도 큐에 넣지 않는다 — 큐는 요청 밖에서 돌아 오너 자격으로 재등록될 수 있다.
+    from src.seller_console.market_credentials import isolation_active
+    if failed_markets and not isolation_active():
         _enqueue_retry(ai_listing_id, product_data, failed_markets)
 
     return PublishResult(ai_listing_id=ai_listing_id, jobs=completed)

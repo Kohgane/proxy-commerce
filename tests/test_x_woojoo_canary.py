@@ -220,7 +220,7 @@ def test_translation_hold_is_auto_translated_before_holding(monkeypatch):
     _translate_ok(monkeypatch, ok=True)
     c = app.test_client()
     with c.session_transaction() as s:
-        s["user_id"] = seller
+        s["user_id"] = seller; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
     d = c.post("/seller/collect/prevalidate", json={"product": dict(ex, sell_price_krw=260000), "markets": ["smartstore"],
                                                     "item_id": iid}).get_json()
     assert d["auto_translate"]["status"] in ("done", "queued")
@@ -236,7 +236,7 @@ def test_hold_stays_only_when_every_translator_fails(monkeypatch):
     _translate_ok(monkeypatch, ok=False)
     c = app.test_client()
     with c.session_transaction() as s:
-        s["user_id"] = seller
+        s["user_id"] = seller; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
     d = c.post("/seller/collect/prevalidate", json={"product": dict(ex, sell_price_krw=260000), "markets": ["smartstore"],
                                                     "item_id": iid}).get_json()
     assert d["auto_translate"]["status"] == "failed"

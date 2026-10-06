@@ -37,6 +37,30 @@ def is_shared(session_email: str, admin: bool) -> bool:
     return bool(admin) or (str(session_email or "").strip().lower() in family_emails() if session_email else False)
 
 
+def session_email() -> str:
+    """로그인 세션의 이메일. 로그인 코드가 넣는 키는 `user_email`이다(`email`은 옛 테스트 픽스처 호환).
+    Z6: #839는 `email`만 읽어 운영의 가족 계정이 공유로 판정되지 않았다."""
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return ""
+        return str(session.get("user_email") or session.get("email") or "")
+    except Exception:
+        return ""
+
+
+def session_is_shared(admin: Optional[bool] = None) -> bool:
+    """지금 요청의 사람이 공유 마켓(= 오너 서버 자격) 사용자인가. `admin`을 안 주면 세션에서 판정."""
+    if admin is None:
+        try:
+            from flask import session
+            from src.auth.admin_resolver import is_admin_session
+            admin = bool(is_admin_session(session)[0])
+        except Exception:
+            admin = False
+    return is_shared(session_email(), admin)
+
+
 def scope(seller_id: str, shared: bool) -> str:
     return "shared" if shared else f"seller:{seller_id or 'default'}"
 

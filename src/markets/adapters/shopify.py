@@ -85,7 +85,8 @@ class ShopifyAdapter(MarketAdapter):
         shop = self._shop_domain()
         if not (cid and csec and shop):
             return None
-        key = f"{shop}:{cid}"
+        # Z6: 비밀값까지 키에 — 상점·client_id만 알면(비밀값 없이) 남이 캐시된 오너 토큰을 받던 자리.
+        key = f"{shop}:{cid}:{hashlib.sha256(csec.encode('utf-8')).hexdigest()[:16]}"
         now = time.time()
         cached = _cc_token_cache.get(key)
         if cached and cached.get("expires_at", 0) > now + 30:
