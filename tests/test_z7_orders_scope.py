@@ -284,6 +284,26 @@ def test_shared_users_see_owner_pool(orders_mem, env, uid, email, role):
     assert r.status_code == 200 and _status_of(orders_mem, OWNER_ROW) == "preparing"
 
 
+def test_shared_user_tracking_for_unsynced_order_still_reaches_market(orders_mem, env, market_calls):
+    """우리 기록에 아직 없는 주문의 송장(동기화 전 일괄 등록)은 공유 사용자에게 종전 그대로 마켓까지 간다."""
+    c = _client("mom-1", "mom@example.com")
+    c.post("/seller/orders/coupang/NOT-SYNCED-1/tracking", json={"courier": "CJGLS", "tracking_no": "123456789012"})
+    assert ("tracking", "NOT-SYNCED-1") in market_calls
+
+
+def test_shared_user_cannot_touch_other_sellers_row(orders_mem, env, market_calls):
+    c = _client("mom-1", "mom@example.com")
+    r = c.post(f"/seller/orders/coupang/{OTHER_ROW}/tracking", json={"courier": "CJGLS", "tracking_no": "123456789012"})
+    assert r.status_code == 404 and market_calls == []
+    assert _tracking_of(orders_mem, OTHER_ROW) == ""
+
+
+def test_stranger_tracking_for_unsynced_order_never_reaches_owner_market(orders_mem, stranger, market_calls):
+    r = stranger.post("/seller/orders/coupang/NOT-SYNCED-1/tracking",
+                      json={"courier": "CJGLS", "tracking_no": "123456789012"})
+    assert r.status_code == 404 and market_calls == []
+
+
 def test_shared_user_sync_reaches_markets(orders_mem, env, market_calls):
     c = _client("mom-1", "mom@example.com")
     assert c.post("/seller/orders/sync").status_code == 200

@@ -113,11 +113,18 @@ class OrderSyncService:
         return viewer is None or viewer.shared
 
     def owns(self, order_id: str, marketplace: str) -> bool:
-        """이 사람이 이 주문을 만져도 되는가(범위 밖 = 없는 주문과 같다). 서버 자신은 종전 그대로 통과."""
+        """이 사람이 이 주문을 만져도 되는가(범위 밖 = 없는 주문과 같다). 서버 자신은 종전 그대로 통과.
+
+        우리 기록에 **아직 없는** 주문(동기화 전 송장 일괄 등록 등)은 공유 사용자에게 종전처럼 열어 둔다 —
+        그 주문은 오너 마켓 계정의 것이고, 마켓이 판정한다. 남의 행은 어느 경우에도 막는다.
+        """
         viewer = getattr(self, "viewer", None)
         if viewer is None:
             return True
-        return self.sheets.find_row(order_id, marketplace, viewer=viewer) is not None
+        row = self.sheets.find_row(order_id, marketplace)
+        if row is None:
+            return viewer.shared
+        return viewer.can_see(row.get("user_id"))
 
     def sync_all(self, since: datetime = None) -> dict:
         """모든 마켓 주문 동기화."""
