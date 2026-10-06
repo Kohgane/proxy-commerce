@@ -123,6 +123,10 @@ def test_picker_groups_by_business_with_defaults(monkeypatch):
     rows = V._with_coupang_accounts(base, {"title_ko": "스테인리스 냄비 주방", "category_code": "HOM"})
     assert [m["code"] for m in rows[:4]] == ["coupang:gogane", "smartstore:chezgoga", "coupang:woojoo", "smartstore:gocosmos"]
     assert [m["group_label"] for m in rows[:4]] == ["고가네", "고가네", "우주대행", "우주대행"]
+    from src.seller_console import market_pick as MP                           # Z5 후속: 기본 체크는 market_pick
+    from src.db import image_translate_queue_pg as _st
+    _st.reset_for_tests()
+    MP.apply_checks(rows, "shared")
     by = {m["code"]: m for m in rows}
     # Z5(오너 2026-10-04): 기본 체크 = 우주대행 묶음만 — 고가네 쿠팡은 손으로 켤 때만
     assert not by["coupang:gogane"]["checked"] and by["coupang:woojoo"]["checked"]

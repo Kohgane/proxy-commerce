@@ -96,6 +96,8 @@
 
   <fieldset class="m5-markets" id="m5Markets" data-role="m5-markets">
     <legend class="m5-legend">등록할 마켓</legend>
+    {# Z5 후속(오너 2026-10-06): 연결된 마켓 전부·전부 토글 — 처음 체크가 어디서 왔는지 한 줄(지난 등록 → 설정 → 우주대행 묶음) #}
+    {% if m5.market_pick and m5.market_pick.label %}<p class="m5-note" data-role="m5-pick-source">처음 체크: {{ m5.market_pick.label }} · <a href="/seller/settings">기본 등록 마켓 바꾸기</a></p>{% endif %}
     {% set _g = namespace(last='') %}
     {% for m in m5.markets %}
     {# U0b: 사업자 축(고가네 = 쿠팡 고가네 + 스스 셰고가 · 우주대행 = 쿠팡 우주대행 + 스스 고코스모스)으로 묶는다 #}
