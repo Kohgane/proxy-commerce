@@ -7,9 +7,26 @@
     <div class="console-kpi-label mb-1">분석 · BI</div>
     <h4 class="mb-0 fw-bold"><i class="bi bi-graph-up-arrow"></i> 재고·판매 분석</h4>
   </div>
+  {% if bi_available is not defined or bi_available %}
   <a href="/seller/analytics?force_refresh=1" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-clockwise"></i> 새로고침</a>
+  {% endif %}
 </div>
 <hr class="pc-hairline mt-0 mb-4">
+
+{# Z7: 이 분석은 공유 마켓(관리자·가족) 계정의 주문·재고·CS로 만든다. 그 밖의 계정엔 그 수치를 보여 주지 않고,
+   「0원」도 쓰지 않는다 — 이 계정의 마켓 판매를 우리가 모르는 것이지 0원인 게 아니다. #}
+{% if bi_available is defined and not bi_available %}
+<div class="console-empty-state">
+  <div class="console-empty-icon"><i class="bi bi-graph-up-arrow"></i></div>
+  <div class="fw-semibold mb-1">아직 이 계정의 판매 데이터가 없습니다.</div>
+  <div class="small mb-1"><strong>무엇을:</strong> 매출·인기 상품·재고 분석은 이 화면으로 가져온 주문으로 계산해요.</div>
+  <div class="small mb-1"><strong>왜:</strong> 내 마켓 주문을 가져오는 기능이 준비 중이라 지금은 계산할 주문이 없어요.</div>
+  <div class="small"><strong>어떻게:</strong> 그동안 판매 현황은 각 마켓 판매자 센터에서 확인해 주세요.</div>
+  <div class="console-empty-state-actions">
+    <a href="/seller/orders" class="btn btn-sm btn-ghost">주문 관리 보기</a>
+  </div>
+</div>
+{% else %}
 
 <!-- 매출 KPI(세리프 대형 + 토큰 좌악센트) -->
 <div class="row g-3 mb-4">
@@ -99,4 +116,5 @@
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}

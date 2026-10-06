@@ -15,9 +15,10 @@
   그래야 이 시드가 통과했다는 사실이 실제 주문 저장 경로의 증거도 된다. 멱등(재실행 안전).
 
 ■ 스코프 주의
-  `orders`에 `user_id` 컬럼이 있지만 **읽기 경로(`orders_pg.all_row_dicts`)는 이를 쓰지 않는다**
-  (스키마 주석대로 "향후 멀티테넌시(현재 단일 스코프)"). 그래서 `--user` 같은 스코프 인자를 받으면
-  있지도 않은 격리를 있는 척하게 된다 — 받지 않는다. 대신 QA 접두사가 유일한 식별·회수 기준이다.
+  Z7(2026-10-07)부터 읽기 경로가 `user_id`로 범위를 건다(`src/seller_console/orders/scope.py`):
+  빈 `user_id` = 오너 풀 → 관리자·가족(`FAMILY_EMAILS`)만 본다. 시드는 `user_id`를 넣지 않으므로
+  오너 풀에 들어가고, 공개 가입자 계정으로는 보이지 않는다(검수는 관리자·가족 계정으로).
+  셀러별 시드(`--user`)는 받지 않는다 — QA 접두사가 유일한 식별·회수 기준이다.
 
 ■ 사용 (Render Shell — DATABASE_URL 이 있는 환경)
     python scripts/qa_test_order.py count

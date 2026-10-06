@@ -76,18 +76,25 @@
     <div class="col-3"><div class="m-kpi"><div class="v text-success">{{ kpi.shipped }}</div><div class="small text-muted">배송완료</div></div></div>
     <div class="col-3"><div class="m-kpi"><div class="v text-danger">{{ kpi.returned_exchanged }}</div><div class="small text-muted">반품</div></div></div>
   </div>
+  {# 주문 관리(orders.html)와 같은 상태 이름 — 영문 코드(paid 등)를 그대로 보이지 않는다. #}
+  {% set _status_ko = {"new":"신규접수","paid":"결제완료","preparing":"상품준비중","shipped":"배송중","delivered":"배송완료","canceled":"취소","returned":"반품","exchanged":"교환","refund_requested":"환불요청"} %}
   {% if orders %}
   <div class="vstack gap-2">
     {% for o in orders %}
     <div class="m-card p-2">
       <div class="d-flex justify-content-between"><span class="fw-semibold text-truncate">{{ o.get('product_name') or o.get('order_id') or '주문' }}</span>
-        <span class="small text-muted">{{ o.get('status') or '' }}</span></div>
+        <span class="small text-muted">{{ _status_ko.get(o.get('status'), o.get('status')) if current_lang != 'en' else (o.get('status') or '') }}</span></div>
       <div class="small text-muted">{{ o.get('marketplace') or o.get('channel') or '' }} · {{ o.get('order_id') or '' }}</div>
     </div>
     {% endfor %}
   </div>
   {% else %}
+  {% if can_sync is not defined or can_sync %}
   <div class="m-card p-4 text-center text-muted small">표시할 주문이 없어요. 마켓을 연동하면 주문이 모여요.<br><a href="/seller/markets/connect">마켓 연동하기 →</a></div>
+  {% else %}
+  {# Z7: 이 계정은 주문 동기화가 아직 없다 — 「연동하면 모여요」는 거짓 약속이 된다. #}
+  <div class="m-card p-4 text-center text-muted small">표시할 주문이 없어요. 내 마켓 주문을 가져오는 기능은 준비 중이에요 — 그동안 각 마켓 판매자 센터에서 확인해 주세요.</div>
+  {% endif %}
   {% endif %}
   <a href="/seller/orders" class="btn btn-ghost w-100 mt-2">주문 전체 관리 →</a>
 </section>
