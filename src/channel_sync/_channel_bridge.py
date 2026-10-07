@@ -146,6 +146,7 @@ def run_upload(
             lines = [str(error)]
         exc = ChannelUploadError(f"{market_label} 업로드 실패: {error}", lines=lines, held=held)
         exc.action_url = resp.get("action_url", "") if isinstance(resp, dict) else ""
+        exc.reason_code = str(resp.get("reason_code") or "") if isinstance(resp, dict) else ""   # Y7: option_limit 등
         raise exc
 
     return {
