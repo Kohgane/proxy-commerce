@@ -284,9 +284,9 @@
     b.disabled = true; b.textContent = '다시 변환하는 중…';
     try {
       var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/video-reconvert', {method: 'POST', credentials: 'same-origin'});
-      var d = await r.json().catch(function () { return {ok: false, error: 'HTTP ' + r.status}; });
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요(잠시 뒤 다시)'}; });
       if (d.ok) { b.textContent = '다시 변환을 시작했어요 — 잠시 뒤 새로 고침'; setTimeout(function () { location.reload(); }, 8000); return; }
-      b.textContent = '다시 변환 못 함 — ' + (d.error || ('HTTP ' + r.status));
+      b.textContent = '다시 변환 못 함 — ' + (d.error || '서버가 사유를 주지 않았어요');
     } catch (err) { b.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
     b.disabled = false;
   });
