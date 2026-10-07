@@ -551,7 +551,7 @@ document.querySelectorAll('.registry-diag-btn').forEach(btn => {
         pcToast((data.diag && data.diag.detail) || data.error || '진단하지 못했어요. 확장 자가진단을 이용해 주세요.', 'warning');
       }
     } catch(e) {
-      pcToast('진단 중 오류가 발생했어요.', 'danger');
+      pcToast(kgpFriendlyError(e, '진단 실패'), 'danger');   // Y6-C C1: 상태·사유 원문
     } finally {
       btn.disabled = false; btn.innerHTML = prev;
     }

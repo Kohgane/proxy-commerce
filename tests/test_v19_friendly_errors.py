@@ -28,10 +28,10 @@ def test_friendly_error_mapping_runs():
     cases = {
         "Cannot read properties of undefined (reading 'x')": "문제가 생겼",
         "undefined": "문제가 생겼",
-        "COUPANG_ACCESS_KEY 미설정": "마켓 연동",
+        "COUPANG_ACCESS_KEY 미설정": "COUPANG_ACCESS_KEY 미설정",
         "Failed to fetch": "인터넷 연결",
         "가격이 0입니다": "가격을 못",
-        "HTTP 500 Internal Server Error": "문제가 생겼",
+        "HTTP 500 Internal Server Error": "HTTP 500",
         "<!doctype html><html>boom": "문제가 생겼",
     }
     script = body + "\nconst I=" + json.dumps(list(cases.keys()), ensure_ascii=False) + \
@@ -41,9 +41,11 @@ def test_friendly_error_mapping_runs():
     results = json.loads(out.stdout.strip())
     for (raw, expect), got in zip(cases.items(), results):
         assert expect in got, f"{raw!r} → {got!r} (기대 포함: {expect})"
-        # 개발 토큰이 화면 문구에 새지 않아야 함
-        for leak in ("undefined", "Traceback", "<!doctype", "HTTP 500", "COUPANG_ACCESS_KEY"):
+        # Y6-C C1(오너 2026-10-07): 「숨기는 일반 문구 금지」 — 원문(상태·사유 120자)은 싣되, HTML 태그·[object]는 안 낸다.
+        for leak in ("<!doctype", "<html", "[object"):
             assert leak not in got
+    assert "HTTP 500 Internal Server Error" in results[5]          # 원문이 그대로 보인다
+    assert "boom" in results[6]                                    # HTML은 태그를 걷고 글만
 
 
 def test_key_flows_use_friendly_handler():

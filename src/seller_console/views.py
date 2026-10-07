@@ -3779,11 +3779,13 @@ def collect_prevalidate():
     t.join(_PV_SYNC_DEADLINE_SEC)
     if t.is_alive():
         logger.warning("사전검증 %s초 초과(markets=%s) — 502 대신 시간 초과로 답함", _PV_SYNC_DEADLINE_SEC, markets)
-        return jsonify({"ok": False, "timeout": True,
+        return jsonify({"ok": False, "timeout": True, "error_code": "prevalidate_timeout",
                         "error": f"사전검증이 {_PV_SYNC_DEADLINE_SEC}초 안에 끝나지 않았어요 — 마켓을 줄여 다시 해 주세요."})
     if "exc" in box:
         logger.warning("사전검증 오류: %s", box["exc"])
-        return jsonify({"ok": False, "error": "사전검증 중 오류가 발생했습니다."}), 500
+        # Y6-C C1: 「오류가 발생했습니다」만 주면 화면이 원인을 못 싣는다 — 예외 종류·첫 120자를 그대로.
+        return jsonify({"ok": False, "error_code": "prevalidate_error",
+                        "error": f"사전검증 중 오류 — {type(box['exc']).__name__}: {str(box['exc'])[:120]}"}), 500
     return jsonify(box["resp"])
 
 

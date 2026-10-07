@@ -135,62 +135,90 @@ function kgpEscapeForHtml(s) {
 }
 
 function kgpFriendlyError(raw) {
-  let msg = '';
-  // F28: 서버가 **이미 셀러의 말로** 쓴 문장은 다시 번역하지 않는다.
-  //   실측(2026-09-16): 등록 게이트가 「등록 전 이미지 확인에서 막혔어요 — 갤러리 3번째 · 응답 403」을
-  //   보냈는데 아래 규칙이 「이미지 처리에 실패했어요 — 잠시 후 다시 시도」로 덮었다.
-  //   사유가 사라진 것도 문제지만, **틀린 조언**이 더 나쁘다 — 잠시 후 다시 시도하면 똑같이 막힌다.
-  //   판단은 추측(문장 모양)이 아니라 **서버가 단 표식**으로 한다.
+  // 선택: 어느 단계에서 실패했나(「사전검증 시작 실패」). `.map(kgpFriendlyError)`의 두 번째 인자(번호)는 단계가 아니다.
+  const stage = (arguments.length > 1 && typeof arguments[1] === 'string') ? arguments[1] : '';
+  // Y6-C C1(오너 2026-10-07): **숨기는 일반 문구 금지.** 「문제가 생겼어요 — 잠시 후 다시」만 띄우던 자리에
+  //   HTTP 상태 + 서버가 준 사유코드·메시지 첫 120자를 같이 싣는다(예: 「사전검증 시작 실패 — 502 worker timeout」).
+  //   실측(19:0x KST, 플리츠 세트): 사전검증 → 토스트가 원인 없이 이 문구뿐이었다. 쉬운 문장 규칙은 앞에 두되 원문을 지우지 않는다.
+  const plain = function (s) {
+    return String(s == null ? '' : s).replace(/<(head|script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  };
+  let status = (raw && typeof raw === 'object' && Number(raw.status) > 0) ? Number(raw.status) : 0;
+  let httpText = '';
+  try {                                           // 직전에 실패한 응답(감시가 적어 둔 것 — 15초 안)
+    const L = (typeof window !== 'undefined') ? window._kgpLastHttp : null;
+    if (L && Date.now() - L.at < 15000) { if (!status) status = L.status; httpText = L.text || ''; }
+  } catch (e) { /* 감시 없음 */ }
+  const prefix = stage ? (String(stage) + ' — ') : '';
+  // F28: 서버가 **이미 셀러의 말로** 쓴 문장(user_message 표식)은 그대로.
   if (raw && typeof raw === 'object' && raw.user_message && (raw.error || raw.message)) {
-    // F30: `Error` 객체에도 표식을 달 수 있게 `message`까지 본다 — 「응답이 아예 없었다」는
-    //   사실은 응답 객체가 없으니 오직 이 경로로만 올라온다.
     const s = String(raw.error || raw.message).trim();
-    // 표식이 붙어도 개발 메시지는 통과시키지 않는다(표식은 면허가 아니다).
-    const devish = /traceback|stacktrace|<!doctype|<html|cannot read prop|is not defined/i.test(s);
-    if (s && !devish && s.length <= 300) return s;
+    if (s && s.length <= 300 && !/<!doctype|<html|traceback|stacktrace|cannot read prop|is not defined/i.test(s)) return prefix + s;
   }
+  let msg = '';
   if (raw == null) msg = '';
   else if (typeof raw === 'string') msg = raw;
   else if (raw.error) msg = String(raw.error);
   else if (raw.message) msg = String(raw.message);
+  else if (raw.reason) msg = String(raw.reason);
+  else if (Array.isArray(raw) || typeof raw === 'object') msg = '';
   else { try { msg = String(raw); } catch (e) { msg = ''; } }
-  // 6-j: 알아볼 수 없는 객체는 `String()`이 **`[object Object]`**를 준다 — 그게 그대로
-  //   사용자 화면에 나갔다(개발 메시지 가리기의 구멍). 원문이 아니라 일반 안내로 떨어뜨린다.
-  if (/^\[object \w+\]$/.test(msg)) msg = '';
+  if (/^\[object \w+\]$/.test(msg)) msg = '';            // 6-j: [object Object]는 원문이 아니다
   msg = (msg || '').trim();
-  // 코드/패턴 → 쉬운 문장(무엇+왜+다음 행동). 서버가 env/HTTP를 줘도 친절 문장으로 가린다.
+  // 스택트레이스는 통째로 싣지 않는다 — 마지막 줄(예외 종류·메시지)만 사유로.
+  const wasTrace = /traceback|stacktrace/i.test(msg);
+  if (wasTrace) {
+    const lines = msg.split(/\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+    const last = lines[lines.length - 1] || '';
+    msg = /traceback/i.test(last) ? last.replace(/^.*?(most recent call last\)\s*:?)/i, '').trim() : last;
+  }
+  // 응답이 JSON이 아니었다(502 HTML 등) — 파서 오류 문장보다 감시가 적어 둔 **응답 본문**이 사유다.
+  if (httpText && /unexpected token|json\.parse|not valid json|unexpected end of json/i.test(msg)) msg = '';
+  const code = (raw && typeof raw === 'object' && raw.error_code) ? String(raw.error_code) : '';
+  const reason = plain(msg) || plain(httpText);
+  const statusTxt = (status && reason.indexOf(String(status)) !== 0) ? String(status) : '';   // 본문이 「502 …」로 시작하면 한 번만
+  const detail = [statusTxt, code, reason].filter(Boolean).join(' ').slice(0, 160);
+  const withDetail = function (lead) { return prefix + lead + (detail ? ' — ' + detail : ''); };
+  // 쉬운 문장(무엇+다음 행동) — 앞에 두고, 원문은 뒤에 그대로.
   const rules = [
-    [/failed to fetch|networkerror|네트워크|연결이 불안정|timeout|시간\s*초과|타임아웃/i,
-      '인터넷 연결이 불안정했어요 — 잠시 후 다시 시도해 주세요.'],
-    [/401|403|unauthor|forbidden|인증|로그인이 필요|token.*(missing|없|필요)|권한/i,
-      '로그인 또는 권한이 필요해요 — 다시 로그인하거나 ‘마켓 연동’에서 키를 확인해 주세요.'],
-    // C-F3: '가격'이 들어갔다고 다 실패가 아니다. 이 규칙이 너무 넓어
-    //   **성공 문구까지 실패로 바꿔 놓고 있었다**("…가격까지 담았어요" → "가격을 못 읽었어요").
-    //   오너 실측에서 하단에 뜬 중복 경고가 이것이다 — 한 상태를 두 번, 그것도 반대로 말했다.
+    [/failed to fetch|networkerror|load failed|네트워크|연결이 불안정/i, '인터넷 연결이 끊겼거나 서버가 답하지 않았어요'],
+    [/\b401\b|\b403\b|unauthor|forbidden|로그인이 필요|token.*(missing|없|필요)/i,
+      '로그인 또는 권한이 필요해요 — 다시 로그인하거나 ‘마켓 연동’에서 키를 확인해 주세요'],
     [/가격[^.]{0,12}(못|실패|없|오류|확인\s*필요|안\s*읽|0\s*입니다|0원)|price[^.]{0,12}(fail|error|missing|invalid|is\s*0)/i,
-      '가격을 못 읽었어요 — 상품 페이지에서 다시 수집하거나 가격을 직접 입력해 주세요.'],
-    [/미연동|미설정|not\s*connected|연동.*안|키.*확인|credential/i,
-      '마켓 연동이 안 됐어요 — ‘마켓 연동’에서 API 키를 확인해 주세요.'],
-    [/업로드|등록 실패|등록에 실패|upload|발행/i,
-      '마켓에 등록하지 못했어요 — 키와 필수값을 확인하고 다시 시도해 주세요.'],
-    [/상품 정보|읽지 못|추출|수집.*실패|상세 페이지|collect/i,
-      '상품 정보를 읽지 못했어요 — 상품 상세 페이지인지 확인하고 다시 수집해 주세요.'],
-    // F28: 이 규칙은 **「이미지」라는 낱말만 보고** 문장을 통째로 갈아치웠다 — 등록 게이트의
-    //   정직한 사유(장 번호·응답코드)까지 덮었다. C-F3에서 '가격' 규칙에 똑같은 일이 있었고
-    //   그때 좁혔는데, 옆 줄의 같은 함정은 그대로 뒀다. 실패 어형일 때만 잡는다.
+      '가격을 못 읽었어요 — 다시 수집하거나 가격을 직접 입력해 주세요'],
+    // F28: 「이미지」 낱말만으로는 안 바꾼다 — 실패 어형일 때만.
     [/이미지[^.]{0,14}(못|실패|없|오류|깨졌|안\s*올라)|image[^.]{0,14}(fail|error|invalid)/i,
-      '이미지 처리에 실패했어요 — 잠시 후 다시 시도해 주세요.'],
+      '이미지 처리에 실패했어요 — 잠시 후 다시 시도해 주세요'],
   ];
-  for (const [re, friendly] of rules) { if (re.test(msg)) return friendly; }
-  // 개발 메시지(undefined/스택/HTTP/env 대문자 토큰/HTML 등)는 가리고 일반 안내로.
-  const devLike = !msg
-    || /^(undefined|null)$/i.test(msg)
-    || /traceback|stacktrace|<!doctype|<html|cannot read prop|is not defined|referenceerror|typeerror|\b[A-Z][A-Z0-9_]{6,}\b|\bhttp[s]?:\/\//i.test(msg)
-    || /\b[45]\d\d\b/.test(msg);
-  if (devLike) return '문제가 생겼어요 — 잠시 후 다시 시도해 주세요. 계속되면 도움말을 확인해 주세요.';
-  // 서버가 이미 사람 말로 짧게 준 경우는 그대로 존중.
-  return msg.length <= 140 ? msg : '문제가 생겼어요 — 잠시 후 다시 시도해 주세요.';
+  if (status === 401 || status === 403) return withDetail(rules[1][1]);
+  for (const [re, friendly] of rules) { if (re.test(msg)) return withDetail(friendly); }
+  // 서버가 사람 말로 짧게 준 문장(코드·HTML 아님)은 그대로 — 상태만 붙인다.
+  const devLike = wasTrace || !msg || /^(undefined|null)$/i.test(msg) || /<!doctype|<html|traceback|cannot read prop|is not defined/i.test(msg);
+  if (!devLike && msg.length <= 140 && !status && !code) return prefix + msg;
+  if (!devLike && msg.length <= 140) return prefix + [status ? String(status) : '', code, msg].filter(Boolean).join(' ');
+  return prefix + '문제가 생겼어요 — ' + (detail || '사유 원문 없음(서버가 상태·본문을 주지 않았어요)');
 }
+
+/** Y6-C C1: 실패한 응답을 적어 둔다 — 호출부가 `resp.json()`에서 죽어도(502 HTML) 토스트가 상태·본문 첫 줄을 싣는다. */
+(function () {
+  if (typeof window === 'undefined' || !window.fetch || window._kgpFetchWatched) return;
+  window._kgpFetchWatched = true;
+  const orig = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const url = (typeof input === 'string') ? input : ((input && input.url) || '');
+    return orig(input, init).then(function (r) {
+      if (!r.ok) {
+        window._kgpLastHttp = {url: url, status: r.status, text: '', at: Date.now()};
+        try { r.clone().text().then(function (t) { if (window._kgpLastHttp && window._kgpLastHttp.url === url) window._kgpLastHttp.text = t; }); } catch (e) { /* 본문 못 읽음 */ }
+      }
+      return r;
+    }, function (e) {
+      window._kgpLastHttp = {url: url, status: 0, text: String((e && e.message) || e), at: Date.now()};
+      throw e;
+    });
+  };
+})();
 
 /**
  * v19 P0: 실패한 그 자리에 인라인 안내 + (선택)재시도 + 도움말. 토스트만으로 끝내지 않는다.

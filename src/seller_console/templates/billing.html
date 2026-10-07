@@ -73,7 +73,7 @@ async function selectPlan(plan, payReady=true) {
     pcToast(data.message || '완료', 'success');
     setTimeout(() => location.reload(), 500);
   } catch (err) {
-    pcToast('요청 처리 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.', 'error');
+    pcToast(kgpFriendlyError(err, '요금제 요청 실패'), 'error');   // Y6-C C1: 상태·사유 원문을 싣는다
   }
 }
 
@@ -84,7 +84,7 @@ function openTossCheckout(payload) {
     return;
   }
   if (typeof TossPayments === 'undefined') {
-    pcToast('결제 시스템 로딩 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.', 'error');
+    pcToast('결제창을 불러오지 못했어요 — 토스페이먼츠 스크립트(TossPayments)가 로드되지 않았어요(차단·네트워크). 새로고침 후 다시 눌러 주세요.', 'error');
     return;
   }
   const toss = TossPayments(clientKey);
