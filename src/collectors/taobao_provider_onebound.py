@@ -430,7 +430,9 @@ def normalize(raw: dict, now=None) -> Dict[str, Any]:
         # 브랜드: other/其他·빈 값은 브랜드 없음(None) — Y6 IP 게이트·상품명에 넘기지 않는다(병합 페이로드엔 원래 안 실음)
         "brand": _brand(item.get("brand")),
         "cache": cache, "data_update": data_update,
-        "price_asof": data_update if (cache and _stale(data_update, now)) else "",
+        # 픽스처 3호(오너 2026-10-07): cache 0인데 data_update가 한 달 전(2026-08-25) — 「가격 기준」은 cache 플래그가 아니라
+        #   data_update 날짜로 판단한다(온바운드가 새로 긁었다고 해도 상품 데이터 자체가 오래됐을 수 있다).
+        "price_asof": data_update if (data_update and _stale(data_update, now)) else "",
         "api_info": parse_api_info((raw or {}).get("api_info")), "parse_notes": notes,
     }
     return {"title": str(item.get("title") or ""), "images": imgs,

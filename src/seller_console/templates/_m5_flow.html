@@ -14,7 +14,8 @@
       {% if m5.video.state == 'done' %}
       <video class="m5-thumb" data-role="m5-video-player" src="{{ m5.video.url }}" poster="{{ m5.video.thumb }}" muted playsinline controls preload="none"></video>
       무음 동영상 {{ (m5.video.duration or 0)|round|int }}초 · {{ m5.video.height }}p
-      {% elif m5.video.state == 'failed' %}동영상을 만들지 못했어요 — {{ m5.video.why }}
+      {% elif m5.video.state == 'failed' %}동영상을 만들지 못했어요 — {{ m5.video_why }}. 등록은 사진만으로 그대로 돼요.
+        {% if m5.video_why_raw %}<div class="m5-note" data-role="m5-video-why-raw">원문(관리자만 보임): {{ m5.video_why_raw }}</div>{% endif %}
       {% else %}동영상을 무음으로 만드는 중이에요(등록을 막지 않아요).{% endif %}
       <ul class="m5-video-lines">{% for l in m5.video_lines %}<li data-role="m5-video-market">{{ l }}</li>{% endfor %}</ul>
     </div>
@@ -54,6 +55,8 @@
       편집 화면의 「한국어 번역」을 누르거나 값을 직접 넣어 주세요(이 값의 SKU는 등록 전에 멈춥니다).</div>
     {% endif %}
     {% for r in m5.risks or [] %}<div class="m5-needs" data-role="m5-risk"><span class="pc-badge pc-badge-danger">{{ r }}</span></div>{% endfor %}
+    {% if m5.mixed_types %}<div class="m5-needs" data-role="m5-mixed-types"><span class="pc-badge pc-badge-off">옵션에 서로 다른 상품이 섞여 있어요</span>
+      {{ m5.mixed_types|join(' · ') }} — 상품 종류는 떼지 않고 옵션 값에 남겨 뒀어요. 한 상품으로 올려도 되는지 확인해 주세요.</div>{% endif %}
     {# F(오너 2026-10-06): 옵션 값·규격표 값의 상표·브랜드 색 이름 — 상품은 보류하지 않고 그 값만 바꿀 말을 낸다. #}
     {% if m5.brand_values %}
     <div class="m5-needs" data-role="m5-brand-values"><span class="pc-badge pc-badge-off">옵션 값에 상표 이름 — 바꿀 말 제안</span>

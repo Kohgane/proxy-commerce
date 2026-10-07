@@ -21,15 +21,33 @@ from typing import Dict, List, Optional
 
 MAX = 30
 _SYMBOLS = re.compile("[✀-➿☀-⛿⬀-⯿Ꙁ-ꚟ\U0001F300-\U0001FAFF★☆●○◆◇■□▲△▼▽◎※√✔✓❗❕‼！~～|｜]+")
+_HAN = re.compile(r"[\u4e00-\u9fff]")
 _BRACKETS = re.compile(r"[【】\[\]()（）「」『』<>《》]")
 AD_TAILS = ("升降桌专用款", "专用款", "新品", "新款", "爆款", "热卖", "推荐", "限时", "特价", "官方正品", "正品", "现货", "包邮")
 
 # 색상 — 긴 낱말부터(曜石黑이 黑보다 먼저)
-COLORS = (("曜石黑", "오닉스 블랙"), ("磨砂黑", "매트 블랙"), ("象牙白", "아이보리"), ("黑色", "블랙"), ("白色", "화이트"),
+COLORS = (("杏纹", "아프리콧 무늬"), ("黑纹", "블랙 무늬"), ("曜石黑", "오닉스 블랙"), ("磨砂黑", "매트 블랙"), ("象牙白", "아이보리"), ("黑色", "블랙"), ("白色", "화이트"),
           ("灰色", "그레이"), ("银色", "실버"), ("金色", "골드"), ("粉色", "핑크"), ("蓝色", "블루"), ("绿色", "그린"),
           ("红色", "레드"), ("黑", "블랙"), ("白", "화이트"), ("灰", "그레이"), ("粉", "핑크"), ("蓝", "블루"))
-AXES = (("color", "색상"), ("config", "구성"), ("power", "출력"), ("cable", "케이블"), ("length", "길이"))
-_MISSING = {"cable": "일반", "length": "기본", "config": "기본", "power": "기본", "color": "기본"}
+AXES = (("color", "색상"), ("size", "사이즈"), ("config", "구성"), ("power", "출력"), ("cable", "케이블"), ("length", "길이"))
+_MISSING = {"cable": "일반", "length": "기본", "config": "기본", "power": "기본", "color": "기본", "size": "기본"}
+# 픽스처 3호(오너 2026-10-07, 티몰 913382613725): 「杏纹圆形中古风升降茶几[50cm]」 — 값 안 대괄호 사이즈는 「사이즈」 축으로.
+_BRACKET_SIZE = re.compile(r"[\[【(（]\s*(\d+(?:\.\d+)?)\s*(cm|mm|厘米|公分)\s*[\]】)）]", re.I)
+# 상품 종류 명사 — 한 축 안에 서로 다른 종류(茶几·电视柜)가 섞이면 따로 떼지 않고 값에 남기고 카드에 경고한다(긴 것부터).
+PRODUCT_NOUNS = ("床头柜", "电视柜", "鞋柜", "书柜", "衣柜", "边几", "茶几", "餐桌", "书桌", "电脑桌", "梳妆台", "沙发", "椅", "凳",
+                 "床", "桌", "柜", "架")
+
+
+def product_type(value: str) -> str:
+    """값 속 상품 종류 명사(없으면 빈 문자열) — 가장 긴 것 하나."""
+    s = str(value or "")
+    return next((n for n in PRODUCT_NOUNS if n in s), "")
+
+
+def mixed_types(values: List[str]) -> List[str]:
+    """한 축 값들에 서로 다른 상품 종류가 섞였나 — 섞였으면 종류 목록(나온 순), 아니면 []."""
+    seen = list(dict.fromkeys(t for t in (product_type(v) for v in values) if t))
+    return seen if len(seen) >= 2 else []
 
 
 def clean(value: str) -> str:
@@ -43,6 +61,10 @@ def clean(value: str) -> str:
 def facets(value: str) -> Dict[str, Optional[str]]:
     s = clean(value)
     out: Dict[str, Optional[str]] = {k: None for k, _n in AXES}
+    m = _BRACKET_SIZE.search(str(value or ""))
+    if m:
+        unit = {"厘米": "cm", "公分": "cm"}.get(m.group(2), m.group(2).lower())
+        out["size"] = f"{m.group(1)}{unit}"
     for cn, ko in COLORS:
         if cn in s:
             out["color"] = ko
@@ -84,9 +106,15 @@ def split_values(values: List[str]) -> Dict:
         col = [c or _MISSING[key] for c in col]
         if len(set(col)) > 1:
             axes.append((name, col))
+    mixed = mixed_types(vals)
+    if mixed and axes:
+        # 상품 종류가 섞였다 — 색상·사이즈만 떼고 나머지 글(종류 명사 포함)은 「종류」 값으로 남긴다(번역기가 옮긴다).
+        rest = [_rest(v, f) for v, f in zip(vals, fs)]
+        if all(rest) and len(set(rest)) > 1:
+            axes.append(("종류", rest))
     tuples = list(zip(*[c for _n, c in axes])) if axes else []
     if len(axes) >= 2 and len(set(tuples)) == len(vals) and all(len(x) <= MAX for _n, c in axes for x in c):
-        return {"state": "split", "axes": axes, "map": dict(zip(vals, tuples)), "why": ""}
+        return {"state": "split", "axes": axes, "map": dict(zip(vals, tuples)), "why": "", "mixed_types": mixed}
     # 축소: 색상 · 구성 · 출력만 이어 한 값으로
     comp = [" · ".join(x for x in (f["color"], f["config"], f["power"]) if x) for f in fs]
     if all(comp) and len(set(comp)) == len(vals) and all(len(c) <= MAX for c in comp):
@@ -95,9 +123,20 @@ def split_values(values: List[str]) -> Dict:
     return {"state": "none", "why": f"분해해도 값 {dup}개가 다른 값과 같은 조합이 돼 SKU를 1:1로 못 옮겨요(가격이 섞임)"}
 
 
+def _rest(value: str, f: Dict[str, Optional[str]]) -> str:
+    """값에서 색상 낱말·대괄호 사이즈를 뺀 나머지(종류 명사 포함)."""
+    s = _BRACKET_SIZE.sub(" ", str(value or ""))
+    for cn, ko in COLORS:
+        if f.get("color") == ko and cn in s:
+            s = s.replace(cn, " ", 1)
+            break
+    return clean(s)
+
+
 def _needs(o: dict) -> bool:
     vals = [str(v.get("name") if isinstance(v, dict) else v) for v in (o.get("values") or [])]
-    return len(vals) >= 2 and any(len(clean(v)) > MAX or _SYMBOLS.search(v) or "【" in v for v in vals)
+    return len(vals) >= 2 and any(len(clean(v)) > MAX or _SYMBOLS.search(v) or "【" in v or _BRACKET_SIZE.search(v)
+                                  for v in vals)
 
 
 def apply(extra: dict) -> Optional[Dict]:
@@ -116,7 +155,9 @@ def apply(extra: dict) -> Optional[Dict]:
         if r["state"] == "none":
             extra["option_split"] = rec
             return rec
-        new_opts = opts[:ai] + [{"name": n, "name_ko": n, "values": list(dict.fromkeys(c)), "values_ko": list(dict.fromkeys(c))}
+        # 한국어로 만든 축(색상·사이즈…)은 values_ko도 같이 · 원문이 남은 축(종류)은 번역기가 옮기게 values_ko를 비워 둔다
+        new_opts = opts[:ai] + [dict({"name": n, "name_ko": n, "values": list(dict.fromkeys(c))},
+                                     **({} if any(_HAN.search(x) for x in c) else {"values_ko": list(dict.fromkeys(c))}))
                                 for n, c in r["axes"]] + opts[ai + 1:]
         new_skus, ok = [], True
         for k in skus:
@@ -142,6 +183,8 @@ def apply(extra: dict) -> Optional[Dict]:
         extra["skus_src"] = copy.deepcopy(skus)
         extra["options"], extra["skus"] = new_opts, new_skus
         rec["axes"] = [n for n, _c in r["axes"]]
+        if r.get("mixed_types"):
+            rec["mixed_types"] = r["mixed_types"]
         extra["option_split"] = rec
         return rec
     return None
@@ -150,6 +193,10 @@ def apply(extra: dict) -> Optional[Dict]:
 def cap_axes(product: dict, limit: int = 3) -> dict:
     """쿠팡 옵션 속성 3개 제한(볼트 지뢰) — 분해로 축이 넘치면 3번째부터 「사양」 한 축으로 잇는다(30자·1:1일 때만).
     못 이으면 그대로(쿠팡 계획이 「3개 초과」로 보류한다). 원본 dict는 건드리지 않는다."""
+    opts = product.get("options") if isinstance(product.get("options"), list) else []
+    if len(opts) <= limit:
+        return product
+    product = _drop_single_axes(product)                 # 값이 하나뿐인 축(安装方式: 整装)은 SKU를 가르지 않는다 — 먼저 뺀다
     opts = product.get("options") if isinstance(product.get("options"), list) else []
     if len(opts) <= limit or not (product.get("option_split") or {}).get("axes"):
         return product
@@ -163,4 +210,17 @@ def cap_axes(product: dict, limit: int = 3) -> dict:
     out["options"] = opts[:head] + [{"name": "사양", "name_ko": "사양", "values": list(dict.fromkeys(merged)),
                                      "values_ko": list(dict.fromkeys(merged))}]
     out["skus"] = [dict(k, spec=list(s)) for k, s in zip(skus, specs)]
+    return out
+
+
+def _drop_single_axes(product: dict) -> dict:
+    """값이 하나뿐인 축을 뺀다(SKU spec에서도 같은 자리) — 모든 SKU가 같은 값이라 1:1이 그대로다. 원본 dict는 그대로."""
+    opts = product.get("options") if isinstance(product.get("options"), list) else []
+    drop = [i for i, o in enumerate(opts) if isinstance(o, dict) and len(o.get("values") or []) == 1]
+    if not drop or len(drop) == len(opts):
+        return product
+    out = dict(product)
+    out["options"] = [o for i, o in enumerate(opts) if i not in drop]
+    out["skus"] = [dict(k, spec=[x for i, x in enumerate(k.get("spec") or []) if i not in drop]) if isinstance(k, dict) else k
+                   for k in (product.get("skus") or [])]
     return out

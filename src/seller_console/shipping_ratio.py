@@ -68,8 +68,30 @@ def _texts(pd: dict) -> str:
     return " ".join(parts)
 
 
+_PKG_KEYS = ("包装体积", "包装尺寸体积", "外箱体积")
+_PKG_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(m³|m3|立方米|立方|方)?\s*$", re.I)
+
+
+def package_m3(pd: dict) -> float:
+    """규격표 「包装体积」(포장 부피, 타오바오 단위 ㎥) — 0 < v < 20일 때만(그 밖은 단위를 몰라 안 씀)."""
+    for sp in pd.get("detail_specs") or []:
+        if isinstance(sp, (list, tuple)) and len(sp) >= 2 and any(k in str(sp[0]) for k in _PKG_KEYS):
+            m = _PKG_RE.match(str(sp[1]))
+            if m and 0 < float(m.group(1)) < 20:
+                return float(m.group(1))
+    return 0.0
+
+
 def read_size(pd: dict) -> Dict[str, Any]:
-    """`{dims_cm, weight_kg, basis}` — 읽은 것 → 표 추정 → 없음 순."""
+    """`{dims_cm, weight_kg, basis, pkg_m3}` — 읽은 것 → 표 추정 → 없음 순. 포장 부피(包装体积 ㎥)는 따로 싣는다."""
+    out = _read_size(pd)
+    out["pkg_m3"] = package_m3(pd)
+    if out["pkg_m3"] and not out["basis"]:
+        out["basis"] = "규격표에서 읽은 포장 부피"
+    return out
+
+
+def _read_size(pd: dict) -> Dict[str, Any]:
     text = _texts(pd)
     dims = None
     for m in _DIM_RE.finditer(text):
@@ -190,7 +212,7 @@ def estimate(pd: dict, seller_id: str = "") -> Dict[str, Any]:
     except ValueError:
         price = 0.0
     fx = _fx(pd.get("currency"))
-    if not (size["dims_cm"] or size["weight_kg"]):
+    if not (size["dims_cm"] or size["weight_kg"] or size["pkg_m3"]):
         return {"state": "unknown", "line": "부피 미확인 — 치수·무게를 못 읽어 배송비 비율을 재지 못했어요(통과)"}
     origin = origin_of(pd)
     route = route_of(pd, seller_id) if origin == "cn" else ""
@@ -200,16 +222,20 @@ def estimate(pd: dict, seller_id: str = "") -> Dict[str, Any]:
     if price <= 0 or not fx:
         return {"state": "unknown", "line": "부피는 읽었지만 원가(가격·환율)가 없어 배송비 비율을 재지 못했어요(통과)"}
     vol = (size["dims_cm"][0] * size["dims_cm"][1] * size["dims_cm"][2] / rd["divisor"]) if size["dims_cm"] else 0.0
-    kg = round(max(vol, size["weight_kg"], 0.5), 1)
+    # 픽스처 3호(오너 2026-10-07): 包装体积 0.36㎥ = 상자 부피 → 부피무게(㎥×1,000,000 ÷ 나눗수). 상품 치수보다 배송에 가깝다.
+    pkg_kg = size["pkg_m3"] * 1_000_000 / rd["divisor"] if size["pkg_m3"] else 0.0
+    kg = round(max(vol, pkg_kg, size["weight_kg"], 0.5), 1)
     ship = round(kg * rd["rate"])
     cost = round(price * fx)
     ratio = round(ship / cost * 100) if cost else 0
     dims_txt = ("×".join(f"{d:g}" for d in size["dims_cm"]) + "cm") if size["dims_cm"] else ""
     where = ("중국발 · " + ROUTES.get(route, "경로 미설정")) if origin == "cn" else ("미국발" if origin == "us" else "")
+    read = [x for x in (f"무게 {size['weight_kg']:g}kg" if size["weight_kg"] else "",
+                        f"포장 부피 {size['pkg_m3']:g}㎥(부피무게 {pkg_kg:.1f}kg)" if size["pkg_m3"] else "") if x]
     return {"state": "ok", "ratio_pct": ratio, "ship_krw": ship, "cost_krw": cost, "chargeable_kg": kg,
-            "basis": size["basis"], "origin": origin, "route": route, "rate_env": rd["rate_env"],
+            "basis": size["basis"], "origin": origin, "route": route, "rate_env": rd["rate_env"], "pkg_m3": size["pkg_m3"],
             "line": (f"추정 배송비 {ship:,}원({where} {rd['rate']:,.0f}원/kg · 청구 무게 {kg:g}kg"
-                     f"{' · ' + dims_txt if dims_txt else ''} · {size['basis']}) "
+                     f"{' · ' + dims_txt if dims_txt else ''}{' · ' + ' · '.join(read) if read else ''} · {size['basis']}) "
                      f"— 원가 {cost:,}원의 {ratio}% (기준 {threshold_pct():g}%)")}
 
 

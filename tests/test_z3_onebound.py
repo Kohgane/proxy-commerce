@@ -155,6 +155,9 @@ def test_fresh_cache_has_no_price_asof():
     assert O.normalize(raw)["provider"]["price_asof"] == ""
     raw["cache"] = 0
     raw["data_update"] = "2026-01-01 00:00:00"
+    # 픽스처 3호 계약(오너 2026-10-07): cache 0이어도 data_update가 하루 넘으면 「가격 기준」 — 날짜 기준(캐시 플래그 아님)
+    assert O.normalize(raw)["provider"]["price_asof"] == "2026-01-01 00:00:00"
+    raw["data_update"] = (datetime.now(timezone(timedelta(hours=8))) - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
     assert O.normalize(raw)["provider"]["price_asof"] == ""
 
 
