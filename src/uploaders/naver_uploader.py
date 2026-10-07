@@ -289,6 +289,14 @@ class NaverSmartStoreUploader(BaseUploader):
                                 product.get('sku', ''),
                                 '; '.join(s['reason'] for s in shot['skipped']))
                 product = {**product, 'images': shot['urls']}
+            # Y7 — 조합형 옵션(신규 등록만). 못 보내는 모양이면 **전송 0**으로 보류하고 사유코드를 싣는다.
+            from src.uploaders.naver_options import plan as _option_plan
+            opt = _option_plan(product, stock_default=self.STOCK_QUANTITY)
+            if opt['mode'] == 'hold':
+                logger.info('네이버 옵션 보류 sku=%s code=%s', product.get('sku', ''), opt['reason_code'])
+                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                        'reason_code': opt['reason_code'], 'error': opt['why']}
+            product = {**product, '_option_plan': opt}
             payload = self._build_product_payload(product)
             # 템플릿 예시값 유출 게이트 — 남의 상품 정보로 등록하느니 **중단**한다(택배사 게이트 동형).
             leaks = self.find_template_leaks(payload)
@@ -389,6 +397,12 @@ class NaverSmartStoreUploader(BaseUploader):
             'weight_kg': collected.get('weight_kg'),
             'stock': 999,
             'options': collected.get('options', {}),
+            # Y7 — 조합형 옵션 재료(SKU·SKU별 판매가·옵션 한국어 사슬 재료). 여기서 떨어지면 옵션이 조용히 단일로 간다.
+            'skus': collected.get('skus') or [],
+            '_values_ko': collected.get('_values_ko') or {},
+            'option_value_overrides': collected.get('option_value_overrides') or {},
+            '_names_ko': collected.get('_names_ko') or {},
+            'option_name_overrides': collected.get('option_name_overrides') or {},
             'tags': collected.get('tags', []),
             'shipping_fee': 0,
             'delivery_days': '7-14',
@@ -421,6 +435,12 @@ class NaverSmartStoreUploader(BaseUploader):
                            self.TEMPLATE_PATH.name)
         merged = self._deep_merge(copy.deepcopy(tpl), payload)
         self._ensure_notice_type(merged)
+        # Y7: 조합형을 실을 때는 같이 못 쓰는 단독형·표준형 칸(템플릿의 빈 목록)을 뺀다 — 빈 칸이라도 섞어 보내지 않는다.
+        oi = merged.get('originProduct', {}).get('detailAttribute', {}).get('optionInfo')
+        if isinstance(oi, dict) and oi.get('optionCombinations'):
+            for k in ('optionSimple', 'simpleOptionSortType', 'standardOptionGroups', 'optionStandards'):
+                if not oi.get(k) or k == 'simpleOptionSortType':
+                    oi.pop(k, None)
         return merged
 
     @classmethod
@@ -443,7 +463,13 @@ class NaverSmartStoreUploader(BaseUploader):
         rep = images[0] if images else ''
         optional = [{'url': u} for u in images[1:]]
         price = int(product.get('price', 0) or 0)
-        return {
+        stock = self.STOCK_QUANTITY
+        opt = product.get('_option_plan') or {}
+        option_info = None
+        if opt.get('mode') == 'combo':
+            # Y7: 판매가 = 가장 싼 조합, 조합별 price = 그 위 추가금. 상품 재고 = 조합 재고 합.
+            price, stock, option_info = int(opt['sale_price']), int(opt['stock']), opt['option_info']
+        payload = {
             'originProduct': {
                 'statusType': self.STATUS_TYPE,
                 'saleType': 'NEW',
@@ -454,7 +480,7 @@ class NaverSmartStoreUploader(BaseUploader):
                 'detailContent': product.get('description_html', ''),
                 'images': {'representativeImage': {'url': rep}, 'optionalImages': optional},
                 'salePrice': price,
-                'stockQuantity': self.STOCK_QUANTITY,
+                'stockQuantity': stock,
                 'deliveryInfo': {
                     'deliveryType': 'DELIVERY',
                     'deliveryAttributeType': 'NORMAL',
@@ -511,6 +537,9 @@ class NaverSmartStoreUploader(BaseUploader):
                 'naverShoppingRegistration': self.NAVER_SHOPPING_REGISTRATION,
             },
         }
+        if option_info:
+            payload['originProduct']['detailAttribute']['optionInfo'] = option_info
+        return payload
 
     # ── 이미지 업로드 정본(오너 SSH `naver_img.py`) ──────────────────────────────
     IMAGE_MIN_BYTES = 1024          # 정본: 1KB 미만은 썸네일 쓰레기 → 스킵

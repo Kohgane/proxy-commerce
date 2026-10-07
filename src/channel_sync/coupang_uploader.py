@@ -76,7 +76,7 @@ def with_choices(product_data: Dict[str, Any]) -> Dict[str, Any]:
     return apply_choices(pd, pd.get("coupang_attributes"), pd.get("coupang_option_pick"))
 
 
-def with_sku_prices(product_data: Dict[str, Any]) -> Dict[str, Any]:
+def with_sku_prices(product_data: Dict[str, Any], market: str = "coupang") -> Dict[str, Any]:
     """F51 — SKU마다 **그 SKU 원가로** 쿠팡 판매가를 낸다(`sell_price_krw`). 식은 등록과 같은 하나
     (`UploadDispatcher._landed_krw` → `calc_sell_price`). 못 내면 판매가를 비우고 사유(`price_why`)만 남긴다 —
     그 SKU가 하나라도 있으면 다중 등록은 열리지 않는다(F51 규칙 2, `coupang_options.sku_mode`).
@@ -107,7 +107,7 @@ def with_sku_prices(product_data: Dict[str, Any]) -> Dict[str, Any]:
         cur = str(k.get("currency") or pd.get("currency") or "").strip().upper()
         if cost > 0 and cur:
             val, why = UploadDispatcher._landed_krw(
-                {**pd, "price_original": cost, "price": cost, "currency": cur}, "coupang")
+                {**pd, "price_original": cost, "price": cost, "currency": cur}, market)   # Y7: 네이버는 네이버 수수료로
             if val > 0:
                 k["sell_price_krw"] = int(round(val))
             else:

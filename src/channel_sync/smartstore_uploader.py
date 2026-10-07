@@ -42,9 +42,12 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
             + (f" · 스토어 전용 NAVER_{account.upper()}_CLIENT_ID/SECRET" if account else "")
         )
 
+    # Y7: SKU마다 그 SKU 원가로 **스마트스토어** 판매가를 낸다(쿠팡과 같은 식 하나, 수수료만 마켓별) —
+    #   조합형 옵션의 조합별 추가금이 여기서 나온다. SKU가 없으면 입력 그대로(단일 등록 불변).
+    from .coupang_uploader import with_sku_prices
     return run_upload(
         up,
-        product_data,
+        with_sku_prices(product_data, market="smartstore"),
         required_envs=[],
         market_label=MARKET_LABEL,
     )

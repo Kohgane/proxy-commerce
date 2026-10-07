@@ -996,6 +996,12 @@ class UploadDispatcher:
             if _ph:
                 return PrevalidationResult(market=market, ok=False, hold=True, error_code="smartstore_price_floor",
                                            message=_ph, hint="기준은 관리자 규칙표(smartstore_routing)에서 바꿀 수 있어요.")
+            # Y7: 조합형 옵션 — 축 2개·조합 상한을 넘으면 보내지 않는다(등록과 같은 판정 `naver_options.limit_hold`).
+            from src.uploaders.naver_options import limit_hold as _ol, REASON_LIMIT as _OL
+            _olh = _ol(product_data)
+            if _olh:
+                return PrevalidationResult(market=market, ok=False, hold=True, error_code=_OL, message=_olh,
+                                           hint="다른 마켓은 그대로 진행돼요.")
             if _st:
                 _lim = _sr.limit_state(_st)
                 if _lim["full"]:
@@ -1246,7 +1252,7 @@ class UploadDispatcher:
         if market == "smartstore":
             _pv = self._prevalidate_market(product_data, market)
             if not _pv.ok and _pv.error_code in ("smartstore_token_failed", "smartstore_limit_full",
-                                                 "smartstore_price_floor"):
+                                                 "smartstore_price_floor", "option_limit"):
                 return UploadResult(market=market, success=False, error_code=_pv.error_code,
                                     message=f"전송 전에 보류했습니다 — {_pv.message}", hint=_pv.hint)
         # T1-c: 표시광고 위험 문구 — 사전검증과 **같은 판정**으로 전송도 막는다(직접 호출 우회 0).
@@ -1677,6 +1683,12 @@ class UploadDispatcher:
                 action_url=_connect_url("smartstore"),
             )
         except Exception as exc:
+            # Y7: 업로더가 **전송 전에** 사유코드를 달아 보류했으면(option_limit·option_untranslated…) 그 코드 그대로.
+            _rc = str(getattr(exc, "reason_code", "") or "")
+            if _rc and getattr(exc, "held", False):
+                _lines = list(getattr(exc, "lines", []) or []) or [str(exc)]
+                return UploadResult(market="smartstore", success=False, error_code=_rc, details=_lines,
+                                    message=lines_message("전송 전에 보류했습니다", _lines))
             logger.warning("스마트스토어 업로드 오류: %s", exc)
             return UploadResult(
                 market="smartstore",

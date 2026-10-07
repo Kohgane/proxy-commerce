@@ -86,5 +86,5 @@ def spec_ko(product: Dict, spec: List[str]) -> List[str]:
 
 def naver_option_values(product: Dict) -> List[Dict]:
     """네이버 옵션 값(조합형 그룹 이름·값) — 같은 사슬. `[{group, values}]`.
-    ※ 2026-10-07 현재 네이버 등록 몸통엔 옵션 칸(optionInfo)이 없다(단일 SKU로 올림) — 붙일 때 이 값을 쓴다."""
+    Y7(2026-10-08): 네이버 조합형 옵션(`naver_options.plan`)이 이 사슬(`options_view`·`spec_ko`)로 그룹 이름·값을 낸다."""
     return [{"group": a["name_ko"], "values": [v["ko"] or v["src"] for v in a["values"]]} for a in options_view(product)]
