@@ -3,7 +3,8 @@
 {% block content %}
 {# Z5 후속(오너 2026-10-04): 중국발 배송비 판정의 요율을 고르는 기본값. 상품에서 따로 고르면 그게 이긴다. #}
 <div class="ship-route mx-auto" data-role="ship-route-settings">
-  <h1 class="pc-h2">중국발 발주 경로 — 계정 기본값</h1>
+  <h1 class="pc-h2">중국발 발주 경로 — {{ '공유 기본값' if shared else '계정 기본값' }}</h1>
+  {% if shared %}<p class="small text-muted" data-role="ship-route-shared">오너·가족 계정이 같은 값을 씁니다(공유 마켓과 같은 범위).</p>{% endif %}
   <p class="text-muted">상품에서 따로 고르지 않으면 이 경로의 요율로 배송비 비율을 잽니다. 요율이 비어 있으면 판정은 건너뜁니다(막지 않음).</p>
   <form method="post" class="vstack gap-2">
     <label class="sr-opt"><input type="radio" name="route" value="" {{ 'checked' if not current }}> 정하지 않음</label>

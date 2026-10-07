@@ -52,7 +52,10 @@ def test_share_result_shows_card_markets_and_steps(client):
     h = client.get("/seller/collect/share?src=share&text=" + quote(SHARE)).get_data(as_text=True)
     assert 'data-role="m5"' in h and 'data-role="m5-card"' in h and 'data-role="m5-coupang-name"' in h
     assert re.search(r'value="coupang" checked', h) and 'value="smartstore"' in h     # 쿠팡 기본 · 여럿
-    assert 'data-role="m5-check"' in h and re.search(r'data-role="m5-register" disabled', h)   # 검증 전엔 등록 닫힘
+    # Y6-C E(2026-10-07) 갱신: 검증 전 등록 버튼은 잠긴 채 말이 없어 가족 폰에서 「안 눌림」이었다(운영 사전검증 작업 0건).
+    #   이제 「사전검증부터」 모드 — 눌리면 사전검증을 돌린다. 검증 없이 바로 등록되는 길은 여전히 없다(test_y6c_e_family_register).
+    assert 'data-role="m5-check"' in h and re.search(r'data-role="m5-register" data-mode="check"', h)
+    assert 'data-role="m5-go-hint"' in h and "누르면 사전검증부터 해요" in h
     need = re.search(r'data-role="m5-needs-pc">(.*?)</div>', h, re.S).group(1)
     # Z3(2026-10-04): 「PC 확장에서 보강 필요」 → 누구에게 자동인지 + 폰 수동 경로
     assert "비어 있어요" in need and "SKU" in need and "사진" in need and "「사진 추가」" in need

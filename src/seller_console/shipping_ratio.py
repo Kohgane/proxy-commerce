@@ -132,20 +132,47 @@ def origin_of(pd: dict) -> str:
     return ""
 
 
-def account_route(seller_id: str) -> str:
+_SHARED_SCOPE = "shared"
+
+
+def _session_shared() -> bool:
+    """Y6-C E1: 지금 요청의 사람이 공유 마켓 사용자(관리자·`FAMILY_EMAILS`)인가 — 요청 밖(크론)·비로그인은 아니오."""
+    try:
+        from flask import has_request_context, session
+        if not has_request_context() or not (session.get("user_id") or session.get("user_email") or session.get("email")):
+            return False
+        from .market_pick import session_is_shared
+        return session_is_shared()
+    except Exception:
+        return False
+
+
+def _read_route(key: str) -> str:
     try:
         from src.db import image_translate_queue_pg as st
-        v = str((st.state_get(_ROUTE_KEY + str(seller_id or "")) or {}).get("route") or "")
+        v = str((st.state_get(_ROUTE_KEY + key) or {}).get("route") or "")
         return v if v in ROUTES else ""
     except Exception:
         return ""
 
 
-def save_account_route(seller_id: str, route: str) -> str:
+def account_route(seller_id: str, shared: Optional[bool] = None) -> str:
+    """계정 기본 발주 경로. Y6-C E1(오너 2026-10-07): 공유 마켓 사용자(오너·가족)는 **한 벌**(`ship_route:shared`)을
+    읽는다 — 가족이 자기 셀러 키로 읽어 「계정 기본 (미설정)」이 뜨던 자리. 한 벌이 비면 예전 자기 키(옛 저장값) 폴백."""
+    if shared is None:
+        shared = _session_shared()
+    if shared:
+        return _read_route(_SHARED_SCOPE) or _read_route(str(seller_id or ""))
+    return _read_route(str(seller_id or ""))
+
+
+def save_account_route(seller_id: str, route: str, shared: Optional[bool] = None) -> str:
     if route not in ROUTES and route != "":
         raise ValueError("발주 경로는 direct(중국 현지 직접 발송) 또는 forwarder(배대지 경유)")
+    if shared is None:
+        shared = _session_shared()
     from src.db import image_translate_queue_pg as st
-    st.state_set(_ROUTE_KEY + str(seller_id or ""), {"route": route})
+    st.state_set(_ROUTE_KEY + (_SHARED_SCOPE if shared else str(seller_id or "")), {"route": route})
     return route
 
 
