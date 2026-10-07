@@ -34,9 +34,17 @@ def enabled() -> bool:
     return str(os.getenv("COUPANG_IMAGE_CHECK", "1")).strip() != "0"
 
 
+# Y6-C B(오너 2026-10-07): 쿠팡 노출 미리보기 502. OCR(RapidOCR)이 원본 해상도 그대로 요청 안에서 돌았다 —
+#   로컬 4코어 실측 800px 0.8초 · 1920px 4.5초, Render 작은 CPU에선 몇 배. 미리보기·사전검증·이미지 번역 사전판정이
+#   한꺼번에 OCR을 돌리면 워커가 gunicorn 120초를 넘겨 죽고 프록시가 502 HTML을 준다. → OCR은 프로세스당 동시 1개,
+#   미리보기는 요청 밖(백그라운드)에서 재고 화면은 3초마다 묻는다.
+_OCR_SEM = threading.BoundedSemaphore(max(1, int(os.getenv("COUPANG_IMAGE_CHECK_CONCURRENCY", "1") or 1)))
+
+
 def _read_text(raw: bytes):
     from src.services import image_text_precheck as P
-    return P.all_text(raw)
+    with _OCR_SEM:
+        return P.all_text(raw)
 
 
 def check_bytes(raw: bytes) -> Dict[str, Any]:
@@ -113,9 +121,67 @@ def check_url(url: str) -> Dict[str, Any]:
 def reset_cache() -> None:
     with _LOCK:
         _CACHE.clear()
+        _FAIL.clear()
+        _RUNNING.clear()
 
 
-def hold(pd: dict, market: str) -> Optional[Dict[str, str]]:
+# ── 요청 밖에서 재기(미리보기) ─────────────────────────────────────────────────
+_FAIL: Dict[str, dict] = {}          # 주소 → 못 잰 결과(사유) — 5분 동안 같은 사유를 돌려준다(폴링이 사유를 받게)
+_RUNNING: Dict[str, float] = {}      # 주소 → 시작 시각
+_FAIL_TTL = 300.0
+
+
+def cached(url: str) -> Optional[dict]:
+    """잰 결과가 있으면(성공 캐시 또는 5분 안 실패) 그것, 없으면 None."""
+    import time as _t
+    key = str(url or "")
+    with _LOCK:
+        if key in _CACHE:
+            return _CACHE[key]
+        f = _FAIL.get(key)
+        if f and _t.time() - f.get("_at", 0) < _FAIL_TTL:
+            return {k: v for k, v in f.items() if k != "_at"}
+    return None
+
+
+def _bg(url: str) -> None:
+    import time as _t
+    try:
+        res = check_url(url)
+    except Exception as exc:                                  # noqa: BLE001 — 백그라운드는 죽지 않는다
+        res = {"state": "unknown", "why": f"판정 실패 {type(exc).__name__}: {str(exc)[:120]}", "flags": []}
+    with _LOCK:
+        if res.get("state") == "ok":
+            _CACHE[url] = res
+            _CACHE.move_to_end(url)
+            while len(_CACHE) > _CACHE_MAX:
+                _CACHE.popitem(last=False)
+        else:
+            _FAIL[url] = dict(res, _at=_t.time())
+        _RUNNING.pop(url, None)
+
+
+def start_check(url: str) -> dict:
+    """미리보기용 — 결과가 있으면 그대로, 없으면 백그라운드로 재기 시작하고 `{state: pending}`(요청은 기다리지 않는다)."""
+    import time as _t
+    if not enabled():
+        return {"state": "unknown", "why": "판정 꺼짐(COUPANG_IMAGE_CHECK=0)", "flags": []}
+    key = str(url or "")
+    if not key:
+        return {"state": "unknown", "why": "이미지 0장", "flags": []}
+    hit = cached(key)
+    if hit is not None:
+        return hit
+    with _LOCK:
+        started = _RUNNING.get(key)
+        if not started:
+            _RUNNING[key] = _t.time()
+            threading.Thread(target=_bg, args=(key,), daemon=True, name="cpx-check").start()
+    return {"state": "pending", "why": "대표 사진을 재는 중", "flags": [],
+            "since": round(_t.time() - (started or _RUNNING.get(key) or _t.time()), 1)}
+
+
+def hold(pd: dict, market: str, cached_only: bool = False) -> Optional[Dict[str, str]]:
     """쿠팡 사전검증 보류 줄(없으면 None) — 대표 사진(등록이 보낼 첫 장)이 500px 미만이거나 글자가 박혔을 때.
 
     「그래도 등록」(`rep_image_override.url`이 지금 대표 장과 같을 때)이면 보류하지 않는다 — 대표 장을 바꾸면 다시 잰다.
@@ -130,7 +196,8 @@ def hold(pd: dict, market: str) -> Optional[Dict[str, str]]:
     if isinstance(ov, dict) and ov.get("url") == rep:
         return None
     try:
-        res = check_url(rep)
+        # 미리보기는 요청 안에서 재지 않는다(cached_only) — 아직 안 쟀으면 보류 줄은 결과가 오면 그린다.
+        res = (cached(rep) or {}) if cached_only else check_url(rep)
     except Exception as exc:                                  # noqa: BLE001 — 판정 실패는 보류 사유가 아니다
         logger.warning("[쿠팡 대표 사진] 판정 실패(보류 안 함): %s", exc)
         return None

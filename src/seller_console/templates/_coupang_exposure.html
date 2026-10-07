@@ -31,6 +31,9 @@
         } }); });
   }
   function checkLines(c) {
+    // Y6-C B: 대표 사진 판정(내려받기·OCR)은 요청 밖에서 돈다 — 재는 동안은 카드·사진 줄을 먼저 보여 주고 3초마다 묻는다.
+    if (c && c.state === 'pending') return '<li class="cpx-ck is-unk" data-role="cpx-check-pending">대표 사진을 재는 중이에요(글자·크기 판정) — 나머지는 그대로 보셔도 돼요</li>';
+    if (c && c.partial) return '<li class="cpx-ck is-unk" data-role="cpx-check-partial"><span class="pc-badge pc-badge-off">일부 생략</span> ' + esc(c.why) + '</li>';
     if (!c || c.state !== 'ok') return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown">판정 못 함 — ' + esc((c && c.why) || '이미지를 읽지 못했어요') + '</li>';
     var out = [];
     out.push('<li class="cpx-ck ' + (c.small ? 'is-bad' : 'is-ok') + '" data-role="cpx-check-size">' +
@@ -81,7 +84,25 @@
     body.innerHTML = fail + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
       '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>';
   }
-  function load() { body.textContent = '쿠팡 검색 카드로 만드는 중…'; call(base + '/coupang-exposure').then(render).catch(function (e) { body.textContent = '불러오지 못했어요 — 네트워크 오류: ' + ((e && e.message) || e); }); }
+  var pollTimer = null;
+  function pollCheck(d, n) {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    if (!d || !d.ok || !d.check || d.check.state !== 'pending') return;
+    if (n >= 20) {                                   // 3초 × 20 = 60초 — 그 뒤엔 「일부 생략」으로 끝낸다(등록은 막지 않는다)
+      d.check = {state: 'unknown', partial: true, why: '대표 사진 판정이 60초 안에 끝나지 않았어요 — 판정만 생략하고 나머지는 그대로예요'};
+      render(d); return;
+    }
+    pollTimer = setTimeout(function () {
+      call(base + '/coupang-exposure/check?rep=' + encodeURIComponent(d.rep || '')).then(function (r) {
+        if (last !== d) return;                      // 그 사이 다른 장을 대표로 바꿨다
+        if (r && r.ok && r.check && r.check.state !== 'pending') {
+          d.check = r.check; if (!d.override) d.hold = r.hold || null; render(d);
+        } else { pollCheck(d, n + 1); }
+      }).catch(function () { pollCheck(d, n + 1); });
+    }, 3000);
+  }
+  function show(d) { render(d); pollCheck(d, 0); }
+  function load() { body.textContent = '쿠팡 검색 카드로 만드는 중…'; call(base + '/coupang-exposure').then(show).catch(function (e) { body.textContent = '불러오지 못했어요 — 네트워크 오류: ' + ((e && e.message) || e); }); }
   root.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
     if (!b || !root.contains(b)) return;
@@ -92,7 +113,7 @@
       render(last);
     } else if (role === 'cpx-rep') {
       b.disabled = true; b.textContent = '바꾸는 중…';
-      call(base + '/rep-image', {idx: +b.getAttribute('data-idx')}).then(render);
+      call(base + '/rep-image', {idx: +b.getAttribute('data-idx')}).then(show);
     } else if (role === 'cpx-use') {
       var f = {}; f[b.getAttribute('data-idx')] = b.getAttribute('data-use') === '1';
       b.disabled = true;

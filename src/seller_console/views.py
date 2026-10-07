@@ -3544,9 +3544,10 @@ def coupang_exposure_data(item: dict) -> dict:
               "rep": n == 0} for n, i in enumerate(order)]
     price, why = UploadDispatcher.sell_price_in(dict(product), "KRW", "coupang")
     rep = eff[0] if eff else ""
-    chk = cic.check_url(rep) if rep else {"state": "unknown", "why": "이미지 0장", "flags": []}
+    # Y6-C B: 대표 사진 판정(내려받기 + OCR)은 요청 밖에서 — 아직이면 {state: pending}, 화면이 3초마다 /check로 묻는다.
+    chk = cic.start_check(rep) if rep else {"state": "unknown", "why": "이미지 0장", "flags": []}
     ov = ex.get("rep_image_override") if isinstance(ex.get("rep_image_override"), dict) else {}
-    hold = cic.hold(dict(product, images_effective=eff, rep_image_override=ov), "coupang") if rep else None
+    hold = cic.hold(dict(product, images_effective=eff, rep_image_override=ov), "coupang", cached_only=True) if rep else None
     return {"ok": True, "name": product.get("coupang_name") or product.get("title") or "",
             "price": int(price) if price else None, "price_why": "" if price else (why or "판매가를 못 냈어요"),
             "rep": rep, "rep_original": strip[0]["original"] if strip else "", "strip": strip[:10], "check": chk,
@@ -3562,6 +3563,30 @@ def _imgko_failure(item_id: str, ex: dict):
     except Exception as exc:                                     # noqa: BLE001 — 배지 재료를 못 읽어도 미리보기는 그린다
         logger.warning("[이미지번역] 실패 사유 판정 실패 item=%s: %s", item_id, exc)
         return None
+
+
+@bp.get("/collect/<item_id>/coupang-exposure/check")
+def collect_coupang_exposure_check(item_id):
+    """Y6-C B: 미리보기의 대표 사진 판정만 — `{ok, rep, check, hold}`. 요청 안에서 재지 않는다(없으면 pending)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    from src.services import coupang_image_check as cic
+    rep = str(request.args.get("rep") or "")
+    chk = cic.start_check(rep) if rep else {"state": "unknown", "why": "이미지 0장", "flags": []}
+    hold = None
+    if chk.get("state") == "ok":
+        try:
+            from .product_builder import build_product
+            ex = json.loads(item.get("extra_json") or "{}") or {}
+            ov = ex.get("rep_image_override") if isinstance(ex.get("rep_image_override"), dict) else {}
+            hold = cic.hold(dict(build_product(item, seller_id=_seller_id()), images_effective=[rep], rep_image_override=ov),
+                            "coupang", cached_only=True)
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("[쿠팡 노출] 보류 판정 실패 item=%s: %s", item_id, exc)
+    return jsonify({"ok": True, "rep": rep, "check": chk, "hold": hold})
 
 
 @bp.get("/collect/<item_id>/coupang-exposure")

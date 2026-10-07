@@ -70,6 +70,19 @@ def test_check_bytes_size_square_white_and_text(wired):
     assert keys == {"small", "not_square"} and "반려 예상 — 500px 미만(긴 변 400px)" in [f["line"] for f in s["flags"]]
 
 
+def _settle(c, iid, d, tries=100):
+    """Y6-C B: 대표 사진 판정은 요청 밖(백그라운드)에서 — 화면처럼 /check를 물어 결과가 오면 그 값으로."""
+    import time
+    for _ in range(tries):
+        if d["check"].get("state") != "pending":
+            return d
+        r = c.get(f"/seller/collect/{iid}/coupang-exposure/check", query_string={"rep": d["rep"]}).get_json()
+        if r["check"].get("state") != "pending":
+            return dict(d, check=r["check"], hold=r["hold"])
+        time.sleep(0.05)
+    raise AssertionError("판정이 끝나지 않았다")
+
+
 def test_blackhole_lamp_text_holds_then_image2_as_rep_passes(wired):
     from src.seller_console.product_builder import build_product
     from src.seller_console.upload_dispatcher import UploadDispatcher
@@ -78,14 +91,16 @@ def test_blackhole_lamp_text_holds_then_image2_as_rep_passes(wired):
     iid = _item(seller, [URL1, URL2])
     c = _client(seller)
     d = c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()
-    assert d["ok"] and d["rep"] == URL1 and d["check"]["text"] is True
+    assert d["ok"] and d["rep"] == URL1 and d["check"]["state"] in ("pending", "ok")   # 요청은 OCR을 기다리지 않는다
+    d = _settle(c, iid, d)
+    assert d["check"]["text"] is True
     assert d["hold"]["fix"] == "rep_image" and "텍스트 있음" in d["hold"]["short"]
     pd = build_product(S.get(iid, seller_ids={seller}), seller_id=seller)
     h = [h for h in UploadDispatcher.readiness_holds(pd, "coupang") if h["fix"] == "rep_image"]
     assert h and "INTERSTELLAR" in h[0]["line"]
     assert not [h for h in UploadDispatcher.readiness_holds(pd, "smartstore") if h["fix"] == "rep_image"]   # 쿠팡만
     # 2번을 대표로
-    d2 = c.post(f"/seller/collect/{iid}/rep-image", json={"idx": 1}).get_json()
+    d2 = _settle(c, iid, c.post(f"/seller/collect/{iid}/rep-image", json={"idx": 1}).get_json())
     assert d2["rep"] == URL2 and d2["hold"] is None and d2["check"]["text"] is False
     assert [s["original"] for s in d2["strip"]] == [URL2, URL1] and d2["strip"][0]["rep"]
     ex = json.loads(S.get(iid, seller_ids={seller})["extra_json"])
