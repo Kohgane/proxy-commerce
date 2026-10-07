@@ -2012,8 +2012,9 @@ def mobile_list_ctx(item: dict) -> dict:
         logger.warning("[M5] 쿠팡 상품명 규칙 경고 실패: %s", exc)
 
     skus = ex.get("skus") if isinstance(ex.get("skus"), list) else []
-    # T2: 옵션 값은 등록 계획과 **같은 해석 체인**(오너 수정 → 용어집 → 정리 규칙 → 번역기)으로 보여 준다.
-    from src.uploaders.coupang_options import resolve_option_value, value_ko_map
+    # T2·Y6-C: 옵션 값은 등록 계획과 **같은 함수**(option_ko — 오너 수정 → 용어집 → 정리 규칙 → 번역기)로 보여 준다.
+    from src.collectors.option_ko import value_ko as resolve_option_value
+    from src.uploaders.coupang_options import value_ko_map
     _vko = value_ko_map(product)
     _ov = ex.get("option_value_overrides") if isinstance(ex.get("option_value_overrides"), dict) else {}
     unresolved = set()
@@ -9216,10 +9217,20 @@ def collect_preview_by_id(item_id: str):
         [{"code": m, "label": m, "connected": bool((market_connected or {}).get(m)), "checked": False}
          for m in ("shopify", "coupang", "smartstore", "elevenst", "woocommerce")],
         extra if isinstance(extra, dict) else None)
+    # Y6-C(오너 2026-10-07): 옵션칸·SKU 조합표는 등록과 같은 한 사슬(option_ko)의 한국어로 — 원문은 「원문 보기」로만
+    try:
+        from src.collectors import option_ko as _okv
+        _ex_d = extra if isinstance(extra, dict) else {}
+        opt_view = _okv.options_view(_ex_d)
+        sku_ko = [_okv.spec_ko(_ex_d, list(k.get("spec") or [])) for k in (_ex_d.get("skus") or []) if isinstance(k, dict)]
+    except Exception as exc:
+        logger.warning("[옵션 한국어] 화면 재료 실패: %s", exc)
+        opt_view, sku_ko = [], []
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
+        opt_view=opt_view, sku_ko=sku_ko,
         field_src=field_src,
         page="collect_history",
         item=item,
@@ -9312,6 +9323,36 @@ def collect_ai_description(item_id: str):
                     "draft_status": res.get("draft_status", ""), "draft_error": res.get("draft_error", "")})
 
 
+def _restore_option_src(opt: dict, name: str, vals: list, extra: dict) -> dict:
+    """Y6-C: 칸엔 한국어가 보이지만 저장은 **원문**으로(주문 때 타오바오 대조용). 한국어를 고친 값만 직접 수정
+    (`option_value_overrides`·`option_name_overrides`)으로 남긴다 — 등록·화면이 같은 사슬(option_ko)로 그 값을 쓴다.
+    원문 짝이 없거나(새 옵션) 값 개수가 바뀌었으면 입력 그대로 저장(구조를 바꾼 것)."""
+    src_name = str(opt.get("src_name") or "").strip()
+    src_vals = [str(v).strip() for v in (opt.get("src_values") or []) if str(v).strip()]
+    if not src_name or len(src_vals) != len(vals):
+        return {"name": name, "values": vals}
+    from src.collectors import option_ko as _ok
+    prev = next((o for o in (extra.get("options") or []) if isinstance(o, dict) and str(o.get("name") or "") == src_name), {})
+    kept = {k: prev[k] for k in ("name_ko", "values_ko") if k in prev}
+    ov = dict(extra.get("option_value_overrides") or {}) if isinstance(extra.get("option_value_overrides"), dict) else {}
+    nov = dict(extra.get("option_name_overrides") or {}) if isinstance(extra.get("option_name_overrides"), dict) else {}
+    view = next((a for a in _ok.options_view({**extra, "option_value_overrides": {}}) if a["name"] == src_name), None)
+    auto = {v["src"]: (v["ko"] or v["src"]) for v in (view or {}).get("values", [])}
+    for s_, typed in zip(src_vals, vals):
+        if typed != auto.get(s_, s_):
+            ov[s_] = typed                                # 한국어를 직접 고침 → 그 값이 이긴다
+        else:
+            ov.pop(s_, None)
+    auto_name = _ok.axis_ko(prev or {"name": src_name}, {})
+    if name != auto_name:
+        nov[src_name] = name
+    else:
+        nov.pop(src_name, None)
+    extra["option_value_overrides"] = ov
+    extra["option_name_overrides"] = nov
+    return {"name": src_name, "values": src_vals, **kept}
+
+
 @bp.post("/collect/preview/<item_id>/save")
 def collect_preview_save(item_id: str):
     """수집 항목 중간 편집 저장 (Phase 201).
@@ -9368,7 +9409,7 @@ def collect_preview_save(item_id: str):
                 vals = [str(v).strip() for v in vals if str(v).strip()]
             else:
                 vals = []
-            norm_opts.append({"name": name, "values": vals})
+            norm_opts.append(_restore_option_src(opt, name, vals, extra))
         options = norm_opts
     else:
         options = None
