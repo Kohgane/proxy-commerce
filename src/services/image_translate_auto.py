@@ -143,6 +143,57 @@ def status(item_id: str = "") -> dict:
             "waiting_cap": waiting_cap, "item": item_c}
 
 
+def item_failure(item_id: str, extra: dict) -> dict:
+    """M5 후속(오너 2026-10-07, 실사용 1호): 이 상품의 이미지 번역이 **왜 안 됐나** — 카드 배지 재료. 없으면 {}.
+
+    실측: 텐센트 계정이 연체로 정지돼 상세 사진 0장 번역 — 장마다 실패가 적혀 있었는데 카드엔 아무것도 안 보였다.
+    순서: 장별 실패(공급사 원문) → 큐 차단기(실패 누적으로 멈춤) → 오늘 상한. 성공·「그릴 글자 없음」은 실패가 아니다.
+    `{code, label, raw, failed, queued, today, cap, paused}`
+    """
+    from src.services import image_translate_tencent as tc
+    failed = []
+    for key in ("images_ko", "detail_images_ko"):
+        for e in (extra.get(key) or []):
+            if isinstance(e, dict) and e.get("status") == "failed":
+                failed.append(e)
+    try:
+        st = status(item_id)
+    except Exception:                                            # noqa: BLE001 — 상태를 못 읽어도 장별 실패는 말한다
+        st = {}
+    ic = st.get("item") or {}
+    queued = int(ic.get("queued") or 0) + int(ic.get("running") or 0)
+    base = {"failed": len(failed), "queued": queued, "today": st.get("today"), "cap": st.get("cap"),
+            "paused": bool(st.get("paused"))}
+    if failed:
+        last = max(failed, key=lambda e: str(e.get("at") or ""))
+        code = tc.failure_code(last.get("error_class"), last.get("error_code"), last.get("error_message"))
+        raw = " · ".join(x for x in (str(last.get("error_code") or last.get("error_class") or ""),
+                                     str(last.get("error_message") or "")[:160]) if x)
+        return dict(base, code=code, label=tc.FAILURE_LABELS[code], raw=raw)
+    if queued and st.get("paused"):
+        return dict(base, code="breaker_open", label=tc.FAILURE_LABELS["breaker_open"], raw=str(st.get("pause_reason") or ""))
+    if queued and st.get("waiting_cap"):
+        return dict(base, code="cap_reached", label=tc.FAILURE_LABELS["cap_reached"],
+                    raw=f"오늘 {st.get('today')}/{st.get('cap')}장 — {ENV_CAP}")
+    return {}
+
+
+def retry_item(user_id: str, item_id: str, url: str, extra: dict, *, may_resume: bool) -> dict:
+    """「다시 번역」 — 이 상품의 실패한 장만 다시 대기로(+아직 안 넣은 장 접수). 차단기가 멈춰 있으면 공유 사용자만 재개."""
+    n = _q().retry_failed(item_id)
+    n += enqueue_after_enrich(user_id, item_id, url, extra)
+    st = pause_state()
+    resumed = False
+    if st.get("paused") and may_resume:
+        resume()
+        resumed = True
+    elif n:
+        kick()
+    s2 = status(item_id)
+    return {"ok": True, "requeued": n, "resumed": resumed, "paused": bool(s2.get("paused")) and not resumed,
+            "pause_reason": s2.get("pause_reason") or "", "today": s2.get("today"), "cap": s2.get("cap")}
+
+
 # ── 접수 ──────────────────────────────────────────────────────────────────────
 
 def enqueue_after_enrich(user_id: str, item_id: str, url: str, extra: dict) -> int:

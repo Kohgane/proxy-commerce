@@ -430,6 +430,30 @@ def admin_diagnostics():
     return _render_diagnostics(issued_magic_link=None)
 
 
+_ALICDN_CACHE: dict = {}
+
+
+def _probe_alicdn() -> dict:
+    """M5 후속: 서버 출구(Render)에서 img.alicdn.com이 열리나 — HEAD 1회, 10분 캐시. 미리보기 「불러오지 못했어요」 원인 가르기."""
+    import time as _t
+    hit = _ALICDN_CACHE.get("v")
+    if hit and _t.time() - hit["ts"] < 600:
+        return hit
+    url = os.getenv("ALICDN_PROBE_URL", "https://img.alicdn.com/")
+    if os.getenv("ALICDN_PROBE", "1").strip() == "0":
+        return {"ts": 0, "line": f"점검 꺼짐(ALICDN_PROBE=0) · {url}"}
+    t0 = _t.time()
+    try:
+        import requests as _rq
+        r = _rq.head(url, timeout=5, allow_redirects=False, headers={"User-Agent": "gogabridj/1.0"})
+        line = f"HTTP {r.status_code} · {int((_t.time() - t0) * 1000)}ms · {url}"
+    except Exception as exc:                                     # noqa: BLE001
+        line = f"실패 {type(exc).__name__}: {str(exc)[:120]} · {int((_t.time() - t0) * 1000)}ms · {url}"
+    out = {"ts": _t.time(), "line": line}
+    _ALICDN_CACHE["v"] = out
+    return out
+
+
 def _scan_merge_conflict_marker_count() -> int:
     root = pathlib.Path(__file__).resolve().parents[2]
     pattern = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.MULTILINE)
@@ -533,6 +557,13 @@ def _render_diagnostics(issued_magic_link: str | None):
         image_budget_line = _itb.status_line()
     except Exception as exc:
         image_budget_line = f"이미지 번역 장부를 읽지 못했어요 — {type(exc).__name__}"
+    # M5 후속(2026-10-07): 텐센트 최근 10회(코드·메시지·시각) + Render 출구에서 img.alicdn.com HEAD 1회(10분 캐시)
+    try:
+        from src.services import image_translate_tencent as _tcd
+        tencent_recent = _tcd.recent_calls()
+    except Exception:
+        tencent_recent = []
+    alicdn_probe = _probe_alicdn()
 
     # v87-W7a branch②: 번역 계측(사유코드별 + 최근 실패 원 응답) 읽기 전용
     translate_stats = _build_translate_stats()
@@ -600,6 +631,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         market_health=market_health,
         pricing_status=pricing_status,
         ai_budget=ai_budget, image_budget_line=image_budget_line,
+        tencent_recent=tencent_recent, alicdn_probe=alicdn_probe,
         smartstore_probe=smartstore_probe,
         account_keys=account_keys,
         workers_status=workers_status,
@@ -3385,6 +3417,11 @@ _DIAGNOSTICS_TEMPLATE = """
         <strong>{{ image_budget_line }}</strong>
         <div class="text-muted mt-1">pro/lite 같은 사진 비교: <a href="/admin/diagnostics/image-mode-compare">사진 5장 비교(유료 $0.30)</a> ·
           무료 로컬 판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a></div>
+        <div class="mt-2" data-role="tencent-recent"><strong>텐센트 최근 {{ tencent_recent|length }}회</strong>
+          {% if tencent_recent %}<table class="table table-sm mb-1"><thead><tr><th>시각(UTC)</th><th>결과</th><th>코드</th><th>메시지</th><th>ms</th></tr></thead><tbody>
+          {% for r in tencent_recent %}<tr><td>{{ r.at }}</td><td>{{ '성공' if r.ok else (r.kind or '실패') }}</td><td><code>{{ r.code or r['class'] }}</code></td><td>{{ r.message }}</td><td>{{ r.ms }}</td></tr>{% endfor %}
+          </tbody></table>{% else %}<div class="text-muted">아직 기록된 호출이 없어요(배포 뒤 첫 호출부터 쌓여요).</div>{% endif %}</div>
+        <div class="mt-1" data-role="alicdn-probe">img.alicdn.com HEAD(서버 출구): <strong>{{ alicdn_probe.line }}</strong></div>
       </div>
     </div>
 

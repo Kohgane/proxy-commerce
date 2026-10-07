@@ -190,7 +190,9 @@ def fetch_image(url: str) -> tuple:
     try:
         raw = _download(url, proxies=px)
     except Exception as exc:
-        return b"", f"이미지를 내려받지 못했습니다({type(exc).__name__})"
+        # M5 후속: 이미지 호스트 응답 코드를 그대로 싣는다(「불러오지 못했어요」만으로는 403인지 시간 초과인지 모른다).
+        status_ = getattr(exc, "code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+        return b"", f"이미지를 내려받지 못했습니다({type(exc).__name__}{f' · HTTP {status_}' if status_ else ''})"
     if not raw:
         return b"", "이미지가 비어 있습니다"
     if len(raw) * 4 / 3 > MAX_BASE64_BYTES:
@@ -378,4 +380,64 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
         logger.warning("[이미지번역] 실패 %s code=%s", type(exc).__name__, code or "-")
 
     out["ms"] = int((time.perf_counter() - t0) * 1000)
+    _remember(out)
     return out
+
+
+# ---------------------------------------------------------------------------
+# M5 후속(오너 2026-10-07, 실사용 1호): 실패를 숨기지 않는다 — 사유 코드 · 최근 10회
+# ---------------------------------------------------------------------------
+#: 계정이 연체로 정지돼 있었는데 카드엔 아무 표시가 없었다. 화면·진단이 같은 분류를 쓴다.
+FAILURE_LABELS = {
+    "tencent_auth": "텐센트 인증 실패(키·권한)",
+    "tencent_balance": "텐센트 잔액·연체(계정 정지)",
+    "tencent_qps": "텐센트 초당 한도",
+    "breaker_open": "번역 큐 멈춤(실패 누적 차단기)",
+    "cap_reached": "오늘 번역 상한 도달",
+    "tencent_image": "원본 사진을 읽지 못함",
+    "tencent_other": "번역 실패",
+}
+_BALANCE_WORDS = ("Arrears", "Overdue", "InsufficientBalance", "欠费", "余额不足", "ServiceIsolate", "NoFreeAmount",
+                  "StopUsing", "UserNotRegistered")
+_IMAGE_CODES = ("FailedOperation.DecodeErr", "FailedOperation.DownloadErr")
+RECENT_KEY = "tencent:recent_calls"
+
+
+def failure_code(error_class: str = "", error_code: str = "", message: str = "") -> str:
+    """실패 한 건 → 사유 코드. 응답 원문(코드·메시지) 문자열로만 판정한다 — 지어내지 않는다."""
+    cls, code, msg = str(error_class or ""), str(error_code or ""), str(message or "")
+    text = f"{cls} {code} {msg}"
+    if code.startswith("AuthFailure") or "AuthFailure" in text or cls == "NotConfigured":
+        return "tencent_auth"
+    if code in _IMAGE_CODES or cls in ("FetchFailed", "EmptyImage"):
+        return "tencent_image"
+    if any(w in text for w in _BALANCE_WORDS) or code.startswith("FailedOperation."):
+        return "tencent_balance"
+    if cls == "RateQueueTooLong" or code in ("LimitExceeded", "RequestLimitExceeded") or _is_rate_limited(code, msg):
+        return "tencent_qps"
+    return "tencent_other"
+
+
+def _remember(out: dict) -> None:
+    """공급사에 실제로 가려던 호출(미연결·입력 오류 제외) 최근 10회 — 진단 표. 키·이미지는 남기지 않는다."""
+    if out.get("error_class") in ("NotConfigured", "ValueError"):
+        return
+    try:
+        from src.db import image_translate_queue_pg as q
+        rows = list((q.state_get(RECENT_KEY) or {}).get("rows") or [])
+        rows.insert(0, {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "ok": bool(out.get("ok")),
+                        "class": str(out.get("error_class") or ""), "code": str(out.get("error_code") or ""),
+                        "message": str(out.get("error_message") or "")[:200], "ms": int(out.get("ms") or 0),
+                        "kind": "" if out.get("ok") else failure_code(out.get("error_class"), out.get("error_code"),
+                                                                     out.get("error_message"))})
+        q.state_set(RECENT_KEY, {"rows": rows[:10]})
+    except Exception as exc:                                     # noqa: BLE001 — 기록 실패가 번역을 막지 않는다
+        logger.debug("[이미지번역] 최근 호출 기록 실패: %s", exc)
+
+
+def recent_calls() -> list:
+    try:
+        from src.db import image_translate_queue_pg as q
+        return list((q.state_get(RECENT_KEY) or {}).get("rows") or [])
+    except Exception:
+        return []

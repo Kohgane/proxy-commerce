@@ -24,7 +24,11 @@
   function call(url, payload) {
     return fetch(url, payload === undefined ? {credentials: 'same-origin'} :
       {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
-      .then(function (r) { return r.json(); });
+      .then(function (r) { return r.text().then(function (t) {
+        // M5 후속: 서버가 HTML(500·502)을 돌려줘도 사유를 남긴다 — 「불러오지 못했어요」만으론 원인을 모른다.
+        try { return JSON.parse(t); } catch (e) {
+          return {ok: false, error: 'HTTP ' + r.status + (r.status === 502 || r.status === 504 ? ' — 서버 시간 초과' : ' — 응답을 읽지 못했어요')};
+        } }); });
   }
   function checkLines(c) {
     if (!c || c.state !== 'ok') return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown">판정 못 함 — ' + esc((c && c.why) || '이미지를 읽지 못했어요') + '</li>';
@@ -41,7 +45,7 @@
   }
   function render(d) {
     last = d;
-    if (!d || !d.ok) { body.textContent = (d && d.error) || '불러오지 못했어요.'; return; }
+    if (!d || !d.ok) { body.textContent = '불러오지 못했어요 — ' + ((d && d.error) || '사유를 받지 못했어요'); return; }
     var s0 = (d.strip || [])[0] || {};
     var repSrc = view === 'orig' ? (s0.original || d.rep) : d.rep;
     var card = '<div class="cpx-card" data-role="cpx-card">' +
@@ -67,10 +71,17 @@
                           (s.use ? '원본으로' : '번역본으로') + '</button>' : '') +
         '</figure>';
     }).join('');
-    body.innerHTML = card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
+    // M5 후속(실사용 1호): 이미지 번역이 안 됐으면 숨기지 않는다 — 공급사 원문 사유 + 「다시 번역」. 등록은 원본으로 계속된다.
+    var f = d.imgko_fail;
+    var fail = f ? '<p class="cpx-cap" data-role="cpx-imgko-fail" data-code="' + esc(f.code) + '">' +
+      '<span class="pc-badge pc-badge-danger">이미지 번역 실패: ' + esc(f.raw || f.label) + '</span> ' + esc(f.label) +
+      ' — 원본 사진으로 나가요(등록은 막지 않아요). ' +
+      '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' +
+      (f.cap ? ' <span data-role="cpx-imgko-cap">오늘 ' + esc(f.today) + '/' + esc(f.cap) + '장 사용</span>' : '') + '</p>' : '';
+    body.innerHTML = fail + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
       '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>';
   }
-  function load() { body.textContent = '쿠팡 검색 카드로 만드는 중…'; call(base + '/coupang-exposure').then(render).catch(function () { body.textContent = '불러오지 못했어요 — 다시 열어 주세요.'; }); }
+  function load() { body.textContent = '쿠팡 검색 카드로 만드는 중…'; call(base + '/coupang-exposure').then(render).catch(function (e) { body.textContent = '불러오지 못했어요 — 네트워크 오류: ' + ((e && e.message) || e); }); }
   root.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
     if (!b || !root.contains(b)) return;
@@ -86,6 +97,12 @@
       var f = {}; f[b.getAttribute('data-idx')] = b.getAttribute('data-use') === '1';
       b.disabled = true;
       call(base + '/image-use', {flags: f, kind: 'gallery'}).then(load);
+    } else if (role === 'cpx-imgko-retry') {
+      b.disabled = true; b.textContent = '다시 넣는 중…';
+      call(base + '/image-translate/retry', {}).then(function (t) {
+        b.insertAdjacentHTML('afterend', ' <span data-role="cpx-imgko-msg">' + esc((t && (t.message || t.error)) || '응답이 없어요') + '</span>');
+        b.textContent = '다시 번역'; b.disabled = false;
+      });
     } else if (role === 'cpx-override') {
       b.disabled = true; b.textContent = '기록하는 중…';
       call(base + '/rep-image-override', {}).then(load);

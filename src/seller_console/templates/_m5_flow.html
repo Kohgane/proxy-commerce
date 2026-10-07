@@ -289,8 +289,8 @@
         d._status = r.status; return d; }); })
       .catch(function (e) { return {ok: false, error: '네트워크 오류 — ' + ((e && e.message) || e)}; });
   }
-  function resetGo() { okMarkets = []; goBtn.disabled = true; goBtn.textContent = '등록'; }
-  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; } });
+  function resetGo() { okMarkets = []; goBtn.disabled = true; goBtn.textContent = '등록'; goBtn.dataset.held = ''; }
+  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvJob++; checkBtn.disabled = false; } });
 
   // T4: 쿠팡에서 보이는 모습 — 서버가 등록과 같은 빌더로 만든 것을 그대로 그린다(화면이 따로 계산하지 않는다).
   var cpBody = document.getElementById('m5CpBody');
@@ -339,86 +339,123 @@
   loadCoupang();
 
   var refreshFromStore = false;
+  // M5 후속(오너 2026-10-07, 실사용 1호 「HTTP 502」): 사전검증은 비동기 — 202 + 작업 번호를 받고 3초마다 물어
+  //   마켓별로 도착하는 대로 그린다. 전송 실패(시간 초과·오류)는 「검증 못 함 — 다시 시도」 · 그 마켓만 체크 해제 제안.
+  //   등록 버튼: 통과 또는 「그래도 등록」으로 풀리는 보류가 하나라도 있으면 켠다(전송 실패가 전체를 잠그지 않는다).
+  var OVERRIDES = {ship_ratio: ['ship-ratio-override', '그래도 등록'], voltage: ['voltage-override', '전압·플러그 그래도 등록'],
+                   rep_image: ['rep-image-override', '대표 사진 그래도 등록']};
+  var pvRows = {}, pvOrder = [], pvAuto = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
+  function overridable(r) { return !r.ok && r.hold && (r.fixes || []).length && (r.fixes || []).every(function (f) { return OVERRIDES[f]; }); }
+  function pvRowHtml(m) {
+    var r = pvRows[m];
+    if (!r) return '<div class="m5-res is-hold" data-market="' + esc(m) + '" data-role="m5-pending"><b>' + esc(m) + ' — 확인하는 중…</b></div>';
+    if (r.transport) {
+      return '<div class="m5-res is-bad" data-market="' + esc(r.market) + '" data-ok="0" data-role="m5-transport" data-transport="' + esc(r.transport) + '">' +
+        '<b>' + esc(r.market_label) + ' — 검증 못 함</b>' + esc(r.message || '') +
+        '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 시도</button> ' +
+        '<button type="button" class="m5-fix" data-role="m5-uncheck-market" data-market="' + esc(r.market) + '">이 마켓 빼기</button></div></div>';
+    }
+    var h = '<div class="m5-res ' + (r.ok ? 'is-ok' : (r.hold ? 'is-hold' : 'is-bad')) + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '"' +
+         (r.hold ? ' data-role="m5-hold"' : '') + '>' +
+         '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
+         (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
+         ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+         (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') +
+         // X2: 번역으로 풀리는 보류엔 버튼 하나 — 이 상품을 지금 옮기고 같은 마켓으로 다시 검증한다.
+         (r.hold && (r.fixes || []).indexOf('translate') >= 0
+           ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '');
+    // Z5: 배송비 비율 보류 옆에 「그래도 등록」 하나 — 누르면 사유를 기록하고 다시 검증한다.
+    h += (r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0
+           ? '<div><button type="button" class="m5-fix" data-role="m5-ship-override" data-override="ship-ratio-override" data-label="그래도 등록">그래도 등록</button></div>' : '') +
+         // Y8: 전압/플러그 불일치(모든 옵션이 110V·해외 플러그) — 확인했다면 「그래도 등록」
+         (r.hold && (r.fixes || []).indexOf('voltage') >= 0
+           ? '<div><button type="button" class="m5-fix" data-role="m5-voltage-override" data-override="voltage-override" data-label="전압·플러그 그래도 등록">전압·플러그 그래도 등록</button></div>' : '') +
+         // Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트) — 위 「쿠팡 노출」에서 대표를 바꾸거나 여기서 「그래도 등록」
+         (r.hold && (r.fixes || []).indexOf('rep_image') >= 0
+           ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override" data-override="rep-image-override" data-label="대표 사진 그래도 등록">대표 사진 그래도 등록</button></div>' : '');
+    return h + '</div>';
+  }
+  function pvRender() {
+    var h = '';
+    if (pvAuto) {
+      h += '<div class="m5-note" data-role="m5-auto-translate">' + (pvAuto.status === 'done' || pvAuto.status === 'queued'
+        ? '보류 전에 자동 번역을 돌리고 다시 확인했어요' + (pvAuto.reason ? ' — ' + esc(pvAuto.reason) : '') + '.'
+        : '자동 번역을 시도했지만 옮기지 못했어요 — ' + esc(pvAuto.reason || pvAuto.status) + '.') + '</div>';
+    }
+    pvOrder.forEach(function (m) { h += pvRowHtml(m); });
+    if (pvState === 'running') h += '<div class="m5-note" data-role="m5-check-progress">마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳 확인됨 — 나머지는 오는 대로 보여 드려요.</div>';
+    checksEl.innerHTML = h;
+    okMarkets = pvOrder.filter(function (m) { return pvRows[m] && pvRows[m].ok; });
+    var held = pvOrder.filter(function (m) { return pvRows[m] && overridable(pvRows[m]); });
+    var anyHold = pvOrder.some(function (m) { return pvRows[m] && pvRows[m].hold; });
+    goBtn.dataset.held = held.join(',');
+    goBtn.disabled = blocked || !(okMarkets.length + held.length);
+    goBtn.textContent = (okMarkets.length + held.length)
+      ? '등록 (' + (okMarkets.length + held.length) + '곳' + (held.length ? ' · 보류 ' + held.length + '곳은 그래도 등록' : '') + ')'
+      : (pvState === 'running' ? '확인하는 중…' : (anyHold ? '보강 후 등록할 수 있어요' : '등록할 수 있는 마켓이 없어요'));
+  }
+  function pvPoll(jobNo, url) {
+    if (jobNo !== pvJob) return;
+    fetch(url, {credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (d) {
+      if (jobNo !== pvJob) return;
+      if (!d || !d.ok) { checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
+      (d.results || []).forEach(function (r) { pvRows[r.market] = r; });
+      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvState = d.state;
+      pvRender();
+      if (d.state === 'running') pvTimer = setTimeout(function () { pvPoll(jobNo, url); }, 3000);
+      else checkBtn.disabled = false;
+    }).catch(function () { if (jobNo === pvJob) pvTimer = setTimeout(function () { pvPoll(jobNo, url); }, 3000); });
+  }
+  function runCheck(markets, keep) {
+    if (pvTimer) clearTimeout(pvTimer);
+    var jobNo = ++pvJob;
+    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; }
+    markets.forEach(function (m) { delete pvRows[m]; if (pvOrder.indexOf(m) < 0) pvOrder.push(m); });
+    pvPending = markets.slice(); pvState = 'running';
+    checkBtn.disabled = true; pvRender();
+    var _refresh = refreshFromStore; refreshFromStore = false;
+    post('/seller/collect/prevalidate', {product: product, markets: markets, item_id: itemId, refresh_from_store: _refresh, async: true}).then(function (d) {
+      if (jobNo !== pvJob) return;
+      if (!d.ok || !d.job_id) {
+        // 작업조차 못 띄웠다 — 그 마켓들은 「검증 못 함」(전송 실패)으로, 다시 시도할 수 있게.
+        markets.forEach(function (m) { pvRows[m] = {market: m, market_label: m, ok: false, transport: 'error', message: '검증 못 함 — ' + (d.error || ('HTTP ' + d._status))}; });
+        pvPending = []; pvState = 'done'; checkBtn.disabled = false; pvRender(); return;
+      }
+      pvPoll(jobNo, d.poll);
+    });
+  }
   checkBtn.addEventListener('click', function () {
     var markets = picked();
     if (!markets.length) { checksEl.innerHTML = '<div class="m5-res is-bad">등록할 마켓을 하나 이상 골라 주세요.</div>'; return; }
-    checkBtn.disabled = true; checksEl.innerHTML = '<div class="m5-note">마켓 조건을 확인하는 중…</div>'; resetGo();
-    var _refresh = refreshFromStore; refreshFromStore = false;
-    post('/seller/collect/prevalidate', {product: product, markets: markets, item_id: itemId, refresh_from_store: _refresh}).then(function (d) {
-      checkBtn.disabled = false;
-      if (!d.ok) { checksEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-check-error">' + esc(d.error || '사전검증을 하지 못했어요') + '</div>'; return; }
-      var h = '';
-      (d.results || []).forEach(function (r) {
-        if (r.ok) okMarkets.push(r.market);
-        // R2: 재료가 덜 온 것은 「보류」 — 카드의 「PC 확장에서 보강 필요」를 결과 바로 옆에 한 번 더(hint).
-        h += '<div class="m5-res ' + (r.ok ? 'is-ok' : (r.hold ? 'is-hold' : 'is-bad')) + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '"' +
-             (r.hold ? ' data-role="m5-hold"' : '') + '>' +
-             '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
-             (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
-             ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
-             (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') +
-             // X2: 번역으로 풀리는 보류엔 버튼 하나 — 이 상품을 지금 옮기고 같은 마켓으로 다시 검증한다.
-             (r.hold && (r.fixes || []).indexOf('translate') >= 0
-               ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '') +
-             // Z5: 배송비 비율 보류 옆에 「그래도 등록」 하나 — 누르면 사유를 기록하고 다시 검증한다.
-             (r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0
-               ? '<div><button type="button" class="m5-fix" data-role="m5-ship-override">그래도 등록</button></div>' : '') +
-             // Y8: 전압/플러그 불일치(모든 옵션이 110V·해외 플러그) — 확인했다면 「그래도 등록」
-             (r.hold && (r.fixes || []).indexOf('voltage') >= 0
-               ? '<div><button type="button" class="m5-fix" data-role="m5-voltage-override">전압·플러그 그래도 등록</button></div>' : '') +
-             // Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트) — 위 「쿠팡 노출」에서 대표를 바꾸거나 여기서 「그래도 등록」
-             (r.hold && (r.fixes || []).indexOf('rep_image') >= 0
-               ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override">대표 사진 그래도 등록</button></div>' : '') + '</div>';
+    resetGo(); runCheck(markets, false);
+  });
+  checksEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('button') : null;
+    if (!b) return;
+    var role = b.getAttribute('data-role') || '';
+    if (role === 'm5-retry-market') { runCheck([b.getAttribute('data-market')], true); return; }
+    if (role === 'm5-uncheck-market') {
+      var m = b.getAttribute('data-market'), box = root.querySelector('input[name=m5-market][value="' + m + '"]');
+      if (box) box.checked = false;
+      pvOrder = pvOrder.filter(function (x) { return x !== m; }); delete pvRows[m]; pvRender(); return;
+    }
+    if (b.getAttribute('data-override')) {
+      var label = b.getAttribute('data-label');
+      b.disabled = true; b.textContent = '기록하는 중…';
+      post('/seller/collect/' + encodeURIComponent(itemId) + '/' + b.getAttribute('data-override'), {}).then(function (t) {
+        if (!t.ok) { b.disabled = false; b.textContent = label; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
+        if (b.getAttribute('data-override') === 'rep-image-override' && window.kgpCpxReload) window.kgpCpxReload();
+        checkBtn.click();
       });
-      if (d.auto_translate) {
-        var at = d.auto_translate;
-        h = '<div class="m5-note" data-role="m5-auto-translate">' + (at.status === 'done' || at.status === 'queued'
-          ? '보류 전에 자동 번역을 돌리고 다시 확인했어요' + (at.reason ? ' — ' + esc(at.reason) : '') + '.'
-          : '자동 번역을 시도했지만 옮기지 못했어요 — ' + esc(at.reason || at.status) + '.') + '</div>' + h;
-      }
-      checksEl.innerHTML = h;
-      checksEl.querySelectorAll('[data-role="m5-ship-override"]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          b.disabled = true; b.textContent = '기록하는 중…';
-          post('/seller/collect/' + encodeURIComponent(itemId) + '/ship-ratio-override', {}).then(function (t) {
-            if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
-            checkBtn.click();
-          });
-        });
+      return;
+    }
+    if (role === 'm5-translate-recheck') {
+      b.disabled = true; b.textContent = '번역하는 중…';
+      post('/seller/collect/' + encodeURIComponent(itemId) + '/translate-now', {}).then(function (t) {
+        if (!t.ok) { b.disabled = false; b.textContent = '번역하고 다시 검증'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.reason || t.error || '옮기지 못했어요') + '</div>'); return; }
+        refreshFromStore = true; checkBtn.click();
       });
-      checksEl.querySelectorAll('[data-role="m5-voltage-override"]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          b.disabled = true; b.textContent = '기록하는 중…';
-          post('/seller/collect/' + encodeURIComponent(itemId) + '/voltage-override', {}).then(function (t) {
-            if (!t.ok) { b.disabled = false; b.textContent = '전압·플러그 그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
-            checkBtn.click();
-          });
-        });
-      });
-      checksEl.querySelectorAll('[data-role="m5-rep-override"]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          b.disabled = true; b.textContent = '기록하는 중…';
-          post('/seller/collect/' + encodeURIComponent(itemId) + '/rep-image-override', {}).then(function (t) {
-            if (!t.ok) { b.disabled = false; b.textContent = '대표 사진 그래도 등록'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '기록하지 못했어요') + '</div>'); return; }
-            if (window.kgpCpxReload) window.kgpCpxReload();
-            checkBtn.click();
-          });
-        });
-      });
-      checksEl.querySelectorAll('[data-role="m5-translate-recheck"]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          b.disabled = true; b.textContent = '번역하는 중…';
-          post('/seller/collect/' + encodeURIComponent(itemId) + '/translate-now', {}).then(function (t) {
-            if (!t.ok) { b.disabled = false; b.textContent = '번역하고 다시 검증'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.reason || t.error || '옮기지 못했어요') + '</div>'); return; }
-            refreshFromStore = true; checkBtn.click();
-          });
-        });
-      });
-      goBtn.disabled = blocked || !okMarkets.length;
-      var held = (d.results || []).some(function (r) { return r.hold; });
-      goBtn.textContent = okMarkets.length ? '등록 (' + okMarkets.length + '곳)'
-        : (held ? '보강 후 등록할 수 있어요' : '등록할 수 있는 마켓이 없어요');
-    });
+    }
   });
 
   // U2(오너 2026-10-02): 쿠팡 검토 상태 — 승인·검토중·반려(사유). 검토중이면 1분마다 다시 묻는다(10회까지).
@@ -442,10 +479,18 @@
   }
 
   function register(confirmWarn) {
-    if (!okMarkets.length) return;
+    var held = (goBtn.dataset.held || '').split(',').filter(Boolean);
+    var targets = okMarkets.concat(held);
+    if (!targets.length) return;
     goBtn.disabled = true; checkBtn.disabled = true;
     doneEl.hidden = false; doneEl.innerHTML = '<div class="m5-note">등록하는 중… 쿠팡은 SKU마다 따로 올라가 조금 걸릴 수 있어요.</div>';
-    post('/seller/collect/upload', {product: product, markets: okMarkets, item_id: itemId, confirm_warn: !!confirmWarn}).then(function (d) {
+    // 보류 중 「그래도 등록」으로 풀리는 마켓을 같이 올리면, 그 확인(사유 기록)을 먼저 남긴다 — 버튼 글자에 적어 둔 그대로.
+    var fixes = {};
+    held.forEach(function (m) { ((pvRows[m] || {}).fixes || []).forEach(function (f) { if (OVERRIDES[f]) fixes[f] = 1; }); });
+    Object.keys(fixes).reduce(function (p, f) {
+      return p.then(function () { return post('/seller/collect/' + encodeURIComponent(itemId) + '/' + OVERRIDES[f][0], {}); });
+    }, Promise.resolve()).then(function () {
+    return post('/seller/collect/upload', {product: product, markets: targets, item_id: itemId, confirm_warn: !!confirmWarn}); }).then(function (d) {
       checkBtn.disabled = false;
       if (d.needs_confirm) {
         doneEl.innerHTML = '<div class="m5-res is-bad">' + esc(d.error) + '</div>' +
