@@ -356,6 +356,34 @@ def limit_state(store: str, *, fetch=None) -> dict:
     return {"count": n, "limit": limit, "full": n >= limit, "text": f"{store_label(store)} {n:,}/{limit:,}"}
 
 
+# Y6-C 후속(오너 2026-10-07): 가족 화면에 「키 없음 — NAVER_CHEZGOGA_CLIENT_ID/… 를 설정하세요」 env 이름이 그대로 보였다.
+#   셀러(관리자 아님) 화면엔 사람 말만 — 키 없음 = 「스마트스토어 키 미설정 — 오너에게 요청」, 그 밖의 사유는 env 이름만 가린다.
+#   원문(env 이름 포함)은 관리자 화면·진단(`probe` 기록)에 그대로 남는다.
+SELLER_NO_KEY = "스마트스토어 키 미설정 — 오너에게 요청"
+#   가리는 건 **우리 env 이름**(마켓 자격 접두)만 — 네이버 응답 코드(GW.IP_NOT_ALLOWED 등)는 사유 원문이라 남긴다.
+_ENV_NAME = re.compile(r"(?<![\w.])(?:NAVER|SMARTSTORE|COUPANG|SHOPIFY|WC|WOO|ELEVENST|MARKET)_[A-Z0-9_*]+(?:\s*=\s*\S+)?")
+
+
+def _viewer_is_admin() -> bool:
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return True                      # 요청 밖(크론·진단 스크립트) = 오너 서버 자신
+        from src.auth.admin_resolver import is_admin_session
+        return bool(is_admin_session(session)[0])
+    except Exception:
+        return False
+
+
+def seller_why(why: str, state: str = "") -> str:
+    """셀러 화면용 사유 — env 이름 없이. 관리자면 원문 그대로."""
+    if not why or _viewer_is_admin():
+        return why
+    if state == "no_creds" or why.startswith("키 없음"):
+        return SELLER_NO_KEY
+    return re.sub(r"\s{2,}", " ", _ENV_NAME.sub("(서버 설정)", why)).strip()
+
+
 def store_choices(product: Optional[dict] = None) -> list:
     """마켓 선택 줄 재료 — `[{code, store, label, business, ready, approved, assigned, note, limit_text}]`."""
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
@@ -370,7 +398,7 @@ def store_choices(product: Optional[dict] = None) -> list:
         except Exception:
             ready = False
         ok = approved(st)
-        why = "" if ok else status_text(st)
+        why = "" if ok else seller_why(status_text(st), probe(st).get("state", ""))
         note = why
         if assigned.get("store") == st:
             note = (assigned["why"] + (" · " + note if note else ""))

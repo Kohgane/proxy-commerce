@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -122,3 +123,52 @@ def test_screen_renders():
     os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
     from src.order_webhook import app
     assert app.test_client().get("/seller/sourcing/reject-watch").status_code == 200
+
+
+# ── Y6-C 후속(오너 2026-10-07): 셀러 화면엔 env 이름 금지 ─────────────────────────────────────
+# 가족 폰 마켓 줄에 「키 없음 — NAVER_CHEZGOGA_CLIENT_ID/NAVER_CHEZGOGA_CLIENT_SECRET 를 설정하세요…」가 그대로 보였다.
+_ENV_NAME_ON_SCREEN = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9*]+)+\b")
+
+
+def test_seller_why_hides_env_names_admin_keeps_raw(monkeypatch):
+    from src.seller_console import smartstore_routing as R
+    raw = "키 없음 — NAVER_CHEZGOGA_CLIENT_ID/NAVER_CHEZGOGA_CLIENT_SECRET 를 설정하세요(발급 요청은 보내지 않았어요)"
+    monkeypatch.setattr(R, "_viewer_is_admin", lambda: False)
+    assert R.seller_why(raw, "no_creds") == "스마트스토어 키 미설정 — 오너에게 요청"
+    off = R.seller_why("실측 꺼짐 — SMARTSTORE_LIVE_PROBE=0이라 토큰을 발급해 보지 않았어요", "off")
+    assert not _ENV_NAME_ON_SCREEN.search(off) and "(서버 설정)" in off
+    fail = R.seller_why("토큰 발급 실패 — HTTP 403 GW.IP_NOT_ALLOWED", "fail")
+    assert fail == "토큰 발급 실패 — HTTP 403 GW.IP_NOT_ALLOWED"       # 네이버 응답 원문 코드는 env 이름이 아니다 — 그대로
+    monkeypatch.setattr(R, "_viewer_is_admin", lambda: True)
+    assert R.seller_why(raw, "no_creds") == raw                        # 관리자 진단은 원문 그대로
+
+
+def _family_card(monkeypatch, role):
+    from src.seller_console import collect_history_store as S
+    from src.seller_console import smartstore_routing as R
+    monkeypatch.setenv("FAMILY_EMAILS", "fam-lang@example.com")
+    monkeypatch.delenv("ADMIN_EMAILS", raising=False)
+    monkeypatch.setenv("SMARTSTORE_LIVE_PROBE", "1")
+    for k in [k for k in os.environ if k.startswith(("NAVER_", "SMARTSTORE_")) and "CLIENT" in k]:
+        monkeypatch.delenv(k, raising=False)
+    R.reset_cache()
+    iid = S.append(source="share", url="https://item.taobao.com/item.htm?id=7", seller_id="fam-lang", title="플리츠 세트",
+                   price="168", currency="CNY", extra={"title_ko": "플리츠 세트", "price": "168", "currency": "CNY",
+                                                       "images": ["https://img.alicdn.com/a.jpg"]})
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s.update(user_id="fam-lang", user_email="fam-lang@example.com", user_role=role)
+    h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    R.reset_cache()
+    return h
+
+
+def test_family_card_market_rows_have_no_env_names(monkeypatch):
+    h = _family_card(monkeypatch, "seller")
+    notes = re.findall(r'data-role="m5-market-note">([^<]*)<', h)
+    ss = [n for n in notes if "스마트스토어" in n or "오너에게" in n]
+    assert ss and all(n.strip().endswith("스마트스토어 키 미설정 — 오너에게 요청") for n in ss), notes
+    assert not [n for n in notes if _ENV_NAME_ON_SCREEN.search(n)], notes
+    ha = _family_card(monkeypatch, "admin")                           # 오너(관리자)는 진단 원문
+    assert "NAVER_CHEZGOGA_CLIENT_ID" in ha

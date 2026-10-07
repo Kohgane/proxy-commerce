@@ -15,6 +15,7 @@ import requests
 from src.market_relay import RelayError, relay_request
 
 from .base_uploader import BaseUploader
+from src.uploaders.coupang_brand import brand_field as coupang_brand_field
 
 logger = logging.getLogger(__name__)
 
@@ -1407,9 +1408,11 @@ class CoupangUploader(BaseUploader):
             'saleEndedAt': '2099-01-01T23:59:59',
             'displayProductName': title,
             'generalProductName': title,
-            # ★ 정본: brand는 **빈 문자열**, 브랜드는 productGroup에 넣는다.
-            #   (브랜드 오인 IPR 회피 설계로 추정 — 5,691건이 이 형태로 통과했으므로 그대로 승계.)
-            'brand': '',
+            # Y6-B(오너 결정 2026-10-05 · 적용 2026-10-07): brand 칸 = GENERIC 규칙 — 비었거나·비한글 원문·쿠팡 브랜드
+            #   목록 매칭 실패 → "GENERIC", 매칭되면 그 쿠팡 표기. 예전 정본 `""`(5,691건)은 올리기는 통과했지만 그 뒤
+            #   수정이 「브랜드가 없는 상품은 brand 필드에 GENERIC을 입력」으로 막혔다. 기존 등록분은 소급하지 않는다.
+            #   productGroup·manufacture는 그대로. 플래그 COUPANG_BRAND_GENERIC(기본 0 → 예전 `""`, 1 → GENERIC 규칙).
+            'brand': coupang_brand_field(brand),
             'manufacture': brand or '상세페이지 참조',
             'productGroup': brand,
             'description': product.get('description_html', ''),
