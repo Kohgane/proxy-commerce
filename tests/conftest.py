@@ -498,3 +498,23 @@ def mock_notification_hub():
         mock_cls.return_value = mock_instance
         mock_instance.dispatch.return_value = {}
         yield mock_instance
+
+
+@pytest.fixture(autouse=True)
+def _onebound_learned_limits_reset():
+    """온바운드가 응답 api_info로 배운 키 한도(max)·오늘 4013 막음은 운영 상태다 — 테스트마다 비운다(다음 테스트로 새지 않게)."""
+    try:
+        from src.collectors import taobao_provider_onebound as _ob
+        from src.db import image_translate_queue_pg as _st
+        _st.state_set(_ob._LIMITS, {})
+        _st.state_set(_ob._QUOTA + _ob._cst_day(), {})
+        # 오늘 온바운드 호출 수(우리 계수기)도 테스트마다 0 — 배운 max(10)와 앞 테스트의 누적이 만나 상한에 걸리지 않게
+        from src.db import option_translate_queue_pg as _oq
+        with _oq._LOCK:
+            _oq._MEM_DAY.pop(_ob._day_key(), None)
+        if _oq._enabled():                       # PG 레인: 같은 app_state 표(take_n이 {"n": …}로 센다)
+            _st.state_set(_ob._day_key(), {"n": 0})
+    except Exception:
+        pass
+    yield
+

@@ -2215,6 +2215,11 @@ def _m5_auto(ex: dict) -> dict:
     st = str(rec.get("state") or "")
     if st == "manual":
         code = str(rec.get("kind") or "")
+        if code == "provider_quota":
+            # 오너 지시(2026-10-07): 온바운드 4013(已超量) — 키 일일 한도. 오늘은 자동 수집을 다시 부르지 않는다(건당 과금).
+            return {"state": "manual", "kind": code,
+                    "line": "상품정보 서비스 일일 한도 — 내일 다시 또는 충전 후. "
+                            "지금 넣으려면 아래 「사진 추가」·「옵션 직접 입력」을 써 주세요."}
         return {"state": "manual", "kind": code,
                 "line": f"자동 수집 실패{('(' + code + ')') if code else ''} — {str(rec.get('reason') or '사유 없음').rstrip('.')}. "
                         "아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요."}
