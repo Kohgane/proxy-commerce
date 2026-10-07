@@ -5,7 +5,8 @@ SaaS 다중 셀러 대비: 각 셀러가 자신의 마켓 API 키를 직접 입�
 
 - 저장: `data/market_credentials/<seller_id>.json` (Fernet 암호화, 키 없으면 평문+경고)
 - 주입: `seller_market_env(seller_id, market)` 컨텍스트로 표준 환경변수에 일시 주입
-- 폴백: 셀러 저장값이 없으면 전역 환경변수(os.environ)를 그대로 사용
+- 폴백: 셀러 저장값이 없으면 전역 환경변수(os.environ) — **공유 사용자(관리자·가족)만**(Z6).
+  공개 가입자는 자기 저장값만 쓴다(오너 서버 자격 격리, `env_fallback_allowed`).
 
 암호화 키: `MARKET_CRED_ENC_KEY`(Fernet 키) 우선, 없으면 `SECRET_KEY` 파생.
 둘 다 없으면 평문 저장(개발용) — 운영에서는 반드시 키를 설정할 것.
@@ -13,6 +14,7 @@ SaaS 다중 셀러 대비: 각 셀러가 자신의 마켓 API 키를 직접 입�
 from __future__ import annotations
 
 import base64
+import contextvars
 import hashlib
 import json
 import logging
@@ -458,23 +460,145 @@ def all_credential_env(seller_id: str) -> Dict[str, str]:
     return merged
 
 
-def _market_ok(stored: Dict[str, str], market: str) -> bool:
+# ── Z6(2026-10-06): 오너 서버 자격(전역 환경변수)은 **공유 사용자만** 쓴다 ──────────────────────────
+#   L1(#837) 이후 누구나 가입한다. 예전 폴백(「셀러 저장값이 없으면 전역 환경변수」)이면 갓 가입한 남이
+#   `{"markets": ["shopify"]}` 한 줄로 **오너 상점에 등록**했고, 연결 뱃지도 오너 키로 「연결됨」이었다.
+#   공유 = 관리자 또는 `FAMILY_EMAILS`(`market_pick.session_is_shared`). 그 밖의 사람은 자기 저장값만.
+#
+#   격리는 **그 요청의 스레드(컨텍스트) 안에서만** 오너의 마켓 환경변수를 가린다. os.environ 자체를
+#   지우면 같은 순간 오너의 다른 요청·크론이 키를 잃고, 동시 요청끼리 복원이 꼬이면 오너 키가 영영
+#   사라진다. 그래서 os.environ에 컨텍스트별 겹(overlay)을 씌운다 — 업로더가 os.getenv로 읽는 그대로.
+MARKET_ENV_PREFIXES = ("COUPANG_", "NAVER_", "SMARTSTORE_", "ELEVENST_", "SHOPIFY_",
+                       "WC_", "WOO_", "WOOCOMMERCE_", "SHOPEE_")
+# 마켓 등록 자격이 아닌 같은 접두 이름(네이버 검색·검색광고 키 = 소싱 화면용, 등록과 무관).
+_MARKET_ENV_KEEP = ("NAVER_SEARCH_", "NAVER_SEARCHAD_")
+
+_ENV_OVERLAY: "contextvars.ContextVar[Optional[Dict[str, Optional[str]]]]" = contextvars.ContextVar(
+    "kgp_market_env_overlay", default=None)
+
+
+def _is_market_env(name: str) -> bool:
+    return isinstance(name, str) and name.startswith(MARKET_ENV_PREFIXES) and not name.startswith(_MARKET_ENV_KEEP)
+
+
+class _OverlayEnviron(getattr(os, "_Environ", type(os.environ))):   # 모듈 재로드에도 겹이 겹겹이 쌓이지 않게 원형 기준
+    """격리 중인 컨텍스트에선 마켓 이름을 겹에서만 읽고 쓴다(겹에 없으면 「없음」). 그 밖엔 원래 os.environ."""
+
+    def __getitem__(self, key):
+        ov = _ENV_OVERLAY.get()
+        if ov is not None and _is_market_env(key):
+            val = ov.get(key)
+            if val is None:
+                raise KeyError(key)
+            return val
+        return super().__getitem__(key)
+
+    def __setitem__(self, key, value):
+        ov = _ENV_OVERLAY.get()
+        if ov is not None and _is_market_env(key):
+            ov[key] = value                 # 남의 토큰이 오너의 전역 환경변수로 새지 않게
+            return
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key):
+        ov = _ENV_OVERLAY.get()
+        if ov is not None and _is_market_env(key):
+            if ov.get(key) is None:
+                raise KeyError(key)
+            ov[key] = None
+            return
+        super().__delitem__(key)
+
+    def __iter__(self):
+        ov = _ENV_OVERLAY.get()
+        if ov is None:
+            yield from super().__iter__()
+            return
+        for k in list(super().__iter__()):
+            if not _is_market_env(k):
+                yield k
+        for k, v in list(ov.items()):
+            if v is not None:
+                yield k
+
+    def __len__(self):
+        if _ENV_OVERLAY.get() is None:
+            return super().__len__()
+        return sum(1 for _ in self.__iter__())
+
+
+def _install_env_overlay() -> None:
+    if not isinstance(os.environ, _OverlayEnviron):
+        try:
+            os.environ.__class__ = _OverlayEnviron
+        except TypeError as exc:     # pragma: no cover - 지원 안 되는 파이썬이면 격리는 판정 쪽 게이트만
+            logger.error("마켓 환경변수 격리 겹 설치 실패: %s", exc)
+
+
+_install_env_overlay()
+
+
+def env_fallback_allowed() -> bool:
+    """오너 서버 자격(전역 환경변수)으로 폴백해도 되는가 — Z6.
+
+    - 격리 컨텍스트 안: 아니오.
+    - 요청 밖(크론·부팅·스크립트 = 오너 서버 자신): 예.
+    - 로그인한 사람의 요청: 공유 사용자(관리자·가족)만 예.
+    - 로그인 신원이 없는 요청(`/cron/*` 등 서버 내부 · 인증 꺼진 개발): 예 — 셀러 콘솔은 인증이 막는다.
+    """
+    if _ENV_OVERLAY.get() is not None:
+        return False
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return True
+        if not (session.get("user_id") or session.get("user_email") or session.get("email")):
+            return True
+        from .market_pick import session_is_shared
+        return session_is_shared()
+    except Exception as exc:
+        logger.warning("공유 사용자 판정 실패 — 오너 자격 폴백 거부: %s", exc)
+        return False
+
+
+def isolation_active() -> bool:
+    """지금 컨텍스트가 셀러 자격 격리 중인가(오너 전역 마켓 환경변수가 가려진 상태)."""
+    return _ENV_OVERLAY.get() is not None
+
+
+@contextmanager
+def isolated_market_env(values: Optional[Dict[str, str]] = None):
+    """이 컨텍스트 안에선 마켓 환경변수가 `values`(셀러 자기 값)뿐이다. 오너 전역 값은 안 보인다."""
+    outer = _ENV_OVERLAY.get()
+    layer: Dict[str, Optional[str]] = dict(outer or {})
+    layer.update({k: str(v) for k, v in (values or {}).items() if v and _is_market_env(k)})
+    token = _ENV_OVERLAY.set(layer)
+    try:
+        yield
+    finally:
+        _ENV_OVERLAY.reset(token)
+
+
+def _market_ok(stored: Dict[str, str], market: str, allow_env: Optional[bool] = None) -> bool:
     fields = MARKET_CRED_FIELDS.get(market)
     if not fields:
         return False
+    if allow_env is None:
+        allow_env = env_fallback_allowed()
     for field in fields:
         if not field.get("required"):
             continue
-        if not ((stored or {}).get(field["env"]) or os.getenv(field["env"])):
+        if not ((stored or {}).get(field["env"]) or (allow_env and os.getenv(field["env"]))):
             return False
     return True
 
 
 def is_connected(seller_id: str, market: str) -> bool:
-    """필수 필드가 셀러 저장값 또는 전역 환경변수로 모두 채워졌는지.
+    """필수 필드가 셀러 저장값(공유 사용자는 + 전역 환경변수)으로 모두 채워졌는지.
 
     ★ S1 — **연결 판정의 단일 소스**. 다른 화면이 자기 판정을 따로 만들지 않는다
     (계약 `test_s1_single_connection_judge`가 판정기 2개 존재를 금지한다).
+    Z6: 전역 환경변수 폴백은 `env_fallback_allowed()`(공유 사용자)일 때만.
     """
     market = canonical_market(market)
     if market not in MARKET_CRED_FIELDS:
@@ -488,7 +612,8 @@ def connected_markets(seller_id: str, markets) -> Dict[str, bool]:
     is_connected를 마켓마다 부르면 _load_all(=PG 쿼리)이 N번 → 대륙 간 RTT가 N배. 한 번 읽어 메모리에서 판정.
     """
     alld = _load_all(seller_id)
-    return {m: _market_ok(alld.get(m, {}), m) for m in markets}
+    allow_env = env_fallback_allowed()
+    return {m: _market_ok(alld.get(m, {}), m, allow_env) for m in markets}
 
 
 def _mask(value: str) -> str:
@@ -523,11 +648,12 @@ def _suggest_value(env: str) -> str:
 def status(seller_id: str, market: str) -> Dict[str, Any]:
     """화면 표시용 상태 (마스킹된 값 포함, 비밀값 노출 금지)."""
     stored = get(seller_id, market)
+    allow_env = env_fallback_allowed()     # Z6: 남에게 오너 서버 값(상점 도메인·업체코드·반품지 주소)을 보이지 않는다
     fields = []
     for field in MARKET_CRED_FIELDS.get(market, []):
         env = field["env"]
         stored_val = stored.get(env, "")
-        global_val = os.getenv(env, "")
+        global_val = os.getenv(env, "") if allow_env else ""
         has_value = bool(stored_val or global_val)
         display = ""
         if stored_val:
@@ -546,13 +672,13 @@ def status(seller_id: str, market: str) -> Dict[str, Any]:
             "section": field.get("section", ""),
             # F29: 아는 값은 **미리 채워 둔다**(비어 있는 칸에 한해). 사람이 고칠 수 있고,
             #   고친 값을 상수가 덮지 않는다. 비밀값엔 절대 제안을 붙이지 않는다.
-            "suggest": ("" if (has_value or field.get("secret"))
+            "suggest": ("" if (has_value or field.get("secret") or not allow_env)
                         else _suggest_value(env)),
         })
     return {
         "market": market,
         "label": MARKET_LABELS.get(market, market),
-        "connected": is_connected(seller_id, market),
+        "connected": _market_ok(stored, market, allow_env) if market in MARKET_CRED_FIELDS else False,
         "has_seller_credentials": bool(stored),
         "fields": fields,
     }
@@ -583,7 +709,9 @@ def temp_env(updates: Dict[str, Optional[str]]):
 def seller_market_env(seller_id: str, markets, extra: Optional[Dict[str, str]] = None):
     """선택 마켓들의 셀러 자격증명을 환경변수에 일시 주입한다.
 
-    셀러 저장값이 있으면 그것으로, 없으면 기존 전역 환경변수를 그대로 사용.
+    셀러 저장값이 있으면 그것으로. 없을 때 전역 환경변수(= 오너 서버 자격)로 폴백하는 건
+    **공유 사용자(관리자·가족)만**이다(Z6). 그 밖의 셀러는 이 컨텍스트 안에서 마켓 환경변수가
+    자기 저장값뿐이다 — 없으면 업로더·사전검증이 「키 없음」이라고 정직하게 말한다.
     `extra`로 입력 중(미저장) 값을 추가 주입할 수 있다. 종료 시 원래 값으로 복원.
     """
     if isinstance(markets, str):
@@ -594,5 +722,9 @@ def seller_market_env(seller_id: str, markets, extra: Optional[Dict[str, str]] =
     if extra:
         updates.update({k: v for k, v in extra.items() if v})
 
+    if not env_fallback_allowed():
+        with isolated_market_env(updates):
+            yield
+        return
     with temp_env(updates):
         yield

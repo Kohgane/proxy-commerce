@@ -790,6 +790,14 @@ def api_publish():
     if not _ENABLED:
         return jsonify({"ok": False, "error": "AI_LISTING_ENABLED=0"}), 403
 
+    # Z6(2026-10-06): 이 경로는 인증도 셀러 자격 주입도 없이 서버 환경변수(= 오너 상점 키)로 바로
+    #   등록했다 — 로그인 안 한 사람도 오너 쇼피파이·WC·쿠팡에 올릴 수 있었다. 로그인 필수 +
+    #   셀러 자격 컨텍스트(공개 가입자는 자기 저장값만, `seller_market_env`).
+    from flask import session
+    seller_id = str(session.get("user_id") or session.get("user_email") or "")
+    if not seller_id:
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+
     data = request.get_json(force=True) or {}
     listing_id = str(data.get("listing_id") or uuid.uuid4())
     markets = data.get("markets") or _DEFAULT_MARKETS
@@ -798,7 +806,8 @@ def api_publish():
     language = str(data.get("language") or _DEFAULT_LANG)
 
     try:
-        from src.ai_listing.multi_publisher import publish_to_markets
+        from src.ai_listing.multi_publisher import _MARKET_CODE_MAP, publish_to_markets
+        from src.seller_console import market_credentials as mc
 
         product_data = {
             "listing_id": listing_id,
@@ -806,11 +815,12 @@ def api_publish():
             "language": language,
             "market_data": market_data,
         }
-        result = publish_to_markets(
-            ai_listing_id=listing_id,
-            product_data=product_data,
-            markets=markets,
-        )
+        with mc.seller_market_env(seller_id, [_MARKET_CODE_MAP.get(m) or m for m in markets]):
+            result = publish_to_markets(
+                ai_listing_id=listing_id,
+                product_data=product_data,
+                markets=markets,
+            )
         return jsonify({"ok": True, "results": result.to_dict()})
     except Exception as exc:
         logger.warning("AI 등록 오류: %s", exc)

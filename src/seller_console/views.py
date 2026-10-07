@@ -2930,9 +2930,8 @@ def _shared_markets() -> bool:
         admin = _is_admin_user()
     except Exception:
         admin = False
-    from flask import has_request_context
-    from .market_pick import is_shared
-    return is_shared(str(session.get("email") or "") if has_request_context() else "", admin)
+    from .market_pick import session_is_shared
+    return session_is_shared(admin)
 
 
 def _account_codes_forbidden(markets):

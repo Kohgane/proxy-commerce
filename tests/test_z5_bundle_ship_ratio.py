@@ -62,6 +62,7 @@ def _client(seller):
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"], s["email"] = seller, "cn-user@example.com"
+        s["user_role"] = "admin"                       # Z6: 서버 env 키(오너 자격)는 공유 사용자만
     return c
 
 

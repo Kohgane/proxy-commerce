@@ -87,7 +87,7 @@ def test_route_reports_hold(coupang_env):
     from src.order_webhook import app
     c = app.test_client()
     with c.session_transaction() as s:
-        s["user_id"] = "u-r2"
+        s["user_id"] = "u-r2"; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
     d = c.post("/seller/collect/prevalidate", json={"product": dict(SHARE_DRAFT), "markets": ["coupang"]}).get_json()
     [r] = d["results"]
     assert d["all_ok"] is False and r["ok"] is False and r["hold"] is True

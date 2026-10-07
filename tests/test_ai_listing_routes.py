@@ -114,7 +114,8 @@ class TestAIListingAPIRoutes:
             }),
             content_type="application/json",
         )
-        assert resp.status_code in (200, 403)
+        # Z6: 로그인 안 한 요청은 등록 불가(예전엔 인증 없이 서버 키로 등록됐다)
+        assert resp.status_code in (401, 403)
 
     def test_status_api_get(self, client):
         resp = client.get("/api/ai-listing/status/test-listing-id")

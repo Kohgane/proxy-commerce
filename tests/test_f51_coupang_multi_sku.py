@@ -256,7 +256,7 @@ def test_prevalidate_says_it_will_register_per_sku(wired):
     from src.order_webhook import app
     c = app.test_client()
     with c.session_transaction() as s:
-        s["user_id"] = "u-f51-pre"
+        s["user_id"] = "u-f51-pre"; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
     r = c.post("/seller/collect/prevalidate", json={"product": _product(_skus(price_fn=None)),
                                                    "markets": ["coupang"]}).get_json()["results"][0]
     assert r["ok"] is True, r
