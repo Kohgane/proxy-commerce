@@ -242,7 +242,8 @@ def test_the_route_carries_reach_to_the_screen():
     """라우트가 `reach_ms`를 실어 보낸다 — 함수만 맞고 화면이 비면 소용없다."""
     import inspect
     from src.seller_console import views
-    src = inspect.getsource(views.collect_prevalidate)
+    # M5 후속(2026-10-07): 결과 한 줄은 `_pv_dict` 한 곳이 만든다(동기·비동기 사전검증 공용)
+    src = inspect.getsource(views._pv_dict)
     assert '"reach_ms"' in src and '"reach_ok"' in src
 
 

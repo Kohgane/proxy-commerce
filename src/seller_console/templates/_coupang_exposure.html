@@ -25,9 +25,9 @@
     return fetch(url, payload === undefined ? {credentials: 'same-origin'} :
       {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
       .then(function (r) { return r.text().then(function (t) {
-        // M5 후속: 서버가 HTML(500·502)을 돌려줘도 사유를 남긴다 — 「불러오지 못했어요」만으론 원인을 모른다.
+        // M5 후속: 서버가 JSON 대신 HTML 오류 페이지를 돌려줘도 사유를 남긴다 — 「불러오지 못했어요」만으론 원인을 모른다.
         try { return JSON.parse(t); } catch (e) {
-          return {ok: false, error: 'HTTP ' + r.status + (r.status === 502 || r.status === 504 ? ' — 서버 시간 초과' : ' — 응답을 읽지 못했어요')};
+          return {ok: false, error: (r.status >= 500 ? '서버 오류·시간 초과' : '응답을 읽지 못했어요') + ' (HTTP ' + r.status + ')'};
         } }); });
   }
   function checkLines(c) {
