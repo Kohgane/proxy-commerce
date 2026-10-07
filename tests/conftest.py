@@ -22,6 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 셀러 콘솔 인증 강제는 운영 기본 ON(SELLER_CONSOLE_AUTH 미설정 시 "1"). 단 테스트는
 # 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+# Z8: 대시보드 API는 키가 비면 닫힌다(fail-closed). 테스트 레인만 명시적으로 연다 — 운영(APP_ENV=production)은 무시.
+os.environ.setdefault("DASHBOARD_API_OPEN", "1")
 # Z3-2: 이미지 번역 전 로컬 OCR 사전판정은 운영 기본 ON. 테스트는 기본 OFF — 파이프라인 계약들이 글자 없는
 #   합성 PNG를 쓰는데, RapidOCR가 깔린 환경에선 「한자 없음」으로 건너뛰어 텐센트 경로를 못 잰다(깔렸는지에 따라
 #   결과가 갈리면 안 된다). 사전판정 계약(test_z3_image_budget)은 스스로 켠다.

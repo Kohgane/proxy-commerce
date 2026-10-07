@@ -24,8 +24,10 @@ class TestRequireApiKey:
     """require_api_key 데코레이터 테스트."""
 
     def test_no_api_key_configured_allows_access(self, api_app, monkeypatch):
-        """DASHBOARD_API_KEY 미설정 시 인증 없이 접근 가능."""
+        """DASHBOARD_API_KEY 미설정 + 개발 개방(DASHBOARD_API_OPEN=1)일 때만 키 없이 접근(Z8 — 기본은 닫힘)."""
         monkeypatch.delenv("DASHBOARD_API_KEY", raising=False)
+        monkeypatch.setenv("DASHBOARD_API_OPEN", "1")
+        monkeypatch.delenv("APP_ENV", raising=False)
         with patch("src.api.auth_middleware._audit") as mock_audit:
             mock_audit.log.return_value = {}
             resp = api_app.get("/api/dashboard/health")
