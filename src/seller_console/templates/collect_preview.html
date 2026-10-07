@@ -295,13 +295,15 @@
 
       <!-- [옵션] 옵션 목록 -->
       <div class="kgp-esec mb-2 kgp-etab-hide" data-etab="options">
-        <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-1 mb-2">
           <label class="form-label small fw-semibold mb-0">옵션{{ src_badge('options') }} <span class="text-muted fw-normal">(예: 색상, 사이즈 — 값은 쉼표로 구분)</span></label>
-          <span class="d-flex gap-1">
+          <span class="d-flex flex-wrap gap-1">
             {# Y2(오너 2026-10-04): 상품명 탭 「한국어로 번역」과 같은 자리 — 옵션 **축 이름 + 값**을 한 번에(규칙 → 번역기, 하루 상한 안). #}
-            <button type="button" class="btn btn-ghost btn-sm py-0" id="btnOptionsKo" data-role="options-translate" onclick="translateOptionsKo()">
+            <button type="button" class="btn btn-ghost btn-sm py-0 text-nowrap" id="btnOptionsKo" data-role="options-translate" onclick="translateOptionsKo()">
               <i class="bi bi-translate"></i> 한국어로 번역</button>
-            <button type="button" class="btn btn-ghost btn-sm py-0" onclick="addOptionRow()">+ 옵션 추가</button>
+            <button type="button" class="btn btn-ghost btn-sm py-0 text-nowrap" onclick="addOptionRow()">+ 옵션 추가</button>
+            <button type="button" class="btn btn-ghost btn-sm py-0 text-nowrap" data-role="opt-src-toggle" aria-pressed="false"
+                    onclick="kgpToggleOptSrc(this)">원문 보기</button>
           </span>
         </div>
         <div class="small mb-2 d-none" data-role="options-translate-out" id="optionsKoOut"></div>
@@ -318,7 +320,8 @@
             <tbody>
             {% for k in _skus %}
               <tr {% if k.stock == 0 %}class="text-muted"{% endif %}>
-                <td>{{ k.spec|join(' / ') }}
+                <td><span data-role="sku-ko">{{ ((sku_ko[loop.index0] if sku_ko and loop.index0 < sku_ko|length else None) or k.spec)|join(' / ') }}</span>
+                  <div class="small text-muted opt-src d-none" data-role="sku-src">원문 — {{ k.spec|join(' / ') }}</div>
                   {% if k.stock == 0 %}<div class="small" style="color:var(--warn)">등록 제외 — 재고 없음{% if k.stock_text %}({{ k.stock_text }}){% endif %}</div>{% endif %}</td>
                 <td class="text-end">{{ k.price or '—' }} {{ k.currency if k.price else '' }}</td>
                 <td class="text-end">{{ k.reference_price or '—' }}</td>
@@ -826,6 +829,8 @@ function kgpEtab(name) {
 // ── 서버 주입 데이터 ──
 const _ITEM = {{ item | tojson }};
 const _EXTRA = {{ extra | tojson }};
+// Y6-C: 옵션 한국어(등록과 같은 사슬 option_ko) — 칸엔 한국어, 원문은 data-src로 들고 다닌다(저장 때 원문 보존)
+const _OPT_VIEW = {{ (opt_view or []) | tojson }};
 const _ITEM_ID = {{ item.id | tojson }};
 const _FX = {{ fx_rates | tojson }};            // {USD:1370.5, JPY:9.12, ..., KRW:1}
 const _FX_MOCK = {{ fx_is_mock | tojson }};      // 실시간 연결 전이면 true(기본값)
@@ -905,25 +910,20 @@ function _initImages() {
 }
 function _initOptions() {
   if (!Array.isArray(_EXTRA.options)) return [];
+  if (Array.isArray(_OPT_VIEW) && _OPT_VIEW.length === _EXTRA.options.length) {
+    // Y6-C: 칸 = 한국어(못 옮긴 값만 원문 그대로) · 원문은 data-src로 — 「한국어 — …」 힌트 줄은 없앴다(값 자체가 한국어)
+    return _OPT_VIEW.map(a => ({
+      name: a.name_ko || a.name || '',
+      values: (a.values || []).map(v => v.ko || v.src).join(', '),
+      src: {name: a.name || '', values: (a.values || []).map(v => v.src), ko: (a.values || []).map(v => v.ko || v.src),
+            name_ko: a.name_ko || a.name || ''},
+    }));
+  }
   return _EXTRA.options.map(o => ({
     name: o.name || '',
     values: Array.isArray(o.values) ? o.values.join(', ')
           : (o.value !== undefined ? String(o.value) : ''),
-    ko: _optKoLine(o),
   }));
-}
-
-// Y2(오너 2026-10-04): 저장된 한국어(축 이름 name_ko · 값 values_ko)를 행 아래 한 줄로 보인다 — 「한국어로 번역」을
-//   눌러도 칸엔 원문이 그대로라 「안 됐다」로 보였다(캡처). 칸은 원문 그대로 두고(등록이 원문 → 한국어로 바꿔 보냄),
-//   못 옮긴 값은 「아직」이라고 말한다.
-function _optKoLine(o) {
-  if (!o) return '';
-  var vs = Array.isArray(o.values) ? o.values.map(v => (v && typeof v === 'object') ? (v.name || '') : String(v || '')) : [];
-  var ks = Array.isArray(o.values_ko) ? o.values_ko : [];
-  if (!o.name_ko && !ks.some(k => k)) return '';
-  // Y8: 원문에 한자·가나가 없는 값(분해한 「화이트」·「PD65W」, 「S」)은 옮길 게 없다 — 「아직」이 아니다
-  var vals = vs.map((v, i) => { var k = String(ks[i] || '').trim(); return (k && k !== v) ? k : (/[\u3040-\u30ff\u3400-\u9fff]/.test(v) ? '아직(' + v + ')' : v); });
-  return (o.name_ko || o.name || '') + ': ' + vals.join(', ');
 }
 
 function addImageRow(url) {
@@ -1292,24 +1292,32 @@ function dpInit() {
   dpSelectMarket('common');
 }
 
-function addOptionRow(name, values, ko) {
+function addOptionRow(name, values, src) {
   const wrap = document.getElementById('optionRows');
   const row = document.createElement('div');
   row.className = 'input-group input-group-sm opt-row';
   row.innerHTML = `
     <input type="text" class="form-control opt-name kgp-w-xs" placeholder="옵션명(예: 색상)" value="${escapeHtml(name || '')}">
-    <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: Black, White)" value="${escapeHtml(values || '')}">
+    <input type="text" class="form-control opt-values" placeholder="값들(쉼표 구분: 블랙, 화이트)" value="${escapeHtml(values || '')}">
     <button class="btn btn-ghost" type="button" title="삭제"><i class="bi bi-x-lg"></i></button>`;
+  if (src) row.setAttribute('data-src', JSON.stringify(src));
   wrap.appendChild(row);
-  var koLine = null;
-  if (ko) {
-    koLine = document.createElement('div');
-    koLine.className = 'small text-muted opt-ko';
-    koLine.setAttribute('data-role', 'opt-ko');
-    koLine.textContent = '한국어 — ' + ko;
-    wrap.appendChild(koLine);
+  var srcLine = null;
+  if (src && src.values && src.values.some((v, i) => v !== (src.ko || [])[i] || src.name !== src.name_ko)) {
+    srcLine = document.createElement('div');
+    srcLine.className = 'small text-muted opt-src' + (document.body.classList.contains('kgp-opt-src-on') ? '' : ' d-none');
+    srcLine.setAttribute('data-role', 'opt-src');
+    srcLine.textContent = '원문 — ' + src.name + ': ' + src.values.join(', ');
+    wrap.appendChild(srcLine);
   }
-  row.querySelector('button').addEventListener('click', () => { row.remove(); if (koLine) koLine.remove(); });
+  row.querySelector('button').addEventListener('click', () => { row.remove(); if (srcLine) srcLine.remove(); });
+}
+function kgpToggleOptSrc(btn) {
+  var on = !document.body.classList.contains('kgp-opt-src-on');
+  document.body.classList.toggle('kgp-opt-src-on', on);
+  document.querySelectorAll('.opt-src').forEach(function (el) { el.classList.toggle('d-none', !on); });
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.textContent = on ? '원문 숨기기' : '원문 보기';
 }
 
 function refreshPrimaryImage() {
@@ -1550,7 +1558,7 @@ function initEditor() {
   _initImages().forEach(addImageRow);
   if (document.querySelectorAll('#imageRows .img-row').length === 0) addImageRow('');
   var _opts = _initOptions();
-  _opts.forEach(o => addOptionRow(o.name, o.values, o.ko));
+  _opts.forEach(o => addOptionRow(o.name, o.values, o.src));
   // v58 STEP2 / v67 STEP3: 옵션 없음 배지 — 무옵션(단일 상품)과 추출 실패를 구분(정직).
   //   핵심 필드(가격·이미지)를 제대로 읽었으면 = 옵션 UI 없는 단일 상품 → 중립('단일 상품').
   //   핵심도 못 읽었으면 = 추출 실패 → 경고색('옵션 미수집').
@@ -1605,10 +1613,14 @@ function kgpWarnConfirmText(pages) {
 function buildProductData() {
   const images = Array.from(document.querySelectorAll('#imageRows .img-url'))
     .map(el => el.value.trim()).filter(Boolean);
-  const options = Array.from(document.querySelectorAll('#optionRows .opt-row')).map(row => ({
-    name: row.querySelector('.opt-name').value.trim(),
-    values: row.querySelector('.opt-values').value.split(',').map(v => v.trim()).filter(Boolean),
-  })).filter(o => o.name);
+  const options = Array.from(document.querySelectorAll('#optionRows .opt-row')).map(row => {
+    var src = null;
+    try { src = JSON.parse(row.getAttribute('data-src') || 'null'); } catch (e) { src = null; }
+    var o = {name: row.querySelector('.opt-name').value.trim(),
+             values: row.querySelector('.opt-values').value.split(',').map(v => v.trim()).filter(Boolean)};
+    if (src) { o.src_name = src.name; o.src_values = src.values; }   // Y6-C: 원문 보존(서버가 원문으로 되돌려 저장)
+    return o;
+  }).filter(o => o.name);
 
   const title = document.getElementById('editTitle').value.trim();
   const price = document.getElementById('editPrice').value.trim();
