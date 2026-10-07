@@ -369,7 +369,10 @@
   function overridable(r) { return !r.ok && r.hold && (r.fixes || []).length && (r.fixes || []).every(function (f) { return OVERRIDES[f]; }); }
   function pvRowHtml(m) {
     var r = pvRows[m];
-    if (!r) return '<div class="m5-res is-hold" data-market="' + esc(m) + '" data-role="m5-pending"><b>' + esc(m) + ' — 확인하는 중…</b></div>';
+    if (!r) {
+      var lab = root.querySelector('label[data-market="' + m + '"] .m5-mk-body > span');
+      return '<div class="m5-res is-hold" data-market="' + esc(m) + '" data-role="m5-pending"><b>' + esc(lab ? lab.textContent : m) + ' — 확인하는 중…</b></div>';
+    }
     if (r.transport) {
       return '<div class="m5-res is-bad" data-market="' + esc(r.market) + '" data-ok="0" data-role="m5-transport" data-transport="' + esc(r.transport) + '">' +
         '<b>' + esc(r.market_label) + ' — 검증 못 함</b>' + esc(r.message || '') +
