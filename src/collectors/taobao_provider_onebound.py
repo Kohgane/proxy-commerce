@@ -19,10 +19,13 @@
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import logging
 import os
 import re
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -40,6 +43,7 @@ _KST = timezone(timedelta(hours=9))
 _CST = timezone(timedelta(hours=8))            # 온바운드 data_update·server_time은 베이징 시각
 _RAW = "onebound:raw:"           # + num_iid → {raw, at, bytes, ms}
 _LAST = "onebound:last"          # 마지막으로 받은 상품번호(진단 내려받기)
+_SENT_LOCK = threading.Lock()
 _PIXEL = re.compile(r"(?:^|//)(?:[\w-]+\.)*o0b\.cn/", re.I)        # 추적 픽셀(i.php?t.png…)
 
 
@@ -139,6 +143,87 @@ def _take(manual: bool = False) -> bool:
     from src.db import option_translate_queue_pg as q
     granted, _n = q.take_n(_day_key(), env_cap() if manual else daily_cap(), 1)
     return granted >= 1
+
+
+# ── Z3-D: 실제로 나간 호출의 출처·실패 계수 · 블록 중 「새로 받기」 쿨다운 ───────────────────────────
+# 운영 실측(2026-10-07 14:3x KST): 4013 막음 중 「오늘 25/10」 → 「58/10」. 자동 수집 집계는 12:54 이후 0건 —
+#   33회는 진단 「새로 받기」(GET ?refresh=1 — 막음을 건너뛰고 env 상한 60으로 셈)였다. 주소에 refresh=1이 남아
+#   새로고침·뒤로가기·탭 복원마다 다시 나갔다. 이제 「새로 받기」는 POST만 · 막음 중엔 쿨다운 1회 · 출처별로 센다.
+SOURCES = {"auto": "자동 수집", "carry": "이월 대기", "diag": "진단 조회", "refresh": "새로 받기"}
+_SRC = "onebound_src:"                     # + 베이징 날짜 → {auto: n, …, fail: n}
+_REFRESH_TRY = "onebound:refresh_try:"     # + 베이징 날짜 → {at, kind}
+ENV_REFRESH_COOLDOWN = "ONEBOUND_REFRESH_COOLDOWN_SECONDS"
+
+
+_SOURCE: "contextvars.ContextVar[str]" = contextvars.ContextVar("onebound_source", default="auto")
+
+
+@contextlib.contextmanager
+def as_source(name: str):
+    """이 블록 안에서 나가는 호출의 출처(자동·이월·진단 조회·새로 받기). 스레드마다 따로(contextvars)."""
+    tok = _SOURCE.set(name if name in SOURCES else "auto")
+    try:
+        yield
+    finally:
+        _SOURCE.reset(tok)
+
+
+def _src_key(now=None) -> str:
+    return _SRC + _cst_day(now)
+
+
+def _count_sent(src: str, ok: bool) -> None:
+    """실제로 온바운드로 나간 호출 1건 — 출처별 + 실패. 계수 실패가 호출 결과를 바꾸지 않는다."""
+    k = src if src in SOURCES else "auto"
+    try:
+        from src.db import image_translate_queue_pg as st
+        if not st._enabled():
+            with _SENT_LOCK:
+                cur = dict(st.state_get(_src_key()) or {})
+                cur[k] = int(cur.get(k) or 0) + 1
+                if not ok:
+                    cur["fail"] = int(cur.get("fail") or 0) + 1
+                st.state_set(_src_key(), cur)
+            return
+        from src.db import pg
+        add = {k: 1, **({} if ok else {"fail": 1})}
+        with pg.tx() as cur:                                    # 서비스·프로세스가 여럿이어도 한 문장(원자적)
+            cur.execute(
+                "INSERT INTO app_state (key, value, updated_at) VALUES (%s, %s::jsonb, now()) "
+                "ON CONFLICT (key) DO UPDATE SET value = app_state.value || (SELECT jsonb_object_agg(e.key, "
+                "COALESCE((app_state.value->>e.key)::int, 0) + e.value::int) FROM jsonb_each_text(%s::jsonb) e), "
+                "updated_at=now()", (_src_key(), json.dumps(add), json.dumps(add)))
+    except Exception as exc:                                    # noqa: BLE001
+        logger.warning("[onebound] 출처 계수 실패: %s", exc)
+
+
+def sent_today() -> Dict[str, int]:
+    from src.db import image_translate_queue_pg as st
+    return {k: int(v or 0) for k, v in (st.state_get(_src_key()) or {}).items()}
+
+
+def refresh_cooldown() -> int:
+    try:
+        return max(0, int(os.getenv(ENV_REFRESH_COOLDOWN, "600").strip() or 600))
+    except ValueError:
+        return 600
+
+
+def _refresh_wait(now=None) -> int:
+    """막음 중 「새로 받기」를 지금 또 보내면 안 되면 남은 초(아니면 0)."""
+    from src.db import image_translate_queue_pg as st
+    rec = st.state_get(_REFRESH_TRY + _cst_day(now)) or {}
+    try:
+        at = datetime.fromisoformat(str(rec.get("at")))
+    except Exception:
+        return 0
+    left = refresh_cooldown() - int(((now or datetime.now(timezone.utc)) - at).total_seconds())
+    return max(0, left)
+
+
+def _note_refresh_try() -> None:
+    from src.db import image_translate_queue_pg as st
+    st.state_set(_REFRESH_TRY + _cst_day(), {"at": datetime.now(timezone.utc).isoformat()})
 
 
 def parse_api_info(s: Any) -> Dict[str, Any]:
@@ -425,6 +510,13 @@ def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transpo
     if blk.get("code") and not refresh:
         return {"ok": False, "kind": QUOTA_KIND, "why": f"{QUOTA_LINE} (온바운드 {blk['code']}: {blk.get('reason', '')[:80]})",
                 "raw": None, "ms": 0, "bytes": 0}
+    if blk.get("code") and refresh:
+        # Z3-D: 막음 중 「새로 받기」는 쿨다운에 한 번 — 충전 확인용이지 연타용이 아니다(실패도 건당 과금).
+        wait = _refresh_wait()
+        if wait:
+            return {"ok": False, "kind": QUOTA_KIND, "raw": None, "ms": 0, "bytes": 0,
+                    "why": f"{QUOTA_LINE} — 방금 「새로 받기」도 한도로 막혔어요. {-(-wait // 60)}분 뒤 다시(연타 방지 · 호출 0)"}
+        _note_refresh_try()
     if not _take(manual=refresh):
         return {"ok": False, "kind": "provider_cap",
                 "why": f"온바운드 일일 한도 — 오늘 {daily_cap()}회 다 씀(ONEBOUND_DAILY_CAP), 내일 다시", "raw": None,
@@ -438,7 +530,8 @@ def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transpo
         status, text = _get(params, transport)
     except Exception as exc:                                    # noqa: BLE001
         ms = int((time.monotonic() - t0) * 1000)
-        logger.info("[onebound] num_iid=%s 실패 %s · %dms", iid, type(exc).__name__, ms)
+        _count_sent(_SOURCE.get(), False)
+        logger.info("[onebound] num_iid=%s 실패 %s · %dms · 출처 %s", iid, type(exc).__name__, ms, _SOURCE.get())
         return {"ok": False, "kind": "provider_fail", "why": f"온바운드 요청 실패 {type(exc).__name__}", "raw": None,
                 "ms": ms, "bytes": 0}
     ms, nbytes = int((time.monotonic() - t0) * 1000), len(str(text).encode("utf-8"))
@@ -447,9 +540,11 @@ def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transpo
     except Exception:
         raw = None
     code = str((raw or {}).get("error_code") or "") if isinstance(raw, dict) else ""
-    logger.info("[onebound] num_iid=%s%s HTTP %s · error_code=%s · cache=%s · execution_time=%s · %d바이트 · %dms",
+    _count_sent(_SOURCE.get(), code == "0000" and isinstance((raw or {}).get("item"), dict) if isinstance(raw, dict) else False)
+    logger.info("[onebound] num_iid=%s%s HTTP %s · error_code=%s · cache=%s · execution_time=%s · %d바이트 · %dms · 출처 %s · 서비스 %s",
                 iid, " (cache=no)" if no_cache else "", status, code or "—", (raw or {}).get("cache") if isinstance(raw, dict) else "—",
-                (raw or {}).get("execution_time") if isinstance(raw, dict) else "—", nbytes, ms)
+                (raw or {}).get("execution_time") if isinstance(raw, dict) else "—", nbytes, ms, _SOURCE.get(),
+                os.getenv("RENDER_SERVICE_NAME", "local"))
     if not isinstance(raw, dict):
         return {"ok": False, "kind": "provider_fail", "why": f"온바운드 HTTP {status} · JSON 아닌 응답({nbytes}바이트)",
                 "raw": None, "ms": ms, "bytes": nbytes}

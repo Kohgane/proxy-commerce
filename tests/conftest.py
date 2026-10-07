@@ -514,6 +514,9 @@ def _onebound_learned_limits_reset():
             _oq._MEM_DAY.pop(_ob._day_key(), None)
         if _oq._enabled():                       # PG 레인: 같은 app_state 표(take_n이 {"n": …}로 센다)
             _st.state_set(_ob._day_key(), {"n": 0})
+        _st.state_set(_ob._REFRESH_TRY + _ob._cst_day(), {})   # Z3-D 새로 받기 쿨다운·출처 계수·마지막 새로 받기
+        _st.state_set(_ob._src_key(), {})
+        _st.state_set("onebound:last_refresh", {})
         from src.services import onebound_carry as _carry   # Z3-C 이월 대기·하루 1회 알림 기록도 비운다
         _st.state_set(_carry.KEY, {})
         _st.state_set(_carry._ALERT + _ob._cst_day(), {})

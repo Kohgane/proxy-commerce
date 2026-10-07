@@ -1430,7 +1430,9 @@ def diagnostics_taobao_provider():
     from src.collectors import taobao_provider as P
     from src.collectors import taobao_provider_onebound as O
     q = (_rq.values.get("q") or "").strip()[:500]
-    refresh = _rq.values.get("refresh") == "1"
+    # Z3-D: GET 주소의 refresh=1은 무시한다(새로고침·뒤로가기·탭 복원마다 유료 재호출 — 운영 4013 중 33회).
+    #   「새로 받기」는 아래 POST로만, 끝나면 이 GET으로 돌려보낸다(PRG).
+    legacy_refresh = _rq.args.get("refresh") == "1"
     row = None
     if q:
         iid, how = T.item_id_from(q, T.resolver_session("direct"))
@@ -1438,7 +1440,8 @@ def diagnostics_taobao_provider():
         if not iid:
             row.update(state="manual", kind="provider_fail", reason="상품번호 해석 실패")
         else:
-            r = P.fetch_detail(iid, refresh=refresh)
+            with O.as_source("diag"):
+                r = P.fetch_detail(iid)
             row.update(state=r["state"], kind=r["kind"], reason=r["reason"], ms=r.get("ms"), bytes=r.get("bytes"),
                        reused=r.get("reused"), bypassed=r.get("bypassed"))
             if r.get("raw") is not None:
@@ -1449,7 +1452,43 @@ def diagnostics_taobao_provider():
     return render_template_string(_TAOBAO_PROVIDER_TEMPLATE, q=q, row=row, st=P.status(), name=P.provider(),
                                   used=O.used_today(), cap=O.daily_cap(), unit=O.UNIT_PRICE, last=O.last_num_iid(),
                                   env_cap=O.env_cap(), limits=O.api_limits(), quota=O.quota_block(),
-                                  stale_on=O.refresh_stale(), carry=_carry_view())
+                                  stale_on=O.refresh_stale(), carry=_carry_view(), sent=O.sent_today(),
+                                  sources=O.SOURCES, legacy_refresh=legacy_refresh, cooldown=O.refresh_cooldown(),
+                                  last_refresh=_last_refresh_view())
+
+
+_LAST_REFRESH = "onebound:last_refresh"
+
+
+def _last_refresh_view() -> dict:
+    from src.db import image_translate_queue_pg as st
+    rec = dict(st.state_get(_LAST_REFRESH) or {})
+    try:
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        rec["at_kst"] = _dt.fromisoformat(str(rec.get("at"))).astimezone(_tz(_td(hours=9))).strftime("%m-%d %H:%M:%S KST")
+    except Exception:
+        rec["at_kst"] = ""
+    return rec
+
+
+@admin_panel_bp.post("/diagnostics/taobao-provider/refresh")
+def diagnostics_taobao_provider_refresh():
+    """Z3-D: 「새로 받기」(cache=no · 유료 1회) — POST만. 결과를 남기고 GET 화면으로 돌려보낸다(새로고침해도 재호출 0)."""
+    from datetime import datetime as _dt, timezone as _tz
+    from urllib.parse import quote as _quote
+    from flask import redirect, request as _rq
+    from src.collectors import taobao_mtop as T
+    from src.collectors import taobao_provider as P
+    from src.collectors import taobao_provider_onebound as O
+    from src.db import image_translate_queue_pg as st
+    q = (_rq.form.get("q") or "").strip()[:500]
+    iid, _how = T.item_id_from(q, T.resolver_session("direct")) if q else ("", "")
+    if iid:
+        with O.as_source("refresh"):
+            r = P.fetch_detail(iid, refresh=True)
+        st.state_set(_LAST_REFRESH, {"num_iid": iid, "state": r["state"], "kind": r["kind"], "reason": str(r["reason"])[:300],
+                                     "at": _dt.now(_tz.utc).isoformat()})
+    return redirect(f"/admin/diagnostics/taobao-provider?q={_quote(q)}", code=303)
 
 
 def _carry_view() -> dict:
@@ -1494,9 +1533,14 @@ _TAOBAO_PROVIDER_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charse
 {% if carry.head %}<br>오래된 순: {% for r in carry.head %}{{ r.item_id }}({{ r.at_kst }}){% if not loop.last %} · {% endif %}{% endfor %}{% endif %}</p>
 <p class="small text-muted" data-role="provider-cap">오늘 {{ used }}/{{ cap }}회(ONEBOUND_DAILY_CAP={{ env_cap }}{% if limits and limits.max %} · 키 max {{ limits.max }}{% if limits.expires %} · 만료 {{ limits.expires }}{% endif %}{% if env_cap > limits.max %} → 상한 {{ limits.max }}로 낮춰 씀{% endif %}{% endif %}, 계정 전체) · 단가 {{ unit }} · 같은 상품 24시간 안 재담기는 보관본 재사용(호출 0)</p>
 <p class="small text-muted" data-role="provider-refresh-stale">하루 넘은 캐시 자동 재호출(ONEBOUND_REFRESH_STALE): {{ '켬 — cache=no 1회' if stale_on else '끔 — 캐시 값 그대로 · 「가격 기준」 표시' }} · 「새로 받기」는 항상 cache=no</p>
+<p class="small text-muted" data-role="provider-sent">오늘 실제로 나간 호출(베이징 날짜): {% for k, label in sources.items() %}{{ label }} {{ sent.get(k, 0) }}{% if not loop.last %} · {% endif %}{% endfor %} · <span class="{{ 'text-danger' if sent.get('fail') else '' }}">실패 {{ sent.get('fail', 0) }}</span></p>
+{% if legacy_refresh %}<p class="small text-warning" data-role="provider-legacy-refresh">주소의 refresh=1은 무시했어요(호출 0) — 「새로 받기」는 아래 버튼으로만 보냅니다.</p>{% endif %}
+{% if last_refresh and last_refresh.num_iid %}<p class="small" data-role="provider-last-refresh">마지막 「새로 받기」: 상품 {{ last_refresh.num_iid }} · {{ last_refresh.at_kst }} → {{ last_refresh.state }}{% if last_refresh.kind != 'ok' %}({{ last_refresh.kind }}) {{ last_refresh.reason }}{% endif %}</p>{% endif %}
 <form method="get" class="mb-3"><input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="e.tb.cn 링크 또는 상품번호">
-<button class="btn btn-sm btn-outline-secondary mt-2">조회(보관본 있으면 재사용)</button>
-{% if q %}<button class="btn btn-sm btn-outline-secondary mt-2" name="refresh" value="1" data-role="provider-refresh">새로 받기(cache=no · 유료 1회)</button>{% endif %}</form>
+<button class="btn btn-sm btn-outline-secondary mt-2">조회(보관본 있으면 재사용)</button></form>
+{% if q %}<form method="post" action="/admin/diagnostics/taobao-provider/refresh" class="mb-3"><input type="hidden" name="q" value="{{ q }}">
+<button class="btn btn-sm btn-outline-secondary" data-role="provider-refresh">새로 받기(cache=no · 유료 1회)</button>
+<span class="small text-muted">{% if quota and quota.code %}한도 막힘 중엔 {{ (cooldown // 60) }}분에 한 번만 보냅니다(연타 방지).{% endif %}</span></form>{% endif %}
 {% if row %}<div class="small" data-role="provider-row">
 <div><strong>{{ row.input }}</strong> → 상품번호 {{ row.item_id or '없음' }}{% if row.how %} ({{ row.how }}){% endif %}</div>
 {% if row.state == 'ok' %}<div data-role="provider-call">{{ '보관본 재사용 — 호출 0' if row.reused else ('item_get' ~ (' · cache=no(캐시 우회)' if row.bypassed else '') ~ ' · ' ~ '{:,}'.format(row.bytes or 0) ~ '바이트 · ' ~ (row.ms or 0) ~ 'ms') }}</div>

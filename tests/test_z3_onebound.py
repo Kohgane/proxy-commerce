@@ -356,7 +356,7 @@ def test_diag_provider_page(monkeypatch):
 
 
 def test_diag_refresh_button_sends_cache_no(monkeypatch):
-    """진단 「새로 받기」(refresh=1) → 실제 요청 params에 cache=no · REFRESH_STALE 상태 한 줄."""
+    """진단 「새로 받기」(POST) → 실제 요청 params에 cache=no · REFRESH_STALE 상태 한 줄."""
     from src.collectors import taobao_mtop as T
     from src.collectors import taobao_provider_onebound as O
     _keys(monkeypatch)
@@ -377,7 +377,11 @@ def test_diag_refresh_button_sends_cache_no(monkeypatch):
         ss["user_id"], ss["user_role"] = "owner", "admin"
     h = c.get("/admin/diagnostics/taobao-provider", query_string={"q": "733241700287"}).get_data(as_text=True)
     assert "cache" not in seen[-1] and "ONEBOUND_REFRESH_STALE): 끔" in h
-    c.get("/admin/diagnostics/taobao-provider", query_string={"q": "733241700287", "refresh": "1"})
+    # Z3-D: 주소의 refresh=1(GET)은 무시 — 새로고침마다 유료 재호출이 나가던 길(운영 4013 중 33회)
+    h = c.get("/admin/diagnostics/taobao-provider", query_string={"q": "733241700287", "refresh": "1"}).get_data(as_text=True)
+    assert len(seen) == 1 and 'data-role="provider-legacy-refresh"' in h
+    r = c.post("/admin/diagnostics/taobao-provider/refresh", data={"q": "733241700287"})
+    assert r.status_code == 303 and "refresh" not in r.headers["Location"]
     assert seen[-1]["cache"] == "no" and len(seen) == 2
 
 
