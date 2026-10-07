@@ -20,6 +20,8 @@
     </div>
     {% endif %}
     <div class="m5-title" data-role="m5-title">{{ m5.title }}</div>
+    {% if m5.translit %}<div class="m5-warn" data-role="m5-translit"><span class="pc-badge pc-badge-off">확인 필요</span>
+      중국어 발음을 그대로 옮긴 말 같아요(용어집에 없음): {% for t in m5.translit %}<strong>{{ t }}</strong>{{ ', ' if not loop.last }}{% endfor %} — 뜻으로 옮긴 말인지 확인해 주세요.</div>{% endif %}
     {% if m5.brand_romanized %}<div class="m5-warn" data-role="m5-brand-romanized"><span class="pc-badge pc-badge-off">브랜드 표기 — 확인</span>
       {{ m5.brand_romanized.han }} → {{ m5.brand_romanized.latin }}</div>{% endif %}
     <div class="m5-meta">{% if m5.price %}<strong>{{ m5.price }} {{ m5.currency }}</strong>{% else %}가격 없음{% endif %}
@@ -108,7 +110,9 @@
   <fieldset class="m5-markets" id="m5Markets" data-role="m5-markets">
     <legend class="m5-legend">등록할 마켓</legend>
     {# Z5 후속(오너 2026-10-06): 연결된 마켓 전부·전부 토글 — 처음 체크가 어디서 왔는지 한 줄(지난 등록 → 설정 → 우주대행 묶음) #}
-    {% if m5.market_pick and m5.market_pick.label %}<p class="m5-note" data-role="m5-pick-source">처음 체크: {{ m5.market_pick.label }} · <a href="/seller/settings">기본 등록 마켓 바꾸기</a></p>{% endif %}
+    {# M5 후속(실사용 1호): 안내는 「우주대행 묶음」인데 6개가 전부 켜져 있었다 — 서버는 묶음만 켠다(브라우저가 이전 체크 상태를
+       되살리거나 손으로 켠 것). 글은 **지금 상태**를 센다: 「현재 선택 N개」 · 처음 체크 출처는 그 옆에. #}
+    <p class="m5-note" data-role="m5-pick-source">현재 선택: <strong data-role="m5-pick-count">{{ m5.markets|selectattr('checked')|list|length }}</strong>개{% if m5.market_pick and m5.market_pick.label %} · 처음 체크: {{ m5.market_pick.label }}{% endif %} · <a href="/seller/settings">기본 등록 마켓 바꾸기</a></p>
     {% set _g = namespace(last='') %}
     {% for m in m5.markets %}
     {# U0b: 사업자 축(고가네 = 쿠팡 고가네 + 스스 셰고가 · 우주대행 = 쿠팡 우주대행 + 스스 고코스모스)으로 묶는다 #}
@@ -116,7 +120,7 @@
     {% if not m.group and _g.last %}<div class="m5-group" data-role="m5-group">그 밖의 마켓</div>{% endif %}
     {% set _g.last = m.group or '' %}
     <label class="m5-mk{% if m.pending %} is-pending{% endif %}" data-market="{{ m.code }}">
-      <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked %}checked{% endif %}>
+      <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked %}checked{% endif %} autocomplete="off">
       <span class="m5-mk-body"><span>{{ m.label }}</span>
         {% if m.note %}<span class="m5-mk-note" data-role="m5-market-note">{{ m.note }}</span>{% endif %}
         {% if m.limit_text %}<span class="m5-mk-note" data-role="m5-market-limit">{{ m.limit_text }}</span>{% endif %}</span>
@@ -302,7 +306,12 @@
       .catch(function (e) { return {ok: false, error: '네트워크 오류 — ' + ((e && e.message) || e)}; });
   }
   function resetGo() { okMarkets = []; goBtn.disabled = true; goBtn.textContent = '등록'; goBtn.dataset.held = ''; }
-  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvJob++; checkBtn.disabled = false; } });
+  var pickCount = root.querySelector('[data-role=m5-pick-count]');
+  function recount() { if (pickCount) pickCount.textContent = String(picked().length); }
+  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvJob++; checkBtn.disabled = false; recount(); } });
+  // 뒤로 가기·새로고침으로 브라우저가 체크 상태를 되살려도 글은 지금 상태를 말한다
+  window.addEventListener('pageshow', recount);
+  recount();
 
   // T4: 쿠팡에서 보이는 모습 — 서버가 등록과 같은 빌더로 만든 것을 그대로 그린다(화면이 따로 계산하지 않는다).
   var cpBody = document.getElementById('m5CpBody');

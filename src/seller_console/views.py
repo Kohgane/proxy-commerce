@@ -2080,6 +2080,11 @@ def mobile_list_ctx(item: dict) -> dict:
     except Exception as exc:
         logger.warning("[M5] 위험 플래그 판정 실패: %s", exc)
     brand_values = _brand_value_rows(product)            # F: 옵션 값·규격표 값의 상표 — 보류 아님, 값만 바꿀 말 제안
+    try:                                                  # M5 후속: 음역 의심(「라오첸」) — 표시만, 상품명은 그대로
+        from src.collectors.ko_polish import translit_suspects as _tls
+        translit = _tls(" ".join([str(product.get("title") or ""), str(cp_name or "")]), str(product.get("title_src") or ""))
+    except Exception:
+        translit = []
     blocked = ""
     if ax["is_draft"] and not ax["gate_ready"]:
         blocked = "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다."
@@ -2105,7 +2110,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
             "product": product,
-            "risks": risks, "brand_values": brand_values, "auto_enrich": _m5_auto(ex), **_m5_ship(product),
+            "risks": risks, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex), **_m5_ship(product),
             **_m5_video(ex)}
 
 
@@ -3017,6 +3022,9 @@ def _market_rows(markets: list, product: Optional[dict] = None):
         rows = [m for m in rows if m.get("group") or m.get("connected")]
     pick = _mp.apply_checks(rows, _mp.scope(_seller_id(), shared), shared=shared)
     pick["label"] = _mp.source_label(pick["source"]) if shared or pick["source"] != "bundle" else ""
+    if pick["source"] == "bundle" and shared and not pick["codes"]:
+        # M5 후속: 묶음 줄(키·승인)이 준비 안 돼 아무것도 안 켰는데 「우주대행 묶음」이라고 쓰면 글과 상태가 어긋난다.
+        pick["label"] = "우주대행 묶음 줄이 아직 준비 안 돼 비워 뒀어요"
     return rows, pick
 
 

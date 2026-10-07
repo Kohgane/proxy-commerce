@@ -1633,6 +1633,63 @@ _OCR_PRECHECK_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
 
 
+@admin_panel_bp.get("/diagnostics/flip-check")
+def diagnostics_flip_check():
+    """M5 후속(오너 2026-10-07): 「사진 좌우반전 의심」 — 그 상품의 원본(온바운드 보관본 item_imgs, 없으면 수집 images)과
+    우리가 보여 주는 사진(번역본 사용·대표 지정 반영)을 장마다 픽셀 비교. 원본 반전이면 「원본 반전」 표기만."""
+    from flask import request as _rq
+    import json as _json
+    from src.services import flip_check as F
+    item = (_rq.args.get("item") or "").strip()[:64]
+    rows, err, summary = [], "", ""
+    if item:
+        try:
+            from src.db import pg as _pg
+            from src.seller_console import collect_history_store as store
+            row = None
+            if _pg.pg_enabled():
+                with _pg.query() as cur:
+                    cur.execute("SELECT user_id FROM collect_history WHERE id::text=%s", (item,))
+                    r0 = cur.fetchone()
+                row = store.get(item, seller_ids={r0[0]}) if r0 else None
+            else:
+                row = store.get(item)
+            ex = _json.loads((row or {}).get("extra_json") or "{}") or {}
+            raw = None
+            iid = str(ex.get("item_id_taobao") or "")
+            if iid:
+                from src.collectors import taobao_provider_onebound as _ob
+                raw = (_ob.stored(iid) or {}).get("raw")
+            originals = F.original_urls(ex, raw)
+            from src.services import image_translate_store as _its
+            shown = _its.effective_images(ex, originals=[u for u in (ex.get("images") or []) if u], item_id=item) or []
+            for n, o in enumerate(originals[:8]):
+                s_url = shown[n] if n < len(shown) else o
+                rows.append(dict(F.check_pair(o, s_url), idx=n + 1, original=o, shown=s_url))
+            flips = [r for r in rows if r.get("verdict") == "좌우반전"]
+            exif = [r for r in rows if r.get("exif_mirror")]
+            summary = (f"{len(rows)}장 비교 · 좌우반전 {len(flips)}장 · 원본 EXIF 거울 {len(exif)}장 · "
+                       f"원본 출처 {'온바운드 보관본 item_imgs' if raw else '수집 images'}"
+                       + (" — 우리 파이프라인엔 flip이 없으니(코드 0곳) 반전이면 원본 쪽" if flips else ""))
+        except Exception as exc:
+            err = f"상품을 못 읽었어요 — {type(exc).__name__}: {str(exc)[:120]}"
+    return render_template_string(_FLIP_TEMPLATE, item=item, rows=rows, err=err, summary=summary)
+
+
+_FLIP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>사진 좌우반전 확인</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px;word-break:break-all" data-role="flip-check">
+<h5>사진 좌우반전 확인 — 원본 vs 보여 주는 사진</h5>
+<form class="mb-2"><input name="item" value="{{ item }}" placeholder="상품 ID" class="form-control mb-1"><button class="btn btn-sm btn-primary">비교</button></form>
+{% if err %}<p class="text-danger">{{ err }}</p>{% endif %}
+{% if summary %}<p data-role="flip-summary"><strong>{{ summary }}</strong></p>{% endif %}
+{% for r in rows %}<div class="border-bottom py-1 small" data-role="flip-row">{{ r.idx }}. <strong>{{ r.verdict }}</strong>
+{% if r.same is defined %} · 그대로 차이 {{ r.same }} · 뒤집어 차이 {{ r.mirror }}{% endif %}{% if r.exif_orientation %} · EXIF 방향 {{ r.exif_orientation }}{% endif %}
+{% if r.why %} · {{ r.why }}{% endif %}{% if r.note %} · {{ r.note }}{% endif %}<br>원본 <a href="{{ r.original }}" target="_blank" rel="noreferrer">{{ r.original[:80] }}</a><br>보여 줌 {{ r.shown[:80] }}</div>{% endfor %}
+<a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.route("/diagnostics/image-mode-compare", methods=["GET", "POST"])
 def diagnostics_image_mode_compare():
     """Z3-2: 같은 사진 5장을 pro(Mode 0)와 lite(Mode 1)로 각각 — **유료**(5×($0.04+$0.02)=$0.30), 오너가 누를 때만.

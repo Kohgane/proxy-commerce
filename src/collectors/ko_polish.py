@@ -197,6 +197,30 @@ def strip_cn(text: str, *, hits: dict | None = None) -> str:
     return _tidy(s)
 
 
+# M5 후속(오너 2026-10-07, 실사용 1호 328 CNY 슬립 원피스): 老钱风→「라오첸 스타일」 · 桑蚕丝→「뽕나무 누에고치 실크」 ·
+#   连衣裙류를 「스커트」. **코드 상수**(원격 `title_fix_ko`와 같은 모양 [원문, 오역들, 바른 말]) — 원문에 그 한자가 있을 때만.
+#   긴 원문부터(吊带连衣裙이 连衣裙보다 먼저).
+TITLE_GLOSSARY = [
+    ["吊带连衣裙", ["멜빵 원피스", "멜빵 드레스", "서스펜더 드레스", "서스펜더 원피스", "슬링 드레스", "슬링 원피스", "스트랩 드레스",
+                "캐미솔 드레스", "캐미솔 원피스", "슬립 드레스", "끈 원피스", "멜빵 스커트", "서스펜더 스커트", "슬링 스커트"], "슬립 원피스"],
+    ["100%桑蚕丝", ["100% 뽕나무 누에고치 실크", "100% 뽕나무 누에 실크", "100% 뽕나무 실크", "100% 상잠사"], "100% 실크"],
+    ["桑蚕丝", ["뽕나무 누에고치 실크", "뽕나무 누에 실크", "뽕나무 누에고치 비단", "뽕나무 실크", "누에고치 실크", "상잠사"], "실크"],
+    ["真丝", ["리얼 실크", "진짜 실크", "진사"], "실크"],
+    ["老钱风", ["라오첸 스타일", "라오첸풍", "라오첸 풍", "라오 첸 스타일", "라오첸", "오래된 돈 스타일", "올드 머니 스타일", "노전풍"], "올드머니 룩"],
+    ["新中式", ["새로운 중국식", "새로운 중국 스타일", "신중국식", "신 중국식", "신중식", "신 중국 스타일", "뉴 차이니즈 스타일"], "뉴차이니즈"],
+    ["半身裙", ["반신 스커트", "반신 치마", "하프 스커트", "하의 스커트"], "스커트"],
+    ["连衣裙", ["원피스 드레스", "드레스", "스커트"], "원피스"],
+    ["法式", ["프랑스 스타일", "프랑스식", "프랑스풍", "프렌치 스타일", "법식"], "프렌치"],
+    ["通勤", ["출퇴근용", "출퇴근", "통근용", "통근", "커뮤터"], "오피스룩"],
+]
+
+
+def _glossary_rows() -> list:
+    """코드 상수(먼저, 긴 원문부터) + 원격 `title_fix_ko`. 半身裙이 같이 있으면 连衣裙의 「스커트」 고침은 하지 않는다."""
+    rows = sorted(TITLE_GLOSSARY, key=lambda r: len(r[0]), reverse=True)
+    return rows + [r for r in (rules().get("title_fix_ko") or []) if isinstance(r, (list, tuple)) and len(r) == 3]
+
+
 def title_fix(text: str, src: str, *, hits: dict | None = None) -> str:
     """Y6(오너 2026-10-04) — 원문에 그 한자가 **있을 때만** 번역문의 오역 표기를 바른 말로(`title_fix_ko`).
 
@@ -205,16 +229,18 @@ def title_fix(text: str, src: str, *, hits: dict | None = None) -> str:
     s, src = str(text or ""), str(src or "")
     if not src:
         return s
-    for cn, wrongs, right in rules().get("title_fix_ko") or []:
+    for cn, wrongs, right in _glossary_rows():
         if not cn or cn not in src or not right:
             continue
+        if cn == "连衣裙" and "半身裙" in src:
+            wrongs = [w for w in (wrongs or []) if w != "스커트"]           # 진짜 스커트가 같이 있는 상품
         for w in sorted([x for x in wrongs or [] if x and x != right], key=len, reverse=True):
-            if w in s and not (right in w):
+            if w in s and w not in right:                      # 바른 말 안에 든 조각(「스커트」⊂「롱스커트」)만 건너뛴다
                 s = s.replace(w, right)
                 if hits is not None:
                     hits.setdefault("replace", []).append(f"{w}→{right}")
     # 같은 바른 말이 두 번 생기면(「무드등 … 무드등」) 첫 번째만
-    for _cn, _w, right in rules().get("title_fix_ko") or []:
+    for _cn, _w, right in _glossary_rows():
         if right and re.search("[가-힣]", right) and s.count(right) > 1:
             first = s.index(right) + len(right)
             s = s[:first] + s[first:].replace(right, " ")
@@ -380,6 +406,30 @@ def _drop_ip_context(s: str, hits: dict | None = None) -> str:
             if hits is not None:
                 hits.setdefault("delete", []).append(f"IP 꾸밈말:{w}")
     return s
+
+
+# ── M5 후속: 음역 의심 — 「라오첸」처럼 중국어 발음을 한글로 옮긴 말(용어집 미등록) ─────────────────────────
+#: 한국어 낱말에선 드물고 중국어 병음 표기(외래어 표기법)에서 흔한 조각. 표시만 한다 — 상품명은 고치지 않는다.
+PINYIN_SEGMENTS = ("라오", "샤오", "랴오", "먀오", "탸오", "쟈오", "챠오", "뱌오", "첸", "롄", "셴", "녠", "쉐", "뤄", "쭤", "쒀",
+                   "쯔", "츠", "쑤", "쭈", "쥐", "좡", "촨", "솬", "왕훙", "쓰촨", "웨이", "쥔")
+_HANGUL_TOKEN = re.compile(r"[가-힣]{2,4}")
+
+
+def translit_suspects(text_ko: str, src: str) -> List[str]:
+    """번역 결과의 2~4음절 한글 낱말 중 병음 표기 조각이 든 것(용어집 바른 말·오역 목록에 없는 것) — 「확인 필요」 재료.
+    원문에 한자가 없으면(중국 소싱이 아니면) 비운다."""
+    if not _HAN.search(str(src or "")):
+        return []
+    known = set()
+    for _cn, wrongs, right in _glossary_rows():
+        known.add(str(right))
+    out: List[str] = []
+    for tok in _HANGUL_TOKEN.findall(str(text_ko or "")):
+        if tok in known or any(tok in k for k in known):
+            continue
+        if any(seg in tok for seg in PINYIN_SEGMENTS) and tok not in out:
+            out.append(tok)
+    return out
 
 
 # ── F(오너 2026-10-06): 옵션 값·규격표 값의 상표 게이트 ─────────────────────────────────────────────
