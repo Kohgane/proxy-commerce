@@ -1182,6 +1182,10 @@ try:
 except Exception as _exc:                                  # 계측이 부팅을 막지 않는다
     logger.warning('화면 방문 카운터 비활성: %s', _exc)
 
+# Z10: /api/ 단일 관문 — 키 또는 공유 사용자 세션 없이는 닫는다(실패하면 부팅을 막는다 — 열린 채 뜨지 않게).
+from src.api.api_gate import install as _install_api_gate
+_install_api_gate(app)
+
 
 @app.after_request
 def _perf_after_request(response):
