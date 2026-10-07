@@ -53,7 +53,10 @@ class _InMemoryOrders:
         for r in rows or []:
             ex = self._find(r.get("order_id"), r.get("marketplace"))
             if ex is not None:
+                owner = ex.get("user_id")
                 ex.update(r)
+                if owner:                       # Z7: 소유(user_id)는 처음 정해진 그대로 — PG와 같다
+                    ex["user_id"] = owner
             else:
                 self.rows.append(dict(r))
             n += 1
@@ -157,10 +160,25 @@ class OrderSheetsAdapter:
         rows = [dict(zip(ORDERS_HEADERS, self._order_to_row(o))) for o in (orders or [])]
         return _b.upsert_rows(rows)
 
-    def query(self, filters: dict = None, limit: int = 50, offset: int = 0) -> List[UnifiedOrder]:
+    @staticmethod
+    def _visible_rows(viewer=None) -> list:
+        """Z7: 보는 사람 범위의 행만(`viewer` None = 서버 자신, 전부). `orders.scope` 참조."""
+        rows = _order_backend().all_row_dicts()
+        if viewer is None:
+            return rows
+        return [r for r in rows if viewer.can_see(r.get("user_id"))]
+
+    def find_row(self, order_id: str, marketplace: str, viewer=None) -> Optional[dict]:
+        """(order_id, marketplace) 행 — 범위 밖이면 없는 것과 같다(None)."""
+        for r in self._visible_rows(viewer):
+            if str(r.get("order_id", "")) == str(order_id) and str(r.get("marketplace", "")) == str(marketplace):
+                return r
+        return None
+
+    def query(self, filters: dict = None, limit: int = 50, offset: int = 0, viewer=None) -> List[UnifiedOrder]:
         """필터/정렬/페이지네이션으로 주문 조회."""
         filters = filters or {}
-        rows = _order_backend().all_row_dicts()
+        rows = self._visible_rows(viewer)
         orders = [self._row_to_order(r) for r in rows if r.get("order_id")]
 
         # 필터 적용
@@ -217,9 +235,9 @@ class OrderSheetsAdapter:
             logger.warning("update_status: 주문 찾을 수 없음 (%s, %s)", order_id, marketplace)
         return ok
 
-    def kpi_summary(self) -> dict:
+    def kpi_summary(self, viewer=None) -> dict:
         """KPI 요약: today_new, pending_ship, shipped, returned_exchanged."""
-        rows = _order_backend().all_row_dicts()
+        rows = self._visible_rows(viewer)
 
         today = date.today().isoformat()
         today_new = 0

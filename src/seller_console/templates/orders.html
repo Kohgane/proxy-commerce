@@ -13,10 +13,13 @@
         <div class="console-kpi-label mb-1">주문</div>
         <h4 class="mb-0 fw-bold">주문 관리</h4>
       </div>
+      {# Z7: 동기화는 공유 마켓 계정만 — 그 밖의 계정엔 누르면 거절만 나는 버튼을 두지 않는다. #}
+      {% if can_sync is not defined or can_sync %}
       <button id="ordersSyncButton" class="btn btn-primary btn-sm" onclick="syncNow()" aria-label="주문 즉시 동기화">
         <span id="sync-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
         <i class="bi bi-arrow-clockwise"></i> 지금 동기화
       </button>
+      {% endif %}
     </div>
     <hr class="pc-hairline mt-0 mb-0">
   </div>
@@ -191,7 +194,11 @@
       <div class="fw-semibold mb-1">아직 주문이 없습니다.</div>
       <div class="small mb-1"><strong>무엇을:</strong> 먼저 마켓 연동과 첫 상품 등록을 완료하세요.</div>
       <div class="small mb-1"><strong>왜:</strong> 주문 데이터가 있어야 자동 처리/CS/정산이 활성화됩니다.</div>
+      {% if can_sync is not defined or can_sync %}
       <div class="small"><strong>어떻게:</strong> 연동 후 상품을 등록하고 주문 동기화를 실행하면 됩니다.</div>
+      {% else %}
+      <div class="small"><strong>어떻게:</strong> 내 마켓 주문을 이 화면으로 가져오는 기능은 준비 중이에요. 그동안 주문은 각 마켓 판매자 센터에서 확인해 주세요.</div>
+      {% endif %}
       <div class="console-empty-state-actions">
         <a href="/seller/markets" class="btn btn-sm btn-ghost">마켓 연동하기</a>
         <a href="/seller/listing/ai-create" class="btn btn-sm btn-primary">상품 등록하기</a>

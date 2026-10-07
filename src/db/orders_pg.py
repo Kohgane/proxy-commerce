@@ -26,16 +26,22 @@ _COLS = [
 ]
 
 
+# Z7: 행의 주인. 빈 값 = 오너 서버 마켓 동기화분(오너 풀). 넣을 때만 쓰고 upsert 갱신으로는 바꾸지 않는다 —
+#   오너 동기화가 같은 키를 다시 써도 셀러 행이 오너 풀로 넘어가지 않게(소유는 처음 정해진 그대로).
+_OWNER_COL = "user_id"
+_INSERT_COLS = [_OWNER_COL] + _COLS
+
+
 def upsert_rows(rows: list) -> int:
     """행 dict(ORDERS_HEADERS 키) 목록을 (order_id, marketplace)로 upsert. 처리 건수 반환."""
     n = 0
     with pg.tx() as cur:
         for r in rows or []:
-            vals = [str(r.get(c, "") if r.get(c) is not None else "") for c in _COLS]
+            vals = [str(r.get(c, "") if r.get(c) is not None else "") for c in _INSERT_COLS]
             set_clause = ", ".join(f"{c}=EXCLUDED.{c}" for c in _COLS if c not in ("order_id", "marketplace"))
             cur.execute(
-                f"""INSERT INTO orders ({', '.join(_COLS)})
-                    VALUES ({', '.join(['%s'] * len(_COLS))})
+                f"""INSERT INTO orders ({', '.join(_INSERT_COLS)})
+                    VALUES ({', '.join(['%s'] * len(_INSERT_COLS))})
                     ON CONFLICT (order_id, marketplace) WHERE deleted_at IS NULL
                     DO UPDATE SET {set_clause}""",
                 vals)
@@ -44,10 +50,10 @@ def upsert_rows(rows: list) -> int:
 
 
 def all_row_dicts() -> list:
-    """활성 주문 전부를 ORDERS_HEADERS 키 dict로 반환(어댑터가 필터/정렬/KPI에 재사용)."""
+    """활성 주문 전부를 ORDERS_HEADERS 키 dict(+ `user_id`)로 반환 — 어댑터가 범위·필터·정렬·KPI에 재사용."""
     with pg.query() as cur:
-        cur.execute(f"SELECT {', '.join(_COLS)} FROM orders WHERE deleted_at IS NULL")
-        return [dict(zip(_COLS, row)) for row in cur.fetchall()]
+        cur.execute(f"SELECT {', '.join(_INSERT_COLS)} FROM orders WHERE deleted_at IS NULL")
+        return [dict(zip(_INSERT_COLS, row)) for row in cur.fetchall()]
 
 
 def update_tracking(order_id: str, marketplace: str, courier: str, tracking_no: str, shipped_status: str) -> bool:

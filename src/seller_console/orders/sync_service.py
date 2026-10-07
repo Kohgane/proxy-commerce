@@ -73,10 +73,20 @@ def _market_tracking_result(raw) -> tuple:
     return bool(raw), {}
 
 
-class OrderSyncService:
-    """모든 마켓 주문 동기화 + Sheets CRUD 통합 서비스."""
+_FROM_REQUEST = object()
+_NOT_YOURS = "주문을 찾을 수 없습니다."
+SYNC_NOT_SHARED = "이 계정에서는 아직 마켓 주문을 가져올 수 없어요. 내 마켓 주문 연동은 준비 중입니다."
 
-    def __init__(self):
+
+class OrderSyncService:
+    """모든 마켓 주문 동기화 + Sheets CRUD 통합 서비스.
+
+    Z7: `viewer`(누가 보는가, `orders.scope`)로 읽기·쓰기 범위를 건다. 기본은 **지금 요청의 세션**에서 정한다 —
+    호출부가 잊어도 남에게 오너 주문이 새지 않게. 요청 밖(크론)·로그인 신원 없음 = None(서버 자신, 전부).
+    """
+
+    def __init__(self, viewer=_FROM_REQUEST):
+        from .scope import current_viewer
         from .sheets_adapter import OrderSheetsAdapter
         from src.seller_console.market_adapters.coupang_adapter import CoupangAdapter
         from src.seller_console.market_adapters.smartstore_adapter import SmartStoreAdapter
@@ -94,9 +104,32 @@ class OrderSyncService:
             # Phase 206: Shopify 주문수집·배송추적 (GraphQL + client_credentials)
             "shopify": ShopifyAdapter(),
         }
+        self.viewer = current_viewer() if viewer is _FROM_REQUEST else viewer
+
+    @property
+    def can_sync(self) -> bool:
+        """마켓 주문 동기화 = 오너 서버 마켓 자격으로 끌어온다 → 공유 사용자(또는 서버 자신)만."""
+        viewer = getattr(self, "viewer", None)
+        return viewer is None or viewer.shared
+
+    def owns(self, order_id: str, marketplace: str) -> bool:
+        """이 사람이 이 주문을 만져도 되는가(범위 밖 = 없는 주문과 같다). 서버 자신은 종전 그대로 통과.
+
+        우리 기록에 **아직 없는** 주문(동기화 전 송장 일괄 등록 등)은 공유 사용자에게 종전처럼 열어 둔다 —
+        그 주문은 오너 마켓 계정의 것이고, 마켓이 판정한다. 남의 행은 어느 경우에도 막는다.
+        """
+        viewer = getattr(self, "viewer", None)
+        if viewer is None:
+            return True
+        row = self.sheets.find_row(order_id, marketplace)
+        if row is None:
+            return viewer.shared
+        return viewer.can_see(row.get("user_id"))
 
     def sync_all(self, since: datetime = None) -> dict:
         """모든 마켓 주문 동기화."""
+        if not self.can_sync:
+            return {"_scope": {"status": "fail", "error": SYNC_NOT_SHARED}}
         if since is None:
             since = datetime.utcnow() - timedelta(days=7)
 
@@ -115,6 +148,8 @@ class OrderSyncService:
 
     def sync_one(self, marketplace: str, since: datetime = None) -> dict:
         """특정 마켓 주문 동기화."""
+        if not self.can_sync:
+            return {"status": "fail", "error": SYNC_NOT_SHARED}
         if since is None:
             since = datetime.utcnow() - timedelta(days=7)
 
@@ -166,6 +201,10 @@ class OrderSyncService:
             "ok": False, "local_ok": False, "market_supported": True,
             "error": "", "error_body": "", "http_status": None,
         }
+
+        # Z7: 범위 밖 주문은 **마켓 호출 전에** 끊는다 — 오너 마켓 계정으로 남의 운송장이 나가지 않게.
+        if not self.owns(order_id, marketplace):
+            return {**result, "market_supported": False, "not_found": True, "error": _NOT_YOURS}
 
         dry_run = os.getenv("ADAPTER_DRY_RUN", "0") == "1"
         if dry_run:
@@ -219,6 +258,8 @@ class OrderSyncService:
         next_status = str(next_status or "").strip().lower()
         if not next_status:
             return {"ok": False, "error": "next_status가 필요합니다."}
+        if not self.owns(order_id, marketplace):
+            return {"ok": False, "not_found": True, "error": _NOT_YOURS}
 
         adapter = self.adapters.get(marketplace)
         adapter_result = {"applied": False, "simulated": True}
@@ -255,7 +296,10 @@ class OrderSyncService:
     def list_orders(self, filters: dict = None, limit: int = 50, offset: int = 0):
         """Sheets에서 통합 주문 조회."""
         try:
-            return self.sheets.query(filters=filters or {}, limit=limit, offset=offset)
+            viewer = getattr(self, "viewer", None)
+            if viewer is None:
+                return self.sheets.query(filters=filters or {}, limit=limit, offset=offset)
+            return self.sheets.query(filters=filters or {}, limit=limit, offset=offset, viewer=viewer)
         except Exception as exc:
             logger.warning("list_orders 실패: %s", exc)
             return []
@@ -263,7 +307,8 @@ class OrderSyncService:
     def kpi_summary(self) -> dict:
         """KPI 요약."""
         try:
-            return self.sheets.kpi_summary()
+            viewer = getattr(self, "viewer", None)
+            return self.sheets.kpi_summary() if viewer is None else self.sheets.kpi_summary(viewer=viewer)
         except Exception as exc:
             logger.warning("kpi_summary 실패: %s", exc)
             return {

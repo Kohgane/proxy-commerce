@@ -1234,6 +1234,12 @@ def analytics_dashboard():
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
     force_refresh = request.args.get("force_refresh", "0") == "1"
+    # Z7: BI는 오너 풀 전체(주문·카탈로그·CS)로 계산된다 — 공유 사용자(관리자·가족)·서버 자신만.
+    #   그 밖의 계정은 엔진을 부르지도 않는다(캐시 파일에 남은 오너 수치도 안 나간다).
+    from .orders.scope import current_viewer
+    _viewer = current_viewer()
+    if _viewer is not None and not _viewer.shared:
+        return render_template("analytics.html", page="analytics", data={}, bi_available=False)
     try:
         from src.analytics.bi_engine import BIEngine
 
@@ -5310,6 +5316,8 @@ def orders():
         order_list = svc.list_orders(filters=filters, limit=limit, offset=offset)
         kpi = svc.kpi_summary()
 
+    # Z7: 동기화는 오너 서버 마켓 자격으로 끌어온다 — 공유 사용자만. 남에겐 누르면 403뿐인 버튼을 두지 않는다.
+    can_sync = bool(svc) and bool(getattr(svc, "can_sync", True))
     from .orders.courier_catalog import get_courier_catalog
     order_dicts = [o.to_dict() for o in order_list]
     for _od in order_dicts:                       # v56 STEP2: 주문마다 소싱처 링크·복사텍스트·소싱완료 부착
@@ -5323,6 +5331,7 @@ def orders():
         limit=limit,
         offset=offset,
         ops_health=ops_health,
+        can_sync=can_sync,
         courier_catalog=get_courier_catalog(include_dynamic=True),
         # F44-p: 택배사 판별 프로브는 **관리자만** 본다(셀러 화면에 진단 도구를 띄우지 않는다).
         is_admin=_is_admin_user(),
@@ -5347,6 +5356,10 @@ def orders_sync():
     if svc is None:
         _log_order_op("warning", "orders_sync", reason="service_unavailable")
         return jsonify({"ok": False, "error": "OrderSyncService 준비 중입니다."}), 503
+    if not getattr(svc, "can_sync", True):
+        from .orders.sync_service import SYNC_NOT_SHARED
+        _log_order_op("warning", "orders_sync", reason="not_shared_user")
+        return jsonify({"ok": False, "error": SYNC_NOT_SHARED}), 403
 
     try:
         results = svc.sync_all()
@@ -5457,6 +5470,9 @@ def order_tracking(marketplace: str, order_id: str):
     if svc is None:
         _log_order_op("warning", "tracking_update", marketplace=marketplace, order_id=order_id, reason="service_unavailable")
         return jsonify({"ok": False, "error": "서비스 준비 중입니다."}), 503
+    if hasattr(svc, "owns") and not svc.owns(order_id, marketplace):   # Z7: 범위 밖 = 없는 주문(오너 주문 존재도 알리지 않는다)
+        _log_order_op("warning", "tracking_update", marketplace=marketplace, order_id=order_id, reason="order_not_found")
+        return jsonify({"ok": False, "local_ok": False, "error": "주문을 찾을 수 없습니다."}), 404
 
     try:
         # F45: `ok`는 **마켓 반영 여부**다. 우리 DB 저장은 `local_ok`로 따로 나간다 —
@@ -6664,17 +6680,23 @@ def mobile_home():
 
     kpi = {"today_new": 0, "pending_ship": 0, "shipped": 0, "returned_exchanged": 0}
     orders = []
+    can_sync = True
     try:
         from .orders.sync_service import OrderSyncService
         svc = OrderSyncService()
+        can_sync = svc.can_sync
         k = svc.kpi_summary() or {}
         for key in kpi:
             kpi[key] = int(k.get(key, 0) or 0)
-        orders = (svc.list_orders(limit=10) or [])[:10]
+        # 템플릿은 dict(.get)로 읽는다 — UnifiedOrder 그대로 넘기면 주문이 1건만 있어도 500이었다(Z7에서 발견).
+        for o in (svc.list_orders(limit=10) or [])[:10]:
+            d = o.to_dict()
+            d["product_name"] = next((it.get("title") for it in d.get("items") or [] if it.get("title")), "")
+            orders.append(d)
     except Exception as exc:
         logger.debug("모바일 주문 조회 실패: %s", exc)
 
-    return render_template("mobile_home.html", recent=recent, kpi=kpi, orders=orders)
+    return render_template("mobile_home.html", recent=recent, kpi=kpi, orders=orders, can_sync=can_sync)
 
 
 @bp.get("/billing")
