@@ -14,7 +14,8 @@
       {% if m5.video.state == 'done' %}
       <video class="m5-thumb" data-role="m5-video-player" src="{{ m5.video.url }}" poster="{{ m5.video.thumb }}" muted playsinline controls preload="none"></video>
       무음 동영상 {{ (m5.video.duration or 0)|round|int }}초 · {{ m5.video.height }}p
-      {% elif m5.video.state == 'failed' %}동영상을 만들지 못했어요 — {{ m5.video.why }}
+      {% elif m5.video.state == 'failed' %}동영상을 만들지 못했어요 — {{ m5.video_why }}. 등록은 사진만으로 그대로 돼요.
+        {% if m5.video_why_raw %}<div class="m5-note" data-role="m5-video-why-raw">원문(관리자만 보임): {{ m5.video_why_raw }}</div>{% endif %}
       {% else %}동영상을 무음으로 만드는 중이에요(등록을 막지 않아요).{% endif %}
       <ul class="m5-video-lines">{% for l in m5.video_lines %}<li data-role="m5-video-market">{{ l }}</li>{% endfor %}</ul>
     </div>

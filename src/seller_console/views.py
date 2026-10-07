@@ -2133,9 +2133,21 @@ def _m5_video(ex: dict) -> dict:
     src = str(((ex.get("provider_detail") or {}).get("video_url")) or "")
     rec = ex.get("video") if isinstance(ex.get("video"), dict) else None
     if not (src or rec):
-        return {"video": None, "video_lines": []}
+        return {"video": None, "video_lines": [], "video_why": "", "video_why_raw": ""}
     from src.media.video_silent import market_lines
-    return {"video": rec or {"state": "pending", "source_url": src}, "video_lines": market_lines(_M5_MARKETS)}
+    # 실패 사유 원문(ProxyError: HTTPSConnectionPool… 같은 예외 글)은 일반 화면에 그대로 내지 않는다 — 앞 구절만,
+    #   원문은 관리자에게만(진단용). 픽스처 3호 캡처가 잡음(2026-10-07).
+    why = str((rec or {}).get("why") or "")
+    short = why.split(" — ")[0].strip()
+    if not short or ":" in short or "Error" in short:
+        short = "동영상을 받거나 바꾸지 못했어요"
+    try:
+        from src.auth.admin_resolver import is_admin_session
+        admin = bool(is_admin_session(session)[0])
+    except Exception:
+        admin = False
+    return {"video": rec or {"state": "pending", "source_url": src}, "video_lines": market_lines(_M5_MARKETS),
+            "video_why": short, "video_why_raw": why if admin else ""}
 
 
 def _brand_value_rows(product: dict) -> list:

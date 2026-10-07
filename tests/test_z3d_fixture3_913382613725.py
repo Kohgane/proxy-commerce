@@ -152,3 +152,23 @@ def test_brand_passes_y6_and_never_reaches_coupang_fields(item):
     pd = _pd(*item)
     prep = CoupangUploader(access_key="a", secret_key="b", vendor_id="v").prepare_product(to_collected(prepared_input(pd)))
     assert prep["brand"] == "" and not K.has_foreign(prep["brand"])
+
+
+def test_video_failure_raw_error_only_for_admin(item):
+    """캡처가 잡은 같은 유형: 동영상 실패 사유 원문(ProxyError: HTTPSConnectionPool…)이 카드에 그대로 — 일반 화면엔 앞 구절만."""
+    from src.seller_console import collect_history_store as S
+    seller, iid = item
+    ex = _ex(seller, iid)
+    ex["video"] = {"state": "failed", "source_url": "https://cloud.video.taobao.com/x.mp4",
+                   "why": "원본을 받지 못했어요 — ProxyError: HTTPSConnectionPool(host='cloud.video.taobao.com', port=443)"}
+    S.update(iid, seller_ids={seller}, extra_json=json.dumps(ex, ensure_ascii=False))
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = seller
+    h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    assert "동영상을 만들지 못했어요 — 원본을 받지 못했어요" in h and "HTTPSConnectionPool" not in h
+    with c.session_transaction() as s:
+        s["user_role"] = "admin"
+    h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    assert 'data-role="m5-video-why-raw"' in h and "HTTPSConnectionPool" in h
