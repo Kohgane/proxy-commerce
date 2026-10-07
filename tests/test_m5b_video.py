@@ -35,13 +35,20 @@ def test_make_silent_reencodes_to_720_without_audio(tmp_path):
     assert V.probe(str(out))["audio"] is False
 
 
-def test_make_silent_copies_when_already_h264_720(tmp_path):
-    """이미 h264·720 이하면 재인코딩하지 않는다(지뢰 「Render 512MB ffmpeg OOM」 — libx264가 메모리 피크)."""
+def test_make_silent_always_pinned_encode_never_copy(tmp_path):
+    """Y6-C D(오너 2026-10-07) 갱신: 예전엔 이미 h264·720 이하면 `-c:v copy`였다 → 원본 프로파일·픽셀 형식이 그대로 갔다.
+    이제 언제나 고정 한 줄(libx264 high · yuv420p · faststart). 두 번 돌려도 encode(copy 0)."""
     from src.media import video_silent as V
     mid, out = tmp_path / "mid.mp4", tmp_path / "out.mp4"
     assert V.make_silent(str(FX), str(mid))["ok"]
     r = V.make_silent(str(mid), str(out))
-    assert r["ok"] and r["mode"] == "copy" and r["audio"] is False
+    assert r["ok"] and r["mode"] == "encode" and r["audio"] is False
+    assert r["profile"] == "High" and r["pix_fmt"] == "yuv420p"
+    raw = out.read_bytes()
+    assert 0 < raw.find(b"moov") < raw.find(b"mdat")                                # faststart — moov가 앞
+    assert V.ENCODE_ARGS[:8] == ["-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+    src = Path(V.__file__).read_text(encoding="utf-8")
+    assert '"copy"' not in src and "'copy'" not in src
 
 
 def test_process_uploads_video_and_builds_thumb(monkeypatch):
@@ -64,11 +71,15 @@ def test_process_failures_are_reasons_not_exceptions(monkeypatch):
     from src.media import image_pipeline as IP
     from src.media import video_silent as V
     monkeypatch.setattr(V, "_download", lambda url, dst: "HTTP 403")
-    assert V.process("https://x/v.mp4")["why"] == "원본을 받지 못했어요 — HTTP 403"
+    r = V.process("https://x/v.mp4")
+    assert r["why"] == "원본을 받지 못했어요 — HTTP 403" and r["code"] == "fetch_failed"
     monkeypatch.setattr(V, "_download", lambda url, dst: shutil.copy(FX, dst) and None)
     monkeypatch.setattr(IP, "upload_bytes", lambda raw, **kw: {"ok": False, "error": "Cloudinary 자격 미설정: CLOUDINARY_API_KEY"})
     r = V.process("https://x/v.mp4")
-    assert r["state"] == "failed" and "CLOUDINARY_API_KEY" in r["why"]
+    assert r["state"] == "failed" and "CLOUDINARY_API_KEY" in r["why"] and r["code"] == "upload_failed"
+    monkeypatch.setattr(V, "make_silent", lambda a, b: {"ok": False, "why": "ffmpeg 실패: Invalid data", "code": "codec_unsupported"})
+    r = V.process("https://x/v.mp4")
+    assert r["code"] == "codec_unsupported" and r["why"] == "영상 형식을 바꾸지 못했어요 — ffmpeg 실패: Invalid data"
     assert V.process("")["state"] == "none"
 
 
@@ -110,7 +121,7 @@ def test_video_job_saves_and_card_plays_muted(monkeypatch):
     ex = json.loads(S.get(iid, seller_ids={"m5b-vid"})["extra_json"])
     assert ex["video"]["state"] == "done" and ex["video_url"].endswith("x.mp4")
     h = _card(iid)
-    assert 'data-role="m5-video-player"' in h and " muted " in h and 'poster="https://res.cloudinary.com/d/video/upload/so_0/v1/x.jpg"' in h
+    assert 'data-role="m5-video-player"' in h and " muted " in h and " playsinline " in h and 'preload="metadata"' in h and 'poster="https://res.cloudinary.com/d/video/upload/so_0/v1/x.jpg"' in h
     assert "무음 동영상 3초 · 720p" in h and h.count('data-role="m5-video-market"') >= 3
 
 

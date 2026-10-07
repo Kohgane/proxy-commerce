@@ -2148,7 +2148,33 @@ def _m5_video(ex: dict) -> dict:
     except Exception:
         admin = False
     return {"video": rec or {"state": "pending", "source_url": src}, "video_lines": market_lines(_M5_MARKETS),
-            "video_why": short, "video_why_raw": why if admin else ""}
+            "video_why": short, "video_why_raw": why if admin else "", "video_code": str((rec or {}).get("code") or "")}
+
+
+@bp.post("/collect/<item_id>/video-reconvert")
+def collect_video_reconvert(item_id):
+    """Y6-C D: 「다시 변환」 — 원본 동영상에서 무음 mp4를 다시 만든다(고정 인코딩 한 줄). 백그라운드, 응답은 기다리지 않는다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    rec = ex.get("video") if isinstance(ex.get("video"), dict) else {}
+    src = str(rec.get("source_url") or (ex.get("provider_detail") or {}).get("video_url") or "")
+    if not src:
+        return jsonify({"ok": False, "error": "원본 동영상 주소가 없어요."}), 409
+    from src.services import taobao_auto as _ta
+    owner = str(item.get("seller_id") or item.get("user_id") or _seller_id())
+    ex["video"] = {"state": "pending", "source_url": src, "at": datetime.now(timezone.utc).isoformat(), "retry": True}
+    from . import collect_history_store as _chs
+    _chs.update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
+    if not _ta.kick_video(owner, str(item_id), src):
+        return jsonify({"ok": False, "error": "동영상 수집이 꺼져 있어요(VIDEO_COLLECT=0)."}), 409
+    return jsonify({"ok": True, "state": "pending"})
 
 
 def _brand_value_rows(product: dict) -> list:
