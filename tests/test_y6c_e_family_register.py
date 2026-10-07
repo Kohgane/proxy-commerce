@@ -81,7 +81,7 @@ def test_family_card_shows_owner_ship_route_and_rate():
     _iid, h = _card("fam", "fam-e")
     assert _mode_on(h) == "air"
     line = re.search(r'data-role="m5-ship-line">(.*?)<ul', h, re.S).group(1)
-    assert "퍼센티 배대지 항공" in line and "부가서비스 3,000원" in line
+    assert "기본 배대지 항공" in line and "부가서비스 3,000원" in line
     _iid, ho = _card("owner", "owner-e")
     assert _mode_on(ho) == "air"                                                           # 오너 자신도 같은 값
 

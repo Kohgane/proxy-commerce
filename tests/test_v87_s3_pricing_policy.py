@@ -64,7 +64,8 @@ def test_default_policy_equals_legacy_constants():
     assert p["margin"]["min_margin_guard_pct"] == 15.0
     assert p["fees"]["card_pct"] == pytest.approx(3.3)          # 0.033
     assert p["customs"]["vat_pct"] == pytest.approx(10.0)       # 0.10
-    assert p["shipping"]["intl_ship_per_kg_krw"] == 18000.0
+    # Z6 후속(2026-10-08) 갱신: kg당 요율(intl_ship_per_kg_krw)은 폐기 — 배송비는 시스템 한 숫자(shipping_ratio.ship_cost).
+    assert "intl_ship_per_kg_krw" not in p["shipping"]
     assert p["shipping"]["default_weight_kg"] == 0.5
     # 마켓 수수료 = 각 마켓 공표 수수료(현행 _market_fee와 같은 값).
     assert p["fees"]["market_pct"]["coupang"] == pytest.approx(10.8)
@@ -85,7 +86,8 @@ def test_no_policy_reproduces_legacy_numbers(market, category):
         market=market, category=category)
 
     cost = 25.0 * 1350.0
-    shipping = 0.4 * 18000.0
+    # Z6 후속 갱신: 배송비 = 카드·마진 계산기와 같은 한 숫자. USD 소싱 = 미국발(몰테일) — 0.5kg 최소 × 18,000원/kg.
+    shipping = 0.5 * 18000.0
     customs = (cost + shipping) * calculator._customs_pct(category)
     landed = cost + shipping + customs
     total_landed = landed + landed * 0.10
@@ -120,7 +122,7 @@ def test_merge_keeps_defaults_for_absent_keys():
     merged = merge_policy({"margin": {"percent_margin": 12.0}})
     assert merged["margin"]["percent_margin"] == 12.0
     assert merged["fees"]["card_pct"] == pytest.approx(3.3)
-    assert merged["shipping"]["intl_ship_per_kg_krw"] == 18000.0
+    assert merged["shipping"]["default_weight_kg"] == 0.5
 
 
 def test_unknown_market_falls_back_to_coupang():

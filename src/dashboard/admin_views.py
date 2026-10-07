@@ -4345,7 +4345,7 @@ _DIAGNOSTICS_TEMPLATE = """
             <li>활성: <span class="badge bg-success">ON</span></li>
             <li>24h 계산: <strong>{{ ai_listing_status.attempts_24h }}</strong>건</li>
             <li>권장가 자동 적용/수동 조정: <strong>{{ ai_listing_status.success_24h }}</strong> / <strong>{{ ai_listing_status.failed_24h }}</strong></li>
-            <li>환경: 배송비 <code>{{ env.get('PRICING_INTL_SHIPPING_PER_KG_KRW', '18000') }}</code> / 결제수수료 <code>{{ env.get('PRICING_PAYMENT_FEE', '0.033') }}</code></li>
+            <li>환경: 배송비 = 배송비 엔진(data/shipping 요율표 · 부피 제수 <code>{{ env.get('SHIPPING_VOL_DIVISOR', '6000') }}</code>) / 결제수수료 <code>{{ env.get('PRICING_PAYMENT_FEE', '0.033') }}</code></li>
           </ul>
         </div>
         <div class="d-flex gap-2 flex-wrap">

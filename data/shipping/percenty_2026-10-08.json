@@ -6,6 +6,7 @@
  "providers": {
   "percenty": {
    "label": "퍼센티 배대지",
+   "display_name": "기본 배대지",
    "modes": {
     "sea": {
      "label": "해운",
@@ -233,5 +234,6 @@
     }
    ]
   }
- }
+ },
+ "_doc": "provider 키(percenty)·label·source는 내부 기록용 — 셀러 화면엔 display_name만(경쟁 서비스명 노출 금지)."
 }

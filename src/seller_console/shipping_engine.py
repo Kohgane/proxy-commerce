@@ -184,7 +184,9 @@ def quote(size: Dict[str, Any], *, mode: str = "sea", divisor: float = DEFAULT_D
     ad = addons_total(prov, addons or [])
     out: Dict[str, Any] = {
         "ok": bool(applied), "mode": mode, "mode_label": mt.get("label") or mode, "provider": provider,
-        "provider_label": prov.get("label") or provider, "version": prov.get("version"),
+        # 셀러 화면엔 display_name만(「기본 배대지」) — label·source는 내부 기록(경쟁 서비스명 노출 금지)
+        "provider_label": prov.get("display_name") or "기본 배대지", "version": prov.get("version"),
+        "table_date": prov.get("captured_at") or "",                       # 셀러 화면용(버전 이름엔 배대지 키가 들어 있다)
         "actual": {"kg": w, **actual} if actual else None,
         "volume": {"kg": round(vol_kg, 2), **volume} if volume else None,
         "applied": applied, "estimated": bool(applied and applied["estimated"]),

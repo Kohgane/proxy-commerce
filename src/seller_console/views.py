@@ -2314,7 +2314,7 @@ def _m5_ship(product: dict) -> dict:
                 "ship_lines": est.get("lines") or [], "ship_bulky": bool(est.get("bulky")),
                 "ship_lcl_line": est.get("lcl_line") or "", "ship_jeju_line": est.get("jeju_line") or "",
                 "ship_need_input": bool(est.get("need_input")), "ship_input": mi,
-                "ship_version": est.get("version") or ""}
+                "ship_version": est.get("table_date") or ""}
     except Exception as exc:
         logger.warning("[M5] 배송비 판정 실패: %s", exc)
         return {"ship_line": "", "ship_origin": "", "ship_est": {}, "ship_mode": "", "ship_mode_label": "",
@@ -3808,7 +3808,11 @@ def settings_shipping():
         except ValueError as exc:
             msg = str(exc)
     st = E.get_settings(_seller_id(), shared)
-    return render_template("shipping_settings.html", st=st, tables=E.tables(), shared=shared, msg=msg,
+    try:
+        _adm = bool(_is_admin_user())
+    except Exception:
+        _adm = False
+    return render_template("shipping_settings.html", st=st, tables=E.tables(), shared=shared, msg=msg, is_admin=_adm,
                            divisor=E.divisor(st), env_divisor=os.getenv("SHIPPING_VOL_DIVISOR", "").strip())
 
 

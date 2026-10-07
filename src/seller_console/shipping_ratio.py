@@ -1,6 +1,6 @@
 """Z5(오너 2026-10-04) — 사전검증 「배송비 비율 초과」: 추정 해외배송비 > 원가의 N%면 보류(「그래도 등록」으로 풀 수 있음).
 
-- 배송비 = 청구 무게(kg) × 가격 정책의 배대지 요율 `shipping.intl_ship_per_kg_krw`(기본 18,000원/kg — 마진 계산과 같은 값).
+- 배송비 = `ship_cost()` 한 숫자(Z6 배송비 엔진 — 카드·사전검증·마진 계산기·가격 계산기 공용).
 - 청구 무게 = max(실무게, 부피무게) · 부피무게 = 가로×세로×높이(cm) ÷ divisor(기본 6000).
 - 치수·무게는 제목·옵션 값·상세에서 **읽은 것만** 쓴다. 못 읽으면 크기 표(`shipping_size_rules.json`, 관리자 덮어쓰기
   `app_state shipping_size:rules`)의 키워드(소파·의자·매트리스·캐리어·유모차 = 대형 기본값)로 **추정**,
@@ -287,17 +287,67 @@ def estimate(pd: dict, seller_id: str = "") -> Dict[str, Any]:
                      f"— 원가 {cost:,}원의 {ratio}% (기준 {threshold_pct():g}%)")}
 
 
+def _ship_from_quote(q: Dict[str, Any]) -> Optional[int]:
+    """엔진 결과 → 배송비 한 숫자. 대형화물은 LCL 추정, 그 밖은 적용 배송비 + 부가서비스. 모르면 None."""
+    if q.get("bulky"):
+        return int(q["lcl"]["krw"]) if q.get("lcl") else None
+    if not q.get("ok"):
+        return None
+    return int(q["applied"]["krw"] + q["addons"]["krw"])
+
+
+def ship_cost(size: Dict[str, Any], *, origin: str = "cn", seller_id: str = "", mode: str = "") -> Dict[str, Any]:
+    """Z6 후속(오너 2026-10-08): **시스템의 배송비 한 숫자** — 카드·사전검증·마진 계산기·가격 계산기가 모두 이것을 쓴다.
+    `size = {weight_kg, dims_cm, pkg_m3}`. → `{krw(None=모름), estimated, source, why, bulky}`.
+    중국발 = 배송비 엔진(요율표) · 미국발 = 몰테일 kg당(예전 그대로) · 그 밖 = 요율 없음(None — 지어내지 않는다)."""
+    size = {"weight_kg": float(size.get("weight_kg") or 0), "dims_cm": size.get("dims_cm") or None,
+            "pkg_m3": float(size.get("pkg_m3") or 0)}
+    if not (size["weight_kg"] or size["dims_cm"] or size["pkg_m3"]):
+        return {"krw": None, "estimated": False, "source": "none", "why": "무게·부피 모름", "bulky": []}
+    if origin == "cn":
+        from . import shipping_engine as E
+        E.warn_legacy_env()
+        st = E.get_settings(seller_id)
+        q = E.quote(size, mode=mode if mode in E.MODES else st["default_mode"], divisor=E.divisor(st),
+                    provider=st["provider"], addons=st["addons"], lcl=bool(st["business"]))
+        if not q["ok"] and "요율표" in str(q.get("why") or ""):
+            return {"krw": None, "estimated": False, "source": "none", "why": str(q["why"]), "bulky": []}
+        krw = _ship_from_quote(q)
+        est = bool(q["lcl"]["estimated"]) if (q["bulky"] and q.get("lcl")) else bool(q["estimated"])
+        return {"krw": krw, "estimated": est, "source": "engine_lcl" if q["bulky"] else "engine",
+                "why": "" if krw is not None else "대형화물 — LCL 부피를 몰라요", "bulky": q["bulky"], "quote": q}
+    if origin == "us":
+        rd = rate_and_divisor("us", "")
+        vol = (size["dims_cm"][0] * size["dims_cm"][1] * size["dims_cm"][2] / rd["divisor"]) if size["dims_cm"] else 0.0
+        pkg_kg = size["pkg_m3"] * 1_000_000 / rd["divisor"] if size["pkg_m3"] else 0.0
+        kg = round(max(vol, pkg_kg, size["weight_kg"], 0.5), 1)
+        return {"krw": round(kg * rd["rate"]), "estimated": False, "source": "us_per_kg", "why": "", "bulky": [], "kg": kg,
+                "rate": rd["rate"]}
+    return {"krw": None, "estimated": False, "source": "none", "why": "출발국 요율 없음", "bulky": []}
+
+
+def ship_cost_for(pd: dict, seller_id: str = "") -> Dict[str, Any]:
+    """상품 한 건의 배송비 한 숫자 — 등록 판매가(`price.calc_sell_price`)가 이것을 국제배송비로 쓴다.
+    출발국: 상품 주소(타오바오·티몰·1688 → 중국발 · 아마존 미국 → 미국발) → 없으면 통화(USD → 미국발 · CNY → 중국발)."""
+    origin = origin_of(pd or {})
+    if not origin:
+        cur = str((pd or {}).get("currency") or "").upper()
+        origin = {"USD": "us", "CNY": "cn"}.get(cur, "")
+    return ship_cost(_size_for(pd or {}), origin=origin, seller_id=seller_id or str((pd or {}).get("seller_id") or ""),
+                     mode=str((pd or {}).get("ship_mode") or ""))
+
+
 def _estimate_cn(pd: dict, size: Dict[str, Any], price: float, fx, seller_id: str) -> Dict[str, Any]:
     from . import shipping_engine as E
     E.warn_legacy_env()
     st = E.get_settings(seller_id or str(pd.get("seller_id") or ""))
-    mode = str(pd.get("ship_mode") or "") if pd.get("ship_mode") in E.MODES else st["default_mode"]
-    q = E.quote(size, mode=mode, divisor=E.divisor(st), provider=st["provider"], addons=st["addons"],
-                lcl=bool(st["business"]))
-    if not q["ok"] and "요율표" in str(q.get("why") or ""):
-        return {"state": "unknown", "origin": "cn", "line": f"요율 미설정 — 비율 판정 생략({q['why']})"}
+    sc = ship_cost(size, origin="cn", seller_id=seller_id or str(pd.get("seller_id") or ""), mode=str(pd.get("ship_mode") or ""))
+    if sc["source"] == "none":
+        return {"state": "unknown", "origin": "cn", "line": f"요율 미설정 — 비율 판정 생략({sc['why']})"}
+    q = sc["quote"]
     base = {"origin": "cn", "mode": q["mode"], "mode_label": q["mode_label"], "basis": size["basis"],
             "pkg_m3": size["pkg_m3"], "provider_label": q["provider_label"], "version": q["version"],
+            "table_date": q.get("table_date") or "",
             "divisor": q["divisor"], "estimated": q["estimated"], "addons": q["addons"], "bulky": q["bulky"],
             "lines": _three_lines(q), "lcl": q["lcl"], "lcl_line": "", "jeju_line": ""}
     lcl = q["lcl"]
@@ -311,13 +361,13 @@ def _estimate_cn(pd: dict, size: Dict[str, Any], price: float, fx, seller_id: st
         base.update(code="bulky_carrier", jeju_line="제주·도서산간은 추가 운임이 붙어요.")
         head = f"대형화물 — 국내 배송비 별도(경동택배 표준운임) · {' · '.join(q['bulky'])} · {size['basis']}"
         if lcl and cost:
-            ratio = round(lcl["krw"] / cost * 100)
-            return dict(base, state="ok", ratio_pct=ratio, ship_krw=lcl["krw"], cost_krw=cost, chargeable_kg=None,
+            ratio = round(sc["krw"] / cost * 100)
+            return dict(base, state="ok", ratio_pct=ratio, ship_krw=sc["krw"], cost_krw=cost, chargeable_kg=None,
                         line=f"{head} — 비율은 LCL 추정 {_won(lcl['krw'])} 기준: 원가 {cost:,}원의 {ratio}% (기준 {threshold_pct():g}%)")
         return dict(base, state="bulky", line=f"{head} — 비율 판정 생략(LCL 부피를 몰라요)")
     if not q["ok"]:
         return dict(base, state="unknown", line="부피 미확인 — 무게·가로·세로·높이를 넣으면 계산해요(통과)", need_input=True)
-    ship = q["applied"]["krw"] + q["addons"]["krw"]
+    ship = sc["krw"]
     if not cost:
         return dict(base, state="unknown", ship_krw=ship, chargeable_kg=q["applied"]["qty"],
                     line="배송비는 계산했지만 원가(가격·환율)가 없어 비율을 재지 못했어요(통과)")

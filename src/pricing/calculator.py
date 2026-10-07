@@ -87,6 +87,10 @@ class PriceBreakdown:
     loss_warning: bool
     suggested_price: int
     margin_actual_pct: float
+    # Z6 후속: 배송비는 시스템 한 숫자(shipping_ratio.ship_cost — 카드·사전검증·마진 계산기와 같은 값)
+    shipping_source: str = ""        # engine · engine_lcl · us_per_kg · none
+    shipping_estimated: bool = False
+    shipping_why: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -98,6 +102,11 @@ def calculate_listing_price(
     source_currency: str,
     weight_kg: float,
     market: str,
+    dims_cm: list | None = None,
+    pkg_m3: float | None = None,
+    ship_mode: str = "",
+    seller_id: str = "",
+    origin: str | None = None,
     category: str,
     target_margin_pct: float | None = None,
     ad_budget_pct: float | None = None,
@@ -122,13 +131,18 @@ def calculate_listing_price(
     weight_kg = float(weight_kg if weight_kg is not None else _sh["default_weight_kg"])
     payment_fee_pct = float(_fe["card_pct"]) / 100.0
     vat_pct = float(pol["customs"]["vat_pct"]) / 100.0
-    intl_shipping_per_kg = float(_sh["intl_ship_per_kg_krw"])
     competitor_discount = _env_float("PRICING_COMPETITOR_DISCOUNT", 0.97)
     min_margin_guard_pct = float(_mg["min_margin_guard_pct"])
     actual_discount = _env_float("PRICING_ACTUAL_DISCOUNT", 0.97)
 
     cost_krw = float(source_price) * _to_krw_rate(source_currency)
-    shipping_krw = max(weight_kg, 0.0) * intl_shipping_per_kg
+    # Z6 후속(오너 2026-10-08): 옛 kg당 요율(policy.shipping.intl_ship_per_kg_krw) 폐기 — 판매가 제안과 마진 판정이
+    #   서로 다른 배송비를 쓰면 안 된다. 출발국: 명시 > 통화(USD=미국발 · 그 밖=중국발 배대지).
+    from src.seller_console.shipping_ratio import ship_cost as _ship_cost
+    _origin = origin or ("us" if str(source_currency or "").upper() == "USD" else "cn")
+    _sc = _ship_cost({"weight_kg": max(weight_kg, 0.0), "dims_cm": dims_cm, "pkg_m3": pkg_m3 or 0},
+                     origin=_origin, seller_id=seller_id, mode=ship_mode)
+    shipping_krw = float(_sc["krw"] or 0)
     customs_krw = (cost_krw + shipping_krw) * _customs_pct(category)
     landed_cost = cost_krw + shipping_krw + customs_krw
     vat_krw = landed_cost * vat_pct
@@ -190,4 +204,7 @@ def calculate_listing_price(
         loss_warning=loss_warning,
         suggested_price=int(round(suggested / 100.0) * 100),
         margin_actual_pct=round(margin_actual_pct, 2),
+        shipping_source=_sc["source"],
+        shipping_estimated=bool(_sc["estimated"]),
+        shipping_why=str(_sc.get("why") or ""),
     )
