@@ -55,11 +55,72 @@ def refresh_stale() -> bool:
     return os.getenv(ENV_REFRESH_STALE, "1").strip().lower() not in ("0", "false", "no", "off")
 
 
-def daily_cap() -> int:
+def env_cap() -> int:
     try:
         return max(0, int(os.getenv(ENV_CAP, str(DEFAULT_CAP)).strip() or DEFAULT_CAP))
     except ValueError:
         return DEFAULT_CAP
+
+
+def daily_cap() -> int:
+    """하루 호출 상한 = `ONEBOUND_DAILY_CAP`과 **키가 실제로 허용하는 수**(응답 `api_info` max) 중 작은 쪽.
+    오너 실측(2026-10-07): CAP 60 > 키 max 10이라 우리 가드가 먼저 막지 못하고 온바운드 4013(已超量)을 받았다."""
+    lim = api_limits()
+    learned, exp = lim.get("max"), str(lim.get("expires") or "")
+    cap = env_cap()
+    if exp and exp < _cst_day():                             # 배운 max의 키가 만료됐으면(체험 → 유료 키) 쓰지 않는다
+        return cap
+    return min(cap, int(learned)) if isinstance(learned, int) and learned > 0 else cap
+
+
+# ── 4013(已超量) — 키 일일 한도 소진 ────────────────────────────────────────────
+QUOTA_KIND = "provider_quota"
+QUOTA_LINE = "상품정보 서비스 일일 한도 — 내일 다시 또는 충전 후"
+_LIMITS = "onebound:api_limits"           # 응답 api_info에서 배운 {max, today, expires, at}
+_QUOTA = "onebound:quota_block:"          # + 베이징 날짜 → {code, reason, at}
+
+
+def _cst_day(now=None) -> str:
+    return (now or datetime.now(timezone.utc)).astimezone(_CST).strftime("%Y-%m-%d")
+
+
+def api_limits() -> Dict[str, Any]:
+    from src.db import image_translate_queue_pg as st
+    return st.state_get(_LIMITS) or {}
+
+
+def _learn_limits(raw: Any) -> None:
+    """응답마다 `api_info`(today/max/expires)를 기억 — 다음 호출부터 상한이 키의 max로 내려간다."""
+    if not isinstance(raw, dict) or not raw.get("api_info"):
+        return
+    info = parse_api_info(raw.get("api_info"))
+    if info.get("max") is None:
+        return
+    from src.db import image_translate_queue_pg as st
+    st.state_set(_LIMITS, {"max": info["max"], "today": info.get("today"), "expires": info.get("expires") or "",
+                           "at": datetime.now(timezone.utc).isoformat()})
+    if env_cap() > info["max"]:
+        logger.warning("[onebound] ONEBOUND_DAILY_CAP=%s > 키 일일 max %s — 상한을 %s로 낮춰 씀", env_cap(), info["max"], info["max"])
+
+
+def is_quota_error(code: str, reason: str) -> bool:
+    return str(code or "") == "4013" or "已超量" in str(reason or "")
+
+
+def quota_block(now=None) -> Dict[str, Any]:
+    """오늘(베이징 날짜) 4013을 이미 받았나 — 받았으면 그 기록. 자동 경로는 이걸 보면 **부르지 않는다**(건당 과금)."""
+    from src.db import image_translate_queue_pg as st
+    return st.state_get(_QUOTA + _cst_day(now)) or {}
+
+
+def _set_quota_block(code: str, reason: str) -> None:
+    from src.db import image_translate_queue_pg as st
+    st.state_set(_QUOTA + _cst_day(), {"code": code, "reason": reason[:200], "at": datetime.now(timezone.utc).isoformat()})
+
+
+def _clear_quota_block() -> None:
+    from src.db import image_translate_queue_pg as st
+    st.state_set(_QUOTA + _cst_day(), {})
 
 
 def _day_key(now=None) -> str:
@@ -71,9 +132,10 @@ def used_today() -> int:
     return q.day_count(_day_key())
 
 
-def _take() -> bool:
+def _take(manual: bool = False) -> bool:
+    """한도 한 칸. 사람이 누른 「새로 받기」는 env 상한으로 — 충전·키 교체 뒤 새 max를 배울 길을 막지 않는다."""
     from src.db import option_translate_queue_pg as q
-    granted, _n = q.take_n(_day_key(), daily_cap(), 1)
+    granted, _n = q.take_n(_day_key(), env_cap() if manual else daily_cap(), 1)
     return granted >= 1
 
 
@@ -355,7 +417,13 @@ def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transpo
     if miss:
         return {"ok": False, "kind": "provider_fail", "why": "공급자 키 미설정 — " + " · ".join(miss), "raw": None,
                 "ms": 0, "bytes": 0}
-    if not _take():
+    # 오늘 이미 4013(키 한도 소진)을 받았으면 **부르지 않는다** — 자동 재시도·다른 상품 담기가 건마다 과금되지 않게.
+    #   「새로 받기」(refresh, 사람이 누름)만 한 번 시도할 수 있다(충전 뒤 확인용) — 성공하면 막음을 푼다.
+    blk = quota_block()
+    if blk.get("code") and not refresh:
+        return {"ok": False, "kind": QUOTA_KIND, "why": f"{QUOTA_LINE} (온바운드 {blk['code']}: {blk.get('reason', '')[:80]})",
+                "raw": None, "ms": 0, "bytes": 0}
+    if not _take(manual=refresh):
         return {"ok": False, "kind": "provider_cap",
                 "why": f"온바운드 일일 한도 — 오늘 {daily_cap()}회 다 씀(ONEBOUND_DAILY_CAP), 내일 다시", "raw": None,
                 "ms": 0, "bytes": 0}
@@ -383,8 +451,14 @@ def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transpo
     if not isinstance(raw, dict):
         return {"ok": False, "kind": "provider_fail", "why": f"온바운드 HTTP {status} · JSON 아닌 응답({nbytes}바이트)",
                 "raw": None, "ms": ms, "bytes": nbytes}
+    _learn_limits(raw)
     if code != "0000" or not isinstance(raw.get("item"), dict):
         said = str(raw.get("reason") or raw.get("error") or "").strip()            # 원문 그대로(번역 안 함)
+        if is_quota_error(code, said):
+            _set_quota_block(code or "4013", said)
+            logger.warning("[onebound] num_iid=%s 키 일일 한도 소진(%s %s) — 오늘은 더 부르지 않음", iid, code, said[:60])
+            return {"ok": False, "kind": QUOTA_KIND, "why": f"{QUOTA_LINE} (온바운드 {code or '4013'}: {said[:80]})",
+                    "raw": raw, "ms": ms, "bytes": nbytes}
         return {"ok": False, "kind": "provider_fail", "why": f"온바운드 {code or '응답 코드 없음'}" + (f": {said[:160]}" if said else ""),
                 "raw": raw, "ms": ms, "bytes": nbytes}
     bad = item_id_mismatch(raw, iid)                     # 다른 상품 응답은 보관도 안 한다
@@ -392,6 +466,8 @@ def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transpo
         logger.warning("[onebound] %s", bad)
         return {"ok": False, "kind": "provider_fail", "why": bad, "raw": raw, "ms": ms, "bytes": nbytes}
     _store(iid, raw, nbytes, ms)
+    if refresh and quota_block().get("code"):
+        _clear_quota_block()                                 # 충전 뒤 「새로 받기」가 성공 — 오늘 막음을 푼다
     return {"ok": True, "kind": "ok", "why": "", "raw": raw, "ms": ms, "bytes": nbytes, "reused": False}
 
 
