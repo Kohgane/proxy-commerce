@@ -20,7 +20,7 @@
     </fieldset>
     <label class="ss-row">부피 제수(가로×세로×높이 ÷ 이 값 = 부피무게 kg)
       <input type="number" name="vol_divisor" class="form-control" min="1000" max="10000" step="1" value="{{ st.vol_divisor or '' }}" placeholder="{{ divisor|int }}">
-      <span class="small text-muted">비우면 {{ divisor|int }}{{ ' (서버 설정)' if env_divisor else ' (기본값 — 퍼센티 표에 없어 실측 후 확정)' }}</span></label>
+      <span class="small text-muted">비우면 {{ divisor|int }}{{ ' (서버 설정)' if env_divisor else ' (기본값 — 요율표에 제수가 없어 실측 후 확정)' }}</span></label>
     {% if prov %}
     <fieldset class="ss-row"><legend>부가서비스 기본 체크</legend>
       {% for a in prov.addons %}<label class="d-block"><input type="checkbox" name="addons" value="{{ a.key }}" {{ 'checked' if a.key in st.addons }}>

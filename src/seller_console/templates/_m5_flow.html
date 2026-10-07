@@ -37,7 +37,7 @@
     <div class="m5-row" data-role="m5-coupang-name"><span class="m5-k">쿠팡 상품명</span>
       <span class="m5-v">{{ m5.coupang_name or "(규칙안을 만들 재료가 없어요)" }}</span></div>
     {% for w in m5.coupang_warnings %}<div class="m5-warn">{{ w }}</div>{% endfor %}
-    {# Z6(오너 2026-10-08): 배송비 엔진(퍼센티 배대지 요율표) — 카드·사전검증·마진 계산기가 같은 결과. 숨기지 않는다. #}
+    {# Z6(오너 2026-10-08): 배송비 엔진(배대지 요율표 데이터) — 카드·사전검증·마진 계산기가 같은 결과. 숨기지 않는다. #}
     {% if m5.ship_line %}<div class="m5-ship" data-role="m5-ship-line">{% if m5.ship_bulky %}<span class="pc-badge pc-badge-off" data-role="m5-bulky">국내 배송비 별도(경동택배 표준운임)</span> {% endif %}배송비 판정: {{ m5.ship_line }}
       {% if m5.ship_origin == 'cn' %}
       {% if m5.ship_lines %}<ul class="m5-ship-lines" data-role="m5-ship-3lines">{% for l in m5.ship_lines %}<li>{{ l }}</li>{% endfor %}</ul>{% endif %}
