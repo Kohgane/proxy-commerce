@@ -226,8 +226,11 @@ def test_registration_price_falls_back_only_when_size_unknown(monkeypatch):
 
 
 def test_pricing_has_no_per_kg_path_left():
-    src = Path("src/pricing/calculator.py").read_text(encoding="utf-8")
-    assert "intl_ship_per_kg" not in src.replace("intl_ship_per_kg_krw) 폐기", "")
+    """구조로 잰다(소스 문자열 핀 금지) — 가격 계산기는 엔진(ship_cost)을 부르고, kg당 키는 값으로도 안 쓴다."""
+    from tests._ast_probe import calls_in, string_constants_in
+    from src.pricing.calculator import calculate_listing_price
+    assert "_ship_cost" in calls_in(calculate_listing_price)
+    assert not any("per_kg" in s for s in string_constants_in(calculate_listing_price))
     from src.pricing.policy import default_policy
     assert "intl_ship_per_kg_krw" not in default_policy()["shipping"]
 
