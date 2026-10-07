@@ -37,15 +37,25 @@
     <div class="m5-row" data-role="m5-coupang-name"><span class="m5-k">쿠팡 상품명</span>
       <span class="m5-v">{{ m5.coupang_name or "(규칙안을 만들 재료가 없어요)" }}</span></div>
     {% for w in m5.coupang_warnings %}<div class="m5-warn">{{ w }}</div>{% endfor %}
-    {# Z5 후속: 배송비 판정 — 「부피 미확인」·「요율 미설정」도 숨기지 않고 그대로. 중국발이면 발주 경로를 고른다. #}
-    {% if m5.ship_line %}<div class="m5-ship" data-role="m5-ship-line">배송비 판정: {{ m5.ship_line }}
+    {# Z6(오너 2026-10-08): 배송비 엔진(배대지 요율표 데이터) — 카드·사전검증·마진 계산기가 같은 결과. 숨기지 않는다. #}
+    {% if m5.ship_line %}<div class="m5-ship" data-role="m5-ship-line">{% if m5.ship_bulky %}<span class="pc-badge pc-badge-off" data-role="m5-bulky">국내 배송비 별도(경동택배 표준운임)</span> {% endif %}배송비 판정: {{ m5.ship_line }}
       {% if m5.ship_origin == 'cn' %}
-      <select class="form-select" id="m5ShipRoute" data-role="m5-ship-route" aria-label="발주 경로">
-        {# Y6-C E1: 오너·가족(공유 마켓)은 공유 기본값 한 벌 — 가족 카드도 오너가 정한 값이 보인다 #}
-        <option value="" data-role="m5-ship-route-default" {{ 'selected' if not m5.ship_route }}>{{ '공유 기본' if m5.ship_route_shared else '계정 기본' }}{{ ' (' ~ m5.ship_routes[m5.ship_route_default] ~ ')' if m5.ship_route_default else ' (미설정)' }}</option>
-        {% for k, label in m5.ship_routes.items() %}<option value="{{ k }}" {{ 'selected' if m5.ship_route == k }}>{{ label }}</option>{% endfor %}
-      </select>
-      <a class="small" href="/seller/settings/ship-route">{{ '공유 기본 바꾸기' if m5.ship_route_shared else '계정 기본 바꾸기' }}</a>
+      {% if m5.ship_lines %}<ul class="m5-ship-lines" data-role="m5-ship-3lines">{% for l in m5.ship_lines %}<li>{{ l }}</li>{% endfor %}</ul>{% endif %}
+      {% if m5.ship_lcl_line %}<div class="m5-note" data-role="m5-ship-lcl">{{ m5.ship_lcl_line }}</div>{% endif %}
+      {% if m5.ship_jeju_line %}<div class="m5-note" data-role="m5-ship-jeju">{{ m5.ship_jeju_line }}</div>{% endif %}
+      {% if m5.ship_mode %}<div class="m5-ship-mode" role="group" aria-label="배송 방식" data-role="m5-ship-mode">
+        {% for k, lab in (('sea', '해운'), ('air', '항공')) %}<button type="button" class="m5-mode-btn{{ ' is-on' if m5.ship_mode == k }}" data-mode="{{ k }}" aria-pressed="{{ 'true' if m5.ship_mode == k else 'false' }}">{{ lab }}</button>{% endfor %}
+      </div>{% endif %}
+      <details class="m5-ship-in" data-role="m5-ship-input"{{ ' open' if m5.ship_need_input }}><summary>무게·크기 직접 넣기</summary>
+        <div class="m5-ship-grid">
+          <label>무게(kg)<input type="number" step="0.01" min="0" inputmode="decimal" data-k="weight_kg" value="{{ m5.ship_input.weight_kg or '' }}"></label>
+          <label>가로(cm)<input type="number" step="0.1" min="0" inputmode="decimal" data-k="l" value="{{ m5.ship_input.l or '' }}"></label>
+          <label>세로(cm)<input type="number" step="0.1" min="0" inputmode="decimal" data-k="w" value="{{ m5.ship_input.w or '' }}"></label>
+          <label>높이(cm)<input type="number" step="0.1" min="0" inputmode="decimal" data-k="h" value="{{ m5.ship_input.h or '' }}"></label>
+        </div>
+        <button type="button" class="m5-fix" data-role="m5-ship-input-save">이 값으로 다시 계산</button> <span class="m5-note" data-role="m5-ship-input-state"></span>
+      </details>
+      <a class="small" href="/seller/settings/shipping">배송 설정(배대지·기본 모드·부가서비스){% if m5.ship_version %} · 요율표 {{ m5.ship_version }}{% endif %}</a>
       {% endif %}</div>{% endif %}
     {% if m5.sku_rows %}
     <table class="m5-sku" data-role="m5-sku">
@@ -176,6 +186,14 @@
               border-radius: 12px; margin-bottom: 10px; }
   .m5-video-fail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
   .m5-video-fail .pc-badge { white-space: normal; text-align: left; line-height: 1.4; }
+  .m5-ship-lines { margin: 4px 0; padding-left: 1.1rem; }
+  .m5-ship-mode { display: inline-flex; gap: 0; margin: 6px 0; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+  .m5-mode-btn { min-height: 40px; min-width: 64px; padding: 0 14px; border: 0; background: var(--surface); color: var(--text-muted); }
+  .m5-mode-btn.is-on { background: var(--ink); color: var(--cream); font-weight: 600; }
+  .m5-ship-in { margin: 6px 0; }
+  .m5-ship-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 6px 0; }
+  .m5-ship-grid label { display: grid; gap: 2px; font-size: .88rem; color: var(--text-muted); }
+  .m5-ship-grid input { min-height: 44px; font-size: 1rem; border: 1px solid var(--border); border-radius: var(--radius, 10px); padding: 0 10px; }
   .m5-video-lines { margin: 4px 0 0; padding-left: 1.1rem; }
   .m5-thumb-empty { display: flex; align-items: center; justify-content: center; height: 120px; color: var(--text-muted); }
   .m5-title { font-size: 1.1rem; font-weight: 700; line-height: 1.45; word-break: break-word; }
@@ -254,14 +272,26 @@
   var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go');
   var checksEl = document.getElementById('m5Checks'), doneEl = document.getElementById('m5Done');
 
-  // Z5 후속: 발주 경로를 바꾸면 저장하고 다시 그린다(배송비 판정 줄이 그 요율로 바뀐다).
-  var shipSel = document.getElementById('m5ShipRoute');
-  if (shipSel) shipSel.addEventListener('change', async function () {
+  // Z6: 해운/항공 토글 · 무게·크기 직접 넣기 — 저장하고 다시 그린다(같은 엔진이 다시 잰다).
+  root.addEventListener('click', async function (e) {
+    var t = e.target && e.target.closest ? e.target.closest('[data-mode],[data-role=m5-ship-input-save]') : null;
+    if (!t || !root.querySelector('[data-role=m5-ship-line]') || !root.querySelector('[data-role=m5-ship-line]').contains(t)) return;
+    var url, body, stEl = root.querySelector('[data-role=m5-ship-input-state]');
+    if (t.getAttribute('data-mode')) {
+      url = '/seller/collect/' + encodeURIComponent(itemId) + '/ship-mode'; body = {mode: t.getAttribute('data-mode')};
+    } else {
+      body = {};
+      root.querySelectorAll('[data-role=m5-ship-input] input[data-k]').forEach(function (i) { body[i.getAttribute('data-k')] = i.value; });
+      url = '/seller/collect/' + encodeURIComponent(itemId) + '/ship-input';
+    }
+    t.disabled = true;
     try {
-      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/ship-route', {method: 'POST',
-        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({route: shipSel.value})});
-      if ((await r.json()).ok) location.reload();
-    } catch (e) { /* 그대로 둔다 */ }
+      var r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
+      if (d.ok) { location.reload(); return; }
+      if (stEl) stEl.textContent = '저장하지 못했어요 — ' + (d.error || '서버가 사유를 주지 않았어요');
+    } catch (err) { if (stEl) stEl.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
+    t.disabled = false;
   });
   // Y6-C D: 동영상 재생 실패(브라우저 MediaError) → 사유 배지 + 「다시 변환」(서버가 원본에서 다시 무음 mp4를 만든다)
   var vid = root.querySelector('[data-role=m5-video-player]');

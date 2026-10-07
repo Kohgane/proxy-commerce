@@ -2302,18 +2302,24 @@ def _m5_auto(ex: dict, item_id: str = "") -> dict:
 
 
 def _m5_ship(product: dict) -> dict:
-    """Z5 후속: 폰 카드 「배송비 판정」 한 줄 + 중국발이면 발주 경로 고르기(상품 > 계정 설정)."""
+    """Z6(오너 2026-10-08): 폰 카드 배송비 — 배송비 엔진(퍼센티 배대지 요율표) 결과 그대로.
+    세 줄(실제 무게 비용 / 부피 무게 비용 / 적용 배송비) · 해운/항공 토글 · 대형화물 배지 · LCL 견적 · 무게·치수 입력칸."""
     try:
-        from .shipping_ratio import ROUTES, account_route, estimate, origin_of
+        from .shipping_ratio import estimate, origin_of
         est = estimate(product, _seller_id())
         origin = origin_of(product)
-        shared = _shared_markets()                 # Y6-C E1: 오너·가족은 공유 한 벌(오너 설정)을 본다
-        return {"ship_line": est.get("line") or "", "ship_origin": origin, "ship_routes": ROUTES,
-                "ship_route": str(product.get("ship_route") or ""),
-                "ship_route_default": account_route(_seller_id(), shared=shared), "ship_route_shared": shared}
+        mi = product.get("ship_input") if isinstance(product.get("ship_input"), dict) else {}
+        return {"ship_line": est.get("line") or "", "ship_origin": origin, "ship_est": est,
+                "ship_mode": est.get("mode") or "", "ship_mode_label": est.get("mode_label") or "",
+                "ship_lines": est.get("lines") or [], "ship_bulky": bool(est.get("bulky")),
+                "ship_lcl_line": est.get("lcl_line") or "", "ship_jeju_line": est.get("jeju_line") or "",
+                "ship_need_input": bool(est.get("need_input")), "ship_input": mi,
+                "ship_version": est.get("version") or ""}
     except Exception as exc:
         logger.warning("[M5] 배송비 판정 실패: %s", exc)
-        return {"ship_line": "", "ship_origin": "", "ship_routes": {}, "ship_route": "", "ship_route_default": ""}
+        return {"ship_line": "", "ship_origin": "", "ship_est": {}, "ship_mode": "", "ship_mode_label": "",
+                "ship_lines": [], "ship_bulky": False, "ship_lcl_line": "", "ship_jeju_line": "",
+                "ship_need_input": False, "ship_input": {}, "ship_version": ""}
 
 
 def coupang_preview_data(item: dict) -> dict:
@@ -3727,6 +3733,85 @@ def collect_ship_route(item_id):
     return jsonify({"ok": ok, "route": route}), (200 if ok else 502)
 
 
+def _save_extra_field(item_id: str, key: str, value) -> bool:
+    item = _get_owned_item(item_id)
+    if not item:
+        return False
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    if value in (None, {}, ""):
+        ex.pop(key, None)
+    else:
+        ex[key] = value
+    from . import collect_history_store as _chs
+    return bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+
+
+@bp.post("/collect/<item_id>/ship-mode")
+def collect_ship_mode(item_id):
+    """Z6: 이 상품의 배송 방식(해운 sea · 항공 air). 빈 값 = 셀러 설정의 기본 모드."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from .shipping_engine import MODES
+    mode = str((request.get_json(force=True, silent=True) or {}).get("mode") or "")
+    if mode and mode not in MODES:
+        return jsonify({"ok": False, "error": "배송 방식은 해운 또는 항공이에요."}), 400
+    if not _get_owned_item(item_id):
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    ok = _save_extra_field(item_id, "ship_mode", mode)
+    return jsonify({"ok": ok, "mode": mode}), (200 if ok else 502)
+
+
+@bp.post("/collect/<item_id>/ship-input")
+def collect_ship_input(item_id):
+    """Z6: 무게(kg)·가로·세로·높이(cm) 직접 입력 — 퍼센티 계산기와 같은 네 칸. 빈 칸은 읽은 값을 쓴다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    out = {}
+    for k in ("weight_kg", "l", "w", "h"):
+        raw = str(data.get(k) if data.get(k) is not None else "").strip()
+        if not raw:
+            continue
+        try:
+            v = float(raw)
+        except ValueError:
+            return jsonify({"ok": False, "error": f"숫자로 넣어 주세요({k})."}), 400
+        if not (0 < v < 10000):
+            return jsonify({"ok": False, "error": f"0보다 크고 10000보다 작은 값으로 넣어 주세요({k})."}), 400
+        out[k] = v
+    if not _get_owned_item(item_id):
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    ok = _save_extra_field(item_id, "ship_input", out)
+    return jsonify({"ok": ok, "input": out}), (200 if ok else 502)
+
+
+@bp.route("/settings/shipping", methods=["GET", "POST"])
+def settings_shipping():
+    """Z6: 배송 설정 — 배대지·기본 모드·부피 제수·부가서비스 기본 체크·사업자(LCL)·요율표 버전.
+    공유 마켓 사용자(오너·가족)는 한 벌, 그 밖은 셀러별(발주 경로와 같은 범위)."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+    from . import shipping_engine as E
+    shared = _shared_markets()
+    msg = ""
+    if request.method == "POST":
+        try:
+            E.save_settings(_seller_id(), {
+                "provider": request.form.get("provider"), "default_mode": request.form.get("default_mode"),
+                "vol_divisor": request.form.get("vol_divisor"), "addons": request.form.getlist("addons"),
+                "business": request.form.get("business") == "1", "lcl_threshold_cbm": request.form.get("lcl_threshold_cbm")},
+                shared=shared)
+            msg = "저장했어요 — 다음 카드부터 이 설정으로 배송비를 재요."
+        except ValueError as exc:
+            msg = str(exc)
+    st = E.get_settings(_seller_id(), shared)
+    return render_template("shipping_settings.html", st=st, tables=E.tables(), shared=shared, msg=msg,
+                           divisor=E.divisor(st), env_divisor=os.getenv("SHIPPING_VOL_DIVISOR", "").strip())
+
+
 @bp.route("/settings", methods=["GET", "POST"])
 def settings_markets():
     """Z5 후속(오너 2026-10-06): 계정 설정 「기본 등록 마켓」 — 검수 카드·데스크톱의 처음 체크.
@@ -3861,7 +3946,7 @@ def _pv_prepare(data: dict, product_data: dict):
         #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
         try:
             _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
-            for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override", "option_split", "options_src",
+            for _k in ("ship_ratio_override", "ship_mode", "ship_input", "option_translate_diag", "rep_image_override", "option_split", "options_src",
                        "voltage_split", "voltage_override"):
                 if _sx.get(_k):
                     product_data[_k] = _sx[_k]
@@ -9277,6 +9362,15 @@ def collect_preview_by_id(item_id: str):
     except Exception as exc:
         logger.warning("[옵션 한국어] 화면 재료 실패: %s", exc)
         opt_view, sku_ko = [], []
+    # Z6: 마진 계산기 배송비 = 배송비 엔진(카드·사전검증과 같은 결과)
+    try:
+        from .product_builder import build_product as _bp_ship
+        from .shipping_ratio import estimate as _ship_est
+        _it_ship = dict(item, extra_json=json.dumps(extra if isinstance(extra, dict) else {}, ensure_ascii=False))
+        ship_est = _ship_est(_bp_ship(_it_ship, seller_id=_seller_id()), _seller_id())
+    except Exception as exc:
+        logger.warning("[마진 계산기] 배송비 엔진 실패: %s", exc)
+        ship_est = {}
     # Y6-C A3: 원제목 표시에도 상표 게이트 — Desede 같은 레플리카·IP 상표는 「확인 필요」로 가려 보여 준다
     try:
         from src.collectors.ko_polish import mask_marks as _mm
@@ -9288,7 +9382,7 @@ def collect_preview_by_id(item_id: str):
     with _pb("render"):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
-        opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown,
+        opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, ship_est=ship_est,
         field_src=field_src,
         page="collect_history",
         item=item,

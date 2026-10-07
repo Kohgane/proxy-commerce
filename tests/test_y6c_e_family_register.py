@@ -30,7 +30,8 @@ def _env(monkeypatch):
     monkeypatch.delenv("SHIPPING_RATE_KRW_PER_KG_CN_DIRECT", raising=False)
     from src.db import image_translate_queue_pg as st
     for k in ("ship_route:shared", "ship_route:fam-e", "ship_route:owner-e", "ship_route:str-e",
-              "market_pick:default:shared", "market_pick:last:shared"):
+              "market_pick:default:shared", "market_pick:last:shared",
+              "ship_settings:shared", "ship_settings:fam-e", "ship_settings:owner-e", "ship_settings:str-e"):
         st.state_set(k, {})
     from src.seller_console import shipping_ratio as SR
     monkeypatch.setattr(SR, "_fx", lambda c: 190.0 if c == "CNY" else None)
@@ -53,7 +54,7 @@ def _item(seller):
                     title="이식 현대 디자이너 소파 의자 회전식 1인용 의자", price="1225", currency="CNY",
                     extra={"title": "意式现代设计师沙发椅 旋转单人椅", "price": "1225", "currency": "CNY",
                            "images": ["https://img.alicdn.com/a.jpg", "https://img.alicdn.com/b.jpg"],
-                           "detail_specs": [["尺寸", "80x80x90cm"], ["毛重", "25kg"]],
+                           "detail_specs": [["尺寸", "50x40x30cm"], ["毛重", "8kg"]],  # Z6: 대형화물이 아닌 크기(이 테스트는 공유 설정을 본다)
                            "skus": [{"spec": ["灰色"], "price": 1225}], "options": [{"name": "颜色", "values": ["灰色"]}]})
 
 
@@ -62,33 +63,39 @@ def _card(kind, seller):
     return iid, _client(kind).get(f"/seller/m/item/{iid}").get_data(as_text=True)
 
 
-def _default_opt(h):
-    return re.search(r'data-role="m5-ship-route-default"[^>]*>([^<]*)<', h).group(1).strip()
+def _mode_on(h):
+    import re as _re
+    m = _re.search(r'class="m5-mode-btn is-on" data-mode="(\w+)"', h)
+    return m.group(1) if m else ""
 
 
 def test_family_card_shows_owner_ship_route_and_rate():
-    """E3: 오너가 정한 발주 경로가 가족 카드의 기본값으로 보이고, 배송비 판정도 그 요율로 잰다."""
-    r = _client("owner").post("/seller/settings/ship-route", data={"route": "forwarder"})
+    """E3 · Z6(2026-10-08) 갱신: 발주 경로 드롭다운은 배송비 엔진의 「배송 설정」으로 바뀌었다 — 오너가 정한 공유 설정
+    (기본 모드 항공·정밀검수)이 가족 카드의 배송비에 그대로 쓰인다."""
+    r = _client("owner").post("/seller/settings/shipping", data={"provider": "percenty", "default_mode": "air",
+                                                                 "addons": ["precise_inspect"], "lcl_threshold_cbm": "0.5"})
     assert r.status_code == 200 and "저장했어요" in r.get_data(as_text=True)
     from src.db import image_translate_queue_pg as st
-    assert st.state_get("ship_route:shared") == {"route": "forwarder"}       # 오너 셀러 키가 아니라 공유 한 벌
+    saved = st.state_get("ship_settings:shared")
+    assert saved["default_mode"] == "air" and saved["addons"] == ["precise_inspect"]      # 오너 셀러 키가 아니라 공유 한 벌
     _iid, h = _card("fam", "fam-e")
-    assert _default_opt(h) == "공유 기본 (배대지 경유)"
-    line = re.search(r'data-role="m5-ship-line">(.*?)<select', h, re.S).group(1)
-    assert "배대지 경유" in line and "9,000원/kg" in line and "미설정" not in line
+    assert _mode_on(h) == "air"
+    line = re.search(r'data-role="m5-ship-line">(.*?)<ul', h, re.S).group(1)
+    assert "퍼센티 배대지 항공" in line and "부가서비스 3,000원" in line
     _iid, ho = _card("owner", "owner-e")
-    assert _default_opt(ho) == "공유 기본 (배대지 경유)"                      # 오너 자신도 같은 값
+    assert _mode_on(ho) == "air"                                                           # 오너 자신도 같은 값
 
 
 def test_family_save_writes_shared_and_stranger_is_isolated():
-    _client("fam").post("/seller/settings/ship-route", data={"route": "direct"})
+    _client("fam").post("/seller/settings/shipping", data={"provider": "percenty", "default_mode": "air", "lcl_threshold_cbm": "0.5"})
     from src.db import image_translate_queue_pg as st
-    assert st.state_get("ship_route:shared") == {"route": "direct"} and not (st.state_get("ship_route:fam-e") or {}).get("route")
-    _iid, h = _card("stranger", "str-e")                                          # 공개 가입자는 오너 값을 못 본다
-    assert _default_opt(h) == "계정 기본 (미설정)" and "공유 기본" not in h
-    _client("stranger").post("/seller/settings/ship-route", data={"route": "forwarder"})
-    assert st.state_get("ship_route:shared") == {"route": "direct"}             # 남이 공유 값을 못 바꾼다
-    assert st.state_get("ship_route:str-e") == {"route": "forwarder"}
+    assert st.state_get("ship_settings:shared")["default_mode"] == "air"
+    assert not (st.state_get("ship_settings:fam-e") or {}).get("default_mode")
+    _iid, h = _card("stranger", "str-e")                                                    # 공개 가입자는 오너 값을 못 본다
+    assert _mode_on(h) == "sea"
+    _client("stranger").post("/seller/settings/shipping", data={"provider": "percenty", "default_mode": "sea", "lcl_threshold_cbm": "0.5"})
+    assert st.state_get("ship_settings:shared")["default_mode"] == "air"                   # 남이 공유 값을 못 바꾼다
+    assert st.state_get("ship_settings:str-e")["default_mode"] == "sea"
 
 
 def test_legacy_own_key_still_read_when_shared_empty():

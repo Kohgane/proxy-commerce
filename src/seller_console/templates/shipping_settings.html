@@ -1,0 +1,56 @@
+{% extends "_base_app.html" %}
+{% block title %}배송 설정 — 고가브릿지{% endblock %}
+{% block content %}
+{# Z6(오너 2026-10-08): 배송비 엔진 설정 — 카드·사전검증·마진 계산기가 같은 값을 쓴다. #}
+{% set prov = tables.get(st.provider) %}
+<div class="ship-set mx-auto" data-role="shipping-settings">
+  <p class="pc-overline">배송비</p>
+  <h1 class="pc-h2">배송 설정{{ ' — 공유' if shared }}</h1>
+  {% if shared %}<p class="small text-muted" data-role="shipping-shared">오너·가족 계정이 같은 값을 써요(공유 마켓과 같은 범위).</p>{% endif %}
+  {% if prov %}
+  <p class="small text-muted" data-role="shipping-table-version">요율표 {{ prov.version }} · 캡처 {{ prov.captured_at }} · {{ prov.source }}</p>
+  {% else %}
+  <p class="small text-danger" data-role="shipping-no-table">요율표 파일이 없어요 — 배송비 판정을 건너뛰어요.</p>
+  {% endif %}
+  <form method="post" class="vstack gap-3">
+    <label class="ss-row">배대지
+      <select name="provider" class="form-select">{% for k, t in tables.items() %}<option value="{{ k }}" {{ 'selected' if st.provider == k }}>{{ t.label }}</option>{% endfor %}</select></label>
+    <fieldset class="ss-row"><legend>기본 배송 방식</legend>
+      {% for k, lab in (('sea', '해운'), ('air', '항공')) %}<label class="me-3"><input type="radio" name="default_mode" value="{{ k }}" {{ 'checked' if st.default_mode == k }}> {{ lab }}</label>{% endfor %}
+    </fieldset>
+    <label class="ss-row">부피 제수(가로×세로×높이 ÷ 이 값 = 부피무게 kg)
+      <input type="number" name="vol_divisor" class="form-control" min="1000" max="10000" step="1" value="{{ st.vol_divisor or '' }}" placeholder="{{ divisor|int }}">
+      <span class="small text-muted">비우면 {{ divisor|int }}{{ ' (서버 설정)' if env_divisor else ' (기본값 — 요율표에 제수가 없어 실측 후 확정)' }}</span></label>
+    {% if prov %}
+    <fieldset class="ss-row"><legend>부가서비스 기본 체크</legend>
+      {% for a in prov.addons %}<label class="d-block"><input type="checkbox" name="addons" value="{{ a.key }}" {{ 'checked' if a.key in st.addons }}>
+        {{ a.label }} — {{ '{:,}'.format(a.min_krw) ~ '원~' if a.min_krw is defined else ('{:,}'.format(a.krw) ~ '원') }}</label>{% endfor %}
+    </fieldset>
+    {% endif %}
+    <fieldset class="ss-row"><legend>사업자(해운 LCL)</legend>
+      <label class="d-block"><input type="checkbox" name="business" value="1" {{ 'checked' if st.business }}> 사업자 계정 — 부피가 크면 「LCL 견적」 줄을 같이 보여요</label>
+      <label>LCL 줄을 보일 부피(cbm 이상)
+        <input type="number" name="lcl_threshold_cbm" class="form-control" min="0.1" max="40" step="0.1" value="{{ st.lcl_threshold_cbm }}"></label>
+    </fieldset>
+    <button class="btn btn-primary" type="submit">저장</button>
+  </form>
+  {% if msg %}<p class="mt-2" data-role="shipping-msg">{{ msg }}</p>{% endif %}
+  {% if prov %}
+  <details class="mt-3" data-role="shipping-table"><summary>요율표 보기</summary>
+    {% for mk, m in prov.modes.items() %}
+    <h2 class="pc-h3 mt-2">{{ m.label }}</h2>
+    <table class="table table-sm"><thead><tr><th>{{ '무게(kg)' if m.unit == 'kg' else '부피(cbm)' }}</th><th class="text-end">요금</th></tr></thead>
+      <tbody>{% for q, k in m.rows %}<tr><td>{{ q }}</td><td class="text-end">{{ '{:,}'.format(k) }}원</td></tr>{% endfor %}</tbody></table>
+    <p class="small text-muted">{{ m.beyond.note }}{% if m.over %} · {{ m.over.note }}{% endif %}{% if m.excludes %} · 별도: {{ m.excludes }}{% endif %}</p>
+    {% endfor %}
+  </details>
+  {% endif %}
+</div>
+<style>
+  .ship-set { max-width: 640px; padding: var(--space-4, 24px) 16px; }
+  .ss-row { display: grid; gap: 4px; }
+  .ss-row legend { font-size: 1rem; font-weight: 600; }
+  .ship-set input[type=checkbox], .ship-set input[type=radio] { width: 20px; height: 20px; vertical-align: middle; }
+  .ship-set label.d-block { min-height: 44px; display: flex !important; align-items: center; gap: 8px; }
+</style>
+{% endblock %}
