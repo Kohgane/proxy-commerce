@@ -3,6 +3,7 @@
 - 브랜드가 비었거나 / 중국어·비한글 원문이거나 / 쿠팡 브랜드 목록 매칭 실패 → brand="GENERIC".
 - 쿠팡 등록 브랜드로 매칭되면 그 이름.
 - productGroup·manufacture에 넣던 값은 그대로. 신규 업로드(등록 몸통)부터.
+- 플래그 COUPANG_BRAND_GENERIC(기본 0=꺼짐 → brand="" 예전 정본). 오너는 Render에 1(배포 시점부터 캐너리).
 """
 from __future__ import annotations
 
@@ -51,7 +52,24 @@ def test_matched_brand_uses_coupang_name(table):
     assert table.coupang_brand("Baronfig")[0] == "GENERIC"
 
 
-def test_payload_brand_generic_product_group_unchanged(monkeypatch):
+@pytest.fixture
+def on(monkeypatch):
+    monkeypatch.setenv("COUPANG_BRAND_GENERIC", "1")
+
+
+def test_flag_off_keeps_old_canon_empty_brand(monkeypatch):
+    from src.uploaders import coupang_brand as B
+    for v in (None, "0", "", "yes"):
+        if v is None:
+            monkeypatch.delenv("COUPANG_BRAND_GENERIC", raising=False)
+        else:
+            monkeypatch.setenv("COUPANG_BRAND_GENERIC", v)
+        assert B.enabled() is False and B.brand_field("亮妆（家俱）") == ""
+        p = _up(monkeypatch)._build_product_payload(dict(_PRODUCT, brand="TORRAS"))
+        assert p["brand"] == "" and p["productGroup"] == "TORRAS"
+
+
+def test_payload_brand_generic_product_group_unchanged(monkeypatch, on):
     from src.uploaders import coupang_brand as B
     monkeypatch.delenv("COUPANG_BRAND_TABLE", raising=False)
     B._table.cache_clear()
@@ -61,7 +79,7 @@ def test_payload_brand_generic_product_group_unchanged(monkeypatch):
         assert p["productGroup"] == brand and p["manufacture"] == (brand or "상세페이지 참조")   # 넣던 값 그대로
 
 
-def test_payload_brand_matched(table, monkeypatch):
+def test_payload_brand_matched(table, monkeypatch, on):
     p = _up(monkeypatch)._build_product_payload(dict(_PRODUCT, brand="Ugmonk"))
     assert p["brand"] == "UGMONK" and p["productGroup"] == "Ugmonk"
 

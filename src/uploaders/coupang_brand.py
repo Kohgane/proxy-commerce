@@ -7,6 +7,7 @@
 - 브랜드가 비었거나 / 중국어·비한글 원문이거나 / 쿠팡 브랜드 목록(`coupang_brands.json`) 매칭 실패 → `"GENERIC"`.
 - 쿠팡 등록 브랜드로 매칭되면 그 쿠팡 표기.
 - `productGroup`·`manufacture`에 넣던 값은 그대로(이 모듈은 `brand` 칸만 정한다).
+- 플래그 `COUPANG_BRAND_GENERIC`(기본 0=꺼짐 → 예전 정본 `""`). 1이면 위 규칙(오너 2026-10-07 — Render에 1).
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 GENERIC = "GENERIC"
+ENV_FLAG = "COUPANG_BRAND_GENERIC"
 _DEFAULT = Path(__file__).with_name("coupang_brands.json")
 _HANGUL = re.compile(r"[가-힣]")
 _CJK_KANA = re.compile(r"[぀-ヿ㐀-鿿豈-﫿]")
@@ -59,3 +61,13 @@ def coupang_brand(brand: str) -> Tuple[str, str]:
     if _CJK_KANA.search(b) or not (_HANGUL.search(b) or re.search(r"[A-Za-z]", b)):
         return GENERIC, "중국어·비한글 원문"
     return GENERIC, "쿠팡 브랜드 목록에 없음"
+
+
+def enabled() -> bool:
+    """`COUPANG_BRAND_GENERIC=1`일 때만 GENERIC 규칙. 기본(0·미설정) = 예전 정본 `brand=""`."""
+    return os.getenv(ENV_FLAG, "0").strip() == "1"
+
+
+def brand_field(brand: str) -> str:
+    """등록 몸통 `brand` 칸 값 — 플래그가 꺼져 있으면 `""`(5,691건이 통과한 예전 정본)."""
+    return coupang_brand(brand)[0] if enabled() else ""
