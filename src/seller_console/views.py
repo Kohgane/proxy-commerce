@@ -132,6 +132,8 @@ def inject_seller_template_flags():
         _ext_ver = ""
     return {
         "is_admin": _is_admin,          # F30: 화면은 이 값 하나만 본다(판정기 셋 금지)
+        # Z9: 오너 풀 화면(CS·메시징·B2B·정기구독) 링크 — 막힌 사람에게 403뿐인 죽은 버튼을 보이지 않는다
+        "owner_pool_ok": not _owner_pool_denied(),
         "latest_ext_version": _ext_ver,
         "session_account": _acct,
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
@@ -208,9 +210,40 @@ def _cs_role_allowed() -> bool:
     role = (session.get("user_role") or "").strip().lower()
     if role and role not in {"admin", "seller"}:
         return False
+    # Z9(2026-10-07): CS 인박스는 **오너 마켓 구매자 문의**(연락처 포함)·오너 채널 답장이다 — 공유 사용자만.
+    if _owner_pool_denied():
+        return False
     if not _AUTH_ENABLED:
         return True
     return role in {"admin", "seller"}
+
+
+def _owner_pool_denied() -> bool:
+    """Z9: 오너 풀 데이터(CS 인박스·메시징 로그·B2B 신청·정기구독)를 볼 수 없는 사람인가.
+
+    주문 범위(Z7 `orders.scope.current_viewer`)와 같은 판정 — 로그인 신원이 있고 공유 사용자
+    (관리자 · `FAMILY_EMAILS`)가 아니면 True. 신원이 없으면(크론·인증 꺼진 개발) 서버 자신이라 False.
+    판정이 깨지면 닫는다."""
+    try:
+        from .orders.scope import current_viewer
+        v = current_viewer()
+        return v is not None and not v.shared
+    except Exception as exc:
+        logger.warning("오너 풀 범위 판정 실패 — 닫음: %s", exc)
+        return True
+
+
+def _owner_pool_gate(json_resp: bool = False):
+    """Z9: 오너 풀 화면·API 입구. 통과면 None, 막히면 응답(로그인 없음 → 로그인/401, 공유 아님 → 403)."""
+    if not _check_auth():
+        if json_resp:
+            return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+        return redirect(url_for("auth.login", next=request.full_path))
+    if _owner_pool_denied():
+        if json_resp:
+            return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요."}), 403
+        abort(403)
+    return None
 
 
 def _infer_customer_identity(msg) -> dict[str, str]:
@@ -7023,6 +7056,9 @@ def messaging():
     """다채널 메시징 페이지 (Phase 134)."""
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
+    _g = _owner_pool_gate()                                  # Z9: 오너 채널 상태·발송 로그(구매자 대상)
+    if _g is not None:
+        return _g
 
     try:
         from src.messaging.router import MessageRouter
@@ -7403,6 +7439,9 @@ def messaging_test():
     Request body: {"channel": str, "locale": str, "event": str}
     Response: {"ok": true, "result": {...}}
     """
+    _g = _owner_pool_gate(json_resp=True)                    # Z9: 오너 채널로 실제 발송 — 인증조차 없었다
+    if _g is not None:
+        return _g
     data = request.get_json(force=True, silent=True) or {}
     channel = (data.get("channel") or "").strip()
     locale = (data.get("locale") or "ko").strip()
@@ -7427,6 +7466,9 @@ def messaging_test():
 @bp.get("/messaging/log")
 def messaging_log():
     """메시지 발송 로그 JSON (Phase 134)."""
+    _g = _owner_pool_gate(json_resp=True)                    # Z9: 인증 없이 발송 로그가 나갔다
+    if _g is not None:
+        return _g
     n = request.args.get("n", 50, type=int)
     try:
         from src.messaging.router import MessageLog
@@ -12154,6 +12196,9 @@ def me_notifications_test():
 @bp.get("/wholesale/tiers")
 def wholesale_tiers():
     """도매 등급/할인 룰 관리 (Phase 148)."""
+    _g = _owner_pool_gate()                                  # Z9: 오너 B2B·구독 데이터 — 인증조차 없었다
+    if _g is not None:
+        return _g
     from src.wholesale.tier_manager import WholesaleTierManager
     mgr = WholesaleTierManager()
     tiers = mgr.list_tiers()
@@ -12188,6 +12233,9 @@ def wholesale_tiers():
 @bp.get("/wholesale/applications")
 def wholesale_applications():
     """B2B 가입 신청 승인 큐 (Phase 148)."""
+    _g = _owner_pool_gate()                                  # Z9: 오너 B2B·구독 데이터 — 인증조차 없었다
+    if _g is not None:
+        return _g
     from src.wholesale.application_manager import WholesaleApplicationManager, ApplicationStatus
     mgr = WholesaleApplicationManager()
     pending = mgr.list_applications(status=ApplicationStatus.PENDING)
@@ -12226,6 +12274,9 @@ def wholesale_applications():
 @bp.post("/wholesale/applications/<application_id>/approve")
 def wholesale_application_approve(application_id: str):
     """B2B 신청 승인 (Phase 148)."""
+    _g = _owner_pool_gate()                                  # Z9: 오너 B2B·구독 데이터 — 인증조차 없었다
+    if _g is not None:
+        return _g
     from src.wholesale.application_manager import WholesaleApplicationManager
     WholesaleApplicationManager().approve(application_id, reviewer_note="관리자 승인")
     return redirect("/seller/wholesale/applications")
@@ -12234,6 +12285,9 @@ def wholesale_application_approve(application_id: str):
 @bp.post("/wholesale/applications/<application_id>/reject")
 def wholesale_application_reject(application_id: str):
     """B2B 신청 거절 (Phase 148)."""
+    _g = _owner_pool_gate()                                  # Z9: 오너 B2B·구독 데이터 — 인증조차 없었다
+    if _g is not None:
+        return _g
     from src.wholesale.application_manager import WholesaleApplicationManager
     WholesaleApplicationManager().reject(application_id, reviewer_note="관리자 거절")
     return redirect("/seller/wholesale/applications")
@@ -12246,6 +12300,9 @@ def wholesale_application_reject(application_id: str):
 @bp.get("/subscriptions")
 def seller_subscriptions():
     """판매자 정기구독 관리 화면 (Phase 148)."""
+    _g = _owner_pool_gate()                                  # Z9: 오너 B2B·구독 데이터 — 인증조차 없었다
+    if _g is not None:
+        return _g
     from src.product_subscriptions.subscription_products import ProductSubscriptionManager
     mgr = ProductSubscriptionManager()
     summary = mgr.summary()
