@@ -8,13 +8,13 @@
   <h1 class="pc-h2">배송 설정{{ ' — 공유' if shared }}</h1>
   {% if shared %}<p class="small text-muted" data-role="shipping-shared">오너·가족 계정이 같은 값을 써요(공유 마켓과 같은 범위).</p>{% endif %}
   {% if prov %}
-  <p class="small text-muted" data-role="shipping-table-version">요율표 {{ prov.version }} · 캡처 {{ prov.captured_at }} · {{ prov.source }}</p>
+  <p class="small text-muted" data-role="shipping-table-version">요율표 {{ prov.captured_at }} 기준{% if is_admin %} · {{ prov.version }} · {{ prov.source }}{% endif %}</p>
   {% else %}
   <p class="small text-danger" data-role="shipping-no-table">요율표 파일이 없어요 — 배송비 판정을 건너뛰어요.</p>
   {% endif %}
   <form method="post" class="vstack gap-3">
     <label class="ss-row">배대지
-      <select name="provider" class="form-select">{% for k, t in tables.items() %}<option value="{{ k }}" {{ 'selected' if st.provider == k }}>{{ t.label }}</option>{% endfor %}</select></label>
+      <select name="provider" class="form-select">{% for k, t in tables.items() %}<option value="{{ k }}" {{ 'selected' if st.provider == k }}>{{ t.display_name or '기본 배대지' }}</option>{% endfor %}</select></label>
     <fieldset class="ss-row"><legend>기본 배송 방식</legend>
       {% for k, lab in (('sea', '해운'), ('air', '항공')) %}<label class="me-3"><input type="radio" name="default_mode" value="{{ k }}" {{ 'checked' if st.default_mode == k }}> {{ lab }}</label>{% endfor %}
     </fieldset>

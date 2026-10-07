@@ -59,9 +59,9 @@ def default_policy() -> dict:
             "ad_budget_pct": _env_float("PRICING_DEFAULT_AD_BUDGET_PCT", 5.0),
         },
         "shipping": {
-            # 소싱국별 해외배송비(원). 무게 기준 요율은 현행 값을 그대로 승계한다.
+            # 소싱국별 해외배송비(원) — 대시보드 「가격 정책」 미리보기용.
+            #   Z6 후속(2026-10-08): 무게 기준 kg당 요율(intl_ship_per_kg_krw)은 폐기 — 가격 계산기는 배송비 엔진.
             "intl_ship_krw": dict(_DEFAULT_INTL_SHIP_KRW),
-            "intl_ship_per_kg_krw": _env_float("PRICING_INTL_SHIPPING_PER_KG_KRW", 18000.0),
             "default_weight_kg": _env_float("PRICING_DEFAULT_WEIGHT_KG", 0.5),
             "domestic_kind": "paid",        # free | paid
             "return_fee_krw": 0.0,

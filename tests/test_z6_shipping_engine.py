@@ -169,7 +169,9 @@ def test_lcl_line_for_business_over_threshold():
 def test_settings_page_shows_version_and_validates():
     c = _client()
     h = c.get("/seller/settings/shipping").get_data(as_text=True)
-    assert "요율표 percenty_2026-10-08 · 캡처 2026-10-08" in h and "폴리백(에어캡) — 1,500원~" in h and "해운 LCL(사업자 전용)" in h
+    # Z6 후속 갱신: 셀러 화면엔 캡처일만(버전 이름 percenty_… · 출처 문구는 관리자만) · 배대지 표시명 「기본 배대지」
+    assert "요율표 2026-10-08 기준" in h and "폴리백(에어캡) — 1,500원~" in h and "해운 LCL(사업자 전용)" in h
+    assert ">기본 배대지</option>" in h
     r = c.post("/seller/settings/shipping", data={"provider": "percenty", "default_mode": "sea", "vol_divisor": "50",
                                                    "lcl_threshold_cbm": "0.5"}).get_data(as_text=True)
     assert "부피 제수는 1000~10000 사이" in r
@@ -185,3 +187,67 @@ def test_image_includes_rate_table():
     """빠지면 운영이 「요율 미설정」으로 떨어진다(지뢰 Render 배포누락)."""
     assert "COPY data/shipping/ ./data/shipping/" in Path("Dockerfile").read_text(encoding="utf-8")
     assert "!data/shipping/" in Path(".dockerignore").read_text(encoding="utf-8")
+
+
+# ── Z6 후속(오너 2026-10-08): 배송비 숫자는 시스템에 하나 · 셀러 화면에 경쟁 서비스명 0 ─────────────────────────────
+def test_card_margin_calculator_and_pricing_use_one_shipping_number():
+    """같은 상품(무게 1.72kg · CNY)에 카드 · 마진 계산기 · 가격 계산기 세 곳의 배송비가 같은 값이어야 한다."""
+    from src.pricing.calculator import calculate_listing_price
+    iid = _item({"title_ko": "파우치 무게 1.72kg"})
+    c = _client()
+    card = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    card_krw = int(re.search(r"적용 배송비: ([\d,]+)원", card).group(1).replace(",", ""))
+    margin = c.get(f"/seller/collect/preview/{iid}").get_data(as_text=True)
+    margin_krw = int(re.search(r"const _SHIP_EST_KRW = (\d+);", margin).group(1))
+    price = calculate_listing_price(source_price=35, source_currency="CNY", weight_kg=1.72, market="coupang", category="기타",
+                                    seller_id="z6")
+    assert card_krw == margin_krw == int(price.shipping_krw) == 6400
+    assert price.shipping_source == "engine" and price.shipping_estimated is False
+    # 실제 등록 판매가(price.calc_sell_price)의 국제배송비도 같은 한 숫자(오너 2026-10-08 결정: 엔진으로 통일)
+    from src.seller_console import collect_history_store as S
+    from src.seller_console.product_builder import build_product
+    from src.seller_console.upload_dispatcher import UploadDispatcher
+    pd = build_product(S.get(iid, seller_ids={"z6"}), seller_id="z6")
+    assert UploadDispatcher._engine_shipping_fee(pd) == 6400
+
+
+def test_registration_price_falls_back_only_when_size_unknown(monkeypatch):
+    """무게·크기를 모르면 등록 판매가는 예전처럼 SHIPPING_FEE_DEFAULT(폴백) — 엔진이 지어내지 않는다."""
+    from src.seller_console.upload_dispatcher import UploadDispatcher
+    seen = {}
+    import src.price as P
+    real = P.calc_sell_price
+    monkeypatch.setattr(P, "calc_sell_price", lambda **kw: seen.update(kw) or real(**kw))
+    base = {"url": "https://item.taobao.com/item.htm?id=9", "price": "35", "currency": "CNY", "target_margin_pct": 20}
+    UploadDispatcher._landed_krw(dict(base, title="파우치"), "coupang")
+    assert seen["shipping_fee"] is None                                   # 모름 → 폴백(price.py가 SHIPPING_FEE_DEFAULT)
+    UploadDispatcher._landed_krw(dict(base, title="파우치 무게 1.72kg"), "coupang")
+    assert seen["shipping_fee"] == 6400
+
+
+def test_pricing_has_no_per_kg_path_left():
+    """구조로 잰다(소스 문자열 핀 금지) — 가격 계산기는 엔진(ship_cost)을 부르고, kg당 키는 값으로도 안 쓴다."""
+    from tests._ast_probe import calls_in, string_constants_in
+    from src.pricing.calculator import calculate_listing_price
+    assert "_ship_cost" in calls_in(calculate_listing_price)
+    assert not any("per_kg" in s for s in string_constants_in(calculate_listing_price))
+    from src.pricing.policy import default_policy
+    assert "intl_ship_per_kg_krw" not in default_policy()["shipping"]
+
+
+def test_seller_screens_never_show_competitor_name():
+    """「퍼센티」 금지 가드와 같은 이유(경쟁 서비스명) — 렌더된 셀러 화면에 퍼센티·percenty 0. 관리자만 출처를 본다."""
+    iid = _item({"title_ko": "파우치 무게 1.72kg"})
+    c = _client()
+    pages = [c.get(f"/seller/m/item/{iid}").get_data(as_text=True), c.get(f"/seller/collect/preview/{iid}").get_data(as_text=True),
+             c.get("/seller/settings/shipping").get_data(as_text=True)]
+    for h in pages:
+        # 화면에 보이는 글자 기준(provider 키 percenty는 폼 값으로만 남는다 — 오너 결정: 키는 그대로)
+        visible = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", h, flags=re.S)
+        assert "퍼센티" not in visible and "percenty" not in visible.lower()
+    assert "기본 배대지 해운" in pages[0]
+    from src.order_webhook import app
+    a = app.test_client()
+    with a.session_transaction() as s:
+        s.update(user_id="z6-admin", user_role="admin")
+    assert "percenty_2026-10-08" in a.get("/seller/settings/shipping").get_data(as_text=True)

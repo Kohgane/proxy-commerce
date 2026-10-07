@@ -1261,6 +1261,21 @@ class UploadDispatcher:
         return self._upload_to_market(enriched, market)
 
     @staticmethod
+    def _engine_shipping_fee(product_data: Dict[str, Any]):
+        """Z6 후속(오너 2026-10-08): 등록 판매가의 **국제배송비 = 배송비 엔진 한 숫자**(카드·마진 계산기·가격 계산기와 같은 값).
+        무게·크기를 몰라 엔진이 못 내면 None → `price.landed_cost_krw`가 `SHIPPING_FEE_DEFAULT`로 폴백(사유 로그)."""
+        try:
+            from src.seller_console.shipping_ratio import ship_cost_for
+            sc = ship_cost_for(product_data)
+        except Exception as exc:
+            logger.warning("[등록] 배송비 엔진 실패 — SHIPPING_FEE_DEFAULT 폴백: %s", exc)
+            return None
+        if sc.get("krw") is None:
+            logger.info("[등록] 배송비 모름(%s) — SHIPPING_FEE_DEFAULT 폴백", sc.get("why") or sc.get("source"))
+            return None
+        return sc["krw"]
+
+    @staticmethod
     def _landed_krw(product_data: Dict[str, Any], market: str = "") -> tuple:
         """원가 → **원화 판매가** `(값, 사유)`. 못 내면 `(0.0, 사유)` (F42a).
 
@@ -1288,7 +1303,8 @@ class UploadDispatcher:
             # F51-b 6: 드로어 미리보기와 **같은 환율**(실시간 우선) — 무엇을 썼는지는 `sell_fx_rates` info.
             val = calc_sell_price(buy_price=cost, buy_currency=cur,
                                   market=market or reference_market(),
-                                  margin_pct=margin, fx_rates=sell_fx_rates()[0])
+                                  margin_pct=margin, fx_rates=sell_fx_rates()[0],
+                                  shipping_fee=UploadDispatcher._engine_shipping_fee(product_data))
             return float(val), ""
         except Exception as exc:
             logger.warning("[등록] 판매가 산정 실패(%s %s %s): %s", cost, cur, market, exc)
@@ -1306,7 +1322,7 @@ class UploadDispatcher:
             판매가KRW = (랜딩코스트 + 국내배송비) ÷ (1 − 마켓수수료율 − 목표마진율)
             랜딩코스트 = (원가KRW + 배대지수수료KRW + 국제배송비) × (1 + 관부가세율)
 
-        - 포함: 배대지 수수료(`FORWARDER_FEE_JPY`) · 국제배송비(`SHIPPING_FEE_DEFAULT`) ·
+        - 포함: 배대지 수수료(`FORWARDER_FEE_JPY`) · 국제배송비(배송비 엔진 `ship_cost` — 모르면 `SHIPPING_FEE_DEFAULT`) ·
           관부가세(면세 기준 `CUSTOMS_THRESHOLD_KRW` 초과 시) ·
           **마켓 판매수수료** · **국내배송비**(`DOMESTIC_SHIPPING_FEE_KRW`)
         - `target_margin_pct`는 **남는 비율**이다 — 판매가에서 수수료·배송을 빼면
@@ -1411,6 +1427,7 @@ class UploadDispatcher:
                     market=market or reference_market(),
                     margin_pct=margin_pct,
                     fx_rates=fx_rates,
+                    shipping_fee=UploadDispatcher._engine_shipping_fee(pd),
                 )
             )
             if sell_krw > 0:
