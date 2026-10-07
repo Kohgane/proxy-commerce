@@ -189,7 +189,7 @@ def drain(runner=None) -> Dict[str, Any]:
             remove(iid, "사진 추가로 직접 채움")
             out["manual_skip"] += 1
             continue
-        rec = runner(uid, iid, via="onebound") or {}
+        rec = runner(uid, iid, via="onebound", src="carry") or {}
         kind = str(rec.get("kind") or "")
         if kind in CARRY_KINDS:                         # 한도에 다시 막힘 — 이 건과 나머지는 그대로 이월
             out["stopped"] = kind

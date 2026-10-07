@@ -98,7 +98,7 @@ def _mark(item_id: str, user_id: str, rec: dict) -> None:
     store.update(item_id, seller_ids={user_id}, extra_json=json.dumps(ex, ensure_ascii=False))
 
 
-def run(user_id: str, item_id: str, *, via: str = "") -> dict:
+def run(user_id: str, item_id: str, *, via: str = "", src: str = "auto") -> dict:
     """한 건 동기 실행 → 기록한 `auto_enrich` dict."""
     from src.collectors import taobao_mtop as T
     from src.seller_console import collect_history_store as store
@@ -131,7 +131,9 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
     with _LOCK:
         if via == "onebound":
             from src.collectors import taobao_provider as P
-            res = P.fetch_detail(iid)
+            from src.collectors.taobao_provider_onebound import as_source
+            with as_source(src):                                # Z3-D: 나간 호출을 출처별로 센다
+                res = P.fetch_detail(iid)
         else:
             res = T.fetch(iid, via)
     if res["state"] == "ok":
