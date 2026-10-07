@@ -45,6 +45,10 @@ ADMIN = {"user_id": "owner-z9", "user_email": "owner@example.com", "user_role": 
 def test_stranger_gets_403(path):
     r = _client(**STRANGER).get(path)
     assert r.status_code == 403, (path, r.status_code)
+    h = r.get_data(as_text=True)
+    assert "Forbidden" not in h and "read-protected" not in h               # 영문 서버 기본 문구 노출 0
+    if path in PAGES:
+        assert 'data-role="forbidden"' in h and "관리자·가족" in h
 
 
 @pytest.mark.parametrize("path", POSTS)

@@ -233,6 +233,18 @@ def _owner_pool_denied() -> bool:
         return True
 
 
+@bp.errorhandler(403)
+def _seller_forbidden(_err):
+    """Z9: 콘솔 403은 한국어 안내로 — 영문 서버 기본 문구(「Forbidden … read-protected」)를 보이지 않는다."""
+    if request.accept_mimetypes.best == "application/json" or request.is_json:
+        return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요."}), 403
+    body = ('<div class="pc-status" data-role="forbidden"><h1 class="pc-h2">이 화면은 열 수 없어요</h1>'
+            "<p>오너 마켓 계정에 연결된 사용자(관리자·가족)만 볼 수 있는 화면이에요. "
+            "내 상품·내 주문은 왼쪽 메뉴에서 그대로 쓸 수 있어요.</p>"
+            "<p><a class='btn btn-primary' href='/seller/'>대시보드로</a></p></div>")
+    return _render_seller_page("열 수 없는 화면", body, page="forbidden"), 403
+
+
 def _owner_pool_gate(json_resp: bool = False):
     """Z9: 오너 풀 화면·API 입구. 통과면 None, 막히면 응답(로그인 없음 → 로그인/401, 공유 아님 → 403)."""
     if not _check_auth():
