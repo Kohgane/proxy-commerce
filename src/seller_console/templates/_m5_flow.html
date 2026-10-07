@@ -34,10 +34,11 @@
     {% if m5.ship_line %}<div class="m5-ship" data-role="m5-ship-line">배송비 판정: {{ m5.ship_line }}
       {% if m5.ship_origin == 'cn' %}
       <select class="form-select" id="m5ShipRoute" data-role="m5-ship-route" aria-label="발주 경로">
-        <option value="" {{ 'selected' if not m5.ship_route }}>계정 기본{{ ' (' ~ m5.ship_routes[m5.ship_route_default] ~ ')' if m5.ship_route_default else ' (미설정)' }}</option>
+        {# Y6-C E1: 오너·가족(공유 마켓)은 공유 기본값 한 벌 — 가족 카드도 오너가 정한 값이 보인다 #}
+        <option value="" data-role="m5-ship-route-default" {{ 'selected' if not m5.ship_route }}>{{ '공유 기본' if m5.ship_route_shared else '계정 기본' }}{{ ' (' ~ m5.ship_routes[m5.ship_route_default] ~ ')' if m5.ship_route_default else ' (미설정)' }}</option>
         {% for k, label in m5.ship_routes.items() %}<option value="{{ k }}" {{ 'selected' if m5.ship_route == k }}>{{ label }}</option>{% endfor %}
       </select>
-      <a class="small" href="/seller/settings/ship-route">계정 기본 바꾸기</a>
+      <a class="small" href="/seller/settings/ship-route">{{ '공유 기본 바꾸기' if m5.ship_route_shared else '계정 기본 바꾸기' }}</a>
       {% endif %}</div>{% endif %}
     {% if m5.sku_rows %}
     <table class="m5-sku" data-role="m5-sku">
@@ -145,7 +146,11 @@
   {% if m5.blocked %}<p class="m5-block" data-role="m5-blocked">{{ m5.blocked }}</p>{% endif %}
   <button type="button" class="btn btn-ghost m5-btn" id="m5Check" data-role="m5-check">사전검증</button>
   <div id="m5Checks" class="m5-checks" data-role="m5-checks" aria-live="polite"></div>
-  <button type="button" class="btn btn-primary m5-btn" id="m5Go" data-role="m5-register" disabled>등록</button>
+  {# Y6-C E(오너 2026-10-07, 가족 폰 「등록 버튼 안 눌림」): 검증 전 등록 버튼은 잠긴 채 아무 말도 없었다(운영 DB 사전검증 작업 0건).
+     이제 검증 전엔 「사전검증부터」 모드 — 누르면 고른 마켓으로 사전검증을 돌리고, 통과한 마켓이 생기면 「등록 (N곳)」.
+     검증 없이 바로 등록되는 길은 여전히 없다. 막힌 이유는 버튼 밑 한 줄로 말한다. #}
+  <button type="button" class="btn btn-primary m5-btn" id="m5Go" data-role="m5-register" data-mode="check"{% if m5.blocked %} disabled{% endif %}>등록</button>
+  <div class="m5-note" id="m5GoHint" data-role="m5-go-hint" aria-live="polite">{{ m5.blocked or '누르면 사전검증부터 해요 — 통과한 마켓에만 등록돼요.' }}</div>
   <div id="m5Done" class="m5-done" data-role="m5-done" aria-live="polite" hidden></div>
   <script type="application/json" id="m5Product">{{ m5.product|tojson }}</script>
 </section>
@@ -308,7 +313,11 @@
         d._status = r.status; return d; }); })
       .catch(function (e) { return {ok: false, error: '네트워크 오류 — ' + ((e && e.message) || e)}; });
   }
-  function resetGo() { okMarkets = []; goBtn.disabled = true; goBtn.textContent = '등록'; goBtn.dataset.held = ''; }
+  var goHint = document.getElementById('m5GoHint');
+  function hint(t) { if (goHint) goHint.textContent = t; }
+  // 검증 전 = 「사전검증부터」 모드(눌리는 버튼). 등록은 통과·보류 결과가 있을 때만 「go」 모드에서.
+  function resetGo() { okMarkets = []; goBtn.dataset.mode = 'check'; goBtn.disabled = blocked; goBtn.textContent = '등록'; goBtn.dataset.held = '';
+    hint(blocked ? (root.querySelector('[data-role=m5-blocked]') || {}).textContent || '' : '누르면 사전검증부터 해요 — 통과한 마켓에만 등록돼요.'); }
   var pickCount = root.querySelector('[data-role=m5-pick-count]');
   function recount() { if (pickCount) pickCount.textContent = String(picked().length); }
   root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvJob++; checkBtn.disabled = false; recount(); } });
@@ -416,16 +425,21 @@
     var held = pvOrder.filter(function (m) { return pvRows[m] && overridable(pvRows[m]); });
     var anyHold = pvOrder.some(function (m) { return pvRows[m] && pvRows[m].hold; });
     goBtn.dataset.held = held.join(',');
-    goBtn.disabled = blocked || !(okMarkets.length + held.length);
-    goBtn.textContent = (okMarkets.length + held.length)
-      ? '등록 (' + (okMarkets.length + held.length) + '곳' + (held.length ? ' · 보류 ' + held.length + '곳은 그래도 등록' : '') + ')'
-      : (pvState === 'running' ? '확인하는 중…' : (anyHold ? '보강 후 등록할 수 있어요' : '등록할 수 있는 마켓이 없어요'));
+    var n = okMarkets.length + held.length;
+    goBtn.dataset.mode = n ? 'go' : 'check';
+    goBtn.disabled = blocked || (!n && pvState === 'running');
+    goBtn.textContent = n
+      ? '등록 (' + n + '곳' + (held.length ? ' · 보류 ' + held.length + '곳은 그래도 등록' : '') + ')'
+      : (pvState === 'running' ? '확인하는 중…' : '다시 사전검증');
+    hint(n ? '' : (pvState === 'running' ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
+      : (anyHold ? '보류된 마켓을 보강하거나 「그래도 등록」을 누르면 등록할 수 있어요.'
+        : '통과한 마켓이 없어요 — 위 사유를 고친 뒤 다시 사전검증해 주세요.')));
   }
   function pvPoll(jobNo, url) {
     if (jobNo !== pvJob) return;
     fetch(url, {credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (d) {
       if (jobNo !== pvJob) return;
-      if (!d || !d.ok) { checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
+      if (!d || !d.ok) { pvState = 'done'; pvPending = []; pvRender(); checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
       (d.results || []).forEach(function (r) { pvRows[r.market] = r; });
       pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvState = d.state;
       pvRender();
@@ -550,6 +564,9 @@
       else { goBtn.disabled = false; }
     });
   }
-  goBtn.addEventListener('click', function () { register(false); });
+  goBtn.addEventListener('click', function () {
+    if (goBtn.dataset.mode !== 'go') { checkBtn.click(); return; }   // 검증 전·전부 막힘 → 사전검증부터
+    register(false);
+  });
 })();
 </script>

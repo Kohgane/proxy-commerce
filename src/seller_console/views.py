@@ -2280,8 +2280,10 @@ def _m5_ship(product: dict) -> dict:
         from .shipping_ratio import ROUTES, account_route, estimate, origin_of
         est = estimate(product, _seller_id())
         origin = origin_of(product)
+        shared = _shared_markets()                 # Y6-C E1: 오너·가족은 공유 한 벌(오너 설정)을 본다
         return {"ship_line": est.get("line") or "", "ship_origin": origin, "ship_routes": ROUTES,
-                "ship_route": str(product.get("ship_route") or ""), "ship_route_default": account_route(_seller_id())}
+                "ship_route": str(product.get("ship_route") or ""),
+                "ship_route_default": account_route(_seller_id(), shared=shared), "ship_route_shared": shared}
     except Exception as exc:
         logger.warning("[M5] 배송비 판정 실패: %s", exc)
         return {"ship_line": "", "ship_origin": "", "ship_routes": {}, "ship_route": "", "ship_route_default": ""}
@@ -3709,14 +3711,15 @@ def settings_ship_route():
     msg = ""
     if request.method == "POST":
         try:
-            save_account_route(_seller_id(), str(request.form.get("route") or ""))
+            save_account_route(_seller_id(), str(request.form.get("route") or ""), shared=_shared_markets())
             msg = "저장했어요."
         except ValueError as exc:
             msg = str(exc)
     envs = {r: f"SHIPPING_RATE_KRW_PER_KG_CN_{r.upper()}" for r in ROUTES}
     set_envs = {r: bool(os.getenv(n, "").strip()) for r, n in envs.items()}
-    return render_template("ship_route_settings.html", routes=ROUTES, current=account_route(_seller_id()),
-                           envs=envs, set_envs=set_envs, msg=msg,
+    shared = _shared_markets()
+    return render_template("ship_route_settings.html", routes=ROUTES, current=account_route(_seller_id(), shared=shared),
+                           envs=envs, set_envs=set_envs, msg=msg, shared=shared,
                            cn_generic=bool(os.getenv("SHIPPING_RATE_KRW_PER_KG_CN", "").strip()))
 
 
