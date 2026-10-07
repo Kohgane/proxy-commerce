@@ -167,7 +167,9 @@ def test_video_failure_raw_error_only_for_admin(item):
     with c.session_transaction() as s:
         s["user_id"] = seller
     h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
-    assert "동영상을 만들지 못했어요 — 원본을 받지 못했어요" in h and "HTTPSConnectionPool" not in h
+    # Y6-C D(2026-10-07) 갱신: 실패 배지 문구 「동영상을 불러오지 못했어요 — 사유」 + 「다시 변환」
+    assert "동영상을 불러오지 못했어요 — 원본을 받지 못했어요" in h and "HTTPSConnectionPool" not in h
+    assert 'data-role="m5-video-reconvert"' in h
     with c.session_transaction() as s:
         s["user_role"] = "admin"
     h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)

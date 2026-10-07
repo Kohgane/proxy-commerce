@@ -3,9 +3,15 @@
 입력: 온바운드 `item.video.url`(공급자 보관본 `provider_detail.video_url`).
 출력: 최대 30초 · 세로 720 이하 · 20MB 이하 · 오디오 스트림 0개.
 
-⚠️ 지뢰 「Render 512MB ffmpeg OOM」: libx264 **재인코딩이 메모리 피크의 원인**이었다. 그래서
-   원본이 이미 h264이고 720 이하면 **재인코딩하지 않는다**(`-c:v copy -an`). 넘을 때만
-   `-preset ultrafast -crf 28 -threads 1`로 줄인다. 요청 경로에서는 돌리지 않는다(보강 뒤 백그라운드).
+Y6-C D(오너 2026-10-07, 가족 iPhone 「동영상 재생 안 됨」): 인코딩은 **한 줄로 고정** —
+   `-c:v libx264 -profile:v high -pix_fmt yuv420p -movflags +faststart`, `-c:v copy` 없음.
+   copy는 원본의 프로파일·픽셀 형식(4:2:2·10bit 등 iOS가 못 푸는 조합)을 그대로 옮긴다.
+⚠️ 지뢰 「Render 512MB ffmpeg OOM」: libx264 재인코딩이 메모리 피크 — `-threads 1`·세로 720 상한은 그대로.
+   프리셋은 `superfast`: `ultrafast`는 CABAC·8x8을 꺼서 `-profile:v high`를 줘도 **Constrained Baseline**이 나온다
+   (profile은 상한일 뿐). 실측 peak RSS(1스레드): 실상품 7ac5ef91 25초 540×720 — ultrafast 50MB · superfast 65MB ·
+   veryfast 76MB / 3초 1280×960 픽스처 — 75 · 105 · 121MB. 요청 경로에서는 돌리지 않는다(보강 뒤 백그라운드).
+   ※ 그 상품(7ac5ef91)의 재생 실패 원인은 파일이 아니라 앱 CSP(`media-src` 없음 → default-src 'self')였다 —
+   `src/middleware/security.py`.
 
 마켓 전송(공식 근거만):
 - 네이버 커머스API — 상품 동영상 업로드 필드 없음. commerce-api-naver/commerce-api 토론 #78 운영진 답변:
@@ -57,6 +63,15 @@ def ffmpeg_exe() -> Optional[str]:
 
 _DUR = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
 _VID = re.compile(r"Stream #\S+.*?Video:\s*(\w+).*?(\d{2,5})x(\d{2,5})")
+_PROFILE = re.compile(r"Video:\s*\w+\s*\(([^)]+)\)")
+_PIXFMT = re.compile(r"Video:.*?,\s*(yuv\w+|nv\w+|gray\w*|rgb\w+)")
+
+#: 고정 인코딩 한 줄(Y6-C D) — iOS Safari가 재생하는 조합. 크기·화질만 단계별로 바꾼다.
+ENCODE_ARGS = ["-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+               "-preset", "superfast", "-threads", "1"]
+#: 실패 코드 — 화면 「동영상을 불러오지 못했어요 — 사유」와 「다시 변환」 판단에 쓴다.
+FAIL_CODES = {"fetch_failed": "원본을 받지 못했어요", "codec_unsupported": "영상 형식을 바꾸지 못했어요",
+              "upload_failed": "Cloudinary에 올리지 못했어요"}
 
 
 def probe(path: str) -> Dict[str, Any]:
@@ -73,6 +88,8 @@ def probe(path: str) -> Dict[str, Any]:
     if not v:
         return {"ok": False, "why": "영상 스트림이 없어요", **out}
     out.update(codec=v.group(1), width=int(v.group(2)), height=int(v.group(3)))
+    pm, fm = _PROFILE.search(err), _PIXFMT.search(err)
+    out.update(profile=pm.group(1) if pm else "", pix_fmt=fm.group(1) if fm else "")
     return out
 
 
@@ -82,36 +99,30 @@ def _run(args: list) -> Optional[str]:
 
 
 def make_silent(src: str, dst: str) -> Dict[str, Any]:
-    """무음 mp4 — 가능하면 스트림 복사(재인코딩 0), 아니면 ultrafast 1스레드. `{ok, mode, bytes, ...probe}`."""
+    """무음 mp4 — 고정 인코딩 한 줄(`ENCODE_ARGS`: libx264 high · yuv420p · faststart), 세로 720 이하.
+    20MB를 넘으면 480·crf 32로 한 번 더. `{ok, mode, bytes, ...probe}`."""
     exe = ffmpeg_exe()
     if not exe:
-        return {"ok": False, "why": "ffmpeg 없음(서버에 설치 필요)"}
+        return {"ok": False, "why": "ffmpeg 없음(서버에 설치 필요)", "code": "codec_unsupported"}
     p = probe(src)
     if not p.get("ok"):
-        return {"ok": False, "why": p.get("why") or "영상을 읽지 못했어요"}
+        return {"ok": False, "why": p.get("why") or "영상을 읽지 못했어요", "code": "codec_unsupported"}
     base = [exe, "-hide_banner", "-loglevel", "error", "-y", "-i", src, "-t", str(MAX_SEC), "-an", "-sn", "-dn",
-            "-map", "0:v:0", "-movflags", "+faststart"]
-    mode = "copy"
-    if p.get("codec") == "h264" and int(p.get("height") or 0) <= MAX_HEIGHT:
-        err = _run(base + ["-c:v", "copy", dst])
-    else:
-        err = "재인코딩 필요"
-    if err or not os.path.exists(dst) or os.path.getsize(dst) > MAX_BYTES:
-        mode = "encode"
-        err = _run(base + ["-vf", f"scale=-2:'min({MAX_HEIGHT},ih)'", "-c:v", "libx264", "-preset", "ultrafast",
-                           "-crf", "28", "-threads", "1", "-pix_fmt", "yuv420p", dst])
+            "-map", "0:v:0"]
+    mode = "encode"
+    err = _run(base + ["-vf", f"scale=-2:'min({MAX_HEIGHT},ih)'", *ENCODE_ARGS, "-crf", "28", dst])
     if not err and os.path.exists(dst) and os.path.getsize(dst) > MAX_BYTES:
         mode = "encode-small"
-        err = _run(base + ["-vf", "scale=-2:'min(480,ih)'", "-c:v", "libx264", "-preset", "ultrafast",
-                           "-crf", "32", "-threads", "1", "-pix_fmt", "yuv420p", dst])
+        err = _run(base + ["-vf", "scale=-2:'min(480,ih)'", *ENCODE_ARGS, "-crf", "32", dst])
     if err:
-        return {"ok": False, "why": f"ffmpeg 실패: {err.strip()[-160:]}"}
+        return {"ok": False, "why": f"ffmpeg 실패: {err.strip()[-160:]}", "code": "codec_unsupported"}
     size = os.path.getsize(dst)
     if size > MAX_BYTES:
-        return {"ok": False, "why": f"20MB 넘음({size // 1024 // 1024}MB) — 올리지 않아요"}
+        return {"ok": False, "why": f"20MB 넘음({size // 1024 // 1024}MB) — 올리지 않아요", "code": "codec_unsupported"}
     q = probe(dst)
     return {"ok": True, "mode": mode, "bytes": size, "audio": q.get("audio"), "duration": q.get("duration"),
-            "width": q.get("width"), "height": q.get("height"), "codec": q.get("codec")}
+            "width": q.get("width"), "height": q.get("height"), "codec": q.get("codec"),
+            "profile": q.get("profile"), "pix_fmt": q.get("pix_fmt")}
 
 
 def _download(url: str, dst: str) -> Optional[str]:
@@ -151,20 +162,22 @@ def process(source_url: str, *, label: str = "") -> Dict[str, Any]:
         src, dst = os.path.join(tmp, "src.mp4"), os.path.join(tmp, "silent.mp4")
         err = _download(source_url, src)
         if err:
-            return dict(rec, state="failed", why=f"원본을 받지 못했어요 — {err}")
+            return dict(rec, state="failed", code="fetch_failed", why=f"원본을 받지 못했어요 — {err}")
         made = make_silent(src, dst)
         if not made.get("ok"):
-            return dict(rec, state="failed", why=made.get("why") or "변환 실패")
+            return dict(rec, state="failed", code=made.get("code") or "codec_unsupported",
+                        why=f"영상 형식을 바꾸지 못했어요 — {made.get('why') or '변환 실패'}")
         with open(dst, "rb") as f:
             raw = f.read()
     from src.media.image_pipeline import upload_bytes
     up = upload_bytes(raw, resource_type="video", folder="videos", public_id=label or "")
     if not up.get("ok"):
-        return dict(rec, state="failed", why=f"Cloudinary 업로드 실패 — {up.get('error') or '사유 원문 없음'}",
+        return dict(rec, state="failed", code="upload_failed",
+                    why=f"Cloudinary 업로드 실패 — {up.get('error') or '사유 원문 없음'}",
                     **{k: made.get(k) for k in ("mode", "bytes", "duration", "width", "height")})
     url = up["secure_url"]
     return dict(rec, state="done", url=url, thumb=thumb_url(url), audio=bool(made.get("audio")),
-                **{k: made.get(k) for k in ("mode", "bytes", "duration", "width", "height")})
+                **{k: made.get(k) for k in ("mode", "bytes", "duration", "width", "height", "profile", "pix_fmt")})
 
 
 def market_lines(markets) -> list:

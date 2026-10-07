@@ -11,10 +11,17 @@
     {# M5 후속(오너 2026-10-07): 원본 동영상 → 무음 mp4(오디오 없음). 실패해도 등록은 그대로 — 사유만. #}
     {% if m5.video %}
     <div class="m5-note" data-role="m5-video" data-state="{{ m5.video.state }}">
+      {# Y6-C D(오너 2026-10-07, 가족 iPhone): iOS는 playsinline·muted 없으면 인라인 재생을 막는다 — 둘 다 + 메타만 미리 받기.
+         재생이 실패하면(브라우저 MediaError) 그 자리에서 사유 배지와 「다시 변환」. #}
       {% if m5.video.state == 'done' %}
-      <video class="m5-thumb" data-role="m5-video-player" src="{{ m5.video.url }}" poster="{{ m5.video.thumb }}" muted playsinline controls preload="none"></video>
-      무음 동영상 {{ (m5.video.duration or 0)|round|int }}초 · {{ m5.video.height }}p
-      {% elif m5.video.state == 'failed' %}동영상을 만들지 못했어요 — {{ m5.video_why }}. 등록은 사진만으로 그대로 돼요.
+      <video class="m5-thumb" data-role="m5-video-player" src="{{ m5.video.url }}" poster="{{ m5.video.thumb }}" playsinline muted preload="metadata" controls></video>
+      <span data-role="m5-video-meta">무음 동영상 {{ (m5.video.duration or 0)|round|int }}초 · {{ m5.video.height }}p</span>
+      <div class="m5-video-fail" data-role="m5-video-fail" hidden><span class="pc-badge pc-badge-danger" data-role="m5-video-fail-badge"></span>
+        <button type="button" class="m5-fix" data-role="m5-video-reconvert">다시 변환</button></div>
+      {% elif m5.video.state == 'failed' %}
+      <div class="m5-video-fail" data-role="m5-video-fail" data-code="{{ m5.video_code }}"><span class="pc-badge pc-badge-danger" data-role="m5-video-fail-badge">동영상을 불러오지 못했어요 — {{ m5.video_why }}</span>
+        <button type="button" class="m5-fix" data-role="m5-video-reconvert">다시 변환</button></div>
+      등록은 사진만으로 그대로 돼요.
         {% if m5.video_why_raw %}<div class="m5-note" data-role="m5-video-why-raw">원문(관리자만 보임): {{ m5.video_why_raw }}</div>{% endif %}
       {% else %}동영상을 무음으로 만드는 중이에요(등록을 막지 않아요).{% endif %}
       <ul class="m5-video-lines">{% for l in m5.video_lines %}<li data-role="m5-video-market">{{ l }}</li>{% endfor %}</ul>
@@ -167,6 +174,8 @@
              padding: 14px; box-shadow: var(--shadow-sm); }
   .m5-thumb { display: block; width: 100%; max-height: 300px; object-fit: contain; background: var(--bg);
               border-radius: 12px; margin-bottom: 10px; }
+  .m5-video-fail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+  .m5-video-fail .pc-badge { white-space: normal; text-align: left; line-height: 1.4; }
   .m5-video-lines { margin: 4px 0 0; padding-left: 1.1rem; }
   .m5-thumb-empty { display: flex; align-items: center; justify-content: center; height: 120px; color: var(--text-muted); }
   .m5-title { font-size: 1.1rem; font-weight: 700; line-height: 1.45; word-break: break-word; }
@@ -253,6 +262,33 @@
         headers: {'Content-Type': 'application/json'}, body: JSON.stringify({route: shipSel.value})});
       if ((await r.json()).ok) location.reload();
     } catch (e) { /* 그대로 둔다 */ }
+  });
+  // Y6-C D: 동영상 재생 실패(브라우저 MediaError) → 사유 배지 + 「다시 변환」(서버가 원본에서 다시 무음 mp4를 만든다)
+  var vid = root.querySelector('[data-role=m5-video-player]');
+  var VIDEO_WHY = {fetch_failed: '원본(또는 Cloudinary 파일)을 받지 못했어요', codec_unsupported: '이 기기가 영상 형식을 못 풀어요',
+                   upload_failed: 'Cloudinary에 올리지 못했어요'};
+  function videoFail(code, extra) {
+    var box = root.querySelector('[data-role=m5-video-fail]');
+    if (!box) return;
+    box.hidden = false; box.setAttribute('data-code', code);
+    box.querySelector('[data-role=m5-video-fail-badge]').textContent =
+      '동영상을 불러오지 못했어요 — ' + (VIDEO_WHY[code] || code) + (extra ? ' (' + extra + ')' : '');
+  }
+  if (vid) vid.addEventListener('error', function () {
+    var e = vid.error || {}, c = e.code;           // 2 네트워크 · 3 디코드 · 4 형식/주소 막힘
+    videoFail(c === 2 ? 'fetch_failed' : 'codec_unsupported', 'MediaError ' + (c || '?') + (e.message ? ' ' + e.message : ''));
+  });
+  root.addEventListener('click', async function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-video-reconvert]') : null;
+    if (!b) return;
+    b.disabled = true; b.textContent = '다시 변환하는 중…';
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/video-reconvert', {method: 'POST', credentials: 'same-origin'});
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요(잠시 뒤 다시)'}; });
+      if (d.ok) { b.textContent = '다시 변환을 시작했어요 — 잠시 뒤 새로 고침'; setTimeout(function () { location.reload(); }, 8000); return; }
+      b.textContent = '다시 변환 못 함 — ' + (d.error || '서버가 사유를 주지 않았어요');
+    } catch (err) { b.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
+    b.disabled = false;
   });
   // Z3(c): 폰 수동 경로 — 사진(앨범 여러 장) · 옵션 직접 입력. 저장되면 다시 그린다(카드·계획이 렌더 시점 값이라).
   var photoIn = document.getElementById('m5Photos'), photoSt = document.getElementById('m5PhotoState');

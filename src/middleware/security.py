@@ -36,6 +36,9 @@ _CSP_HTML_PAGES = (
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
     "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com data:; "
     "img-src 'self' data: https:; "
+    # Y6-C D(오너 2026-10-07): 상품 동영상은 Cloudinary(res.cloudinary.com)에 있다. media-src가 없으면 default-src
+    #   'self'로 떨어져 브라우저가 <video>를 막는다(포스터 jpg는 img-src라 보여서 「재생만 안 됨」으로 보였다).
+    "media-src 'self' https://res.cloudinary.com; "
     "connect-src 'self'; "
     "object-src 'none'; "
     "frame-ancestors 'none'"
