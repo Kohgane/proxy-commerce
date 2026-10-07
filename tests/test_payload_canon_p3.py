@@ -80,10 +80,12 @@ def test_item_contents_text(monkeypatch):
 
 
 # ── 상품 레벨 정본 ──────────────────────────────────────────────────────────────
-def test_root_brand_empty_and_product_group_carries_brand(monkeypatch):
-    # ★ 정본: brand="" (빈 문자열), 브랜드는 productGroup — 5,691건이 이 형태로 통과.
+def test_root_brand_generic_and_product_group_carries_brand(monkeypatch):
+    # Y6-B(오너 결정 2026-10-05 · 적용 2026-10-07): brand 칸 = GENERIC 규칙. 예전 정본 brand=""(5,691건)는
+    #   올리기는 통과했지만 수정이 「브랜드가 없는 상품은 brand 필드에 GENERIC」으로 막혔다. TORRAS는 이 레포의
+    #   쿠팡 브랜드 목록에 없음 → GENERIC. productGroup·manufacture는 그대로.
     p = _payload(monkeypatch)
-    assert p["brand"] == "" and p["productGroup"] == "TORRAS"
+    assert p["brand"] == "GENERIC" and p["productGroup"] == "TORRAS"
     assert p["manufacture"] == "TORRAS"
 
 
