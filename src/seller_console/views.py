@@ -9226,11 +9226,18 @@ def collect_preview_by_id(item_id: str):
     except Exception as exc:
         logger.warning("[옵션 한국어] 화면 재료 실패: %s", exc)
         opt_view, sku_ko = [], []
+    # Y6-C A3: 원제목 표시에도 상표 게이트 — Desede 같은 레플리카·IP 상표는 「확인 필요」로 가려 보여 준다
+    try:
+        from src.collectors.ko_polish import mask_marks as _mm
+        _ex_t = extra if isinstance(extra, dict) else {}
+        orig_title_shown = _mm(str(_ex_t.get("title_en") or _ex_t.get("title") or item.get("title") or ""))
+    except Exception:
+        orig_title_shown = ""
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
-        opt_view=opt_view, sku_ko=sku_ko,
+        opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown,
         field_src=field_src,
         page="collect_history",
         item=item,

@@ -212,6 +212,12 @@ TITLE_GLOSSARY = [
     ["连衣裙", ["원피스 드레스", "드레스", "스커트"], "원피스"],
     ["法式", ["프랑스 스타일", "프랑스식", "프랑스풍", "프렌치 스타일", "법식"], "프렌치"],
     ["通勤", ["출퇴근용", "출퇴근", "통근용", "통근", "커뮤터"], "오피스룩"],
+    # Y6-C A3(오너 2026-10-07, 「이식 현대 디자이너 소파 의자」 — 意式을 한자음 「이식」으로 옮겼다)
+    ["意式", ["이탈리아식", "이탈리아 스타일", "이탈리아풍", "이태리식", "이태리풍", "의식", "이식"], "이탈리안 스타일"],
+    ["北欧", ["북유럽풍", "북유럽식", "북유럽 풍", "북구풍", "북구식", "북구"], "북유럽 스타일"],
+    ["轻奢", ["가벼운 사치", "가벼운 럭셔리", "라이트 럭셔리", "경량 럭셔리", "경사치", "경사"], "럭셔리"],
+    ["创意", ["창의적인", "창의적", "크리에이티브", "창의"], "디자인"],
+    ["休闲", ["캐주얼한", "레저용", "레저", "여가용", "여가", "휴식용", "휴한"], "캐주얼"],
 ]
 
 
@@ -351,6 +357,27 @@ def trademark_fix(text: str) -> str:
                 first = s.index(want) + len(want)
                 s = s[:first] + s[first:].replace(want, " ")
     return _tidy(s) if s != str(text or "") else s
+
+
+MARK_MASK = "「확인 필요」"
+
+
+def mask_marks(text: str) -> str:
+    """Y6-C A3(오너 2026-10-07) — **원제목 표시**에도 상표 게이트. 레플리카·IP·지울 상표(`trademarks` mode
+    replica/drop/ip — Desede·임스·迪奥·星际穿越…)는 원문을 보여 줄 때도 「확인 필요」로 가린다(호환 표기는 그대로).
+    원문 저장값은 바꾸지 않는다 — 화면에 보이는 글만."""
+    s = str(text or "")
+    if not s:
+        return s
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") not in ("replica", "drop", "ip"):
+            continue
+        for n in _tm_names(e):
+            flags = re.I if n.isascii() else 0
+            s = re.sub(re.escape(n), MARK_MASK, s, flags=flags)
+    while MARK_MASK + MARK_MASK in s or f"{MARK_MASK} {MARK_MASK}" in s:
+        s = s.replace(MARK_MASK + MARK_MASK, MARK_MASK).replace(f"{MARK_MASK} {MARK_MASK}", MARK_MASK)
+    return s
 
 
 def replica_hits(text: str) -> List[str]:
