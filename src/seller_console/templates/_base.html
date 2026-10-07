@@ -189,9 +189,12 @@
       <li class="console-nav-group-title">주문·CS</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/orders/auto') %}active{% endif %}" href="/seller/orders/auto"><i class="bi bi-box2-heart"></i><span>주문 자동 처리</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/customs/pccc') %}active{% endif %}" href="/seller/customs/pccc"><i class="bi bi-shield-check"></i><span>통관고유부호(PCCC) 조회</span></a></li>
+      {# Z9: 오너 구매자 문의·오너 채널 — 공유 사용자(관리자·FAMILY_EMAILS)만 #}
+      {% if owner_pool_ok is not defined or owner_pool_ok %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/cs/messaging') %}active{% endif %}" href="/seller/cs/messaging"><i class="bi bi-chat-dots"></i><span>고객 메시지</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/cs/autoreply') %}active{% endif %}" href="/seller/cs/autoreply"><i class="bi bi-magic"></i><span>자동 답변</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/cs/inbox') %}active{% endif %}" href="/seller/cs/inbox"><i class="bi bi-inbox"></i><span>문의 통합함</span></a></li>
+      {% endif %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/notifications') %}active{% endif %}" href="/seller/notifications"><i class="bi bi-bell"></i><span>알림 설정</span></a></li>
 
       <li class="console-nav-group-title">분석·정산</li>
@@ -214,10 +217,14 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/bookmarklet') %}active{% endif %}" href="/seller/bookmarklet"><i class="bi bi-bookmark"></i><span>북마클릿(고급)</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/discovery') %}active{% endif %}" href="/seller/discovery"><i class="bi bi-compass"></i><span>트렌드 발굴</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/billing') %}active{% endif %}" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>
+      {% if owner_pool_ok is not defined or owner_pool_ok %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/subscriptions') %}active{% endif %}" href="/seller/subscriptions"><i class="bi bi-arrow-repeat"></i><span>정기구독 관리</span></a></li>
+      {% endif %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/me/subscriptions') %}active{% endif %}" href="/seller/me/subscriptions"><i class="bi bi-person-check"></i><span>내 구독</span></a></li>
+      {% if owner_pool_ok is not defined or owner_pool_ok %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/tiers') %}active{% endif %}" href="/seller/wholesale/tiers"><i class="bi bi-building"></i><span>도매 등급</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/wholesale/applications') %}active{% endif %}" href="/seller/wholesale/applications"><i class="bi bi-ui-checks"></i><span>B2B 신청함</span></a></li>
+      {% endif %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/about') %}active{% endif %}" href="/seller/about"><i class="bi bi-info-circle"></i><span>고가브릿지란?(소개)</span></a></li>
     </ul>
     </details>
