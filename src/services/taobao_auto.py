@@ -140,6 +140,8 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
         body, _code = apply_enrich(item_id, {user_id}, user_id, payload)
         if body.get("ok") and res["payload"].get("provider"):
             _keep_provider(item_id, user_id, res["payload"])
+            # M5 후속: 원본 동영상이 있으면 무음 mp4로(백그라운드 — 보강·등록을 막지 않는다)
+            kick_video(user_id, item_id, str((res["payload"].get("provider") or {}).get("video_url") or ""))
         rec = {"state": "done" if body.get("ok") else "manual", "route": via, "at": now,
                "reason": "" if body.get("ok") else str(body.get("error") or "병합 실패"),
                "counts": {"images": len(res["payload"]["images"]), "skus": len(res["payload"]["skus"]),
@@ -170,6 +172,37 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
         logger.warning("[Z3 집계] 기록 실패: %s", exc)
     logger.info("[Z3 자동] item=%s 상품=%s 경로=%s → %s %s", item_id, iid, via, rec["state"], rec.get("reason", ""))
     return rec
+
+
+def kick_video(user_id: str, item_id: str, source_url: str) -> bool:
+    """M5 후속(오너 2026-10-07): 온바운드 `item.video.url` → 무음 mp4 → Cloudinary → `extra.video`(+`video_url`).
+    `VIDEO_COLLECT=0`이면 끈다. 실패해도 사유만 남기고 등록은 그대로."""
+    if not (source_url and user_id and item_id) or os.getenv("VIDEO_COLLECT", "1").strip() == "0":
+        return False
+    threading.Thread(target=_video_job, args=(user_id, item_id, source_url), daemon=True).start()
+    return True
+
+
+def _video_job(user_id: str, item_id: str, source_url: str) -> None:
+    from src.seller_console import collect_history_store as store
+    try:
+        from src.media import video_silent
+        rec = video_silent.process(source_url, label=f"video-{item_id}")
+    except Exception as exc:                                    # noqa: BLE001 — 백그라운드는 죽지 않는다
+        rec = {"state": "failed", "source_url": source_url, "why": f"{type(exc).__name__}: {str(exc)[:120]}",
+               "at": datetime.now(timezone.utc).isoformat()}
+    row = store.get(item_id, seller_ids={user_id})
+    if not row:
+        return
+    try:
+        ex = json.loads(row.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    ex["video"] = rec
+    if rec.get("state") == "done":
+        ex["video_url"] = rec["url"]
+    store.update(item_id, seller_ids={user_id}, extra_json=json.dumps(ex, ensure_ascii=False))
+    logger.info("[동영상] item=%s → %s %s", item_id, rec.get("state"), rec.get("why") or rec.get("mode") or "")
 
 
 def kick(user_id: str, item_id: str) -> bool:

@@ -26,6 +26,8 @@ os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
 os.environ.setdefault("DASHBOARD_API_OPEN", "1")
 # M5 후속: 진단의 img.alicdn.com HEAD(네트워크)는 테스트 레인에서 끈다.
 os.environ.setdefault("ALICDN_PROBE", "0")
+# M5 후속: 보강 뒤 동영상 백그라운드 작업(다운로드·ffmpeg)은 테스트 레인에서 끈다 — 테스트는 process()를 직접 부른다.
+os.environ.setdefault("VIDEO_COLLECT", "0")
 # Z3-2: 이미지 번역 전 로컬 OCR 사전판정은 운영 기본 ON. 테스트는 기본 OFF — 파이프라인 계약들이 글자 없는
 #   합성 PNG를 쓰는데, RapidOCR가 깔린 환경에선 「한자 없음」으로 건너뛰어 텐센트 경로를 못 잰다(깔렸는지에 따라
 #   결과가 갈리면 안 된다). 사전판정 계약(test_z3_image_budget)은 스스로 켠다.

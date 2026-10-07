@@ -2105,7 +2105,18 @@ def mobile_list_ctx(item: dict) -> dict:
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
             "product": product,
-            "risks": risks, "brand_values": brand_values, "auto_enrich": _m5_auto(ex), **_m5_ship(product)}
+            "risks": risks, "brand_values": brand_values, "auto_enrich": _m5_auto(ex), **_m5_ship(product),
+            **_m5_video(ex)}
+
+
+def _m5_video(ex: dict) -> dict:
+    """M5 후속: 무음 동영상 카드 재료 — 원본이 있었을 때만. 마켓마다 보내나(공식 근거 문장)."""
+    src = str(((ex.get("provider_detail") or {}).get("video_url")) or "")
+    rec = ex.get("video") if isinstance(ex.get("video"), dict) else None
+    if not (src or rec):
+        return {"video": None, "video_lines": []}
+    from src.media.video_silent import market_lines
+    return {"video": rec or {"state": "pending", "source_url": src}, "video_lines": market_lines(_M5_MARKETS)}
 
 
 def _brand_value_rows(product: dict) -> list:
