@@ -35,6 +35,7 @@ WORKERS = {
     "translate-pilot-tick": "번역 드레인 + 파일럿(/cron/translate-drain)",
     "reject-watch": "쿠팡 반려 감시(/cron/reject-watch)",
     "naver-order-poll": "네이버 주문 폴러(NAVER_ORDER_POLL=1일 때만)",
+    "onebound-carry": "온바운드 하루 한도 이월 대기 — 한도 풀리면 자동 수집(Z3-C)",
 }
 
 

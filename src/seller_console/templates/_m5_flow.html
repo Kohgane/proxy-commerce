@@ -64,7 +64,7 @@
     </div>
     {% endif %}
     {% if m5.auto_enrich and m5.auto_enrich.line %}<div class="m5-needs" data-role="m5-auto-enrich" data-state="{{ m5.auto_enrich.state }}">{{ m5.auto_enrich.line }}</div>{% endif %}
-    {% if m5.needs_pc and not (m5.auto_enrich and m5.auto_enrich.state == 'manual') %}
+    {% if m5.needs_pc and not (m5.auto_enrich and m5.auto_enrich.state in ('manual', 'carry')) %}
     {# Z3(오너 2026-10-04): 「컴퓨터에서 켜면 자동」은 PC가 없는 유저에겐 거짓 약속이었다 — 누구에게 되는지 그대로. #}
     <div class="m5-needs" data-role="m5-needs-pc">비어 있어요 — {{ m5.missing|join(", ") }}.
       PC 크롬 + 고가수집기가 있는 계정만 자동으로 채워져요. 폰만 쓰면 바로 아래 「사진 추가」·「옵션 직접 입력」으로 넣어 주세요.</div>
@@ -186,7 +186,7 @@
   .m5-group { font-size: .86rem; font-weight: 700; color: var(--gold-ink, var(--text-muted)); margin: 10px 2px 6px;
               letter-spacing: .02em; }
   .m5-mk-body { display: flex; flex-direction: column; min-width: 0; padding: 8px 0; }
-  .m5-mk-note { color: var(--text-muted); font-size: .84rem; line-height: 1.35; word-break: keep-all; }
+  .m5-mk-note { color: var(--text-muted); font-size: .84rem; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }   /* 긴 영문 토큰(키 이름)이 390px 카드를 밀지 않게 */
   .m5-mk.is-pending { border-style: dashed; }
   .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
   .m5-btn.btn-ghost { border: 1px solid var(--border); background: var(--surface); font-weight: 600; }

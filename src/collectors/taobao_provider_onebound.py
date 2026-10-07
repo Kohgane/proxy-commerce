@@ -124,7 +124,9 @@ def _clear_quota_block() -> None:
 
 
 def _day_key(now=None) -> str:
-    return "onebound_calls:" + (now or datetime.now(timezone.utc)).astimezone(_KST).strftime("%Y-%m-%d")
+    """하루 호출 수 키 — **베이징 날짜**(Z3-C). 온바운드 한도는 베이징 자정에 리셋되는데 KST로 세면
+    KST 00:00~01:00 호출이 우리 쪽에선 「새 날」, 온바운드에선 「어제」라 어긋났다."""
+    return "onebound_calls:" + _cst_day(now)
 
 
 def used_today() -> int:
@@ -468,6 +470,11 @@ def call(num_iid: str, *, refresh: bool = False, no_cache: bool = False, transpo
     _store(iid, raw, nbytes, ms)
     if refresh and quota_block().get("code"):
         _clear_quota_block()                                 # 충전 뒤 「새로 받기」가 성공 — 오늘 막음을 푼다
+        try:                                                 # Z3-C: 막음이 풀린 직후 이월 대기를 곧바로 비운다
+            from src.services import onebound_carry as _carry
+            _carry.kick()
+        except Exception as exc:                             # noqa: BLE001
+            logger.warning("[onebound] 이월 대기 시작 실패: %s", exc)
     return {"ok": True, "kind": "ok", "why": "", "raw": raw, "ms": ms, "bytes": nbytes, "reused": False}
 
 

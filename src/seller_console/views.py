@@ -2110,7 +2110,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
             "product": product,
-            "risks": risks, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex), **_m5_ship(product),
+            "risks": risks, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or "")), **_m5_ship(product),
             **_m5_video(ex)}
 
 
@@ -2209,12 +2209,22 @@ def collect_brand_value_fix(item_id: str):
     return jsonify({"ok": True, "applied": applied, "left": ex["brand_value_fix"]["left"]})
 
 
-def _m5_auto(ex: dict) -> dict:
+def _m5_auto(ex: dict, item_id: str = "") -> dict:
     """Z3 자동 경로(오너 2026-10-05) — 서버 mtop 보강 상태 한 줄. 켜졌을 때만 「채우는 중」, 실패면 사유 + (c) 수동."""
     rec = ex.get("auto_enrich") if isinstance(ex.get("auto_enrich"), dict) else {}
     st = str(rec.get("state") or "")
     if st == "manual":
         code = str(rec.get("kind") or "")
+        if code in ("provider_quota", "provider_cap") and item_id:
+            # Z3-C(오너 2026-10-07): 하루 한도에 막힌 건은 이월 대기 — 한도가 풀리면 서버가 자동으로 채운다.
+            try:
+                from src.services import onebound_carry as _carry
+                pos = _carry.position(item_id)
+            except Exception:
+                pos = 0
+            if pos:
+                return {"state": "carry", "kind": code, "position": pos,
+                        "line": f"상품정보 일일 한도 — 내일 자동으로 채워져요 (대기 {pos}번째)"}
         if code == "provider_quota":
             # 오너 지시(2026-10-07): 온바운드 4013(已超量) — 키 일일 한도. 오늘은 자동 수집을 다시 부르지 않는다(건당 과금).
             return {"state": "manual", "kind": code,
@@ -3312,6 +3322,12 @@ def collect_manual_photos(item_id):
     ex["manual_fields"] = man
     ex["manual_photos"] = int(ex.get("manual_photos") or 0) + len(added)
     ok = _save_manual_extra(item_id, ex, image_url=ex["images"][0])
+    if ok:                                                # Z3-C: 직접 채운 상품은 이월 대기에서 뺀다(자동으로 다시 부르지 않음)
+        try:
+            from src.services import onebound_carry as _carry
+            _carry.remove(item_id, "사진 추가로 직접 채움")
+        except Exception as exc:                          # noqa: BLE001
+            logger.warning("[이월 대기] 빼기 실패: %s", exc)
     logger.info("[폰 사진 추가] item=%s 올림=%d 실패=%d 저장=%s", item_id, len(added), len(failed), ok)
     return jsonify({"ok": ok, "added": len(added), "failed": failed, "images_count": len(ex["images"]),
                     "error": "" if ok else "사진은 올렸지만 상품에 저장하지 못했어요."}), (200 if ok else 502)
@@ -3594,7 +3610,7 @@ def collect_auto_enrich_state(item_id):
         ex = json.loads(item.get("extra_json") or "{}") or {}
     except Exception:
         ex = {}
-    info = _m5_auto(ex) or {"state": "off", "line": ""}
+    info = _m5_auto(ex, item_id) or {"state": "off", "line": ""}
     if info.get("state") == "done":                     # Y8: 담았어요 카드엔 플러그 짧은 줄도(M5는 자기 줄이 따로 있다)
         try:
             from src.collectors.voltage_plug import plug_notice_needed as _pnn

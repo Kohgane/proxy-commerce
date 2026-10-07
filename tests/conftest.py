@@ -514,6 +514,9 @@ def _onebound_learned_limits_reset():
             _oq._MEM_DAY.pop(_ob._day_key(), None)
         if _oq._enabled():                       # PG 레인: 같은 app_state 표(take_n이 {"n": …}로 센다)
             _st.state_set(_ob._day_key(), {"n": 0})
+        from src.services import onebound_carry as _carry   # Z3-C 이월 대기·하루 1회 알림 기록도 비운다
+        _st.state_set(_carry.KEY, {})
+        _st.state_set(_carry._ALERT + _ob._cst_day(), {})
     except Exception:
         pass
     yield
