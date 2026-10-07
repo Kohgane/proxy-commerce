@@ -6,6 +6,10 @@
   `app_state shipping_size:rules`)의 키워드(소파·의자·매트리스·캐리어·유모차 = 대형 기본값)로 **추정**,
   표에도 없으면 「부피 미확인」 — 보류하지 않는다(재지 못한 것을 막지 않는다).
 - 임계값 `SHIPPING_RATIO_HOLD_PCT`(기본 35). 원가 = 매입가 × 환율(원).
+
+Z6(오너 2026-10-08): 중국발 배송비는 **배송비 엔진**(`shipping_engine` — 퍼센티 배대지 요율표 데이터)이 정한다.
+  카드·사전검증·마진 계산기가 같은 결과를 쓴다. 폐기: `SHIPPING_RATE_KRW_PER_KG_CN[_경로]`(있으면 무시+경고 로그).
+  「요율 미설정」은 요율표 파일이 없을 때만. 미국발(몰테일 kg당)은 예전 그대로.
 """
 from __future__ import annotations
 
@@ -231,39 +235,111 @@ def _fx(currency: str) -> Optional[float]:
         return None
 
 
-def estimate(pd: dict, seller_id: str = "") -> Dict[str, Any]:
-    """`{state: ok|unknown, ratio_pct, ship_krw, cost_krw, chargeable_kg, basis, line}`."""
+def _size_for(pd: dict) -> Dict[str, Any]:
+    """읽은 크기(毛重·包装体积·치수·크기 표) — 카드에서 직접 넣은 값(`ship_input`)이 있으면 그게 이긴다."""
     size = read_size(pd)
+    mi = pd.get("ship_input") if isinstance(pd.get("ship_input"), dict) else {}
+    try:
+        w = float(mi.get("weight_kg") or 0)
+        d = [float(mi.get(k) or 0) for k in ("l", "w", "h")]
+    except (TypeError, ValueError):
+        w, d = 0.0, [0, 0, 0]
+    if w > 0 or all(x > 0 for x in d):
+        size = dict(size, weight_kg=w if w > 0 else size["weight_kg"],
+                    dims_cm=d if all(x > 0 for x in d) else size["dims_cm"], basis="직접 입력한 무게·치수")
+    return size
+
+
+def _won(n) -> str:
+    return f"{int(round(n)):,}원"
+
+
+def estimate(pd: dict, seller_id: str = "") -> Dict[str, Any]:
+    """`{state: ok|unknown|bulky, ratio_pct, ship_krw, cost_krw, chargeable_kg, basis, line, ...}`."""
+    size = _size_for(pd)
     try:
         price = float(str(pd.get("price") or pd.get("price_original") or 0).replace(",", ""))
     except ValueError:
         price = 0.0
     fx = _fx(pd.get("currency"))
     if not (size["dims_cm"] or size["weight_kg"] or size["pkg_m3"]):
-        return {"state": "unknown", "line": "부피 미확인 — 치수·무게를 못 읽어 배송비 비율을 재지 못했어요(통과)"}
+        return {"state": "unknown", "need_input": True,
+                "line": "부피 미확인 — 무게·가로·세로·높이를 넣으면 계산해요(통과)"}
     origin = origin_of(pd)
-    route = route_of(pd, seller_id) if origin == "cn" else ""
-    rd = rate_and_divisor(origin, route)
+    if origin == "cn":
+        return _estimate_cn(pd, size, price, fx, seller_id)
+    rd = rate_and_divisor(origin, "")
     if rd["rate"] is None:
-        return {"state": "unknown", "origin": origin, "route": route, "line": rd["why"]}
+        return {"state": "unknown", "origin": origin, "line": rd["why"]}
     if price <= 0 or not fx:
         return {"state": "unknown", "line": "부피는 읽었지만 원가(가격·환율)가 없어 배송비 비율을 재지 못했어요(통과)"}
     vol = (size["dims_cm"][0] * size["dims_cm"][1] * size["dims_cm"][2] / rd["divisor"]) if size["dims_cm"] else 0.0
-    # 픽스처 3호(오너 2026-10-07): 包装体积 0.36㎥ = 상자 부피 → 부피무게(㎥×1,000,000 ÷ 나눗수). 상품 치수보다 배송에 가깝다.
     pkg_kg = size["pkg_m3"] * 1_000_000 / rd["divisor"] if size["pkg_m3"] else 0.0
     kg = round(max(vol, pkg_kg, size["weight_kg"], 0.5), 1)
     ship = round(kg * rd["rate"])
     cost = round(price * fx)
     ratio = round(ship / cost * 100) if cost else 0
     dims_txt = ("×".join(f"{d:g}" for d in size["dims_cm"]) + "cm") if size["dims_cm"] else ""
-    where = ("중국발 · " + ROUTES.get(route, "경로 미설정")) if origin == "cn" else ("미국발" if origin == "us" else "")
-    read = [x for x in (f"무게 {size['weight_kg']:g}kg" if size["weight_kg"] else "",
-                        f"포장 부피 {size['pkg_m3']:g}㎥(부피무게 {pkg_kg:.1f}kg)" if size["pkg_m3"] else "") if x]
     return {"state": "ok", "ratio_pct": ratio, "ship_krw": ship, "cost_krw": cost, "chargeable_kg": kg,
-            "basis": size["basis"], "origin": origin, "route": route, "rate_env": rd["rate_env"], "pkg_m3": size["pkg_m3"],
-            "line": (f"추정 배송비 {ship:,}원({where} {rd['rate']:,.0f}원/kg · 청구 무게 {kg:g}kg"
-                     f"{' · ' + dims_txt if dims_txt else ''}{' · ' + ' · '.join(read) if read else ''} · {size['basis']}) "
+            "basis": size["basis"], "origin": origin, "rate_env": rd["rate_env"], "pkg_m3": size["pkg_m3"],
+            "line": (f"추정 배송비 {ship:,}원(미국발 {rd['rate']:,.0f}원/kg · 청구 무게 {kg:g}kg"
+                     f"{' · ' + dims_txt if dims_txt else ''} · {size['basis']}) "
                      f"— 원가 {cost:,}원의 {ratio}% (기준 {threshold_pct():g}%)")}
+
+
+def _estimate_cn(pd: dict, size: Dict[str, Any], price: float, fx, seller_id: str) -> Dict[str, Any]:
+    from . import shipping_engine as E
+    E.warn_legacy_env()
+    st = E.get_settings(seller_id or str(pd.get("seller_id") or ""))
+    mode = str(pd.get("ship_mode") or "") if pd.get("ship_mode") in E.MODES else st["default_mode"]
+    q = E.quote(size, mode=mode, divisor=E.divisor(st), provider=st["provider"], addons=st["addons"],
+                lcl=bool(st["business"]))
+    if not q["ok"] and "요율표" in str(q.get("why") or ""):
+        return {"state": "unknown", "origin": "cn", "line": f"요율 미설정 — 비율 판정 생략({q['why']})"}
+    base = {"origin": "cn", "mode": q["mode"], "mode_label": q["mode_label"], "basis": size["basis"],
+            "pkg_m3": size["pkg_m3"], "provider_label": q["provider_label"], "version": q["version"],
+            "divisor": q["divisor"], "estimated": q["estimated"], "addons": q["addons"], "bulky": q["bulky"],
+            "lines": _three_lines(q), "lcl": q["lcl"], "lcl_line": "", "jeju_line": ""}
+    lcl = q["lcl"]
+    show_lcl = bool(lcl) and (bool(q["bulky"]) or (st["business"] and lcl["cbm"] >= float(st["lcl_threshold_cbm"] or 0.5)))
+    if show_lcl:
+        billed = f"(청구 {lcl['qty']:g}cbm)" if lcl["qty"] != lcl["cbm"] else ""
+        base["lcl_line"] = (f"LCL 견적 {lcl['cbm']:g}cbm{billed} → {_won(lcl['krw'])}{' (표 밖 추정)' if lcl['estimated'] else ''}"
+                            f" — {lcl['notice']}")
+    cost = round(price * fx) if (price > 0 and fx) else 0
+    if q["bulky"]:
+        base.update(code="bulky_carrier", jeju_line="제주·도서산간은 추가 운임이 붙어요.")
+        head = f"대형화물 — 국내 배송비 별도(경동택배 표준운임) · {' · '.join(q['bulky'])} · {size['basis']}"
+        if lcl and cost:
+            ratio = round(lcl["krw"] / cost * 100)
+            return dict(base, state="ok", ratio_pct=ratio, ship_krw=lcl["krw"], cost_krw=cost, chargeable_kg=None,
+                        line=f"{head} — 비율은 LCL 추정 {_won(lcl['krw'])} 기준: 원가 {cost:,}원의 {ratio}% (기준 {threshold_pct():g}%)")
+        return dict(base, state="bulky", line=f"{head} — 비율 판정 생략(LCL 부피를 몰라요)")
+    if not q["ok"]:
+        return dict(base, state="unknown", line="부피 미확인 — 무게·가로·세로·높이를 넣으면 계산해요(통과)", need_input=True)
+    ship = q["applied"]["krw"] + q["addons"]["krw"]
+    if not cost:
+        return dict(base, state="unknown", ship_krw=ship, chargeable_kg=q["applied"]["qty"],
+                    line="배송비는 계산했지만 원가(가격·환율)가 없어 비율을 재지 못했어요(통과)")
+    ratio = round(ship / cost * 100)
+    ad = q["addons"]
+    ad_txt = f" + 부가서비스 {_won(ad['krw'])}{'~' if ad['at_least'] else ''}" if ad["items"] else ""
+    line = (f"추정 배송비 {_won(ship)}{'~' if ad['at_least'] else ''}({q['provider_label']} {q['mode_label']} · "
+            f"청구 무게 {q['applied']['qty']:g}kg({q['applied']['basis']} · 0.5kg 올림){ad_txt}"
+            f"{' · 표 밖 추정' if q['estimated'] else ''} · {size['basis']}) — 원가 {cost:,}원의 {ratio}% (기준 {threshold_pct():g}%)")
+    return dict(base, state="ok", ratio_pct=ratio, ship_krw=ship, cost_krw=cost, chargeable_kg=q["applied"]["qty"], line=line)
+
+
+def _three_lines(q: Dict[str, Any]) -> List[str]:
+    """퍼센티 계산기와 같은 세 줄 — 실제 무게 비용 / 부피 무게 비용 / 적용 배송비."""
+    out = []
+    a, v, ap = q.get("actual"), q.get("volume"), q.get("applied")
+    est = lambda x: " (표 밖 추정)" if x and x.get("estimated") else ""
+    out.append(f"실제 무게 비용: {a['kg']:g}kg → {a['qty']:g}kg {_won(a['krw'])}{est(a)}" if a else "실제 무게 비용: 무게 모름")
+    out.append(f"부피 무게 비용: {v['kg']:g}kg(÷{q['divisor']:g}) → {v['qty']:g}kg {_won(v['krw'])}{est(v)}" if v
+               else "부피 무게 비용: 치수 모름")
+    out.append(f"적용 배송비: {_won(ap['krw'])}({ap['basis']} · {q['mode_label']}){est(ap)}" if ap else "적용 배송비: 계산 못 함")
+    return out
 
 
 def hold(pd: dict, seller_id: str = "") -> Optional[Dict[str, str]]:
@@ -273,4 +349,5 @@ def hold(pd: dict, seller_id: str = "") -> Optional[Dict[str, str]]:
         return None
     if pd.get("ship_ratio_override"):
         return None
-    return {"short": f"배송비 비율 초과 {est['ratio_pct']}%", "fix": "ship_ratio", "line": est["line"]}
+    tag = " (LCL 추정)" if est.get("code") == "bulky_carrier" else ""
+    return {"short": f"배송비 비율 초과 {est['ratio_pct']}%{tag}", "fix": "ship_ratio", "line": est["line"]}

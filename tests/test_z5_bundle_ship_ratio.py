@@ -18,17 +18,22 @@ def _fx(monkeypatch):
     for k in ("SHIPPING_RATIO_HOLD_PCT", "SHIPPING_RATE_KRW_PER_KG_CN_DIRECT", "SHIPPING_RATE_KRW_PER_KG_CN_FORWARDER",
               "SHIPPING_RATE_KRW_PER_KG_US", "SHIPPING_VOL_DIVISOR_CN", "SHIPPING_VOL_DIVISOR_US"):
         monkeypatch.delenv(k, raising=False)
-    # Z5 후속: 중국발 요율은 기본값이 없다(오너가 준다) — 계약은 시험값 18000으로 잰다.
-    monkeypatch.setenv("SHIPPING_RATE_KRW_PER_KG_CN", "18000")
+    # Z6(2026-10-08) 갱신: 중국발 요율은 배송비 엔진(data/shipping 퍼센티 요율표) — kg당 env는 폐기(무시).
+    monkeypatch.delenv("SHIPPING_RATE_KRW_PER_KG_CN", raising=False)
+    monkeypatch.delenv("SHIPPING_VOL_DIVISOR", raising=False)
+    from src.db import image_translate_queue_pg as st
+    st.state_set("ship_settings:shared", {})
 
 
 def test_sofa_is_held_by_shipping_ratio_and_lamp_passes():
+    """Z6 갱신: 소파(크기 표 90×80×70 · 세 변 합 240cm)는 대형화물 → 비율은 LCL 추정(0.51cbm → 1cbm 94,500원)으로 잰다."""
     from src.seller_console.shipping_ratio import estimate, hold
     from src.seller_console.upload_dispatcher import UploadDispatcher
     s = estimate(SOFA)
-    assert s["state"] == "ok" and s["ratio_pct"] > 35 and "소파 기본값" in s["basis"]
+    assert s["state"] == "ok" and s["code"] == "bulky_carrier" and s["ratio_pct"] > 35 and "소파 기본값" in s["basis"]
+    assert s["ship_krw"] == 94500 and "LCL 견적 0.51cbm(청구 1cbm) → 94,500원" in s["lcl_line"]
     h = [x for x in UploadDispatcher.readiness_holds(dict(SOFA), "coupang") if x["fix"] == "ship_ratio"]
-    assert h and h[0]["short"].startswith("배송비 비율 초과 ") and "%" in h[0]["short"]
+    assert h and h[0]["short"].startswith("배송비 비율 초과 ") and h[0]["short"].endswith("(LCL 추정)")
     lamp = estimate(LAMP)
     assert lamp["state"] == "unknown" and lamp["line"].startswith("부피 미확인")       # 못 잰 건 통과
     assert hold(dict(LAMP)) is None
@@ -39,7 +44,7 @@ def test_threshold_and_read_dimensions(monkeypatch):
     from src.seller_console.shipping_ratio import estimate, hold
     box = {"url": "https://item.taobao.com/item.htm?id=2", "title": "접이식 수납함 40x30x20cm", "price": "50", "currency": "CNY"}
     e = estimate(box)
-    assert e["basis"] == "상품 글에서 읽은 치수" and e["chargeable_kg"] == 4.0
+    assert e["basis"] == "상품 글에서 읽은 치수" and e["chargeable_kg"] == 4.0 and e["ship_krw"] == 8800   # 표 4kg
     monkeypatch.setenv("SHIPPING_RATIO_HOLD_PCT", "10000")
     assert hold(box) is None                                                   # 임계값 env
 
@@ -81,7 +86,7 @@ def test_override_button_records_and_releases_hold(monkeypatch):
     r = d["results"][0]
     assert r["hold"] and "ship_ratio" in r["fixes"] and "배송비 비율 초과" in r["message"]
     o = c.post(f"/seller/collect/{iid}/ship-ratio-override").get_json()
-    assert o["ok"] and o["override"]["by"] == "cn-user@example.com" and "추정 배송비" in o["override"]["line"]
+    assert o["ok"] and o["override"]["by"] == "cn-user@example.com" and "LCL 추정" in o["override"]["line"]
     saved = json.loads(S.get(iid, seller_ids={seller})["extra_json"])["ship_ratio_override"]
     assert saved["ratio_pct"] > 35
     d = c.post("/seller/collect/prevalidate", json={"product": dict(SOFA), "markets": ["coupang"], "item_id": iid}).get_json()
@@ -149,42 +154,38 @@ def test_full_gocosmos_holds_only_its_line(monkeypatch):
 
 
 
-def test_rates_by_origin_and_route(monkeypatch):
-    """Z5 후속(오너 10-04 20:30): 출발국·발주 경로별 요율 env — 중국발 기본값 없음(판정 생략) · 미국발 18,000 기본."""
-    from src.seller_console import shipping_ratio as S
-    monkeypatch.delenv("SHIPPING_RATE_KRW_PER_KG_CN", raising=False)
-    e = S.estimate(dict(SOFA))
-    assert e["state"] == "unknown" and e["line"].startswith("요율 미설정 — 비율 판정 생략") and S.hold(dict(SOFA)) is None
-    monkeypatch.setenv("SHIPPING_RATE_KRW_PER_KG_CN_DIRECT", "6000")
-    monkeypatch.setenv("SHIPPING_RATE_KRW_PER_KG_CN_FORWARDER", "9000")
-    assert "발주 경로 미설정" in S.estimate(dict(SOFA))["line"]                      # 경로별만 있고 경로를 안 골랐다
-    d = S.estimate(dict(SOFA, ship_route="direct"))
-    f = S.estimate(dict(SOFA, ship_route="forwarder"))
-    assert "중국 현지 직접 발송 6,000원/kg" in d["line"] and "배대지 경유 9,000원/kg" in f["line"]
-    monkeypatch.setenv("SHIPPING_VOL_DIVISOR_CN_DIRECT", "5000")
-    assert S.estimate(dict(SOFA, ship_route="direct"))["chargeable_kg"] == round(90 * 80 * 70 / 5000, 1)
+def test_rates_by_origin_and_route(monkeypatch, caplog):
+    """Z6 갱신: 중국발 = 요율표(데이터). 옛 kg당 env는 무시+경고 로그. 「요율 미설정」은 요율표 파일이 없을 때만. 미국발은 예전 그대로."""
+    import logging
+    from src.seller_console import shipping_engine as E, shipping_ratio as S
+    MID = {"url": "https://item.taobao.com/item.htm?id=5", "title": "수납함 40x30x20cm", "price": "50", "currency": "CNY"}
+    monkeypatch.setenv("SHIPPING_RATE_KRW_PER_KG_CN", "99999")
+    E._warned.clear()
+    with caplog.at_level(logging.WARNING):
+        e = S.estimate(dict(MID))
+    assert e["ship_krw"] == 8800 and "SHIPPING_RATE_KRW_PER_KG_CN는 폐기" in caplog.text     # 99999는 안 씀
+    monkeypatch.setattr(E, "DATA_DIR", E.DATA_DIR.parent / "no_such_dir")
+    e = S.estimate(dict(MID))
+    assert e["state"] == "unknown" and e["line"].startswith("요율 미설정 — 비율 판정 생략(요율표 파일 없음")
     us = S.estimate({"url": "https://www.amazon.com/dp/B0X", "title": "box 40x30x20cm", "price": "20", "currency": "USD"})
     assert "미국발 18,000원/kg" in us["line"]
-    assert S.estimate({"url": "https://zozo.jp/x", "title": "의자", "price": "2000", "currency": "JPY"})["line"].startswith("출발국 요율 없음")
+    assert S.estimate({"url": "https://zozo.jp/x", "title": "의자 40x30x20cm", "price": "2000", "currency": "JPY"})["line"].startswith("출발국 요율 없음")
 
 
-def test_account_default_route_and_product_override(monkeypatch):
+def test_account_default_mode_and_product_override(monkeypatch):
+    """Z6 갱신: 계정 기본 배송 방식(설정) → 상품별 해운/항공 토글이 이긴다."""
     from src.order_webhook import app
     from src.seller_console import collect_history_store as CH, shipping_ratio as S
-    from src.db import image_translate_queue_pg as st
-    st.reset_for_tests()
-    monkeypatch.delenv("SHIPPING_RATE_KRW_PER_KG_CN", raising=False)
-    monkeypatch.setenv("SHIPPING_RATE_KRW_PER_KG_CN_FORWARDER", "9000")
-    seller = "owner-z5-route"
+    seller = "owner-z5-mode"
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = seller
-    assert "계정 기본값" in c.get("/seller/settings/ship-route").get_data(as_text=True)
-    c.post("/seller/settings/ship-route", data={"route": "forwarder"})
-    assert S.account_route(seller) == "forwarder"
-    assert "배대지 경유 9,000원/kg" in S.estimate(dict(SOFA, seller_id=seller), seller)["line"]   # 계정 기본
-    iid = CH.append(source="extension", url=SOFA["url"], seller_id=seller, title="빈백", price="780", currency="CNY", extra=dict(SOFA))
-    assert c.post(f"/seller/collect/{iid}/ship-route", json={"route": "direct"}).get_json()["ok"]
+    assert "배송 설정" in c.get("/seller/settings/shipping").get_data(as_text=True)
+    c.post("/seller/settings/shipping", data={"provider": "percenty", "default_mode": "air", "lcl_threshold_cbm": "0.5"})
+    box = {"url": "https://item.taobao.com/item.htm?id=6", "title": "파우치 무게 1.72kg", "price": "35", "currency": "CNY"}
+    assert S.estimate(dict(box, seller_id=seller), seller)["ship_krw"] == 7900            # 항공 2kg
+    iid = CH.append(source="extension", url=box["url"], seller_id=seller, title="파우치", price="35", currency="CNY", extra=dict(box))
+    assert c.post(f"/seller/collect/{iid}/ship-mode", json={"mode": "sea"}).get_json()["ok"]
     h = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
-    assert 'data-role="m5-ship-route"' in h and 'value="direct" selected' in h
-    assert "요율 미설정" in h                                                          # 직접 발송 요율은 아직 없음
+    assert 'data-role="m5-ship-mode"' in h and 'class="m5-mode-btn is-on" data-mode="sea"' in h
+    assert "6,400원" in h                                                              # 해운 2kg

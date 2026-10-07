@@ -123,21 +123,19 @@ def test_coupang_axes_drop_single_value_axis(item):
 
 
 def test_z5_reads_gross_weight_and_package_volume(item, monkeypatch):
+    """Z6(2026-10-08) 갱신: 毛重 40kg · 包装体积 0.36㎥ → 대형화물(경동택배 별도) · 비율은 LCL 추정으로.
+    (예전 계약: kg당 6000원 × 청구 60kg = 165% — 폐기된 kg당 env 모델.)"""
     from src.seller_console import shipping_ratio as SR
-    pd = _pd(*item)
-    monkeypatch.delenv("SHIPPING_RATE_KRW_PER_KG_CN", raising=False)
-    for r in SR.ROUTES:
-        monkeypatch.delenv(f"SHIPPING_RATE_KRW_PER_KG_CN_{r.upper()}", raising=False)
-    e = SR.estimate(pd, "fx3")
-    assert e["state"] == "unknown" and e["line"] == "요율 미설정 — 비율 판정 생략(SHIPPING_RATE_KRW_PER_KG_CN)"   # 요율이 비면 그 사유
-    monkeypatch.setenv("SHIPPING_RATE_KRW_PER_KG_CN", "6000")
     monkeypatch.setattr(SR, "_fx", lambda c: 190.0 if c == "CNY" else None)
+    pd = _pd(*item)
     e = SR.estimate(pd, "fx3")
-    # 毛重 40kg · 치수 60×60×62(오타 m → cm) 부피무게 37.2kg · 包装体积 0.36㎥ → 부피무게 60kg → 청구 60kg
-    assert e["state"] == "ok" and e["chargeable_kg"] == 60.0 and e["pkg_m3"] == 0.36
-    assert e["ship_krw"] == 360000 and e["cost_krw"] == 218500 and e["ratio_pct"] == 165   # 1150元 대비 실제 숫자
-    assert "무게 40kg" in e["line"] and "포장 부피 0.36㎥(부피무게 60.0kg)" in e["line"] and "요율 미설정" not in e["line"]
-    assert SR.hold(pd, "fx3")["short"] == "배송비 비율 초과 165%"
+    assert e["code"] == "bulky_carrier" and e["bulky"][0] == "실중량 40kg ≥ 20kg"
+    assert e["line"].startswith("대형화물 — 국내 배송비 별도(경동택배 표준운임) · 실중량 40kg ≥ 20kg")
+    # LCL: 0.36cbm → 표 최소 1cbm 94,500원(표가 말하지 않은 구간이라 추정) · 원가 1150元×190 = 218,500원 → 43%
+    assert e["lcl"]["cbm"] == 0.36 and e["lcl"]["krw"] == 94500 and e["lcl"]["estimated"] is True
+    assert e["ship_krw"] == 94500 and e["cost_krw"] == 218500 and e["ratio_pct"] == 43
+    assert "LCL 견적 0.36cbm(청구 1cbm) → 94,500원 (표 밖 추정) — LCL: 관부가세·국내운송 별도" == e["lcl_line"]
+    assert SR.hold(pd, "fx3")["short"] == "배송비 비율 초과 43% (LCL 추정)"
 
 
 def test_brand_passes_y6_and_never_reaches_coupang_fields(item):

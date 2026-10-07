@@ -80,6 +80,9 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "options_src": ex.get("options_src") if isinstance(ex.get("options_src"), list) else [],
         "option_split": ex.get("option_split") if isinstance(ex.get("option_split"), dict) else {},
         "ship_route": str(ex.get("ship_route") or ""),
+        # Z6: 배송비 엔진 재료 — 상품별 배송 방식(해운/항공)·직접 넣은 무게·치수
+        "ship_mode": str(ex.get("ship_mode") or ""),
+        "ship_input": ex.get("ship_input") if isinstance(ex.get("ship_input"), dict) else {},
         # Z 후속2: 옵션 값을 왜 못 옮겼나(번역기 응답 원문) — 「옵션 값 n개 미해석」 보류 문구가 싣는다
         "option_translate_diag": ex.get("option_translate_diag") if isinstance(ex.get("option_translate_diag"), dict) else {},          # Z5 후속: 중국발 발주 경로(상품) — 없으면 계정 설정
         "detail_specs": ex.get("detail_specs") if isinstance(ex.get("detail_specs"), list) else [],
