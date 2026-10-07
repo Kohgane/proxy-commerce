@@ -2091,7 +2091,7 @@ async function runPrevalidate() {
                             refresh_from_store: !!window._kgpRefreshFromStore}),
     });
     window._kgpRefreshFromStore = false;
-    // Y6-C C1: 본문을 글로 먼저 받는다 — 502 HTML이면 resp.json()이 던져서 상태·사유가 통째로 사라졌다(실측 19:0x KST).
+    // Y6-C C1: 본문을 글로 먼저 받는다 — 게이트웨이 오류 HTML이면 resp.json()이 던져서 상태·사유가 통째로 사라졌다(실측 19:0x KST).
     const _txt = await resp.text();
     let data = null;
     try { data = JSON.parse(_txt); } catch (e) { data = {ok: false, error: _txt}; }
