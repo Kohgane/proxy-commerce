@@ -2079,6 +2079,20 @@ def mobile_list_ctx(item: dict) -> dict:
             risks.append(f"상표 확인 보류({', '.join(_ipl)}) — 라이선스 확인 전 등록 보류")
     except Exception as exc:
         logger.warning("[M5] 위험 플래그 판정 실패: %s", exc)
+    # 픽스처 3호(오너 2026-10-07): 한 옵션 축에 상품 종류가 섞임(茶几 티테이블 · 电视柜 TV장) — 종류는 떼지 않고 값에 남기고 경고만
+    mixed = []
+    try:
+        from src.collectors.option_split import mixed_types as _mt
+        _osr = product.get("option_split") if isinstance(product.get("option_split"), dict) else {}
+        mixed = list(_osr.get("mixed_types") or [])
+        if not mixed:
+            for o in (product.get("options_src") or product.get("options") or []):
+                if isinstance(o, dict):
+                    mixed = _mt([str(v.get("name") if isinstance(v, dict) else v) for v in (o.get("values") or [])])
+                    if mixed:
+                        break
+    except Exception as exc:
+        logger.warning("[M5] 상품 종류 섞임 판정 실패: %s", exc)
     brand_values = _brand_value_rows(product)            # F: 옵션 값·규격표 값의 상표 — 보류 아님, 값만 바꿀 말 제안
     try:                                                  # M5 후속: 음역 의심(「라오첸」) — 표시만, 상품명은 그대로
         from src.collectors.ko_polish import translit_suspects as _tls
@@ -2110,7 +2124,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
             "product": product,
-            "risks": risks, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or "")), **_m5_ship(product),
+            "risks": risks, "mixed_types": mixed, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or "")), **_m5_ship(product),
             **_m5_video(ex)}
 
 
