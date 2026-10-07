@@ -326,12 +326,33 @@ def test_owner_sync_does_not_steal_seller_row_ownership(orders_mem):
     assert row["user_id"] == "stranger-1" and row["status"] == "shipped"
 
 
-def test_pg_backend_reads_user_id_and_keeps_owner_on_upsert():
-    import inspect
+def test_pg_backend_reads_user_id_and_keeps_owner_on_upsert(monkeypatch):
+    """PG 백엔드가 **실제로 보내는 SQL**을 가짜 커서로 잡아 본다(소스 문자열 핀 아님 — 메타 계약)."""
+    import contextlib
     from src.db import orders_pg
-    src = inspect.getsource(orders_pg)
-    sel = inspect.getsource(orders_pg.all_row_dicts)
-    assert "user_id" in sel, "PG 읽기가 user_id를 안 실어 스코프 판정이 불가"
-    up = inspect.getsource(orders_pg.upsert_rows)
-    assert "user_id=EXCLUDED.user_id" not in up, "동기화 upsert가 소유자를 덮어쓴다"
-    assert "user_id" in src
+
+    sent = []
+
+    class _Cur:
+        def execute(self, sql, params=None):
+            sent.append((sql, params))
+
+        def fetchall(self):
+            return [tuple(["stranger-1"] + ["x"] * (len(orders_pg._INSERT_COLS) - 1))]
+
+    @contextlib.contextmanager
+    def _cm():
+        yield _Cur()
+    monkeypatch.setattr(orders_pg.pg, "tx", _cm)
+    monkeypatch.setattr(orders_pg.pg, "query", _cm)
+
+    rows = orders_pg.all_row_dicts()
+    assert rows[0]["user_id"] == "stranger-1", "PG 읽기가 user_id를 안 실어 스코프 판정이 불가"
+    select_sql = sent[-1][0]
+    assert select_sql.split("FROM")[0].count("user_id") == 1
+
+    assert orders_pg.upsert_rows([dict(_row(STRANGER_ROW, "stranger-1"))]) == 1
+    sql, vals = sent[-1]
+    insert_cols, update_set = sql.split("DO UPDATE SET")
+    assert "user_id" in insert_cols and vals[0] == "stranger-1"            # 넣을 때만 주인을 쓴다
+    assert "user_id" not in update_set, "동기화 upsert가 소유자를 덮어쓴다"
