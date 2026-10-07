@@ -160,6 +160,15 @@ def run(user_id: str, item_id: str, *, via: str = "") -> dict:
         logger.info("[Z3 프록시] item=%s 상품=%s session=%s 바이트=%d 결과=%s", item_id, iid, rec["session"],
                     rec["proxy_bytes"], rec["kind"])
     _mark(item_id, user_id, rec)
+    if via == "onebound":                                       # Z3-C 이월: 하루 한도에 막히면 대기 → 한도 풀리면 자동
+        try:
+            from src.services import onebound_carry as _carry
+            if rec["kind"] in _carry.CARRY_KINDS:
+                _carry.add(user_id, item_id, url=url, share=str(ex.get("share_raw") or ""), kind=rec["kind"])
+            else:
+                _carry.remove(item_id, f"자동 수집 {rec['state']}")
+        except Exception as exc:                                # noqa: BLE001 — 대기 실패가 수집 기록을 막지 않는다
+            logger.warning("[이월 대기] 기록 실패: %s", exc)
     # Z3-C: 집계(경로·갈래) · 첫 10건 담은 시각 → 준비 완료 시각 · 첫 성공 응답 1건(픽스처 교체용)
     try:
         from src.services import mtop_stats as _ms

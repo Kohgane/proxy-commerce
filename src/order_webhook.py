@@ -139,6 +139,13 @@ try:
 except Exception as _npexc:
     logger.warning("네이버 주문 폴러 시작 실패(계속): %s", _npexc)
 
+# Z3-C(2026-10-07): 온바운드 하루 한도 이월 대기 — 한도가 풀리면(베이징 자정·「새로 받기」) 자동 수집. 워커 서비스에서만.
+try:
+    from src.services.onebound_carry import start_if_enabled as _carry_start
+    logger.info("온바운드 이월 대기: %s", _carry_start())
+except Exception as _carry_exc:
+    logger.warning("온바운드 이월 대기 시작 실패(계속): %s", _carry_exc)
+
 app = Flask(__name__)
 
 # 프록시(Render/nginx) 뒤에서 X-Forwarded-Proto/Host를 신뢰하여 scheme/host를 올바르게 반영

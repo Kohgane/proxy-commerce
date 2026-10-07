@@ -11,7 +11,7 @@
     fetch('/seller/collect/' + encodeURIComponent(id) + '/auto-enrich', {credentials: 'same-origin'})
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.state === 'done' || d.state === 'manual') {
+        if (d.state === 'done' || d.state === 'manual' || d.state === 'carry') {   // carry = 하루 한도 이월 대기(Z3-C)
           el.setAttribute('data-state', d.state);
           el.textContent = d.line;
           // 다시 불러오기(reload)는 공유 주소를 또 보내 「이미 담은 상품이에요」가 된다 — 채워진 검수 화면으로 간다
