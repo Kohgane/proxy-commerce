@@ -10,6 +10,7 @@ Flask==3.0.3
 Flask-Limiter==4.1.1
 Flask-Cors==6.0.2
 cloudinary==1.41.0
+imageio-ffmpeg>=0.5,<1  # M5 후속: 상품 동영상 무음 변환(-an) — 정적 ffmpeg 바이너리 동봉(Docker·CI 모두 이 하나로, apt 불필요)
 Babel==2.15.0
 gunicorn==25.1.0
 beautifulsoup4>=4.12

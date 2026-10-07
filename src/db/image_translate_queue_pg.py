@@ -111,6 +111,22 @@ def finish(job_id, status: str, reason: str = "") -> None:
                     (status, str(reason or "")[:300], job_id))
 
 
+def retry_failed(item_id: str) -> int:
+    """M5 후속 「다시 번역」: 그 상품의 실패한 장을 다시 대기로(같은 장은 하나뿐 — 새 줄을 만들지 않는다). 돌린 장 수."""
+    if not _enabled():
+        n = 0
+        with _LOCK:
+            for r in _MEM_Q:
+                if r["item_id"] == str(item_id) and r["status"] == "failed":
+                    r.update(status="queued", reason="", started_at=None, finished_at=None)
+                    n += 1
+        return n
+    with pg.tx() as cur:
+        cur.execute("UPDATE image_translate_queue SET status='queued', reason='', started_at=NULL, finished_at=NULL "
+                    "WHERE item_id=%s AND status='failed'", (str(item_id),))
+        return int(cur.rowcount or 0)
+
+
 def counts(item_id: str = "") -> dict:
     """`{queued, running, done, failed, skipped}` — 상품 하나 또는 전체."""
     out = {"queued": 0, "running": 0, "done": 0, "failed": 0, "skipped": 0}

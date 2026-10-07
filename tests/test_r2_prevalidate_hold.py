@@ -97,7 +97,8 @@ def test_route_reports_hold(coupang_env):
 def test_screens_say_hold_and_repeat_the_pc_line():
     m5 = Path("src/seller_console/templates/_m5_flow.html").read_text(encoding="utf-8")
     assert "(r.hold ? '보류' : '막힘')" in m5 and 'data-role="m5-hold-pc"' in m5 and "is-hold" in m5
-    assert "goBtn.disabled = blocked || !okMarkets.length;" in m5              # 통과한 곳이 없으면 등록 닫힘
+    # M5 후속(오너 2026-10-07): 통과 또는 「그래도 등록」으로 풀리는 보류가 하나도 없으면 등록 닫힘(전송 실패는 잠그지 않음)
+    assert "goBtn.disabled = blocked || !(okMarkets.length + held.length);" in m5
     assert "보강 후 등록할 수 있어요" in m5
     pv = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert 'data-role="prevalidate-hold">보류' in pv

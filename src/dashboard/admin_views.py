@@ -430,6 +430,30 @@ def admin_diagnostics():
     return _render_diagnostics(issued_magic_link=None)
 
 
+_ALICDN_CACHE: dict = {}
+
+
+def _probe_alicdn() -> dict:
+    """M5 후속: 서버 출구(Render)에서 img.alicdn.com이 열리나 — HEAD 1회, 10분 캐시. 미리보기 「불러오지 못했어요」 원인 가르기."""
+    import time as _t
+    hit = _ALICDN_CACHE.get("v")
+    if hit and _t.time() - hit["ts"] < 600:
+        return hit
+    url = os.getenv("ALICDN_PROBE_URL", "https://img.alicdn.com/")
+    if os.getenv("ALICDN_PROBE", "1").strip() == "0":
+        return {"ts": 0, "line": f"점검 꺼짐(ALICDN_PROBE=0) · {url}"}
+    t0 = _t.time()
+    try:
+        import requests as _rq
+        r = _rq.head(url, timeout=5, allow_redirects=False, headers={"User-Agent": "gogabridj/1.0"})
+        line = f"HTTP {r.status_code} · {int((_t.time() - t0) * 1000)}ms · {url}"
+    except Exception as exc:                                     # noqa: BLE001
+        line = f"실패 {type(exc).__name__}: {str(exc)[:120]} · {int((_t.time() - t0) * 1000)}ms · {url}"
+    out = {"ts": _t.time(), "line": line}
+    _ALICDN_CACHE["v"] = out
+    return out
+
+
 def _scan_merge_conflict_marker_count() -> int:
     root = pathlib.Path(__file__).resolve().parents[2]
     pattern = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.MULTILINE)
@@ -533,6 +557,13 @@ def _render_diagnostics(issued_magic_link: str | None):
         image_budget_line = _itb.status_line()
     except Exception as exc:
         image_budget_line = f"이미지 번역 장부를 읽지 못했어요 — {type(exc).__name__}"
+    # M5 후속(2026-10-07): 텐센트 최근 10회(코드·메시지·시각) + Render 출구에서 img.alicdn.com HEAD 1회(10분 캐시)
+    try:
+        from src.services import image_translate_tencent as _tcd
+        tencent_recent = _tcd.recent_calls()
+    except Exception:
+        tencent_recent = []
+    alicdn_probe = _probe_alicdn()
 
     # v87-W7a branch②: 번역 계측(사유코드별 + 최근 실패 원 응답) 읽기 전용
     translate_stats = _build_translate_stats()
@@ -600,6 +631,7 @@ def _render_diagnostics(issued_magic_link: str | None):
         market_health=market_health,
         pricing_status=pricing_status,
         ai_budget=ai_budget, image_budget_line=image_budget_line,
+        tencent_recent=tencent_recent, alicdn_probe=alicdn_probe,
         smartstore_probe=smartstore_probe,
         account_keys=account_keys,
         workers_status=workers_status,
@@ -1599,6 +1631,63 @@ _OCR_PRECHECK_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 라벨 {{ '글자 있음' if r.label else '없음' }} · 판정 {{ '있음' if r.pred else ('없음' if r.pred is sameas false else '—') }}
 {% if r.seen %} · 읽은 글자 「{{ r.seen }}」{% endif %}{% if r.why %} · {{ r.why }}{% endif %}<br><a href="{{ r.url }}" target="_blank" rel="noreferrer">{{ r.url[:90] }}</a></div>{% endfor %}
 <a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
+
+
+@admin_panel_bp.get("/diagnostics/flip-check")
+def diagnostics_flip_check():
+    """M5 후속(오너 2026-10-07): 「사진 좌우반전 의심」 — 그 상품의 원본(온바운드 보관본 item_imgs, 없으면 수집 images)과
+    우리가 보여 주는 사진(번역본 사용·대표 지정 반영)을 장마다 픽셀 비교. 원본 반전이면 「원본 반전」 표기만."""
+    from flask import request as _rq
+    import json as _json
+    from src.services import flip_check as F
+    item = (_rq.args.get("item") or "").strip()[:64]
+    rows, err, summary = [], "", ""
+    if item:
+        try:
+            from src.db import pg as _pg
+            from src.seller_console import collect_history_store as store
+            row = None
+            if _pg.pg_enabled():
+                with _pg.query() as cur:
+                    cur.execute("SELECT user_id FROM collect_history WHERE id::text=%s", (item,))
+                    r0 = cur.fetchone()
+                row = store.get(item, seller_ids={r0[0]}) if r0 else None
+            else:
+                row = store.get(item)
+            ex = _json.loads((row or {}).get("extra_json") or "{}") or {}
+            raw = None
+            iid = str(ex.get("item_id_taobao") or "")
+            if iid:
+                from src.collectors import taobao_provider_onebound as _ob
+                raw = (_ob.stored(iid) or {}).get("raw")
+            originals = F.original_urls(ex, raw)
+            from src.services import image_translate_store as _its
+            shown = _its.effective_images(ex, originals=[u for u in (ex.get("images") or []) if u], item_id=item) or []
+            for n, o in enumerate(originals[:8]):
+                s_url = shown[n] if n < len(shown) else o
+                rows.append(dict(F.check_pair(o, s_url), idx=n + 1, original=o, shown=s_url))
+            flips = [r for r in rows if r.get("verdict") == "좌우반전"]
+            exif = [r for r in rows if r.get("exif_mirror")]
+            summary = (f"{len(rows)}장 비교 · 좌우반전 {len(flips)}장 · 원본 EXIF 거울 {len(exif)}장 · "
+                       f"원본 출처 {'온바운드 보관본 item_imgs' if raw else '수집 images'}"
+                       + (" — 우리 파이프라인엔 flip이 없으니(코드 0곳) 반전이면 원본 쪽" if flips else ""))
+        except Exception as exc:
+            err = f"상품을 못 읽었어요 — {type(exc).__name__}: {str(exc)[:120]}"
+    return render_template_string(_FLIP_TEMPLATE, item=item, rows=rows, err=err, summary=summary)
+
+
+_FLIP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>사진 좌우반전 확인</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:820px;word-break:break-all" data-role="flip-check">
+<h5>사진 좌우반전 확인 — 원본 vs 보여 주는 사진</h5>
+<form class="mb-2"><input name="item" value="{{ item }}" placeholder="상품 ID" class="form-control mb-1"><button class="btn btn-sm btn-primary">비교</button></form>
+{% if err %}<p class="text-danger">{{ err }}</p>{% endif %}
+{% if summary %}<p data-role="flip-summary"><strong>{{ summary }}</strong></p>{% endif %}
+{% for r in rows %}<div class="border-bottom py-1 small" data-role="flip-row">{{ r.idx }}. <strong>{{ r.verdict }}</strong>
+{% if r.same is defined %} · 그대로 차이 {{ r.same }} · 뒤집어 차이 {{ r.mirror }}{% endif %}{% if r.exif_orientation %} · EXIF 방향 {{ r.exif_orientation }}{% endif %}
+{% if r.why %} · {{ r.why }}{% endif %}{% if r.note %} · {{ r.note }}{% endif %}<br>원본 <a href="{{ r.original }}" target="_blank" rel="noreferrer">{{ r.original[:80] }}</a><br>보여 줌 {{ r.shown[:80] }}</div>{% endfor %}
+<a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
 
 
 @admin_panel_bp.route("/diagnostics/image-mode-compare", methods=["GET", "POST"])
@@ -3385,6 +3474,11 @@ _DIAGNOSTICS_TEMPLATE = """
         <strong>{{ image_budget_line }}</strong>
         <div class="text-muted mt-1">pro/lite 같은 사진 비교: <a href="/admin/diagnostics/image-mode-compare">사진 5장 비교(유료 $0.30)</a> ·
           무료 로컬 판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a></div>
+        <div class="mt-2" data-role="tencent-recent"><strong>텐센트 최근 {{ tencent_recent|length }}회</strong>
+          {% if tencent_recent %}<table class="table table-sm mb-1"><thead><tr><th>시각(UTC)</th><th>결과</th><th>코드</th><th>메시지</th><th>ms</th></tr></thead><tbody>
+          {% for r in tencent_recent %}<tr><td>{{ r.at }}</td><td>{{ '성공' if r.ok else (r.kind or '실패') }}</td><td><code>{{ r.code or r['class'] }}</code></td><td>{{ r.message }}</td><td>{{ r.ms }}</td></tr>{% endfor %}
+          </tbody></table>{% else %}<div class="text-muted">아직 기록된 호출이 없어요(배포 뒤 첫 호출부터 쌓여요).</div>{% endif %}</div>
+        <div class="mt-1" data-role="alicdn-probe">img.alicdn.com HEAD(서버 출구): <strong>{{ alicdn_probe.line }}</strong></div>
       </div>
     </div>
 

@@ -2080,6 +2080,11 @@ def mobile_list_ctx(item: dict) -> dict:
     except Exception as exc:
         logger.warning("[M5] 위험 플래그 판정 실패: %s", exc)
     brand_values = _brand_value_rows(product)            # F: 옵션 값·규격표 값의 상표 — 보류 아님, 값만 바꿀 말 제안
+    try:                                                  # M5 후속: 음역 의심(「라오첸」) — 표시만, 상품명은 그대로
+        from src.collectors.ko_polish import translit_suspects as _tls
+        translit = _tls(" ".join([str(product.get("title") or ""), str(cp_name or "")]), str(product.get("title_src") or ""))
+    except Exception:
+        translit = []
     blocked = ""
     if ax["is_draft"] and not ax["gate_ready"]:
         blocked = "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다."
@@ -2105,7 +2110,18 @@ def mobile_list_ctx(item: dict) -> dict:
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
             "product": product,
-            "risks": risks, "brand_values": brand_values, "auto_enrich": _m5_auto(ex), **_m5_ship(product)}
+            "risks": risks, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex), **_m5_ship(product),
+            **_m5_video(ex)}
+
+
+def _m5_video(ex: dict) -> dict:
+    """M5 후속: 무음 동영상 카드 재료 — 원본이 있었을 때만. 마켓마다 보내나(공식 근거 문장)."""
+    src = str(((ex.get("provider_detail") or {}).get("video_url")) or "")
+    rec = ex.get("video") if isinstance(ex.get("video"), dict) else None
+    if not (src or rec):
+        return {"video": None, "video_lines": []}
+    from src.media.video_silent import market_lines
+    return {"video": rec or {"state": "pending", "source_url": src}, "video_lines": market_lines(_M5_MARKETS)}
 
 
 def _brand_value_rows(product: dict) -> list:
@@ -3006,6 +3022,9 @@ def _market_rows(markets: list, product: Optional[dict] = None):
         rows = [m for m in rows if m.get("group") or m.get("connected")]
     pick = _mp.apply_checks(rows, _mp.scope(_seller_id(), shared), shared=shared)
     pick["label"] = _mp.source_label(pick["source"]) if shared or pick["source"] != "bundle" else ""
+    if pick["source"] == "bundle" and shared and not pick["codes"]:
+        # M5 후속: 묶음 줄(키·승인)이 준비 안 돼 아무것도 안 켰는데 「우주대행 묶음」이라고 쓰면 글과 상태가 어긋난다.
+        pick["label"] = "우주대행 묶음 줄이 아직 준비 안 돼 비워 뒀어요"
     return rows, pick
 
 
@@ -3455,7 +3474,18 @@ def coupang_exposure_data(item: dict) -> dict:
     return {"ok": True, "name": product.get("coupang_name") or product.get("title") or "",
             "price": int(price) if price else None, "price_why": "" if price else (why or "판매가를 못 냈어요"),
             "rep": rep, "rep_original": strip[0]["original"] if strip else "", "strip": strip[:10], "check": chk,
-            "hold": hold, "override": ov if ov and ov.get("url") == rep else None}
+            "hold": hold, "override": ov if ov and ov.get("url") == rep else None,
+            # M5 후속: 이미지 번역이 왜 안 됐나(공급사 원문) — 카드 「나갈 사진」 옆 배지. 없으면 null.
+            "imgko_fail": _imgko_failure(iid, ex)}
+
+
+def _imgko_failure(item_id: str, ex: dict):
+    try:
+        from src.services import image_translate_auto as _ita
+        return _ita.item_failure(item_id, ex) or None
+    except Exception as exc:                                     # noqa: BLE001 — 배지 재료를 못 읽어도 미리보기는 그린다
+        logger.warning("[이미지번역] 실패 사유 판정 실패 item=%s: %s", item_id, exc)
+        return None
 
 
 @bp.get("/collect/<item_id>/coupang-exposure")
@@ -3465,7 +3495,37 @@ def collect_coupang_exposure(item_id):
     item = _get_owned_item(item_id)
     if not item:
         return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
-    return jsonify(coupang_exposure_data(item))
+    try:
+        return jsonify(coupang_exposure_data(item))
+    except Exception as exc:                                     # noqa: BLE001
+        # M5 후속(실사용 1호): 「불러오지 못했어요」만 나왔다 — 500 HTML이라 화면이 사유를 못 읽었다. 예외명·메시지를 그대로.
+        logger.warning("[쿠팡 노출] item=%s 미리보기 실패: %s", item_id, exc)
+        return jsonify({"ok": False, "error": f"미리보기를 만들지 못했어요 — {type(exc).__name__}: {str(exc)[:160]}"}), 200
+
+
+@bp.post("/collect/<item_id>/image-translate/retry")
+def collect_image_translate_retry(item_id):
+    """M5 후속 「다시 번역」: 이 상품의 실패한 장만 다시 큐로(일일 상한 안에서). 차단기가 멈춰 있으면 공유 사용자만 재개."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from src.services import image_translate_auto as _ita
+    from . import market_pick as _mp
+    out = _ita.retry_item(str(item.get("seller_id") or _seller_id()), item_id, str(item.get("url") or ""), ex,
+                          may_resume=_mp.session_is_shared())
+    msg = (f"{out['requeued']}장을 다시 넣었어요 — 오늘 {out['today']}/{out['cap']}장 사용" if out["requeued"]
+           else "다시 넣을 실패한 장이 없어요")
+    if out["paused"]:
+        msg += f" · 번역 큐가 멈춰 있어요({out['pause_reason'][:80]}) — 관리자가 재개해야 돌아요"
+    elif out["resumed"]:
+        msg += " · 멈춰 있던 번역 큐를 다시 돌렸어요"
+    return jsonify(dict(out, message=msg))
 
 
 @bp.post("/collect/<item_id>/rep-image")
@@ -3631,8 +3691,13 @@ def collect_translate_now(item_id):
 def collect_prevalidate():
     """마켓 업로드 사전검증 (Phase 190).
 
-    Request body: {"product": {...}, "markets": ["coupang", "shopify"]}
+    Request body: {"product": {...}, "markets": ["coupang", "shopify"], "async": false}
     Response: {"ok": true, "results": [{"market": "shopify", "ok": true, ...}, ...]}
+
+    M5 후속(오너 2026-10-07, 실사용 1호 「응답을 읽지 못했어요 (HTTP 502)」): `async: true`면 **즉시 202 + job_id** —
+    마켓별 검증은 백그라운드에서 병렬(마켓당 12초), 화면은 `/collect/prevalidate/job/<id>`를 3초마다 묻고 도착하는
+    대로 그린다(전체 60초 상한). 동기 경로(데스크톱)는 그대로 두되 **25초 상한** — 워커 타임아웃(120초)에 죽어
+    502가 되는 대신 정직한 「시간 초과」를 돌려준다.
     """
     data = request.get_json(force=True, silent=True) or {}
     product_data = data.get("product") or {}
@@ -3650,89 +3715,247 @@ def collect_prevalidate():
     if dispatcher is None:
         return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
 
-    try:
-        from .upload_dispatcher import MARKET_LABELS, PrevalidationResult
-        from . import market_credentials as mc
+    if data.get("async"):
+        return _pv_start_job(data, list(markets), dispatcher)
 
-        # S1(오너 2026-10-02): 등록이 보낼 **그 이미지 배열**로 재고, 마켓 관점 도달도 **여기서** 본다 —
-        #   예전엔 사전검증 「통과」 뒤 등록에서야 「상세 1번째 — 우리 서버 주소」로 막혔다(R2와 같은 교훈).
-        product_data, _wp, _rc = _outbound_images(dict(product_data), data.get("item_id"))
-        product_data.setdefault("seller_id", _seller_id())
-        if data.get("item_id"):
-            # Z5: 「그래도 등록」은 저장된 기록이 정본 — 화면이 렌더 때 받은 상품엔 없을 수 있다(누른 직후 재검증)
-            #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
-            try:
-                _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
-                for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override", "option_split", "options_src",
-                           "voltage_split", "voltage_override"):
-                    if _sx.get(_k):
-                        product_data[_k] = _sx[_k]
-                # Y8 전압·플러그: 분리됐으면 SKU 판매 판정(sale_excluded·plug_notice)은 저장본이 정본
-                if (_sx.get("voltage_split") or {}).get("state") == "split" and isinstance(_sx.get("skus"), list):
-                    product_data["skus"] = _sx["skus"]
-            except Exception:
-                pass
-        if data.get("refresh_from_store") and data.get("item_id"):
-            product_data = _merge_stored_translation(product_data, str(data["item_id"]))
+    import contextvars as _cv
+    import threading as _th
+    box: dict = {}
+
+    def _work():
+        try:
+            box["resp"] = _pv_sync(data, product_data, markets, dispatcher)
+        except Exception as exc:                                  # noqa: BLE001 — 아래에서 500으로
+            box["exc"] = exc
+    t = _th.Thread(target=_cv.copy_context().run, args=(_work,), daemon=True)
+    t.start()
+    t.join(_PV_SYNC_DEADLINE_SEC)
+    if t.is_alive():
+        logger.warning("사전검증 %s초 초과(markets=%s) — 502 대신 시간 초과로 답함", _PV_SYNC_DEADLINE_SEC, markets)
+        return jsonify({"ok": False, "timeout": True,
+                        "error": f"사전검증이 {_PV_SYNC_DEADLINE_SEC}초 안에 끝나지 않았어요 — 마켓을 줄여 다시 해 주세요."})
+    if "exc" in box:
+        logger.warning("사전검증 오류: %s", box["exc"])
+        return jsonify({"ok": False, "error": "사전검증 중 오류가 발생했습니다."}), 500
+    return jsonify(box["resp"])
+
+
+_PV_SYNC_DEADLINE_SEC = int(os.getenv("PREVALIDATE_SYNC_DEADLINE_SEC", "25") or 25)
+_PV_MARKET_TIMEOUT_SEC = float(os.getenv("PREVALIDATE_MARKET_TIMEOUT_SEC", "12") or 12)
+_PV_JOB_DEADLINE_SEC = float(os.getenv("PREVALIDATE_JOB_DEADLINE_SEC", "60") or 60)
+_PV_JOB_KEY = "prevalidate_job:"
+
+
+def _pv_prepare(data: dict, product_data: dict):
+    """등록이 보낼 이미지 배열·저장된 「그래도 등록」·번역을 얹은 검증 대상 — `(product_data, reach)`."""
+    # S1(오너 2026-10-02): 등록이 보낼 **그 이미지 배열**로 재고, 마켓 관점 도달도 **여기서** 본다 —
+    #   예전엔 사전검증 「통과」 뒤 등록에서야 「상세 1번째 — 우리 서버 주소」로 막혔다(R2와 같은 교훈).
+    product_data, _wp, _rc = _outbound_images(dict(product_data), data.get("item_id"))
+    product_data.setdefault("seller_id", _seller_id())
+    if data.get("item_id"):
+        # Z5: 「그래도 등록」은 저장된 기록이 정본 — 화면이 렌더 때 받은 상품엔 없을 수 있다(누른 직후 재검증)
+        #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
+        try:
+            _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
+            for _k in ("ship_ratio_override", "option_translate_diag", "rep_image_override", "option_split", "options_src",
+                       "voltage_split", "voltage_override"):
+                if _sx.get(_k):
+                    product_data[_k] = _sx[_k]
+            # Y8 전압·플러그: 분리됐으면 SKU 판매 판정(sale_excluded·plug_notice)은 저장본이 정본
+            if (_sx.get("voltage_split") or {}).get("state") == "split" and isinstance(_sx.get("skus"), list):
+                product_data["skus"] = _sx["skus"]
+        except Exception:
+            pass
+    if data.get("refresh_from_store") and data.get("item_id"):
+        product_data = _merge_stored_translation(product_data, str(data["item_id"]))
+    return product_data, _rc
+
+
+def _pv_dict(r, rc=None) -> dict:
+    """결과 한 줄(화면 모양). 이미지가 마켓에서 안 열리면 통과한 마켓도 그 사유로 멈춘다."""
+    from .upload_dispatcher import MARKET_LABELS
+    if rc is not None and not rc["ok"] and r.ok:
+        from src.services import image_reachability as _reach
+        from .upload_dispatcher import PrevalidationResult
+        r = PrevalidationResult(market=r.market, ok=False, error_code="image_unreachable",
+                                message=_reach.message(rc).split(" (")[0],
+                                hint="마켓 서버가 이 주소로 이미지를 받으러 와도 열리지 않습니다 — 그 장을 빼거나 다른 장으로 바꿔 주세요.",
+                                details=[_reach.describe(b) for b in rc["bad"][:8]])
+    return {
+        "market": r.market,
+        "market_label": MARKET_LABELS.get(r.market, r.market),
+        "ok": r.ok,
+        "error_code": r.error_code,
+        "message": r.message,
+        "hint": r.hint,
+        # F35-2: 도달 여부·소요 ms. None = 안 잰 마켓(화면이 「측정 안 함」이라 말한다).
+        "reach_ok": r.reach_ok,
+        "reach_ms": r.reach_ms,
+        "reach_detail": r.reach_detail,
+        # F48-d — 전송 전에 잡은 사유 한 줄씩(쿠팡 배송·구매옵션·필수서류)
+        "details": list(getattr(r, "details", None) or []),
+        # M1-1 — 고치러 갈 화면(마켓 연동 › 그 마켓). env 이름은 싣지 않는다.
+        "action_url": getattr(r, "action_url", "") or "",
+        # R2 — 재료가 덜 와서 멈춘 것(보강·번역하면 풀린다). 화면은 「막힘」 대신 「보류」.
+        "hold": bool(getattr(r, "hold", False)),
+        "fixes": list(getattr(r, "fixes", None) or []),
+    }
+
+
+def _pv_auto_translate(product_data: dict, data: dict, results) -> tuple:
+    """X2: 「번역」 보류는 보류 전에 번역부터 — `(auto, product_data)`. 번역 안 했으면 auto=None."""
+    if not (data.get("item_id") and any(r.hold and "translate" in (getattr(r, "fixes", None) or []) for r in results)):
+        return None, product_data
+    from src.services import option_translate_auto as _optauto
+    _auto = _optauto.translate_now(_seller_id(), str(data["item_id"]))
+    if _auto.get("status") in ("done", "queued"):
+        product_data = _merge_stored_translation(product_data, str(data["item_id"]))
+    # Z 후속2: 방금 번역이 남긴 「값마다 왜 못 옮겼나」로 다시 잰다(앞에서 실은 건 번역 전 기록)
+    try:
+        _dx = (json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}).get("option_translate_diag")
+        if _dx:
+            product_data["option_translate_diag"] = _dx
+    except Exception:
+        pass
+    return _auto, product_data
+
+
+def _pv_sync(data: dict, product_data: dict, markets: list, dispatcher) -> dict:
+    """동기 사전검증(데스크톱) — 예전 동작 그대로(한 번에 전 마켓)."""
+    from . import market_credentials as mc
+    product_data, _rc = _pv_prepare(data, product_data)
+    with mc.seller_market_env(_seller_id(), markets):
+        results = dispatcher.prevalidate(product_data, markets)
+    _auto, product_data = _pv_auto_translate(product_data, data, results)
+    if _auto is not None and _auto.get("status") in ("done", "queued", "failed"):
         with mc.seller_market_env(_seller_id(), markets):
             results = dispatcher.prevalidate(product_data, markets)
-        # X2(오너 2026-10-04): 「번역」 보류는 **보류하기 전에 번역을 먼저** — 옮겨지면 다시 검증, 그래도 남으면 보류.
-        _auto = None
-        if data.get("item_id") and any(r.hold and "translate" in (getattr(r, "fixes", None) or []) for r in results):
-            from src.services import option_translate_auto as _optauto
-            _auto = _optauto.translate_now(_seller_id(), str(data["item_id"]))
-            if _auto.get("status") in ("done", "queued"):
-                product_data = _merge_stored_translation(product_data, str(data["item_id"]))
-            # Z 후속2: 방금 번역이 남긴 「값마다 왜 못 옮겼나」로 다시 잰다(앞에서 실은 건 번역 전 기록)
-            try:
-                _dx = (json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}).get("option_translate_diag")
-                if _dx:
-                    product_data["option_translate_diag"] = _dx
-            except Exception:
-                pass
-            if _auto.get("status") in ("done", "queued", "failed"):
-                with mc.seller_market_env(_seller_id(), markets):
-                    results = dispatcher.prevalidate(product_data, markets)
-        if _rc is not None and not _rc["ok"]:
-            from src.services import image_reachability as _reach
-            _lines = [_reach.describe(b) for b in _rc["bad"][:8]]
-            results = [r if not r.ok else PrevalidationResult(   # 다른 사유로 이미 멈춘 마켓은 그 사유 그대로
-
-                market=r.market, ok=False, error_code="image_unreachable",
-                message=_reach.message(_rc).split(" (")[0],
-                hint="마켓 서버가 이 주소로 이미지를 받으러 와도 열리지 않습니다 — 그 장을 빼거나 다른 장으로 바꿔 주세요.",
-                details=_lines) for r in results]
-        return jsonify({
-            "ok": True,
-            "results": [
-                {
-                    "market": r.market,
-                    "market_label": MARKET_LABELS.get(r.market, r.market),
-                    "ok": r.ok,
-                    "error_code": r.error_code,
-                    "message": r.message,
-                    "hint": r.hint,
-                    # F35-2: 도달 여부·소요 ms. None = 안 잰 마켓(화면이 「측정 안 함」이라 말한다).
-                    "reach_ok": r.reach_ok,
-                    "reach_ms": r.reach_ms,
-                    "reach_detail": r.reach_detail,
-                    # F48-d — 전송 전에 잡은 사유 한 줄씩(쿠팡 배송·구매옵션·필수서류)
-                    "details": list(getattr(r, "details", None) or []),
-                    # M1-1 — 고치러 갈 화면(마켓 연동 › 그 마켓). env 이름은 싣지 않는다.
-                    "action_url": getattr(r, "action_url", "") or "",
-                    # R2 — 재료가 덜 와서 멈춘 것(보강·번역하면 풀린다). 화면은 「막힘」 대신 「보류」.
-                    "hold": bool(getattr(r, "hold", False)),
-                    "fixes": list(getattr(r, "fixes", None) or []),
-                }
-                for r in results
-            ],
-            "all_ok": all(r.ok for r in results),
+    rows = [_pv_dict(r, _rc) for r in results]
+    return {"ok": True, "results": rows, "all_ok": all(x["ok"] for x in rows),
             # X2: 보류 전에 돌린 자동 번역 결과(없으면 null) — 화면이 「자동 번역 후 다시 확인」/실패 사유를 말한다.
-            "auto_translate": _auto,
-        })
-    except Exception as exc:
-        logger.warning("사전검증 오류: %s", exc)
-        return jsonify({"ok": False, "error": "사전검증 중 오류가 발생했습니다."}), 500
+            "auto_translate": _auto}
+
+
+def _pv_transport_fail(market: str, kind: str, why: str) -> dict:
+    """전송 실패(시간 초과·예외) — 검증을 **못 한** 것이지 막힌 게 아니다. 화면은 「검증 못 함 — 다시 시도」."""
+    from .upload_dispatcher import MARKET_LABELS
+    return {"market": market, "market_label": MARKET_LABELS.get(market, market), "ok": False, "hold": False,
+            "transport": kind, "error_code": f"prevalidate_{kind}", "message": why, "hint": "", "details": [],
+            "fixes": [], "action_url": "", "reach_ok": None, "reach_ms": None, "reach_detail": ""}
+
+
+def _pv_store():
+    from src.db import image_translate_queue_pg as st
+    return st
+
+
+_PV_LOCK = __import__("threading").Lock()
+
+
+def _pv_update(job_id: str, **kw) -> dict:
+    with _PV_LOCK:
+        st = _pv_store()
+        cur = st.state_get(_PV_JOB_KEY + job_id) or {}
+        res = dict(cur.get("results") or {})
+        res.update(kw.pop("results", {}) or {})
+        cur.update(kw)
+        cur["results"] = res
+        st.state_set(_PV_JOB_KEY + job_id, cur)
+        return cur
+
+
+def _pv_start_job(data: dict, markets: list, dispatcher):
+    import contextvars as _cv
+    import threading as _th
+    import uuid as _uuid
+    job_id = _uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    _pv_store().state_set(_PV_JOB_KEY + job_id, {
+        "state": "running", "owner": _seller_id(), "markets": markets, "results": {}, "auto_translate": None,
+        "started_at": now.isoformat(), "started_ts": now.timestamp(),
+        "market_timeout": _PV_MARKET_TIMEOUT_SEC, "deadline": _PV_JOB_DEADLINE_SEC})
+    # 요청 컨텍스트(세션 — Z6 오너 자격 판정)를 그대로 잡 스레드로 넘긴다(Flask 3은 contextvars).
+    _th.Thread(target=_cv.copy_context().run, args=(_pv_job, job_id, data, markets, dispatcher), daemon=True).start()
+    return jsonify({"ok": True, "job_id": job_id, "markets": markets,
+                    "poll": f"/seller/collect/prevalidate/job/{job_id}", "poll_sec": 3}), 202
+
+
+def _pv_run_markets(job_id: str, product_data: dict, markets: list, dispatcher, rc, deadline_ts: float) -> list:
+    """마켓마다 따로·동시에. 마켓당 12초(전체 마감 안에서). 도착하는 대로 저장 — 화면이 순서대로 그린다."""
+    import concurrent.futures as _cf
+    import contextvars as _cv
+    import copy as _copy
+    import time as _time
+    done_results = []
+    ex = _cf.ThreadPoolExecutor(max_workers=max(1, len(markets)))
+    futs = {ex.submit(_cv.copy_context().run, dispatcher.prevalidate, _copy.deepcopy(product_data), [m]): m
+            for m in markets}
+    wait_for = max(0.1, min(_PV_MARKET_TIMEOUT_SEC, deadline_ts - _time.time()))
+    try:
+        for fut in _cf.as_completed(futs, timeout=wait_for):
+            m = futs[fut]
+            try:
+                rs = fut.result() or []
+                r = rs[0]
+                r.market = m
+                done_results.append(r)
+                _pv_update(job_id, results={m: _pv_dict(r, rc)})
+            except Exception as exc:                             # noqa: BLE001 — 그 마켓만
+                logger.warning("[사전검증 잡] %s %s 예외: %s", job_id[:8], m, exc)
+                _pv_update(job_id, results={m: _pv_transport_fail(m, "error", f"검증 못 함 — {type(exc).__name__}: {str(exc)[:120]}")})
+    except _cf.TimeoutError:
+        pass
+    for fut, m in futs.items():
+        if not fut.done():
+            _pv_update(job_id, results={m: _pv_transport_fail(
+                m, "timeout", f"검증 못 함 — {int(_PV_MARKET_TIMEOUT_SEC)}초 안에 답이 없었어요")})
+    ex.shutdown(wait=False, cancel_futures=True)
+    return done_results
+
+
+def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
+    import time as _time
+    from . import market_credentials as mc
+    st0 = (_pv_store().state_get(_PV_JOB_KEY + job_id) or {})
+    deadline_ts = float(st0.get("started_ts") or _time.time()) + _PV_JOB_DEADLINE_SEC
+    try:
+        product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
+        with mc.seller_market_env(_seller_id(), markets):
+            results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
+            _auto, product_data = _pv_auto_translate(product_data, data, results)
+            if _auto is not None:
+                _pv_update(job_id, auto_translate=_auto)
+                held = [r.market for r in results if r.hold and "translate" in (getattr(r, "fixes", None) or [])]
+                if held and _time.time() < deadline_ts - 1 and _auto.get("status") in ("done", "queued", "failed"):
+                    _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
+    except Exception as exc:                                     # noqa: BLE001 — 잡은 죽지 않는다
+        logger.warning("[사전검증 잡] %s 실패: %s", job_id[:8], exc)
+        cur = _pv_store().state_get(_PV_JOB_KEY + job_id) or {}
+        missing = {m: _pv_transport_fail(m, "error", f"검증 못 함 — {type(exc).__name__}")
+                   for m in markets if m not in (cur.get("results") or {})}
+        _pv_update(job_id, results=missing, error=f"{type(exc).__name__}: {str(exc)[:160]}")
+    _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat())
+
+
+@bp.get("/collect/prevalidate/job/<job_id>")
+def collect_prevalidate_job(job_id: str):
+    """비동기 사전검증 결과 — 마켓별로 도착한 것부터. 전체 마감이 지났는데 끝나지 않았으면 남은 마켓은 「검증 못 함」."""
+    import time as _time
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    cur = _pv_store().state_get(_PV_JOB_KEY + str(job_id)[:64]) or {}
+    if not cur or str(cur.get("owner") or "") != _seller_id():
+        return jsonify({"ok": False, "error": "검증 작업을 찾지 못했어요 — 사전검증을 다시 눌러 주세요."}), 404
+    markets = list(cur.get("markets") or [])
+    if cur.get("state") == "running" and _time.time() > float(cur.get("started_ts") or 0) + _PV_JOB_DEADLINE_SEC + 5:
+        miss = {m: _pv_transport_fail(m, "timeout", f"검증 못 함 — {int(_PV_JOB_DEADLINE_SEC)}초 안에 끝나지 않았어요")
+                for m in markets if m not in (cur.get("results") or {})}
+        cur = _pv_update(str(job_id), results=miss, state="done")
+    res = cur.get("results") or {}
+    rows = [res[m] for m in markets if m in res]
+    return jsonify({"ok": True, "state": cur.get("state"), "results": rows,
+                    "pending": [m for m in markets if m not in res],
+                    "auto_translate": cur.get("auto_translate"), "error": cur.get("error") or ""})
 
 
 @bp.post("/collect/localize")
