@@ -118,4 +118,6 @@ def test_plug_flag_on_title_only_and_m5_card(monkeypatch):
 def test_options_tab_does_not_call_korean_values_untranslated():
     from pathlib import Path
     h = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
-    assert "/[\\u3040-\\u30ff\\u3400-\\u9fff]/.test(v) ? '아직(' + v + ')' : v" in h
+    # Y6-C A1: 칸 값 = 사슬이 옮긴 한국어, 못 옮긴 값만 원문 그대로(「아직(…)」 표시 줄은 힌트 줄과 함께 없앴다).
+    #   원문에 한자가 없는 값(분해한 「화이트」·「PD65W」)은 사슬이 그대로 돌려준다 — 「미번역」으로 부르지 않는다.
+    assert "values: (a.values || []).map(v => v.ko || v.src).join(', ')" in h

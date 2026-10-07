@@ -53,8 +53,15 @@ def test_owner_canon_lines_and_tokens_are_the_owner_list():
     """F51-b-2(오너 2026-09-27): 수행방패 정본 10줄 + 조각 치환 토큰 — 오너가 준 그대로."""
     from src.services.image_text_glossary import OPTION_VALUE_LINES, OPTION_VALUE_TOKENS
     assert len(OPTION_VALUE_LINES) == 10 and OPTION_VALUE_LINES["【三合一充电支架】带理线器（红色）"] == "레드 선정리형"
-    assert OPTION_VALUE_TOKENS == {"白色": "화이트", "黑色": "블랙", "粉色": "핑크", "蓝色": "블루", "红色": "레드",
-                                   "带理线器": "선정리형", "三合一": "3in1"}
+    owner_f51b = {"白色": "화이트", "黑色": "블랙", "粉色": "핑크", "蓝色": "블루", "红色": "레드",
+                  "带理线器": "선정리형", "三合一": "3in1"}
+    assert all(OPTION_VALUE_TOKENS[k] == v for k, v in owner_f51b.items())
+    # Y6-C A3(오너 2026-10-07): 같은 표에 색명(외래어 표기 통일)·의류 낱말 추가 — 오너가 준 줄 그대로.
+    y6c = {"宝蓝": "로열 블루", "藏蓝": "네이비", "苔藓绿": "모스 그린", "军绿": "카키 그린", "米白": "아이보리",
+           "杏色": "베이지", "卡其": "카키", "酒红": "와인", "上衣": "상의", "半裙": "스커트", "连衣裙": "원피스",
+           "套装": "세트", "均码": "프리사이즈"}
+    assert all(OPTION_VALUE_TOKENS[k] == v for k, v in y6c.items())
+    assert set(OPTION_VALUE_TOKENS) <= set(owner_f51b) | set(y6c) | {"半身裙"}
 
 
 def test_without_the_lines_translator_values_pass_with_a_badge(monkeypatch):

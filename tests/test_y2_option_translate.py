@@ -89,11 +89,14 @@ def test_rule_moves_are_reported_when_translator_fails(monkeypatch):
 
 
 def test_saved_korean_is_shown_under_each_option_row():
-    """Y2 캡처: 번역 뒤 다시 그려도 칸엔 원문(大小 / 小号, 大号)만 보여 「안 됐다」로 보였다 — 저장된 한국어를 한 줄로."""
+    """Y2 캡처: 번역 뒤 다시 그려도 칸엔 원문만 보여 「안 됐다」로 보였다.
+    Y6-C A1(오너 2026-10-07)로 갱신: 힌트 줄(「한국어 — …」)이 아니라 **칸 자체가 한국어**(등록과 같은 사슬 option_ko),
+    원문은 「원문 보기」 토글로만."""
     from pathlib import Path
     html = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
-    assert "function _optKoLine(o)" in html and "data-role', 'opt-ko'" in html
-    assert "addOptionRow(o.name, o.values, o.ko)" in html and "'아직(' + v + ')'" in html
+    assert "function _optKoLine(o)" not in html and "'한국어 — '" not in html
+    assert "addOptionRow(o.name, o.values, o.src)" in html and "const _OPT_VIEW = " in html
+    assert 'data-role="opt-src-toggle"' in html and "'원문 — ' + src.name" in html
 
 
 def test_desktop_title_translate_also_moves_options_and_hold_card_buttons():
