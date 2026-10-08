@@ -3049,7 +3049,8 @@ def _persist_upload_status(item_id, result_dict) -> None:
                     "external_url": r.get("external_url") or "",
                     # U2: 검토 상태 조회 재료 — 셀러 상품번호(sellerProductId)와 계정(U0 두 계정 중 어느 쪽)
                     "product_id": str(r.get("external_product_id") or ""),
-                    "account": (r["market"].partition(":")[2] if r["market"].startswith("coupang:") else ""),
+                    "account": (r["market"].partition(":")[2]
+                                if r["market"].startswith(("coupang:", "smartstore:")) else ""),
                     "at": now,
                 }
                 changed = True
@@ -3215,6 +3216,34 @@ def collect_review_status(item_id):
             u["product_id"] = u.get("product_id") or r.get("sid")
     from .collect_history_store import update as _update
     _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
+    return jsonify({"ok": True, "rows": rows})
+
+
+@bp.get("/collect/<item_id>/market-status")
+def collect_market_status(item_id):
+    """M6(오너 2026-10-08) — 등록한 마켓의 **지금 상태**(검토·판매)와 반려 사유. 팝업이 열릴 때만 묻는다(60초 캐시).
+
+    `?market=coupang:woojoo`면 그 마켓만, 없으면 이 상품에 등록 기록이 있는 마켓 전부. 결과의 마지막 상태는
+    `uploaded[].review`에 남겨 목록 칩(M7)이 다음에 마켓에 묻지 않고 그린다. 못 물어보면 원문을 그대로 싣는다.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    from . import market_status as MS
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        extra = {}
+    want = str(request.args.get("market") or "").strip()
+    recs = [r for r in MS.records(extra) if not want or r["market"] == want]
+    if not recs:
+        return jsonify({"ok": True, "rows": [], "message": "이 마켓에 등록한 기록이 없어요."})
+    rows = [MS.query(r) for r in recs]
+    if any(MS.remember(extra, r) for r in rows if not r.get("cached")):
+        from .collect_history_store import update as _update
+        _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
     return jsonify({"ok": True, "rows": rows})
 
 

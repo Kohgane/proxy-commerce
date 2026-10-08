@@ -1,0 +1,87 @@
+{# M6(오너 2026-10-08) — 마켓 상태 팝업. 목록 칩·등록됨 배지·폰 카드 「검토 상태 보기」가 같은 팝업을 연다.
+   데이터: GET /seller/collect/<id>/market-status[?market=…] — 열 때만 마켓에 묻는다(60초 캐시). 한 페이지에 한 번만 넣는다. #}
+<dialog class="mst" id="kgpMarketStatus" data-role="market-status" aria-labelledby="mstTitle">
+  <div class="mst-head">
+    <h2 class="mst-title" id="mstTitle">마켓 상태</h2>
+    <button type="button" class="mst-x" data-role="mst-close" aria-label="닫기">닫기</button>
+  </div>
+  <div class="mst-body" data-role="mst-body">불러오는 중…</div>
+</dialog>
+<style>
+  .mst { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--border);
+         border-radius: var(--radius-lg); background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); }
+  .mst::backdrop { background: color-mix(in srgb, var(--ink) 45%, transparent); }
+  .mst-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .mst-title { font-family: var(--font-display); font-size: 1.15rem; margin: 0; }
+  .mst-x { min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text); white-space: nowrap; }
+  .mst-body { padding: 12px 16px 16px; overflow-y: auto; }
+  .mst-row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .mst-row:last-child { border-bottom: 0; }
+  .mst-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+  .mst-badge { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: .85rem; font-weight: 600; white-space: nowrap;
+               background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text); }
+  .mst-badge.is-ok { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+  .mst-badge.is-bad { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+  .mst-badge.is-fail { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange-strong, var(--orange)); }
+  .mst-meta { font-size: .85rem; color: var(--text-muted); margin-top: 4px; overflow-wrap: anywhere; }
+  .mst-reason { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--danger); background: var(--bg); overflow-wrap: anywhere; }
+  .mst-err { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--orange); background: var(--bg); font-size: .85rem; overflow-wrap: anywhere; }
+  .mst-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .mst-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--teal); text-decoration: none; white-space: nowrap; }
+</style>
+<script>
+(function () {
+  var dlg = document.getElementById('kgpMarketStatus');
+  if (!dlg || dlg.dataset.ready) return;
+  dlg.dataset.ready = '1';
+  var body = dlg.querySelector('[data-role=mst-body]');
+  var TONE = {ok: 'is-ok', bad: 'is-bad', fail: 'is-fail', wait: ''};
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  function kst(iso) {
+    if (!iso) return '';
+    var d = new Date(iso); if (isNaN(d)) return iso;
+    var k = new Date(d.getTime() + 9 * 3600 * 1000);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return (k.getUTCMonth() + 1) + '-' + p(k.getUTCDate()) + ' ' + p(k.getUTCHours()) + ':' + p(k.getUTCMinutes()) + ' KST';
+  }
+  function row(r) {
+    var h = '<div class="mst-row" data-role="mst-row" data-market="' + esc(r.market) + '" data-state="' + esc(r.state) + '">' +
+      '<div class="mst-top"><span>' + esc(r.market_label || r.chip) + '</span>' +
+      '<span class="mst-badge ' + (TONE[r.tone] || '') + '" data-role="mst-state">' + esc(r.label || '확인 못 함') + '</span></div>' +
+      '<div class="mst-meta">상품번호 ' + esc(r.product_id || '없음') + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') +
+      (r.status_raw ? ' · 마켓 표기 「' + esc(r.status_raw) + '」' : '') +
+      ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') + '</div>';
+    if (r.comment) h += '<div class="mst-reason" data-role="mst-reason"><b>반려 사유</b> ' + esc(r.comment) + '</div>';
+    if (r.error) h += '<div class="mst-err" data-role="mst-error">마켓에 묻지 못했어요 — ' + esc(r.error) + '</div>';
+    var links = '';
+    if (r.manage_url) links += '<a href="' + esc(r.manage_url) + '" target="_blank" rel="noopener" data-role="mst-manage">' + esc(r.manage_label || '마켓에서 열기') + '</a>';
+    if (r.link) links += '<a href="' + esc(r.link) + '" target="_blank" rel="noopener" data-role="mst-link">구매자 화면</a>';
+    if (links) h += '<div class="mst-links">' + links + '</div>';
+    return h + '</div>';
+  }
+  window.kgpMarketStatus = function (itemId, market) {
+    body.textContent = '마켓에 묻는 중…';
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    var url = '/seller/collect/' + encodeURIComponent(itemId) + '/market-status' + (market ? '?market=' + encodeURIComponent(market) : '');
+    return fetch(url, {credentials: 'same-origin'}).then(function (r) {
+      return r.text().then(function (t) {
+        try { return JSON.parse(t); } catch (e) { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }
+      });
+    }).then(function (d) {
+      if (!d || !d.ok) { body.innerHTML = '<div class="mst-err" data-role="mst-error">' + esc((d && d.error) || '불러오지 못했어요') + '</div>'; return d; }
+      body.innerHTML = (d.rows || []).length ? d.rows.map(row).join('') : '<p data-role="mst-empty">' + esc(d.message || '등록 기록이 없어요.') + '</p>';
+      document.dispatchEvent(new CustomEvent('kgp:market-status', {detail: {itemId: itemId, rows: d.rows || []}}));
+      return d;
+    }).catch(function (e) { body.innerHTML = '<div class="mst-err" data-role="mst-error">네트워크 오류 — ' + esc((e && e.message) || e) + '</div>'; });
+  };
+  dlg.addEventListener('click', function (ev) {
+    if (ev.target === dlg || ev.target.closest('[data-role=mst-close]')) dlg.close ? dlg.close() : dlg.removeAttribute('open');
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest('[data-market-status]');
+    if (!t) return;
+    ev.preventDefault();
+    window.kgpMarketStatus(t.getAttribute('data-item'), t.getAttribute('data-market-status') || '');
+  });
+})();
+</script>

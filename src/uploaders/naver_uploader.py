@@ -317,7 +317,9 @@ class NaverSmartStoreUploader(BaseUploader):
                             'action_url': _ncat.picker_url(str(product.get('item_id') or '')) if leaf else ''}
                 return {'success': False, 'error': result['error'], 'sku': product.get('sku', '')}
             product_id = str(result.get('originProductNo', ''))
-            url = f'https://smartstore.naver.com/main/products/{product_id}' if product_id else ''
+            # M6: 구매자 화면 주소는 **채널 상품번호**다(원상품번호와 다른 번호 — 식별자 오용 지뢰). 없으면 비운다.
+            channel_no = str(result.get('smartstoreChannelProductNo') or '')
+            url = f'https://smartstore.naver.com/main/products/{channel_no}' if channel_no else ''
             return {'success': True, 'product_id': product_id, 'url': url, 'sku': product.get('sku', '')}
         except Exception as exc:
             logger.error('upload_product failed for sku=%s: %s', product.get('sku', ''), exc)

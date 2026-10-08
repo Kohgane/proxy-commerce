@@ -541,6 +541,11 @@ class CoupangUploader(BaseUploader):
         """WING 상품조회(오너 스크린샷 실측 형식 — reject_watch N3와 같은 것)."""
         return f'https://wing.coupang.com/vendor-inventory/list?searchKeywords={sid}'
 
+    @staticmethod
+    def wing_modify_url(sid) -> str:
+        """M6: WING 상품 수정 화면 — 오너가 준 실제 주소에서 ID 자리만 바꾼다(2026-10-08)."""
+        return f'https://wing.coupang.com/tenants/seller-web/vendor-inventory/modify?vendorInventoryId={sid}'
+
     def get_product(self, seller_product_id: str) -> dict:
         """상품 조회 원문 `data`(dict) 또는 `{'error': …}`."""
         sid = str(seller_product_id or '').strip()
@@ -563,7 +568,7 @@ class CoupangUploader(BaseUploader):
         """
         sid = str(seller_product_id or '').strip()
         out = {'sid': sid, 'state': 'unknown', 'label': self.REVIEW_LABELS['unknown'], 'status_raw': '',
-               'comment': '', 'product_id': '', 'link': '', 'wing_url': self.wing_search_url(sid) if sid else '',
+               'comment': '', 'product_id': '', 'link': '', 'wing_url': self.wing_modify_url(sid) if sid else '',
                'name': '', 'search_tags': [], 'foreign': [], 'error': ''}
         data = self.get_product(sid)
         if 'error' in data:

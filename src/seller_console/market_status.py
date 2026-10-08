@@ -1,214 +1,157 @@
-"""src/seller_console/market_status.py — 마켓별 상품 상태 데이터 모델 (Phase 127).
+"""M6(오너 2026-10-08) — 등록한 상품의 **마켓 검토·판매 상태** 한 자리(쿠팡·스마트스토어·11번가·멀티샵).
 
-- 활성 / 품절 / 오류 / 가격이상 / 정지
-- 마켓별 어댑터 + Google Sheets 캐시 + 실시간 폴백 구조
+실측(오너 폰 16:26 KST, 플리츠 세트): 쿠팡 우주대행 16407690349 등록 성공 → 「검토 상태 보기」가 아무것도 안 보여 줌.
+상태는 이 모듈 하나에서 묻고, 마지막으로 알려진 값은 수집 행 `uploaded[].review`에 남긴다(M7 칩이 목록을 그릴 때
+마켓에 묻지 않고 그 값만 쓴다). 마켓에 묻는 건 **팝업을 열 때만** — 같은 상품·마켓은 60초 캐시.
+
+- 쿠팡: `GET seller-products/{sellerProductId}`의 `statusName`(승인대기중·승인완료·승인반려 …) + 반려 사유(이력).
+  WING 딥링크는 오너가 준 실제 주소 형식 — `…/vendor-inventory/modify?vendorInventoryId={sellerProductId}`.
+- 스마트스토어: `GET /v2/products/origin-products/{originProductNo}`의 `originProduct.statusType`
+  (문서 값: WAIT·SALE·OUTOFSTOCK·UNADMISSION·REJECTION·SUSPENSION·CLOSE·PROHIBITION·DELETE). 판매자센터는
+  상품별 주소 형식을 확인하지 못해 **홈**으로만 연다(추측 주소 금지).
+- 11번가·멀티샵·Shopify: 상태 조회를 붙이지 않았다 — 「상태 조회 미연동」이라고 그대로 말한다(지어내지 않음).
+- 못 물어보면 그 원문(HTTP·본문 앞부분)을 그대로 싣는다.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from decimal import Decimal
-from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+import threading
+import time
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
-# 지원 마켓
-Marketplace = Literal[
-    "coupang",
-    "smartstore",
-    "11st",
-    "kohganemultishop",
-    "woocommerce",
-    "shopify",
-    "amazon",
-    "ebay",
-    "shopee",
-]
+CACHE_SEC = 60
+_CACHE: Dict[tuple, tuple] = {}
+_LOCK = threading.Lock()
 
-# 상품 상태
-ProductState = Literal["active", "out_of_stock", "error", "price_anomaly", "suspended"]
+#: 칩 표기(M7) — 등록 레코드의 market 코드 → 짧은 이름. 순서 = 화면 순서.
+CHIP_LABELS = (
+    ("coupang:gogane", "쿠팡·고가네"), ("coupang:woojoo", "쿠팡·우주대행"), ("coupang", "쿠팡"),
+    ("smartstore:chezgoga", "셰고가"), ("smartstore:gocosmos", "고코스모스"), ("smartstore", "스마트스토어"),
+    ("elevenst", "11번가"), ("woocommerce", "멀티샵"), ("shopify", "Shopify"),
+)
+_CHIP = dict(CHIP_LABELS)
+_ORDER = {m: i for i, (m, _l) in enumerate(CHIP_LABELS)}
 
-_CURRENCY_SYMBOLS = {
-    "KRW": "₩",
-    "USD": "$",
-    "JPY": "¥",
-    "EUR": "€",
-    "SGD": "S$",
-    "GBP": "£",
-    "CNY": "¥",
+COUPANG_WING_MODIFY = "https://wing.coupang.com/tenants/seller-web/vendor-inventory/modify?vendorInventoryId={sid}"
+NAVER_SELLER_HOME = "https://sell.smartstore.naver.com/"
+ELEVENST_SELLER_HOME = "https://soffice.11st.co.kr/"
+
+#: 스마트스토어 statusType → (state, 화면 이름)
+NAVER_STATES = {
+    "SALE": ("approved", "판매중"), "WAIT": ("pending", "판매대기"), "OUTOFSTOCK": ("approved", "품절"),
+    "UNADMISSION": ("pending", "승인대기"), "REJECTION": ("rejected", "승인거부"), "SUSPENSION": ("pending", "판매중지"),
+    "CLOSE": ("deleted", "판매종료"), "PROHIBITION": ("rejected", "판매금지"), "DELETE": ("deleted", "삭제"),
 }
-
-_CURRENCY_DECIMALS = {
-    "KRW": 0,
-    "JPY": 0,
-    "USD": 2,
-    "EUR": 2,
-    "SGD": 2,
-    "GBP": 2,
-    "CNY": 2,
-}
+#: 칩 색(M7): 승인대기 회색 · 승인완료 초록 · 반려 빨강 · 실패(조회 실패·확인 못 함) 주황
+CHIP_TONE = {"approved": "ok", "pending": "wait", "saved": "wait", "rejected": "bad", "deleted": "bad",
+             "unknown": "fail", "unsupported": "wait", "": "wait"}
 
 
-def format_currency_amount(amount: Optional[float], currency: str) -> str:
-    """금액을 통화별 기본 표시 포맷으로 렌더링한다."""
-    if amount is None:
-        return "—"
-    cur = (currency or "KRW").upper()
-    decimals = _CURRENCY_DECIMALS.get(cur, 2)
-    symbol = _CURRENCY_SYMBOLS.get(cur, f"{cur} ")
-    return f"{symbol}{amount:,.{decimals}f}"
+def chip_label(market: str) -> str:
+    return _CHIP.get(market) or market
 
 
-def convert_amount(amount: float, from_currency: str, to_currency: str) -> tuple[Optional[float], bool]:
-    """환율 유틸을 사용해 금액을 변환한다.
-
-    Returns:
-        (변환금액, 성공여부). 환율 미가용 시 (None, False).
-    """
-    src = (from_currency or "KRW").upper()
-    dst = (to_currency or "KRW").upper()
-    if src == dst:
-        return float(amount), True
-    try:
-        from src.price import _build_fx_rates, _from_krw, _to_krw
-
-        amount_dec = Decimal(str(amount))
-        fx_rates = _build_fx_rates()
-        krw = _to_krw(amount_dec, src, fx_rates)
-        converted = _from_krw(krw, dst, fx_rates)
-        return float(converted), True
-    except Exception:
-        return None, False
-
-
-def marketplace_meta(marketplace: str) -> dict:
-    """마켓 코드에 대한 국가/통화/locale/region 메타를 반환한다."""
-    try:
-        from src.markets.adapters.base import get_marketplace_meta
-
-        return get_marketplace_meta(marketplace)
-    except Exception:
-        return {
-            "market": marketplace,
-            "label": marketplace,
-            "country": "KR",
-            "currency": "KRW",
-            "locale": "ko-KR",
-            "region": "동아시아",
-            "is_ready": True,
-        }
+def records(extra: dict) -> List[Dict]:
+    """수집 행의 등록 기록(마켓별 1건, 화면 순서) — 상품번호가 없으면 예전 주소에서 읽는다(소급)."""
+    import re
+    out = []
+    for u in (extra or {}).get("uploaded") or []:
+        if not isinstance(u, dict) or not u.get("market"):
+            continue
+        m = str(u["market"])
+        pid = str(u.get("product_id") or "").strip()
+        if not pid:
+            hit = re.search(r"/(?:vp/products|products)/(\d+)", str(u.get("external_url") or ""))
+            pid = hit.group(1) if hit else ""
+        rv = u.get("review") if isinstance(u.get("review"), dict) else {}
+        out.append({"market": m, "chip": chip_label(m), "label": str(u.get("market_label") or chip_label(m)),
+                    "product_id": pid, "at": str(u.get("at") or ""), "account": str(u.get("account") or m.partition(":")[2]),
+                    "external_url": str(u.get("external_url") or ""), "review": rv,
+                    "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait"),
+                    "state_label": str(rv.get("label") or "등록됨")})
+    out.sort(key=lambda r: _ORDER.get(r["market"], 99))
+    return out
 
 
-@dataclass
-class MarketStatusItem:
-    """개별 상품의 마켓 상태 레코드."""
-
-    marketplace: str
-    product_id: str
-    state: str
-    sku: Optional[str] = None
-    title: Optional[str] = None
-    description: Optional[str] = None
-    keywords: List[str] = field(default_factory=list)
-    options: List[Dict[str, Any]] = field(default_factory=list)
-    localized: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    localization_status: str = "not_localized"
-    price: Optional[float] = None
-    currency: str = "KRW"
-    price_krw: Optional[int] = None
-    last_synced_at: Optional[datetime] = None
-    error_message: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        self.currency = (self.currency or "KRW").upper()
-        if self.price is None and self.price_krw is not None:
-            self.price = float(self.price_krw)
-            self.currency = "KRW"
-        elif self.price is not None and self.price_krw is None:
-            converted, ok = convert_amount(float(self.price), self.currency, "KRW")
-            if ok and converted is not None:
-                self.price_krw = int(round(converted))
-        elif self.price is not None and self.price_krw is not None:
-            converted, ok = convert_amount(float(self.price), self.currency, "KRW")
-            if ok and converted is not None and int(round(converted)) != self.price_krw:
-                self.price_krw = int(round(converted))
-
-    @property
-    def price_display(self) -> str:
-        return format_currency_amount(self.price, self.currency)
+def _coupang(rec: dict) -> dict:
+    from .views import _coupang_up_for
+    sid = rec["product_id"]
+    up = _coupang_up_for(rec["account"])
+    st = up.review_status(sid)
+    st["manage_url"] = COUPANG_WING_MODIFY.format(sid=sid)
+    st["manage_label"] = "Wing에서 열기"
+    return st
 
 
-@dataclass
-class MarketStatusSummary:
-    """마켓별 상품 상태 집계 요약."""
-
-    marketplace: str
-    active: int = 0
-    out_of_stock: int = 0
-    error: int = 0
-    price_anomaly: int = 0
-    suspended: int = 0
-    total: int = 0
-    last_synced_at: Optional[datetime] = None
-    source: str = "mock"  # "sheets" / "live" / "mock"
-
-    # 프론트엔드용 레이블 (마켓 코드 → 한글명)
-    _LABELS: dict = field(default_factory=dict, init=False, repr=False, compare=False)
-
-    def label(self) -> str:
-        """마켓 한글 레이블 반환."""
-        _map = {
-            "coupang": "쿠팡",
-            "smartstore": "스마트스토어",
-            "11st": "11번가",
-            "kohganemultishop": "코가네멀티샵",
-            "woocommerce": "WooCommerce",
-            "shopify": "Shopify",
-            "amazon": "Amazon",
-            "ebay": "eBay",
-            "shopee": "Shopee",
-        }
-        return _map.get(self.marketplace, self.marketplace)
-
-    def to_dict(self) -> dict:
-        """JSON 직렬화 가능한 dict 반환."""
-        return {
-            "marketplace": self.marketplace,
-            "label": self.label(),
-            "country": marketplace_meta(self.marketplace).get("country"),
-            "currency": marketplace_meta(self.marketplace).get("currency"),
-            "locale": marketplace_meta(self.marketplace).get("locale"),
-            "region": marketplace_meta(self.marketplace).get("region"),
-            "active": self.active,
-            "out_of_stock": self.out_of_stock,
-            "error": self.error,
-            "price_anomaly": self.price_anomaly,
-            "suspended": self.suspended,
-            "total": self.total,
-            "last_synced_at": self.last_synced_at.isoformat() if self.last_synced_at else None,
-            "source": self.source,
-        }
+def _naver(rec: dict) -> dict:
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader
+    pid = rec["product_id"]
+    up = NaverSmartStoreUploader(account=rec["account"] or None)
+    out = {"sid": pid, "state": "unknown", "label": "확인 못 함", "status_raw": "", "comment": "", "link": "",
+           "manage_url": NAVER_SELLER_HOME, "manage_label": "판매자센터 열기", "error": ""}
+    res = up._api_request("GET", f"/v2/products/origin-products/{pid}")
+    if not isinstance(res, dict) or "error" in res:
+        out["error"] = str((res or {}).get("error") if isinstance(res, dict) else res)[:300]
+        return out
+    raw = str(((res.get("originProduct") or {}).get("statusType")) or "").strip()
+    state, label = NAVER_STATES.get(raw, ("unknown", raw or "확인 못 함"))
+    out.update(state=state, label=label, status_raw=raw)
+    ch = str(((res.get("smartstoreChannelProduct") or {}).get("channelProductNo")) or "").strip()
+    if ch and state == "approved":
+        out["link"] = f"https://smartstore.naver.com/main/products/{ch}"
+    return out
 
 
-@dataclass
-class AllMarketStatus:
-    """모든 마켓 상태 집계 결과."""
+def _unsupported(rec: dict) -> dict:
+    home = ELEVENST_SELLER_HOME if rec["market"] == "elevenst" else ""
+    return {"sid": rec["product_id"], "state": "unsupported", "label": "상태 조회 미연동 — 등록 기록만",
+            "status_raw": "", "comment": "", "link": rec.get("external_url") or "", "error": "",
+            "manage_url": home, "manage_label": "셀러오피스 열기" if home else ""}
 
-    summaries: List[MarketStatusSummary]
-    items: List[MarketStatusItem] = field(default_factory=list)
-    fetched_at: datetime = field(default_factory=datetime.utcnow)
-    source: str = "mock"  # "sheets" / "live" / "mock"
 
-    def is_mock(self) -> bool:
-        return self.source == "mock"
+def query(rec: dict, *, now: Optional[float] = None) -> dict:
+    """한 마켓의 지금 상태 — 60초 캐시. 결과에 `cached`(캐시에서 왔나)와 `checked_at`을 싣는다."""
+    now = time.time() if now is None else now
+    key = (rec["market"], rec["product_id"])
+    with _LOCK:
+        hit = _CACHE.get(key)
+        if hit and now - hit[0] < CACHE_SEC:
+            return dict(hit[1], cached=True)
+    m = rec["market"]
+    if not rec["product_id"]:
+        row = {"state": "unknown", "label": "확인 못 함", "error": "등록 기록에 마켓 상품번호가 없어요", "sid": ""}
+    else:
+        try:
+            if m.startswith("coupang"):
+                row = _coupang(rec)
+            elif m.startswith("smartstore"):
+                row = _naver(rec)
+            else:
+                row = _unsupported(rec)
+        except Exception as exc:                            # noqa: BLE001 — 원문 그대로(C 규칙)
+            row = {"sid": rec["product_id"], "state": "unknown", "label": "확인 못 함",
+                   "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
+               registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
+               tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
+    with _LOCK:
+        _CACHE[key] = (now, row)
+    return dict(row, cached=False)
 
-    def to_legacy_dict(self) -> dict:
-        """기존 data_aggregator.get_market_product_status() 형태와 호환되는 dict 반환.
 
-        widgets.py 기존 위젯과 호환성 유지.
-        """
-        markets = [s.to_dict() for s in self.summaries]
-        return {
-            "markets": markets,
-            "is_mock": self.is_mock(),
-            "source": self.source,
-            "fetched_at": self.fetched_at.isoformat(),
-        }
+def remember(extra: dict, row: dict) -> bool:
+    """마지막으로 알려진 상태를 `uploaded[].review`에 — 조회가 실패했으면 예전 값을 덮지 않는다(실패도 칩 색으로는 안 바꾼다)."""
+    if row.get("state") in ("unknown",) and row.get("error"):
+        return False
+    for u in (extra or {}).get("uploaded") or []:
+        if isinstance(u, dict) and u.get("market") == row.get("market"):
+            u["review"] = {k: row.get(k) for k in ("state", "label", "comment", "link", "status_raw", "checked_at")}
+            if row.get("product_id") and not u.get("product_id"):
+                u["product_id"] = row["product_id"]
+            return True
+    return False
+
+
+def reset_cache() -> None:
+    with _LOCK:
+        _CACHE.clear()
