@@ -157,15 +157,29 @@ def test_prevalidate_holds_before_naver(monkeypatch, tree):
     from src.seller_console import smartstore_routing as SR
     monkeypatch.setattr(UD, "smartstore_approved", lambda store="": True)
     monkeypatch.setattr(SR, "price_hold", lambda pd: "")
+    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_IMAGE_UPLOAD", "0")
     pv = UD.UploadDispatcher()._prevalidate_market(_pleats(), "smartstore")
-    assert pv.hold and pv.error_code == "category_unset" and pv.fixes == ["naver_category"]
+    assert pv.hold and pv.error_code == "category_unset" and pv.fixes == ["naver_category"], pv
+    assert "카테고리를 다시 지정하세요(카테고리 지정 →)" in " ".join(pv.details)
     assert pv.action_url == "/seller/collect/it-1/naver-category"
     pv2 = UD.UploadDispatcher()._prevalidate_market(_pleats(naver_category_id=PARENT), "smartstore")
     assert pv2.error_code == "category_not_leaf"
     r = UD.UploadDispatcher()._dispatch_one(_pleats(), "smartstore")
     assert r.success is False and r.error_code == "category_unset" and r.action_url.endswith("/naver-category")
     ok = UD.UploadDispatcher()._prevalidate_market(_pleats(naver_category_id=LEAF), "smartstore")
-    assert ok.error_code not in ("category_unset", "category_not_leaf")
+    assert ok.error_code not in ("category_unset", "category_not_leaf") and "naver_category" not in ok.fixes
+
+
+def test_category_hold_shows_with_translation_hold(monkeypatch, tree):
+    """카테고리 보류가 다른 보류(옵션 미해석)를 가리지 않는다 — 함께 보여야 「번역하고 다시 검증」이 돈다."""
+    from src.seller_console import upload_dispatcher as UD
+    holds = UD.UploadDispatcher.readiness_holds(_pleats(options=[{"name": "颜色分类", "values": ["奇异色上衣"]}],
+                                                        skus=[{"sku_id": "1", "spec": ["奇异色上衣"], "sell_price_krw": 52000}]),
+                                               "smartstore")
+    fixes = [h["fix"] for h in holds]
+    assert "naver_category" in fixes and "translate" in fixes
 
 
 @pytest.fixture

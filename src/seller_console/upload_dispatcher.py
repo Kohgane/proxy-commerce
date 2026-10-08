@@ -694,6 +694,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("편집 화면에서 판매가 직접 입력")
     if any(h["fix"] == "ship_ratio" for h in holds):
         fixes.append("원가·크기를 확인하거나 「그래도 등록」")
+    if any(h["fix"] == "naver_category" for h in holds):
+        fixes.append("「카테고리 지정 →」에서 네이버 카테고리 고르기")
     if any(h["fix"] == "rep_image" for h in holds):
         fixes.append("「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」")
     if any(h["fix"] == "voltage" for h in holds):
@@ -709,6 +711,8 @@ def readiness_hint(holds: List[Dict[str, str]]) -> str:
         out.append("외화 원가는 편집 화면 ‘원화로 환산’ 버튼으로 원화 판매가를 채울 수도 있어요.")
     if any(h["fix"] == "translate" for h in holds):
         out.append("편집 화면의 「한국어 번역」을 누르거나 값을 직접 넣어 주세요.")
+    if any(h["fix"] == "naver_category" for h in holds):
+        out.append("네이버 카테고리는 등록 뒤 바꿀 수 없어요 — 리프(맨 아래 분류)로 골라 주세요.")
     return " ".join(out)
 
 
@@ -867,6 +871,17 @@ class UploadDispatcher:
             price = float(price_raw) if price_raw not in (None, "") else None
         except (TypeError, ValueError):
             price = None
+        # Y7-B: 네이버 리프 카테고리 — 못 정했거나 리프가 아니면 보류(번역 등 다른 보류와 **같이** 보인다 —
+        #   먼저 막아 버리면 「번역하고 다시 검증」 자동 번역이 돌지 않는다). 등록 업로더도 같은 판정을 한 번 더 한다.
+        if market == "smartstore":
+            try:
+                from src.uploaders import naver_categories as _ncat
+                from .market_cred_view import current_naver_account as _cna_r
+                _nch = _ncat.hold(pd, account=_cna_r() or "")
+            except Exception:
+                _nch = None
+            if _nch:
+                holds.append({"short": "네이버 카테고리", "fix": "naver_category", "code": _nch["code"], "line": _nch["line"]})
         if price is None or price <= 0:
             holds.append({"short": "판매가 없음", "fix": "pc",
                           "line": "판매가가 0이거나 비어 있어요 — 원가를 읽어야 판매가를 낼 수 있어요"
@@ -1010,14 +1025,6 @@ class UploadDispatcher:
                         market=market, ok=False, hold=True, error_code="smartstore_limit_full",
                         message=f"보류: 스토어 한도 — {_lim['limit']:,} 도달 ({_lim['text']}) · 다른 마켓은 그대로 진행돼요",
                         hint="스토어당 판매중·판매대기·품절 합계 1,000이 상한이에요 — 자리가 생기면 다시 사전검증해 주세요.")
-            # Y7-B: 리프 카테고리 — 못 정했거나 리프가 아니면 보내지 않는다(등록과 같은 판정 `naver_categories.hold`).
-            from src.uploaders import naver_categories as _ncat
-            _nch = _ncat.hold(product_data, account=_st or "")
-            if _nch:
-                return PrevalidationResult(market=market, ok=False, hold=True, error_code=_nch["code"], message=_nch["line"],
-                                           fixes=["naver_category"],
-                                           action_url=_ncat.picker_url(str(product_data.get("item_id") or "")),
-                                           hint="네이버 카테고리는 등록 뒤 바꿀 수 없어요 — 리프(맨 아래 분류)로 골라 주세요.")
             # Y7: 조합형 옵션 — 축 2개·조합 상한을 넘으면 보내지 않는다(등록과 같은 판정 `naver_options.limit_hold`).
             from src.uploaders.naver_options import limit_hold as _ol, REASON_LIMIT as _OL
             _olh = _ol(product_data)
@@ -1131,12 +1138,20 @@ class UploadDispatcher:
         #   못 채웠으면 「막힘」이 아니라 **보류**(보강·번역하면 풀린다)로 말하고 등록 버튼은 열리지 않는다.
         holds = self.readiness_holds(product_data, market)
         if holds:
+            # Y7-B: 카테고리 보류만 있으면 그 사유코드(category_unset·category_not_leaf) · 「카테고리 지정 →」 링크
+            _cat = [h for h in holds if h.get("fix") == "naver_category"]
+            _url = ""
+            if _cat:
+                from src.uploaders.naver_categories import picker_url as _pick_url
+                _url = _pick_url(str(product_data.get("item_id") or ""))
             return PrevalidationResult(
-                market=market, ok=False, error_code="missing_field", hold=True,
+                market=market, ok=False, hold=True,
+                error_code=(_cat[0]["code"] if _cat and len(holds) == 1 else "missing_field"),
                 message=readiness_message(holds),
                 hint=readiness_hint(holds),
                 details=[h["line"] for h in holds],
                 fixes=list(dict.fromkeys(h.get("fix", "") for h in holds if h.get("fix"))),
+                action_url=_url,
             )
 
         # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)
@@ -1269,9 +1284,10 @@ class UploadDispatcher:
         # U0b: 스마트스토어 미승인·한도 꽉 참·고단가 기준 미달은 사전검증과 **같은 판정**으로 전송 전 보류(직접 호출 우회 0).
         if market == "smartstore":
             _pv = self._prevalidate_market(product_data, market)
-            if not _pv.ok and _pv.error_code in ("smartstore_token_failed", "smartstore_limit_full",
-                                                 "smartstore_price_floor", "option_limit",
-                                                 "category_not_leaf", "category_unset"):
+            if not _pv.ok and (_pv.error_code in ("smartstore_token_failed", "smartstore_limit_full",
+                                                  "smartstore_price_floor", "option_limit",
+                                                  "category_not_leaf", "category_unset")
+                               or "naver_category" in (_pv.fixes or [])):
                 return UploadResult(market=market, success=False, error_code=_pv.error_code,
                                     message=f"전송 전에 보류했습니다 — {_pv.message}", hint=_pv.hint,
                                     action_url=_pv.action_url)
