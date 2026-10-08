@@ -77,6 +77,29 @@
   dlg.addEventListener('click', function (ev) {
     if (ev.target === dlg || ev.target.closest('[data-role=mst-close]')) dlg.close ? dlg.close() : dlg.removeAttribute('open');
   });
+  // M7: 이미 등록된 마켓(data-registered)을 다시 체크하면 「중복 등록」 확인 **한 번** — 이 화면에서 한 번 확인하면 다시 묻지 않는다.
+  //   네이티브 confirm 대신 그 줄 아래 한 줄(폰 카드엔 확인 창 함수가 없다).
+  var dupOk = false;
+  document.addEventListener('change', function (ev) {
+    var box = ev.target;
+    if (!box || !box.matches || !box.matches('input[type=checkbox][data-registered="1"]') || !box.checked || dupOk) return;
+    box.checked = false;
+    var host = box.closest('label') || box.parentNode;
+    if (!host || (host.nextElementSibling && host.nextElementSibling.matches('[data-role=dup-confirm]'))) return;
+    var bar = document.createElement('div');
+    bar.className = 'mk-dup-confirm'; bar.setAttribute('data-role', 'dup-confirm');
+    bar.innerHTML = '<span>이미 등록된 마켓이에요 — 다시 올리면 같은 상품이 하나 더 생겨요.</span>' +
+      '<button type="button" data-role="dup-yes">중복 등록</button><button type="button" data-role="dup-no">취소</button>';
+    host.parentNode.insertBefore(bar, host.nextSibling);
+    bar.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      e.preventDefault();
+      if (b.getAttribute('data-role') === 'dup-yes') {
+        dupOk = true; box.checked = true; box.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      bar.remove();
+    });
+  });
   document.addEventListener('click', function (ev) {
     var t = ev.target.closest('[data-market-status]');
     if (!t) return;

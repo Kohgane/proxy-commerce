@@ -2305,3 +2305,28 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .cpx-src { color: var(--gold-ink); }
 .cpx-act { min-height: 44px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); font-size: .78rem; color: var(--text); padding: 0 4px; white-space: nowrap; }
 .cpx-act:hover { border-color: var(--teal); }
+
+/* M7(오너 2026-10-08): 등록된 마켓 소형 칩 — 목록·폰 카드 공용. 색 = 마지막으로 알려진 상태
+   (승인대기 회색 · 승인완료 초록 · 반려 빨강 · 실패 주황). 누르면 M6 상태 팝업. 390px에서 줄바꿈(가로 넘침 0). */
+.mk-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; }
+.mk-chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 7px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text);
+  font-size: .72rem; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; }
+.mk-chip.tone-ok { background: color-mix(in srgb, var(--success) 16%, transparent); border-color: color-mix(in srgb, var(--success) 40%, transparent); color: var(--success); }
+.mk-chip.tone-bad { background: color-mix(in srgb, var(--danger) 14%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
+.mk-chip.tone-fail { background: color-mix(in srgb, var(--orange) 16%, transparent); border-color: color-mix(in srgb, var(--orange) 45%, transparent); color: var(--orange-strong); }
+.mk-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.mk-dup { font-size: .8rem; color: var(--orange-strong); overflow-wrap: anywhere; }
+.mk-dup-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 10px;
+  border-left: 3px solid var(--orange); background: var(--surface); font-size: .85rem; }
+.mk-dup-confirm button { min-height: 40px; padding: 0 12px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: transparent; color: var(--text); white-space: nowrap; }
+.mk-dup-confirm button[data-role=dup-yes] { border-color: var(--orange); color: var(--orange-strong); font-weight: 600; }
+.mk-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-filter-row { padding: 8px 16px 0; }
+.mk-filter a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border); color: var(--text); text-decoration: none; white-space: nowrap; font-size: .85rem; }
+.mk-filter a.is-on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* M7 같은 유형(세로쪼개짐): 수집 목록 머리줄 — 390px에서 「정리 후보」「이미지 점검」「수집 목록」이 두 줄로 쪼개졌다(main 실측 52px).
+   머리줄 자체를 줄바꿈하고 각 항목은 한 줄로 둔다. */
+.ch-card-table .op-card-head { flex-wrap: wrap; row-gap: 6px; }
+.ch-card-table .op-card-head > *, .ch-card-table .op-card-head .rp-step-eyebrow { white-space: nowrap; }

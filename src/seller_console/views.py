@@ -30,7 +30,7 @@ from typing import Any, Dict, Optional
 from difflib import SequenceMatcher
 
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for, Response
@@ -2114,6 +2114,9 @@ def mobile_list_ctx(item: dict) -> dict:
     markets = [{"code": m, "label": MARKET_LABELS.get(m, m), "connected": bool(connected.get(m)),
                 "checked": False} for m in _M5_MARKETS]
     markets, market_pick = _market_rows(markets, product)
+    _mark_registered(markets, ex)                       # M7: 이미 등록한 마켓은 기본 체크 해제 + 경고
+    from .listing_status import records as _mk_records
+    market_chips = _mk_records(ex)
     return {"item_id": str(item.get("id") or ""), "title": product["title"] or "(제목 없음)",
             "thumb": product["thumbnail"], "images_count": len(images),
             "price": str(product.get("price") or "") if has_price else "",
@@ -2124,6 +2127,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
+            "market_chips": market_chips,
             "product": product,
             "risks": risks, "mixed_types": mixed, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or "")), **_m5_ship(product),
             **_m5_video(ex)}
@@ -3086,6 +3090,29 @@ def _account_codes_forbidden(markets):
         return jsonify({"ok": False, "error": "이 계정에서는 공유 마켓 계정으로 등록할 수 없어요.",
                         "markets": acct}), 403
     return None
+
+
+def _mark_registered(rows: list, extra: Optional[dict]) -> Dict[str, dict]:
+    """M7(오너 2026-10-08) — 이미 등록된 마켓 줄은 **기본 체크 해제** + 「이미 등록됨(번호·날짜)」. `{code: 등록 정보}`.
+
+    등록 기록(`uploaded[]`)으로만 판정한다(마켓에 묻지 않음). 다시 올리면 마켓에 같은 상품이 하나 더 생긴다.
+    """
+    from .listing_status import records as _mk_records
+    reg = {}
+    for r in _mk_records(extra or {}):
+        at = r.get("at") or ""
+        try:
+            at = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone(timezone(timedelta(hours=9))).strftime("%m-%d")
+        except Exception:
+            at = at[:10]
+        reg[r["market"]] = {"product_id": r.get("product_id") or "", "date": at, "chip": r.get("chip") or "",
+                            "line": f"이미 등록됨 ({r.get('product_id') or '번호 없음'}, {at}) — 다시 올리면 중복 상품"}
+    for m in rows or []:
+        info = reg.get(m.get("code"))
+        if info:
+            m["registered"] = info
+            m["checked"] = False
+    return reg
 
 
 def _market_rows(markets: list, product: Optional[dict] = None):
@@ -8890,6 +8917,9 @@ def _shape_collect_items(items, current_lang):
         up = ex.get("uploaded")
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
+        # M7: 마켓별 소형 칩(등록된 마켓만) — 색은 마지막으로 알려진 상태(uploaded[].review). 목록은 마켓에 묻지 않는다.
+        from .listing_status import records as _mk_records
+        it["market_chips"] = _mk_records(ex)
         # U2: 마지막으로 물어본 쿠팡 검토 상태(승인·검토중·반려) — 목록 배지. 안 물어봤으면 비움(지어내지 않음).
         it["uploaded_review"] = [{"label": str(u.get("market_label") or u.get("market")),
                                   "state": (u.get("review") or {}).get("state") or "",
@@ -9013,6 +9043,9 @@ def collect_history():
     status_f = request.args.get("status", "").strip()          # ""=전체 / ok / archived
     group_f = request.args.get("group", "").strip()            # 그룹 id 필터
     hygiene_f = request.args.get("hygiene", "").strip()        # v87-W1: "cleanup"=비상품 정리 후보만
+    reg_f = request.args.get("reg", "").strip()                # M7: "none"=미등록만 · "done"=등록됨만
+    if reg_f not in ("none", "done"):
+        reg_f = ""
     sort = (request.args.get("sort") or "newest").strip()
     per_page = request.args.get("per_page", 50, type=int)
     if per_page not in (20, 50, 100):
@@ -9024,7 +9057,8 @@ def collect_history():
 
     # 속도: 기본 뷰(최신순·필터 없음)는 목록을 SQL LIMIT/OFFSET로 그 페이지만 가져온다
     #   (전체 스캔 회피 — 상품 많아도 첫 페이지 비용 고정). 필터/타 정렬은 기존 전체 로드 경로.
-    _sql_page = (sort == "newest" and not q and not status_f and not group_f and not domain and not source and not hygiene_f)
+    _sql_page = (sort == "newest" and not q and not status_f and not group_f and not domain and not source and not hygiene_f
+                 and not reg_f)
 
     items = []
     summ = {"total": 0, "today": 0, "domains": 0, "by_source": {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}}
@@ -9080,6 +9114,17 @@ def collect_history():
                          if (it.get("status") or "ok") != "archived" and _is_cand(it)]
             except Exception as _he:
                 logger.warning("정리 후보 판별 실패: %s", _he)
+
+        # M7: 등록 여부 필터 — 등록 기록(uploaded[])이 있으면 등록됨(마켓에 묻지 않는다)
+        if reg_f:
+            from .listing_status import records as _mk_records
+
+            def _registered(it):
+                try:
+                    return bool(_mk_records(json.loads(it.get("extra_json") or "{}") or {}))
+                except Exception:
+                    return False
+            items = [it for it in items if _registered(it) == (reg_f == "done")]
 
         # 검색(제목/도메인/URL 부분일치)
         if q:
@@ -9174,8 +9219,12 @@ def collect_history():
         fs_buckets=fs_buckets,
         filters={"domain": domain, "source": source, "days": days,
                  "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page,
-                 "hygiene": hygiene_f},
+                 "hygiene": hygiene_f, "reg": reg_f},
         hygiene_mode=(hygiene_f == "cleanup"),
+        # M7: 「미등록만 · 등록됨만」 — 다른 필터는 그대로 두고 reg만 바꾼 주소(페이지는 1로)
+        reg_urls={k: url_for(request.endpoint, **{**{kk: vv for kk, vv in request.args.items() if kk not in ("reg", "page", "offset")},
+                                                  **({"reg": k} if k else {})})
+                  for k in ("", "none", "done")},
         cleanup_count=(total_filtered if hygiene_f == "cleanup" else None),
         pagination={"page": page, "per_page": per_page, "total": total_filtered,
                     "total_pages": total_pages},
@@ -9429,6 +9478,7 @@ def collect_preview_by_id(item_id: str):
         [{"code": m, "label": m, "connected": bool((market_connected or {}).get(m)), "checked": False}
          for m in ("shopify", "coupang", "smartstore", "elevenst", "woocommerce")],
         extra if isinstance(extra, dict) else None)
+    _desk_reg = _mark_registered(_desk_rows, extra if isinstance(extra, dict) else {})
     # Y6-C(오너 2026-10-07): 옵션칸·SKU 조합표는 등록과 같은 한 사슬(option_ko)의 한국어로 — 원문은 「원문 보기」로만
     try:
         from src.collectors import option_ko as _okv
@@ -9473,7 +9523,9 @@ def collect_preview_by_id(item_id: str):
         fx_updated=fx_updated,
         market_connected=market_connected,
         coupang_accounts=_desk_rows,
-        market_show=[m["code"] for m in _desk_rows], market_checked=_desk_pick["codes"],
+        market_show=[m["code"] for m in _desk_rows],
+        # M7: 이미 등록된 마켓은 처음 체크에서 뺀다(타일엔 「이미 등록됨」 경고 · 체크하면 확인 한 번)
+        market_checked=[c for c in _desk_pick["codes"] if c not in _desk_reg], registered_markets=_desk_reg,
         market_pick_label=_desk_pick["label"],
         category_options=CATEGORY_OPTIONS,
         current_category=cur_cat,
