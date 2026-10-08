@@ -287,13 +287,16 @@ def test_urllib3_direct_calls_are_counted_once(monkeypatch):
     from src.order_webhook import app
     try:
         with app.test_request_context("/z9"):
+            # 전체 실행에선 앞 테스트가 남긴 앱 컨텍스트(g)가 재사용될 수 있다 — 호출 전후 **차이**로 잰다
+            before = perf.perf_external_ms_by_host()
             urllib3.PoolManager().request("GET", f"http://127.0.0.1:{port}/a")
             _s = requests.Session()
             _s.trust_env = False                                              # 다른 테스트가 남긴 프록시 env를 타지 않게
             _s.get(f"http://127.0.0.1:{port}/b")
-            by = perf.perf_external_ms_by_host()
-            assert by.get("127.0.0.1(urllib3)", [0, 0])[1] == 1, by           # urllib3 직접 1건
-            assert by.get("127.0.0.1", [0, 0])[1] == 1, by                    # requests 1건(이중 계상 0)
+            after = perf.perf_external_ms_by_host()
+            n = lambda h: after.get(h, [0, 0])[1] - before.get(h, [0, 0])[1]
+            assert n("127.0.0.1(urllib3)") == 1, after                        # urllib3 직접 1건
+            assert n("127.0.0.1") == 1, after                                 # requests 1건(이중 계상 0)
     finally:
         srv.shutdown()
 
