@@ -12,6 +12,7 @@ import pytest
 from src.uploaders import coupang_options as O
 from tests.test_f49t2_tmall_ice_sku import res_of
 from tests.test_f51_coupang_multi_sku import META, SHIP, _product, _skus
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 pytestmark = pytest.mark.coupang_precheck
 
@@ -77,8 +78,8 @@ def test_prevalidate_has_no_untranslated_or_required_option_reason(wired_real):
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = "u-f51b2-pre"; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
-    r = c.post("/seller/collect/prevalidate", json={"product": _product(_skus(price_fn=None)),
-                                                   "markets": ["coupang"]}).get_json()["results"][0]
+    r = _pv(c, {"product": _product(_skus(price_fn=None)),
+                                                   "markets": ["coupang"]})["results"][0]
     assert r["ok"] is True, r
     text = str(r)
     assert "SKU별 등록 10개" in r["hint"]

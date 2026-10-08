@@ -220,9 +220,9 @@ def test_the_upload_path_applies_it():
     # S1(2026-10-02): 이미지 배열은 사전검증과 같은 함수(`_outbound_images`)에서 — 등록·사전검증이 그 함수를 부른다.
     #   (문자열 핀이 아니라 호출 구조로 잰다 — 메타 계약)
     assert "_outbound_images" in calls_in(views.collect_upload)
-    # M5 후속(2026-10-07): 사전검증은 동기(`_pv_sync`)·비동기(`_pv_job`) 둘 다 `_pv_prepare`를 지나고, 거기서 `_outbound_images`
+    # M5 후속(2026-10-07)·Z9(10-09): 사전검증은 잡(`_pv_job`) 하나 — `_pv_prepare`를 지나고, 거기서 `_outbound_images`
     assert "_outbound_images" in calls_in(views._pv_prepare)
-    assert "_pv_prepare" in calls_in(views._pv_sync) and "_pv_prepare" in calls_in(views._pv_job)
+    assert "_pv_prepare" in calls_in(views._pv_job) and not hasattr(views, "_pv_sync")
     assert "drop_cross_duplicates" in calls_in(views._outbound_images)
 
 

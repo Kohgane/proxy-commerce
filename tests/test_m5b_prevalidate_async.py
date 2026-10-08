@@ -134,19 +134,19 @@ def test_stuck_job_is_closed_on_poll(monkeypatch):
     assert j["state"] == "done" and j["results"][0]["transport"] == "timeout"
 
 
-def test_sync_path_unchanged_but_capped(monkeypatch):
+def test_no_sync_path_left(monkeypatch):
+    """Z9(오너 2026-10-09): 동기 25초 입구 폐기 — `async` 없이 와도 즉시 202 + job_id, 느린 마켓은 그 줄만 「검증 못 함」."""
     import src.seller_console.views as V
-    disp = _Disp()
-    monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: disp)
-    d = _client().post("/seller/collect/prevalidate", json={"product": {"title": "x"}, "markets": ["shopify", "coupang"]}).get_json()
-    assert d["ok"] and [r["market"] for r in d["results"]] == ["shopify", "coupang"] and d["all_ok"]
-    assert disp.calls == [["shopify", "coupang"]]                              # 데스크톱은 예전대로 한 번에
-    monkeypatch.setattr(V, "_PV_SYNC_DEADLINE_SEC", 0.5)
+    assert not hasattr(V, "_PV_SYNC_DEADLINE_SEC") and not hasattr(V, "_pv_sync")
+    monkeypatch.setattr(V, "_PV_MARKET_TIMEOUT_SEC", 0.3)
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: _Disp(slow=["shopify"]))
     t0 = time.time()
-    r = _client().post("/seller/collect/prevalidate", json={"product": {"title": "x"}, "markets": ["shopify"]})
-    assert time.time() - t0 < 2.5 and r.status_code == 200
-    assert r.get_json()["timeout"] is True and "초 안에 끝나지 않았어요" in r.get_json()["error"]
+    r = _client().post("/seller/collect/prevalidate", json={"product": {"title": "x"}, "markets": ["shopify", "coupang"]})
+    assert r.status_code == 202 and time.time() - t0 < 1.0                       # 워커 스레드를 쥐지 않는다
+    from tests._pv_helper import prevalidate as _pv
+    d = _pv(_client(), {"product": {"title": "x"}, "markets": ["shopify", "coupang"]})
+    by = {x["market"]: x for x in d["results"]}
+    assert by["shopify"]["transport"] == "timeout" and by["coupang"]["ok"]
 
 
 def test_async_job_keeps_owner_env_gate(monkeypatch):

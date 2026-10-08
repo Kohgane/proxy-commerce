@@ -10,6 +10,7 @@ import os
 import threading
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 OWNER_SHOP = "owner-shop.myshopify.com"
 OWNER_WC = "https://owner-wc.example"
@@ -210,7 +211,7 @@ def test_stranger_real_dispatch_fails_honestly_and_never_calls_owner_hosts(monke
         res = d["result"]["results"]
         assert res and not any(x.get("success") for x in res), res
     assert not any(OWNER_SHOP in u or "owner-wc.example" in u for u in calls), calls
-    pv = c.post("/seller/collect/prevalidate", json=body).get_json()
+    pv = _pv(c, body)
     shop = next(x for x in pv["results"] if x["market"] == "shopify")
     assert shop["ok"] is False and shop["error_code"] == "token_missing", shop
 

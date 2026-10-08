@@ -537,6 +537,9 @@ class PrevalidationResult:
     fixes: List[str] = field(default_factory=list)
     # Y7-C — 스마트스토어 카테고리 한 줄 재료 `{id, name, source, label, candidates, why, change_url}`(naver_categories.describe).
     category: Dict[str, Any] = field(default_factory=dict)
+    # Z9 — 쿠팡 대표 사진 글자 판정(OCR)이 아직 안 끝났다. 사전검증은 기다리지 않고 통과/판정하고,
+    #   결과가 오면 잡이 이 마켓 줄을 다시 그린다(카드는 폴링으로 받는다). 보류 아님.
+    rep_pending: bool = False
 
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
@@ -831,6 +834,14 @@ class UploadDispatcher:
                         r.category = _cat_describe(product_data)
                     except Exception as exc:                     # noqa: BLE001 — 한 줄 재료라 검증을 막지 않는다
                         logger.warning("[사전검증] 네이버 카테고리 한 줄 실패: %s", exc)
+            # Z9: 쿠팡 대표 사진 글자 판정이 아직이면 「대기 중」 한 줄(보류 아님) — 잡이 결과가 오면 다시 잰다.
+            try:
+                from src.services.coupang_image_check import rep_pending as _rep_pending
+                if _rep_pending(product_data, market):
+                    r.rep_pending = True
+                    r.details = list(r.details or []) + ["쿠팡 대표 사진 글자 판정 대기 중 — 결과가 오면 이 줄이 바뀌어요(등록은 막지 않아요)"]
+            except Exception:
+                pass
             _rss.log("prevalidate_end", market=market, code=r.error_code or "ok")
             r.market = market
             results.append(r)
@@ -947,12 +958,15 @@ class UploadDispatcher:
                 holds.append(_vh)
         # Y7(오너 2026-10-04): 쿠팡 대표 사진(등록이 보낼 첫 장) — 긴 변 500px 미만·글자/워터마크면 보류(「그래도 등록」으로 푼다).
         #   못 재면(다운로드·엔진 없음) 막지 않는다.
+        #   Z9(오너 2026-10-09): 사전검증 안에서 OCR을 **기다리지 않는다** — 재 둔 결과(캐시)만 읽고, 없으면 백그라운드로
+        #   재기 시작만 한다(「글자 판정 대기 중」, 보류 아님). 결과가 오면 사전검증 잡이 이 마켓을 다시 잰다.
         if str(market or "").startswith("coupang") and imgs:
             from src.utils import rss as _rss
             _rss.log("rep_image_check_before", market=market)
             try:
-                from src.services.coupang_image_check import hold as _rep_hold
-                _rh = _rep_hold(pd, market)
+                from src.services.coupang_image_check import hold as _rep_hold, kick as _rep_kick
+                _rep_kick(pd, market)
+                _rh = _rep_hold(pd, market, cached_only=True)
             except Exception:
                 _rh = None
             _rss.log("rep_image_check_after", market=market)
@@ -1197,6 +1211,13 @@ class UploadDispatcher:
                 logger.warning("[사전검증] 쿠팡 판정 실패: %s", exc)
                 chk = {"ok": None, "holds": [], "notes": [f"쿠팡 판정을 돌리지 못했습니다: {type(exc).__name__}"]}
             _rss.log("coupang_precheck_after", market=market)
+            if chk.get("meta_unavailable"):
+                # Z9(오너 2026-10-09): 쿠팡 카테고리 메타·예측을 **못 받은** 것 — 「없음」(보류)도 「통과」도 아니다.
+                #   화면은 「검증 못 함 — 다시 확인」(사유코드 meta_unavailable).
+                return PrevalidationResult(
+                    market=market, ok=False, error_code="meta_unavailable",
+                    message=chk.get("unavailable_line") or "쿠팡 카테고리 메타 확인 못 함 — 다시 확인",
+                    hint="쿠팡 응답을 받지 못했어요 — 통과도 보류도 아니에요. 잠시 뒤 다시 사전검증해 주세요.")
             if chk.get("ok") is False:
                 return PrevalidationResult(
                     market=market, ok=False, error_code="coupang_hold",

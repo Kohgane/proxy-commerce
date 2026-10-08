@@ -6,9 +6,12 @@ UploadDispatcher._upload_coupang()가 `from src.channel_sync import coupang_uplo
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 from ._channel_bridge import run_upload
+
+logger = logging.getLogger(__name__)
 
 REQUIRED_ENVS = ["COUPANG_ACCESS_KEY", "COUPANG_SECRET_KEY", "COUPANG_VENDOR_ID"]
 MARKET_LABEL = "쿠팡"
@@ -137,10 +140,31 @@ def option_form(product_data: Dict[str, Any]) -> Dict[str, Any]:
     _pi = prepared_input(product_data)
     prepared = up.prepare_product(to_collected(_pi))
     prepared["fx_info"] = _pi.get("fx_info") or []      # F51-b 6: SKU별 판매가에 쓴 환율(표에 싣는다)
-    cat = up.predict_category(prepared.get("title", "")) or str(prepared.get("category_id") or "")
+    from src.uploaders.coupang_uploader import CoupangUploader as _CU
+    if isinstance(up, _CU):
+        cat, src, pwhy = up.category_for(prepared)
+    else:                                                  # 테스트 대역 — 예전 동작
+        cat = up.predict_category(prepared.get("title", "")) or str(prepared.get("category_id") or "")
+        src, pwhy = ("predict" if cat else ""), ""
+    _transport = _CU.is_transport_error
     if not cat:
+        if _transport(pwhy):
+            # Z9: 쿠팡이 답을 안 준 것 — 「예측 못 함(제목 확인)」이 아니라 「확인 못 함 — 다시 확인」
+            return {"ok": False, "meta_unavailable": True,
+                    "error": f"쿠팡 카테고리 예측 확인 못 함 — 다시 확인해 주세요(쿠팡 응답: {pwhy[:160]})"}
         return {"ok": False, "error": "쿠팡 카테고리를 예측하지 못했습니다 — 제목을 확인해 주세요."}
     meta = up.get_category_meta(cat)
     out = _form(meta.get("attributes") or [], prepared, meta_ok=bool(meta),
                 choices_from={"options": (product_data or {}).get("options") or []})
-    return {"ok": True, "category": cat, **out}
+    from src.uploaders.coupang_uploader import tag_meta_absent
+    out["holds"] = [tag_meta_absent(h, cat, src, pwhy) for h in out.get("holds") or []]
+    # Z9: 메타를 못 받았거나(통신) 예측이 통신 문제로 안 와서 저장된 카테고리로 쟀다 — 「없음」을 말하지 않는다
+    unavailable = (not meta) or (src == "saved" and _transport(pwhy))
+    if unavailable:
+        _me = getattr(up, "meta_error", None)
+        why = ((_me(cat) if callable(_me) else "") or "응답 없음") if not meta else f"예측 못 받음: {pwhy[:120]}"
+        out["holds"] = [f"쿠팡 카테고리 메타 확인 못 함 — 다시 확인 (카테고리 {cat} · {why[:160]})"]
+        out["name_picks"] = []
+    logger.info("[쿠팡 옵션] cat=%s src=%s meta_ok=%s attrs=%d unavailable=%s", cat, src, bool(meta),
+                len(meta.get("attributes") or []), unavailable)
+    return {"ok": True, "category": cat, "category_source": src, "meta_unavailable": unavailable, **out}

@@ -55,14 +55,31 @@ def pool_stats() -> dict:
 
 
 def _connect(url: str, *, autocommit: bool = False):
-    """psycopg3 연결 — NullPool(1회용) + prepared statement 비활성(풀러 호환)."""
+    """psycopg3 연결 — NullPool(1회용) + prepared statement 비활성(풀러 호환).
+
+    Z9: 연결을 **여는 시간**(TCP+TLS+인증)은 쿼리 시간(`db`)에 안 들어간다 — `db_connect` 구간으로 따로 잰다.
+    01:21 KST 사전검증 25초 중 ~21초가 db·external 어디에도 안 잡혔다(쿼리 12번 = 1회용 연결 12번일 수 있다).
+    """
+    import time as _t
     import psycopg
-    return psycopg.connect(
-        url,
-        autocommit=autocommit,
-        prepare_threshold=None,   # 트랜잭션 풀러(6543)에서 prepared statement 미사용
-        connect_timeout=int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10),
-    )
+    t0 = _t.perf_counter()
+    try:
+        return psycopg.connect(
+            url,
+            autocommit=autocommit,
+            prepare_threshold=None,   # 트랜잭션 풀러(6543)에서 prepared statement 미사용
+            connect_timeout=int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10),
+        )
+    finally:
+        try:
+            from src.utils.perf import _bucket as _get_bucket, perf_add_ms
+            dt = (_t.perf_counter() - t0) * 1000.0
+            b = _get_bucket()
+            if b is not None:
+                b["db_connect"] = round(b.get("db_connect", 0.0) + dt, 2)
+            perf_add_ms("db_connect", dt)
+        except Exception:
+            pass
 
 
 def pg_enabled() -> bool:
@@ -328,12 +345,41 @@ def close_request_conn(_exc=None):
 
 @contextlib.contextmanager
 def query():
-    """읽기 전용 — 요청 범위 내에서는 연결 1개를 재사용(핸드셰이크 절감), 밖에서는 1회용."""
+    """읽기 전용 — 요청 스레드는 요청 연결 1개를 재사용, 그 밖(잡·마켓별 스레드·백그라운드)은 **풀에서 빌려 바로 반납**.
+
+    Z9: Z8 뒤로 요청 스레드가 아닌 스레드는 쿼리마다 1회용 연결(TCP+TLS+인증)을 열었다 — 사전검증 잡의 쿼리 12번이
+    연결 12번이었다. 풀이 있으면 그 쿼리 동안만 빌리고 **같은 자리에서 반납**한다(Z8 누수는 g에 걸어 두고 아무도
+    반납하지 않아서였다 — 여기선 g에 걸지 않는다). 풀이 없거나 5초 안에 못 빌리면 예전처럼 1회용.
+    """
     conn, is_new = _request_read_conn()
     if conn is not None:
         _perf_mark("db_read", new_conn=is_new)
         with conn.cursor() as cur, _timed_db():
             yield cur
+        return
+    pool = _persistent_pool()
+    borrowed = None
+    if pool is not None:
+        try:
+            borrowed = pool.getconn(timeout=pool_wait_sec())
+        except Exception as exc:
+            logger.warning("[DB] pg_pool_timeout — 잡 스레드 풀 대여 %ss 안에 실패(%s) · 풀 %s → 1회용 연결",
+                           pool_wait_sec(), type(exc).__name__, pool_stats())
+            borrowed = None
+    if borrowed is not None:
+        _perf_mark("db_read", new_conn=False)
+        try:
+            try:
+                borrowed.autocommit = True
+            except Exception:
+                pass
+            with borrowed.cursor() as cur, _timed_db():
+                yield cur
+        finally:
+            try:
+                pool.putconn(borrowed)
+            except Exception:
+                pass
         return
     _perf_mark("db_read", new_conn=True)
     conn = _connect(db_url(), autocommit=True)

@@ -9,6 +9,7 @@ import io
 import json
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 URL1 = "https://img.alicdn.com/blackhole-1.jpg"
 URL2 = "https://img.alicdn.com/blackhole-2.jpg"
@@ -152,10 +153,10 @@ def test_prevalidate_route_sees_new_rep_and_override(wired, monkeypatch):
     c = _client(seller)
     body = {"item_id": iid, "markets": ["coupang"], "product": {"title": "블랙홀 무드등 인테리어 조명", "price": "69.90",
             "currency": "CNY", "images": [URL1, URL2], "images_effective": [URL1, URL2]}}
-    r = next(x for x in c.post("/seller/collect/prevalidate", json=body).get_json()["results"] if x["market"] == "coupang")
+    r = next(x for x in _pv(c, body)["results"] if x["market"] == "coupang")
     assert r["hold"] and "rep_image" in r["fixes"]
     c.post(f"/seller/collect/{iid}/rep-image", json={"idx": 1})
-    r = next(x for x in c.post("/seller/collect/prevalidate", json=body).get_json()["results"] if x["market"] == "coupang")
+    r = next(x for x in _pv(c, body)["results"] if x["market"] == "coupang")
     assert "rep_image" not in (r.get("fixes") or [])                 # 화면이 보낸 묵은 목록이 아니라 저장된 대표로 잰다
 
 

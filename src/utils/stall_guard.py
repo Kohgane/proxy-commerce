@@ -4,11 +4,14 @@
 그때 어디서 멈췄는지 알 길이 없었다(Render 로그엔 접속 기록만). 다음엔 좌표가 바로 나오게:
 
 - 요청이 시작되면 (스레드 번호, 시작 시각, 경로)를 적어 두고, 끝나면 지운다.
-- 감시 스레드가 5초마다 보고 **30초를 넘긴 요청**이 있으면 그 스레드의 스택을 한 번 덤프한다
+- 감시 스레드가 2초마다 보고 **30초를 넘긴 요청**이 있으면 그 스레드의 스택을 한 번 덤프한다
   (`[STALL] path=… elapsed=…s thread=…` + 스택). 90초를 넘기면 한 번 더 — 같은 자리면 묶인 것, 다르면 느린 것.
 - 덤프에는 그 순간 처리 중인 다른 요청 목록(경로·경과)도 한 줄로 싣는다(워커 하나가 통째 묶였는지).
 
 `STALL_DUMP_SEC`(기본 30)로 조정, 0이면 끈다. 프로세스(워커)마다 감시 스레드 하나 — 포크 뒤 첫 요청에서 띄운다.
+
+Z9(오너 2026-10-09): 사전검증 경로는 **10초**(`STALL_DUMP_SEC_PREVALIDATE`) — 25초 캡이 먼저 끊어서 덤프가 안 남았다.
+사전검증 잡 스레드·마켓별 스레드도 `begin("pv_job:…")`·`begin("pv_market:…")`으로 같은 감시를 받는다(요청은 202로 끝나도).
 """
 from __future__ import annotations
 
@@ -35,10 +38,26 @@ def dump_after_sec() -> float:
         return 30.0
 
 
-def begin(path: str) -> None:
+def prevalidate_dump_sec() -> float:
+    try:
+        return float(os.getenv("STALL_DUMP_SEC_PREVALIDATE", "10") or 10)
+    except ValueError:
+        return 10.0
+
+
+#: 경로(또는 잡 이름) 앞부분 → 덤프 임계(초). 나머지는 `STALL_DUMP_SEC`.
+_FAST_PREFIXES = ("/seller/collect/prevalidate", "pv_job:", "pv_market:")
+
+
+def limit_for(path: str) -> float:
+    return prevalidate_dump_sec() if str(path or "").startswith(_FAST_PREFIXES) else dump_after_sec()
+
+
+def begin(path: str, limit: Optional[float] = None) -> None:
     tid = threading.get_ident()
     with _LOCK:
-        _ACTIVE[tid] = {"path": str(path or "")[:200], "start": time.monotonic(), "dumped": []}
+        _ACTIVE[tid] = {"path": str(path or "")[:200], "start": time.monotonic(), "dumped": [],
+                        "limit": float(limit) if limit is not None else limit_for(path)}
     _ensure_watcher()
 
 
@@ -62,14 +81,16 @@ def _stack_of(tid: int) -> str:
 
 def check_once(now: Optional[float] = None) -> List[str]:
     """한 번 훑어 덤프할 것을 덤프 — 덤프한 로그 줄들을 돌려준다(테스트용)."""
-    limit = dump_after_sec()
-    if limit <= 0:
+    if dump_after_sec() <= 0:
         return []
     now = time.monotonic() if now is None else now
     out = []
     with _LOCK:
         snap = {t: dict(r, dumped=list(r["dumped"])) for t, r in _ACTIVE.items()}
     for tid, r in snap.items():
+        limit = float(r.get("limit") or dump_after_sec())
+        if limit <= 0:
+            continue
         el = now - r["start"]
         for mark in (limit, limit * 3):
             if el >= mark and mark not in r["dumped"]:
@@ -86,7 +107,7 @@ def check_once(now: Optional[float] = None) -> List[str]:
 
 
 def _loop() -> None:
-    while not _STOP.wait(5.0):
+    while not _STOP.wait(2.0):                               # Z9: 10초 임계를 10~12초 안에 잡게
         try:
             check_once()
         except Exception as exc:                              # noqa: BLE001 — 감시는 죽지 않는다

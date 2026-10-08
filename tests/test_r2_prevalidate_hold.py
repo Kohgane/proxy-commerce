@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 FULL_COUPANG = {
     "COUPANG_ACCESS_KEY": "ak", "COUPANG_SECRET_KEY": "sk", "COUPANG_VENDOR_ID": "A01381223",
@@ -88,7 +89,7 @@ def test_route_reports_hold(coupang_env):
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = "u-r2"; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
-    d = c.post("/seller/collect/prevalidate", json={"product": dict(SHARE_DRAFT), "markets": ["coupang"]}).get_json()
+    d = _pv(c, {"product": dict(SHARE_DRAFT), "markets": ["coupang"]})
     [r] = d["results"]
     assert d["all_ok"] is False and r["ok"] is False and r["hold"] is True
     assert r["message"].startswith("사전검증 — 보류:") and PC in r["hint"]

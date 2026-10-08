@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 SOFA = {"url": "https://item.taobao.com/item.htm?id=733241700286", "title_src": "格斯潘懒人沙发单人", "title": "격스판 빈백 소파 1인용", "title_ko": "격스판 빈백 소파 1인용",
         "price": "780", "currency": "CNY", "images": ["https://img.alicdn.com/a.jpg", "https://img.alicdn.com/b.jpg"]}
@@ -82,14 +83,14 @@ def test_override_button_records_and_releases_hold(monkeypatch):
     iid = S.append(source="extension", url="https://item.taobao.com/item.htm?id=733241700286", seller_id=seller,
                    title=SOFA["title"], price="780", currency="CNY", extra=ex)
     c = _client(seller)
-    d = c.post("/seller/collect/prevalidate", json={"product": dict(SOFA), "markets": ["coupang"], "item_id": iid}).get_json()
+    d = _pv(c, {"product": dict(SOFA), "markets": ["coupang"], "item_id": iid})
     r = d["results"][0]
     assert r["hold"] and "ship_ratio" in r["fixes"] and "배송비 비율 초과" in r["message"]
     o = c.post(f"/seller/collect/{iid}/ship-ratio-override").get_json()
     assert o["ok"] and o["override"]["by"] == "cn-user@example.com" and "LCL 추정" in o["override"]["line"]
     saved = json.loads(S.get(iid, seller_ids={seller})["extra_json"])["ship_ratio_override"]
     assert saved["ratio_pct"] > 35
-    d = c.post("/seller/collect/prevalidate", json={"product": dict(SOFA), "markets": ["coupang"], "item_id": iid}).get_json()
+    d = _pv(c, {"product": dict(SOFA), "markets": ["coupang"], "item_id": iid})
     assert "ship_ratio" not in (d["results"][0].get("fixes") or [])            # 같은 화면 상품으로 다시 → 풀림
 
 

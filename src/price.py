@@ -119,6 +119,34 @@ def _build_fx_rates(fx_usdkrw=None, fx_jpykrw=None, fx_eurkrw=None, fx_cnykrw=No
 _FX_KEYS = ('USD', 'JPY', 'EUR', 'CNY')
 
 
+def fx_stale_min() -> int:
+    """이 분(分) 넘게 갱신 안 된 환율은 「실시간」이라 부르지 않는다(기본 120분, `FX_STALE_MIN`)."""
+    try:
+        return max(1, int(os.getenv('FX_STALE_MIN', '120') or 120))
+    except ValueError:
+        return 120
+
+
+def fx_age(updated_at: str, now=None):
+    """`(KST 'YYYY-MM-DD HH:MM', 경과 분)` — 못 읽으면 `('', None)`.
+
+    Z9: 화면이 UTC ISO 문자열을 그대로 잘라 「16:20 갱신」이라 적었다(01:21 KST = 16:21 UTC — 실제론 1분 전).
+    """
+    from datetime import datetime, timedelta, timezone
+    s = str(updated_at or '').strip()
+    if not s:
+        return '', None
+    try:
+        dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+    except ValueError:
+        return '', None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    kst = dt.astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')
+    return kst, max(0, int((now - dt).total_seconds() // 60))
+
+
 def sell_fx_rates():
     """판매가 산정 환율 — `(rates, info)`. **드로어 원화 미리보기와 같은 환율**을 쓴다(F51-b 6).
 
@@ -147,8 +175,18 @@ def sell_fx_rates():
             continue
         if live and live.get(cur):
             base[key] = Decimal(str(live[cur]))
-            info[cur] = {'rate': float(base[key]), 'source': 'live', 'label': '실시간 환율',
-                         'provider': str(live.get('source') or ''), 'updated_at': str(live.get('updated_at') or '')}
+            _upd = str(live.get('updated_at') or '')
+            _kst, _age = fx_age(_upd)
+            _label = '실시간 환율'
+            _src = 'live'
+            # Z9(오너 2026-10-09): 갱신이 묵었으면 「실시간」이라 부르지 않는다 — 「n시간 전 환율」.
+            if _age is None or _age >= fx_stale_min():
+                _src = 'stale'
+                _label = (f'{_age // 60}시간 전 환율' if (_age or 0) >= 60 else f'{_age}분 전 환율') if _age is not None \
+                    else '갱신 시각 모름(환율)'
+            info[cur] = {'rate': float(base[key]), 'source': _src, 'label': _label,
+                         'provider': str(live.get('source') or ''), 'updated_at': _upd,
+                         'updated_kst': _kst, 'age_min': _age}
         elif os.getenv(f'FX_{key}'):
             info[cur] = {'rate': float(base[key]), 'source': 'env', 'label': '서버 설정값(고정)',
                          'provider': '', 'updated_at': ''}

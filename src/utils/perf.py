@@ -118,12 +118,13 @@ def perf_server_timing() -> str:
 # 계측이 터져도 호출은 그대로 간다(그래서 안팎이 try로 감싸여 있다).
 
 _EXT_HOSTS_ATTR = "_kgp_perf_ext_hosts"
+_EXT_MS_ATTR = "_kgp_perf_ext_ms"
 _EXT_HOST_CAP = 20
 _probe_installed = False
 
 
 def perf_note_external(host: str, ms: float) -> None:
-    """외부 호출 1건 — 구간 누적 + 건수 + 호스트(어디로 나갔는지)."""
+    """외부 호출 1건 — 구간 누적 + 건수 + 호스트(어디로 나갔는지) + 호스트별 누적 ms(Z9)."""
     if not has_request_context():
         return
     b = _bucket()
@@ -136,12 +137,34 @@ def perf_note_external(host: str, ms: float) -> None:
         setattr(g, _EXT_HOSTS_ATTR, d)
     if len(d) < _EXT_HOST_CAP:
         d.append(str(host or "?"))
+    # Z9(오너 2026-10-09): 호스트 이름만으론 「어디서 시간을 먹었나」를 못 읽는다 — 호스트별 누적 ms·건수.
+    m = getattr(g, _EXT_MS_ATTR, None)
+    if m is None:
+        m = {}
+        setattr(g, _EXT_MS_ATTR, m)
+    key = str(host or "?")
+    if key in m or len(m) < _EXT_HOST_CAP:
+        cur = m.get(key) or [0.0, 0]
+        m[key] = [round(cur[0] + float(ms), 1), cur[1] + 1]
 
 
 def perf_external_hosts() -> list:
     if not has_request_context():
         return []
     return list(getattr(g, _EXT_HOSTS_ATTR, None) or [])
+
+
+def perf_external_ms_by_host() -> dict:
+    """`{host: [누적 ms, 건수]}` — 요청(또는 같은 g를 쓰는 잡) 동안."""
+    if not has_request_context():
+        return {}
+    return {k: list(v) for k, v in (getattr(g, _EXT_MS_ATTR, None) or {}).items()}
+
+
+import threading as _threading
+
+_TL = _threading.local()
+_u3_probe_installed = False
 
 
 def install_external_probe() -> bool:
@@ -165,9 +188,11 @@ def install_external_probe() -> bool:
 
     def _send(self, request, *a, **kw):
         t0 = time.perf_counter()
+        _TL.in_requests = getattr(_TL, "in_requests", 0) + 1      # urllib3 겹이 같은 호출을 두 번 세지 않게
         try:
             return _orig(self, request, *a, **kw)
         finally:
+            _TL.in_requests -= 1
             try:
                 from urllib.parse import urlparse
                 perf_note_external(urlparse(getattr(request, "url", "") or "").hostname or "?",
@@ -178,4 +203,41 @@ def install_external_probe() -> bool:
     _send._kgp_probed = True
     HTTPAdapter.send = _send
     _probe_installed = True
+    return True
+
+
+def install_urllib3_probe() -> bool:
+    """Z9 — `requests`를 거치지 않고 **urllib3를 직접** 쓰는 SDK(Cloudinary 등)도 외부 호출로 센다(재기만 한다).
+
+    01:21 KST 사전검증 25초 중 ~21초가 어느 계측에도 안 잡혔다 — `requests` 겹 밖의 호출은 보이지 않았다.
+    `requests`가 부른 urllib3 호출은 위 겹이 이미 셌으니 건너뛴다(스레드 표시).
+    """
+    global _u3_probe_installed
+    if _u3_probe_installed:
+        return True
+    try:
+        from urllib3.connectionpool import HTTPConnectionPool
+    except Exception:
+        return False
+    if getattr(HTTPConnectionPool.urlopen, "_kgp_probed", False):
+        _u3_probe_installed = True
+        return True
+    _orig = HTTPConnectionPool.urlopen
+
+    def _urlopen(self, method, url, *a, **kw):
+        if getattr(_TL, "in_requests", 0):
+            return _orig(self, method, url, *a, **kw)
+        t0 = time.perf_counter()
+        try:
+            return _orig(self, method, url, *a, **kw)
+        finally:
+            try:
+                perf_note_external(str(getattr(self, "host", "") or "?") + "(urllib3)",
+                                   (time.perf_counter() - t0) * 1000.0)
+            except Exception:
+                pass
+
+    _urlopen._kgp_probed = True
+    HTTPConnectionPool.urlopen = _urlopen
+    _u3_probe_installed = True
     return True

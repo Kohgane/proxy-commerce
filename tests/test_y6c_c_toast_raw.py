@@ -81,24 +81,26 @@ def test_desktop_prevalidate_reads_text_first_and_labels_stage():
     assert seg.count("'사전검증 시작 실패'") == 2 and "status: resp.status" in seg
 
 
-def test_desktop_prevalidate_is_sync_path_fact():
-    """C2 사실 기록: 데스크톱 드로어는 `async` 없이 POST — 202+job_id 경로가 아니다(운영 DB prevalidate_job 0건과 일치)."""
+def test_desktop_prevalidate_polls_the_job():
+    """C2 사실 기록(10-07): 데스크톱·폰 모달은 동기 입구였다. Z9(10-09 01:21 「25초 안에 끝나지 않았어요」)로 잡 폴링으로 바꿨다."""
     t = TPL.read_text(encoding="utf-8")
     seg = t[t.index("async function runPrevalidate()"):t.index("function renderActionLink")]
-    assert "async: true" not in seg and "'/seller/collect/prevalidate'" in seg
+    assert "'/seller/collect/prevalidate'" in seg and "data.poll" in seg and "d.state === 'running'" in seg
+    assert "data.job_id" in seg
 
 
 def test_server_exception_carries_type_and_message(monkeypatch):
+    """잡 안에서 터진 예외 — 마켓 줄은 「검증 못 함 — KeyError」, 잡 `error`에 종류·첫 160자."""
     import src.seller_console.views as V
-    monkeypatch.setattr(V, "_pv_sync", lambda *a, **k: (_ for _ in ()).throw(KeyError("skus")))
+    from tests._pv_helper import prevalidate as _pv
+    monkeypatch.setattr(V, "_pv_prepare", lambda *a, **k: (_ for _ in ()).throw(KeyError("skus")))
     from src.order_webhook import app
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"], s["user_role"] = "owner", "admin"
-    r = c.post("/seller/collect/prevalidate", json={"product": {"title": "x"}, "markets": ["shopify"]})
-    d = r.get_json()
-    assert r.status_code == 500 and d["error_code"] == "prevalidate_error"
-    assert d["error"] == "사전검증 중 오류 — KeyError: 'skus'"
+    d = _pv(c, {"product": {"title": "x"}, "markets": ["shopify"]})
+    assert d["state"] == "done" and d["error"] == "KeyError: 'skus'"
+    assert d["results"][0]["transport"] == "error" and "KeyError" in d["results"][0]["message"]
 
 
 def test_no_hardcoded_generic_toasts_left():
