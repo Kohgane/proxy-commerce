@@ -141,6 +141,11 @@ def test_prevalidate_loads_no_local_ml_and_logs_rss_stages(rep, ocr, monkeypatch
         monkeypatch.setenv(k, v)
     from src.seller_console.upload_dispatcher import UploadDispatcher
     caplog.set_level(logging.INFO, logger="rss")
+    # Z9: 사전검증은 대표 사진 판정을 기다리지 않는다(백그라운드 + 「대기 중」) — 판정이 끝나면 다시 잰다(잡이 하는 그대로)
+    import time as _t
+    from src.services import coupang_image_check as _cic
+    UploadDispatcher().prevalidate(_pd(["https://img.alicdn.com/a.jpg"]), ["coupang"])
+    assert _cic.wait_done(["https://img.alicdn.com/a.jpg"], until_ts=_t.time() + 10, step=0.05)
     [r] = UploadDispatcher().prevalidate(_pd(["https://img.alicdn.com/a.jpg"]), ["coupang"])
     assert r.hold is True and "대표 사진 텍스트 있음" in (r.message or "")
     loaded = [m for m in LOCAL_ML if m in sys.modules]

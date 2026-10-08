@@ -172,6 +172,9 @@ def test_sku_prices_carry_the_fx_used(monkeypatch):
     assert fx["label"] == "앱 기본값(고정)" and fx["updated_at"] == ""
 
 
+_NOW_ISO = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+
+
 def test_live_rate_is_used_when_the_fx_api_answers(monkeypatch):
     """프로덕션(FX_USE_LIVE 미설정) — 드로어와 **같은** 실시간 환율로 판매가를 낸다."""
     from src.channel_sync.coupang_uploader import with_sku_prices
@@ -179,12 +182,13 @@ def test_live_rate_is_used_when_the_fx_api_answers(monkeypatch):
     monkeypatch.delenv("FX_USE_LIVE", raising=False)
     monkeypatch.setattr(DA, "get_fx_rates", lambda: {"USD": 1390.0, "JPY": 9.3, "EUR": 1500.0, "CNY": 195.5,
                                                      "is_mock": False, "source": "frankfurter",
-                                                     "updated_at": "2026-09-27T03:00:00+00:00"})
+                                                     # Z9: 묵은 갱신은 「n시간 전 환율」 — 여긴 방금 받은 실시간
+                                                     "updated_at": _NOW_ISO})
     live = with_sku_prices({**_product(_skus(price_fn=None))})
     monkeypatch.setenv("FX_USE_LIVE", "0")
     fixed = with_sku_prices({**_product(_skus(price_fn=None))})
     assert live["fx_info"][0]["source"] == "live" and live["fx_info"][0]["rate"] == 195.5
-    assert live["fx_info"][0]["label"] == "실시간 환율" and live["fx_info"][0]["updated_at"].startswith("2026-09-27")
+    assert live["fx_info"][0]["label"] == "실시간 환율" and live["fx_info"][0]["updated_at"] == _NOW_ISO
     a = live["skus"][0]["sell_price_krw"]
     b = fixed["skus"][0]["sell_price_krw"]
     assert a > b > 0                                                        # 195.5원 > 185원 — 환율이 실제로 들어갔다

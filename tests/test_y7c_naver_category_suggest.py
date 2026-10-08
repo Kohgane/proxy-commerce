@@ -368,8 +368,11 @@ def test_phone_card_auto_line_and_candidate_tap(monkeypatch):
 
 @BROWSER
 def test_phone_card_shows_auto_line_with_change_link(monkeypatch):
-    """사전에 없는 플리츠 세트가 쿠팡 예측으로 정해지면 카드는 탭 없이 「카테고리 자동: 패션의류>여성의류>투피스 (바꾸기)」."""
+    """사전에 없는 플리츠 세트가 쿠팡 예측으로 정해지면 카드는 탭 없이 「카테고리 자동: 패션의류>여성의류>투피스 (바꾸기)」.
+
+    Z9: 쿠팡 전체 경로 표가 있을 때의 줄 — 표가 아직 없으면 「(추정 — 쿠팡 카테고리 경로를 받는 중)」이 붙는다(별도 계약)."""
     _coupang(monkeypatch, "여성 투피스")
+    monkeypatch.setattr("src.uploaders.coupang_categories.path_of", lambda code: "패션의류잡화>여성패션>여성의류>여성 투피스")
     iid = _card_item("y7c-auto")
     c = _client("y7c-auto")
     auto = _row(_prevalidate(monkeypatch, _pleats(item_id=iid)), "smartstore")
