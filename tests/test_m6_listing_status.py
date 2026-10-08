@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from src.seller_console import market_status as MS
+from src.seller_console import listing_status as MS
 
 WING = "https://wing.coupang.com/tenants/seller-web/vendor-inventory/modify?vendorInventoryId=16407690349"
 

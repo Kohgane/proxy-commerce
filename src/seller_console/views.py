@@ -3231,7 +3231,7 @@ def collect_market_status(item_id):
     item = _get_owned_item(item_id)
     if item is None:
         return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
-    from . import market_status as MS
+    from . import listing_status as MS
     try:
         extra = json.loads(item.get("extra_json") or "{}") or {}
     except Exception:
