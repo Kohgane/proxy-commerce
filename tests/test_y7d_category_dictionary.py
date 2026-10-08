@@ -52,12 +52,65 @@ def test_longest_token_wins_then_hit_count_then_upper_row():
     assert SS.match_details("키링 주얼리")["row"] == 4
     # 같은 길이(2자) — 「스트랩」(3, 3행)과 「가방」(2, 2행): 긴 쪽
     assert SS.match_details("가방 스트랩")["token"] == "스트랩"
-    # 같은 길이 동점 → 적중 수: 「원예 전정」(6행 2개) vs 「노트」(8행 1개)
-    assert SS.match_details("원예 전정 노트")["row"] == 6
-    # 완전 동점 → 위 줄: 「가위」(6행) vs 「노트」(8행)
-    assert SS.match_details("가위 노트")["row"] == 6
+    # 같은 길이 동점 → 적중 수: 「원예 전정」(6행 2개) vs 「문구」(8행 1개)
+    assert SS.match_details("원예 전정 문구")["row"] == 6
+    # 완전 동점 → 위 줄: 「가위」(6행) vs 「문구」(8행)
+    assert SS.match_details("가위 문구")["row"] == 6
 
 
 def test_no_hit_is_empty_and_default_leaf_only_in_resolve():
     assert SS.match_category("플리츠 미니멀 여성 여름 세트") == ""
     assert SS.resolve_category("플리츠 미니멀 여성 여름 세트") == SS.DEFAULT_LEAF_CATEGORY
+
+
+# ── Y7-D 후속(오너 2026-10-08): 「노트」「허브」「데스크」 삭제 → 쿠팡 예측 다리로 ───────────────────────
+
+BROAD = ["알루미늄 합금 휴대폰 및 노트북 스탠드 (자석 베이스 및 8단계 높이 조절) 아이패드 및 휴대폰에 적합",   # 운영 상품명
+         "USB 허브 7포트 알루미늄",
+         "LED 충전식 터치 크리에이티브 데스크 램프, 침실, 공부방, 거실 장식을 위한 조절 가능한 조명"]               # 운영 상품명
+
+
+@pytest.mark.parametrize("title", BROAD)
+def test_removed_words_no_longer_decide(title):
+    assert SS.match_category(title) == ""
+
+
+def test_removed_words_go_to_coupang_bridge(monkeypatch):
+    """사전이 안 정하면 → 학습 → 쿠팡 예측 다리(Y7-C/E). 세 상품명 모두 출처가 「coupang」."""
+    from src.uploaders import naver_categories as NC
+    from src.db import image_translate_queue_pg as ST
+    NC.reset()
+    ST.state_set(NC.STATE_KEY, {})
+    ST.state_set(NC.SUGGEST_KEY, {})
+    monkeypatch.setattr(NC, "BACKGROUND", False)
+    monkeypatch.setattr(NC, "_fetch", lambda account="": [
+        {"id": "50000151", "name": "노트북", "wholeCategoryName": "디지털/가전>노트북액세서리>노트북거치대", "last": True},
+        {"id": "50000152", "name": "USB허브", "wholeCategoryName": "디지털/가전>PC액세서리>USB허브", "last": True},
+        {"id": "50000153", "name": "스탠드", "wholeCategoryName": "가구/인테리어>인테리어소품>스탠드", "last": True}])
+    asked = []
+
+    class Fake:
+        access_key, secret_key = "ak", "sk"
+
+        def predict(self, name, desc=""):
+            asked.append(name)
+            leaf = "노트북거치대" if "노트북" in name else ("USB허브" if "허브" in name else "스탠드")
+            return {"id": "9", "name": leaf, "type": "SUCCESS", "why": ""}
+    import src.channel_sync.coupang_uploader as CU
+    monkeypatch.setattr(CU, "make_uploader", lambda: (Fake(), ""))
+    try:
+        for t in BROAD:
+            cid, src = NC.pick({"title_ko": t, "cat_scope": "s:y7d-broad"})
+            assert src == "coupang", (t, cid, src)
+        assert len(asked) == 3
+    finally:
+        NC.reset()
+        ST.state_set(NC.STATE_KEY, {})
+        ST.state_set(NC.SUGGEST_KEY, {})
+
+
+def test_dictionary_words_left():
+    """남은 사전 낱말 — 보고서와 같은 목록(추가는 리프 ID·테스트와 함께만)."""
+    words = [t for p, _ in SS.CATEGORY_PATTERNS for t in p.split("|")]
+    assert "노트" not in words and "허브" not in words and "데스크" not in words
+    assert len(words) == 59
