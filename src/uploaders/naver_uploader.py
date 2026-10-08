@@ -287,6 +287,12 @@ class NaverSmartStoreUploader(BaseUploader):
                 return {'success': False, 'held': True, 'sku': product.get('sku', ''),
                         'reason_code': opt['reason_code'], 'error': opt['why']}
             product = {**product, '_option_plan': opt}
+            # Y7-C: 카테고리는 사전검증과 **같은 함수**로 정한다(오너 지정 → 내가 고른 기록 → 사전 → 쿠팡 예측 다리).
+            from src.uploaders import naver_categories as _ncat
+            _cid, _csrc = _ncat.pick({**product, 'naver_category_id': product.get('category_id')})
+            if _cid and _csrc != 'manual':
+                logger.info('네이버 카테고리 %s(%s) sku=%s', _cid, _csrc, product.get('sku', ''))
+                product = {**product, 'category_id': _cid}
             payload = self._build_product_payload(product)
             # 템플릿 예시값 유출 게이트 — 남의 상품 정보로 등록하느니 **중단**한다(택배사 게이트 동형).
             leaks = self.find_template_leaks(payload)

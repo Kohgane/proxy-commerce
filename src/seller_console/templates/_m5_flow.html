@@ -195,8 +195,10 @@
   .m5-mode-btn.is-on { background: var(--ink); color: var(--cream); font-weight: 600; }
   .m5-ship-in { margin: 6px 0; }
   .m5-ship-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 6px 0; }
-  .m5-ship-grid label { display: grid; gap: 2px; font-size: .88rem; color: var(--text-muted); }
-  .m5-ship-grid input { min-height: 44px; font-size: 1rem; border: 1px solid var(--border); border-radius: var(--radius, 10px); padding: 0 10px; }
+  .m5-ship-grid label { display: grid; gap: 2px; font-size: .88rem; color: var(--text-muted); min-width: 0; }
+  /* Y7-C 같은 유형(390px 실측): number 입력의 기본 폭이 칸을 넘어 가로·높이 칸이 화면 밖 37px — 칸 폭에 맞춘다 */
+  .m5-ship-grid input { min-height: 44px; font-size: 1rem; border: 1px solid var(--border); border-radius: var(--radius, 10px); padding: 0 10px;
+                        width: 100%; min-width: 0; box-sizing: border-box; }
   .m5-video-lines { margin: 4px 0 0; padding-left: 1.1rem; }
   .m5-thumb-empty { display: flex; align-items: center; justify-content: center; height: 120px; color: var(--text-muted); }
   .m5-title { font-size: 1.1rem; font-weight: 700; line-height: 1.45; word-break: break-word; }
@@ -238,6 +240,14 @@
   button.m5-fix { background: none; border: 1px solid var(--border); border-radius: 10px; min-height: 40px; padding: 0 12px;
                   color: var(--teal); font-weight: 600; }
   .m5-block { color: var(--danger); margin: 8px 0 0; }
+  /* Y7-C 네이버 카테고리 — 자동 한 줄 · 후보 칩(1탭 저장). 이름이 길어 칩은 한 줄씩 풀폭으로(390px 세로쪼개짐 방지) */
+  .m5-cat { margin-top: 6px; overflow-wrap: anywhere; }
+  .m5-cat a { white-space: nowrap; }
+  .m5-cat-cands { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .m5-cat-chip { display: block; width: 100%; text-align: left; min-height: 44px; padding: 8px 12px; border-radius: 12px;
+                 border: 1px solid var(--teal); background: var(--surface); color: var(--text); font-weight: 600;
+                 overflow-wrap: anywhere; word-break: keep-all; }
+  .m5-cat-chip:disabled { opacity: .6; }
   .m5-checks, .m5-done { margin-top: 10px; }
   .m5-cp { margin: 16px 0 4px; }
   .m5-cp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
@@ -447,6 +457,21 @@
   var OVERRIDES = {ship_ratio: ['ship-ratio-override', '그래도 등록'], voltage: ['voltage-override', '전압·플러그 그래도 등록'],
                    rep_image: ['rep-image-override', '대표 사진 그래도 등록']};
   var pvRows = {}, pvOrder = [], pvAuto = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
+  // Y7-C: 스마트스토어 카테고리 — 정해졌으면 「카테고리 자동: … (바꾸기)」 한 줄, 못 정했으면 후보 칩(1탭 저장 → 그 마켓만 다시 검증).
+  function catLine(r) {
+    var c = r.category || {};
+    if (c.id) {
+      return '<div class="m5-note m5-cat" data-role="m5-cat-auto" data-source="' + esc(c.source || '') + '">' +
+        (c.source === 'manual' ? '카테고리 지정: ' : '카테고리 자동: ') + '<strong class="m5-cat-name">' + esc(c.name || c.id) + '</strong>' +
+        (c.change_url ? ' <a href="' + esc(c.change_url) + '" data-role="m5-cat-change">(바꾸기)</a>' : '') + '</div>';
+    }
+    if ((c.candidates || []).length) {
+      return '<div class="m5-cat-cands" data-role="m5-cat-cands">' + c.candidates.map(function (x) {
+        return '<button type="button" class="m5-cat-chip" data-role="m5-cat-pick" data-market="' + esc(r.market) + '" data-cat="' + esc(x.id) + '">' + esc(x.name) + '</button>';
+      }).join('') + '</div>';
+    }
+    return '';
+  }
   function overridable(r) { return !r.ok && r.hold && (r.fixes || []).length && (r.fixes || []).every(function (f) { return OVERRIDES[f]; }); }
   function pvRowHtml(m) {
     var r = pvRows[m];
@@ -465,8 +490,10 @@
          '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
          (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
          ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+         catLine(r) +
          (r.action_url ? '<div><a class="m5-fix" data-role="' + ((r.fixes || []).indexOf('naver_category') >= 0 ? 'm5-naver-category' : 'm5-action') + '" href="' + esc(r.action_url) + '">' +
-           ((r.fixes || []).indexOf('naver_category') >= 0 || r.error_code === 'naver_invalid_input' ? '카테고리 지정 →' : '고치러 가기') + '</a></div>' : '') +
+           ((r.fixes || []).indexOf('naver_category') >= 0 || r.error_code === 'naver_invalid_input'
+             ? (((r.category || {}).candidates || []).length ? '다른 카테고리 찾기 →' : '카테고리 지정 →') : '고치러 가기') + '</a></div>' : '') +
          // X2: 번역으로 풀리는 보류엔 버튼 하나 — 이 상품을 지금 옮기고 같은 마켓으로 다시 검증한다.
          (r.hold && (r.fixes || []).indexOf('translate') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '');
@@ -545,6 +572,19 @@
     if (!b) return;
     var role = b.getAttribute('data-role') || '';
     if (role === 'm5-retry-market') { runCheck([b.getAttribute('data-market')], true); return; }
+    if (role === 'm5-cat-pick') {
+      var mk = b.getAttribute('data-market');
+      checksEl.querySelectorAll('[data-role=m5-cat-pick]').forEach(function (x) { x.disabled = true; });
+      b.textContent = '저장하는 중… ' + b.textContent;
+      post('/seller/collect/' + encodeURIComponent(itemId) + '/naver-category', {category_id: b.getAttribute('data-cat')}).then(function (t) {
+        if (!t.ok) {
+          checksEl.querySelectorAll('[data-role=m5-cat-pick]').forEach(function (x) { x.disabled = false; });
+          b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '저장하지 못했어요') + '</div>'); return;
+        }
+        runCheck([mk], true);
+      });
+      return;
+    }
     if (role === 'm5-uncheck-market') {
       var m = b.getAttribute('data-market'), box = root.querySelector('input[name=m5-market][value="' + m + '"]');
       if (box) box.checked = false;

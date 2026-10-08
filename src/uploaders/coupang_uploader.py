@@ -167,7 +167,7 @@ class CoupangUploader(BaseUploader):
         self._meta_cache = {}            # displayCategoryCode → 카테고리 메타 원문(고시정보+속성 단일 소스)
         self._meta_errors = {}           # X1: displayCategoryCode → 실패 원문(HTTP 코드·본문)
         self._notice_schema_cache = {}   # displayCategoryCode → 고시정보 스키마(메타 API, 1회 조회)
-        self._predict_cache = {}         # 상품명 → 예측 categoryId
+        self._predict_cache = {}         # (상품명, 설명) → 예측 결과 {id, name, type, why}
         if not self.access_key:
             logger.warning('COUPANG_ACCESS_KEY is not set')
         if not self.secret_key:
@@ -751,23 +751,47 @@ class CoupangUploader(BaseUploader):
             return ''
         return self.DEFAULT_DELIVERY_COMPANY_CODE          # ③ 정본 기본값(오너 SSH 실측·5,691건 검증)
 
-    def predict_category(self, product_name: str) -> str:
+    def predict_category(self, product_name: str, description: str = '') -> str:
         """쿠팡 카테고리 예측 API로 상품명 → **실 카테고리ID**(리프). 실패/미지원 시 '' (폴백 CATEGORY_MAP)."""
+        return self.predict(product_name, description).get('id', '')
+
+    def predict(self, product_name: str, description: str = '') -> dict:
+        """Y7-C — 예측 한 번의 결과 `{id, name, type, why}`. 네이버 카테고리 다리(`naver_categories`)도 **같은 호출**을 쓴다.
+
+        같은 (상품명, 설명)은 이 업로더에서 한 번만 묻는다(예전 `_predict_cache`와 같은 범위).
+        설명(`productDescription`)은 오너 지시(상품명+설명)로 싣는다 — 필드 이름을 쿠팡 문서 원문으로 확인하지 못해,
+        그 요청이 예측을 못 내면 **상품명만으로 한 번 더** 묻는다(예전 동작 그대로).
+        """
         name = str(product_name or '').strip()
         if not name:
-            return ''
-        if name in self._predict_cache:
-            return self._predict_cache[name]
-        cid = ''
+            return {'id': '', 'name': '', 'type': '', 'why': '상품명 없음'}
+        desc = str(description or '').strip()[:300]
+        key = (name, desc)
+        if key in self._predict_cache:
+            return dict(self._predict_cache[key])
+        out = self._predict_once({'productName': name, 'productDescription': desc} if desc else {'productName': name})
+        if not out['id'] and desc:
+            plain = self._predict_once({'productName': name})
+            if plain['id']:
+                logger.info('쿠팡 카테고리 예측 — 설명 포함 요청은 못 냄(%s), 상품명만으로 %s', out['why'][:80], plain['id'])
+                out = plain
+        self._predict_cache[key] = dict(out)
+        return out
+
+    def _predict_once(self, body: dict) -> dict:
         try:
-            res = self._api_request('POST', self.CATEGORY_PREDICT_PATH, data={'productName': name})
-            data = res.get('data') if isinstance(res, dict) else None
-            if isinstance(data, dict):
-                cid = str(data.get('predictedCategoryId') or data.get('categoryId') or '')
+            res = self._api_request('POST', self.CATEGORY_PREDICT_PATH, data=body)
         except Exception as exc:
             logger.warning('카테고리 예측 실패(폴백 사용): %s', exc)
-        self._predict_cache[name] = cid
-        return cid
+            return {'id': '', 'name': '', 'type': '', 'why': f'{type(exc).__name__}: {str(exc)[:120]}'}
+        data = res.get('data') if isinstance(res, dict) else None
+        if isinstance(data, dict):
+            cid = str(data.get('predictedCategoryId') or data.get('categoryId') or '')
+            return {'id': cid, 'name': str(data.get('predictedCategoryName') or ''),
+                    'type': str(data.get('autoCategorizationPredictionResultType') or ''),
+                    'why': '' if cid else str(data.get('comment') or data.get('autoCategorizationPredictionResultType') or '예측 없음')[:160]}
+        why = str((res or {}).get('error') or (res or {}).get('message') or res)[:160] if isinstance(res, dict) else str(res)[:160]
+        return {'id': '', 'name': '', 'type': '', 'why': why}
 
     # ------------------------------------------------------------------
     # F48 — 사전검증과 등록이 **같은 판정**을 쓴다(precheck)
