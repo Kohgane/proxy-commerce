@@ -2261,7 +2261,7 @@ function renderPrevalidateResults(results, pending, state) {
     document.getElementById('btnConfirmUpload').disabled = true;
   } else {
     document.getElementById('btnConfirmUpload').disabled = false;
-    html += `<div class="pc-status pc-status-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${_validatedMarkets.join(', ')}</div>`;
+    html += `<div class="pc-status pc-status-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${results.filter(r => r.ok).map(r => r.market_label || r.market).join(', ')}</div>`;   // Z9: 코드(smartstore) 대신 이름
   }
   el.innerHTML = html;
   // Y2·Z5(오너 2026-10-04): 보류 카드에서 바로 — 번역(옵션 축·값 포함)하고 다시 검증 / 배송비 비율 「그래도 등록」.
