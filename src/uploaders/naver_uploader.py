@@ -24,19 +24,9 @@ class NaverSmartStoreUploader(BaseUploader):
     uploader_name = 'naver_smartstore'
     marketplace = 'naver'
 
-    CATEGORY_MAP = {
-        'ELC': '50000003',
-        'HOM': '50000004',
-        'BTY': '50000002',
-        'CLO': '50000000',
-        'BAG': '50000001',
-        'SPT': '50000007',
-        'BBY': '50000005',
-        'FOD': '50000006',
-        'PET': '50000008',
-        'TOY': '50000009',
-        'HLT': '50000010',
-    }
+    # Y7-B(2026-10-08): 옛 `CATEGORY_MAP`(정규화 코드 → 50000000 등)은 **전부 최상위 카테고리**였다 — 리프가 아니라
+    #   네이버가 `leafCategoryId NotValid`(400)로 거부했다(운영 등록 성공 0건). 지웠다. 카테고리는 오너 지정
+    #   (`naver_category_id`) → 정본 사전 매칭(`CATEGORY_PATTERNS`) 순서이고, 리프 여부는 `naver_categories`가 잰다.
 
     API_BASE = 'https://api.commerce.naver.com/external'
     _TOKEN_URL = 'https://api.commerce.naver.com/external/v1/oauth2/token'
@@ -306,9 +296,25 @@ class NaverSmartStoreUploader(BaseUploader):
                              len(leaks), product.get('sku', ''), detail)
                 return {'success': False, 'held': True, 'sku': product.get('sku', ''),
                         'error': f'템플릿 예시값이 페이로드에 남아 등록 중단({len(leaks)}건): {detail}'}
+            # Y7-B — 리프 카테고리 가드(사전검증과 같은 판정). 네이버까지 가서 400을 받지 않는다.
+            from src.uploaders import naver_categories as _ncat
+            _ch = _ncat.hold({**product, 'naver_category_id': product.get('category_id')}, account=self.account or '')
+            if _ch:
+                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                        'reason_code': _ch['code'], 'error': _ch['line'],
+                        'action_url': _ncat.picker_url(str(product.get('item_id') or ''))}
             path = '/v2/products'
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
+                # Y7-B: 400 + `invalidInputs` — 다시 해도 같은 답이다. 「잠시 뒤 다시 시도」 대신 필드별 조치로.
+                inv = self.invalid_input_lines(result.get('body') or '') if result.get('http_status') == 400 else []
+                if inv:
+                    from src.uploaders import naver_categories as _ncat
+                    leaf = any('leafCategoryId' in n for n, _l in inv)
+                    return {'success': False, 'sku': product.get('sku', ''), 'reason_code': 'naver_invalid_input',
+                            'error': '네이버가 입력값을 거부했어요 — ' + ' · '.join(l for _n, l in inv),
+                            'error_lines': [l for _n, l in inv], 'raw': result['error'],
+                            'action_url': _ncat.picker_url(str(product.get('item_id') or '')) if leaf else ''}
                 return {'success': False, 'error': result['error'], 'sku': product.get('sku', '')}
             product_id = str(result.get('originProductNo', ''))
             url = f'https://smartstore.naver.com/main/products/{product_id}' if product_id else ''
@@ -382,8 +388,8 @@ class NaverSmartStoreUploader(BaseUploader):
         sell_price = collected.get('sell_price_krw', 0) or 0
         # 10원 단위로 올림
         price = int(math.ceil(sell_price / 10) * 10)
-        category_code = collected.get('category_code', 'GEN')
-        category_id = self.CATEGORY_MAP.get(category_code, '50000000')
+        # Y7-B: 오너가 지정한 네이버 리프만 싣는다(없으면 비워 두고 `_compose_payload`가 정본 사전 매칭).
+        category_id = str(collected.get('naver_category_id') or '').strip()
         images = (collected.get('images') or [])[:10]
         return {
             'sku': collected.get('sku', ''),
@@ -393,6 +399,7 @@ class NaverSmartStoreUploader(BaseUploader):
             'original_price': collected.get('price_krw', price),
             'images': images,
             'category_id': category_id,
+            'item_id': str(collected.get('item_id') or ''),
             'brand': collected.get('brand', ''),
             'weight_kg': collected.get('weight_kg'),
             'stock': 999,
@@ -663,6 +670,38 @@ class NaverSmartStoreUploader(BaseUploader):
     # ── 실패 원문 노출(카나리 6차) ────────────────────────────────────────────────
     #   `_resp_body`/`_fail_detail`은 **`BaseUploader`가 단일 소스**(쿠팡과 공유).
     #   여기서 재구현하지 않는다 — 같은 규칙을 두 곳에 두면 한쪽만 고쳐진다(이 세션 4례).
+    #: Y7-B — 400 `invalidInputs[].name`별 조치 문구(없는 이름은 필드명 그대로 + 「값 확인」).
+    INVALID_INPUT_ACTIONS = {
+        'originProduct.leafCategoryId': '카테고리를 다시 지정하세요(카테고리 지정 →)',
+    }
+
+    @classmethod
+    def invalid_input_lines(cls, body: str) -> list:
+        """400 본문 → `[(필드명, 조치 한 줄)]`. `invalidInputs`가 없으면 빈 목록."""
+        import json as _json
+        try:
+            data = _json.loads(body or '')
+        except (TypeError, ValueError):
+            return []
+        out = []
+        for it in (data or {}).get('invalidInputs') or [] if isinstance(data, dict) else []:
+            if not isinstance(it, dict):
+                continue
+            name = str(it.get('name') or '').strip()
+            act = cls.INVALID_INPUT_ACTIONS.get(name)
+            msg = str(it.get('message') or '').strip()
+            out.append((name, act or f"{name or '(필드 이름 없음)'} — 값 확인" + (f"({msg})" if msg else '')))
+        return out
+
+    @classmethod
+    def match_category(cls, title: str) -> str:
+        """정본 사전 매칭만 — 매칭이 없으면 빈 문자열(기본 리프로 채우지 않는다, Y7-B 가드용)."""
+        name = str(title or '')
+        for pattern, leaf in cls.CATEGORY_PATTERNS:
+            if re.search(pattern, name, re.I):
+                return leaf
+        return ''
+
     @classmethod
     def resolve_category(cls, title: str) -> str:
         """상품명 → 리프 카테고리 ID. **정본 사전 매칭**(순서 유지·첫 매칭 우선), 미매칭이면 기본 리프.
@@ -800,7 +839,9 @@ class NaverSmartStoreUploader(BaseUploader):
                     last = self._fail_detail(stage, attempt + 1, status=resp.status_code,
                                              body=self._resp_body(resp))
                     logger.warning('네이버 거부 — %s', last)
-                    return {'error': f'네이버 거부 — {last}'}
+                    # Y7-B: 상태·본문을 따로 싣는다 — 400 `invalidInputs`는 필드별 조치로 바꿔 보여 준다.
+                    return {'error': f'네이버 거부 — {last}', 'http_status': resp.status_code,
+                            'body': self._resp_body(resp)}
                 resp.raise_for_status()
                 if resp.content:
                     return resp.json()

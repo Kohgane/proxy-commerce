@@ -76,6 +76,9 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "voltage_override": ex.get("voltage_override") or None,
         # Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트)를 「그래도 등록」으로 푼 기록 — 그 장 주소에만 유효
         "rep_image_override": ex.get("rep_image_override") or None,
+        # Y7-B: 오너가 지정한 네이버 리프 카테고리(없으면 정본 사전 매칭 — 못 정하면 보류)
+        "naver_category_id": str(ex.get("naver_category_id") or ""),
+        "item_id": str(it.get("id") or ""),
         # Y8: 축 분해 전 원본 옵션(五孔 같은 차단 어휘는 분해 뒤 값엔 없다) · 분해 기록
         "options_src": ex.get("options_src") if isinstance(ex.get("options_src"), list) else [],
         "option_split": ex.get("option_split") if isinstance(ex.get("option_split"), dict) else {},

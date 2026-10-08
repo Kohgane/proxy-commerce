@@ -462,7 +462,8 @@
          '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
          (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
          ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
-         (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '') +
+         (r.action_url ? '<div><a class="m5-fix" data-role="' + ((r.fixes || []).indexOf('naver_category') >= 0 ? 'm5-naver-category' : 'm5-action') + '" href="' + esc(r.action_url) + '">' +
+           ((r.fixes || []).indexOf('naver_category') >= 0 || r.error_code === 'naver_invalid_input' ? '카테고리 지정 →' : '고치러 가기') + '</a></div>' : '') +
          // X2: 번역으로 풀리는 보류엔 버튼 하나 — 이 상품을 지금 옮기고 같은 마켓으로 다시 검증한다.
          (r.hold && (r.fixes || []).indexOf('translate') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '');
@@ -621,7 +622,9 @@
                   ? '<div><button type="button" class="m5-fix" data-role="m5-review-btn">검토 상태 보기</button> <span data-role="m5-review" data-market="' + esc(r.market) + '"></span></div>'
                   : (r.external_url ? '<div><a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">마켓에서 보기</a></div>' : ''))
               : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
-                (r.action_url ? '<div><a class="m5-fix" href="' + esc(r.action_url) + '">고치러 가기</a></div>' : '')) + '</div>';
+                (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
+                  (['naver_invalid_input', 'category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기') +
+                  '</a></div>' : '')) + '</div>';
       });
       doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
       var rb = doneEl.querySelector('[data-role=m5-review-btn]');

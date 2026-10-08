@@ -1003,12 +1003,6 @@ class UploadDispatcher:
             if _ph:
                 return PrevalidationResult(market=market, ok=False, hold=True, error_code="smartstore_price_floor",
                                            message=_ph, hint="기준은 관리자 규칙표(smartstore_routing)에서 바꿀 수 있어요.")
-            # Y7: 조합형 옵션 — 축 2개·조합 상한을 넘으면 보내지 않는다(등록과 같은 판정 `naver_options.limit_hold`).
-            from src.uploaders.naver_options import limit_hold as _ol, REASON_LIMIT as _OL
-            _olh = _ol(product_data)
-            if _olh:
-                return PrevalidationResult(market=market, ok=False, hold=True, error_code=_OL, message=_olh,
-                                           hint="다른 마켓은 그대로 진행돼요.")
             if _st:
                 _lim = _sr.limit_state(_st)
                 if _lim["full"]:
@@ -1016,6 +1010,20 @@ class UploadDispatcher:
                         market=market, ok=False, hold=True, error_code="smartstore_limit_full",
                         message=f"보류: 스토어 한도 — {_lim['limit']:,} 도달 ({_lim['text']}) · 다른 마켓은 그대로 진행돼요",
                         hint="스토어당 판매중·판매대기·품절 합계 1,000이 상한이에요 — 자리가 생기면 다시 사전검증해 주세요.")
+            # Y7-B: 리프 카테고리 — 못 정했거나 리프가 아니면 보내지 않는다(등록과 같은 판정 `naver_categories.hold`).
+            from src.uploaders import naver_categories as _ncat
+            _nch = _ncat.hold(product_data, account=_st or "")
+            if _nch:
+                return PrevalidationResult(market=market, ok=False, hold=True, error_code=_nch["code"], message=_nch["line"],
+                                           fixes=["naver_category"],
+                                           action_url=_ncat.picker_url(str(product_data.get("item_id") or "")),
+                                           hint="네이버 카테고리는 등록 뒤 바꿀 수 없어요 — 리프(맨 아래 분류)로 골라 주세요.")
+            # Y7: 조합형 옵션 — 축 2개·조합 상한을 넘으면 보내지 않는다(등록과 같은 판정 `naver_options.limit_hold`).
+            from src.uploaders.naver_options import limit_hold as _ol, REASON_LIMIT as _OL
+            _olh = _ol(product_data)
+            if _olh:
+                return PrevalidationResult(market=market, ok=False, hold=True, error_code=_OL, message=_olh,
+                                           hint="다른 마켓은 그대로 진행돼요.")
 
         # 토큰/환경변수 검증
         required_envs = _MARKET_REQUIRED_ENVS.get(market, [])
@@ -1262,9 +1270,11 @@ class UploadDispatcher:
         if market == "smartstore":
             _pv = self._prevalidate_market(product_data, market)
             if not _pv.ok and _pv.error_code in ("smartstore_token_failed", "smartstore_limit_full",
-                                                 "smartstore_price_floor", "option_limit"):
+                                                 "smartstore_price_floor", "option_limit",
+                                                 "category_not_leaf", "category_unset"):
                 return UploadResult(market=market, success=False, error_code=_pv.error_code,
-                                    message=f"전송 전에 보류했습니다 — {_pv.message}", hint=_pv.hint)
+                                    message=f"전송 전에 보류했습니다 — {_pv.message}", hint=_pv.hint,
+                                    action_url=_pv.action_url)
         # T1-c: 표시광고 위험 문구 — 사전검증과 **같은 판정**으로 전송도 막는다(직접 호출 우회 0).
         _ad = self._ad_claim_hits(product_data, market)
         if _ad:
@@ -1698,7 +1708,15 @@ class UploadDispatcher:
             if _rc and getattr(exc, "held", False):
                 _lines = list(getattr(exc, "lines", []) or []) or [str(exc)]
                 return UploadResult(market="smartstore", success=False, error_code=_rc, details=_lines,
-                                    message=lines_message("전송 전에 보류했습니다", _lines))
+                                    message=lines_message("전송 전에 보류했습니다", _lines),
+                                    action_url=str(getattr(exc, "action_url", "") or ""))
+            # Y7-B: 400 invalidInputs — 다시 해도 같은 답이다. 재시도 안내 없이 필드별 조치만.
+            if _rc == "naver_invalid_input":
+                _lines = list(getattr(exc, "lines", []) or []) or [str(exc)]
+                logger.warning("스마트스토어 입력값 거부: %s", exc)
+                return UploadResult(market="smartstore", success=False, error_code=_rc, details=_lines,
+                                    message=lines_message("네이버가 입력값을 거부했어요", _lines),
+                                    action_url=str(getattr(exc, "action_url", "") or ""))
             logger.warning("스마트스토어 업로드 오류: %s", exc)
             return UploadResult(
                 market="smartstore",
