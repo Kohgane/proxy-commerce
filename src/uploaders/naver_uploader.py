@@ -41,9 +41,13 @@ class NaverSmartStoreUploader(BaseUploader):
         'gocosmos': {'ship': '107987297', 'return': '107987296'},
     }
     DEFAULT_LEAF_CATEGORY = '50004132'      # 정본 기본 리프 카테고리
-    # ★ 카테고리 정본(오너 grep `ss_upload.py` CAT) — **순서 유지·첫 매칭 우선**.
-    #   쿠팡의 predict_category(API 예측)와 **별개 축**이다: 스마트스토어는 사전 매칭이 정본.
-    #   순서를 바꾸면 판정이 바뀐다(예: '주얼리'는 키링 줄 다음에 와야 원래 결과가 나온다). 재정렬 금지.
+    # ★ 카테고리 사전(오너 grep `ss_upload.py` CAT의 낱말·리프 그대로) — 쿠팡 예측과 **별개 축**.
+    #   Y7-D(오너 2026-10-08): 판정은 **줄 순서와 무관**하다(`match_category`).
+    #   - 상품명에 들어 있는 낱말 중 **가장 긴 낱말**을 가진 줄이 이긴다 — 「티셔츠」(3자, 의류) > 「티」(1자, 주방).
+    #   - 같은 길이면 그 줄의 낱말이 상품명에 **더 많이** 든 쪽, 그래도 같으면 위 줄.
+    #   - 한 글자 낱말(「잔」「티」「향」)은 상품명 낱말 **전체**이거나 **끝 글자**일 때만 — 한국어 합성어는 뒤가 중심 말
+    #     (「와인잔」「밀크티」는 맞음, 「티셔츠」「티백」「잔디」「향수」 안의 한 글자는 아님).
+    #   예전 정본은 「첫 매칭 우선」이라 「티셔츠」가 7행 「티」에 먼저 걸려 주방(50004737)이 됐다.
     CATEGORY_PATTERNS = (
         (r"피젯|EDC|스피너|슬라이더|엔진|오브제|퍼즐|모형|분재", '50004132'),
         (r"슬링백|백팩|가방|패킹큐브|파우치|토트", '50000646'),
@@ -701,27 +705,43 @@ class NaverSmartStoreUploader(BaseUploader):
             out.append((name, act or f"{name or '(필드 이름 없음)'} — 값 확인" + (f"({msg})" if msg else '')))
         return out
 
+    _WORD_SPLIT = re.compile(r"[^0-9A-Za-z\uac00-\ud7a3]+")
+
+    @classmethod
+    def _token_hit(cls, token: str, name: str, words: list) -> bool:
+        """사전 낱말 하나가 상품명에 걸리나 — 두 글자 이상은 포함, 한 글자는 낱말 전체이거나 끝 글자일 때만."""
+        if len(token) == 1:
+            return any(w == token or w.endswith(token) for w in words)
+        return token.lower() in name.lower()
+
+    @classmethod
+    def match_details(cls, title: str) -> dict:
+        """사전 판정 근거 `{leaf, token, row, hits}` — 못 정하면 leaf 빈칸. 위 규칙(가장 긴 낱말 → 적중 수 → 위 줄)."""
+        name = str(title or '')
+        words = [w for w in cls._WORD_SPLIT.split(name) if w]
+        best = None
+        for row, (pattern, leaf) in enumerate(cls.CATEGORY_PATTERNS):
+            hits = [t for t in pattern.split('|') if t and cls._token_hit(t, name, words)]
+            if not hits:
+                continue
+            key = (max(len(t) for t in hits), len(hits), -row)
+            if best is None or key > best[0]:
+                best = (key, {'leaf': leaf, 'token': max(hits, key=len), 'row': row + 1, 'hits': hits})
+        return best[1] if best else {'leaf': '', 'token': '', 'row': 0, 'hits': []}
+
     @classmethod
     def match_category(cls, title: str) -> str:
-        """정본 사전 매칭만 — 매칭이 없으면 빈 문자열(기본 리프로 채우지 않는다, Y7-B 가드용)."""
-        name = str(title or '')
-        for pattern, leaf in cls.CATEGORY_PATTERNS:
-            if re.search(pattern, name, re.I):
-                return leaf
-        return ''
+        """사전 매칭만 — 매칭이 없으면 빈 문자열(기본 리프로 채우지 않는다, Y7-B 가드용)."""
+        return cls.match_details(title)['leaf']
 
     @classmethod
     def resolve_category(cls, title: str) -> str:
-        """상품명 → 리프 카테고리 ID. **정본 사전 매칭**(순서 유지·첫 매칭 우선), 미매칭이면 기본 리프.
+        """상품명 → 리프 카테고리 ID. 사전 매칭(`match_details`), 미매칭이면 기본 리프.
 
         쿠팡은 예측 API가 정본이고 실패 시 등록을 중단하지만, 스마트스토어는 **사전 매칭이 정본**이라
-        미매칭도 기본 리프로 등록한다(정본 스크립트 동작 그대로 — 규칙을 바꾸지 않는다).
+        미매칭도 기본 리프로 등록한다(정본 스크립트 동작 그대로).
         """
-        name = str(title or '')
-        for pattern, leaf in cls.CATEGORY_PATTERNS:
-            if re.search(pattern, name, re.I):
-                return leaf
-        return cls.DEFAULT_LEAF_CATEGORY
+        return cls.match_category(title) or cls.DEFAULT_LEAF_CATEGORY
 
     @staticmethod
     def _as_int(v):

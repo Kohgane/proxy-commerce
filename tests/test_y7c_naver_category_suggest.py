@@ -45,17 +45,21 @@ class FakeCoupang:
         return {"id": "63955", "name": self.name, "type": "SUCCESS", "why": ""}
 
 
+_SCOPES = ("shared", "s:default", "s:y7c-own", "s:y7c-other", "s:y7c-card", "s:y7c-auto", "s:fam-y7c")
+
+
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
-    NC.reset()
-    for k in (NC.STATE_KEY, NC.SUGGEST_KEY, NC.LEARN_KEY + "shared", NC.LEARN_KEY + "s:y7c-own",
-              NC.LEARN_KEY + "s:y7c-other", NC.LEARN_KEY + "s:default"):
-        ST.state_set(k, {})
+    def wipe():
+        NC.reset()
+        for k in [NC.STATE_KEY, NC.SUGGEST_KEY] + [NC.LEARN_KEY + sc for sc in _SCOPES]:
+            ST.state_set(k, {})
+    wipe()
     monkeypatch.setattr(NC, "_fetch", lambda account="": ROWS)
     monkeypatch.setenv("NAVER_IMAGE_UPLOAD", "0")
     monkeypatch.setenv("FAMILY_EMAILS", FAM)
     yield
-    NC.reset()
+    wipe()                      # 끝날 때도 — 추천 기억·학습이 다음 파일(Y7-B 보류 계약)로 번지지 않게
 
 
 def _coupang(monkeypatch, name):
