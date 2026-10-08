@@ -2010,7 +2010,7 @@ _NCAT_TABLE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="ut
 <a class="small ms-2" href="?format=csv">CSV 받기</a></form>
 <div class="small mb-2" data-role="ncat-job">작업: {{ job.state or '없음' }}{% if job.running_sec %} · {{ job.running_sec }}초째{% endif %}{% if job.elapsed_ms %} · {{ job.elapsed_ms }}ms{% endif %}{% if job.error %} · {{ job.error }}{% endif %}</div>
 {% if data.summary %}<div class="small mb-2" data-role="ncat-summary">{{ data.at }} · 상품명 {{ data.summary.titles }} · 자동 {{ data.summary.auto }} · 후보 {{ data.summary.candidates }} · 미지정 {{ data.summary.unset }} · 쿠팡 경로 확인 {{ data.summary.coupang_path_known }} · 네이버 리프 {{ data.summary.naver_tree }} · 쿠팡 경로 표 {{ data.summary.coupang_tree }}{% if data.summary.coupang_tree_why %} ({{ data.summary.coupang_tree_why }}){% endif %}</div>
-<div class="table-responsive"><table class="table table-sm small"><thead><tr><th>상품명</th><th>건수</th><th>쿠팡 예측 경로</th><th>결과</th><th>네이버</th><th>점수</th><th>사유·후보</th></tr></thead><tbody>
+<div class="table-responsive"><table class="table table-sm small" style="min-width:860px"><thead style="white-space:nowrap"><tr><th>상품명</th><th>건수</th><th>쿠팡 예측 경로</th><th>결과</th><th>네이버</th><th>점수</th><th>사유·후보</th></tr></thead><tbody>
 {% for r in data.rows %}<tr data-result="{{ r.result }}"><td>{{ r.title }}</td><td>{{ r.count }}</td><td>{{ r.coupang_path or r.coupang }}</td><td>{{ {'auto':'자동','candidates':'후보','unset':'미지정'}[r.result] }}</td><td>{{ r.naver }}</td><td>{{ r.score }}</td><td>{{ r.candidates or r.why }}</td></tr>{% endfor %}
 </tbody></table></div>{% endif %}
 <a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
