@@ -9,6 +9,19 @@ import io
 import json
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
+
+
+def _holds(pd):
+    """Z9: 사전검증은 대표 사진 판정을 기다리지 않는다(백그라운드) — 판정이 끝난 뒤의 보류 줄을 잰다."""
+    import time as _t
+    from src.seller_console.upload_dispatcher import UploadDispatcher
+    from src.services import coupang_image_check as cic
+    UploadDispatcher.readiness_holds(pd, "coupang")
+    rep = cic.rep_url(pd, "coupang")
+    if rep:
+        cic.wait_done([rep], until_ts=_t.time() + 10, step=0.05)
+    return UploadDispatcher.readiness_holds(pd, "coupang")
 
 URL1 = "https://img.alicdn.com/blackhole-1.jpg"
 URL2 = "https://img.alicdn.com/blackhole-2.jpg"
@@ -96,7 +109,7 @@ def test_blackhole_lamp_text_holds_then_image2_as_rep_passes(wired):
     assert d["check"]["text"] is True
     assert d["hold"]["fix"] == "rep_image" and "텍스트 있음" in d["hold"]["short"]
     pd = build_product(S.get(iid, seller_ids={seller}), seller_id=seller)
-    h = [h for h in UploadDispatcher.readiness_holds(pd, "coupang") if h["fix"] == "rep_image"]
+    h = [h for h in _holds(pd) if h["fix"] == "rep_image"]
     assert h and "INTERSTELLAR" in h[0]["line"]
     assert not [h for h in UploadDispatcher.readiness_holds(pd, "smartstore") if h["fix"] == "rep_image"]   # 쿠팡만
     # 2번을 대표로
@@ -118,23 +131,23 @@ def test_small_rep_holds_and_override_is_per_image(wired):
     iid = _item(seller, [URL_SMALL, URL1])
     c = _client(seller)
     pd = build_product(S.get(iid, seller_ids={seller}), seller_id=seller)
-    holds = UploadDispatcher.readiness_holds(pd, "coupang")
+    holds = _holds(pd)
     rh = next(h for h in holds if h["fix"] == "rep_image")
     assert "500px 미만" in rh["short"] and "「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」" in readiness_message(holds)
     o = c.post(f"/seller/collect/{iid}/rep-image-override", json={}).get_json()
     assert o["ok"] and o["override"]["url"] == URL_SMALL
     pd = build_product(S.get(iid, seller_ids={seller}), seller_id=seller)
-    assert not [h for h in UploadDispatcher.readiness_holds(pd, "coupang") if h["fix"] == "rep_image"]
+    assert not [h for h in _holds(pd) if h["fix"] == "rep_image"]
     # 대표를 다른 장(글자 있는 1번)으로 바꾸면 그 「그래도 등록」은 안 따라간다 — 다시 잰다
     c.post(f"/seller/collect/{iid}/rep-image", json={"idx": 1})
     pd = build_product(S.get(iid, seller_ids={seller}), seller_id=seller)
-    assert [h for h in UploadDispatcher.readiness_holds(pd, "coupang") if h["fix"] == "rep_image"]
+    assert [h for h in _holds(pd) if h["fix"] == "rep_image"]
 
 
 def test_unreadable_image_does_not_hold(wired):
     from src.seller_console.upload_dispatcher import UploadDispatcher
     pd = {"images_effective": ["https://img.alicdn.com/missing.jpg"], "price": "1", "title": "x"}
-    assert not [h for h in UploadDispatcher.readiness_holds(pd, "coupang") if h["fix"] == "rep_image"]
+    assert not [h for h in _holds(pd) if h["fix"] == "rep_image"]
     assert wired.check_url("https://img.alicdn.com/missing.jpg")["state"] == "unknown"
 
 
@@ -152,10 +165,10 @@ def test_prevalidate_route_sees_new_rep_and_override(wired, monkeypatch):
     c = _client(seller)
     body = {"item_id": iid, "markets": ["coupang"], "product": {"title": "블랙홀 무드등 인테리어 조명", "price": "69.90",
             "currency": "CNY", "images": [URL1, URL2], "images_effective": [URL1, URL2]}}
-    r = next(x for x in c.post("/seller/collect/prevalidate", json=body).get_json()["results"] if x["market"] == "coupang")
+    r = next(x for x in _pv(c, body)["results"] if x["market"] == "coupang")
     assert r["hold"] and "rep_image" in r["fixes"]
     c.post(f"/seller/collect/{iid}/rep-image", json={"idx": 1})
-    r = next(x for x in c.post("/seller/collect/prevalidate", json=body).get_json()["results"] if x["market"] == "coupang")
+    r = next(x for x in _pv(c, body)["results"] if x["market"] == "coupang")
     assert "rep_image" not in (r.get("fixes") or [])                 # 화면이 보낸 묵은 목록이 아니라 저장된 대표로 잰다
 
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 OWNER_DETAIL = ["//img.alicdn.com/imgextra/i1/1116632222/O1CN01SGQy8H1SHiuTtVrP9_!!1116632222-0-shopmanager.jpg_1200x1200q30.jpg_.webp",
                 "https://gtms04.alicdn.com/tps/i4/TB1lLP.HpXXXXb5XpXXaYjxHXXX-51-24.png_.webp"]
@@ -75,7 +76,7 @@ def test_prevalidate_measures_what_registration_sends(client):
     iid = _item(OWNER_DETAIL)
     product = {"title": "플리츠 셔츠", "price": "199", "images": ["https://img.alicdn.com/g1.jpg"],
                "detail_images": list(OWNER_DETAIL)}
-    d = client.post("/seller/collect/prevalidate", json={"product": product, "markets": ["coupang"], "item_id": iid}).get_json()
+    d = _pv(client, {"product": product, "markets": ["coupang"], "item_id": iid})
     assert d["results"][0]["ok"] is True                                  # `//`가 펴져 통과(오너 상품 그대로)
     assert client.disp.seen["detail_images"][0].startswith("https://img.alicdn.com/")
 
@@ -86,7 +87,7 @@ def test_prevalidate_blocks_what_registration_would_block(client, monkeypatch):
     iid = _item(["/imgextra/d1.jpg"])
     product = {"title": "플리츠 셔츠", "price": "199", "images": ["https://img.alicdn.com/g1.jpg"],
                "detail_images": ["/imgextra/d1.jpg"]}
-    d = client.post("/seller/collect/prevalidate", json={"product": product, "markets": ["coupang"], "item_id": iid}).get_json()
+    d = _pv(client, {"product": product, "markets": ["coupang"], "item_id": iid})
     r = d["results"][0]
     assert r["ok"] is False and r["error_code"] == "image_unreachable"
     assert r["message"].startswith("등록 전 이미지 확인에서 막혔어요") and any("상세 1번째" in x for x in r["details"])
@@ -103,7 +104,7 @@ def test_send_time_upload_replaces_unreachable_pages(client, monkeypatch):
     iid = _item(["/imgextra/d1.jpg"])
     product = {"title": "플리츠 셔츠", "price": "199", "images": ["https://img.alicdn.com/g1.jpg"],
                "detail_images": ["/imgextra/d1.jpg"]}
-    d = client.post("/seller/collect/prevalidate", json={"product": product, "markets": ["coupang"], "item_id": iid}).get_json()
+    d = _pv(client, {"product": product, "markets": ["coupang"], "item_id": iid})
     assert d["results"][0]["ok"] is True and client.disp.seen["detail_images"] == [CDN]
     assert fetched and fetched[0][1].startswith("https://item.taobao.com/")   # 상대 경로는 소스 페이지 기준
     from src.seller_console import collect_history_store as S

@@ -50,6 +50,9 @@ except Exception:
 try:
     from src.utils.perf import install_external_probe as _install_ext_probe
     _install_ext_probe()
+    # Z9: urllib3를 직접 쓰는 SDK(Cloudinary 등)도 — `requests` 겹이 센 호출은 건너뛴다(이중 계상 0)
+    from src.utils.perf import install_urllib3_probe as _install_u3_probe
+    _install_u3_probe()
 except Exception as _probe_exc:
     logger.warning("외부 호출 계측 설치 실패(계속): %s", _probe_exc)
 

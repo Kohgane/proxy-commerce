@@ -470,12 +470,14 @@ class TestPrevalidateEndpoint:
             yield c
 
     def test_prevalidate_returns_ok_structure(self, client):
+        # Z9: 즉시 202 + job_id, 결과는 잡에서
         resp = client.post(
             "/seller/collect/prevalidate",
             json={"product": {"title": "T", "price": 1000}, "markets": ["shopify"]},
         )
-        assert resp.status_code == 200
-        data = resp.get_json()
+        assert resp.status_code == 202 and resp.get_json()["job_id"]
+        from tests._pv_helper import prevalidate as _pv
+        data = _pv(client, {"product": {"title": "T", "price": 1000}, "markets": ["shopify"]})
         assert data["ok"] is True
         assert "results" in data
         assert "all_ok" in data

@@ -1907,7 +1907,8 @@ function kgpCpFx(fx) {
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   return '<div class="text-muted mt-1" data-role="cp-fx" style="font-size:.76rem">' + fx.map(f =>
     `환율 1 ${esc(f.currency)} = ${Number(f.rate).toLocaleString('ko-KR')}원 · ${esc(f.label)}` +
-    (f.updated_at ? ` · ${esc(String(f.updated_at).slice(0, 16).replace('T', ' '))} 갱신` : ' · 갱신 없음(고정값)')).join('<br>') + '</div>';
+    // Z9: 갱신 시각은 KST(서버가 바꿔 준다) — UTC 문자열을 그대로 자르면 9시간 묵은 것처럼 보였다
+    (f.updated_kst ? ` · ${esc(f.updated_kst)} 갱신(KST)` : (f.updated_at ? '' : ' · 갱신 없음(고정값)'))).join('<br>') + '</div>';
 }
 
 // 카테고리 자동 분류 — 상품명·키워드로 추천
@@ -2096,6 +2097,10 @@ function getSelectedMarkets() {
 }
 
 // ── 사전검증 ──
+// Z9(오너 2026-10-09, 폰 01:21 「사전검증이 25초 안에 끝나지 않았어요」): 이 모달은 #844 때도 **동기 입구**를 쳤다
+//   (비동기는 폰 카드만). 이제 폰 카드와 같은 잡 — 즉시 202 + job_id, 3초마다 묻고 마켓별로 도착하는 대로 그린다
+//   (마켓당 12초 · 전체 60초). 늦게 온 결과(대표 사진 글자 판정 등)도 잡이 그 줄을 갈아 끼우면 다음 폴링에 바뀐다.
+let _pvPollNo = 0;
 async function runPrevalidate() {
   const markets = getSelectedMarkets();
   if (markets.length === 0) {
@@ -2105,6 +2110,8 @@ async function runPrevalidate() {
   const btn = document.getElementById('btnPrevalidate');
   btn.disabled = true;
   btn.textContent = '⏳ 검증 중...';
+  const pollNo = ++_pvPollNo;
+  const done = () => { btn.disabled = false; btn.textContent = '사전검증 →'; };
 
   try {
     const resp = await fetch('/seller/collect/prevalidate', {
@@ -2118,18 +2125,38 @@ async function runPrevalidate() {
     const _txt = await resp.text();
     let data = null;
     try { data = JSON.parse(_txt); } catch (e) { data = {ok: false, error: _txt}; }
-    btn.disabled = false;
-    btn.textContent = '사전검증 →';
-
-    if (!resp.ok || !data.ok) {
+    if (!resp.ok || !data.ok || !data.job_id) {
+      done();
       pcToast(kgpFriendlyError(Object.assign({status: resp.status}, data), '사전검증 시작 실패'), 'error');
       return;
     }
-    renderPrevalidateResults(data.results);
+    renderPrevalidateResults([], markets, 'running');
     goToStep('stepPrevalidate');
+    const poll = async () => {
+      if (pollNo !== _pvPollNo) return;
+      let d = null;
+      try {
+        const r = await fetch(data.poll, {credentials: 'same-origin'});
+        const t = await r.text();
+        try { d = JSON.parse(t); } catch (e) { d = {ok: false, error: t, _status: r.status}; }
+        if (!r.ok && d.ok !== false) d = Object.assign({ok: false}, d);
+      } catch (e) {
+        setTimeout(poll, 3000);                        // 네트워크가 한 번 끊긴 것 — 다시 묻는다
+        return;
+      }
+      if (pollNo !== _pvPollNo) return;
+      if (!d || !d.ok) {
+        done();
+        pcToast(kgpFriendlyError(d || {}, '사전검증 결과 받기 실패'), 'error');
+        return;
+      }
+      renderPrevalidateResults(d.results || [], d.pending || [], d.state);
+      if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
+      else done();
+    };
+    setTimeout(poll, 600);                             // 빠른 마켓은 곧 온다 — 첫 질문만 짧게
   } catch (err) {
-    btn.disabled = false;
-    btn.textContent = '사전검증 →';
+    done();
     pcToast(kgpFriendlyError(err, '사전검증 시작 실패'), 'error');
   }
 }
@@ -2153,6 +2180,7 @@ function renderCategoryLine(r) {
   const esc = kgpEscapeForHtml;
   if (c.id) {
     return `<div class="small mt-1" data-role="pv-cat-auto">${c.source === 'manual' ? '카테고리 지정' : '카테고리 자동'}: <b>${esc(c.name || c.id)}</b>`
+      + (c.estimated ? ' <span class="text-muted" data-role="pv-cat-estimated">(추정 — 쿠팡 카테고리 경로를 받는 중)</span>' : '')
       + (c.change_url ? ` <a target="_top" href="${esc(c.change_url)}" data-role="pv-cat-change">(바꾸기)</a>` : '') + '</div>';
   }
   if ((c.candidates || []).length) {
@@ -2169,7 +2197,9 @@ function renderDetailLines(lines, cls) {
     + lines.map(l => '<li>' + esc(l) + '</li>').join('') + '</ul>';
 }
 
-function renderPrevalidateResults(results) {
+function renderPrevalidateResults(results, pending, state) {
+  pending = pending || [];
+  const running = state === 'running';
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
   const el = document.getElementById('prevalidateResults');
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
@@ -2178,10 +2208,12 @@ function renderPrevalidateResults(results) {
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).
+    // Z9: 시간 초과·예외는 검증을 **못 한** 것 — 「실패」(막힘)가 아니라 「검증 못 함」(다시 사전검증).
     const badge = r.ok
       ? '<span class="pc-badge pc-badge-on">통과</span>'
       : (r.hold ? '<span class="pc-badge pc-badge-off" data-role="prevalidate-hold">보류</span>'
-                : '<span class="pc-badge pc-badge-danger">실패</span>');
+                : (r.transport ? '<span class="pc-badge pc-badge-muted" data-role="prevalidate-transport">검증 못 함</span>'
+                               : '<span class="pc-badge pc-badge-danger">실패</span>'));
     // F35-2: 「닿나」를 잰 마켓은 걸린 시간을 적는다. 안 잰 마켓을 「빠르다」로 읽지 않게
     //   아무 표시도 하지 않는다(측정 안 한 것을 통과의 근거로 쓰지 않는다).
     let reach = '';
@@ -2205,9 +2237,23 @@ function renderPrevalidateResults(results) {
         </div>
       </div>`;
   });
+  pending.forEach(m => {
+    // 마켓 이름은 고른 타일의 글자 그대로(계정 코드 `coupang:woojoo`를 사람에게 보이지 않는다)
+    const box = document.querySelector('.market-upload-check[value="' + m + '"]');
+    const nm = (box && box.parentElement && box.parentElement.querySelector('.market-name')) ? box.parentElement.querySelector('.market-name').textContent : m;
+    html += `
+      <div class="list-group-item" data-role="prevalidate-pending">
+        <div class="fw-semibold">${nm} <span class="pc-badge pc-badge-muted">확인하는 중…</span></div>
+      </div>`;
+  });
   html += '</div>';
 
-  if (_validatedMarkets.length === 0) {
+  if (running) {
+    html += '<div class="pc-status pc-status-info" data-role="pv-running">마켓마다 확인하는 중이에요 — 도착하는 대로 여기에 그려요.</div>';
+  }
+  if (_validatedMarkets.length === 0 && running) {
+    document.getElementById('btnConfirmUpload').disabled = true;
+  } else if (_validatedMarkets.length === 0) {
     // Y2 후속: 보류만 남았으면 「설정 확인」이 아니라 위 버튼으로 풀 수 있다고 말한다.
     html += results.some(r => r.hold)
       ? '<div class="pc-status pc-status-warning" data-role="pv-only-holds">통과한 마켓이 아직 없어요 — 위 보류는 버튼(번역하고 다시 검증 · 그래도 등록)이나 보강으로 풀 수 있어요.</div>'
@@ -2215,7 +2261,7 @@ function renderPrevalidateResults(results) {
     document.getElementById('btnConfirmUpload').disabled = true;
   } else {
     document.getElementById('btnConfirmUpload').disabled = false;
-    html += `<div class="pc-status pc-status-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${_validatedMarkets.join(', ')}</div>`;
+    html += `<div class="pc-status pc-status-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${results.filter(r => r.ok).map(r => r.market_label || r.market).join(', ')}</div>`;   // Z9: 코드(smartstore) 대신 이름
   }
   el.innerHTML = html;
   // Y2·Z5(오너 2026-10-04): 보류 카드에서 바로 — 번역(옵션 축·값 포함)하고 다시 검증 / 배송비 비율 「그래도 등록」.

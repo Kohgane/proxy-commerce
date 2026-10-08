@@ -463,6 +463,7 @@
     if (c.id) {
       return '<div class="m5-note m5-cat" data-role="m5-cat-auto" data-source="' + esc(c.source || '') + '">' +
         (c.source === 'manual' ? '카테고리 지정: ' : '카테고리 자동: ') + '<strong class="m5-cat-name">' + esc(c.name || c.id) + '</strong>' +
+        (c.estimated ? ' <span data-role="m5-cat-estimated">(추정 — 쿠팡 카테고리 경로를 받는 중)</span>' : '') +
         (c.change_url ? ' <a href="' + esc(c.change_url) + '" data-role="m5-cat-change">(바꾸기)</a>' : '') + '</div>';
     }
     if ((c.candidates || []).length) {

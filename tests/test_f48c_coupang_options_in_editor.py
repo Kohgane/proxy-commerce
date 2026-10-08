@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from src.uploaders import coupang_options as O
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 pytestmark = pytest.mark.coupang_precheck
 
@@ -153,12 +154,12 @@ def test_the_editor_block_route_returns_the_meta_fields(wired):
 
 def test_prevalidate_goes_from_held_to_passed_once_the_owner_fills_the_block(wired):
     c = _client("u-f48c-pre")
-    held = c.post("/seller/collect/prevalidate", json={"product": PRODUCT, "markets": ["coupang"]}).get_json()
+    held = _pv(c, {"product": PRODUCT, "markets": ["coupang"]})
     r = held["results"][0]
     assert r["ok"] is False and r["error_code"] == "coupang_hold" and "필수 옵션: 적용모델" in r["details"]
     filled = {**PRODUCT, "coupang_attributes": [{"attributeTypeName": "적용모델", "attributeValueName": "iPhone 15"}],
               "coupang_option_pick": {"색상": "黑色"}}
-    ok = c.post("/seller/collect/prevalidate", json={"product": filled, "markets": ["coupang"]}).get_json()
+    ok = _pv(c, {"product": filled, "markets": ["coupang"]})
     assert ok["results"][0]["ok"] is True, ok
     assert wired == []                                    # 사전검증은 전송 0회
 

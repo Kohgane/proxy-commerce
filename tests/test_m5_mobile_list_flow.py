@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 SHARE = ("【淘宝】https://e.tb.cn/h.8IcTrtZuTU19ieN?tk=nyXpT7VA7lt CZ356\n"
          "「新中式双人书桌靠墙长条桌简约现代学生写字学习桌实木办公电脑桌」\n"
@@ -105,7 +106,7 @@ def test_embedded_product_prechecks_and_registers_end_to_end(client, monkeypatch
     product = _embedded_product(client.get(f"/seller/m/item/{iid}").get_data(as_text=True))
     assert product["title"] == "원목 책상" and len(product["skus"]) == 2 and product.get("coupang_name")
 
-    pre = client.post("/seller/collect/prevalidate", json={"product": product, "markets": ["coupang", "smartstore"]}).get_json()
+    pre = _pv(client, {"product": product, "markets": ["coupang", "smartstore"]})
     ok_markets = [r["market"] for r in pre["results"] if r["ok"]]
     assert ok_markets == ["coupang"]                                          # 통과한 곳만 등록 대상
     up = client.post("/seller/collect/upload", json={"product": product, "markets": ok_markets, "item_id": iid}).get_json()

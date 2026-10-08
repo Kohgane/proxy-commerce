@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 GOGANE_DOM, GOGANE_OV, WOOJOO_DOM, WOOJOO_OV = "22796911", "25479338", "23612851", "26600001"
 
@@ -221,8 +222,8 @@ def test_translation_hold_is_auto_translated_before_holding(monkeypatch):
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = seller; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
-    d = c.post("/seller/collect/prevalidate", json={"product": dict(ex, sell_price_krw=260000), "markets": ["smartstore"],
-                                                    "item_id": iid}).get_json()
+    d = _pv(c, {"product": dict(ex, sell_price_krw=260000), "markets": ["smartstore"],
+                                                    "item_id": iid})
     assert d["auto_translate"]["status"] in ("done", "queued")
     r = d["results"][0]
     assert "옵션 값" not in (r["message"] or "") and "translate" not in r["fixes"]
@@ -237,8 +238,8 @@ def test_hold_stays_only_when_every_translator_fails(monkeypatch):
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = seller; s["user_role"] = "admin"   # Z6: 서버 env 키(오너 자격)는 공유 사용자만
-    d = c.post("/seller/collect/prevalidate", json={"product": dict(ex, sell_price_krw=260000), "markets": ["smartstore"],
-                                                    "item_id": iid}).get_json()
+    d = _pv(c, {"product": dict(ex, sell_price_krw=260000), "markets": ["smartstore"],
+                                                    "item_id": iid})
     assert d["auto_translate"]["status"] == "failed"
     r = d["results"][0]
     assert r["hold"] and "translate" in r["fixes"]

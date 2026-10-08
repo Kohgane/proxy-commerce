@@ -99,7 +99,10 @@ def test_copied_context_job_does_not_leak_pool_connections(pg_pool):
 
 
 def test_job_thread_first_query_also_does_not_take_ownership(pg_pool):
-    """요청 스레드가 query를 한 번도 안 불렀어도(before_request가 주인을 표시) 잡 스레드는 1회용 연결."""
+    """요청 스레드가 query를 한 번도 안 불렀어도(before_request가 주인을 표시) 잡 스레드는 g 연결의 주인이 되지 않는다.
+
+    Z9: 잡 스레드를 풀 대여로 바꿨다가 되돌렸다(요청 풀 굶김) — 1회용 연결 그대로.
+    """
     from src.db import pg
     app = _app()
     with app.test_request_context("/x"):

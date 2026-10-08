@@ -55,14 +55,31 @@ def pool_stats() -> dict:
 
 
 def _connect(url: str, *, autocommit: bool = False):
-    """psycopg3 연결 — NullPool(1회용) + prepared statement 비활성(풀러 호환)."""
+    """psycopg3 연결 — NullPool(1회용) + prepared statement 비활성(풀러 호환).
+
+    Z9: 연결을 **여는 시간**(TCP+TLS+인증)은 쿼리 시간(`db`)에 안 들어간다 — `db_connect` 구간으로 따로 잰다.
+    01:21 KST 사전검증 25초 중 ~21초가 db·external 어디에도 안 잡혔다(쿼리 12번 = 1회용 연결 12번일 수 있다).
+    """
+    import time as _t
     import psycopg
-    return psycopg.connect(
-        url,
-        autocommit=autocommit,
-        prepare_threshold=None,   # 트랜잭션 풀러(6543)에서 prepared statement 미사용
-        connect_timeout=int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10),
-    )
+    t0 = _t.perf_counter()
+    try:
+        return psycopg.connect(
+            url,
+            autocommit=autocommit,
+            prepare_threshold=None,   # 트랜잭션 풀러(6543)에서 prepared statement 미사용
+            connect_timeout=int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10),
+        )
+    finally:
+        try:
+            from src.utils.perf import _bucket as _get_bucket, perf_add_ms
+            dt = (_t.perf_counter() - t0) * 1000.0
+            b = _get_bucket()
+            if b is not None:
+                b["db_connect"] = round(b.get("db_connect", 0.0) + dt, 2)
+            perf_add_ms("db_connect", dt)
+        except Exception:
+            pass
 
 
 def pg_enabled() -> bool:
@@ -328,7 +345,12 @@ def close_request_conn(_exc=None):
 
 @contextlib.contextmanager
 def query():
-    """읽기 전용 — 요청 범위 내에서는 연결 1개를 재사용(핸드셰이크 절감), 밖에서는 1회용."""
+    """읽기 전용 — 요청 스레드는 요청 연결 1개를 재사용, 그 밖(잡·마켓별 스레드·백그라운드)은 1회용.
+
+    Z9: 잡 스레드도 상시 풀에서 빌려 보려 했으나(연결 여는 시간을 줄이려고) **되돌렸다** — 백그라운드 스레드가
+    쿼리 블록을 오래 쥐면 요청 스레드와 같은 풀(5)을 나눠 써 요청이 `pg_pool_timeout` 5초씩 기다렸다(gunicorn 2워커 실측
+    대시보드 5.0초, main은 수 ms). 1회용 연결의 비용은 `db_connect` 구간으로 잰다 — 운영 수치를 보고 정한다.
+    """
     conn, is_new = _request_read_conn()
     if conn is not None:
         _perf_mark("db_read", new_conn=is_new)

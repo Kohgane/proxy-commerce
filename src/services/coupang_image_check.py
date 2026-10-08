@@ -196,6 +196,43 @@ def start_check(url: str) -> dict:
             "since": round(_t.time() - (started or _RUNNING.get(key) or _t.time()), 1)}
 
 
+def rep_url(pd: dict, market: str) -> str:
+    """판정 대상 대표 장(등록이 보낼 첫 장) — 쿠팡 아님·꺼짐·이미지 0장·「그래도 등록」이면 ''."""
+    if not str(market or "").startswith("coupang") or not enabled():
+        return ""
+    imgs = [u for u in (pd.get("images_effective") or pd.get("images") or []) if isinstance(u, str) and u.strip()]
+    if not imgs:
+        return ""
+    ov = pd.get("rep_image_override") or {}
+    if isinstance(ov, dict) and ov.get("url") == imgs[0]:
+        return ""
+    return imgs[0]
+
+
+def kick(pd: dict, market: str) -> None:
+    """Z9 — 사전검증용: 결과가 없으면 백그라운드로 재기 시작만 한다(기다리지 않음)."""
+    rep = rep_url(pd, market)
+    if rep and cached(rep) is None:
+        start_check(rep)
+
+
+def rep_pending(pd: dict, market: str) -> bool:
+    """대표 장 판정이 아직 안 끝났나(재 둔 결과도, 5분 안 실패 기록도 없음)."""
+    rep = rep_url(pd, market)
+    return bool(rep) and cached(rep) is None
+
+
+def wait_done(urls, until_ts: float, step: float = 0.5) -> bool:
+    """주어진 장들의 판정이 끝날 때까지(또는 `until_ts`까지) 기다린다 — 잡 스레드 전용(요청 스레드에서 부르지 않는다)."""
+    import time as _t
+    keys = [str(u) for u in urls if u]
+    while _t.time() < until_ts:
+        if all(cached(k) is not None for k in keys):
+            return True
+        _t.sleep(step)
+    return all(cached(k) is not None for k in keys)
+
+
 def hold(pd: dict, market: str, cached_only: bool = False) -> Optional[Dict[str, str]]:
     """쿠팡 사전검증 보류 줄(없으면 None) — 대표 사진(등록이 보낼 첫 장)이 500px 미만이거나 글자가 박혔을 때.
 

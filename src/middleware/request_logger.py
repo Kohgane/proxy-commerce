@@ -167,7 +167,7 @@ class RequestLogger:
         counts = {}
         try:
             from src.utils.perf import (perf_snapshot, perf_server_timing, perf_counts,
-                                        perf_ms_list, perf_external_hosts)
+                                        perf_ms_list, perf_external_hosts, perf_external_ms_by_host)
             perf = perf_snapshot()
             counts = perf_counts()
             st = perf_server_timing()
@@ -197,6 +197,10 @@ class RequestLogger:
             _hosts = perf_external_hosts()
             if _hosts:
                 perf["external_hosts"] = _hosts
+            # Z9: 호스트별 누적 ms·건수 — 「어디서 시간을 먹었나」
+            _byh = perf_external_ms_by_host()
+            if _byh:
+                perf["external_ms_by_host"] = _byh
         except Exception:
             pass
 
@@ -209,12 +213,13 @@ class RequestLogger:
                     "route": getattr(request, "endpoint", "") or "",
                     "path": request.path,
                     "elapsed_ms": elapsed_ms,
-                    "segments_ms": {k: perf.get(k) for k in ("auth", "db", "external", "render")
+                    "segments_ms": {k: perf.get(k) for k in ("auth", "db", "db_connect", "external", "render")
                                     if perf.get(k) is not None},
                     "db_queries": int(counts.get("db_query", 0) or 0),
                     "db_conns": int(counts.get("db_conn", 0) or 0),
                     "external_calls": int(counts.get("external_call", 0) or 0),
                     "external_hosts": perf.get("external_hosts") or [],
+                    "external_ms_by_host": perf.get("external_ms_by_host") or {},
                     "db_ms_each": perf.get("db_ms_each") or [],
                 }, ensure_ascii=False))
         except Exception:

@@ -3991,15 +3991,15 @@ def collect_translate_now(item_id):
 
 @bp.post("/collect/prevalidate")
 def collect_prevalidate():
-    """마켓 업로드 사전검증 (Phase 190).
+    """마켓 업로드 사전검증 — **항상 즉시 202 + job_id**(Z9, 오너 2026-10-09).
 
-    Request body: {"product": {...}, "markets": ["coupang", "shopify"], "async": false}
-    Response: {"ok": true, "results": [{"market": "shopify", "ok": true, ...}, ...]}
+    Request body: {"product": {...}, "markets": ["coupang", "shopify"], "item_id": "…"}
+    Response 202: {"ok": true, "job_id": "…", "poll": "/seller/collect/prevalidate/job/<id>", "poll_sec": 3}
 
-    M5 후속(오너 2026-10-07, 실사용 1호 「응답을 읽지 못했어요 (HTTP 502)」): `async: true`면 **즉시 202 + job_id** —
-    마켓별 검증은 백그라운드에서 병렬(마켓당 12초), 화면은 `/collect/prevalidate/job/<id>`를 3초마다 묻고 도착하는
-    대로 그린다(전체 60초 상한). 동기 경로(데스크톱)는 그대로 두되 **25초 상한** — 워커 타임아웃(120초)에 죽어
-    502가 되는 대신 정직한 「시간 초과」를 돌려준다.
+    마켓별 검증은 백그라운드에서 병렬(마켓당 12초), 화면은 `poll`을 묻고 도착하는 대로 그린다(전체 60초 상한).
+    Z9 근거: 폰 마켓 등록 모달(편집 화면)은 #844 때도 동기 입구를 쳤다 — 01:21 KST 「사전검증이 25초 안에
+    끝나지 않았어요」. 동기 25초 상한은 워커 스레드를 25초 쥐고(Z8: 1초 넘게 쥐지 않는다) 결과도 버렸다(잡은 42초 더 돌았다).
+    그래서 동기 입구를 없앴다 — 데스크톱·폰 카드·폰 모달이 같은 잡을 쓴다. 옛 `async` 값은 무시한다.
     """
     data = request.get_json(force=True, silent=True) or {}
     product_data = data.get("product") or {}
@@ -4016,35 +4016,9 @@ def collect_prevalidate():
     dispatcher = _get_upload_dispatcher()
     if dispatcher is None:
         return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
-
-    if data.get("async"):
-        return _pv_start_job(data, list(markets), dispatcher)
-
-    import contextvars as _cv
-    import threading as _th
-    box: dict = {}
-
-    def _work():
-        try:
-            box["resp"] = _pv_sync(data, product_data, markets, dispatcher)
-        except Exception as exc:                                  # noqa: BLE001 — 아래에서 500으로
-            box["exc"] = exc
-    t = _th.Thread(target=_cv.copy_context().run, args=(_work,), daemon=True)
-    t.start()
-    t.join(_PV_SYNC_DEADLINE_SEC)
-    if t.is_alive():
-        logger.warning("사전검증 %s초 초과(markets=%s) — 502 대신 시간 초과로 답함", _PV_SYNC_DEADLINE_SEC, markets)
-        return jsonify({"ok": False, "timeout": True, "error_code": "prevalidate_timeout",
-                        "error": f"사전검증이 {_PV_SYNC_DEADLINE_SEC}초 안에 끝나지 않았어요 — 마켓을 줄여 다시 해 주세요."})
-    if "exc" in box:
-        logger.warning("사전검증 오류: %s", box["exc"])
-        # Y6-C C1: 「오류가 발생했습니다」만 주면 화면이 원인을 못 싣는다 — 예외 종류·첫 120자를 그대로.
-        return jsonify({"ok": False, "error_code": "prevalidate_error",
-                        "error": f"사전검증 중 오류 — {type(box['exc']).__name__}: {str(box['exc'])[:120]}"}), 500
-    return jsonify(box["resp"])
+    return _pv_start_job(data, list(markets), dispatcher)
 
 
-_PV_SYNC_DEADLINE_SEC = int(os.getenv("PREVALIDATE_SYNC_DEADLINE_SEC", "25") or 25)
 _PV_MARKET_TIMEOUT_SEC = float(os.getenv("PREVALIDATE_MARKET_TIMEOUT_SEC", "12") or 12)
 _PV_JOB_DEADLINE_SEC = float(os.getenv("PREVALIDATE_JOB_DEADLINE_SEC", "60") or 60)
 _PV_JOB_KEY = "prevalidate_job:"
@@ -4086,7 +4060,7 @@ def _pv_dict(r, rc=None) -> dict:
                                 message=_reach.message(rc).split(" (")[0],
                                 hint="마켓 서버가 이 주소로 이미지를 받으러 와도 열리지 않습니다 — 그 장을 빼거나 다른 장으로 바꿔 주세요.",
                                 details=[_reach.describe(b) for b in rc["bad"][:8]])
-    return {
+    out = {
         "market": r.market,
         "market_label": MARKET_LABELS.get(r.market, r.market),
         "ok": r.ok,
@@ -4106,7 +4080,13 @@ def _pv_dict(r, rc=None) -> dict:
         "fixes": list(getattr(r, "fixes", None) or []),
         # Y7-C — 스마트스토어 카테고리(자동이면 「카테고리 자동: … (바꾸기)」, 못 정했으면 후보 칩)
         "category": dict(getattr(r, "category", None) or {}),
+        # Z9 — 쿠팡 대표 사진 글자 판정 대기 중(보류 아님) — 잡이 결과가 오면 이 줄을 다시 그린다
+        "rep_pending": bool(getattr(r, "rep_pending", False)),
     }
+    if r.error_code == "meta_unavailable":
+        # Z9 — 쿠팡 메타를 못 받았다: 화면은 「검증 못 함 — 다시 시도」(통과도 막힘도 아님)
+        out["transport"] = "meta_unavailable"
+    return out
 
 
 def _pv_auto_translate(product_data: dict, data: dict, results) -> tuple:
@@ -4125,22 +4105,6 @@ def _pv_auto_translate(product_data: dict, data: dict, results) -> tuple:
     except Exception:
         pass
     return _auto, product_data
-
-
-def _pv_sync(data: dict, product_data: dict, markets: list, dispatcher) -> dict:
-    """동기 사전검증(데스크톱) — 예전 동작 그대로(한 번에 전 마켓)."""
-    from . import market_credentials as mc
-    product_data, _rc = _pv_prepare(data, product_data)
-    with mc.seller_market_env(_seller_id(), markets):
-        results = dispatcher.prevalidate(product_data, markets)
-    _auto, product_data = _pv_auto_translate(product_data, data, results)
-    if _auto is not None and _auto.get("status") in ("done", "queued", "failed"):
-        with mc.seller_market_env(_seller_id(), markets):
-            results = dispatcher.prevalidate(product_data, markets)
-    rows = [_pv_dict(r, _rc) for r in results]
-    return {"ok": True, "results": rows, "all_ok": all(x["ok"] for x in rows),
-            # X2: 보류 전에 돌린 자동 번역 결과(없으면 null) — 화면이 「자동 번역 후 다시 확인」/실패 사유를 말한다.
-            "auto_translate": _auto}
 
 
 def _pv_transport_fail(market: str, kind: str, why: str) -> dict:
@@ -4167,8 +4131,11 @@ def _pv_update(job_id: str, **kw) -> dict:
         cur = st.state_get(_PV_JOB_KEY + job_id) or {}
         res = dict(cur.get("results") or {})
         res.update(kw.pop("results", {}) or {})
+        stg = dict(cur.get("stages") or {})
+        stg.update(kw.pop("stages", {}) or {})
         cur.update(kw)
         cur["results"] = res
+        cur["stages"] = stg
         st.state_set(_PV_JOB_KEY + job_id, cur)
         return cur
 
@@ -4195,20 +4162,34 @@ def _pv_run_markets(job_id: str, product_data: dict, markets: list, dispatcher, 
     import contextvars as _cv
     import copy as _copy
     import time as _time
+    from src.utils import stall_guard as _sg
     done_results = []
+
+    def _one(m, pd):
+        # Z9: 마켓별 스레드도 스톨 감시(10초) — 어느 마켓·어느 줄에서 멈췄는지 스택이 남게
+        _sg.begin(f"pv_market:{m}:{job_id[:8]}")
+        t0 = _time.monotonic()
+        try:
+            rs = dispatcher.prevalidate(pd, [m])
+            return rs, int((_time.monotonic() - t0) * 1000)
+        finally:
+            _sg.end()
+
     ex = _cf.ThreadPoolExecutor(max_workers=max(1, len(markets)))
-    futs = {ex.submit(_cv.copy_context().run, dispatcher.prevalidate, _copy.deepcopy(product_data), [m]): m
-            for m in markets}
+    futs = {ex.submit(_cv.copy_context().run, _one, m, _copy.deepcopy(product_data)): m for m in markets}
     wait_for = max(0.1, min(_PV_MARKET_TIMEOUT_SEC, deadline_ts - _time.time()))
     try:
         for fut in _cf.as_completed(futs, timeout=wait_for):
             m = futs[fut]
             try:
-                rs = fut.result() or []
-                r = rs[0]
+                rs, ms = fut.result()
+                r = (rs or [])[0]
                 r.market = m
                 done_results.append(r)
-                _pv_update(job_id, results={m: _pv_dict(r, rc)})
+                row = _pv_dict(r, rc)
+                row["ms"] = ms
+                _pv_update(job_id, results={m: row}, stages={f"market:{m}": ms})
+                logger.info("[PV] job=%s market=%s ms=%d code=%s", job_id[:8], m, ms, r.error_code or "ok")
             except Exception as exc:                             # noqa: BLE001 — 그 마켓만
                 logger.warning("[사전검증 잡] %s %s 예외: %s", job_id[:8], m, exc)
                 _pv_update(job_id, results={m: _pv_transport_fail(m, "error", f"검증 못 함 — {type(exc).__name__}: {str(exc)[:120]}")})
@@ -4216,34 +4197,91 @@ def _pv_run_markets(job_id: str, product_data: dict, markets: list, dispatcher, 
         pass
     for fut, m in futs.items():
         if not fut.done():
+            logger.warning("[PV] job=%s market=%s %d초 초과 — 검증 못 함", job_id[:8], m, int(_PV_MARKET_TIMEOUT_SEC))
             _pv_update(job_id, results={m: _pv_transport_fail(
                 m, "timeout", f"검증 못 함 — {int(_PV_MARKET_TIMEOUT_SEC)}초 안에 답이 없었어요")})
     ex.shutdown(wait=False, cancel_futures=True)
     return done_results
 
 
+def _pv_rep_check_followup(job_id: str, product_data: dict, results: list, rc, deadline_ts: float, dispatcher) -> None:
+    """Z9 — 대표 사진 글자 판정을 기다리지 않고 낸 쿠팡 줄을, 판정이 끝나면 **다시 재서** 갈아 끼운다(잡 마감 안에서).
+
+    판정은 백그라운드(`coupang_image_check.start_check`) — 끝나면 캐시에 있어 다시 재는 데 OCR을 안 부른다.
+    마감까지 안 끝나면 「대기 중」 줄 그대로 둔다(보류 아님 — 등록은 막지 않는다).
+    """
+    import time as _time
+    from src.services import coupang_image_check as _cic
+    pend = [r.market for r in results if getattr(r, "rep_pending", False)]
+    if not pend:
+        return
+    reps = [_cic.rep_url(product_data, m) for m in pend]
+    t0 = _time.monotonic()
+    if _cic.wait_done(reps, until_ts=deadline_ts - 2):
+        _pv_run_markets(job_id, product_data, pend, dispatcher, rc, deadline_ts)
+    _pv_update(job_id, stages={"rep_check_wait": int((_time.monotonic() - t0) * 1000)})
+
+
+def _pv_perf_now() -> dict:
+    """잡 시작·끝에서 같은 g의 누적 계측을 떠서 **차이**를 잡 한 줄에 싣는다(요청 로그는 202로 이미 찍혔다)."""
+    try:
+        from src.utils.perf import perf_snapshot, perf_counts, perf_external_ms_by_host
+        return {"seg": perf_snapshot(), "cnt": perf_counts(), "host": perf_external_ms_by_host()}
+    except Exception:
+        return {"seg": {}, "cnt": {}, "host": {}}
+
+
+def _pv_perf_diff(a: dict, b: dict) -> dict:
+    seg = {k: round(float(b["seg"].get(k, 0) or 0) - float(a["seg"].get(k, 0) or 0), 1)
+           for k in ("db", "db_connect", "external") if b["seg"].get(k)}
+    host = {}
+    for h, (ms, n) in (b.get("host") or {}).items():
+        ms0, n0 = (a.get("host") or {}).get(h) or (0.0, 0)
+        if n - n0:
+            host[h] = [round(ms - ms0, 1), n - n0]
+    cnt = {k: int(b["cnt"].get(k, 0) or 0) - int(a["cnt"].get(k, 0) or 0)
+           for k in ("db_query", "db_conn", "external_call") if b["cnt"].get(k)}
+    return {"segments_ms": seg, "counts": cnt, "external_ms_by_host": host}
+
+
 def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
     import time as _time
     from . import market_credentials as mc
+    from src.utils import stall_guard as _sg
     st0 = (_pv_store().state_get(_PV_JOB_KEY + job_id) or {})
     deadline_ts = float(st0.get("started_ts") or _time.time()) + _PV_JOB_DEADLINE_SEC
+    t_job = _time.monotonic()
+    p0 = _pv_perf_now()
+    _sg.begin(f"pv_job:{job_id[:8]}")                            # Z9: 잡 스레드도 10초 스톨 감시
     try:
+        t0 = _time.monotonic()
         product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
+        _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
         with mc.seller_market_env(_seller_id(), markets):
             results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
+            t0 = _time.monotonic()
             _auto, product_data = _pv_auto_translate(product_data, data, results)
             if _auto is not None:
-                _pv_update(job_id, auto_translate=_auto)
+                _pv_update(job_id, auto_translate=_auto, stages={"auto_translate": int((_time.monotonic() - t0) * 1000)})
                 held = [r.market for r in results if r.hold and "translate" in (getattr(r, "fixes", None) or [])]
                 if held and _time.time() < deadline_ts - 1 and _auto.get("status") in ("done", "queued", "failed"):
                     _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
+            _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
     except Exception as exc:                                     # noqa: BLE001 — 잡은 죽지 않는다
         logger.warning("[사전검증 잡] %s 실패: %s", job_id[:8], exc)
         cur = _pv_store().state_get(_PV_JOB_KEY + job_id) or {}
         missing = {m: _pv_transport_fail(m, "error", f"검증 못 함 — {type(exc).__name__}")
                    for m in markets if m not in (cur.get("results") or {})}
         _pv_update(job_id, results=missing, error=f"{type(exc).__name__}: {str(exc)[:160]}")
-    _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat())
+    finally:
+        _sg.end()
+    elapsed = int((_time.monotonic() - t_job) * 1000)
+    perf = _pv_perf_diff(p0, _pv_perf_now())
+    cur = _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat(),
+                     elapsed_ms=elapsed, perf=perf)
+    # Z9: 잡 한 줄 — 요청 로그(slow_request)는 202로 이미 찍혀 이 시간이 어디에도 안 남는다.
+    logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
+                json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
 
 
 @bp.get("/collect/prevalidate/job/<job_id>")

@@ -34,6 +34,14 @@ def _record_meta_probe(account: str, vendor_id: str, category: str, ok: bool, ra
         logger.debug('메타 기록 실패: %s', exc)
 
 
+def tag_meta_absent(line: str, cat: str, src: str, pwhy: str = '') -> str:
+    """Z9 — 「메타 속성에 없어」 줄에 **어느 카테고리를 · 어디서 받아** 쟀는지 단다(같은 데이터가 다시 확인에 통과한 근거)."""
+    if '메타 속성에 없어' not in str(line or '') or not cat:
+        return line
+    how = '쿠팡 예측' if src == 'predict' else (f'저장된 값 — 예측 못 받음: {pwhy[:80]}' if src == 'saved' else src or '출처 모름')
+    return f'{line} (쿠팡 카테고리 {cat} · {how})'
+
+
 class CoupangUploader(BaseUploader):
     """Coupang Wing API를 통한 상품 업로더."""
 
@@ -751,6 +759,28 @@ class CoupangUploader(BaseUploader):
             return ''
         return self.DEFAULT_DELIVERY_COMPANY_CODE          # ③ 정본 기본값(오너 SSH 실측·5,691건 검증)
 
+    #: Z9 — 예측·메타 실패가 **통신 문제**(시간 초과·연결·5xx·릴레이)인가. 그렇다면 「없음/실패」가 아니라 「확인 못 함」.
+    _TRANSPORT_RE = re.compile(r'Timeout|timed out|Connection|RemoteDisconnected|HTTP 5\d\d|\b50[0234]\b|relay|릴레이', re.I)
+
+    @classmethod
+    def is_transport_error(cls, why: str) -> bool:
+        return bool(cls._TRANSPORT_RE.search(str(why or '')))
+
+    def category_for(self, product: dict) -> tuple:
+        """Z9 — `(카테고리, 출처, 예측 실패 사유)`. 출처 = predict(쿠팡 예측) | saved(예측 실패 → 저장된 값) | ''.
+
+        01:21 KST 쿠팡 SKU 칸이 「옵션 패션의류/잡화 사이즈가 이 카테고리 메타 속성에 없어」 → 다시 확인 「통과」(같은 데이터).
+        어느 카테고리로 쟀는지 남지 않아 근거를 못 댔다 — 이제 줄마다 카테고리·출처를 단다.
+        """
+        title = str((product or {}).get('title', '') or '') if isinstance(product, dict) else ''
+        cid = self.predict_category(title)
+        if cid:
+            return str(cid), 'predict', ''
+        # 사유는 방금 물은 결과(같은 업로더 캐시)에서 — 다시 묻지 않는다
+        why = str((self._predict_cache.get((title.strip(), '')) or {}).get('why') or '예측 없음')
+        saved = str((product or {}).get('category_id', '') or '') if isinstance(product, dict) else ''
+        return saved, ('saved' if saved else ''), why
+
     def predict_category(self, product_name: str, description: str = '') -> str:
         """쿠팡 카테고리 예측 API로 상품명 → **실 카테고리ID**(리프). 실패/미지원 시 '' (폴백 CATEGORY_MAP)."""
         return self.predict(product_name, description).get('id', '')
@@ -915,15 +945,30 @@ class CoupangUploader(BaseUploader):
                 notes.append(f'출고지 {_who}{code}의 주소 유형을 확인하지 못했습니다(조회 실패) — 해외인지 모릅니다.')
 
         # b) 카테고리 → 메타(고시정보·구매옵션·필수서류 단일 소스)
-        cat = self.predict_category(product.get('title', '')) or str(product.get('category_id', '') or '')
+        cat, cat_src, pwhy = self.category_for(product)
         out['category'] = cat
+        out['category_source'] = cat_src
+        _who = self.account_label() or '무접두 키'
         if not cat:
-            holds.append('쿠팡 카테고리 예측 실패 — 임의 카테고리 전송 금지.')
+            if self.is_transport_error(pwhy):
+                # Z9: 쿠팡이 답을 안 준 것 — 「예측 실패(막힘)」가 아니라 「확인 못 함 — 다시 확인」
+                out['meta_unavailable'] = True
+                out['unavailable_line'] = f'쿠팡 카테고리 예측 확인 못 함 — 다시 확인 ({_who} · 쿠팡 응답: {pwhy[:200]})'
+            holds.append('쿠팡 카테고리 예측 실패 — 임의 카테고리 전송 금지.' + (f' ({pwhy[:160]})' if pwhy else ''))
             return out
+        if cat_src == 'saved' and self.is_transport_error(pwhy):
+            # 예측이 통신 문제로 안 왔는데 저장된 카테고리로 재면, 그 카테고리 기준 「없음」이 거짓일 수 있다.
+            out['meta_unavailable'] = True
+            out['unavailable_line'] = (f'쿠팡 카테고리 예측 확인 못 함 — 다시 확인 (저장된 카테고리 {cat}로는 판정하지 않아요 · '
+                                       f'{_who} · 쿠팡 응답: {pwhy[:200]})')
         meta = self.get_category_meta(cat)
         out['meta_ok'] = bool(meta)
         if not meta:
             out['meta_error'] = self.meta_error(cat)
+            # Z9: 메타를 못 받았다 — 「없음」이 아니라 「확인 못 함 — 다시 확인」(통과도 멈춤도 아님)
+            out['meta_unavailable'] = True
+            out['unavailable_line'] = (f'쿠팡 카테고리 메타 확인 못 함 — 다시 확인 ({_who} · 카테고리 {cat} · '
+                                       f'쿠팡 응답: {(out.get("meta_error") or "알 수 없음")[:200]})')
         docs, dhold = self.required_documents_plan(meta)
         out['documents'] = docs
         if dhold:
@@ -934,9 +979,9 @@ class CoupangUploader(BaseUploader):
         self._log_meta_attributes(cat, meta.get('attributes') or [])
         # F51 — SKU별 판매가가 다 있으면 SKU마다 item(`plan_for`가 판정 한 곳).
         plan = plan_for(meta.get('attributes') or [], product, meta_ok=bool(meta))
+        plan['holds'] = [tag_meta_absent(h, cat, cat_src, pwhy) for h in plan['holds']]
         if not meta:
             # X1: 「메타를 읽지 못했습니다」 옆에 **어느 계정 키로 · 쿠팡이 뭐라 했는지** 원문을 붙인다.
-            _who = self.account_label() or '무접두 키'
             _tail = f' ({_who} · 카테고리 {cat} · 쿠팡 응답: {(out.get("meta_error") or "알 수 없음")[:300]})'
             plan['holds'] = [h + _tail if '카테고리 메타를 읽지 못했습니다' in h else h for h in plan['holds']]
         holds.extend(plan['holds'])
@@ -1042,6 +1087,7 @@ class CoupangUploader(BaseUploader):
             logger.warning('쿠팡 카테고리 메타 실패 — 계정 %s · 업체코드 %s · 카테고리 %s · 원문 %s',
                            self.account or '무접두', self.vendor_id, code, (raw or '')[:500])
             _record_meta_probe(self.account or '', self.vendor_id, code, False, raw)
+            return data                             # Z9: 실패는 굳히지 않는다 — 다음 확인에서 다시 묻는다
         self._meta_cache[code] = data
         return data
 

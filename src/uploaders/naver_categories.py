@@ -427,8 +427,18 @@ def suggest(product: dict) -> dict:
         return {"id": "", "name": "", "score": 0.0, "coupang": "", "candidates": [], "why": "상품명이 없어요"}
     hit = _suggest_cache_get(name)
     if hit and (hit.get("id") or hit.get("candidates") or hit.get("coupang")):
-        return dict(hit)
+        # Z9: 쿠팡 경로 표 없이(리프 이름만) 낸 추정이면, 표가 들어온 뒤엔 다시 계산한다(추정을 굳히지 않는다).
+        if not (hit.get("estimated") and _coupang_paths_ready()):
+            return dict(hit)
     return compute_suggestion(p, remember=True)
+
+
+def _coupang_paths_ready() -> bool:
+    try:
+        from src.uploaders.coupang_categories import table as _ctable
+        return bool((_ctable() or {}).get("paths"))
+    except Exception:
+        return False
 
 
 def compute_suggestion(p: dict, *, remember: bool = False) -> dict:
@@ -442,7 +452,9 @@ def compute_suggestion(p: dict, *, remember: bool = False) -> dict:
     g = coupang_guess(p)
     cp = g.get("path") or g.get("name", "")
     out = {"id": "", "name": "", "score": 0.0, "coupang": g.get("name", ""), "coupang_id": g.get("id", ""),
-           "coupang_path": g.get("path", ""), "candidates": [], "why": g.get("why", "")}
+           "coupang_path": g.get("path", ""), "candidates": [], "why": g.get("why", ""),
+           # Z9: 쿠팡 전체 경로 표(백그라운드)가 아직 없어 **리프 이름만**으로 맞춘 결과 — 화면에 「추정」으로 표시
+           "estimated": bool(g.get("name")) and not g.get("path")}
     if not g.get("name"):
         return out
     top = [c for c in rank(cp, name, limit=3) if c["score"] >= 0.25]   # 거의 안 닮은 후보는 보이지 않는다
@@ -563,15 +575,17 @@ def describe(product: dict) -> dict:
     p = product or {}
     cid, src = pick(p)
     out = {"id": cid, "name": name_of(cid) if cid else "", "source": src, "label": SOURCE_LABEL.get(src, ""),
-           "candidates": [], "why": "", "coupang": "", "change_url": picker_url(str(p.get("item_id") or ""))}
+           "candidates": [], "why": "", "coupang": "", "change_url": picker_url(str(p.get("item_id") or "")),
+           "estimated": False}
     if not cid:
         s = suggest(p)
         out.update(candidates=[{"id": c["id"], "name": c["name"]} for c in s.get("candidates") or []],
-                   why=s.get("why", ""), coupang=s.get("coupang", ""))
+                   why=s.get("why", ""), coupang=s.get("coupang", ""), estimated=bool(s.get("estimated")))
     elif src == "coupang":
         s = suggest(p)
         out["coupang"] = s.get("coupang", "")
         out["name"] = out["name"] or s.get("name", "")
+        out["estimated"] = bool(s.get("estimated"))
     return out
 
 
