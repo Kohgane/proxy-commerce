@@ -87,15 +87,13 @@ def test_category_canon_patterns(title, leaf):
     assert SS.resolve_category(title) == leaf
 
 
-def test_category_order_is_canon_and_must_not_be_resorted():
-    """**첫 매칭 우선** — 순서를 바꾸면 판정이 바뀐다. 정본 순서를 그대로 고정한다.
+def test_category_rows_kept_but_order_no_longer_decides():
+    """Y7-D(오너 2026-10-08): 사전 줄(낱말·리프)은 정본 그대로 11줄, 판정은 **줄 순서와 무관**(가장 긴 낱말 우선).
 
-    실제 사례: '티셔츠'는 10행(재킷|티셔츠)이 아니라 **7행의 '티'**에 먼저 걸려 주방(50004737)이 된다.
-    정본 스크립트와 동일한 결과이므로 재정렬하지 않는다(발명 금지). 바꾸려면 오너가 정본을 고쳐야 한다.
+    예전 정본 동작은 「첫 매칭 우선」이라 '티셔츠'가 7행의 '티'에 먼저 걸려 주방(50004737)이 됐다 — 이제 의류.
     """
-    assert SS.resolve_category("티셔츠") == "50004737"      # 7행 '티' 선매칭(정본 동작)
-    assert SS.resolve_category("재킷") == "50000167"        # '티' 없는 의류는 10행으로
-    # 패턴 순서 자체를 고정 — 재정렬 시 이 테스트가 깨진다.
+    assert SS.resolve_category("티셔츠") == "50000167"      # 「티셔츠」(3자) > 「티」(1자)
+    assert SS.resolve_category("재킷") == "50000167"
     assert [leaf for _, leaf in SS.CATEGORY_PATTERNS] == [
         "50004132", "50000646", "50000570", "50000570", "50003413",
         "50000406", "50004737", "50002335", "50000205", "50000167", "50001854"]
