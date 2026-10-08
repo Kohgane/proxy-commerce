@@ -618,17 +618,17 @@
              '<b>' + esc(r.market_label) + ' — ' + (r.success ? '등록됨' : (r.queued ? '대기열에 들어감' : '실패')) + '</b>' +
              (r.success ? '마켓 상품 ID: <strong data-role="m5-ext-id">' + esc(r.external_product_id || '(마켓이 번호를 돌려주지 않았어요)') + '</strong>' +
                 // U2: 쿠팡 셀러 상품번호 주소(vp/products)는 승인 전엔 「상품을 찾을 수 없습니다」 — 대신 검토 상태를 묻는다.
-                (String(r.market || '').indexOf('coupang') === 0
-                  ? '<div><button type="button" class="m5-fix" data-role="m5-review-btn">검토 상태 보기</button> <span data-role="m5-review" data-market="' + esc(r.market) + '"></span></div>'
-                  : (r.external_url ? '<div><a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">마켓에서 보기</a></div>' : ''))
+                // M6: 등록한 마켓은 전부 「검토 상태 보기」 → 상태 팝업(마켓에 그때 묻는다 · statusName·반려 사유·Wing/판매자센터).
+                '<div><button type="button" class="m5-fix" data-role="m5-review-btn" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">검토 상태 보기</button>' +
+                (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>'
               : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
                 (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
                   (['naver_invalid_input', 'category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기') +
                   '</a></div>' : '')) + '</div>';
       });
       doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
-      var rb = doneEl.querySelector('[data-role=m5-review-btn]');
-      if (rb) { rb.addEventListener('click', function () { reviewStatus(0); }); reviewStatus(0); }
+      // 쿠팡은 결과 줄 옆에 마지막 상태 배지를 바로 채운다(팝업은 버튼이 연다 — _market_status.html 위임 클릭).
+      if (doneEl.querySelector('[data-role=m5-review]')) reviewStatus(0);
       if (rs.some(function (r) { return r.success; })) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; }
       else { goBtn.disabled = false; }
     });
@@ -639,3 +639,4 @@
   });
 })();
 </script>
+{% include "_market_status.html" %}
