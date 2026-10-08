@@ -1172,6 +1172,33 @@ _GZIP_TYPES = ("text/html", "text/css", "application/javascript",
 _GZIP_MIN_BYTES = int(os.getenv("GZIP_MIN_BYTES", "600"))
 
 
+# Z8(오너 2026-10-08 23:3x 워커 교착): 외부 호출 타임아웃 상한(connect 5s·read 15s, 한 곳) ·
+#   30초 넘는 요청의 스택 덤프 · 요청 스레드 표시(pg 요청 연결의 주인 — 복사된 컨텍스트 스레드의 풀 누수 차단).
+try:
+    from src.utils.http_timeouts import install as _install_http_timeouts
+    _install_http_timeouts()
+    from src.utils.stall_guard import install as _install_stall_guard
+    _install_stall_guard(app)
+except Exception as _exc:                                  # 계측이 부팅을 막지 않는다
+    logger.warning('Z8 가드 설치 실패: %s', _exc)
+
+_NAVER_TREE_BOOT = {"pid": None}
+
+
+@app.before_request
+def _naver_tree_boot():
+    """Z8: 네이버 카테고리 트리는 워커(포크 뒤 프로세스)마다 첫 요청 때 **백그라운드로** 받기 시작 — 요청은 안 기다린다."""
+    if _NAVER_TREE_BOOT["pid"] == os.getpid():
+        return None
+    _NAVER_TREE_BOOT["pid"] = os.getpid()
+    try:
+        from src.uploaders.naver_categories import boot_refresh
+        boot_refresh()
+    except Exception as _exc:                              # noqa: BLE001 — 부팅 보조가 요청을 막지 않는다
+        logger.warning('네이버 카테고리 백그라운드 받기 시작 실패: %s', _exc)
+    return None
+
+
 @app.teardown_request
 def _close_request_db_conn(exc):
     """속도: 요청 범위에서 재사용한 PG 읽기 연결을 요청 종료 시 닫는다(연결 누수 0)."""

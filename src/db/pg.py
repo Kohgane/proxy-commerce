@@ -36,6 +36,24 @@ def direct_url() -> str:
     return (os.getenv("DATABASE_URL_DIRECT") or "").strip() or db_url()
 
 
+def pool_wait_sec() -> float:
+    """풀 대여 대기 상한(초) — 기본 5. 라이브러리 기본 30초는 바닥난 풀에서 요청 스레드를 통째로 묶는다(Z8)."""
+    try:
+        return max(0.5, float(os.getenv("PG_POOL_WAIT_SEC", "5") or 5))
+    except ValueError:
+        return 5.0
+
+
+def pool_stats() -> dict:
+    """풀 상태(진단·로그용) — 풀이 없으면 빈 dict."""
+    try:
+        st = _pool.get_stats() if _pool is not None and hasattr(_pool, "get_stats") else {}
+        return {k: st.get(k) for k in ("pool_size", "pool_available", "requests_waiting", "requests_errors",
+                                       "requests_wait_ms", "connections_num") if k in st}
+    except Exception:
+        return {}
+
+
 def _connect(url: str, *, autocommit: bool = False):
     """psycopg3 연결 — NullPool(1회용) + prepared statement 비활성(풀러 호환)."""
     import psycopg
@@ -52,7 +70,10 @@ def pg_enabled() -> bool:
     global _checked, _available
     if _checked:
         return _available
-    with _lock:
+    # Z8: 이 잠금 안에서 첫 접속(최대 connect_timeout)을 한다 — 5초 넘게 못 잡으면 잠금 없이 같은 확인을 한다
+    #   (결과는 같고 캐시만 늦게 찬다 — 기다리느라 요청 스레드가 줄 서지 않게).
+    from src.utils.locks import try_lock
+    with try_lock(_lock, code="pg_check_lock_timeout", what="DB 가용 확인"):
         if _checked:
             return _available
         _checked = True
@@ -132,7 +153,10 @@ def _persistent_pool():
         return None
     if _pool_checked:
         return _pool
-    with _lock:
+    from src.utils.locks import try_lock
+    with try_lock(_lock, code="pg_pool_lock_timeout", what="DB 상시 풀 만들기") as _got:
+        if not _got:
+            return None                                # 이번 요청은 1회용 연결로(풀은 다른 스레드가 만드는 중)
         if _pool_checked:
             return _pool
         _pool_checked = True
@@ -143,7 +167,10 @@ def _persistent_pool():
                 min_size=int(os.getenv("PG_POOL_MIN", "1") or 1),
                 max_size=int(os.getenv("PG_POOL_SIZE", "5") or 5),
                 max_idle=float(os.getenv("PG_POOL_RECYCLE", "300") or 300),
-                kwargs={"prepare_threshold": None, "autocommit": True},  # 풀러 호환
+                # 풀러 호환 · Z8: 풀이 새로 여는 연결에도 connect_timeout(1회용 `_connect`와 같은 값)
+                kwargs={"prepare_threshold": None, "autocommit": True,
+                        "connect_timeout": int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10)},
+                timeout=pool_wait_sec(),
                 check=ConnectionPool.check_connection,                   # pre_ping
                 open=True,
             )
@@ -242,6 +269,16 @@ def _request_read_conn():
         from flask import g, has_request_context
         if not has_request_context():
             return None, False
+        # Z8(오너 2026-10-08 23:3x 워커 교착): 요청 컨텍스트를 **복사한** 스레드(사전검증 잡 `_pv_job`·마켓별 future)도
+        #   has_request_context()가 참이다. 그 스레드가 요청이 끝난 뒤(teardown이 이미 반납한 뒤) 여기서 풀 연결을 빌려
+        #   g에 걸면 **아무도 반납하지 않는다** — 잡 1회에 1개씩 새어 풀(5)이 바닥나면 그 워커의 모든 요청이
+        #   getconn에서 기다린다. 요청을 받은 그 스레드만 g 연결을 쓰고, 나머지는 1회용(쓰고 바로 닫음).
+        owner = getattr(g, "_kgp_req_thread", None)
+        if owner is None:
+            owner = threading.get_ident()
+            setattr(g, "_kgp_req_thread", owner)
+        if owner != threading.get_ident():
+            return None, False
         c = getattr(g, "_kgp_db_read_conn", None)
         if c is not None and not getattr(c, "closed", False):
             return c, False                     # 재사용(새 연결 아님)
@@ -249,7 +286,8 @@ def _request_read_conn():
         pool = _persistent_pool()
         if pool is not None:
             try:
-                c = pool.getconn()
+                # Z8: 풀이 바닥났을 때 30초(라이브러리 기본)씩 기다리지 않는다 — 5초 뒤 사유를 남기고 1회용으로.
+                c = pool.getconn(timeout=pool_wait_sec())
                 try:
                     c.autocommit = True
                 except Exception:
@@ -257,8 +295,9 @@ def _request_read_conn():
                 setattr(g, "_kgp_db_read_conn", c)
                 setattr(g, "_kgp_db_conn_pooled", True)
                 return c, False                 # 풀 대여 = 새 핸드셰이크 아님(연결 수 미계상)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("[DB] pg_pool_timeout — 풀 대여 %ss 안에 실패(%s: %s) · 풀 %s → 1회용 연결",
+                               pool_wait_sec(), type(exc).__name__, str(exc)[:120], pool_stats())
         c = _connect(db_url(), autocommit=True)
         setattr(g, "_kgp_db_read_conn", c)
         setattr(g, "_kgp_db_conn_pooled", False)

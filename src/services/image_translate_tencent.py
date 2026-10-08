@@ -319,7 +319,17 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                         "hint": f"앞에 {turn.get('wait', 0):.0f}초치가 밀려 있습니다."})
             out["ms"] = int((time.perf_counter() - t0) * 1000)
             return out
-        with _GATE:
+        # Z8: 이 잠금은 공급사 호출(장당 최대 20s)을 쥔다 — 5초 넘게 못 잡으면 기다리지 않고 「지금 줄이 깁니다」(gate_busy).
+        from src.utils.locks import try_lock
+        from src.utils.http_timeouts import allow as _http_allow
+        with try_lock(_GATE, code="gate_busy", what="이미지 번역 공급사 호출 차례") as _got, \
+                _http_allow(read=max(15, int(timeout_sec or DEFAULT_TIMEOUT_SEC)), why="텐센트 이미지 번역(장당)"):
+            if not _got:
+                out.update({"error_class": "GateBusy", "error_code": "gate_busy",
+                            "error_message": "지금은 번역 줄이 깁니다. 잠시 후 다시 시도해 주세요.",
+                            "hint": "앞 장의 번역이 아직 끝나지 않았어요(5초 넘게 대기)."})
+                out["ms"] = int((time.perf_counter() - t0) * 1000)
+                return out
             _wait_turn()
             try:
                 resp = cli.ImageTranslateLLM(req)

@@ -75,6 +75,13 @@ def relay_wait_plan() -> dict:
     그래서 시도 횟수를 상수로 박지 않고 **워커 타임아웃에서 역산한다**(여유분을 뺀 예산).
     """
     timeout = _as_int_env("MARKET_RELAY_TIMEOUT_SEC", 35)
+    # Z8(오너 2026-10-08 워커 교착): 외부 호출 read 상한(기본 15s, `src/utils/http_timeouts`)보다 길게 기다린다고
+    #   적지 않는다 — 실제로는 상한에서 끊기므로 계획·문장도 상한 기준(그래야 「몇 초씩 몇 번」이 사실).
+    try:
+        from src.utils.http_timeouts import caps as _http_caps
+        timeout = max(1, min(timeout, int(_http_caps()[1])))
+    except Exception:
+        pass
     worker = _as_int_env("GUNICORN_TIMEOUT", 120)
     margin = _as_int_env("MARKET_RELAY_BUDGET_MARGIN_SEC", 20)
     budget = max(timeout, worker - margin)          # 최소 1회는 시도한다

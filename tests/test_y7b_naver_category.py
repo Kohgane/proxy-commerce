@@ -30,6 +30,7 @@ BODY_400 = json.dumps({"code": "BAD_REQUEST", "message": "요청 파라미터가
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
+    monkeypatch.setattr(NC, "BACKGROUND", False)     # Z8 이후 트리는 백그라운드 — 이 계약들은 그 자리 받기로 재현
     NC.reset()
     from src.db import image_translate_queue_pg as st
     st.state_set(NC.STATE_KEY, {})

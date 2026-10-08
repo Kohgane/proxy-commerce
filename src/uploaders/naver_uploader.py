@@ -644,11 +644,14 @@ class NaverSmartStoreUploader(BaseUploader):
                    'Content-Type': prepped.headers['Content-Type']}
         payload_bytes = len(prepped.body or b'')
         last = ''
+        from src.utils.http_timeouts import allow as _http_allow
         for att in range(self.IMAGE_RETRY):
             try:
-                resp = relay_request('POST', self.API_BASE + self.IMAGE_UPLOAD_PATH,
-                                     headers=headers, data=prepped.body, timeout=60,
-                                     market='smartstore', key=str(self.client_id or ''))
+                # Z8: 외부 호출 read 상한은 15s — 사진 최대 10장 한 요청은 예외(60s, 이 호출만)
+                with _http_allow(read=60, why='네이버 이미지 업로드(최대 10장)'):
+                    resp = relay_request('POST', self.API_BASE + self.IMAGE_UPLOAD_PATH,
+                                         headers=headers, data=prepped.body, timeout=60,
+                                         market='smartstore', key=str(self.client_id or ''))
                 if getattr(resp, 'status_code', 0) == 429:
                     last = self._fail_detail('image_upload', att + 1, status=429,
                                              body=self._resp_body(resp))

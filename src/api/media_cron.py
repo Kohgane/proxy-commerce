@@ -54,19 +54,28 @@ def drain_image_copies():
     if not _authorized():
         return jsonify({"ok": False, "error": "cron 인증 실패"}), 403
 
-    from src.api.extension_api import _cdn_configured, _store_image_copies
-    from src.seller_console import collect_history_store as store
+    from src.api.extension_api import _cdn_configured
 
     if not _cdn_configured():
         # 둘 데가 없으면 할 일도 없다 — 「0건」이 거짓이 아니라 사실이다.
         return jsonify({"ok": True, "picked": 0, "stored_rows": 0, "left": 0,
                         "note": "CDN 미설정 — 저장본을 둘 데가 없습니다"})
 
+    # Z8(오너 2026-10-08 워커 교착): 복사(최대 45s 예산)는 요청 밖 — 백그라운드(동시 1개), 요청은 즉시 202 / 진행 중 409.
+    from src.utils import bg_job
+    started, state = bg_job.start("image-copies", _drain)
+    return bg_job.accepted("image-copies", started, state)
+
+
+def _drain() -> dict:
+    """접수된 이미지 복사를 예산 안에서 비운다(백그라운드). `{ok, picked, stored_rows, left}`."""
+    from src.api.extension_api import _store_image_copies
+    from src.seller_console import collect_history_store as store
     try:
         rows = store.list_items(days=90, limit=500)
     except Exception as exc:
         logger.warning("[이미지복사] 목록 조회 실패: %s", exc)
-        return jsonify({"ok": False, "error": "목록을 읽지 못했습니다"}), 500
+        return {"ok": False, "error": f"목록을 읽지 못했습니다: {type(exc).__name__}"}
 
     queued = []
     for row in rows:
@@ -100,5 +109,5 @@ def drain_image_copies():
 
     logger.info("[이미지복사] 접수 %s건 중 %s건 처리 · 저장본 생성 %s건",
                 len(queued), len(picked), stored_rows)
-    return jsonify({"ok": True, "picked": len(picked), "stored_rows": stored_rows,
-                    "left": max(0, len(queued) - len(picked))})
+    return {"ok": True, "picked": len(picked), "stored_rows": stored_rows,
+            "left": max(0, len(queued) - len(picked))}

@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 def _make_app():
+    from src.utils import bg_job
+    bg_job.reset()
     from flask import Flask
     from src.pricing.cron import cron_bp
     app = Flask(__name__)
@@ -39,11 +41,17 @@ class TestRepriceCronRoute:
              patch("src.pricing.cron._send_summary_notification"):
             client = app.test_client()
             resp = client.post("/cron/reprice?dry_run=1")
+            # Z8: 엔진은 요청 밖 — 즉시 202, 결과는 작업 상태(/cron/jobs)에
+            assert resp.status_code == 202 and resp.get_json()["started"] is True
+            from src.utils import bg_job
+            st = bg_job.join("reprice")
 
-        assert resp.status_code == 200
-        data = resp.get_json()
+        assert st["state"] == "done"
+        data = st["result"]
         assert data["ok"] is True
         assert data["results"]["evaluated"] == 5
+        jobs = client.get("/cron/jobs").get_json()["jobs"]
+        assert jobs["reprice"]["result"]["results"]["evaluated"] == 5 and jobs["reprice"]["elapsed_ms"] is not None
 
     def test_reprice_unauthorized(self, monkeypatch):
         monkeypatch.setenv("CRON_SECRET", "supersecret")
@@ -64,16 +72,20 @@ class TestRepriceCronRoute:
              patch("src.pricing.cron._send_summary_notification"):
             client = app.test_client()
             resp = client.post("/cron/reprice", headers={"X-Cron-Secret": "supersecret"})
+            from src.utils import bg_job
+            bg_job.join("reprice")
 
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
-    def test_reprice_engine_error_returns_500(self):
+    def test_reprice_engine_error_is_recorded_as_failed(self):
+        """Z8: 응답은 이미 202로 나갔다 — 엔진 오류는 작업 상태에 failed + 사유로 남는다."""
         app = _make_app()
 
         with patch("src.pricing.engine.PricingEngine.evaluate", side_effect=RuntimeError("DB error")):
             client = app.test_client()
             resp = client.post("/cron/reprice")
+            from src.utils import bg_job
+            st = bg_job.join("reprice")
 
-        assert resp.status_code == 500
-        data = resp.get_json()
-        assert data["ok"] is False
+        assert resp.status_code == 202
+        assert st["state"] == "failed" and st["result"]["ok"] is False and "DB error" in st["result"]["error"]
