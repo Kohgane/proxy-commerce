@@ -2140,7 +2140,25 @@ async function runPrevalidate() {
 //   드로어(iframe) 안에서 눌러도 연동 화면이 드로어에 갇히지 않게 맨 위 창에서 연다(새 창 아님).
 function renderActionLink(url) {
   if (!url || !/^\/seller\//.test(String(url))) return '';
+  // Y7-C 같은 유형: 네이버 카테고리 링크까지 「마켓 연동에서 채우기」로 적던 것 — 가는 곳 이름 그대로.
+  if (/\/naver-category$/.test(String(url))) {
+    return `<a class="btn btn-sm btn-ghost mt-2" data-role="action-link" target="_top" href="${kgpEscapeForHtml(url)}"><i class="bi bi-diagram-3"></i> 카테고리 지정 →</a>`;
+  }
   return `<a class="btn btn-sm btn-ghost mt-2" data-role="action-link" target="_top" href="${kgpEscapeForHtml(url)}"><i class="bi bi-plug"></i> 마켓 연동에서 채우기</a>`;
+}
+
+// Y7-C: 스마트스토어 카테고리 한 줄 — 자동이면 「카테고리 자동: … (바꾸기)」, 못 정했으면 후보 이름(고르기는 지정 화면에서).
+function renderCategoryLine(r) {
+  const c = r.category || {};
+  const esc = kgpEscapeForHtml;
+  if (c.id) {
+    return `<div class="small mt-1" data-role="pv-cat-auto">${c.source === 'manual' ? '카테고리 지정' : '카테고리 자동'}: <b>${esc(c.name || c.id)}</b>`
+      + (c.change_url ? ` <a target="_top" href="${esc(c.change_url)}" data-role="pv-cat-change">(바꾸기)</a>` : '') + '</div>';
+  }
+  if ((c.candidates || []).length) {
+    return '<div class="small mt-1" data-role="pv-cat-cands">후보: ' + c.candidates.map(x => esc(x.name)).join(' · ') + '</div>';
+  }
+  return '';
 }
 
 function renderDetailLines(lines, cls) {
@@ -2178,6 +2196,7 @@ function renderPrevalidateResults(results) {
           <div class="fw-semibold">${r.market_label || r.market} ${badge}${reach}</div>
           <div class="text-muted small">${r.message}</div>
           ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger')}
+          ${renderCategoryLine(r)}
           ${(r.hold && (r.fixes || []).indexOf('translate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-translate-recheck">번역하고 다시 검증</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-ship-override">그래도 등록</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('rep_image') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-rep-override">대표 사진 그래도 등록</button>' : ''}

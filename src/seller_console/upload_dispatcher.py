@@ -535,6 +535,8 @@ class PrevalidationResult:
     hold: bool = False
     # X2 — 보류를 푸는 방법(pc·translate·price…) — 화면이 「번역하고 다시 검증」 같은 버튼을 고른다.
     fixes: List[str] = field(default_factory=list)
+    # Y7-C — 스마트스토어 카테고리 한 줄 재료 `{id, name, source, label, candidates, why, change_url}`(naver_categories.describe).
+    category: Dict[str, Any] = field(default_factory=dict)
 
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
@@ -695,7 +697,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
     if any(h["fix"] == "ship_ratio" for h in holds):
         fixes.append("원가·크기를 확인하거나 「그래도 등록」")
     if any(h["fix"] == "naver_category" for h in holds):
-        fixes.append("「카테고리 지정 →」에서 네이버 카테고리 고르기")
+        fixes.append("후보 카테고리를 누르거나 「카테고리 지정 →」에서 고르기"
+                     if any(h.get("candidates") for h in holds) else "「카테고리 지정 →」에서 네이버 카테고리 고르기")
     if any(h["fix"] == "rep_image" for h in holds):
         fixes.append("「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」")
     if any(h["fix"] == "voltage" for h in holds):
@@ -821,6 +824,13 @@ class UploadDispatcher:
             _rss.log("prevalidate_start", market=market)
             with ctx:
                 r = self._prevalidate_market(product_data, base)
+                if base == "smartstore" and r.error_code not in ("smartstore_token_failed", "unsupported_market"):
+                    # Y7-C: 통과든 보류든 「카테고리 자동: … (바꾸기)」/후보 칩을 카드가 그릴 재료(등록과 같은 판정 pick).
+                    try:
+                        from src.uploaders.naver_categories import describe as _cat_describe
+                        r.category = _cat_describe(product_data)
+                    except Exception as exc:                     # noqa: BLE001 — 한 줄 재료라 검증을 막지 않는다
+                        logger.warning("[사전검증] 네이버 카테고리 한 줄 실패: %s", exc)
             _rss.log("prevalidate_end", market=market, code=r.error_code or "ok")
             r.market = market
             results.append(r)
@@ -881,7 +891,8 @@ class UploadDispatcher:
             except Exception:
                 _nch = None
             if _nch:
-                holds.append({"short": "네이버 카테고리", "fix": "naver_category", "code": _nch["code"], "line": _nch["line"]})
+                holds.append({"short": "네이버 카테고리", "fix": "naver_category", "code": _nch["code"], "line": _nch["line"],
+                              "candidates": _nch.get("candidates") or []})
         if price is None or price <= 0:
             holds.append({"short": "판매가 없음", "fix": "pc",
                           "line": "판매가가 0이거나 비어 있어요 — 원가를 읽어야 판매가를 낼 수 있어요"

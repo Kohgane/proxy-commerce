@@ -10,9 +10,22 @@
 
   <div class="ncp-now" data-role="ncp-current">
     {% if cur %}지금: <b>{{ cur_name or cur }}</b> <span class="text-muted">({{ cur }})</span>
-    {% elif auto %}지정 안 함 — 상품명으로 정한 카테고리: <b>{{ auto_name or auto }}</b> <span class="text-muted">({{ auto }})</span>
+    {% elif auto %}지정 안 함 — <span data-role="ncp-auto">카테고리 {{ auto_label or '자동' }}: <b>{{ auto_name or auto }}</b></span> <span class="text-muted">({{ auto }})</span>
+    {% elif candidates %}지정 안 함 — 쿠팡 예측 「{{ coupang }}」와 가까운 후보를 하나로 정하지 못했어요. 아래 후보에서 골라 주세요.
     {% else %}지정 안 함 — 상품명으로도 정하지 못했어요. 아래에서 찾아 골라 주세요.{% endif %}
   </div>
+
+  {% if candidates and not cur %}
+  {# Y7-C: 쿠팡 예측 다리 후보 3개 — 고르면 저장하고, 상품명 낱말에 기억한다(같은 류 다음 상품은 자동) #}
+  <form method="post" data-role="ncp-candidates">
+    <ul class="ncp-list">
+      {% for c in candidates %}
+      <li><label><input type="radio" name="category_id" value="{{ c.id }}"> <span>{{ c.name }}</span></label></li>
+      {% endfor %}
+    </ul>
+    <button class="btn btn-primary" type="submit" data-role="ncp-save-candidate">이 카테고리로 저장</button>
+  </form>
+  {% endif %}
 
   {% if msg %}<p class="ncp-msg is-ok" data-role="ncp-msg">{{ msg }}</p>{% endif %}
   {% if err %}<p class="ncp-msg is-bad" data-role="ncp-err">{{ err }}</p>{% endif %}

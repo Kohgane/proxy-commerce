@@ -3857,11 +3857,12 @@ def collect_naver_category(item_id: str):
     if not item:
         abort(404)
     from src.uploaders import naver_categories as NC
-    from src.uploaders.naver_uploader import NaverSmartStoreUploader as _SS
     ex = json.loads(item.get("extra_json") or "{}") or {}
     msg, err = "", ""
+    title = str(ex.get("title_ko") or item.get("title") or "")
     if request.method == "POST":
-        cid = str(request.form.get("category_id") or "").strip()
+        _body = request.get_json(silent=True) or {}
+        cid = str(_body.get("category_id") or request.form.get("category_id") or "").strip()
         state = NC.leaf_state(cid)
         if state != "leaf":
             err = {"not_leaf": f"{cid}는 상위 카테고리예요 — 맨 아래 분류를 골라 주세요.",
@@ -3874,15 +3875,27 @@ def collect_naver_category(item_id: str):
             ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
             msg = f"저장했어요 — {ex['naver_category_name']}" if ok else ""
             err = "" if ok else "저장하지 못했어요."
+            if ok:
+                # Y7-C: 오너가 고른 리프를 상품명 낱말에 기억 — 같은 류 다음 상품은 자동(공유 마켓 사용자는 한 벌).
+                NC.learn("shared" if _shared_markets() else "s:" + _seller_id(), title, cid)
+        if request.is_json:
+            return jsonify({"ok": not err, "error": err, "id": cid if not err else "",
+                            "name": ex.get("naver_category_name", "") if not err else ""}), (200 if not err else 400)
     q = str(request.args.get("q") or "").strip()
-    title = str(ex.get("title_ko") or item.get("title") or "")
     tree = NC.tree()
     cur = str(ex.get("naver_category_id") or "")
-    auto = _SS.match_category(title)
+    # Y7-C: 지정이 없을 때 보일 「자동으로 정한 것」은 등록과 같은 판정(내가 고른 기록 → 사전 → 쿠팡 예측 다리)
+    try:
+        _d = NC.describe({"title_ko": title, "title": title, "item_id": item_id,
+                          "description_ko": str(ex.get("description_ko") or "")}) if not cur else {}
+    except Exception as exc:                                    # noqa: BLE001 — 고르는 화면은 그대로 연다
+        logger.warning("[네이버 카테고리] 지정 화면 자동 추천 실패: %s", exc)
+        _d = {}
     return render_template(
         "naver_category_pick.html", item_id=item_id, title=title, q=q, results=NC.search(q) if q else [],
         tree_ok=bool(tree and tree.get("leaves")), cur=cur, cur_name=NC.name_of(cur) if cur else "",
-        auto=auto, auto_name=NC.name_of(auto) if auto else "", msg=msg, err=err,
+        auto=_d.get("id", ""), auto_name=_d.get("name", ""), auto_label=_d.get("label", ""),
+        candidates=_d.get("candidates") or [], coupang=_d.get("coupang", ""), msg=msg, err=err,
         words=[w for w in re.split(r"[\s,·/]+", title) if len(w) >= 2][:8])
 
 
@@ -4091,6 +4104,8 @@ def _pv_dict(r, rc=None) -> dict:
         # R2 — 재료가 덜 와서 멈춘 것(보강·번역하면 풀린다). 화면은 「막힘」 대신 「보류」.
         "hold": bool(getattr(r, "hold", False)),
         "fixes": list(getattr(r, "fixes", None) or []),
+        # Y7-C — 스마트스토어 카테고리(자동이면 「카테고리 자동: … (바꾸기)」, 못 정했으면 후보 칩)
+        "category": dict(getattr(r, "category", None) or {}),
     }
 
 
