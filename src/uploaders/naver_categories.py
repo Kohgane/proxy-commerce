@@ -72,8 +72,52 @@ def _pack(rows: list) -> dict:
     return {"fetched_at": time.time(), "leaves": leaves, "parents": parents}
 
 
+# Z8(오너 2026-10-08 23:3x 워커 교착): 전체 카테고리 받기(수천 줄·릴레이 경유)는 **요청 스레드에서 하지 않는다.**
+#   캐시가 없거나 하루가 지났으면 백그라운드 스레드 하나가 받고(동시에 하나만), 그동안 요청은 저장본(낡았어도)을
+#   쓰거나 저장본도 없으면 「트리 미수신 → 리프 검사 생략」으로 지나간다. 실패하면 다음 요청이 다시 띄운다
+#   (실패 직후 `RETRY_SEC` 동안은 다시 안 띄운다). 부팅 직후엔 `start_background_refresh()`가 한 번 띄운다.
+BACKGROUND = True          # 테스트는 False로 바꿔 예전처럼 그 자리에서 받는다(계약 재현용)
+RETRY_SEC = 60.0
+_REFRESH: Dict = {"thread": None, "last_fail": 0.0, "last_ok": 0.0}
+
+
+def _fetch_and_store(account: str = "") -> Optional[dict]:
+    rows = _fetch(account)
+    if not rows:
+        with _LOCK:
+            _REFRESH["last_fail"] = time.time()
+        return None
+    d = _pack(rows)
+    try:
+        _store().state_set(STATE_KEY, d)
+    except Exception as exc:                            # noqa: BLE001
+        logger.warning("[네이버 카테고리] 저장 실패(메모리만): %s", exc)
+    logger.info("[네이버 카테고리] 갱신 — 리프 %d · 상위 %d", len(d["leaves"]), len(d["parents"]))
+    with _LOCK:
+        _MEM["data"] = d
+        _REFRESH["last_ok"] = time.time()
+    return d
+
+
+def start_background_refresh(account: str = "", *, force: bool = False) -> bool:
+    """백그라운드로 받기 시작 — 이미 도는 중이거나 실패 직후 `RETRY_SEC` 안이면 False."""
+    with _LOCK:
+        t = _REFRESH["thread"]
+        if t is not None and t.is_alive():
+            return False
+        if not force and time.time() - float(_REFRESH["last_fail"] or 0) < RETRY_SEC:
+            return False
+        t = threading.Thread(target=_fetch_and_store, args=(account,), daemon=True, name="naver-category-tree")
+        _REFRESH["thread"] = t
+    t.start()
+    return True
+
+
 def tree(*, refresh: bool = False, account: str = "") -> Optional[dict]:
-    """`{fetched_at, leaves: {id: 전체 이름}, parents: [id]}` — 하루 1회 갱신. 못 받았으면 마지막 저장본, 그것도 없으면 None."""
+    """`{fetched_at, leaves: {id: 전체 이름}, parents: [id]}` — 하루 1회 갱신(백그라운드). 저장본이 없으면 None.
+
+    `refresh=True`는 백그라운드·관리자 진단처럼 **요청 밖**에서만 — 그 자리에서 받는다.
+    """
     now = time.time()
     with _LOCK:
         d = _MEM["data"]
@@ -84,20 +128,14 @@ def tree(*, refresh: bool = False, account: str = "") -> Optional[dict]:
             d = _store().state_get(STATE_KEY) or None
         except Exception:
             d = None
+        if d:
+            with _LOCK:
+                _MEM["data"] = d
     if d and not refresh and now - float(d.get("fetched_at") or 0) < TTL_SEC:
-        with _LOCK:
-            _MEM["data"] = d
         return d
-    rows = _fetch(account)
-    if rows:
-        d = _pack(rows)
-        try:
-            _store().state_set(STATE_KEY, d)
-        except Exception as exc:                            # noqa: BLE001
-            logger.warning("[네이버 카테고리] 저장 실패(메모리만): %s", exc)
-        logger.info("[네이버 카테고리] 갱신 — 리프 %d · 상위 %d", len(d["leaves"]), len(d["parents"]))
-    with _LOCK:
-        _MEM["data"] = d
+    if refresh or not BACKGROUND:
+        return _fetch_and_store(account) or d
+    start_background_refresh(account)                   # 낡았거나 없음 — 받기는 뒤에서, 지금은 있는 것으로
     return d
 
 
@@ -466,6 +504,23 @@ def reset() -> None:
     """테스트·진단용 — 메모리 캐시만 비운다(저장본은 그대로)."""
     with _LOCK:
         _MEM.update(at=0.0, data=None)
+        _REFRESH.update(thread=None, last_fail=0.0, last_ok=0.0)
+
+
+def boot_refresh() -> bool:
+    """워커 부팅 직후 1회 — 저장본이 없거나 하루 지났으면 백그라운드로 받기 시작(요청은 기다리지 않는다)."""
+    import os
+    if not BACKGROUND or os.getenv("PYTEST_CURRENT_TEST"):
+        return False
+    try:
+        d = _MEM["data"] or _store().state_get(STATE_KEY) or None
+    except Exception:
+        d = None
+    if d and time.time() - float(d.get("fetched_at") or 0) < TTL_SEC:
+        with _LOCK:
+            _MEM["data"] = _MEM["data"] or d
+        return False
+    return start_background_refresh()
 
 
 def picker_url(item_id: str) -> str:

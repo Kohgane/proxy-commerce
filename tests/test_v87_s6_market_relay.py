@@ -89,7 +89,7 @@ def test_relay_used_when_configured(monkeypatch):
 
     assert seen["url"] == "https://relay.example.com/mkt.php"
     assert seen["headers"]["X-KGP-Relay-Key"] == "s3cret", "공유 시크릿 헤더가 없다"
-    assert seen["timeout"] == 35, "타임아웃 35s 계약"
+    assert seen["timeout"] == 15, "타임아웃 계약 — Z8 read 상한 15s(예전 35s)"
     p = seen["payload"]
     assert set(p) == {"url", "method", "headers", "body_b64"}, p
     assert p["method"] == "POST"

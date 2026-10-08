@@ -4160,7 +4160,9 @@ _PV_LOCK = __import__("threading").Lock()
 
 
 def _pv_update(job_id: str, **kw) -> dict:
-    with _PV_LOCK:
+    # Z8: 이 잠금 안에서 DB를 두 번 오간다 — 5초 넘게 못 잡으면 잠금 없이 그대로 쓴다(pv_lock_timeout, 막지 않음).
+    from src.utils.locks import try_lock
+    with try_lock(_PV_LOCK, code="pv_lock_timeout", what="사전검증 잡 결과 저장"):
         st = _pv_store()
         cur = st.state_get(_PV_JOB_KEY + job_id) or {}
         res = dict(cur.get("results") or {})

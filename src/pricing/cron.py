@@ -40,18 +40,20 @@ def reprice():
     else:
         dry_run = None  # 엔진에서 PRICING_DRY_RUN 환경변수 사용
 
-    try:
+    # Z8(오너 2026-10-08 워커 교착): 엔진은 요청 밖(백그라운드, 동시 1개) — 요청은 즉시 202 / 진행 중이면 409.
+    def _work():
         from src.pricing.engine import PricingEngine
-        engine = PricingEngine()
-        results = engine.evaluate(dry_run=dry_run)
-    except Exception as exc:
-        logger.error("재가격 엔진 오류: %s", exc)
-        return jsonify({"ok": False, "error": "재가격 실행 중 오류가 발생했습니다."}), 500
+        try:
+            results = PricingEngine().evaluate(dry_run=dry_run)
+        except Exception as exc:
+            logger.error("재가격 엔진 오류: %s", exc)
+            return {"ok": False, "error": f"재가격 실행 중 오류: {type(exc).__name__}: {str(exc)[:200]}"}
+        _send_summary_notification(results)              # 요약 알림 발송
+        return {"ok": True, "results": results}
 
-    # 요약 알림 발송
-    _send_summary_notification(results)
-
-    return jsonify({"ok": True, "results": results})
+    from src.utils import bg_job
+    started, state = bg_job.start("reprice", _work)
+    return bg_job.accepted("reprice", started, state)
 
 
 @cron_bp.post("/sourcing-monitor")
@@ -75,18 +77,22 @@ def sourcing_monitor_cron():
         except (TypeError, ValueError):
             return default
 
-    try:
-        from src.seller_console.views import run_auto_source_monitor
-        summary = run_auto_source_monitor(
-            days=_int("days", 14),
-            max_items=_int("max_items", 200),
-            only_stale_hours=float(request.args.get("stale_hours", 6) or 6),
-        )
-    except Exception as exc:
-        logger.error("소싱처 자동확인 오류: %s", exc)
-        return jsonify({"ok": False, "error": "소싱처 자동확인 중 오류가 발생했습니다."}), 500
+    days, max_items = _int("days", 14), _int("max_items", 200)
+    stale = float(request.args.get("stale_hours", 6) or 6)
 
-    return jsonify({"ok": True, **summary})
+    # Z8 같은 유형: 최대 200건 재확인을 요청 안에서 돌렸다 — 백그라운드(동시 1개)로.
+    def _work():
+        from src.seller_console.views import run_auto_source_monitor
+        try:
+            summary = run_auto_source_monitor(days=days, max_items=max_items, only_stale_hours=stale)
+        except Exception as exc:
+            logger.error("소싱처 자동확인 오류: %s", exc)
+            return {"ok": False, "error": f"소싱처 자동확인 중 오류: {type(exc).__name__}: {str(exc)[:200]}"}
+        return {"ok": True, **summary}
+
+    from src.utils import bg_job
+    started, state = bg_job.start("sourcing-monitor", _work)
+    return bg_job.accepted("sourcing-monitor", started, state)
 
 
 @cron_bp.post("/supabase-backup")
@@ -100,13 +106,28 @@ def supabase_backup_cron():
     if cron_secret:
         if request.headers.get("X-Cron-Secret", "") != cron_secret:
             return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    try:
+    # Z8 같은 유형: 전체 테이블 덤프를 요청 안에서 — 백그라운드(동시 1개)로.
+    def _work():
         from src.db.backup import backup_to_sheets
-        summary = backup_to_sheets()
-    except Exception as exc:
-        logger.error("Supabase 백업 오류: %s", exc)
-        return jsonify({"ok": False, "error": "백업 실행 중 오류가 발생했습니다."}), 500
-    return jsonify(summary)
+        try:
+            return backup_to_sheets()
+        except Exception as exc:
+            logger.error("Supabase 백업 오류: %s", exc)
+            return {"ok": False, "error": f"백업 실행 중 오류: {type(exc).__name__}: {str(exc)[:200]}"}
+
+    from src.utils import bg_job
+    started, state = bg_job.start("supabase-backup", _work)
+    return bg_job.accepted("supabase-backup", started, state)
+
+
+@cron_bp.get("/jobs")
+def cron_jobs():
+    """Z8: 크론 작업 마지막 상태(시작·끝·elapsed_ms·결과·오류) — `X-Cron-Secret` 필요(키 미설정 시 허용, 다른 크론과 같은 규칙)."""
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret and request.headers.get("X-Cron-Secret", "") != cron_secret:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    from src.utils import bg_job
+    return jsonify({"ok": True, "jobs": bg_job.all_views()})
 
 
 # 크론 틱 공유 벽시계 예산 — 외부 크론(cron-job.org 30s)이 두 작업(번역 드레인 + 파일럿 마감) 스택을

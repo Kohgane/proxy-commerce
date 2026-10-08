@@ -95,12 +95,23 @@ def _safe_query(raw_qs: str) -> str:
         return "(query 생략 — 스크럽 실패)"
 
 
+# Z8(오너 2026-10-08): `request_headers`에 X-Cron-Secret이 평문으로 찍혔다 — 정확히 같은 이름만 가리던 목록
+#   (`authorization`·`x-api-key`…)에 없어서. 헤더는 **이름에 비밀 낱말이 들어 있으면** 가린다(env로 끌 수 없음):
+#   Authorization·Proxy-Authorization·Cookie·Set-Cookie·X-Cron-Secret·X-Api-Key·X-Dashboard-Key·X-KGP-Relay-Key·
+#   X-Relay-Signature·*-Token·*-Session 등.
+_HEADER_SECRET_WORDS = ("authorization", "cookie", "secret", "token", "key", "password", "passwd",
+                        "session", "signature", "credential", "auth")
+_HEADER_MASK = "***"
+
+
+def _is_secret_header(name: str) -> bool:
+    n = str(name or "").lower()
+    return n in _MASK_FIELDS or any(w in n for w in _HEADER_SECRET_WORDS)
+
+
 def _mask_headers(headers: Dict[str, str]) -> Dict[str, str]:
-    """요청 헤더에서 민감 값을 마스킹한다."""
-    return {
-        k: _MASK_VALUE if k.lower() in _MASK_FIELDS else v
-        for k, v in headers.items()
-    }
+    """요청 헤더에서 민감 값을 마스킹한다 — 비밀 낱말이 이름에 든 헤더는 「***」."""
+    return {k: (_HEADER_MASK if _is_secret_header(k) else v) for k, v in headers.items()}
 
 
 # ──────────────────────────────────────────────────────────

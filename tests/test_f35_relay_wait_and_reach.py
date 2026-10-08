@@ -42,7 +42,7 @@ import requests
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for k in ("MARKET_RELAY_TIMEOUT_SEC", "GUNICORN_TIMEOUT",
+    for k in ("MARKET_RELAY_TIMEOUT_SEC", "GUNICORN_TIMEOUT", "HTTP_READ_TIMEOUT_MAX",
               "MARKET_RELAY_BUDGET_MARGIN_SEC", "MARKET_API_RELAY_URL",
               "MARKET_API_RELAY_KEY", "MARKET_RELAY_TOKEN", "MARKET_RELAY_URL",
               "WC_URL", "WOO_BASE_URL", "SHOPIFY_SHOP"):
@@ -55,10 +55,14 @@ def clean_env(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_the_wait_plan_fits_inside_the_worker_timeout(clean_env):
-    """★★ **F35-①의 판정 지점** — 기본값(35s 타임아웃 · 워커 120s)에서 예산 안에 든다."""
+    """★★ **F35-①의 판정 지점** — 기본값(워커 120s)에서 예산 안에 든다.
+
+    Z8(오너 2026-10-08 워커 교착): 릴레이 1회 대기는 외부 호출 read 상한(15s)을 넘지 않는다 —
+    env 기본 35s여도 계획·문장은 실제로 끊기는 15s 기준.
+    """
     from src.market_relay import relay_wait_plan
     plan = relay_wait_plan()
-    assert plan["timeout_sec"] == 35
+    assert plan["timeout_sec"] == 15
     assert plan["total_sec"] <= 120 - 20, plan
     assert plan["attempts"] >= 1
 
@@ -73,16 +77,17 @@ def test_the_old_shape_would_not_have_fit():
 
 
 def test_the_sentence_carries_the_numbers(clean_env):
-    """★ 「1회, 35s」든 「35초씩 2번, 총 71초」든 — **숫자가 문장에 있다**."""
+    """★ 「1회, 15s」든 「15초씩 4번, 총 67초」든 — **숫자가 문장에 있다**."""
     from src.market_relay import relay_wait_plan
     s = relay_wait_plan()["sentence"]
-    assert "35" in s and "초" in s, s
+    assert "15" in s and "초" in s, s
 
 
 def test_one_attempt_says_so(clean_env):
     """재시도가 없으면 오너 지시대로 **「1회, Ns」**라고 적는다."""
     from src.market_relay import relay_wait_plan
     clean_env.setenv("MARKET_RELAY_TIMEOUT_SEC", "90")     # 예산(100s)에 한 번만 들어간다
+    clean_env.setenv("HTTP_READ_TIMEOUT_MAX", "90")        # Z8 상한도 같이 올려야 90s가 된다
     plan = relay_wait_plan()
     assert plan["attempts"] == 1
     assert plan["sentence"] == "1회, 90초 기다렸습니다"
@@ -94,7 +99,14 @@ def test_a_bigger_worker_budget_buys_more_attempts(clean_env):
     clean_env.setenv("GUNICORN_TIMEOUT", "600")
     plan = relay_wait_plan()
     assert plan["attempts"] == 4
-    assert plan["total_sec"] == 4 * 35 + (1 + 2 + 4)
+    assert plan["total_sec"] == 4 * 15 + (1 + 2 + 4)
+
+
+def test_relay_timeout_env_is_capped_by_http_read_cap(clean_env):
+    """Z8: env가 35s여도 read 상한 15s를 넘겨 적지 않는다(실제로 15s에 끊긴다)."""
+    from src.market_relay import relay_wait_plan
+    clean_env.setenv("MARKET_RELAY_TIMEOUT_SEC", "35")
+    assert relay_wait_plan()["timeout_sec"] == 15
 
 
 def test_a_tiny_budget_still_tries_once(clean_env):

@@ -55,6 +55,7 @@ def _clean(monkeypatch):
         for k in [NC.STATE_KEY, NC.SUGGEST_KEY] + [NC.LEARN_KEY + sc for sc in _SCOPES]:
             ST.state_set(k, {})
     wipe()
+    monkeypatch.setattr(NC, "BACKGROUND", False)     # Z8 이후 트리는 백그라운드 — 여기선 그 자리 받기로 재현
     monkeypatch.setattr(NC, "_fetch", lambda account="": ROWS)
     monkeypatch.setenv("NAVER_IMAGE_UPLOAD", "0")
     monkeypatch.setenv("FAMILY_EMAILS", FAM)

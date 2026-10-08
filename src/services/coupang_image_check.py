@@ -44,8 +44,12 @@ _OCR_SEM = threading.BoundedSemaphore(max(1, int(os.getenv("COUPANG_IMAGE_CHECK_
 
 
 def _read_text(raw: bytes):
+    """OCR은 프로세스당 동시 1개 — Z8: 줄이 5초 넘게 밀리면 기다리지 않고 「판정 못 함」(ocr_busy, 막지 않음)."""
     from src.services import image_text_precheck as P
-    with _OCR_SEM:
+    from src.utils.locks import try_lock
+    with try_lock(_OCR_SEM, code="ocr_busy", what="대표 사진 글자 판정(OCR 동시 1개)") as got:
+        if not got:
+            return None, ""
         return P.all_text(raw)
 
 

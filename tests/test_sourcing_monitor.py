@@ -117,11 +117,15 @@ def test_run_auto_monitor_skips_recent_and_counts_changes():
 
 def test_cron_sourcing_monitor_route(client, monkeypatch):
     monkeypatch.delenv("CRON_SECRET", raising=False)
+    from src.utils import bg_job
+    bg_job.reset()
     with patch("src.seller_console.views.run_auto_source_monitor",
                return_value={"total": 3, "checked": 2, "changed": 1, "skipped": 1, "alerts": []}):
         resp = client.post("/cron/sourcing-monitor")
-    data = resp.get_json()
-    assert resp.status_code == 200 and data["ok"] is True
+        st = bg_job.join("sourcing-monitor")       # Z8: 일은 요청 밖 — 즉시 202, 결과는 작업 상태에
+    assert resp.status_code == 202 and resp.get_json()["started"] is True
+    data = st["result"]
+    assert st["state"] == "done" and data["ok"] is True
     assert data["checked"] == 2 and data["changed"] == 1
 
 
