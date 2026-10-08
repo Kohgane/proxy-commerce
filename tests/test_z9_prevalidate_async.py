@@ -90,7 +90,9 @@ def test_job_line_names_external_hosts_with_ms(monkeypatch, caplog):
             return [_R(m) for m in markets]
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: Disp())
     caplog.set_level(logging.INFO, logger=V.logger.name)
-    d = _pv(_client(), {"product": {"title": "플리츠 세트"}, "markets": ["coupang"]})
+    from src.order_webhook import app
+    with app.app_context():                          # 앞 테스트가 남긴 앱 컨텍스트(g)를 물려받지 않게 — 운영은 요청마다 새 g
+        d = _pv(_client(), {"product": {"title": "플리츠 세트"}, "markets": ["coupang"]})
     perf = (V._pv_store().state_get(V._PV_JOB_KEY + d["job_id"]) or {}).get("perf") or {}
     assert perf["external_ms_by_host"]["ocr.tencentcloudapi.com"] == [1234.5, 1]
     line = next(r.getMessage() for r in caplog.records if "[PV] job=" in r.getMessage() and "done" in r.getMessage())
@@ -286,7 +288,7 @@ def test_urllib3_direct_calls_are_counted_once(monkeypatch):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     from src.order_webhook import app
     try:
-        with app.test_request_context("/z9"):
+        with app.app_context(), app.test_request_context("/z9"):     # 새 g(앞 테스트가 남긴 컨텍스트를 안 물려받게)
             # 전체 실행에선 앞 테스트가 남긴 앱 컨텍스트(g)가 재사용될 수 있다 — 호출 전후 **차이**로 잰다
             before = perf.perf_external_ms_by_host()
             urllib3.PoolManager().request("GET", f"http://127.0.0.1:{port}/a")
@@ -299,6 +301,17 @@ def test_urllib3_direct_calls_are_counted_once(monkeypatch):
             assert n("127.0.0.1") == 1, after                                 # requests 1건(이중 계상 0)
     finally:
         srv.shutdown()
+
+
+def test_host_ms_never_dropped_past_cap():
+    """호스트가 상한(20)을 넘어도 시간은 버리지 않는다 — 「(그 밖)」에 합산."""
+    from src.order_webhook import app
+    from src.utils import perf
+    with app.app_context(), app.test_request_context("/z9"):
+        for i in range(25):
+            perf.perf_note_external(f"h{i}.example", 10.0)
+        by = perf.perf_external_ms_by_host()
+        assert len(by) == 21 and by["(그 밖)"] == [50.0, 5]
 
 
 def test_db_connect_time_is_its_own_segment(monkeypatch):

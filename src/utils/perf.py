@@ -143,9 +143,10 @@ def perf_note_external(host: str, ms: float) -> None:
         m = {}
         setattr(g, _EXT_MS_ATTR, m)
     key = str(host or "?")
-    if key in m or len(m) < _EXT_HOST_CAP:
-        cur = m.get(key) or [0.0, 0]
-        m[key] = [round(cur[0] + float(ms), 1), cur[1] + 1]
+    if key not in m and len(m) >= _EXT_HOST_CAP:
+        key = "(그 밖)"                       # 호스트가 많아도 시간은 버리지 않는다 — 넘친 것은 한데 합산
+    cur = m.get(key) or [0.0, 0]
+    m[key] = [round(cur[0] + float(ms), 1), cur[1] + 1]
 
 
 def perf_external_hosts() -> list:
