@@ -140,8 +140,9 @@ def test_no_sync_path_left(monkeypatch):
     assert not hasattr(V, "_PV_SYNC_DEADLINE_SEC") and not hasattr(V, "_pv_sync")
     monkeypatch.setattr(V, "_PV_MARKET_TIMEOUT_SEC", 0.3)
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: _Disp(slow=["shopify"]))
+    c = _client()
     t0 = time.time()
-    r = _client().post("/seller/collect/prevalidate", json={"product": {"title": "x"}, "markets": ["shopify", "coupang"]})
+    r = c.post("/seller/collect/prevalidate", json={"product": {"title": "x"}, "markets": ["shopify", "coupang"]})
     assert r.status_code == 202 and time.time() - t0 < 1.0                       # 워커 스레드를 쥐지 않는다
     from tests._pv_helper import prevalidate as _pv
     d = _pv(_client(), {"product": {"title": "x"}, "markets": ["shopify", "coupang"]})

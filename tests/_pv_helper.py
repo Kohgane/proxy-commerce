@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 
 
-def prevalidate(client, body: dict, timeout: float = 30.0) -> dict:
+def prevalidate(client, body: dict, timeout: float = 90.0) -> dict:
     r = client.post("/seller/collect/prevalidate", json=body)
     d = r.get_json() or {}
     if r.status_code != 202:
@@ -16,10 +16,14 @@ def prevalidate(client, body: dict, timeout: float = 30.0) -> dict:
         return d
     end = time.time() + timeout
     while True:
-        j = client.get(d["poll"]).get_json() or {}
+        _r = client.get(d["poll"])
+        if _r.status_code == 429 and time.time() < end:          # 테스트 앱 속도 제한(분당 200) — 화면은 3초 간격이라 해당 없음
+            time.sleep(1.0)
+            continue
+        j = _r.get_json() or {"_status": _r.status_code, "_body": _r.get_data(as_text=True)[:300]}
         if j.get("state") != "running" or time.time() > end:
             rows = j.get("results") or []
             j["all_ok"] = bool(rows) and all(x.get("ok") for x in rows)
             j["job_id"] = d["job_id"]
             return j
-        time.sleep(0.05)
+        time.sleep(0.4)                                           # 분당 150회 — 테스트 앱 한도(200) 아래

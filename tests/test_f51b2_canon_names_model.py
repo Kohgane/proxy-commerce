@@ -248,6 +248,8 @@ def test_fx_real_api_is_live(monkeypatch):
     monkeypatch.delenv("FX_USE_LIVE", raising=False)
     monkeypatch.setattr(DA, "get_fx_rates", lambda: {"USD": 1390.0, "JPY": 9.3, "EUR": 1500.0, "CNY": 195.5,
                                                      "is_mock": False, "source": "frankfurter",
-                                                     "updated_at": "2026-09-27T03:00:00+00:00"})
+                                                     # Z9: 묵은 갱신은 「n시간 전 환율」 — 여긴 방금 받은 실시간
+                                                     "updated_at": __import__("datetime").datetime.now(
+                                                         __import__("datetime").timezone.utc).isoformat()})
     info = sell_fx_rates()[1]["CNY"]
     assert info["source"] == "live" and info["label"] == "실시간 환율" and info["rate"] == 195.5

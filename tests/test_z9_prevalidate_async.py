@@ -61,8 +61,9 @@ def test_modal_post_returns_202_without_holding_a_worker(monkeypatch):
             time.sleep(2.0)
             return [_R(m) for m in markets]
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: Slow())
+    c = _client()                                                            # 앱 첫 로드는 재지 않는다
     t0 = time.time()
-    r = _client().post("/seller/collect/prevalidate", json={"product": {"title": "플리츠 세트"}, "markets": ["smartstore"]})
+    r = c.post("/seller/collect/prevalidate", json={"product": {"title": "플리츠 세트"}, "markets": ["smartstore"]})
     assert r.status_code == 202 and time.time() - t0 < 1.0                  # Z8: 워커 스레드 1초 넘게 쥐지 않음
     assert r.get_json()["poll"].startswith("/seller/collect/prevalidate/job/")
     assert not hasattr(V, "_PV_SYNC_DEADLINE_SEC")
@@ -200,9 +201,9 @@ def test_dispatcher_turns_it_into_check_failed_not_pass_not_hold(monkeypatch):
         "unavailable_line": "쿠팡 카테고리 메타 확인 못 함 — 다시 확인 (카테고리 69195 · ReadTimeout)"})
     d = UploadDispatcher()
     monkeypatch.setattr(d, "readiness_holds", lambda pd, m: [])
-    monkeypatch.setenv("COUPANG_ACCESS_KEY", "ak")
-    monkeypatch.setenv("COUPANG_SECRET_KEY", "sk")
-    monkeypatch.setenv("COUPANG_VENDOR_ID", "A1")
+    monkeypatch.setattr("src.seller_console.market_cred_view.coupang_api_state", lambda: {"missing": [], "account": ""})
+    monkeypatch.setattr("src.seller_console.market_cred_view.coupang_shipping_state", lambda acct: {"missing": [], "source": ""})
+    monkeypatch.setattr("src.seller_console.market_cred_view.resolve_upload_account", lambda: "")
     r = d._prevalidate_market({"title": "플리츠 세트", "price": 30000, "images": []}, "coupang")
     assert r.error_code == "meta_unavailable" and r.ok is False and r.hold is False      # 통과 아님 · 멈춤(보류) 아님
     row = V._pv_dict(r)

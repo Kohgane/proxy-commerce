@@ -151,8 +151,13 @@ def test_stranger_upload_and_prevalidate_never_see_owner_env(monkeypatch, path):
     import src.seller_console.views as V
     rec = _Recorder()
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: rec)
-    r = _client("stranger").post(path, json={"product": {"title": "x", "price": "1000"}, "markets": PLAIN})
-    assert r.status_code == 200, r.get_json()
+    body = {"product": {"title": "x", "price": "1000"}, "markets": PLAIN}
+    if path.endswith("prevalidate"):                           # Z9: 사전검증은 202 + 잡 — 잡이 끝날 때까지 기다린다
+        d = _pv(_client("stranger"), body)
+        assert d.get("state") == "done", d
+    else:
+        r = _client("stranger").post(path, json=body)
+        assert r.status_code == 200, r.get_json()
     assert all(v is None for k, v in rec.seen.items() if k != "__copy__"), rec.seen
     assert rec.seen["__copy__"] == {}                          # 하위 프로세스 env 사본에도 없음
     # 요청이 끝나면 오너 전역 값은 그대로(전역을 지우지 않는다)
@@ -212,6 +217,7 @@ def test_stranger_real_dispatch_fails_honestly_and_never_calls_owner_hosts(monke
         assert res and not any(x.get("success") for x in res), res
     assert not any(OWNER_SHOP in u or "owner-wc.example" in u for u in calls), calls
     pv = _pv(c, body)
+    assert "results" in pv, pv
     shop = next(x for x in pv["results"] if x["market"] == "shopify")
     assert shop["ok"] is False and shop["error_code"] == "token_missing", shop
 
