@@ -177,10 +177,13 @@ def test_tab_and_m5_share_one_partial():
     assert "pv-rep-override" in pv and "m5-rep-override" in m5
 
 
-def test_real_ocr_reads_interstellar_when_engine_installed(monkeypatch):
-    """엔진이 깔린 곳(운영·이 컨테이너)에선 실제 RapidOCR로 — 대역 없이 「INTERSTELLAR」를 읽는가."""
-    pytest.importorskip("rapidocr_onnxruntime")
+def test_ocr_reads_interstellar_via_tencent_ocr(monkeypatch):
+    """Z7: 글자 판정은 텐센트 OCR API — 「INTERSTELLAR」 조각이 오면 텍스트 있음, 조각 없으면 없음(대역은 공급사 응답만)."""
     from src.services import image_text_precheck as P
+    from src.services import ocr_tencent as O
+    monkeypatch.setattr(O, "is_configured", lambda: True)
+    monkeypatch.setattr(O, "_call", lambda b64: {"TextDetections": [{"DetectedText": "INTERSTELLAR", "Confidence": 99}]})
     has, seen = P.all_text(IMG[URL1])
     assert has is True and "INTERSTELLAR" in seen.replace(" ", "").upper()
-    assert P.all_text(IMG[URL2])[0] is False
+    monkeypatch.setattr(O, "_call", lambda b64: {"TextDetections": [{"DetectedText": "x", "Confidence": 30}]})
+    assert P.all_text(IMG[URL2])[0] is False                           # 확신 50 미만 조각은 버린다

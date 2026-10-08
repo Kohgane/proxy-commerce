@@ -3,7 +3,8 @@
 판정 줄(전부 **재서** 낸다 — 못 재면 「판정 못 함」, 통과로 치지 않고 보류도 하지 않는다):
 - 정사각인가 — 아니면 쿠팡 검색 카드는 **가운데를 잘라** 보여 준다(미리보기도 그렇게 자른다).
 - 긴 변 < 500px — 「반려 예상 — 500px 미만」(사전검증 보류).
-- 글자·워터마크 — 서버 로컬 OCR(RapidOCR, 무료)이 두 글자 이상 읽으면 「텍스트 있음 — 반려 가능」(사전검증 보류).
+- 글자·워터마크 — 텐센트 OCR API(Z7: 로컬 RapidOCR 제거)가 두 글자 이상 읽으면 「텍스트 있음 — 반려 가능」(사전검증 보류).
+  OCR 호출이 실패하면 「글자 판정 못 함」(사유코드 `ocr_unavailable`) — 보류하지 않고 결과도 캐시하지 않는다(다음에 다시 잰다).
 - 흰 배경 비율 — 가장자리 띠(사방 6%)에서 흰색(RGB 모두 240 이상)인 화소의 비율. 보류하지 않고 숫자만 보인다.
 
 `COUPANG_IMAGE_CHECK=0`이면 끈다(사전검증 보류도 안 건다 — 테스트 기본값).
@@ -34,6 +35,7 @@ def enabled() -> bool:
     return str(os.getenv("COUPANG_IMAGE_CHECK", "1")).strip() != "0"
 
 
+# Z7(2026-10-08): OCR은 텐센트 API — 로컬 모델 메모리는 사라졌지만 동시 호출 수는 그대로 1로 묶는다(공급사 QPS·비용).
 # Y6-C B(오너 2026-10-07): 쿠팡 노출 미리보기 502. OCR(RapidOCR)이 원본 해상도 그대로 요청 안에서 돌았다 —
 #   로컬 4코어 실측 800px 0.8초 · 1920px 4.5초, Render 작은 CPU에선 몇 배. 미리보기·사전검증·이미지 번역 사전판정이
 #   한꺼번에 OCR을 돌리면 워커가 gunicorn 120초를 넘겨 죽고 프록시가 502 HTML을 준다. → OCR은 프로세스당 동시 1개,
@@ -52,14 +54,17 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
     try:
         from PIL import Image
         im = Image.open(io.BytesIO(raw))
+        w, h = im.size                                        # 크기는 머리말에서 — 원본 화소를 다 풀지 않는다
+        if max(w, h) > 400:
+            im.draft("RGB", (max(1, w // 4), max(1, h // 4)))  # Z7: JPEG는 1/4로 풀어 흰 배경만 잰다(메모리)
         im.load()
     except Exception as exc:                                  # noqa: BLE001 — 깨진 바이트·포맷 미지원
         return {"state": "unknown", "why": f"이미지를 열지 못했어요({type(exc).__name__})", "flags": []}
-    w, h = im.size
     long_side = max(w, h)
     square = abs(w - h) <= SQUARE_TOL * long_side
     rgb = im.convert("RGB")
     small = rgb.resize((max(1, w // 4), max(1, h // 4))) if long_side > 400 else rgb
+    del rgb, im
     sw, sh = small.size
     sbw, sbh = max(1, int(sw * BORDER_FRAC)), max(1, int(sh * BORDER_FRAC))
     px = small.load()
@@ -78,12 +83,18 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
         flags.append({"key": "small", "hold": True, "line": f"반려 예상 — 500px 미만(긴 변 {long_side}px)"})
     if text:
         flags.append({"key": "text", "hold": True, "line": f"텍스트 있음 — 반려 가능(읽은 글자 「{seen}」)"})
+    ocr_why = ""
+    if text is None:
+        from src.services.image_text_precheck import last_unavailable
+        ocr_why = last_unavailable() or "텐센트 OCR 실패"
+        flags.append({"key": "ocr_unavailable", "code": "ocr_unavailable", "hold": False,
+                      "line": f"글자 판정 못 함({ocr_why}) — 등록은 막지 않아요"})
     if not square:
         flags.append({"key": "not_square", "hold": False,
                       "line": f"정사각 아님({w}×{h}) — 쿠팡 검색 카드엔 가운데를 잘라 보여요"})
     return {"state": "ok", "w": w, "h": h, "square": square, "long_side": long_side,
             "small": long_side < MIN_LONG_SIDE, "white_pct": white_pct,
-            "text": text, "seen": seen, "flags": flags}
+            "text": text, "seen": seen, "flags": flags, "ocr": "unavailable" if text is None else "ok", "ocr_why": ocr_why}
 
 
 def _bytes_for(url: str) -> tuple:
@@ -110,7 +121,7 @@ def check_url(url: str) -> Dict[str, Any]:
             return _CACHE[key]
     raw, why = _bytes_for(key)
     res = check_bytes(raw) if raw else {"state": "unknown", "why": why or "이미지를 읽지 못했어요", "flags": []}
-    if res.get("state") == "ok":
+    if res.get("state") == "ok" and res.get("ocr") != "unavailable":       # Z7: 판정 못 한 결과는 굳히지 않는다
         with _LOCK:
             _CACHE[key] = res
             while len(_CACHE) > _CACHE_MAX:
@@ -151,7 +162,7 @@ def _bg(url: str) -> None:
     except Exception as exc:                                  # noqa: BLE001 — 백그라운드는 죽지 않는다
         res = {"state": "unknown", "why": f"판정 실패 {type(exc).__name__}: {str(exc)[:120]}", "flags": []}
     with _LOCK:
-        if res.get("state") == "ok":
+        if res.get("state") == "ok" and res.get("ocr") != "unavailable":
             _CACHE[url] = res
             _CACHE.move_to_end(url)
             while len(_CACHE) > _CACHE_MAX:

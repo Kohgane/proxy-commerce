@@ -812,8 +812,12 @@ class UploadDispatcher:
             base, ctx = _for_market(market)
             if base != market and market not in ACCOUNT_MARKET_CODES:
                 base, ctx = market, _for_market("")[1]          # 모르는 계정 → 아래에서 「지원하지 않는 마켓」
+            # Z7(오너 2026-10-08 OOM): 단계마다 RSS 한 줄 — 다음에 512MB를 넘기면 어느 단계인지 로그가 말한다.
+            from src.utils import rss as _rss
+            _rss.log("prevalidate_start", market=market)
             with ctx:
                 r = self._prevalidate_market(product_data, base)
+            _rss.log("prevalidate_end", market=market, code=r.error_code or "ok")
             r.market = market
             results.append(r)
         return results
@@ -918,11 +922,14 @@ class UploadDispatcher:
         # Y7(오너 2026-10-04): 쿠팡 대표 사진(등록이 보낼 첫 장) — 긴 변 500px 미만·글자/워터마크면 보류(「그래도 등록」으로 푼다).
         #   못 재면(다운로드·엔진 없음) 막지 않는다.
         if str(market or "").startswith("coupang") and imgs:
+            from src.utils import rss as _rss
+            _rss.log("rep_image_check_before", market=market)
             try:
                 from src.services.coupang_image_check import hold as _rep_hold
                 _rh = _rep_hold(pd, market)
             except Exception:
                 _rh = None
+            _rss.log("rep_image_check_after", market=market)
             if _rh:
                 holds.append(_rh)
         if market in _KO_OPTION_MARKETS:
@@ -1147,12 +1154,15 @@ class UploadDispatcher:
         # ★ F48-d — 쿠팡은 **등록 버튼을 눌러야 아는 것**을 여기서 판다: 배송(해외 출고지)·
         #   구매옵션(필수·택1·3개 제한·색상 매핑)·필수서류(인보이스). 등록과 **같은 함수**(precheck).
         if market == "coupang":
+            from src.utils import rss as _rss
+            _rss.log("coupang_precheck_before", market=market)
             try:
                 from src.channel_sync import coupang_uploader as _cu
                 chk = _cu.precheck(product_data)
             except Exception as exc:
                 logger.warning("[사전검증] 쿠팡 판정 실패: %s", exc)
                 chk = {"ok": None, "holds": [], "notes": [f"쿠팡 판정을 돌리지 못했습니다: {type(exc).__name__}"]}
+            _rss.log("coupang_precheck_after", market=market)
             if chk.get("ok") is False:
                 return PrevalidationResult(
                     market=market, ok=False, error_code="coupang_hold",

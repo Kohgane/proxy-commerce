@@ -5,7 +5,7 @@
 - 월 상한 `TENCENT_IMAGE_MONTHLY_BUDGET_USD`(기본 200) — **계정 전체 단일**(사용자별 아님, Stage 6에서 쪼갠다).
   넘으면 번역을 **안 보내고** 원본으로 등록을 계속한다(실패 아님).
 - 장부 = `app_state` `imgko_budget:YYYY-MM`(KST 달) — 보낸 장(calls)·성공 장(ok)·추정 비용(usd = 성공 장 × 단가)·
-  모드별 장 수·예산으로 건너뛴 장·로컬 판정으로 건너뛴 장. 비용은 **추정**이다(청구서가 정본).
+  모드별 장 수·예산으로 건너뛴 장·OCR 판정으로 건너뛴 장. 비용은 **추정**이다(청구서가 정본).
 """
 from __future__ import annotations
 
@@ -110,4 +110,4 @@ def status_line(now=None) -> str:
     m = mode()
     return (f"이미지 번역 이번 달({month(now)}) {int(lg['ok'])}장 / ${float(lg['usd']):.2f} "
             f"(상한 ${budget():.0f} · {'lite' if m == 1 else 'pro'} ${price(m):.2f}/장 · 보낸 {int(lg['calls'])}장 · "
-            f"로컬 판정으로 안 보냄 {int(lg['skip_ocr'])}장 · 예산으로 안 보냄 {int(lg['skip_budget'])}장) — 추정, 청구서가 정본")
+            f"OCR 판정으로 안 보냄 {int(lg['skip_ocr'])}장 · 예산으로 안 보냄 {int(lg['skip_budget'])}장) — 추정, 청구서가 정본")

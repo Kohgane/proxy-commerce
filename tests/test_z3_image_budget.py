@@ -36,7 +36,7 @@ def test_no_han_by_local_ocr_never_calls_tencent(fresh):
     from src.services import image_translate_auto as A, image_translate_budget as B
     calls = _wire(fresh, has_han=False)
     e = A.translate_page("https://img.alicdn.com/x.jpg", idx=0, kind="gallery", item_id="i", seller_id="u")
-    assert calls == [] and e["status"] == "skipped" and "로컬 판정" in e["reason"]
+    assert calls == [] and e["status"] == "skipped" and "OCR 판정" in e["reason"]
     assert B.ledger()["skip_ocr"] == 1 and B.ledger()["calls"] == 0
 
 
@@ -82,7 +82,7 @@ def test_status_line_for_diagnostics(fresh):
     B.record_skip("ocr")
     line = B.status_line()
     assert line.startswith("이미지 번역 이번 달(") and "2장 / $0.08" in line and "상한 $200" in line
-    assert "로컬 판정으로 안 보냄 1장" in line and "청구서가 정본" in line
+    assert "OCR 판정으로 안 보냄 1장" in line and "청구서가 정본" in line
 
 
 def test_diagnostics_pages_render(fresh):
@@ -98,19 +98,20 @@ def test_diagnostics_pages_render(fresh):
     assert "유료 약 $0.30" in h
 
 
-def test_local_ocr_reads_han_from_bytes(monkeypatch):
-    pytest.importorskip("rapidocr_onnxruntime")
+def test_ocr_precheck_reads_han_via_tencent_ocr(monkeypatch):
+    """Z7: 사전판정 엔진은 텐센트 OCR API — 응답 조각에 한자가 있으면 True, 없으면 False, 호출 실패면 None(번역으로 보냄)."""
     monkeypatch.setenv("IMAGE_OCR_PRECHECK", "1")
     import io
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
     from src.services import image_text_precheck as P
-    font = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
-    import os
-    if not os.path.exists(font):
-        pytest.skip("CJK 글꼴 없음")
-    im = Image.new("RGB", (600, 300), "white")
-    ImageDraw.Draw(im).text((20, 100), "加厚记忆棉", font=ImageFont.truetype(font, 48), fill="black")
-    b = io.BytesIO(); im.save(b, "JPEG")
+    from src.services import ocr_tencent as O
+    monkeypatch.setattr(O, "is_configured", lambda: True)
+    b = io.BytesIO(); Image.new("RGB", (600, 300), "white").save(b, "JPEG")
+    monkeypatch.setattr(O, "_call", lambda b64: {"TextDetections": [{"DetectedText": "加厚记忆棉", "Confidence": 98}]})
     assert P.han_text(b.getvalue())[0] is True
-    b2 = io.BytesIO(); Image.new("RGB", (600, 300), "gray").save(b2, "JPEG")
-    assert P.han_text(b2.getvalue())[0] is False
+    monkeypatch.setattr(O, "_call", lambda b64: {"TextDetections": []})
+    assert P.han_text(b.getvalue())[0] is False
+    def boom(b64):
+        raise RuntimeError("network")
+    monkeypatch.setattr(O, "_call", boom)
+    assert P.han_text(b.getvalue()) == (None, "")
