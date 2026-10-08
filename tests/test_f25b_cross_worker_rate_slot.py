@@ -67,7 +67,8 @@ def test_translate_takes_a_server_wide_turn():
     assert "rate_slot.wait_turn(RATE_KEY" in src
     # 기다림은 잠금 **밖**이어야 한다(DB 연결을 붙잡은 채 자지 않는다).
     body = src.split("cli = _client(", 1)[1][:1200]
-    assert body.index("rate_slot.wait_turn") < body.index("with _GATE:")
+    # Z8: 잠금은 `try_lock(_GATE, …)`(5초 상한)으로 잡는다 — 차례 기다림은 여전히 그 **앞**(잠금 밖).
+    assert body.index("rate_slot.wait_turn") < body.index("try_lock(_GATE")
 
 
 # ---------------------------------------------------------------------------
