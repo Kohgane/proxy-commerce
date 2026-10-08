@@ -1656,8 +1656,8 @@ _QOO10_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 
 @admin_panel_bp.get("/diagnostics/ocr-precheck")
 def diagnostics_ocr_precheck():
-    """Z3-2(오너 2026-10-04): 무료 로컬 OCR(RapidOCR) 「한자 있나」 판정을 **운영 라벨**(텐센트가 실제로 번역함 = 글자 있음 /
-    「그릴 줄 없음」 = 없음)로 잰다 — 무료, 텐센트 호출 0. 놓친 장(글자 있는데 「없음」)이 곧 한자가 남은 채 나갈 장이다."""
+    """Z3-2(오너 2026-10-04) → Z7: OCR(텐센트 OCR API — 로컬 RapidOCR 제거) 「한자 있나」 판정을 **운영 라벨**(텐센트가 실제로 번역함 = 글자 있음 /
+    「그릴 줄 없음」 = 없음)로 잰다 — 장마다 텐센트 OCR 호출 1회(과금). 놓친 장(글자 있는데 「없음」)이 곧 한자가 남은 채 나갈 장이다."""
     from flask import request as _rq
     from src.db import image_translate_queue_pg as q
     from src.services import image_text_precheck as P
@@ -1686,10 +1686,10 @@ def diagnostics_ocr_precheck():
 
 
 _OCR_PRECHECK_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>로컬 OCR 판정 정확도</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>OCR 판정 정확도</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px" data-role="ocr-precheck">
-<h5>무료 로컬 OCR — 「한자 있나」 판정 정확도(운영 라벨)</h5>
+<h5>텐센트 OCR — 「한자 있나」 판정 정확도(운영 라벨 · 장마다 OCR 호출 1회 과금)</h5>
 <p data-role="ocr-summary"><strong>{{ summary }}</strong></p>
 <p class="small text-muted">라벨 = 텐센트가 실제로 번역함(글자 있음) / 「그릴 줄 없음」(없음). 놓침은 한자가 남은 채 나갈 장, 헛판정은 돈만 더 쓰는 장.</p>
 {% for r in rows %}<div class="border-bottom py-1 small" data-role="ocr-row" style="word-break:break-all">
@@ -3539,7 +3539,7 @@ _DIAGNOSTICS_TEMPLATE = """
       <div class="card-body small" style="word-break:break-word">
         <strong>{{ image_budget_line }}</strong>
         <div class="text-muted mt-1">pro/lite 같은 사진 비교: <a href="/admin/diagnostics/image-mode-compare">사진 5장 비교(유료 $0.30)</a> ·
-          무료 로컬 판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a></div>
+          OCR 사전판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a></div>
         <div class="mt-2" data-role="tencent-recent"><strong>텐센트 최근 {{ tencent_recent|length }}회</strong>
           {% if tencent_recent %}<table class="table table-sm mb-1"><thead><tr><th>시각(UTC)</th><th>결과</th><th>코드</th><th>메시지</th><th>ms</th></tr></thead><tbody>
           {% for r in tencent_recent %}<tr><td>{{ r.at }}</td><td>{{ '성공' if r.ok else (r.kind or '실패') }}</td><td><code>{{ r.code or r['class'] }}</code></td><td>{{ r.message }}</td><td>{{ r.ms }}</td></tr>{% endfor %}

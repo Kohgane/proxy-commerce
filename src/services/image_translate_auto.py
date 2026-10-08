@@ -349,13 +349,13 @@ def translate_page(url: str, *, idx: int, kind: str, item_id: str, seller_id: st
     from src.services import image_translate_budget as budget
     from src.services import image_text_precheck as precheck
     now_iso = datetime.now(timezone.utc).isoformat()
-    # Z3-2 ① 무료 로컬 OCR 먼저 — 한자가 없다고 **확신**하면 텐센트에 안 보낸다(모르면 예전처럼 보냄).
+    # Z3-2 ① OCR 먼저(Z7: 로컬 RapidOCR → 텐센트 OCR API) — 한자가 없다고 **확신**하면 이미지 번역에 안 보낸다(모르면 예전처럼 보냄).
     raw0, _why0 = tc.fetch_image(url)
     has, seen = precheck.han_text(raw0) if raw0 else (None, "")
     if has is False:
         budget.record_skip("ocr")
-        return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "local-ocr", "ms": 0, "at": now_iso,
-                "reason": "글자 없는 사진(로컬 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
+        return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "tencent-ocr", "ms": 0, "at": now_iso,
+                "reason": "글자 없는 사진(OCR 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
     # ② 월 예산(계정 전체 하나) — 넘으면 보내지 않고 원본으로 등록을 계속한다.
     m = budget.mode()
     ok_send, spent, cap = budget.can_send(m)

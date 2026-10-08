@@ -42,7 +42,8 @@
              (c.square ? '정사각' : '정사각 아님 — 검색 카드엔 가운데를 잘라 보여요(위 카드가 잘린 모습)') + '</li>');
     out.push('<li class="cpx-ck ' + (c.text ? 'is-bad' : (c.text === false ? 'is-ok' : 'is-unk')) + '" data-role="cpx-check-text">' +
              (c.text ? '텍스트 있음 — 반려 가능(읽은 글자 「' + esc(c.seen) + '」)'
-                     : (c.text === false ? '글자·워터마크 안 보임' : '글자 판정 못 함(OCR 엔진 없음)')) + '</li>');
+                     : (c.text === false ? '글자·워터마크 안 보임'
+                                         : '글자 판정 못 함(' + esc(c.ocr_why || '텐센트 OCR 실패') + ') — 등록은 막지 않아요')) + '</li>');
     out.push('<li class="cpx-ck is-info" data-role="cpx-check-white">흰 배경 ' + c.white_pct + '%(가장자리 띠 기준)</li>');
     return out.join('');
   }

@@ -197,13 +197,13 @@ def failure_breakdown(since) -> list:
 
 def labeled_pages(limit: int = 60) -> list:
     """Z3-2: 텐센트가 이미 판정한 장 — `[(user_id, item_id, kind, idx, has_text)]`.
-    done = 글자 있었음(번역됨) · 「그릴 줄 없음/无文本」 = 글자 없었음. 로컬 OCR 정확도를 **운영 라벨로** 재는 재료."""
+    done = 글자 있었음(번역됨) · 「그릴 줄 없음/无文本」 = 글자 없었음. OCR 사전판정 정확도를 **운영 라벨로** 재는 재료."""
     out = []
     if not _enabled():
         with _LOCK:
             for r in _MEM_Q:
                 reason = str(r.get("reason") or "")
-                if "로컬 판정" in reason:
+                if "로컬 판정" in reason or "OCR 판정" in reason:
                     continue
                 if r["status"] == "done":
                     out.append((r["user_id"], r["item_id"], r["kind"], int(r["idx"]), True))
@@ -216,7 +216,7 @@ def labeled_pages(limit: int = 60) -> list:
                     "ORDER BY finished_at DESC NULLS LAST LIMIT %s",
                     ("%그릴 줄이 없습니다%", "%无文本%", "%글자 없는 사진%", int(limit)))
         for uid, iid, kind, idx, st, reason in cur.fetchall():
-            if "로컬 판정" in reason:
+            if "로컬 판정" in reason or "OCR 판정" in reason:
                 continue                                   # 우리 판정으로 건너뛴 장은 라벨이 아니다(순환)
             out.append((uid, iid, kind, int(idx), st == "done"))
     return out

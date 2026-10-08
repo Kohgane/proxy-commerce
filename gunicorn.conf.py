@@ -6,6 +6,10 @@ workers = int(os.getenv('GUNICORN_WORKERS', '2'))
 worker_class = os.getenv('GUNICORN_WORKER_CLASS', 'gthread')
 threads = int(os.getenv('GUNICORN_THREADS', '4'))
 timeout = int(os.getenv('GUNICORN_TIMEOUT', '120'))
+# Z7(오너 2026-10-08 OOM): 워커 2개 이상이면 요청 200±50번마다 워커를 갈아끼운다 — 누수 보험(한 워커가 커져도 오래 안 간다).
+#   워커 1개면 재시작 순간 받을 곳이 없으므로 켜지 않는다. 0을 주면 끈다.
+max_requests = int(os.getenv('GUNICORN_MAX_REQUESTS', '200')) if workers >= 2 else 0
+max_requests_jitter = int(os.getenv('GUNICORN_MAX_REQUESTS_JITTER', '50')) if workers >= 2 else 0
 graceful_timeout = int(os.getenv('GUNICORN_GRACEFUL_TIMEOUT', '30'))
 keepalive = int(os.getenv('GUNICORN_KEEPALIVE', '5'))
 accesslog = '-'
