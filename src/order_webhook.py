@@ -1194,6 +1194,9 @@ def _naver_tree_boot():
     try:
         from src.uploaders.naver_categories import boot_refresh
         boot_refresh()
+        if not os.getenv("PYTEST_CURRENT_TEST"):
+            from src.uploaders.coupang_categories import table as _cp_table   # Y7-E: 쿠팡 경로 표도 백그라운드로
+            _cp_table()
     except Exception as _exc:                              # noqa: BLE001 — 부팅 보조가 요청을 막지 않는다
         logger.warning('네이버 카테고리 백그라운드 받기 시작 실패: %s', _exc)
     return None
