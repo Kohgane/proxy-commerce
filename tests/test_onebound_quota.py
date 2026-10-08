@@ -10,7 +10,9 @@ import json
 
 import pytest
 
-QUOTA_BODY = {"error_code": "4013", "reason": "已超量", "error": "已超量", "api_info": "today:10 max:10 all[10=10+0+0];expires:2026-10-08"}
+# 실측 원문의 만료일은 2026-10-08이었다. 날짜를 박아 두면 베이징 10-09부터 「만료 키」로 읽혀 하향 계약이 깨진다
+# (CI 2026-10-08 16:13 UTC). 만료 키 경우는 아래 test가 따로 잰다 — 여기선 만료 안 된 키.
+QUOTA_BODY = {"error_code": "4013", "reason": "已超量", "error": "已超量", "api_info": "today:10 max:10 all[10=10+0+0];expires:2099-12-31"}
 
 
 @pytest.fixture(autouse=True)
