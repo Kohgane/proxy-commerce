@@ -200,7 +200,8 @@ def test_u2_route_persists_review_and_list_badge(monkeypatch):
     ex = json.loads(S.get(iid, seller_ids={"u-u2"})["extra_json"])
     assert ex["uploaded"][0]["review"]["state"] == "pending" and ex["uploaded"][0]["product_id"] == "16401838524"
     h = c.get("/seller/collect/history").get_data(as_text=True)
-    assert 'data-role="list-review-badge"' in h and 'data-state="pending"' in h
+    # M7(2026-10-08): 목록 배지는 마켓별 칩 — 검토중(pending)은 회색(wait) 칩, 누르면 M6 상태 팝업
+    assert 'data-role="mk-chip"' in h and 'data-tone="wait"' in h
 
 
 def test_u2_screens_ask_for_review_instead_of_opening_the_seller_number_url():

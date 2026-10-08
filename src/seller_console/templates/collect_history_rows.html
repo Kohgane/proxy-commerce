@@ -49,17 +49,15 @@
     <span class="pc-badge pc-badge-danger mt-1"
           title="{{ it.vendor_sku_expected or '상품 주소에서 식별자를 찾지 못했습니다' }} — 이대로는 마켓에 등록할 수 없어요"><i class="bi bi-hash"></i> 식별자 없음</span>
     {% endif %}
-    {# v44-1: 업로드 성공한 마켓 '등록됨' 뱃지(서버 확인분 영구 표시). #}
-    {% if it.uploaded_markets %}
-    {# M6: 등록됨 배지를 누르면 마켓 상태 팝업(그때 마켓에 묻는다 — 목록을 그릴 땐 묻지 않는다) #}
-    <button type="button" class="badge mt-1 border-0" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)"
-          data-role="list-uploaded-badge" data-market-status="" data-item="{{ it.id }}"
-          title="{{ it.uploaded_markets|join(', ') }}에 등록됨 — 눌러서 검토 상태 보기"><i class="bi bi-check-circle"></i> 등록됨 · {{ it.uploaded_markets|join('·') }}</button>
-    {% for rv in (it.uploaded_review or []) %}
-    {# U2: 쿠팡 검토 상태(마지막 조회) — 승인=청록 · 검토중=금 · 반려=적 #}
-    <span class="pc-badge mt-1 {{ 'pc-badge-on' if rv.state == 'approved' else ('pc-badge-off' if rv.state in ('rejected', 'deleted') else '') }}"
-          data-role="list-review-badge" data-state="{{ rv.state }}">{{ rv.label }} {{ rv.text }}</span>
-    {% endfor %}
+    {# M7(오너 2026-10-08): 등록된 마켓만 소형 칩 — 색 = 마지막으로 알려진 상태(승인대기 회색·승인완료 초록·반려 빨강·실패 주황).
+       칩을 누르면 M6 상태 팝업(그때 마켓에 묻는다). 목록을 그릴 땐 마켓에 묻지 않는다. #}
+    {% if it.market_chips %}
+    <div class="mk-chips mt-1" data-role="mk-chips">
+      {% for c in it.market_chips %}
+      <button type="button" class="mk-chip tone-{{ c.tone }}" data-role="mk-chip" data-market-status="{{ c.market }}" data-item="{{ it.id }}"
+              data-tone="{{ c.tone }}" title="{{ c.label }} — {{ c.state_label }}{{ ' · ' ~ c.product_id if c.product_id }} · 눌러서 검토 상태 보기">{{ c.chip }}</button>
+      {% endfor %}
+    </div>
     {% endif %}
     {# v81 STEP1 북마클릿 코어 폴백 / v86-F 목록 타일 간이 — 둘 다 제목·이미지만. [다시 수집] 권장(warn 토큰). #}
     {% if it.is_core %}

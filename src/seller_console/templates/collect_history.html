@@ -177,6 +177,12 @@
       </a>
       {% endif %}
     </div>
+    {# M7: 등록 여부 필터 — 등록 기록으로만 가른다(마켓에 묻지 않음). 머리줄 밖 한 줄(390px에서 머리줄을 짓누르지 않게) #}
+    <nav class="mk-filter mk-filter-row" data-role="mk-filter" aria-label="등록 여부">
+      {% for k, lab in (('', '전체'), ('none', '미등록만'), ('done', '등록됨만')) %}
+      <a href="{{ (reg_urls or {}).get(k, '?reg=' ~ k) }}" class="{{ 'is-on' if (filters.reg or '') == k }}" data-reg="{{ k or 'all' }}"{% if (filters.reg or '') == k %} aria-current="page"{% endif %}>{{ lab }}</a>
+      {% endfor %}
+    </nav>
     <div class="op-card-body">
       <div class="small text-muted px-3 pb-2">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 제목순으로 전환됩니다.){% endif %}</div>
       <div class="table-responsive" data-fs-root>
@@ -275,8 +281,15 @@
       <span class="rp-step-eyebrow"><span class="rp-step-num">02</span>수집 목록</span>
       <span class="op-tile-sub ms-auto">0건</span>
     </div>
+    {% if filters.reg %}
+    <nav class="mk-filter mk-filter-row" data-role="mk-filter" aria-label="등록 여부">
+      {% for k, lab in (('', '전체'), ('none', '미등록만'), ('done', '등록됨만')) %}
+      <a href="{{ (reg_urls or {}).get(k, '?reg=' ~ k) }}" class="{{ 'is-on' if (filters.reg or '') == k }}" data-reg="{{ k or 'all' }}"{% if (filters.reg or '') == k %} aria-current="page"{% endif %}>{{ lab }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
     <div class="op-card-body console-empty-state py-5">
-    {% if filters.q or filters.domain or filters.source or filters.status or filters.group %}
+    {% if filters.q or filters.domain or filters.source or filters.status or filters.group or filters.reg %}
     <div class="pc-empty-title">조건에 맞는 수집 항목이 없어요</div>
     <p class="pc-empty-sub">필터를 바꾸거나 초기화하면 전체 수집 이력을 다시 볼 수 있어요.</p>
     <div class="console-empty-state-actions">

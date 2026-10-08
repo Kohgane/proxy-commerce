@@ -690,8 +690,10 @@
           {% set ok = (market_connected or {}).get(code) %}
           {% if market_show is not defined or code in market_show %}
           <label class="market-tile {{ 'is-on' if ok else 'is-off' }}" for="{{ chkid }}">
-            <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}"{% if code in (market_checked or []) %} checked{% endif %}>
+            {% set _reg = (registered_markets or {}).get(code) %}
+            <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ code }}" id="{{ chkid }}"{% if code in (market_checked or []) %} checked{% endif %}{% if _reg %} data-registered="1"{% endif %}>
             <span class="market-name">{{ label }}</span>
+            {% if _reg %}<span class="mk-dup d-block" data-role="mk-dup">{{ _reg.line }}</span>{% endif %}
             {% if ok %}
             <span class="market-badge on" title="API 키가 입력됨 — 실제 연결은 ‘사전검증/등록’에서 확인됩니다"><i class="bi bi-check-circle"></i> 키 설정됨</span>
             {% else %}
@@ -712,8 +714,9 @@
             {% if _cpa %}
             {% for c in _cpa %}
             <label class="market-tile {{ 'is-on' if c.connected and not c.pending else 'is-off' }}" for="chkAcct{{ loop.index }}" data-role="cp-account-tile" data-group="{{ c.group }}">
-              <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ c.code }}" id="chkAcct{{ loop.index }}"{% if c.checked %} checked{% endif %}>
+              <input class="form-check-input market-upload-check m-0" type="checkbox" value="{{ c.code }}" id="chkAcct{{ loop.index }}"{% if c.checked %} checked{% endif %}{% if c.registered %} data-registered="1"{% endif %}>
               <span class="market-name">{{ c.label }}</span>
+              {% if c.registered %}<span class="mk-dup d-block" data-role="mk-dup">{{ c.registered.line }}</span>{% endif %}
               {% if c.pending %}<span class="market-badge off" data-role="ss-pending" title="{{ c.note }}"><i class="bi bi-hourglass-split"></i> {{ c.pending_head or '확인 실패' }}</span>
               {% elif c.connected %}<span class="market-badge on"><i class="bi bi-check-circle"></i> 키 설정됨</span>
               {% else %}<span class="market-badge off" title="빠진 것: {{ (c.missing or [])|join(', ') }}"><i class="bi bi-x-circle"></i> 키 없음</span>{% endif %}
@@ -2314,7 +2317,8 @@ function cpLiveCheck(send) {
 }
 document.addEventListener('DOMContentLoaded', () => {
   const rb = document.getElementById('cpReviewBtn');
-  if (rb) rb.addEventListener('click', () => cpReviewStatus(0));
+  // M6: 검토 상태는 팝업으로(마켓에 그때 묻는다 — statusName·반려 사유·Wing/판매자센터). 팝업이 없는 문맥이면 예전 줄.
+  if (rb) rb.addEventListener('click', () => (window.kgpMarketStatus ? window.kgpMarketStatus(_ITEM_ID, '') : cpReviewStatus(0)));
   const lc = document.getElementById('cpLiveCheck');
   if (lc) lc.addEventListener('click', () => cpLiveCheck(false));
   const ls = document.getElementById('cpLiveSend');
@@ -2364,7 +2368,7 @@ function renderUploadResults(data) {
     if (r.success) {
       // U2: 쿠팡 vp/products/{셀러 상품번호}는 승인 전 「상품을 찾을 수 없습니다」 — 쿠팡은 검토 상태를 묻는다.
       const linkPart = String(r.market || '').indexOf('coupang') === 0
-        ? ` · <a href="#" data-role="cp-result-review" onclick="event.preventDefault();cpReviewStatus(0)">검토 상태 보기</a>`
+        ? ` · <a href="#" data-role="cp-result-review" data-market-status="${_cpEsc(r.market)}" data-item="${_cpEsc(_ITEM_ID)}">검토 상태 보기</a>`
         : (r.external_url
           ? ` · <a href="${r.external_url}" target="_blank" rel="noopener noreferrer">상품 페이지 열기</a>`
           : '');
@@ -2766,4 +2770,5 @@ function kgpEnrichRetry() {
   });
 })();
 </script>
+{% include "_market_status.html" %}
 {% endblock %}

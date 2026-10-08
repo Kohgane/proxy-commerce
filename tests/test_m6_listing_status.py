@@ -146,14 +146,15 @@ def test_route_is_owner_scoped(item):
 
 def test_list_badge_opens_popup(item):
     h = _client().get("/seller/collect/history").get_data(as_text=True)
-    assert 'data-role="list-uploaded-badge"' in h and f'data-item="{item}"' in h
+    # M7: 목록은 마켓별 칩 — 칩이 팝업을 연다(data-market-status)
+    assert 'data-role="mk-chip"' in h and 'data-market-status="coupang:woojoo"' in h and f'data-item="{item}"' in h
     assert 'id="kgpMarketStatus"' in h
 
 
 @pytest.mark.skipif(not os.path.exists("/opt/pw-browsers/chromium") and not os.environ.get("KGP_REQUIRE_BROWSER"),
                     reason="브라우저 없음")
 def test_popup_390px_shows_state_reason_and_wing(item, coupang):
-    """실브라우저 390px: 목록 「등록됨」 배지 → 팝업에 우주대행 「반려」·사유·「Wing에서 열기」(오너 주소 형식)."""
+    """실브라우저 390px: 목록 「쿠팡·우주대행」 칩 → 팝업에 우주대행 「반려」·사유·「Wing에서 열기」(오너 주소 형식)."""
     pytest.importorskip("playwright.sync_api")
     from urllib.parse import urlparse
     from playwright.sync_api import sync_playwright
@@ -175,7 +176,7 @@ def test_popup_390px_shows_state_reason_and_wing(item, coupang):
             return route.fulfill(status=r.status_code, content_type=r.content_type or "text/plain", body=r.get_data())
         pg.route("**/*", handle)
         pg.goto("http://kgp.test/seller/collect/history")
-        pg.click(f'[data-role="list-uploaded-badge"][data-item="{item}"]')
+        pg.click(f'[data-role="mk-chip"][data-item="{item}"][data-market-status="coupang:woojoo"]')
         pg.wait_for_selector('[data-role=mst-row][data-market="coupang:woojoo"]')
         woo = pg.inner_text('[data-role=mst-row][data-market="coupang:woojoo"]')
         href = pg.get_attribute('[data-role=mst-row][data-market="coupang:woojoo"] [data-role=mst-manage]', "href")
