@@ -102,6 +102,9 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "coupang_name": str(pd.get("coupang_name") or "").strip(),
         "coupang_name_source": str(pd.get("coupang_name_source") or "").strip(),
         "coupang_brand_pos": str(pd.get("coupang_brand_pos") or "").strip(),
+        # Y7-B — 네이버 리프 카테고리(오너 지정)와 수집 행 번호(「카테고리 지정 →」 링크). 떨어지면 정본 매칭만 남는다.
+        "naver_category_id": str(pd.get("naver_category_id") or "").strip(),
+        "item_id": str(pd.get("item_id") or "").strip(),
     }
 
 

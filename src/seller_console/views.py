@@ -3788,6 +3788,48 @@ def collect_ship_input(item_id):
     return jsonify({"ok": ok, "input": out}), (200 if ok else 502)
 
 
+@bp.route("/collect/<item_id>/naver-category", methods=["GET", "POST"])
+def collect_naver_category(item_id: str):
+    """Y7-B(오너 2026-10-08): 「카테고리 지정 →」 — 네이버 **리프** 카테고리를 찾아 이 상품에 저장한다.
+
+    목록은 네이버 `GET /v1/categories`(하루 1회 캐시) 그대로. 리프(`last=true`)만 고를 수 있다 — 상위 카테고리는
+    네이버가 `leafCategoryId NotValid`로 거부하고, 등록 뒤엔 카테고리를 바꿀 수 없다.
+    """
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+    item = _get_owned_item(item_id)
+    if not item:
+        abort(404)
+    from src.uploaders import naver_categories as NC
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader as _SS
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    msg, err = "", ""
+    if request.method == "POST":
+        cid = str(request.form.get("category_id") or "").strip()
+        state = NC.leaf_state(cid)
+        if state != "leaf":
+            err = {"not_leaf": f"{cid}는 상위 카테고리예요 — 맨 아래 분류를 골라 주세요.",
+                   "unknown_id": f"{cid}는 네이버 목록에 없어요.",
+                   "unknown": "네이버 카테고리 목록을 받지 못했어요 — 스마트스토어 키 연결을 확인한 뒤 다시 해 주세요."}.get(state, "확인하지 못했어요.")
+        else:
+            ex["naver_category_id"] = cid
+            ex["naver_category_name"] = NC.name_of(cid)
+            from . import collect_history_store as _chs
+            ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+            msg = f"저장했어요 — {ex['naver_category_name']}" if ok else ""
+            err = "" if ok else "저장하지 못했어요."
+    q = str(request.args.get("q") or "").strip()
+    title = str(ex.get("title_ko") or item.get("title") or "")
+    tree = NC.tree()
+    cur = str(ex.get("naver_category_id") or "")
+    auto = _SS.match_category(title)
+    return render_template(
+        "naver_category_pick.html", item_id=item_id, title=title, q=q, results=NC.search(q) if q else [],
+        tree_ok=bool(tree and tree.get("leaves")), cur=cur, cur_name=NC.name_of(cur) if cur else "",
+        auto=auto, auto_name=NC.name_of(auto) if auto else "", msg=msg, err=err,
+        words=[w for w in re.split(r"[\s,·/]+", title) if len(w) >= 2][:8])
+
+
 @bp.route("/settings/shipping", methods=["GET", "POST"])
 def settings_shipping():
     """Z6: 배송 설정 — 배대지·기본 모드·부피 제수·부가서비스 기본 체크·사업자(LCL)·요율표 버전.
@@ -3950,8 +3992,9 @@ def _pv_prepare(data: dict, product_data: dict):
         #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
         try:
             _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
+            product_data.setdefault("item_id", str(data["item_id"]))
             for _k in ("ship_ratio_override", "ship_mode", "ship_input", "option_translate_diag", "rep_image_override", "option_split", "options_src",
-                       "voltage_split", "voltage_override"):
+                       "voltage_split", "voltage_override", "naver_category_id"):
                 if _sx.get(_k):
                     product_data[_k] = _sx[_k]
             # Y8 전압·플러그: 분리됐으면 SKU 판매 판정(sale_excluded·plug_notice)은 저장본이 정본

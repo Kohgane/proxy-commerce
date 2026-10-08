@@ -1,0 +1,65 @@
+{% extends "_base_app.html" %}
+{% block title %}네이버 카테고리 지정 — 고가브릿지{% endblock %}
+{% block content %}
+{# Y7-B(오너 2026-10-08): 네이버 리프 카테고리 고르기 — 목록은 네이버 GET /v1/categories(하루 1회) 그대로, 리프만 고를 수 있다. #}
+<div class="ncp mx-auto" data-role="naver-category-pick">
+  <p class="pc-overline">스마트스토어</p>
+  <h1 class="pc-h2">네이버 카테고리 지정</h1>
+  <p class="ncp-title" data-role="ncp-title">{{ title }}</p>
+  <p class="small text-muted">네이버 카테고리는 <b>등록 뒤 바꿀 수 없어요</b>. 맨 아래 분류(리프)만 고를 수 있어요.</p>
+
+  <div class="ncp-now" data-role="ncp-current">
+    {% if cur %}지금: <b>{{ cur_name or cur }}</b> <span class="text-muted">({{ cur }})</span>
+    {% elif auto %}지정 안 함 — 상품명으로 정한 카테고리: <b>{{ auto_name or auto }}</b> <span class="text-muted">({{ auto }})</span>
+    {% else %}지정 안 함 — 상품명으로도 정하지 못했어요. 아래에서 찾아 골라 주세요.{% endif %}
+  </div>
+
+  {% if msg %}<p class="ncp-msg is-ok" data-role="ncp-msg">{{ msg }}</p>{% endif %}
+  {% if err %}<p class="ncp-msg is-bad" data-role="ncp-err">{{ err }}</p>{% endif %}
+
+  {% if not tree_ok %}
+  <p class="ncp-msg is-bad" data-role="ncp-no-tree">네이버 카테고리 목록을 받지 못했어요 — 스마트스토어 키 연결을 확인해 주세요.</p>
+  {% endif %}
+
+  <form method="get" class="ncp-search" role="search">
+    <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="예: 투피스, 스커트, 여성의류" aria-label="카테고리 검색" autocomplete="off">
+    <button class="btn btn-ghost" type="submit">찾기</button>
+  </form>
+  {% if words %}
+  <div class="ncp-words" data-role="ncp-words">{% for w in words %}<a class="ncp-chip" href="?q={{ w|urlencode }}">{{ w }}</a>{% endfor %}</div>
+  {% endif %}
+
+  {% if q %}
+  <form method="post" data-role="ncp-results">
+    {% if results %}
+    <ul class="ncp-list">
+      {% for r in results %}
+      <li><label><input type="radio" name="category_id" value="{{ r.id }}" {{ 'checked' if r.id == cur }}> <span>{{ r.name }}</span></label></li>
+      {% endfor %}
+    </ul>
+    <button class="btn btn-primary" type="submit" data-role="ncp-save">이 카테고리로 저장</button>
+    {% else %}
+    <p class="text-muted" data-role="ncp-empty">「{{ q }}」가 들어간 리프 카테고리가 없어요 — 다른 낱말로 찾아 보세요.</p>
+    {% endif %}
+  </form>
+  {% endif %}
+
+  <p class="mt-3"><a href="/seller/m/item/{{ item_id }}" data-role="ncp-back">← 상품 카드로</a></p>
+</div>
+<style>
+  .ncp { max-width: 640px; padding: var(--space-4, 24px) 16px; }
+  .ncp-title { font-weight: 600; margin: 4px 0 8px; }
+  .ncp-now { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 12px; }
+  .ncp-msg { padding: 10px 12px; border-radius: var(--radius); border-left: 3px solid var(--teal); background: var(--surface); }
+  .ncp-msg.is-bad { border-left-color: var(--danger); }
+  .ncp-search { display: flex; gap: 8px; margin: 8px 0; }
+  .ncp-search .form-control, .ncp-search .btn { min-height: 44px; }
+  .ncp-search .btn { flex: none; white-space: nowrap; }
+  .ncp-words { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .ncp-chip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); text-decoration: none; }
+  .ncp-list { list-style: none; padding: 0; margin: 0 0 12px; }
+  .ncp-list li { border-bottom: 1px solid var(--border); }
+  .ncp-list label { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 4px; overflow-wrap: anywhere; }
+  .ncp-list input[type=radio] { width: 20px; height: 20px; flex: none; accent-color: var(--teal); }
+</style>
+{% endblock %}

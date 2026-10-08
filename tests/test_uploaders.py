@@ -399,9 +399,11 @@ class TestNaverPrepareProduct:
         assert result['price'] >= 12005
 
     def test_category_mapped(self, naver_uploader):
-        collected = dict(SAMPLE_COLLECTED, category_code='BTY')
-        result = naver_uploader.prepare_product(collected)
-        assert result['category_id'] == '50000002'
+        # Y7-B(2026-10-08): 옛 표(BTY→50000002 등)는 전부 최상위 카테고리라 네이버가 NotValid로 거부했다 — 지웠다.
+        #   prepare는 오너가 지정한 네이버 리프만 싣고, 없으면 비운다(compose가 정본 사전 매칭, 못 정하면 보류).
+        assert naver_uploader.prepare_product(dict(SAMPLE_COLLECTED, category_code='BTY'))['category_id'] == ''
+        picked = naver_uploader.prepare_product(dict(SAMPLE_COLLECTED, naver_category_id='50000805'))
+        assert picked['category_id'] == '50000805'
 
     def test_delivery_days(self, naver_uploader):
         result = naver_uploader.prepare_product(SAMPLE_COLLECTED)
@@ -441,7 +443,8 @@ class TestNaverGetAccessToken:
 
 class TestNaverUploadProduct:
     def test_upload_product_success(self, naver_uploader):
-        prepared = naver_uploader.prepare_product(SAMPLE_COLLECTED)
+        # Y7-B: 「무선 블루투스 이어폰」은 정본 사전 매칭에 없다 → 오너가 고른 리프로(못 정하면 등록 전 보류)
+        prepared = naver_uploader.prepare_product(dict(SAMPLE_COLLECTED, naver_category_id='50000805'))
         # 이미지는 **네이버 CDN 업로드**를 거친다(P5 정본) — 이 테스트는 등록 페이로드 관심사라 목킹.
         with patch.object(naver_uploader, 'upload_images',
                           return_value={'ok': True, 'urls': ['https://shop-phinf.naver.net/a.jpg'],
