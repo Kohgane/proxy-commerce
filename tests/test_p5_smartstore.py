@@ -38,7 +38,7 @@ def test_canon_constants():
     assert SS.STATUS_TYPE == "SALE" and SS.STOCK_QUANTITY == 999
     assert SS.NAVER_SHOPPING_REGISTRATION is True
     assert SS.ORIGIN_AREA_CODE == "03" and SS.ORIGIN_AREA_CONTENT == "상세설명에 표시"
-    assert SS.DEFAULT_LEAF_CATEGORY == "50004132"
+    assert not hasattr(SS, "DEFAULT_LEAF_CATEGORY")      # Y7-D 결정 2 — 정본 기본 리프 50004132 = 운영 트리 「보드게임」
 
 
 def test_payload_carries_canon(monkeypatch):
@@ -46,8 +46,9 @@ def test_payload_carries_canon(monkeypatch):
     p = up._build_product_payload(_PRODUCT)
     op = p["originProduct"]
     assert op["statusType"] == "SALE" and op["stockQuantity"] == 999
-    # category_id 미상 → 상품명으로 정본 매칭('주전자' = 7행 주방).
-    assert op["leafCategoryId"] == "50004737"
+    # category_id 미상 → 사전 미적중이면 빈칸(Y7-D 결정 2: 「주전자」 줄의 50004737은 운영 트리 「건어물>멸치」라 삭제).
+    #   빈칸은 등록 전 `naver_categories.hold`가 보류(category_unset) — 쿠팡 예측 다리·오너 지정이 채운다.
+    assert op["leafCategoryId"] == ""
     assert op["salePrice"] == 894000
     da = op["detailAttribute"]
     assert da["customsTaxType"] == "PURCHASE_AGENT"
@@ -64,46 +65,46 @@ def test_payload_carries_canon(monkeypatch):
     assert len(op["images"]["optionalImages"]) == 1
 
 
-# ── 카테고리 정본 11패턴(순서 유지·첫 매칭 우선) ────────────────────────────────
+# ── 카테고리 사전(Y7-D 결정 2, 오너 2026-10-09) ────────────────────────────────
+#   정본 11줄의 리프 ID를 운영 네이버 트리와 대조 — (a) 리프이고 (b) 경로 이름이 낱말 뜻과 맞는 「키링」만 생존.
 @pytest.mark.parametrize("title,leaf", [
-    ("EDC 피젯 스피너", "50004132"),
-    ("분재 오브제 퍼즐", "50004132"),
-    ("슬링백 파우치", "50000646"),
-    ("백팩 패킹큐브", "50000646"),
-    ("키링 카라비너", "50000570"),
-    ("목걸이 주얼리", "50000570"),
-    ("멀티툴 나이프", "50003413"),
-    ("에어펌프 드라이버", "50003413"),
-    ("원예 전정가위", "50000406"),
-    ("스텐 텀블러", "50004737"),
-    ("만년필 북마크", "50002335"),
-    ("블루투스 스피커", "50000205"),
-    ("이어팁 카드리더", "50000205"),
-    ("여름 샌들", "50000167"),
-    ("캔들 디퓨저", "50001854"),
-    ("정체불명 상품", "50004132"),          # 미매칭 → 기본 리프(정본 동작 그대로)
+    ("EDC 피젯 스피너", ""),            # 50004132 보드게임 — 삭제
+    ("슬링백 파우치", ""),              # 50000646 남성가방>숄더백 — 삭제
+    ("키링 카라비너", "50000570"),       # 패션소품>키링 — 「키링」만 생존
+    ("목걸이 주얼리", ""),              # 50000570 키링 — 뜻이 안 맞아 삭제
+    ("멀티툴 나이프", ""),              # 50003413 전동드릴 — 삭제
+    ("원예 전정가위", ""),              # 50000406 네일케어도구 — 삭제
+    ("스텐 텀블러", ""),                # 50004737 건어물>멸치 — 삭제
+    ("만년필 북마크", ""),              # 50002335 목록에 없음 — 삭제
+    ("블루투스 스피커", ""),            # 50000205 상위 분류 — 삭제
+    ("여름 샌들", ""),                  # 50000167 상위 분류 — 삭제
+    ("캔들 디퓨저", ""),                # 50001854 주방가전>냉동고 — 삭제
+    ("정체불명 상품", ""),              # 미적중 → 기본 리프 없음
 ])
-def test_category_canon_patterns(title, leaf):
+def test_category_dictionary_after_tree_check(title, leaf):
     assert SS.resolve_category(title) == leaf
 
 
-def test_category_rows_kept_but_order_no_longer_decides():
-    """Y7-D(오너 2026-10-08): 사전 줄(낱말·리프)은 정본 그대로 11줄, 판정은 **줄 순서와 무관**(가장 긴 낱말 우선).
+def test_category_dictionary_single_verified_row():
+    assert SS.CATEGORY_PATTERNS == ((r"키링", "50000570"),)
 
-    예전 정본 동작은 「첫 매칭 우선」이라 '티셔츠'가 7행의 '티'에 먼저 걸려 주방(50004737)이 됐다 — 이제 의류.
-    """
-    assert SS.resolve_category("티셔츠") == "50000167"      # 「티셔츠」(3자) > 「티」(1자)
-    assert SS.resolve_category("재킷") == "50000167"
-    assert [leaf for _, leaf in SS.CATEGORY_PATTERNS] == [
-        "50004132", "50000646", "50000570", "50000570", "50003413",
-        "50000406", "50004737", "50002335", "50000205", "50000167", "50001854"]
-    assert len(SS.CATEGORY_PATTERNS) == 11
+
+def test_upload_without_category_is_held_not_default_leaf(monkeypatch):
+    """Y7-D 결정 2 — 사전 미적중·지정 없음이면 기본 리프로 보내지 않고 보류(쿠팡 예측 다리가 못 정한 경우)."""
+    import src.channel_sync.coupang_uploader as CU
+    monkeypatch.setattr(CU, "make_uploader", lambda: (None, "쿠팡 키 없음"))
+    up = SS(account="chezgoga")
+    monkeypatch.setattr(up, "upload_images", lambda urls: {"ok": True, "urls": list(urls), "skipped": [], "reason": ""})
+    monkeypatch.setattr(up, "_api_request", lambda *a, **k: pytest.fail("카테고리 없이 네이버로 보냄"))
+    res = up.upload_product(dict(_PRODUCT, title="Fellow Stagg 주전자 y7d3-held"))
+    assert res["success"] is False and res.get("held") is True
+    assert res["reason_code"] in ("category_unset", "category_candidates")
 
 
 def test_payload_uses_canon_category_when_unspecified():
-    """명시 카테고리가 없으면 상품명으로 정본 매칭(기본 리프 고정이 아니다)."""
-    p = SS(account="chezgoga")._build_product_payload({**_PRODUCT, "title": "멀티툴 나이프"})
-    assert p["originProduct"]["leafCategoryId"] == "50003413"
+    """명시 카테고리가 없으면 상품명으로 사전 매칭(기본 리프 고정이 아니다)."""
+    p = SS(account="chezgoga")._build_product_payload({**_PRODUCT, "title": "과일 키링 아크릴"})
+    assert p["originProduct"]["leafCategoryId"] == "50000570"
 
 
 def test_explicit_category_overrides_default():
@@ -374,7 +375,7 @@ def test_uploaded_cdn_urls_are_used_in_payload(monkeypatch):
     sent = {}
     monkeypatch.setattr(up, "_api_request",
                         lambda m, p, data=None: sent.update({"d": data}) or {"originProductNo": "1"})
-    res = up.upload_product(dict(_PRODUCT))
+    res = up.upload_product(dict(_PRODUCT, category_id="50000570"))      # 카테고리 지정분(사전 미적중이면 보류 — 별도 계약)
     assert res["success"] is True
     imgs = sent["d"]["originProduct"]["images"]
     assert imgs["representativeImage"]["url"] == cdn[0]
@@ -387,7 +388,7 @@ def test_image_upload_can_be_disabled_by_env(monkeypatch):
     assert up.image_upload_enabled is False
     monkeypatch.setattr(up, "upload_images", lambda urls: pytest.fail("게이트 껐는데 업로드됨"))
     monkeypatch.setattr(up, "_api_request", lambda *a, **k: {"originProductNo": "1"})
-    assert up.upload_product(dict(_PRODUCT))["success"] is True
+    assert up.upload_product(dict(_PRODUCT, category_id="50000570"))["success"] is True
 
 
 # ── 7. 토큰 발급 정본(bcrypt 서명) + 조용한 실패 수리 ───────────────────────────
@@ -1224,7 +1225,8 @@ def test_our_values_beat_template_product_fields(_real_tpl):
     op = p["originProduct"]
     assert op["salePrice"] == 894000                     # 템플릿 199900 아님
     assert op["stockQuantity"] == SS.STOCK_QUANTITY
-    assert op["leafCategoryId"] == "50004737"            # 정본 매칭('주전자'), 템플릿 50000646 아님
+    # 사전 미적중(Y7-D 결정 2) → 빈칸 그대로 — 템플릿 50000646(남성가방>숄더백)이 끼어들지 않는다. 등록 전 hold가 보류.
+    assert op["leafCategoryId"] == ""
     assert op["detailContent"] == "<p>상세</p>"
     assert op["images"]["representativeImage"]["url"].endswith("71a._SS1600_.jpg")
     assert len(op["images"]["optionalImages"]) == 1      # 템플릿 2장이 남지 않는다
