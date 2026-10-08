@@ -173,7 +173,7 @@ def search(q: str, limit: int = 30) -> List[Dict[str, str]]:
 #   카테고리별 속성·표준형 옵션, 카탈로그 조회뿐). 그래서 **쿠팡 카테고리 예측**(`categorization/predict`)이 돌려준
 #   리프 이름을 네이버 리프 이름과 맞춰 본다. 확신(점수·2등과의 차이)이 모자라면 후보 3개를 보여 주고 1탭으로 고르게,
 #   오너가 고른 결과는 상품명 낱말 → 리프로 기억한다(같은 류 다음 상품은 자동).
-SUGGEST_KEY = "naver_cat_suggest"
+SUGGEST_KEY = "naver_cat_suggest:v2"     # Y7-E: 판정 규칙이 바뀌어 예전(v1) 기억은 쓰지 않는다
 LEARN_KEY = "naver_cat_learn:"
 REASON_CANDIDATES = "category_candidates"
 SOURCE_LABEL = {"manual": "지정", "learned": "자동(내가 고른 기록)", "pattern": "자동(상품명 사전)",
@@ -189,18 +189,18 @@ def _env_float(name: str, default: float) -> float:
 
 
 def auto_min() -> float:
-    """자동 지정 최소 점수(0~1). 기본 0.75 — 쿠팡 리프 이름과 네이버 리프 이름이 사실상 같을 때만."""
-    return _env_float("NAVER_CATEGORY_AUTO_MIN", 0.75)
+    """자동 지정 최소 점수(0~1). Y7-E: 경로 토큰 점수 기준 0.55."""
+    return _env_float("NAVER_CATEGORY_AUTO_MIN", 0.55)
 
 
 def sole_min() -> float:
-    """후보가 사실상 하나뿐일 때(2등과 0.3 이상 차) 자동 지정 최소 점수 — 기본 0.6."""
-    return _env_float("NAVER_CATEGORY_SOLE_MIN", 0.6)
+    """후보가 사실상 하나뿐일 때(2등과 0.25 이상 차) 자동 지정 최소 점수 — 기본 0.45."""
+    return _env_float("NAVER_CATEGORY_SOLE_MIN", 0.45)
 
 
 def auto_margin() -> float:
-    """1등과 2등 점수 차 최소 — 같은 이름 리프가 여러 갈래(여성/남성/아동)에 있으면 자동으로 정하지 않는다."""
-    return _env_float("NAVER_CATEGORY_AUTO_MARGIN", 0.08)
+    """1등과 2등 점수 차 최소 — 기본 0.1."""
+    return _env_float("NAVER_CATEGORY_AUTO_MARGIN", 0.1)
 
 
 _SEP = re.compile(r"[\s>/·,()\[\]_&+\-]+")
@@ -236,47 +236,119 @@ def tokens(title: str) -> List[str]:
     return out
 
 
-def score_leaf(cp_name: str, whole: str, title: str = "") -> float:
-    """쿠팡 리프 이름 ↔ 네이버 리프(전체 이름) 점수 0~1.
+# ── Y7-E(오너 2026-10-08 23:37 실측) 경로 토큰 매핑 ───────────────────────────────────────────────
+#   예전엔 쿠팡 **리프 이름**만 네이버 리프 이름과 맞췄다 → 「여성 캐주얼 세트」의 끝 낱말 「세트」만 걸려
+#   후보가 「식품>통조림/캔>세트 · 출산/육아>신생아의류>세트 · 스포츠/레저>등산>등산의류>세트」(전부 0.62 동점).
+#   이제: 쿠팡 **전체 경로**(coupang_categories)를 토큰으로 쪼개 네이버 **전체 경로** 토큰과 비교 ·
+#   범용 낱말(세트·기타·용품…)은 가중치 0 · 쿠팡 1단계 ↔ 네이버 1단계 대응표(category_top_map.json) 밖은 탈락 ·
+#   후보가 전부 다른 1단계면 후보를 내지 않는다(category_unset).
+GENERIC = {"세트", "기타", "용품", "상품", "제품", "소품", "잡화", "전용", "기획", "모음", "외", "관련", "류", "등"}
+_TOK_SPLIT = re.compile(r"[\s>/·,()\[\]_&+\-]+")
 
-    0.6 × 리프 이름 겹침(글자 2개씩 Dice) + 0.3 × 쿠팡 이름 낱말이 네이버 경로에 든 비율 + 0.1 × 상품명 낱말이 경로에 든 비율.
+
+def _core(tok: str) -> str:
+    """범용 낱말을 뒤에 붙인 합성어는 앞부분이 실체 — 「정장세트」→「정장」, 「주방용품」→「주방」."""
+    for g in sorted(GENERIC, key=len, reverse=True):
+        if len(tok) > len(g) + 1 and tok.endswith(g):
+            return tok[: -len(g)]
+    return tok
+
+
+def path_tokens(path: str) -> List[Tuple[str, float]]:
+    """경로 → `[(토큰, 가중치)]` — 깊을수록 무겁게(리프 1.0, 1단계 0.5). 범용 낱말은 가중치 0으로 뺀다."""
+    segs = [x for x in str(path or "").split(">") if x.strip()]
+    n = len(segs)
+    out: List[Tuple[str, float]] = []
+    for i, seg in enumerate(segs):
+        w = 0.5 + 0.5 * (i / (n - 1)) if n > 1 else 1.0
+        for t in _TOK_SPLIT.split(seg):
+            t = t.strip()
+            if len(t) < 1 or t in GENERIC:
+                continue
+            out.append((t, w))
+    return out
+
+
+def _tok_match(a: str, toks: List[str]) -> float:
+    """토큰 하나 ↔ 상대 토큰들 — 같으면 1, 핵심(범용 꼬리 뗀 것)이 같거나 한쪽이 다른 쪽을 품으면 0.8."""
+    ca = _core(a)
+    best = 0.0
+    for b in toks:
+        cb = _core(b)
+        if a == b or ca == cb:
+            return 1.0
+        if min(len(ca), len(cb)) >= 2 and (ca in cb or cb in ca):
+            best = max(best, 0.8)
+    return best
+
+
+def _top_map() -> Dict[str, List[str]]:
+    import json
+    from pathlib import Path
+    try:
+        return json.loads((Path(__file__).with_name("category_top_map.json")).read_text(encoding="utf-8")).get("map") or {}
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("[네이버 카테고리] 1단계 대응표 읽기 실패: %s", exc)
+        return {}
+
+
+def allowed_tops(cp_path: str) -> Optional[List[str]]:
+    """쿠팡 경로 1단계 → 허용 네이버 1단계 목록. 경로가 리프 하나뿐이거나 표에 없으면 None(게이트 없음)."""
+    if ">" not in str(cp_path or ""):
+        return None
+    top = str(cp_path).split(">")[0].strip()
+    tops = _top_map().get(top)
+    if tops is None:
+        logger.info("[네이버 카테고리] 쿠팡 1단계 「%s」가 대응표에 없음 — 1단계 게이트 없이 비교", top)
+    return tops
+
+
+def score_path(cp_path: str, whole: str, title: str = "") -> float:
+    """쿠팡 경로(또는 리프 이름) ↔ 네이버 리프 전체 경로 점수 0~1.
+
+    0.55 × 쿠팡 토큰이 네이버 경로에 덮인 비율(가중) + 0.35 × 네이버 리프 핵심 낱말이 쿠팡 토큰에 있나
+    + 0.1 × 네이버 리프 핵심 낱말이 상품명에 있나 − 갈래 어긋남(여성↔남성 0.3 · 아이 말 없이 유아동 0.2).
+    네이버 리프 핵심 낱말이 쿠팡 쪽에 없으면 0(상품명만으로는 정하지 않는다 — 「…상의와 스커트 투피스 세트」가 스커트로 가지 않게).
     """
-    whole = str(whole or "")
-    last = whole.split(">")[-1]
-    nl, nc = _norm(last), _norm(cp_name)
-    s_leaf = _dice(cp_name, last)
-    if nl and nl == nc:
-        s_leaf = 1.0
-    elif len(nl) >= 2 and len(nc) >= 2 and (nl in nc or nc in nl):   # 「여성정장세트」 ⊃ 「정장세트」
-        s_leaf = max(s_leaf, 0.85)
-    cp_words = [w for w in _SEP.split(str(cp_name or "")) if len(w) >= 2]
-    nw = _norm(whole)
-    s_tok = (sum(1 for w in cp_words if w in nw) / len(cp_words)) if cp_words else 0.0
-    cb = _bigrams(cp_name)                                         # 붙여 쓴 이름(「여성정장세트」)은 글자 2개씩 덮인 비율로
-    if cb:
-        s_tok = max(s_tok, len(cb & _bigrams(whole)) / len(cb))
-    tw = [w for w in _SEP.split(re.sub(r"^\s*\[[^\]]*\]\s*", "", str(title or ""))) if len(w) >= 2 and not w.isdigit()][:8]
-    s_title = (sum(1 for w in tw if w in nw) / len(tw)) if tw else 0.0
-    # 갈래가 엇갈리면 깎는다 — 쿠팡 이름·상품명이 「여성」인데 네이버 경로가 남성(또는 반대), 아이 말이 없는데 유아동 갈래.
-    said = str(cp_name or "") + " " + str(title or "")
+    cp = path_tokens(cp_path)
+    nv_all = [t for t, _w in path_tokens(whole)]
+    leaf_core = [t for t, _w in path_tokens(str(whole or "").split(">")[-1])]
+    if not cp or not leaf_core:
+        return 0.0
+    wsum = sum(w for _t, w in cp) or 1.0
+    s1 = sum(w * _tok_match(t, nv_all) for t, w in cp) / wsum
+    cp_toks = [t for t, _w in cp]
+    s2 = max(_tok_match(t, cp_toks) for t in leaf_core)
+    tnorm = _norm(title)
+    s3 = 1.0 if any(len(_core(t)) >= 2 and _core(t) in tnorm for t in leaf_core) else 0.0
+    if s2 == 0.0:                                     # 네이버 리프 낱말을 쿠팡이 말하지 않았으면 근거 없음(상품명만으론 안 정한다)
+        return 0.0
+    said = str(cp_path or "") + " " + str(title or "")
     pen = 0.0
     if any(g in said for g in ("여성", "여자", "우먼")) and "남성" in whole and "여성" not in whole:
         pen += 0.3
     if any(g in said for g in ("남성", "남자", "맨즈")) and "여성" in whole and "남성" not in whole:
         pen += 0.3
-    if any(k in whole for k in ("유아", "아동", "키즈")) and not any(k in said for k in ("유아", "아동", "키즈", "아기", "베이비", "주니어")):
+    if any(k in whole for k in ("유아", "아동", "키즈", "신생아")) and not any(
+            k in said for k in ("유아", "아동", "키즈", "아기", "베이비", "주니어", "신생아", "출산")):
         pen += 0.2
-    return round(max(0.0, 0.6 * s_leaf + 0.3 * s_tok + 0.1 * s_title - pen), 4)
+    return round(max(0.0, 0.55 * s1 + 0.35 * s2 + 0.1 * s3 - pen), 4)
 
 
-def rank(cp_name: str, title: str = "", *, limit: int = 3) -> List[Dict]:
-    """네이버 리프 상위 `limit`개 `[{id, name, score}]` — 트리를 못 받았으면 빈 목록."""
+score_leaf = score_path          # Y7-C 이름 호환(리프 이름 하나도 경로 한 칸으로 받는다)
+
+
+def rank(cp_path: str, title: str = "", *, limit: int = 3) -> List[Dict]:
+    """네이버 리프 상위 `limit`개 `[{id, name, score}]` — 쿠팡 1단계 대응표 밖은 뺀다. 트리를 못 받았으면 빈 목록."""
     t = tree() or {}
-    if not cp_name or not t.get("leaves"):
+    if not cp_path or not t.get("leaves"):
         return []
+    tops = allowed_tops(cp_path)
     scored = []
     for cid, whole in t["leaves"].items():
-        sc = score_leaf(cp_name, whole, title)
+        if tops is not None and str(whole).split(">")[0] not in tops:
+            continue
+        sc = score_path(cp_path, whole, title)
         if sc > 0:
             scored.append((sc, len(whole), cid, whole))
     scored.sort(key=lambda x: (-x[0], x[1], x[3]))
@@ -331,9 +403,15 @@ def coupang_guess(p: dict) -> dict:
     except Exception as exc:                                      # noqa: BLE001
         return {"id": "", "name": "", "why": f"쿠팡 예측 오류 — {type(exc).__name__}: {str(exc)[:80]}"}
     if not r.get("name"):
-        return {"id": r.get("id", ""), "name": "", "why": "쿠팡 예측이 카테고리 이름을 돌려주지 않았어요"
+        return {"id": r.get("id", ""), "name": "", "path": "", "why": "쿠팡 예측이 카테고리 이름을 돌려주지 않았어요"
                 + (f"({r.get('why')})" if r.get("why") else "")}
-    return {"id": r.get("id", ""), "name": r["name"], "why": ""}
+    # Y7-E: 예측 ID의 전체 경로(쿠팡 노출 카테고리 표, 백그라운드 하루 1회). 표가 아직 없으면 리프 이름만.
+    try:
+        from src.uploaders.coupang_categories import path_of
+        path = path_of(r.get("id", ""))
+    except Exception:
+        path = ""
+    return {"id": r.get("id", ""), "name": r["name"], "path": path, "why": ""}
 
 
 def suggest(product: dict) -> dict:
@@ -348,30 +426,50 @@ def suggest(product: dict) -> dict:
     if not name:
         return {"id": "", "name": "", "score": 0.0, "coupang": "", "candidates": [], "why": "상품명이 없어요"}
     hit = _suggest_cache_get(name)
-    if hit and (hit.get("id") or hit.get("candidates")):
+    if hit and (hit.get("id") or hit.get("candidates") or hit.get("coupang")):
         return dict(hit)
+    return compute_suggestion(p, remember=True)
+
+
+def compute_suggestion(p: dict, *, remember: bool = False) -> dict:
+    """기억(캐시)을 보지 않고 지금 계산 — 관리자 표(운영 상품명 일괄)는 이걸로, 사전검증·등록은 `suggest`."""
+    name, _desc = _predict_input(p or {})
+    if not name:
+        return {"id": "", "name": "", "score": 0.0, "coupang": "", "candidates": [], "why": "상품명이 없어요"}
     if not (tree() or {}).get("leaves"):                          # 맞춰 볼 목록이 없으면 쿠팡에 묻지도 않는다
         return {"id": "", "name": "", "score": 0.0, "coupang": "", "candidates": [],
                 "why": "네이버 카테고리 목록을 받지 못해 자동 추천을 못 했어요"}
     g = coupang_guess(p)
+    cp = g.get("path") or g.get("name", "")
     out = {"id": "", "name": "", "score": 0.0, "coupang": g.get("name", ""), "coupang_id": g.get("id", ""),
-           "candidates": [], "why": g.get("why", "")}
+           "coupang_path": g.get("path", ""), "candidates": [], "why": g.get("why", "")}
     if not g.get("name"):
         return out
-    top = [c for c in rank(g["name"], name, limit=3) if c["score"] >= 0.25]   # 거의 안 닮은 후보는 보이지 않는다
+    top = [c for c in rank(cp, name, limit=3) if c["score"] >= 0.25]   # 거의 안 닮은 후보는 보이지 않는다
     if not top:
-        out["why"] = f"쿠팡 예측 「{g['name']}」와 닮은 네이버 카테고리가 없어요"
+        out["why"] = f"쿠팡 예측 「{cp}」와 닮은 네이버 카테고리가 없어요"
+        if remember:
+            _suggest_cache_put(name, out)
         return out
     second = top[1]["score"] if len(top) > 1 else 0.0
     gap = top[0]["score"] - second
-    if (top[0]["score"] >= auto_min() and gap >= auto_margin()) or (top[0]["score"] >= sole_min() and gap >= 0.3):
+    if (top[0]["score"] >= auto_min() and gap >= auto_margin()) or (top[0]["score"] >= sole_min() and gap >= 0.25):
         out.update(id=top[0]["id"], name=top[0]["name"], score=top[0]["score"])
     else:
+        if len(top) >= 2 and len({c["name"].split(">")[0] for c in top}) == len(top):
+            # Y7-E: 후보가 전부 다른 1단계 — 갈래부터 갈린다(식품·출산육아·스포츠가 나란히). 고르라고 내밀지 않는다.
+            out["why"] = (f"쿠팡 예측 「{cp}」로는 네이버 1단계부터 갈려요("
+                          + " · ".join(c["name"].split(">")[0] for c in top) + ") — 카테고리를 다시 지정하세요")
+            out["candidates_dropped"] = top
+            if remember:
+                _suggest_cache_put(name, out)
+            return out
         out["candidates"] = top
-        out["why"] = (f"쿠팡 예측 「{g['name']}」와 딱 맞는 네이버 카테고리를 하나로 정하지 못했어요"
+        out["why"] = (f"쿠팡 예측 「{cp}」와 딱 맞는 네이버 카테고리를 하나로 정하지 못했어요"
                       f"(1등 {top[0]['score']:.2f}" + (f" · 2등 {second:.2f}" if len(top) > 1 else "") + ")")
-    _suggest_cache_put(name, out)
-    logger.info("[네이버 카테고리] 쿠팡 예측 「%s」 → %s", g["name"],
+    if remember:
+        _suggest_cache_put(name, out)
+    logger.info("[네이버 카테고리] 쿠팡 예측 「%s」 → %s", cp,
                 out["name"] or "후보 " + " / ".join(c["name"] for c in top))
     return out
 

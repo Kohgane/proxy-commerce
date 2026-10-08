@@ -1915,6 +1915,107 @@ _COUPANG_META_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <a href="/admin/diagnostics#account-keys">← 진단으로</a></div></body></html>"""
 
 
+# ── Y7-E(오너 2026-10-08): 운영 수집 상품명 일괄 — 쿠팡 예측 경로 → 네이버 자동 지정 표 ─────────────────────
+#   쿠팡 예측은 서버 키로만 부를 수 있다(이 세션엔 키 없음) → 오너가 버튼을 누르면 **백그라운드**로 돈다
+#   (Z8: 요청 스레드를 붙잡지 않는다). 결과는 app_state `naver_cat_table`에 남고 CSV로 받을 수 있다.
+_NCAT_TABLE_KEY = "naver_cat_table"
+
+
+def _ncat_table_titles(limit: int = 1000) -> list:
+    """운영 수집 상품명(번역 제목 우선) — 같은 상품명은 한 줄로, 건수와 함께."""
+    from src.db import pg
+    rows = []
+    if pg.pg_enabled():
+        with pg.query() as cur:
+            cur.execute("SELECT coalesce(nullif(extra_json->>'title_ko',''), title) t, count(*) "
+                        "FROM collect_history GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT %s", (limit,))
+            rows = [(str(t or ""), int(n)) for t, n in cur.fetchall() if str(t or "").strip()]
+    else:
+        from src.seller_console import collect_history_store as chs
+        seen = {}
+        for it in chs.list_items(days=3650, limit=limit):
+            import json as _json
+            ex = _json.loads(it.get("extra_json") or "{}") or {}
+            t = str(ex.get("title_ko") or it.get("title") or "")
+            if t.strip():
+                seen[t] = seen.get(t, 0) + 1
+        rows = sorted(seen.items(), key=lambda x: (-x[1], x[0]))
+    return rows
+
+
+def _ncat_table_run() -> dict:
+    from src.uploaders import naver_categories as NC, coupang_categories as CC
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader as SS
+    from src.db import image_translate_queue_pg as st
+    if not (NC.tree() or {}).get("leaves"):
+        NC.tree(refresh=True)
+    if not (CC.table() or {}).get("paths"):
+        CC._fetch_and_store()
+    out = []
+    for title, n in _ncat_table_titles():
+        row = {"title": title[:120], "count": n, "dict": SS.match_category(title)}
+        try:
+            s = NC.compute_suggestion({"title_ko": title})
+        except Exception as exc:                                  # noqa: BLE001
+            s = {"why": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        row.update(coupang_id=s.get("coupang_id", ""), coupang=s.get("coupang", ""), coupang_path=s.get("coupang_path", ""),
+                   result=("auto" if s.get("id") else "candidates" if s.get("candidates") else "unset"),
+                   naver=s.get("name", ""), naver_id=s.get("id", ""), score=s.get("score", 0.0),
+                   candidates=" | ".join(c["name"] for c in s.get("candidates") or []), why=s.get("why", ""))
+        out.append(row)
+    summary = {"titles": len(out), "auto": sum(r["result"] == "auto" for r in out),
+               "candidates": sum(r["result"] == "candidates" for r in out),
+               "unset": sum(r["result"] == "unset" for r in out),
+               "coupang_path_known": sum(bool(r["coupang_path"]) for r in out),
+               "naver_tree": len((NC.tree() or {}).get("leaves") or {}),
+               "coupang_tree": len((CC.table() or {}).get("paths") or {}), "coupang_tree_why": CC._REFRESH.get("why", "")}
+    st.state_set(_NCAT_TABLE_KEY, {"summary": summary, "rows": out,
+                                   "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
+    return {"ok": True, **summary}
+
+
+@admin_panel_bp.route("/diagnostics/naver-category-table", methods=["GET", "POST"])
+def diagnostics_naver_category_table():
+    """운영 수집 상품명 → 쿠팡 예측 경로 → 네이버 자동 지정(자동·후보·미지정) 표. POST = 백그라운드로 다시 계산."""
+    from flask import request as _rq, Response
+    from src.utils import bg_job
+    from src.db import image_translate_queue_pg as st
+    started = None
+    if _rq.method == "POST":
+        started, _state = bg_job.start("naver-category-table", _ncat_table_run)
+    data = st.state_get(_NCAT_TABLE_KEY) or {}
+    if _rq.args.get("format") == "csv":
+        import csv
+        import io
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["상품명", "건수", "상품명 사전", "쿠팡 ID", "쿠팡 예측", "쿠팡 경로", "결과", "네이버 리프", "점수", "후보", "사유"])
+        for r in data.get("rows") or []:
+            w.writerow([r["title"], r["count"], r["dict"], r["coupang_id"], r["coupang"], r["coupang_path"], r["result"],
+                        r["naver"], r["score"], r["candidates"], r["why"]])
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=naver-category-table.csv"})
+    return render_template_string(_NCAT_TABLE_TEMPLATE, data=data, job=bg_job.view("naver-category-table"),
+                                  started=started)
+
+
+_NCAT_TABLE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>네이버 카테고리 자동 지정 표</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container-fluid" data-role="ncat-table">
+<h5>운영 수집 상품명 → 쿠팡 예측 경로 → 네이버 자동 지정</h5>
+<p class="small text-muted">쿠팡 예측은 서버 쿠팡 키로 상품명마다 1번 묻습니다(백그라운드). 기억(캐시)은 쓰지 않고 지금 규칙으로 다시 계산합니다.</p>
+<form method="post" class="mb-2"><button class="btn btn-sm btn-outline-secondary" data-role="ncat-run">지금 다시 계산</button>
+{% if started is sameas true %}<span class="small ms-2">시작했어요 — 끝나면 새로고침하세요.</span>{% elif started is sameas false %}<span class="small ms-2">이미 계산 중이에요.</span>{% endif %}
+<a class="small ms-2" href="?format=csv">CSV 받기</a></form>
+<div class="small mb-2" data-role="ncat-job">작업: {{ job.state or '없음' }}{% if job.running_sec %} · {{ job.running_sec }}초째{% endif %}{% if job.elapsed_ms %} · {{ job.elapsed_ms }}ms{% endif %}{% if job.error %} · {{ job.error }}{% endif %}</div>
+{% if data.summary %}<div class="small mb-2" data-role="ncat-summary">{{ data.at }} · 상품명 {{ data.summary.titles }} · 자동 {{ data.summary.auto }} · 후보 {{ data.summary.candidates }} · 미지정 {{ data.summary.unset }} · 쿠팡 경로 확인 {{ data.summary.coupang_path_known }} · 네이버 리프 {{ data.summary.naver_tree }} · 쿠팡 경로 표 {{ data.summary.coupang_tree }}{% if data.summary.coupang_tree_why %} ({{ data.summary.coupang_tree_why }}){% endif %}</div>
+<div class="table-responsive"><table class="table table-sm small"><thead><tr><th>상품명</th><th>건수</th><th>쿠팡 예측 경로</th><th>결과</th><th>네이버</th><th>점수</th><th>사유·후보</th></tr></thead><tbody>
+{% for r in data.rows %}<tr data-result="{{ r.result }}"><td>{{ r.title }}</td><td>{{ r.count }}</td><td>{{ r.coupang_path or r.coupang }}</td><td>{{ {'auto':'자동','candidates':'후보','unset':'미지정'}[r.result] }}</td><td>{{ r.naver }}</td><td>{{ r.score }}</td><td>{{ r.candidates or r.why }}</td></tr>{% endfor %}
+</tbody></table></div>{% endif %}
+<a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.post("/diagnostics/smartstore-recheck")
 def diagnostics_smartstore_recheck():
     """캐시(10분)를 건너뛰고 지금 다시 발급해 본다."""
