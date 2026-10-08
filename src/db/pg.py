@@ -345,41 +345,17 @@ def close_request_conn(_exc=None):
 
 @contextlib.contextmanager
 def query():
-    """읽기 전용 — 요청 스레드는 요청 연결 1개를 재사용, 그 밖(잡·마켓별 스레드·백그라운드)은 **풀에서 빌려 바로 반납**.
+    """읽기 전용 — 요청 스레드는 요청 연결 1개를 재사용, 그 밖(잡·마켓별 스레드·백그라운드)은 1회용.
 
-    Z9: Z8 뒤로 요청 스레드가 아닌 스레드는 쿼리마다 1회용 연결(TCP+TLS+인증)을 열었다 — 사전검증 잡의 쿼리 12번이
-    연결 12번이었다. 풀이 있으면 그 쿼리 동안만 빌리고 **같은 자리에서 반납**한다(Z8 누수는 g에 걸어 두고 아무도
-    반납하지 않아서였다 — 여기선 g에 걸지 않는다). 풀이 없거나 5초 안에 못 빌리면 예전처럼 1회용.
+    Z9: 잡 스레드도 상시 풀에서 빌려 보려 했으나(연결 여는 시간을 줄이려고) **되돌렸다** — 백그라운드 스레드가
+    쿼리 블록을 오래 쥐면 요청 스레드와 같은 풀(5)을 나눠 써 요청이 `pg_pool_timeout` 5초씩 기다렸다(gunicorn 2워커 실측
+    대시보드 5.0초, main은 수 ms). 1회용 연결의 비용은 `db_connect` 구간으로 잰다 — 운영 수치를 보고 정한다.
     """
     conn, is_new = _request_read_conn()
     if conn is not None:
         _perf_mark("db_read", new_conn=is_new)
         with conn.cursor() as cur, _timed_db():
             yield cur
-        return
-    pool = _persistent_pool()
-    borrowed = None
-    if pool is not None:
-        try:
-            borrowed = pool.getconn(timeout=pool_wait_sec())
-        except Exception as exc:
-            logger.warning("[DB] pg_pool_timeout — 잡 스레드 풀 대여 %ss 안에 실패(%s) · 풀 %s → 1회용 연결",
-                           pool_wait_sec(), type(exc).__name__, pool_stats())
-            borrowed = None
-    if borrowed is not None:
-        _perf_mark("db_read", new_conn=False)
-        try:
-            try:
-                borrowed.autocommit = True
-            except Exception:
-                pass
-            with borrowed.cursor() as cur, _timed_db():
-                yield cur
-        finally:
-            try:
-                pool.putconn(borrowed)
-            except Exception:
-                pass
         return
     _perf_mark("db_read", new_conn=True)
     conn = _connect(db_url(), autocommit=True)

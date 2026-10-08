@@ -328,8 +328,9 @@ def test_db_connect_time_is_its_own_segment(monkeypatch):
         assert perf.perf_snapshot()["db_connect"] >= 50
 
 
-def test_job_thread_reads_borrow_pool_and_return(monkeypatch):
-    """잡·마켓별 스레드(요청 스레드 아님)의 읽기 — 풀에서 빌리고 **같은 자리에서 반납**(1회용 연결 0)."""
+def test_job_thread_reads_do_not_take_request_pool(monkeypatch):
+    """잡·백그라운드 스레드의 읽기는 요청 풀(5)을 쓰지 않는다 — 오래 쥐면 요청이 5초씩 기다린다(gunicorn 2워커 실측).
+    1회용 연결의 비용은 `db_connect`로 잰다."""
     from src.db import pg
 
     class Cur:
@@ -340,31 +341,22 @@ def test_job_thread_reads_borrow_pool_and_return(monkeypatch):
             return False
 
     class Conn:
-        autocommit = False
-
         def cursor(self):
             return Cur()
 
+        def close(self):
+            pass
+
     class Pool:
-        def __init__(self):
-            self.out = 0
-            self.got = 0
-
         def getconn(self, timeout=None):
-            self.out += 1
-            self.got += 1
-            return Conn()
-
-        def putconn(self, c):
-            self.out -= 1
-    pool = Pool()
-    monkeypatch.setattr(pg, "_persistent_pool", lambda: pool)
+            raise AssertionError("잡 스레드가 요청 풀을 빌렸다")
+    monkeypatch.setattr(pg, "_persistent_pool", lambda: Pool())
     monkeypatch.setattr(pg, "_request_read_conn", lambda: (None, False))
-    monkeypatch.setattr(pg, "_connect", lambda *a, **k: pytest.fail("1회용 연결을 열었다"))
-    for _ in range(3):
-        with pg.query() as cur:
-            assert cur is not None
-    assert pool.got == 3 and pool.out == 0
+    opened = []
+    monkeypatch.setattr(pg, "_connect", lambda *a, **k: opened.append(1) or Conn())
+    with pg.query() as cur:
+        assert cur is not None
+    assert opened == [1]
 
 
 # ── 6. 환율 표기 — KST · 묵었으면 「n시간 전 환율」 ─────────────────────────────────────────────────
