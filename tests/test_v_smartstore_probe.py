@@ -13,6 +13,9 @@ import pytest
 from src.seller_console import smartstore_routing as SR
 from src.uploaders.naver_uploader import NaverSmartStoreUploader as N
 
+#: Y7-H: 주소록으로 스토어를 판정하는 계약 — conftest의 스토어 없는 맥락 주소 ID를 깔지 않는다.
+NAVER_ADDRESS_DEFAULTS = False
+
 _TOKEN = "tok-SECRET-VALUE-123"
 
 

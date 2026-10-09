@@ -3957,6 +3957,24 @@ def settings_markets():
                            pick_names=[names.get(c, c) for c in pick["codes"]])
 
 
+@bp.route("/settings/naver-notice", methods=["GET", "POST"])
+def settings_naver_notice():
+    """Y7-H(오너 2026-10-09): 네이버 상품정보제공고시 구매대행 기본값 — 공유 마켓 사용자는 한 벌, 그 밖은 셀러별."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.full_path))
+    from src.uploaders import naver_notice as NN
+    shared = _shared_markets()
+    msg = ""
+    if request.method == "POST":
+        try:
+            NN.save_settings(_seller_id(), {k: request.form.get(k) for k, _l, _d in NN.SETTING_FIELDS}, shared=shared)
+            msg = "저장했어요 — 다음 등록부터 이 값으로 고시 칸을 채워요."
+        except ValueError as exc:
+            msg = str(exc)
+    return render_template("naver_notice_settings.html", fields=NN.SETTING_FIELDS,
+                           st=NN.get_settings(_seller_id(), shared), shared=shared, msg=msg)
+
+
 @bp.route("/settings/ship-route", methods=["GET", "POST"])
 def settings_ship_route():
     """Z5 후속: 계정 기본 발주 경로(중국발) — 상품에서 따로 고르지 않으면 이 값으로 배송비 요율을 고른다."""

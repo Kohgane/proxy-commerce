@@ -432,6 +432,10 @@ class NaverSmartStoreUploader(BaseUploader):
             'option_name_overrides': collected.get('option_name_overrides') or {},
             'tags': collected.get('tags', []),
             'min_purchase_quantity': collected.get('min_purchase_quantity') or 0,     # Y7-F: 셀러가 2 이상으로 정했을 때만 실림
+            # Y7-H: 상품정보제공고시 재료 — 품명·모델명(50자)은 「[해외직구] + 상품명」이 아니라 짧은 이름, 제조국은 소싱처로
+            'coupang_name': str(collected.get('coupang_name') or '').strip(),
+            'title_ko': str(collected.get('title_ko') or '').strip(),
+            'source_url': str(collected.get('source_url') or collected.get('url') or ''),
             'detail_images': [u for u in (collected.get('detail_images') or []) if isinstance(u, str)],
             'shipping_fee': 0,
             'delivery_days': '7-14',
@@ -463,6 +467,11 @@ class NaverSmartStoreUploader(BaseUploader):
                            ' (카나리 7차: detailAttribute.minorPurchasable NotNull).',
                            self.TEMPLATE_PATH.name)
         merged = self._deep_merge(copy.deepcopy(tpl), payload)
+        # Y7-H: 고시 블록은 **통째로 바꾼다** — 깊게 합치면 템플릿의 `etc{}`(하베스트라벨 예시값)가 WEAR 옆에 남는다.
+        _da = merged.get('originProduct', {}).get('detailAttribute')
+        _notice = ((payload.get('originProduct') or {}).get('detailAttribute') or {}).get('productInfoProvidedNotice')
+        if isinstance(_da, dict) and isinstance(_notice, dict) and _notice:
+            _da['productInfoProvidedNotice'] = copy.deepcopy(_notice)
         self._ensure_notice_type(merged)
         # Y7: 조합형을 실을 때는 같이 못 쓰는 단독형·표준형 칸(템플릿의 빈 목록)을 뺀다 — 빈 칸이라도 섞어 보내지 않는다.
         oi = merged.get('originProduct', {}).get('detailAttribute', {}).get('optionInfo')
@@ -543,14 +552,9 @@ class NaverSmartStoreUploader(BaseUploader):
                     #   출처는 쿠팡 고시정보와 **같은 소스**: 상품명·SKU·수집 브랜드·AS 연락처(env).
                     #   비어 있으면 빈 값으로 덮는다 — 남의 브랜드를 붙여 등록하느니 네이버가
                     #   '필수값 없음'으로 거부하는 편이 정직하다(가짜 정보 0).
-                    'productInfoProvidedNotice': {
-                        'etc': {
-                            'itemName': (product.get('title') or '')[:100],
-                            'modelName': product.get('sku', ''),
-                            'manufacturer': product.get('brand', ''),
-                            'afterServiceDirector': self._acct_env('NAVER_AS_PHONE'),
-                        },
-                    },
+                    # Y7-H(오너 2026-10-09 19:46 KST 400 `etc.itemName` 50자 · `etc.manufacturer` 빈칸): 고시는 한 곳
+                    #   (`naver_notice.build`) — 카테고리로 타입(패션의류=WEAR, 그 밖=ETC), 그 타입 칸 **전부** 구매대행 기본값.
+                    'productInfoProvidedNotice': self.notice_for(product),
                     # 구매대행 통관(정본) — 템플릿의 NOT_APPLICABLE을 덮는다(우리가 구매대행이다).
                     'customsTaxType': self.CUSTOMS_TAX_TYPE,
                 },
@@ -572,6 +576,11 @@ class NaverSmartStoreUploader(BaseUploader):
         if mq:
             payload['originProduct']['detailAttribute']['purchaseQuantityInfo'] = {'minPurchaseQuantity': mq}
         return payload
+
+    def notice_for(self, product: dict) -> dict:
+        """Y7-H — 상품정보제공고시(타입 + 그 타입 칸 전부). A/S 연락처는 스토어별 `NAVER_AS_PHONE`."""
+        from src.uploaders import naver_notice as _nn
+        return _nn.build(product, as_phone=self._acct_env('NAVER_AS_PHONE'))
 
     @staticmethod
     def min_purchase_quantity(product: dict) -> int:
