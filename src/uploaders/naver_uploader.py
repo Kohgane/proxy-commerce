@@ -34,6 +34,10 @@ class NaverSmartStoreUploader(BaseUploader):
     # ── P5 정본 승계(오너 SSH 실측 `ss_upload.py`) — 추측 금지, 실증값만 ────────────
     #   쿠팡과 **다른 축**이다: 계정 = chezgoga / gocosmos (쿠팡 고가네/우주대행과 별개).
     ACCOUNT_PREFIXES = {'chezgoga': 'NAVER_CHEZGOGA', 'gocosmos': 'NAVER_GOCOSMOS'}
+    # Y7-J(오너 2026-10-10): 구매자 화면 주소 `smartstore.naver.com/{스토어 주소}/products/{channelProductNo}`.
+    #   셰고가 = `chezgoga`(오너가 준 실제 주소 smartstore.naver.com/chezgoga/products/13802276439). 고코스모스 주소는
+    #   확인하지 못했다 — `NAVER_GOCOSMOS_STORE_SLUG`로 넣기 전까지는 예전과 같은 `main`(지어내지 않음).
+    STORE_SLUGS = {'chezgoga': 'chezgoga'}
     # 출고지/반품지 주소 ID — 정본 스크립트는 하드코딩이었으나 **env화**(하드코딩 금지·오너 지시).
     #   기본값이 곧 실증값이라 env 미설정이어도 정본으로 등록된다(계정별 오버라이드 가능).
     DEFAULT_ADDRESS_IDS = {
@@ -336,12 +340,55 @@ class NaverSmartStoreUploader(BaseUploader):
                 return {'success': False, 'error': result['error'], 'sku': product.get('sku', '')}
             product_id = str(result.get('originProductNo', ''))
             # M6: 구매자 화면 주소는 **채널 상품번호**다(원상품번호와 다른 번호 — 식별자 오용 지뢰). 없으면 비운다.
+            #   Y7-J: 두 번호를 **둘 다** 돌려준다 — 원상품번호(수정 PUT)·채널 상품번호(구매자 주소·상태 조회).
             channel_no = str(result.get('smartstoreChannelProductNo') or '')
-            url = f'https://smartstore.naver.com/main/products/{channel_no}' if channel_no else ''
-            return {'success': True, 'product_id': product_id, 'url': url, 'sku': product.get('sku', '')}
+            return {'success': True, 'product_id': product_id, 'origin_product_no': product_id,
+                    'channel_product_no': channel_no, 'url': self.product_url(channel_no), 'sku': product.get('sku', '')}
         except Exception as exc:
             logger.error('upload_product failed for sku=%s: %s', product.get('sku', ''), exc)
             return {'success': False, 'error': str(exc), 'sku': product.get('sku', '')}
+
+    def store_slug(self) -> str:
+        """구매자 화면 주소의 스토어 자리 — env `NAVER_<STORE>_STORE_SLUG` → 확인된 표 → `main`."""
+        return self._acct_env('NAVER_STORE_SLUG', self.STORE_SLUGS.get(self.account or '', '')) or 'main'
+
+    def product_url(self, channel_no: str) -> str:
+        ch = str(channel_no or '').strip()
+        return f'https://smartstore.naver.com/{self.store_slug()}/products/{ch}' if ch else ''
+
+    def update_detail_content(self, origin_no: str, detail_html: str) -> dict:
+        """Y7-J — 등록된 상품의 **상세 본문만** 바꾼다: `GET origin-products/{no}` → `detailContent`만 갈아 끼움 →
+        `PUT origin-products/{no}`(조회한 몸통 그대로 — 다른 칸은 손대지 않는다).
+
+        문서: 원상품 수정의 `detailContent`는 생략하면 기존값 유지 — 다른 칸을 빼면 어떻게 되는지는 문서에서 확인하지
+        못했다 → 조회한 값을 그대로 되돌려 보낸다. 판매 상태가 수정에 허용된 값(SALE·SUSPENSION)이 아니면 보내지 않는다.
+        반환 `{success, error, status_type, raw}`.
+        """
+        no = str(origin_no or '').strip()
+        if not no:
+            return {'success': False, 'error': '원상품번호가 없어요 — 등록 기록을 확인해 주세요'}
+        if not str(detail_html or '').strip():
+            return {'success': False, 'error': '보낼 상세 본문이 비어 있어요'}
+        cur = self._api_request('GET', f'/v2/products/origin-products/{no}')
+        if not isinstance(cur, dict) or 'error' in cur:
+            return {'success': False, 'error': f"상품 조회 실패 — {(cur or {}).get('error') if isinstance(cur, dict) else cur}"}
+        op = cur.get('originProduct')
+        if not isinstance(op, dict):
+            return {'success': False, 'error': f'조회 응답에 originProduct 없음: {str(cur)[:200]}'}
+        st = str(op.get('statusType') or '')
+        if st not in ('SALE', 'SUSPENSION'):
+            return {'success': False, 'status_type': st,
+                    'error': f'판매 상태가 「{st or "미상"}」라 수정 요청을 보내지 않았어요(수정은 판매중·판매중지일 때만 — 문서)'}
+        body = {k: v for k, v in cur.items() if k in ('originProduct', 'smartstoreChannelProduct', 'windowChannelProduct')}
+        body['originProduct'] = {**op, 'detailContent': detail_html}
+        res = self._api_request('PUT', f'/v2/products/origin-products/{no}', data=body)
+        if not isinstance(res, dict) or 'error' in res:
+            from src.uploaders import naver_invalid as _ni
+            inv = _ni.rows(res.get('body') or '', '') if isinstance(res, dict) and res.get('http_status') == 400 else []
+            err = (' · '.join(r['line'] for r in inv) if inv
+                   else str((res or {}).get('error') if isinstance(res, dict) else res))
+            return {'success': False, 'status_type': st, 'error': f'네이버가 수정을 거부했어요 — {err}'[:600]}
+        return {'success': True, 'status_type': st, 'raw': res}
 
     def update_product(self, product_id: str, updates: dict) -> dict:
         """Naver SmartStore 상품 정보를 업데이트한다."""
@@ -686,6 +733,7 @@ class NaverSmartStoreUploader(BaseUploader):
                 dropped.append({'url': u, 'reason': f'네이버 CDN 업로드 실패 — {why}'})
         for d in dropped:
             logger.warning('상세 이미지 뺌 sku=%s — %s (%s)', sku, d['reason'][:240], str(d['url'])[-80:])
+            _cc.put_fail(acct, self.normalize_source_url(d['url']) or str(d['url']), d['reason'])   # Y7-J: 사유를 DB에도
         return {'mapping': mapping, 'dropped': dropped, 'cached': cached}
 
     def _detail_to_cdn(self, html_body: str, sku: str = '', *, report: dict = None) -> str:

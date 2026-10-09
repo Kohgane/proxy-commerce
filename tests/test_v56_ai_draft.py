@@ -29,8 +29,9 @@ def test_structured_draft_no_placeholder():
                           [["소재", "ABS"], ["k", "v"], ["", ""], ["무게", "1.2kg"]],
                           [{"name": "색상", "values": ["블랙", "화이트"]}], "GOGA")
     assert "- k: v" not in t and "k: v" not in t          # 플레이스홀더 0
-    assert "차량용" in t and "블랙, 화이트" in t and "ABS" in t and "1.2kg" in t   # 실데이터
-    assert "■ 특징" in t and "■ 옵션·상세" in t and "■ 배송·구매대행 안내" in t   # 구조
+    assert "블랙, 화이트" in t and "ABS" in t and "1.2kg" in t   # 실데이터
+    # Y7-J(오너 2026-10-10): 키워드 「■ 특징」 나열은 없앴다(제목 낱말 나열 금지) — 옵션은 문장, 스펙은 「이름: 값」
+    assert "■ 특징" not in t and "차량용" not in t and "■ 옵션·상세" in t and "■ 배송·구매대행 안내" in t   # 구조
     # 빈/1글자 행 생략
     assert "\n· k:" not in t
 
@@ -81,4 +82,5 @@ def test_e2e_ai_description_endpoint():
                        content_type="application/json")
             d = r.get_json()
             assert d["ok"] and d["provider"] == "stub" and d["is_draft"] is True
-            assert "- k: v" not in d["text"] and "차량용" in d["text"] and "블랙" in d["text"]
+            # Y7-J(오너 2026-10-10): 키워드는 초안에 나열하지 않는다(제목 낱말 나열 금지) — 옵션은 문장으로
+            assert "- k: v" not in d["text"] and "차량용" not in d["text"] and "색상은 블랙 한 가지예요." in d["text"]

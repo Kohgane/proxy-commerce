@@ -110,7 +110,52 @@ def market_description(desc: str) -> str:
     s = str(desc or "").split(_BILINGUAL_DIVIDER)[0]
     s, _dropped = _kp.drop_detail_lines(s)
     keep = [ln for ln in s.split("\n") if not (_kp.has_han(ln) and not _re.search("[가-힣]", ln))]
-    return _re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip()
+    # Y7-J(오너 2026-10-10): 상표가 든 줄은 통째로 뺀다(제목과 같은 상표 표 — 「미야케」 등). 카드 한 줄은 `outbound_mark_labels`.
+    s, _labs = _kp.gate_lines("\n".join(keep))
+    return _re.sub(r"\n{3,}", "\n\n", tidy_sections(s)).strip()
+
+
+def tidy_sections(text: str) -> str:
+    """Y7-J(오너 2026-10-10 3번) — 내용 없는 섹션 제목(「■ 원문 상세」 아래가 다 빠짐)은 빼고, 같은 글머리 줄(「· …」)은 한 번만.
+    13802276439 본문: 「■ 옵션·상세」 아래 같은 두 줄이 두 번, 「■ 원문 상세」 아래는 가게 통계뿐(빠지고 제목만 남음)."""
+    lines = str(text or "").split("\n")
+    out, seen = [], set()
+    for i, ln in enumerate(lines):
+        st = ln.strip()
+        if st.startswith("■"):
+            nxt = next((l.strip() for l in lines[i + 1:] if l.strip()), "")
+            if not nxt or nxt.startswith("■"):
+                continue                                  # 아래에 내용이 없는 제목
+        if st.startswith("·"):
+            if st in seen:
+                continue
+            seen.add(st)
+        out.append(ln)
+    return "\n".join(out)
+
+
+def outbound_mark_labels(pd: Dict[str, Any]) -> List[str]:
+    """Y7-J — 이 상품의 **나갈 글자**(상세·자동 초안·옵션 값·브랜드)에서 지운 상표 라벨 → 카드 「상표 표현 제거: 미야케」."""
+    from src.collectors import ko_polish as _kp
+    pd = pd or {}
+    texts = [str(pd.get(k) or "") for k in ("description", "description_ko", "description_html", "brand")]
+    a = pd.get("detail_auto")
+    if isinstance(a, dict):
+        texts.append(str(a.get("text") or ""))
+    for o in pd.get("options") or []:
+        if isinstance(o, dict):
+            texts += [str(v) for v in (o.get("values") or []) + (o.get("values_ko") or [])]
+    out: List[str] = []
+    for t in texts:
+        for lab in _kp.mark_hits(t):
+            if lab not in out:
+                out.append(lab)
+    return out
+
+
+def mark_note(pd: Dict[str, Any]) -> str:
+    labs = outbound_mark_labels(pd)
+    return f"상표 표현 제거: {', '.join(labs)}" if labs else ""
 
 
 def _market_desc_source(pd: Dict[str, Any]) -> str:
@@ -474,6 +519,7 @@ class UploadResult:
     details: List[str] = field(default_factory=list)
     action_url: str = ""                       # M1-1 — 고치러 갈 화면(마켓 연동 등)
     action_label: str = ""                     # Y7-F — 그 버튼의 글자(「상세페이지 꾸미기 →」 등). 비면 화면이 주소로 고른다
+    channel_product_no: Optional[str] = None   # Y7-J — 네이버 채널 상품번호(구매자 주소·상태 조회). 원상품번호는 external_product_id
 
 
 #: Y7-F — 다시 눌러 볼 만한 실패(통신·일시 오류)만. 400 입력값 거부·전송 전 보류는 다시 해도 같은 답 — 「재시도」를 보이지 않는다.
@@ -508,6 +554,7 @@ class DispatchResult:
                     "queued": r.queued,
                     "external_product_id": r.external_product_id,
                     "external_url": r.external_url,
+                    "channel_product_no": r.channel_product_no,
                     "error_code": r.error_code,
                     "hint": r.hint,
                     "details": list(r.details or []),
@@ -702,7 +749,12 @@ def detail_auto_note(pd: Dict[str, Any]) -> Dict[str, str]:
     a = _nd.auto_of(pd)
     if not a or _nd._text_of(pd) or render_detail_blocks_html(pd.get("detail_blocks"), "smartstore"):
         return {}
-    how = "AI" if a.get("provider") == "openai" else "확인된 정보로 정리"
+    if a.get("provider") == "openai":
+        how = "AI"
+    elif a.get("draft_status") == "openai_error":
+        how = "AI 호출 실패 — 확인된 정보로 정리"            # Y7-J: 왜 AI 글이 아닌지 카드에서 바로 보이게
+    else:
+        how = "확인된 정보로 정리"
     iid = str(pd.get("item_id") or "")
     return {"line": f"상세 자동 생성({how}) — 확인(바꾸기)",
             "url": f"/seller/collect/preview/{iid}?tab=detail" if iid else "", "label": "확인(바꾸기)"}
@@ -975,6 +1027,13 @@ class UploadDispatcher:
                             r.action_url, r.action_label = _note["url"], _note["line"]
                         elif _note:
                             r.details = list(r.details or []) + [_note["line"]]
+            # Y7-J(오너 2026-10-10): 나갈 글자(상세·초안·옵션 값·브랜드)에서 상표를 지웠으면 카드에 한 줄(보류 아님)
+            try:
+                _mk = mark_note(product_data)
+                if _mk and _mk not in (r.details or []):
+                    r.details = list(r.details or []) + [_mk]
+            except Exception as exc:                             # noqa: BLE001 — 안내 한 줄이라 검증을 막지 않는다
+                logger.warning("[사전검증] 상표 안내 줄 실패: %s", exc)
             # Z9: 쿠팡 대표 사진 글자 판정이 아직이면 「대기 중」 한 줄(보류 아님) — 잡이 결과가 오면 다시 잰다.
             try:
                 from src.services.coupang_image_check import rep_pending as _rep_pending
@@ -1885,15 +1944,18 @@ class UploadDispatcher:
             upload_resp = smartstore_uploader.upload(product_data)
             ext_id = None
             ext_url = None
+            ch_no = None
             if isinstance(upload_resp, dict):
                 ext_id = str(upload_resp.get("product_id") or upload_resp.get("id") or "").strip() or None
                 ext_url = str(upload_resp.get("url") or "").strip() or None
+                ch_no = str(upload_resp.get("channel_product_no") or "").strip() or None
             return UploadResult(
                 market="smartstore",
                 success=True,
                 message="스마트스토어 업로드 성공",
                 external_product_id=ext_id,
                 external_url=ext_url,
+                channel_product_no=ch_no,
             )
         except ImportError:
             _pending_queue.append({"market": "smartstore", "data": product_data})

@@ -163,4 +163,6 @@ def run_upload(
     return {
         "product_id": str(resp.get("product_id") or "").strip() or None,
         "url": str(resp.get("url") or "").strip() or None,
+        # Y7-J: 네이버는 번호가 둘 — 원상품번호(product_id)와 채널 상품번호(구매자 주소·상태 조회)
+        "channel_product_no": str(resp.get("channel_product_no") or "").strip() or None,
     }

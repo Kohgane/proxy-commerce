@@ -1,5 +1,5 @@
 {
- "version": "2026-10-04-Y6",
+ "version": "2026-10-10-Y7J",
  "note": "T1 ko_polish — 상품명·옵션명·옵션값·이미지 줄 번역 공통 후처리. 오너가 화면 C 옆 관리자 화면에서 덮어쓸 수 있다(app_state, 재배포 없이).",
  "delete_cn": [
   "海外特供",
@@ -1792,6 +1792,23 @@
     "Chanel",
     "CHANEL",
     "샤넬"
+   ],
+   "mode": "drop"
+  },
+  {
+   "label": "미야케",
+   "names": [
+    "三宅一生",
+    "三宅",
+    "Issey Miyake",
+    "ISSEY MIYAKE",
+    "Miyake",
+    "MIYAKE",
+    "이세이 미야케",
+    "이세이미야케",
+    "미야케 아키라의",
+    "미야케 아키라",
+    "미야케"
    ],
    "mode": "drop"
   },

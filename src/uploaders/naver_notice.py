@@ -104,9 +104,19 @@ def short_name(product: Dict[str, Any]) -> str:
     for k in ("coupang_name", "title_ko", "title"):
         v = re.sub(r"\s+", " ", str(product.get(k) or "")).strip()
         v = re.sub(r"^\[해외직구\]\s*", "", v)                       # 네이버 상품명 접두는 품명이 아니다
+        v = _unmark(v)                                              # Y7-J: 고시 칸에도 상표 이름을 싣지 않는다
         if v and len(v) <= ITEM_NAME_MAX:
             return v
     return ""
+
+
+def _unmark(text: str) -> str:
+    """Y7-J(오너 2026-10-10) — 상표 게이트(제목과 같은 표: 「미야케」 등)를 고시 칸에도. 이름만 지운다."""
+    try:
+        from src.collectors.ko_polish import strip_marks
+        return strip_marks(text)[0]
+    except Exception:
+        return str(text or "")
 
 
 def origin_text(product: Dict[str, Any], st: Dict[str, str]) -> str:
@@ -128,7 +138,7 @@ def build(product: Dict[str, Any], *, as_phone: str = "", settings: Optional[Dic
     }
     origin = origin_text(product, st)
     # 수집 브랜드가 있으면 그게 제조자(사실) — 없을 때만 「상세페이지 참조」(19:46 KST 400: 브랜드 빈칸으로 빈 제조자)
-    who = str(product.get("brand") or "").strip() or st["manufacturer"]
+    who = _unmark(str(product.get("brand") or "").strip()) or st["manufacturer"]
     maker = who if origin == ref else f"{who} (제조국: {origin})"
     phone = str(as_phone or "").strip()
     t = notice_type(category_path(product))

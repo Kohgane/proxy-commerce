@@ -27,6 +27,10 @@
   .mst-reason { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--danger); background: var(--bg); overflow-wrap: anywhere; }
   .mst-err { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--orange); background: var(--bg); font-size: .85rem; overflow-wrap: anywhere; }
   .mst-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .mst-resend { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px;
+                background: var(--ink); color: var(--hanji, var(--surface)); font-weight: 600; white-space: nowrap; }
+  .mst-resend:disabled { opacity: .6; }
+  .mst-ok { color: var(--success); }
   .mst-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--teal); text-decoration: none; white-space: nowrap; }
 </style>
 <script>
@@ -48,18 +52,52 @@
     var h = '<div class="mst-row" data-role="mst-row" data-market="' + esc(r.market) + '" data-state="' + esc(r.state) + '">' +
       '<div class="mst-top"><span>' + esc(r.market_label || r.chip) + '</span>' +
       '<span class="mst-badge ' + (TONE[r.tone] || '') + '" data-role="mst-state">' + esc(r.label || '확인 못 함') + '</span></div>' +
-      '<div class="mst-meta">상품번호 ' + esc(r.product_id || '없음') + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') +
+      '<div class="mst-meta">' + (r.channel_product_no || String(r.market || '').indexOf('smartstore') === 0
+        ? '원상품번호 ' + esc(r.product_id || '없음') + ' · 채널 상품번호 ' + esc(r.channel_product_no || '없음')
+        : '상품번호 ' + esc(r.product_id || '없음')) + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') +
       (r.status_raw ? ' · 마켓 표기 「' + esc(r.status_raw) + '」' : '') +
       ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') + '</div>';
     if (r.comment) h += '<div class="mst-reason" data-role="mst-reason"><b>반려 사유</b> ' + esc(r.comment) + '</div>';
+    if (r.price_line) h += '<div class="mst-meta" data-role="mst-price-line">판매가 구성: ' + esc(r.price_line) + '</div>';
     if (r.error) h += '<div class="mst-err" data-role="mst-error">마켓에 묻지 못했어요 — ' + esc(r.error) + '</div>';
     var links = '';
     if (r.manage_url) links += '<a href="' + esc(r.manage_url) + '" target="_blank" rel="noopener" data-role="mst-manage">' + esc(r.manage_label || '마켓에서 열기') + '</a>';
     if (r.link) links += '<a href="' + esc(r.link) + '" target="_blank" rel="noopener" data-role="mst-link">구매자 화면</a>';
+    // Y7-J: 네이버 등록본 — 상세 본문만 지금 규칙(사진 위·글 아래·상표 제거)으로 다시 보낸다(가격·옵션·사진 칸은 그대로)
+    if (String(r.market || '').indexOf('smartstore') === 0 && r.product_id)
+      links += '<button type="button" class="mst-resend" data-role="mst-resend" data-market="' + esc(r.market) + '">본문 다시 보내기</button>';
     if (links) h += '<div class="mst-links">' + links + '</div>';
+    if (String(r.market || '').indexOf('smartstore') === 0)
+      h += '<div class="mst-meta" data-role="mst-resend-out" hidden></div>';
     return h + '</div>';
   }
+  var curItem = '';
+  function resend(btn) {
+    var rowEl = btn.closest('[data-role=mst-row]');
+    var out = rowEl && rowEl.querySelector('[data-role=mst-resend-out]');
+    btn.disabled = true; btn.textContent = '보내는 중…';
+    if (out) { out.hidden = false; out.textContent = '본문을 다시 만들고 네이버에 보내는 중…'; }
+    fetch('/seller/collect/' + encodeURIComponent(curItem) + '/naver-resend-detail', {
+      method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({market: btn.getAttribute('data-market')})
+    }).then(function (r) { return r.text().then(function (t) {
+      try { return JSON.parse(t); } catch (e) { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; } }); })
+      .then(function (d) {
+        btn.disabled = false; btn.textContent = '본문 다시 보내기';
+        if (!out) return;
+        var bits = [];
+        if (d && d.ok) bits.push(esc(d.message || '보냈어요'));
+        else bits.push('보내지 못했어요 — ' + esc((d && d.error) || '사유 미상'));
+        if (d && d.marks) bits.push(esc(d.marks));
+        if (d && d.dropped && d.dropped.length) bits.push('못 올린 사진 ' + d.dropped.length + '장 — ' + esc(d.dropped[0].reason || ''));
+        if (d && d.auto && d.auto.draft_status === 'openai_error') bits.push('AI 호출 실패 — 확인된 정보로 정리한 글: ' + esc(d.auto.draft_error || ''));
+        out.innerHTML = bits.join('<br>');
+        out.className = 'mst-meta ' + (d && d.ok ? 'mst-ok' : 'mst-err');
+      }).catch(function (e) { btn.disabled = false; btn.textContent = '본문 다시 보내기';
+        if (out) { out.className = 'mst-err'; out.textContent = '네트워크 오류 — ' + ((e && e.message) || e); } });
+  }
   window.kgpMarketStatus = function (itemId, market) {
+    curItem = itemId;
     body.textContent = '마켓에 묻는 중…';
     if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
     var url = '/seller/collect/' + encodeURIComponent(itemId) + '/market-status' + (market ? '?market=' + encodeURIComponent(market) : '');
@@ -75,6 +113,8 @@
     }).catch(function (e) { body.innerHTML = '<div class="mst-err" data-role="mst-error">네트워크 오류 — ' + esc((e && e.message) || e) + '</div>'; });
   };
   dlg.addEventListener('click', function (ev) {
+    var rs = ev.target.closest && ev.target.closest('[data-role=mst-resend]');
+    if (rs) { ev.preventDefault(); resend(rs); return; }
     if (ev.target === dlg || ev.target.closest('[data-role=mst-close]')) dlg.close ? dlg.close() : dlg.removeAttribute('open');
   });
   // M7: 이미 등록된 마켓(data-registered)을 다시 체크하면 「중복 등록」 확인 **한 번** — 이 화면에서 한 번 확인하면 다시 묻지 않는다.

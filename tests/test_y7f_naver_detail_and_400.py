@@ -80,7 +80,8 @@ def test_dispatcher_builds_naver_detail_and_plug_notice_once(monkeypatch):
     pd = _pleats(description="플리츠 세트 상세.", detail_images=["https://res.cloudinary.com/x/d1.jpg"])
     ss, _ = UploadDispatcher._payload_for_market(pd, "smartstore")
     body = ss["description_html"]
-    assert body.index(PLUG_CN_TITLE) < body.index("플리츠 세트 상세.") < body.index("d1.jpg")
+    # Y7-J(오너 2026-10-10): 사진 위 · 글 아래 — 플러그 고지(맨 위) → 대표·갤러리 → 상세 이미지 → 글
+    assert body.index(PLUG_CN_TITLE) < body.index("d1.jpg") < body.index("플리츠 세트 상세.")
     assert body.count(PURCHASE_AGENT_NOTICE) == 1                                         # 두 번 붙지 않는다
     cp, _ = UploadDispatcher._payload_for_market(pd, "coupang")
     assert "d1.jpg" not in str(cp.get("description_html") or "")                         # 쿠팡 본문 출처는 그대로(이번 범위 밖)

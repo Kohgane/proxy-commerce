@@ -16,6 +16,12 @@ Y7-G(오너 2026-10-09 15:56 KST — 사전검증 「통과」 → 등록 「상
 - 판정은 **`judge()` 하나** — 사전검증과 등록이 같은 본문(`build`)을 같은 업로더로 네이버 CDN에 올린 **뒤** 잰다.
   예전 사전검증은 「상세 이미지 URL이 있다」로 통과시켰고, 등록은 그 장을 받아 → 변환 → 올리다 못 올려 빈 본문이 됐다.
 - 셀러 텍스트가 없으면 `detail_auto`(사전검증이 자동으로 만든 상세 초안 — 텍스트 + 갤러리 사진)를 쓴다.
+
+Y7-J(오너 2026-10-10 셰고가 13802276439 — 본문 이미지 0장, 글은 제목 낱말 나열):
+- 순서는 **사진 위 · 글 아래** — 대표·갤러리(앞 `GALLERY_MAX`장) → 상세 이미지 → 글 → 고지. 사진은 글이 셀러 것이든
+  자동 초안이든 **항상** 싣는다. 그 상품은 편집 화면이 자동 초안 글을 상세 칸에 미리 채워 「셀러 글」로 보냈고,
+  그러면 자동 초안 사진(갤러리 3장 — 네이버 CDN에 이미 올라가 있었다)을 버렸다 → 남은 상세 1장(webp)은 업로드 실패 → 0장.
+- 글에 든 상표(제목과 같은 표)는 그 **줄째** 뺀다(`market_description` · HTML이면 이름만).
 """
 from __future__ import annotations
 
@@ -27,7 +33,7 @@ def _text_of(pd: Dict[str, Any]) -> str:
     """보낼 상세 설명 텍스트 — 이미 HTML이면 그대로, 아니면 마켓 규칙(한국어만·가게 줄 뺌)을 지난 평문."""
     raw = str(pd.get("description_html") or "").strip()
     if raw:
-        return raw
+        return _unmark_html(raw)
     txt = str(pd.get("description") or pd.get("description_ko") or "").strip()
     if not txt:
         return ""
@@ -36,8 +42,29 @@ def _text_of(pd: Dict[str, Any]) -> str:
         txt = market_description(txt)
     except Exception:
         pass
+    if _is_auto_echo(pd, txt):
+        return ""                      # Y7-J: 편집 화면이 미리 채운 자동 초안이 그대로 돌아온 것 — 셀러 글이 아니다
     paras = [p.strip() for p in txt.replace("\r", "").split("\n\n") if p.strip()]
     return "".join('<p style="margin:0 0 12px;white-space:pre-wrap">' + _html.escape(p) + "</p>" for p in paras)
+
+
+def _norm(t: str) -> str:
+    import re as _re
+    return _re.sub(r"\s+", " ", str(t or "")).strip()
+
+
+def _is_auto_echo(pd: Dict[str, Any], txt: str) -> bool:
+    """보낸 상세 글이 저장된 자동 초안과 같은가(마켓 규칙을 똑같이 지난 뒤 비교). 같으면 그건 초안이다.
+    13802276439: 편집 화면이 초안 글을 상세 칸에 미리 채워 등록이 「셀러 글」로 읽었고, 초안 사진(갤러리)을 버렸다."""
+    a = pd.get("detail_auto")
+    if not (isinstance(a, dict) and str(a.get("text") or "").strip() and txt):
+        return False
+    try:
+        from src.seller_console.upload_dispatcher import market_description
+        at = market_description(str(a.get("text") or ""))
+    except Exception:
+        at = str(a.get("text") or "")
+    return _norm(at) == _norm(txt)
 
 
 def auto_of(pd: Dict[str, Any]) -> Dict[str, Any]:
@@ -91,26 +118,58 @@ def has_content(pd: Dict[str, Any]) -> bool:
     return bool(detail_images(pd)) or bool(_text_of(pd)) or bool(auto_of(pd))
 
 
+GALLERY_MAX = 5
+
+
+def gallery_images(pd: Dict[str, Any]) -> List[str]:
+    """본문 맨 위에 실을 대표·갤러리 사진 — 등록이 보낼 목록(`images_effective` → `images`) 앞 `GALLERY_MAX`장.
+    없으면 자동 초안이 저장해 둔 사진."""
+    g = _expand(pd.get("images_effective") or pd.get("images"))
+    if not g and auto_of(pd):
+        g = _expand(auto_of(pd).get("images"))
+    return g[:GALLERY_MAX]
+
+
 def build(pd: Dict[str, Any]) -> str:
-    """상세페이지 HTML — 이미지도 텍스트도 없으면 ''. 셀러 텍스트가 없으면 자동 초안(텍스트 + 갤러리 사진)을 얹는다."""
+    """상세페이지 HTML — 사진(대표·갤러리 → 상세) 위, 글 아래, 고지 끝. 사진도 글도 없으면 ''.
+    글: 셀러 텍스트 → 없으면 자동 초안 텍스트."""
     text = _text_of(pd)
-    imgs = detail_images(pd)
     if not text and auto_of(pd):
         text = _auto_text(pd)
-        imgs = imgs + [u for u in _expand(auto_of(pd).get("images")) if u not in imgs]
+    imgs: List[str] = []
+    for u in gallery_images(pd) + detail_images(pd):
+        if u not in imgs:
+            imgs.append(u)
     if not text and not imgs:
         return ""
     from src.seller_console.notice_texts import PURCHASE_AGENT_NOTICE
     parts = ['<div style="max-width:860px;margin:0 auto">']
-    if text:
-        parts.append(text)
     for u in imgs:
         parts.append('<img src="' + _html.escape(u, quote=True) + '" style="max-width:100%;display:block;margin:0 auto" alt="">')
+    if text:
+        parts.append('<div style="margin-top:24px">' + text + "</div>")
     if PURCHASE_AGENT_NOTICE not in text:
         parts.append('<p class="kgp-agent-notice" style="margin-top:20px;font-size:12px;color:#666">'
                      + _html.escape(PURCHASE_AGENT_NOTICE) + "</p>")
     parts.append("</div>")
     return "".join(parts)
+
+
+def _unmark_html(raw: str) -> str:
+    """셀러 HTML(꾸미기 블록 아닌 것) — 태그 밖 글자에서 상표 이름만 지운다(줄 구분이 없으므로). 걸린 조각만 바꾼다."""
+    import re as _re
+    try:
+        from src.collectors.ko_polish import strip_marks
+    except Exception:
+        return raw
+    out = []
+    for seg in _re.split(r"(<[^>]+>)", raw):
+        if seg and not seg.startswith("<"):
+            cleaned, labs = strip_marks(_html.unescape(seg))
+            if labs:
+                seg = _html.escape(cleaned, quote=False)
+        out.append(seg)
+    return "".join(out)
 
 
 def judge(html_body: str, uploader=None, sku: str = "") -> Dict[str, Any]:

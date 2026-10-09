@@ -392,6 +392,47 @@ def calc_sell_price(buy_price, buy_currency, market, margin_pct, fx_rates=None,
     return round((landed + ship) / denom, 2)
 
 
+def sell_price_parts(buy_price, buy_currency, market, margin_pct, fx_rates=None, shipping_fee=None) -> dict:
+    """Y7-J(오너 2026-10-10) — `calc_sell_price`와 **같은 입력·같은 식**의 구성 한 줄(판매가가 어디서 왔나).
+
+    반환 `{cost_krw, fx, forwarder_krw, shipping_krw, shipping_src, customs_pct, landed_krw, domestic_krw,
+    commission_pct, margin_pct, sell_krw, line}`. 수수료를 모르면 `line`에 그 사유(값은 지어내지 않음).
+    """
+    if fx_rates is None:
+        fx_rates = _build_fx_rates()
+    cur = str(buy_currency or "").upper()
+    buy = Decimal(str(buy_price))
+    cost = _to_krw(buy, cur, fx_rates)
+    fwd = _to_krw(Decimal(os.getenv('FORWARDER_FEE_JPY', '300')), 'JPY', fx_rates)
+    ship_src = "배송비 엔진" if shipping_fee is not None else "기본값 — 무게·크기를 몰라서"
+    ship = Decimal(str(shipping_fee if shipping_fee is not None else os.getenv('SHIPPING_FEE_DEFAULT', '12000')))
+    thr = Decimal(os.getenv('CUSTOMS_THRESHOLD_KRW', '150000'))
+    customs = Decimal(os.getenv('CUSTOMS_RATE_DEFAULT', '0.20')) if cost > thr else Decimal('0')
+    landed = (cost + fwd + ship) * (Decimal('1') + customs)
+    dom = domestic_shipping_krw(market)
+    comm, why = commission_pct(market)
+    rate = fx_rates.get(f"{cur}KRW") if cur != "KRW" else 1
+    out = {"cost_krw": float(cost), "fx": float(rate or 0), "forwarder_krw": float(fwd), "shipping_krw": float(ship),
+           "shipping_src": ship_src, "customs_pct": float(customs * 100), "landed_krw": float(landed),
+           "domestic_krw": float(dom), "commission_pct": None if comm is None else float(comm),
+           "margin_pct": float(margin_pct), "sell_krw": None}
+    head = (f"원가 {float(buy):g} {cur}×{float(rate or 0):g} = {float(cost):,.0f}원 + 배대지 {float(fwd):,.0f}원 + 국제배송 "
+            f"{float(ship):,.0f}원({ship_src})" + (f" × 관부가세 {float(customs * 100):g}%" if customs else "")
+            + f" + 국내배송 {float(dom):,.0f}원")
+    if comm is None:
+        out["line"] = head + " — 이 마켓 수수료율이 등록돼 있지 않아 판매가를 낼 수 없어요"
+        return out
+    denom = (Decimal('100') - comm - Decimal(str(margin_pct))) / Decimal('100')
+    if denom <= 0:
+        out["line"] = head + f" ÷ (1 − 수수료 {float(comm):g}% − 마진 {float(margin_pct):g}%) — 합이 100% 이상이라 판매가가 없어요"
+        return out
+    sell = (landed + dom) / denom
+    out["sell_krw"] = float(round(sell, 2))
+    out["line"] = (head + f" = {float(landed + dom):,.0f}원 ÷ (1 − 수수료 {float(comm):g}% − 마진 {float(margin_pct):g}%)"
+                   f" = {float(sell):,.0f}원 → 10원 올림 {int(-(-float(sell) // 10) * 10):,}원")
+    return out
+
+
 def reference_market() -> str:
     """마켓이 정해지기 **전에** 값을 보여 줘야 하는 자리(수집 초안·카탈로그 내보내기)가
     쓰는 기준 마켓.
