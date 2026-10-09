@@ -85,7 +85,8 @@ def fake(monkeypatch):
 
     monkeypatch.setattr(pg, "_connect", connect)
     monkeypatch.setattr(pg, "db_url", lambda: "postgresql://fake")
-    monkeypatch.setattr(pg, "_persistent_pool", lambda: pytest.fail("잡이 요청 풀을 건드림"))
+    # 요청 연결 경로는 이 계약 밖 — 앞 테스트가 남긴 요청 컨텍스트가 있어도 잡 범위만 보게(잡이 요청 풀을 안 빌리는 건 PG 레인 실측)
+    monkeypatch.setattr(pg, "_request_read_conn", lambda: (None, False))
     return pg, opened
 
 
@@ -224,7 +225,7 @@ def test_tx_error_rolls_back_and_connection_stays(fake):
 
 
 def test_prevalidate_job_runs_inside_the_scope(monkeypatch):
-    """잡 본문(마켓별 스레드 포함)이 범위 안에서 돈다 — 잡 줄의 db_conn이 잡 연결을 센다(첫 읽기 전에 계측 시작)."""
+    """잡 본문(마켓별 스레드 포함)이 범위 안에서 돈다. 잡 줄 db_conn=1(첫 읽기 전에 계측 시작)은 PG 레인 실측."""
     import src.seller_console.views as V
     seen = []
 
@@ -251,6 +252,3 @@ def test_prevalidate_job_runs_inside_the_scope(monkeypatch):
         d = _pv(c, {"product": {"title": "플리츠 세트"}, "markets": ["coupang", "smartstore"]})
     assert d.get("state") == "done", d
     assert len(seen) == 2 and seen[0] is not None and seen[0] is seen[1]   # 두 마켓 스레드 = 같은 잡 범위
-    src = open("src/seller_console/views.py", encoding="utf-8").read()
-    body = src[src.index("def _pv_job_run("):]
-    assert body.index("p0 = _pv_perf_now()") < body.index("state_get(_PV_JOB_KEY + job_id)")

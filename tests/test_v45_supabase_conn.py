@@ -46,9 +46,12 @@ def test_psycopg3_nullpool_and_no_prepared():
     assert ('getconn' not in PGSRC) or ("_persistent_pool" in PGSRC)  # getconn은 풀 경로에서만
     # tx()·get_conn()은 1회용(즉시 close). query()는 속도 최적화로 요청 범위 내 읽기 연결을 재사용하되
     #   요청 종료 시 close_request_conn(teardown)로 닫는다(연결 누수 0) + 요청 밖 1회용 경로는 즉시 close.
+    #   Z9 후속: tx()는 잡 범위(`pg.job_conn`) 안이면 잡 연결을 함께 쓰고(범위 끝에 닫음), 그 밖의 1회용 경로는 즉시 close.
+    #   글자 수 창(400자)이 아니라 함수 본문 전체에서 본다 — 잡 분기가 앞에 붙어도 1회용 close 계약은 그대로다.
     for fn in ("def tx(", "def get_conn("):
         j = PGSRC.index(fn)
-        assert "conn.close()" in PGSRC[j:j + 400], fn
+        k = PGSRC.find("\n@contextlib.contextmanager", j)
+        assert "conn.close()" in PGSRC[j:k if k > 0 else None], fn
     assert "close_request_conn" in PGSRC          # 요청 범위 재사용 연결의 명시적 종료
     assert "conn.close()" in PGSRC[PGSRC.index("def query("):]   # query 1회용 경로도 close
 

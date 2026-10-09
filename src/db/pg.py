@@ -227,18 +227,11 @@ def get_conn(*, autocommit: bool = False):
 @contextlib.contextmanager
 def tx():
     """트랜잭션 — 블록 정상 종료 시 commit, 예외 시 rollback. (커밋 후에만 성공 응답)"""
-    sc = _job_scope.get()
-    if sc is not None:
-        held = sc.acquire()
-        if held is not None:
-            conn, is_new = held
-            _perf_mark("db_write", new_conn=is_new)
-            try:
-                with conn.transaction(), conn.cursor() as cur, _timed_db():
-                    yield cur
-            finally:
-                sc.release()
-            return
+    held = _job_hold()
+    if held is not None:
+        with _job_block(held, "db_write", write=True) as cur:
+            yield cur
+        return
     _perf_mark("db_write")
     conn = _connect(db_url(), autocommit=False)
     try:
@@ -446,6 +439,27 @@ def job_conn_wait_sec() -> float:
         return 2.0
 
 
+def _job_hold():
+    """잡 범위 안이면 (범위, 연결, 새로 열었나) — 아니거나 못 쓰면 None(1회용 연결로)."""
+    sc = _job_scope.get()
+    if sc is None:
+        return None
+    got = sc.acquire()
+    return None if got is None else (sc, got[0], got[1])
+
+
+@contextlib.contextmanager
+def _job_block(held, kind: str, *, write: bool = False):
+    """잡 연결 한 블록 — 쓰기는 명시 트랜잭션(끝나면 commit, 예외면 rollback), 끝나면 반납."""
+    sc, conn, is_new = held
+    _perf_mark(kind, new_conn=is_new)
+    try:
+        with (conn.transaction() if write else contextlib.nullcontext()), conn.cursor() as cur, _timed_db():
+            yield cur
+    finally:
+        sc.release()
+
+
 @contextlib.contextmanager
 def job_conn():
     """잡(백그라운드 작업) 범위 — 안에서 부르는 query()/tx()가 연결 1개를 함께 쓴다. 끝나면 닫는다.
@@ -479,18 +493,11 @@ def query():
         with conn.cursor() as cur, _timed_db():
             yield cur
         return
-    sc = _job_scope.get()
-    if sc is not None:
-        held = sc.acquire()
-        if held is not None:
-            conn, is_new = held
-            _perf_mark("db_read", new_conn=is_new)
-            try:
-                with conn.cursor() as cur, _timed_db():
-                    yield cur
-            finally:
-                sc.release()
-            return
+    held = _job_hold()
+    if held is not None:
+        with _job_block(held, "db_read") as cur:
+            yield cur
+        return
     _perf_mark("db_read", new_conn=True)
     conn = _connect(db_url(), autocommit=True)
     try:
