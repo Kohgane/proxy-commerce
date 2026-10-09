@@ -2192,16 +2192,17 @@ def _brand_value_rows(product: dict) -> list:
         vko = value_ko_map(product)
         ov = product.get("option_value_overrides") if isinstance(product.get("option_value_overrides"), dict) else {}
         opts = [o for o in (product.get("options") or []) if isinstance(o, dict)]
+        from src.collectors import option_ko as _okx
+        _axn = [a["name_ko"] for a in _okx.options_view(product)]     # Y7-I: 축 이름은 한 함수(원문 열쇠)
         cand = []                                           # (kind, orig, where, 나가는 값)
         for k in product.get("skus") or []:
             spec = k.get("spec") if isinstance(k, dict) else None
             for i, v in enumerate(spec if isinstance(spec, list) else []):
-                o = opts[i] if i < len(opts) else {}
-                cand.append(("option", str(v), str(o.get("name_ko") or o.get("name") or "옵션"), str(v)))
-        for o in opts:
+                cand.append(("option", str(v), (_axn[i] if i < len(_axn) else "") or "옵션", str(v)))
+        for i, o in enumerate(opts):
             for v in o.get("values") or []:
                 sv = str(v.get("name") if isinstance(v, dict) else v)
-                cand.append(("option", sv, str(o.get("name_ko") or o.get("name") or "옵션"), sv))
+                cand.append(("option", sv, (_axn[i] if i < len(_axn) else "") or "옵션", sv))
         for sp in product.get("detail_specs") or []:
             if isinstance(sp, (list, tuple)) and len(sp) >= 2:
                 cand.append(("spec", str(sp[1]), f"규격표 {sp[0]}", str(sp[1])))
@@ -2879,6 +2880,9 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 if _g:
                     product_data["images_effective"] = list(_g)
                 _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
+                # Y7-I: 축 이름 덮어쓰기는 서버 저장값을 둘로 나눠 싣는다(화면이 보낸 표를 믿지 않는다 — 원문 아닌 열쇠·쿠팡 메타 이름 분리)
+                from src.collectors.option_ko import split_name_overrides as _sno
+                product_data["option_name_overrides"], product_data["coupang_option_names"] = _sno(_uex)
                 # Y7-G: 사전검증이 만든 상세 자동 초안 — 등록도 같은 자리에서 싣는다(셀러 텍스트가 없을 때만 쓰인다)
                 if isinstance(_uex.get("detail_auto"), dict):
                     product_data["detail_auto"] = _uex["detail_auto"]
@@ -14609,7 +14613,7 @@ def coupang_brand_pos_save():
 def collect_option_name_pick(item_id: str):
     """F51-b-3: 메타에 없는 옵션 축 이름 — 오너가 **이 카테고리 메타 속성명** 중에서 고른 것.
 
-    `option_name_overrides[원문 이름] = 메타 이름`(해석 순서 0번). 용어집엔 넣지 않는다(후보만).
+    Y7-I: `coupang_option_names[원문 이름] = 메타 이름`(쿠팡 전용 — 네이버 그룹 이름·화면엔 안 나간다). 용어집엔 후보만.
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
@@ -14631,9 +14635,13 @@ def collect_option_name_pick(item_id: str):
     _src_names = {str(o.get("name") or "").strip() for o in (ex.get("options") or []) if isinstance(o, dict)}
     if orig not in _src_names:
         return jsonify({"ok": False, "error": f"「{orig}」은 이 상품의 원래 옵션 이름이 아니에요 — 화면을 새로 고친 뒤 다시 골라 주세요."}), 400
-    ov = dict(ex.get("option_name_overrides") or {})
+    # Y7-I: 쿠팡 메타 이름은 **쿠팡 전용 표**에 — 보이는 이름 표(`option_name_overrides`)에 넣으면 네이버 그룹 이름·화면까지 바뀐다
+    ov = dict(ex.get("coupang_option_names") or {})
     ov[orig] = name
-    ex["option_name_overrides"] = ov
+    ex["coupang_option_names"] = ov
+    nov = dict(ex.get("option_name_overrides") or {})
+    if nov.pop(orig, None) is not None:
+        ex["option_name_overrides"] = nov
     cands = [c for c in (ex.get("glossary_candidates") or []) if isinstance(c, dict) and c.get("orig") != orig]
     cands.append({"orig": orig, "value": name, "kind": "name",
                   "at": _dt.datetime.now(_dt.timezone.utc).isoformat()})

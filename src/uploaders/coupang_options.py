@@ -455,8 +455,10 @@ def resolve_option_name(name: str, meta_names, *, name_ko: str = "", override: s
 
 
 def _name_ctx(product: Dict) -> tuple:
-    ov = product.get("option_name_overrides") if isinstance(product.get("option_name_overrides"), dict) else {}
-    return names_ko_map(product), ov
+    """Y7-I: 쿠팡은 사람이 고친 이름 위에 **쿠팡 메타 이름**(SKU 칸에서 고른 것)을 얹어 본다 — 둘 다 원문 열쇠."""
+    from src.collectors.option_ko import split_name_overrides
+    human, coupang = split_name_overrides(product)
+    return names_ko_map(product), {**human, **coupang}
 
 
 def override_for(ov: Dict, name: str, src_name: str = "") -> str:

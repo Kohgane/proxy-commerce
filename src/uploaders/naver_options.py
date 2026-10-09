@@ -38,6 +38,8 @@ REASON_LIMIT = "option_limit"
 REASON_UNTRANSLATED = "option_untranslated"
 REASON_DUPLICATE = "option_duplicate"
 REASON_PRICE = "option_price"
+#: Y7-I(오너 2026-10-09 23:25 KST 400 「중복된 옵션이 있습니다. (옵션명 : 색상)」) — 그룹 이름 중복·빈 이름.
+REASON_GROUP_DUP = "naver_option_dup"
 
 
 def combo_limit() -> int:
@@ -59,12 +61,46 @@ def _skus(product: Dict) -> List[Dict]:
             if isinstance(k, dict) and k.get("spec") and not non_option_sku(k)]
 
 
+def group_names(product: Dict, axes: int) -> List[str]:
+    """조합형 그룹 이름 — 축 이름 한 함수(`option_ko.options_view` → `axis_ko`, 원문 열쇠). 사전검증·등록이 같이 쓴다."""
+    from src.collectors import option_ko as K
+    groups = [a["name_ko"] for a in K.options_view(product)][:axes]
+    if len(groups) < axes:                         # 옵션 축 이름이 없으면 SKU 스펙 순서로 「옵션1」…
+        groups += [f"옵션{i + 1}" for i in range(len(groups), axes)]
+    return groups
+
+
+def group_hold(product: Dict) -> str:
+    """Y7-I — 그룹 이름이 비었거나 겹치면 보내지 않는다(네이버 400 「중복된 옵션이 있습니다」). 아니면 ''."""
+    skus = _skus(product or {})
+    if len(skus) <= 1:
+        return ""
+    axes = max(len(k.get("spec") or []) for k in skus)
+    groups = group_names(product, min(axes, MAX_AXES))
+    if any(not str(g or "").strip() for g in groups):
+        return "보류: 네이버 옵션 그룹 이름이 비었어요 — 옵션 탭에서 축 이름을 넣어 주세요"
+    seen, dup = set(), []
+    for g in groups:
+        k = str(g).strip().lower()
+        if k in seen:
+            dup.append(g)
+        seen.add(k)
+    if dup:
+        return (f"보류: 네이버 옵션 그룹 이름이 겹쳐요({' · '.join(groups)}) — 「{dup[0]}」이 두 번. "
+                "옵션 탭에서 축 이름을 나눠 주세요")
+    return ""
+
+
 def limit_hold(product: Dict) -> str:
     """구조만 본다(가격 없이도 판정 — 사전검증용). 넘으면 사람 말 한 줄, 아니면 빈 문자열."""
     skus = _skus(product or {})
     if len(skus) <= 1:
         return ""
     axes = max(len(k.get("spec") or []) for k in skus)
+    if axes <= MAX_AXES:
+        gh = group_hold(product)
+        if gh:
+            return gh
     if axes > MAX_AXES:
         return (f"보류: 네이버 옵션은 {MAX_AXES}축까지 보내요 — 이 상품은 {axes}축"
                 f"({' / '.join(str(s) for s in skus[0].get('spec') or [])}). 축을 줄이면 보낼 수 있어요")
@@ -85,15 +121,13 @@ def plan(product: Dict, *, stock_default: int = 999) -> Dict:
         return out
     hold = limit_hold(product)
     if hold:
-        return {**out, "mode": "hold", "reason_code": REASON_LIMIT, "why": hold}
+        code = REASON_GROUP_DUP if hold == group_hold(product) else REASON_LIMIT
+        return {**out, "mode": "hold", "reason_code": code, "why": hold}
 
     from src.collectors import option_ko as K
     from src.uploaders.coupang_options import _as_float
     axes = max(len(k.get("spec") or []) for k in skus)
-    view = K.options_view(product)
-    groups = [a["name_ko"] for a in view][:axes]
-    if len(groups) < axes:                         # 옵션 축 이름이 없으면 SKU 스펙 순서로 「옵션1」…
-        groups += [f"옵션{i + 1}" for i in range(len(groups), axes)]
+    groups = group_names(product, axes)
 
     rows, no_price, untranslated = [], [], []
     for k in skus:

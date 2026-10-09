@@ -98,6 +98,9 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "_names_ko": pd.get("option_names_ko") if isinstance(pd.get("option_names_ko"), dict) else {},
         "option_name_overrides": (pd.get("option_name_overrides")
                                   if isinstance(pd.get("option_name_overrides"), dict) else {}),
+        # Y7-I — 쿠팡 메타 이름(쿠팡 SKU 칸에서 고른 것). 쿠팡만 쓴다 — 네이버 그룹 이름·화면엔 안 나간다.
+        "coupang_option_names": (pd.get("coupang_option_names")
+                                 if isinstance(pd.get("coupang_option_names"), dict) else {}),
         # F53 — 쿠팡 전용 상품명(오너가 확인·수정한 값)과 브랜드 위치. 떨어지면 번역 문장이 그대로 간다.
         "coupang_name": str(pd.get("coupang_name") or "").strip(),
         "coupang_name_source": str(pd.get("coupang_name_source") or "").strip(),

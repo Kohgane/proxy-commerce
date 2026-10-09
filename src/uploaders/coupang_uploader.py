@@ -503,6 +503,7 @@ class CoupangUploader(BaseUploader):
             'option_value_overrides': collected.get('option_value_overrides') or {},
             '_names_ko': collected.get('_names_ko') or {},
             'option_name_overrides': collected.get('option_name_overrides') or {},
+            'coupang_option_names': collected.get('coupang_option_names') or {},          # Y7-I
             'tags': collected.get('tags', []),
             'shipping_fee': 0,
             'delivery_days': '7-14',

@@ -155,7 +155,8 @@ def test_name_pick_route_stores_override(monkeypatch):
     r = c.post(f"/seller/collect/preview/{iid}/option-name", json={"orig": "商品规格", "name": "색상"}).get_json()
     assert r["ok"] and r["overrides"] == {"商品规格": "색상"}
     ex = json.loads(S.get(iid, seller_id=seller)["extra_json"])
-    assert ex["option_name_overrides"] == {"商品规格": "색상"}
+    # Y7-I: 쿠팡 메타 이름은 쿠팡 전용 표 — 보이는 이름 표(네이버 그룹 이름·화면)엔 안 들어간다
+    assert ex["coupang_option_names"] == {"商品规格": "색상"} and "option_name_overrides" not in ex
 
 
 def test_name_overrides_reach_the_uploader():

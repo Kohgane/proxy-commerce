@@ -1200,11 +1200,17 @@ class UploadDispatcher:
                         message=f"보류: 스토어 한도 — {_lim['limit']:,} 도달 ({_lim['text']}) · 다른 마켓은 그대로 진행돼요",
                         hint="스토어당 판매중·판매대기·품절 합계 1,000이 상한이에요 — 자리가 생기면 다시 사전검증해 주세요.")
             # Y7: 조합형 옵션 — 축 2개·조합 상한을 넘으면 보내지 않는다(등록과 같은 판정 `naver_options.limit_hold`).
-            from src.uploaders.naver_options import limit_hold as _ol, REASON_LIMIT as _OL
+            #   Y7-I: 그룹 이름 중복·빈 이름도 여기서(`naver_option_dup`) — 등록 `plan`과 같은 함수.
+            from src.uploaders.naver_options import (limit_hold as _ol, group_hold as _gh, REASON_LIMIT as _OL,
+                                                     REASON_GROUP_DUP as _OD)
             _olh = _ol(product_data)
             if _olh:
-                return PrevalidationResult(market=market, ok=False, hold=True, error_code=_OL, message=_olh,
-                                           hint="다른 마켓은 그대로 진행돼요.")
+                _code = _OD if _olh == _gh(product_data) else _OL
+                return PrevalidationResult(market=market, ok=False, hold=True, error_code=_code, message=_olh,
+                                           hint="다른 마켓은 그대로 진행돼요.",
+                                           action_url=(f"/seller/collect/preview/{product_data.get('item_id')}?tab=options"
+                                                       if _code == _OD and product_data.get("item_id") else ""),
+                                           action_label=("옵션 탭 →" if _code == _OD and product_data.get("item_id") else ""))
 
         # 토큰/환경변수 검증
         required_envs = _MARKET_REQUIRED_ENVS.get(market, [])

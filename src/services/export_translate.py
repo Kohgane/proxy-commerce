@@ -93,8 +93,10 @@ def product_to_ja(product: Dict) -> Dict:
     desc = str(product.get("description_ko") or product.get("description") or "")
     opts = [o for o in (product.get("options") or []) if isinstance(o, dict)]
     flat = [title, desc]
-    for o in opts:
-        flat.append(str(o.get("name_ko") or o.get("name") or ""))
+    from src.collectors import option_ko as _ok
+    _axn = [a["name_ko"] for a in _ok.options_view(product)]          # Y7-I: 축 이름은 한 함수(원문 열쇠)
+    for i, o in enumerate(opts):
+        flat.append(str((_axn[i] if i < len(_axn) else "") or o.get("name_ko") or o.get("name") or ""))
         vk = list(o.get("values_ko") or [])
         vals = [str(v.get("name") if isinstance(v, dict) else v) for v in (o.get("values") or [])]
         flat += [str(vk[i] if i < len(vk) and vk[i] else vals[i]) for i in range(len(vals))]
