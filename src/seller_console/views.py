@@ -4246,13 +4246,23 @@ def _pv_perf_diff(a: dict, b: dict) -> dict:
 
 
 def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
+    """Z9 후속(오너 2026-10-09 13:31 KST 실측 — 잡 한 번에 연결 19회·합 385ms): 잡 전체가 DB 연결 1개를 함께 쓴다.
+
+    마켓별 스레드도 물려받는다(차례로). 요청 풀과는 섞지 않는다 — `pg.job_conn` 주석.
+    """
+    from src.db import pg as _pg
+    with _pg.job_conn():
+        _pv_job_run(job_id, data, markets, dispatcher)
+
+
+def _pv_job_run(job_id: str, data: dict, markets: list, dispatcher) -> None:
     import time as _time
     from . import market_credentials as mc
     from src.utils import stall_guard as _sg
+    t_job = _time.monotonic()
+    p0 = _pv_perf_now()                                          # 잡 연결을 여는 첫 읽기보다 먼저 — db_connect가 잡 줄에 실리게
     st0 = (_pv_store().state_get(_PV_JOB_KEY + job_id) or {})
     deadline_ts = float(st0.get("started_ts") or _time.time()) + _PV_JOB_DEADLINE_SEC
-    t_job = _time.monotonic()
-    p0 = _pv_perf_now()
     _sg.begin(f"pv_job:{job_id[:8]}")                            # Z9: 잡 스레드도 10초 스톨 감시
     try:
         t0 = _time.monotonic()
