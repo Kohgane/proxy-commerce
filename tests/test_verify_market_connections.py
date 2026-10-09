@@ -33,7 +33,7 @@ class TestPrevalidateEnvAliases:
         from src.seller_console.upload_dispatcher import UploadDispatcher
         # Y7-B: 스마트스토어는 네이버 리프 카테고리가 정해져야 통과 — 이 계약은 env 이름 별칭만 본다
         prod = {"title": "T", "sell_price_krw": 19900, "price": 19900, "currency": "KRW", "images": ["/seller/static/icon-512.png"],
-                "naver_category_id": "50000805"}
+                "naver_category_id": "50000805", "description": "상세"}      # Y7-F: 네이버 상세 본문 필수
         return UploadDispatcher().prevalidate(prod, [market])[0]
 
     def test_woocommerce_accepts_woo_names(self, monkeypatch):

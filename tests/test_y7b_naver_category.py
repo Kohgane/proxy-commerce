@@ -51,6 +51,7 @@ def _pleats(**over):
     src = ["黑色上衣", "黑色半裙"]
     pd = {"sku": "PLEATS-1", "title_ko": "플리츠 미니멀 여성 여름 세트", "sell_price_krw": 52000, "price": 168,
           "currency": "CNY", "images": ["https://img.alicdn.com/a.jpg"], "category_code": "CLO", "item_id": "it-1",
+          "description": "가볍고 시원한 플리츠 상의와 스커트 세트입니다.",       # Y7-F: 네이버 상세 본문 필수(빈 본문은 따로 잰다)
           "options": [{"name": "颜色分类", "values": src}, {"name": "尺码", "values": ["均码"]}],
           "skus": [{"sku_id": str(i), "spec": [v, "均码"], "stock": 5, "sell_price_krw": 52000} for i, v in enumerate(src)]}
     pd.update(over)

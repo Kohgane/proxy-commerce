@@ -473,6 +473,11 @@ class UploadResult:
     # F48-c — 마켓 거부 문장 **한 줄씩**(쿠팡 `|` 분리 · errorItems[].itemAttributes[].message)
     details: List[str] = field(default_factory=list)
     action_url: str = ""                       # M1-1 — 고치러 갈 화면(마켓 연동 등)
+    action_label: str = ""                     # Y7-F — 그 버튼의 글자(「상세페이지 꾸미기 →」 등). 비면 화면이 주소로 고른다
+
+
+#: Y7-F — 다시 눌러 볼 만한 실패(통신·일시 오류)만. 400 입력값 거부·전송 전 보류는 다시 해도 같은 답 — 「재시도」를 보이지 않는다.
+RETRYABLE_CODES = frozenset({"api_error", "market_unreachable"})
 
 
 @dataclass
@@ -507,6 +512,8 @@ class DispatchResult:
                     "hint": r.hint,
                     "details": list(r.details or []),
                     "action_url": r.action_url or "",
+                    "action_label": r.action_label or "",
+                    "retryable": (not r.success and not r.queued and (r.error_code or "") in RETRYABLE_CODES),
                 }
                 for r in self.results
             ],
@@ -537,6 +544,8 @@ class PrevalidationResult:
     fixes: List[str] = field(default_factory=list)
     # Y7-C — 스마트스토어 카테고리 한 줄 재료 `{id, name, source, label, candidates, why, change_url}`(naver_categories.describe).
     category: Dict[str, Any] = field(default_factory=dict)
+    # Y7-F — 고칠 곳 버튼 글자(「상세페이지 꾸미기 →」 등). 비면 화면이 주소로 고른다.
+    action_label: str = ""
     # Z9 — 쿠팡 대표 사진 글자 판정(OCR)이 아직 안 끝났다. 사전검증은 기다리지 않고 통과/판정하고,
     #   결과가 오면 잡이 이 마켓 줄을 다시 그린다(카드는 폴링으로 받는다). 보류 아님.
     rep_pending: bool = False
@@ -683,6 +692,40 @@ def korea_voltage_filter(payload: Dict[str, Any], market: str) -> Dict[str, Any]
         return payload
 
 
+#: 네이버 문서 상한(판매가·옵션가 모두 ≤ 999,999,990). 옵션가의 「판매가 대비 %」 범위는 문서에서 확인하지 못해 재지 않는다.
+NAVER_PRICE_MAX = 999_999_990
+
+
+def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Y7-F — 네이버 필수 칸을 **보내기 전에** 잰다. `[{short, line, fix, code, action_url, action_label}]`.
+
+    상세 본문: 셀러가 꾸민 블록도, 상세 이미지도, 상세 설명 텍스트도 없으면 `naver_required_detailContent`(fix `detail_blank`).
+    옵션가: 조합형으로 보낼 때 판매가·조합 추가금이 문서 상한(999,999,990)을 넘으면 `naver_required_optionPrice`.
+    (대표 이미지·판매가 0은 위 공통 보류에 같은 사유코드로 붙는다.)
+    """
+    out: List[Dict[str, str]] = []
+    from src.uploaders import naver_detail as _nd
+    from src.uploaders import naver_invalid as _ni
+    iid = str(pd.get("item_id") or "")
+    if not render_detail_blocks_html(pd.get("detail_blocks"), "smartstore") and not _nd.has_content(pd):
+        r = _ni.row("originProduct.detailContent", "", iid)
+        out.append({"short": "상세 본문 비어 있음", "fix": "detail_blank", "code": "naver_required_detailContent",
+                    "line": r["line"] + " — 상세 이미지도 상세 설명도 없어요(네이버는 빈 본문을 받지 않아요)",
+                    "action_url": r["action_url"], "action_label": r["action_label"]})
+    try:
+        from src.uploaders.naver_options import plan as _plan
+        op = _plan(pd)
+    except Exception:
+        op = {}
+    if op.get("mode") == "combo":
+        over = [c for c in (op.get("option_info") or {}).get("optionCombinations") or []
+                if int(c.get("price") or 0) > NAVER_PRICE_MAX or int(c.get("price") or 0) < 0]
+        if over or int(op.get("sale_price") or 0) > NAVER_PRICE_MAX:
+            out.append({"short": "옵션가 범위", "fix": "price", "code": "naver_required_optionPrice",
+                        "line": f"네이버 옵션가는 0 ~ {NAVER_PRICE_MAX:,}원이에요 — 범위를 넘는 조합 {len(over)}개(가격 탭에서 확인)"})
+    return out
+
+
 def readiness_message(holds: List[Dict[str, str]]) -> str:
     """「사전검증 — 보류: 이미지 0장·판매가 없음 → PC 확장에서 보강 후」 — 무엇이 모자라고 어디서 채우는지 한 줄."""
     if any(h["fix"] == "block" for h in holds):
@@ -706,6 +749,10 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」")
     if any(h["fix"] == "voltage" for h in holds):
         fixes.append("전압·플러그를 확인하거나 「그래도 등록」")
+    if any(h["fix"] == "detail_blank" for h in holds):
+        fixes.append("「상세페이지 꾸미기」에서 상세 설명이나 상세 이미지를 채운")     # Y7-F
+    if not fixes:                                         # 모르는 보류 종류 — 「→ 후」처럼 빈 조치를 쓰지 않는다
+        return f"사전검증 — 보류: {what}"
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
 
 
@@ -887,6 +934,8 @@ class UploadDispatcher:
         if not imgs:
             holds.append({"short": "이미지 0장", "fix": "pc",
                           "line": "대표 이미지가 0장이에요 — 마켓은 사진 없는 상품을 받지 않아요."})
+            if market == "smartstore":
+                holds[-1]["code"] = "naver_required_representativeImage"     # Y7-F: 네이버 필수 칸 사유코드
         price_raw = pd.get("price") or pd.get("price_original")
         try:
             price = float(price_raw) if price_raw not in (None, "") else None
@@ -908,6 +957,12 @@ class UploadDispatcher:
             holds.append({"short": "판매가 없음", "fix": "pc",
                           "line": "판매가가 0이거나 비어 있어요 — 원가를 읽어야 판매가를 낼 수 있어요"
                                   "(외화면 편집 화면 ‘원화로 환산’ 버튼으로도 채울 수 있어요)."})
+            if market == "smartstore":
+                holds[-1]["code"] = "naver_required_salePrice"
+        # Y7-F(오너 2026-10-09): 네이버 필수 칸 사전 점검 — 13:32 KST 사전검증은 「통과」였는데 등록이 400(상세 본문 비어 있음)이었다.
+        #   네이버 응답을 기다리지 말고 우리가 먼저 잡는다. 사유코드 `naver_required_<칸>`, 문구·고칠 곳은 400 매퍼와 같은 표.
+        if market == "smartstore":
+            holds += naver_required_holds(pd)
         # T3(오너 2026-10-02): 위험 플래그 — 번역이 아니라 **차단**. 원문 제목·옵션 값까지 본다.
         from src.collectors import ko_polish as _kp
         _risk_text = " ".join([str(pd.get("title_src") or ""), str(pd.get("title") or ""),
@@ -1164,19 +1219,21 @@ class UploadDispatcher:
         holds = self.readiness_holds(product_data, market)
         if holds:
             # Y7-B: 카테고리 보류만 있으면 그 사유코드(category_unset·category_not_leaf) · 「카테고리 지정 →」 링크
+            #   Y7-F: 보류가 하나면 그 사유코드(naver_required_<칸> 포함), 고칠 곳은 그 보류가 준 주소 → 없으면 카테고리 지정.
             _cat = [h for h in holds if h.get("fix") == "naver_category"]
-            _url = ""
-            if _cat:
+            _url = next((h.get("action_url") for h in holds if h.get("action_url")), "") or ""
+            if _cat and not _url:
                 from src.uploaders.naver_categories import picker_url as _pick_url
                 _url = _pick_url(str(product_data.get("item_id") or ""))
             return PrevalidationResult(
                 market=market, ok=False, hold=True,
-                error_code=(_cat[0]["code"] if _cat and len(holds) == 1 else "missing_field"),
+                error_code=(holds[0]["code"] if len(holds) == 1 and holds[0].get("code") else "missing_field"),
                 message=readiness_message(holds),
                 hint=readiness_hint(holds),
                 details=[h["line"] for h in holds],
                 fixes=list(dict.fromkeys(h.get("fix", "") for h in holds if h.get("fix"))),
                 action_url=_url,
+                action_label=next((h.get("action_label") for h in holds if h.get("action_url") == _url and h.get("action_label")), ""),
             )
 
         # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)
@@ -1617,6 +1674,15 @@ class UploadDispatcher:
                         payload[_k] = strip_seller_card(_v)
             except Exception as exc:        # 정제 실패가 등록을 막지 않는다
                 logger.warning("[등록] 셀러 카드 정제 실패(원문 유지): %s", exc)
+        # Y7-F(오너 2026-10-09): 네이버 `detailContent` = 상세페이지 HTML(상세 설명 + 상세 이미지 + KC 구매대행 고지).
+        #   13:32 KST 400 `detailContent NotBlank` — 예전엔 상세 설명 텍스트만 썼고 이미지는 안 실었다. 플러그 고지는 아래
+        #   국내 마켓 필터가 맨 위에 얹는다. 셀러가 꾸민 블록이 있으면 그것이 정본(위에서 이미 description_html).
+        if not _blocks_html and str(market or "").split(":")[0] == "smartstore":
+            try:
+                from src.uploaders import naver_detail as _nd
+                payload["description_html"] = _nd.build(payload)
+            except Exception as exc:        # 조립 실패는 빈 본문 → 업로더가 보류(400 대신)
+                logger.warning("[등록] 네이버 상세 본문 조립 실패: %s", exc)
         localized_map = payload.get("localized") if isinstance(payload.get("localized"), dict) else {}
         try:
             from src.markets.adapters.base import get_marketplace_meta
@@ -1757,14 +1823,16 @@ class UploadDispatcher:
                 _lines = list(getattr(exc, "lines", []) or []) or [str(exc)]
                 return UploadResult(market="smartstore", success=False, error_code=_rc, details=_lines,
                                     message=lines_message("전송 전에 보류했습니다", _lines),
-                                    action_url=str(getattr(exc, "action_url", "") or ""))
-            # Y7-B: 400 invalidInputs — 다시 해도 같은 답이다. 재시도 안내 없이 필드별 조치만.
+                                    action_url=str(getattr(exc, "action_url", "") or ""),
+                                    action_label=str(getattr(exc, "action_label", "") or ""))
+            # Y7-B: 400 invalidInputs — 다시 해도 같은 답이다. 재시도 안내 없이 필드별 조치만(Y7-F: 매퍼 `naver_invalid` 한 곳).
             if _rc == "naver_invalid_input":
                 _lines = list(getattr(exc, "lines", []) or []) or [str(exc)]
                 logger.warning("스마트스토어 입력값 거부: %s", exc)
                 return UploadResult(market="smartstore", success=False, error_code=_rc, details=_lines,
                                     message=lines_message("네이버가 입력값을 거부했어요", _lines),
-                                    action_url=str(getattr(exc, "action_url", "") or ""))
+                                    action_url=str(getattr(exc, "action_url", "") or ""),
+                                    action_label=str(getattr(exc, "action_label", "") or ""))
             logger.warning("스마트스토어 업로드 오류: %s", exc)
             return UploadResult(
                 market="smartstore",

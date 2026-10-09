@@ -1042,7 +1042,7 @@ def test_leak_blocks_registration(monkeypatch):
                         lambda p: {"originProduct": {"name": "HARVEST LABEL 토트백"}})
     monkeypatch.setattr(up, "_api_request",
                         lambda *a, **k: pytest.fail("유출 상태로 네이버에 보내면 안 된다"))
-    out = up.upload_product({"sku": "X1", "images": []})
+    out = up.upload_product({"sku": "X1", "images": [], "description_html": "<p>상세</p>"})   # Y7-F: 빈 본문 보류가 먼저 걸리지 않게
     assert out["success"] is False and out["held"] is True
     assert "템플릿 예시값" in out["error"] and "HARVEST LABEL" in out["error"]
 
