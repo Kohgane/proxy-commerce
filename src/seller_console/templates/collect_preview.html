@@ -1772,13 +1772,14 @@ function kgpRenderCoupangOptions(d) {
   // F51 — SKU별로 나가면 **SKU마다 판매가**(그 SKU 원가로 낸 값)를 보여 준다. 등록 전에 눈으로 확인한다.
   if (d.multi && (d.items || []).length) {
     h += '<div class="mt-2" data-role="cp-sku-prices"><div class="small fw-semibold">SKU별 등록 ' + d.items.length +
-      '개 — 판매가(원가로 각각 계산)</div><table class="table table-sm small mb-0"><tbody>' +
-      d.items.map(it => `<tr><td>${esc((it.label || (it.spec || []).join(' / ')))}${kgpCpConfirm(it.resolved)}` +
-        `<div class="text-muted" style="font-size:.72rem">${esc((it.spec || []).join(' / '))}</div></td>` +
-        `<td class="text-end text-nowrap">${esc(it.cost)} ${esc(it.currency)}</td>` +
-        `<td class="text-end text-nowrap fw-semibold">${Number(it.sell_price_krw || 0).toLocaleString('ko-KR')}원</td>` +
-        `<td class="text-end text-nowrap text-muted">재고 ${esc(it.stock == null ? '?' : it.stock)}</td></tr>`).join('') +
-      '</tbody></table>' + kgpCpFx(d.fx) + '</div>';
+      '개 — 판매가(원가로 각각 계산)</div>' +
+      // Y6-D: 표 4칸은 390px 폰에서 이름 칸이 한 글자씩 세로로 쪼개지거나(원문) 판매가 칸이 잘렸다 — SKU마다 위아래로 쌓는다.
+      d.items.map(it => `<div class="border-top py-2" data-role="cp-sku-row"><div class="small">${esc((it.label || (it.spec || []).join(' / ')))}${kgpCpConfirm(it.resolved)}</div>` +
+        `<div class="text-muted" style="font-size:.72rem">${esc((it.spec || []).join(' / '))}</div>` +
+        `<div class="d-flex flex-wrap gap-2 small"><span>${esc(it.cost)} ${esc(it.currency)}</span>` +
+        `<span class="fw-semibold">${Number(it.sell_price_krw || 0).toLocaleString('ko-KR')}원</span>` +
+        `<span class="text-muted">재고 ${esc(it.stock == null ? '?' : it.stock)}</span></div></div>`).join('') +
+      kgpCpFx(d.fx) + '</div>';
   } else if ((d.resolved || []).some(r => r.confirm || r.how === 'glossary')) {
     h += '<div class="mt-2" data-role="cp-resolved">' + d.resolved.map(r =>
       `<div>${esc(r.orig)} → <b>${esc(r.value)}</b>${kgpCpConfirm([r])}</div>`).join('') + '</div>';
@@ -1793,7 +1794,8 @@ function kgpRenderCoupangOptions(d) {
       d.holds.map(x => `<li>${esc(x)}</li>`).join('') + '</ul></div>';
     // F51-b-3: 메타에 없는 축 이름 → 이 카테고리 메타 속성명에서 고른다(고른 값은 이 상품에만, 용어집엔 후보로).
     (d.name_picks || []).forEach(p => {
-      h += `<label class="d-block mt-1" data-role="cp-name-pick"><span class="fw-semibold">「${esc(p.orig)}」</span>` +
+      // Y6-D: 보이는 이름(label)으로 묻고, 저장 열쇠는 원래 옵션 이름(orig)
+      h += `<label class="d-block mt-1" data-role="cp-name-pick"><span class="fw-semibold">「${esc(p.label || p.orig)}」</span>` +
         (p.candidate ? `<span class="text-muted">(→${esc(p.candidate)})</span>` : '') + ' 을(를) 어느 쪽으로 보낼까요? ' +
         `<select class="form-select form-select-sm d-inline-block w-auto ms-1" data-cp-name="${esc(p.orig)}">` +
         '<option value="">메타 속성 고르기</option>' +
@@ -1819,7 +1821,7 @@ function kgpRenderCoupangOptions(d) {
       kgpLoadCoupangOptions();
     } catch (e) { el.disabled = false; }
   }));
-  // F51-b: 「번역기 값 — 확인」 칸 — 고치면 이 상품에 바로 쓰고, 용어집에는 **후보로만** 남는다.
+  // F51-b: 「번역기 값(그대로 써도 됨)」 칸 — 고치면 이 상품에 바로 쓰고, 용어집에는 **후보로만** 남는다.
   body.querySelectorAll('[data-cp-fix]').forEach(el => el.addEventListener('change', async () => {
     const v = el.value.trim();
     if (!v) return;
@@ -1860,7 +1862,7 @@ function kgpCpConfirm(resolved) {
   const g = (resolved || []).filter(r => r && r.how === 'glossary').map(r =>
     ` <span class="pc-badge pc-badge-on" data-role="cp-glossary" title="원문: ${esc(r.orig)}">용어집</span>`).join('');
   return g + (resolved || []).filter(r => r && r.confirm).map(r =>
-    ` <span class="pc-badge pc-badge-muted" data-role="cp-confirm" title="${esc(r.how_label)} — 원문: ${esc(r.orig)}">번역기 값 — 확인</span>` +
+    ` <span class="pc-badge pc-badge-muted" data-role="cp-confirm" title="참고 표시 — 입력하지 않아도 이 값으로 나가요 · ${esc(r.how_label)} — 원문: ${esc(r.orig)}">번역기 값(그대로 써도 됨)</span>` +
     `<input class="form-control form-control-sm d-inline-block ms-1" style="width:9rem" data-cp-fix="${esc(r.orig)}"` +
     ` placeholder="고칠 값" aria-label="${esc(r.orig)} 한국어 값 고치기">`).join('');
 }

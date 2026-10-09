@@ -141,7 +141,7 @@ def test_unknown_option_name_is_held():
     plan = O.plan_for(META["attributes"], p)
     # F51-b-3: 이름도 용어집(尺码→사이즈)을 거친다 — 메타에 「사이즈」가 없으면 후보와 함께 보류 + 고를 목록.
     assert any(h.startswith("옵션 「尺码」(→사이즈)이 이 카테고리 메타 속성에 없어") for h in plan["holds"])
-    assert plan["name_picks"] == [{"orig": "尺码", "candidate": "사이즈", "choices": ["색상", "수량"]}]
+    assert plan["name_picks"] == [{"orig": "尺码", "label": "尺码", "candidate": "사이즈", "choices": ["색상", "수량"]}]
 
 
 # ── 4 같은 값 두 번 ────────────────────────────────────────────────────────────

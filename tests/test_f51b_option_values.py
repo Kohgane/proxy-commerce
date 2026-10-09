@@ -196,6 +196,6 @@ def test_live_rate_is_used_when_the_fx_api_answers(monkeypatch):
 
 def test_option_block_renders_badges_fix_fields_and_fx():
     html = open("src/seller_console/templates/collect_preview.html", encoding="utf-8").read()
-    assert "function kgpCpConfirm" in html and "번역기 값 — 확인" in html and "data-cp-fix" in html
+    assert "function kgpCpConfirm" in html and "번역기 값(그대로 써도 됨)" in html and "data-cp-fix" in html
     assert "function kgpCpFx" in html and 'data-role="cp-fx"' in html and "갱신 없음(고정값)" in html
     assert "option_values_ko: kgpValuesKoMap()" in html
