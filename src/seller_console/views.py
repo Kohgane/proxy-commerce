@@ -14608,6 +14608,11 @@ def collect_option_name_pick(item_id: str):
         ex = json.loads(item.get("extra_json") or "{}")
     except Exception:
         ex = {}
+    # Y6-D(오너 2026-10-09): 덮어쓰기 표의 열쇠는 **원래 옵션 이름**만 — 메타 이름(이미 해석된 이름)을 열쇠로 받으면
+    #   「패션의류/잡화 사이즈 → 색상」처럼 해석된 축을 다른 축으로 바꾸는 줄이 생긴다(10-09 01:21 KST 저장분).
+    _src_names = {str(o.get("name") or "").strip() for o in (ex.get("options") or []) if isinstance(o, dict)}
+    if orig not in _src_names:
+        return jsonify({"ok": False, "error": f"「{orig}」은 이 상품의 원래 옵션 이름이 아니에요 — 화면을 새로 고친 뒤 다시 골라 주세요."}), 400
     ov = dict(ex.get("option_name_overrides") or {})
     ov[orig] = name
     ex["option_name_overrides"] = ov

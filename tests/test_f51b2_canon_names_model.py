@@ -135,7 +135,7 @@ def test_tissue_holder_without_gyu_is_held_with_the_meta_list_then_owner_pick_pa
     p, meta = _tissue(False)
     plan = O.plan_for(meta, p)
     assert any(h.startswith("옵션 「商品规格」(→규격)") for h in plan["holds"])
-    assert plan["name_picks"] == [{"orig": "商品规格", "candidate": "규격", "choices": ["색상", "수량"]}]
+    assert plan["name_picks"] == [{"orig": "商品规格", "label": "商品规格", "candidate": "규격", "choices": ["색상", "수량"]}]
     p["option_name_overrides"] = {"商品规格": "색상"}
     assert O.plan_for(meta, p)["holds"] == []
 
@@ -146,7 +146,8 @@ def test_name_pick_route_stores_override(monkeypatch):
     from src.seller_console import collect_history_store as S
     seller = "u-f51b3-name"
     iid = S.append(url="https://detail.tmall.com/item.htm?id=1064346880857", title="t", price="175.5",
-                   currency="CNY", source="extension", seller_id=seller, extra={"options": []})
+                   currency="CNY", source="extension", seller_id=seller,
+                   extra={"options": [{"name": "商品规格", "values": ["A", "B"]}]})            # Y6-D: 열쇠는 원래 옵션 이름만
     iid = iid[0] if isinstance(iid, tuple) else iid
     c = app.test_client()
     with c.session_transaction() as s:

@@ -459,11 +459,19 @@ def _name_ctx(product: Dict) -> tuple:
     return names_ko_map(product), ov
 
 
-def option_name_for_meta(name: str, meta_names, product: Optional[Dict] = None, required=()) -> str:
+def override_for(ov: Dict, name: str, src_name: str = "") -> str:
+    """Y6-D — 덮어쓰기 표는 **원래 옵션 이름**(원문)을 열쇠로 찾는다. 편집 화면은 축을 **보이는 이름**
+    (예: 「패션의류/잡화 사이즈」)으로 보내고 원문은 `src_name`에 싣는다 — 보이는 이름으로 찾으면 그 이름을 열쇠로 둔 줄
+    (10-09 01:21 KST 「패션의류/잡화 사이즈 → 색상」)이 사이즈 축을 가로챈다. 원문이 있으면 원문만 본다."""
+    src = str(src_name or "").strip()
+    return str((ov or {}).get(src or str(name or "").strip(), "") or "")
+
+
+def option_name_for_meta(name: str, meta_names, product: Optional[Dict] = None, required=(), src_name: str = "") -> str:
     """상품 옵션 이름 → 메타 이름(해석 순서 `resolve_option_name`). 못 찾으면 빈 문자열."""
     kos, ov = _name_ctx(product or {})
     nm = str(name or "").strip()
-    return resolve_option_name(nm, meta_names, name_ko=kos.get(nm, ""), override=ov.get(nm, ""),
+    return resolve_option_name(nm, meta_names, name_ko=kos.get(nm, ""), override=override_for(ov, nm, src_name),
                                required=required)["meta"]
 
 
@@ -476,8 +484,12 @@ def with_meta_names(product: Dict, meta_names, required=()) -> Dict:
     out = dict(product)
     opts = []
     for o in product.get("options") or []:
-        if isinstance(o, dict) and o.get("name"):
-            m = option_name_for_meta(o["name"], meta_names, product, required)
+        if isinstance(o, dict) and o.get("name") and o.get("_meta_resolved"):
+            # Y6-D(오너 2026-10-09 19:45): 이미 메타 이름으로 해석된 축(SKU별 계획이 넘긴 것)은 **다시 해석하지 않는다** —
+            #   덮어쓰기 표는 원래 옵션 이름에 한 번만. 다시 해석하면 「패션의류/잡화 사이즈 → 색상」 같은 줄이 사이즈 축을 가로챘다.
+            opts.append(o)
+        elif isinstance(o, dict) and o.get("name"):
+            m = option_name_for_meta(o["name"], meta_names, product, required, src_name=o.get("src_name") or "")
             opts.append({**o, "name": m} if m else o)
         else:
             opts.append(o)
@@ -557,13 +569,15 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
     kos, ov = _name_ctx(product)
     for o in axes:
         nm = str(o["name"]).strip()
-        r = resolve_option_name(nm, meta_names, name_ko=kos.get(nm, ""), override=ov.get(nm, ""),
+        r = resolve_option_name(nm, meta_names, name_ko=kos.get(nm, ""), override=override_for(ov, nm, o.get("src_name") or ""),
                                 required=_required_names(meta))
         how_list.append(r.get("how") or "")
         if not r["meta"]:
             holds.append(r["why"])
             # 오너가 고를 목록 — 이 카테고리 메타 속성명 전부(드롭다운).
-            name_picks.append({"orig": nm, "candidate": r["candidate"], "choices": list(meta_names)})
+            # 고른 값은 **원래 옵션 이름**에 건다(보이는 이름을 열쇠로 두면 다른 축을 가로챈다 — Y6-D)
+            name_picks.append({"orig": str(o.get("src_name") or nm), "label": nm, "candidate": r["candidate"],
+                               "choices": list(meta_names)})
         mapped.append(r["meta"])
     if zero:
         notes.append("재고 0이라 등록에서 뺀 SKU " + str(len(zero)) + "개: "
@@ -577,7 +591,7 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
         spec = list(k.get("spec") or [])
         # 이 SKU 하나만 가진 상품으로 바꿔 **기존 규칙 그대로** 돌린다(값 1개 → 「값이 N개」 보류 없음).
         one = dict(product)
-        one["options"] = [{"name": (mapped[i] or axes[i]["name"]), "values": [spec[i]]}
+        one["options"] = [{"name": (mapped[i] or axes[i]["name"]), "values": [spec[i]], "_meta_resolved": bool(mapped[i])}
                           for i in range(min(len(axes), len(spec)))]
         one.pop("skus", None)
         # F51-b: 번역기 값·오너 수정은 **원 옵션**에 붙어 있다 — 값 1개짜리로 줄인 뒤에도 찾게 넘긴다.
@@ -800,7 +814,7 @@ def option_form(raw_meta_attrs, product: Dict, *, meta_ok: bool = True,
             continue
         value, source, why = _value_for(m, named)
         if plan.get("multi"):
-            axis = {_norm(option_name_for_meta(o.get("name"), _meta_names, product, _req))
+            axis = {_norm(option_name_for_meta(o.get("name"), _meta_names, product, _req, src_name=o.get("src_name") or ""))
                     for o in product.get("options") or [] if isinstance(o, dict)}
             if _norm(m["attributeTypeName"]) in axis:
                 # F51: 이 칸은 SKU마다 다른 값으로 나간다 — 「값이 N개」 보류 문구를 여기 두지 않는다.
