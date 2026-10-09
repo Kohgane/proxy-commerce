@@ -279,6 +279,18 @@ class NaverSmartStoreUploader(BaseUploader):
                                 product.get('sku', ''),
                                 '; '.join(s['reason'] for s in shot['skipped']))
                 product = {**product, 'images': shot['urls']}
+            # Y7-F: 상세 본문의 이미지도 대표 사진과 같은 네이버 CDN으로(정본 템플릿도 shop-phinf 주소). 못 올린 장은 본문에서 뺀다.
+            if self.image_upload_enabled and '<img' in str(product.get('description_html') or ''):
+                product = {**product, 'description_html': self._detail_to_cdn(product.get('description_html') or '',
+                                                                              product.get('sku', ''))}
+            # Y7-F: 상세 본문이 비면 보내지 않는다 — 네이버까지 가서 400 `detailContent NotBlank`를 받지 않게(사전검증과 같은 판정).
+            from src.uploaders import naver_detail as _nd
+            if not _nd.body_has_content(product.get('description_html') or ''):
+                from src.uploaders import naver_invalid as _ni
+                _r = _ni.row('originProduct.detailContent', '', str(product.get('item_id') or ''))
+                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                        'reason_code': 'naver_required_detailContent', 'error': _r['line'],
+                        'error_lines': [_r['line']], 'action_url': _r['action_url'], 'action_label': _r['action_label']}
             # Y7 — 조합형 옵션(신규 등록만). 못 보내는 모양이면 **전송 0**으로 보류하고 사유코드를 싣는다.
             from src.uploaders.naver_options import plan as _option_plan
             opt = _option_plan(product, stock_default=self.STOCK_QUANTITY)
@@ -313,14 +325,15 @@ class NaverSmartStoreUploader(BaseUploader):
             result = self._api_request('POST', path, data=payload)
             if 'error' in result:
                 # Y7-B: 400 + `invalidInputs` — 다시 해도 같은 답이다. 「잠시 뒤 다시 시도」 대신 필드별 조치로.
-                inv = self.invalid_input_lines(result.get('body') or '') if result.get('http_status') == 400 else []
+                from src.uploaders import naver_invalid as _ni
+                inv = _ni.rows(result.get('body') or '', str(product.get('item_id') or '')) \
+                    if result.get('http_status') == 400 else []
                 if inv:
-                    from src.uploaders import naver_categories as _ncat
-                    leaf = any('leafCategoryId' in n for n, _l in inv)
+                    act = _ni.first_action(inv)
                     return {'success': False, 'sku': product.get('sku', ''), 'reason_code': 'naver_invalid_input',
-                            'error': '네이버가 입력값을 거부했어요 — ' + ' · '.join(l for _n, l in inv),
-                            'error_lines': [l for _n, l in inv], 'raw': result['error'],
-                            'action_url': _ncat.picker_url(str(product.get('item_id') or '')) if leaf else ''}
+                            'error': '네이버가 입력값을 거부했어요 — ' + ' · '.join(r['line'] for r in inv),
+                            'error_lines': [r['line'] for r in inv], 'raw': result['error'],
+                            'action_url': act['url'], 'action_label': act['label']}
                 return {'success': False, 'error': result['error'], 'sku': product.get('sku', '')}
             product_id = str(result.get('originProductNo', ''))
             # M6: 구매자 화면 주소는 **채널 상품번호**다(원상품번호와 다른 번호 — 식별자 오용 지뢰). 없으면 비운다.
@@ -419,6 +432,8 @@ class NaverSmartStoreUploader(BaseUploader):
             '_names_ko': collected.get('_names_ko') or {},
             'option_name_overrides': collected.get('option_name_overrides') or {},
             'tags': collected.get('tags', []),
+            'min_purchase_quantity': collected.get('min_purchase_quantity') or 0,     # Y7-F: 셀러가 2 이상으로 정했을 때만 실림
+            'detail_images': [u for u in (collected.get('detail_images') or []) if isinstance(u, str)],
             'shipping_fee': 0,
             'delivery_days': '7-14',
             'return_info': '해외직구 상품으로 반품/교환이 불가합니다',
@@ -519,9 +534,6 @@ class NaverSmartStoreUploader(BaseUploader):
                         'afterServiceGuideContent': product.get('return_info', '')
                                                     or '해외 구매대행 상품입니다.',
                     },
-                    'purchaseQuantityInfo': {
-                        'minPurchaseQuantity': 1, 'maxPurchaseQuantityPer1Time': 99,
-                    },
                     # ★ 원산지 정본 — 쿠팡과 다른 축(마켓별 원산지 정책 분기).
                     'originAreaInfo': {
                         'originAreaCode': self.ORIGIN_AREA_CODE,
@@ -554,7 +566,22 @@ class NaverSmartStoreUploader(BaseUploader):
         }
         if option_info:
             payload['originProduct']['detailAttribute']['optionInfo'] = option_info
+        # Y7-F(오너 2026-10-09): 구매수량 칸은 **기본으로 보내지 않는다** — 13:32 KST 400 `minPurchaseQuantity NumberMin`
+        #   「최소구매수량 항목은 2개 이상」(예전엔 1을 늘 실었다 · `maxPurchaseQuantityPer1Time`은 문서에 없는 이름이었다).
+        #   셀러가 최소수량을 2 이상으로 정한 경우에만 그 값 하나를 싣는다.
+        mq = self.min_purchase_quantity(product)
+        if mq:
+            payload['originProduct']['detailAttribute']['purchaseQuantityInfo'] = {'minPurchaseQuantity': mq}
         return payload
+
+    @staticmethod
+    def min_purchase_quantity(product: dict) -> int:
+        """셀러가 정한 최소구매수량(2 이상일 때만) — 아니면 0(칸을 보내지 않음). 네이버 문서 상한 10,000."""
+        try:
+            v = int(str((product or {}).get('min_purchase_quantity') or '').strip())
+        except ValueError:
+            return 0
+        return min(v, 10000) if v >= 2 else 0
 
     # ── 이미지 업로드 정본(오너 SSH `naver_img.py`) ──────────────────────────────
     IMAGE_MIN_BYTES = 1024          # 정본: 1KB 미만은 썸네일 쓰레기 → 스킵
@@ -591,6 +618,41 @@ class NaverSmartStoreUploader(BaseUploader):
         return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES,
                                  allowed_formats=self.IMAGE_ALLOWED_FORMATS,
                                  on_skip=on_skip)
+
+    _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"[^>]*>', re.I)
+
+    def _detail_to_cdn(self, html_body: str, sku: str = '') -> str:
+        """상세 본문 `<img src>` → 네이버 CDN 주소. 이미 네이버(pstatic) 주소면 그대로. 못 올린 장의 `<img>`는 뺀다(외부 주소를 보내지 않음)."""
+        import html as _h
+        srcs = []
+        for m in self._IMG_SRC_RE.finditer(html_body or ''):
+            u = _h.unescape(m.group(1))
+            if u.startswith(('http://', 'https://')) and 'pstatic.net' not in u and u not in srcs:
+                srcs.append(u)
+        if not srcs:
+            return html_body
+        mapping = {}
+        for i in range(0, len(srcs), self.IMAGE_MAX_COUNT):
+            chunk = srcs[i:i + self.IMAGE_MAX_COUNT]
+            shot = self.upload_images(chunk)
+            if not shot.get('ok'):
+                logger.warning('상세 이미지 업로드 실패 sku=%s — %s', sku, shot.get('reason'))
+                continue
+            skipped = {str(x.get('url') or '') for x in shot.get('skipped') or []}
+            kept = [u for u in chunk if (self.normalize_source_url(u) or u) not in skipped and u not in skipped]
+            if len(kept) == len(shot.get('urls') or []):
+                mapping.update(dict(zip(kept, shot['urls'])))
+            else:                                       # 짝을 못 맞추면 짐작하지 않는다 — 그 묶음은 빠진다
+                logger.warning('상세 이미지 짝 불일치 sku=%s — 보냄 %d · 받음 %d', sku, len(kept), len(shot.get('urls') or []))
+
+        def _swap(m):
+            u = _h.unescape(m.group(1))
+            if 'pstatic.net' in u or not u.startswith(('http://', 'https://')):
+                return m.group(0)
+            if u in mapping:
+                return m.group(0).replace(m.group(1), _h.escape(mapping[u], quote=True))
+            return ''                                   # 못 올린 장 — 본문에서 뺀다
+        return self._IMG_SRC_RE.sub(_swap, html_body)
 
     def upload_images(self, urls) -> dict:
         """외부 이미지 URL 목록 → **네이버 CDN URL** 목록. 정본 `naver_img.upload` 승계.
@@ -681,28 +743,16 @@ class NaverSmartStoreUploader(BaseUploader):
     # ── 실패 원문 노출(카나리 6차) ────────────────────────────────────────────────
     #   `_resp_body`/`_fail_detail`은 **`BaseUploader`가 단일 소스**(쿠팡과 공유).
     #   여기서 재구현하지 않는다 — 같은 규칙을 두 곳에 두면 한쪽만 고쳐진다(이 세션 4례).
-    #: Y7-B — 400 `invalidInputs[].name`별 조치 문구(없는 이름은 필드명 그대로 + 「값 확인」).
-    INVALID_INPUT_ACTIONS = {
-        'originProduct.leafCategoryId': '카테고리를 다시 지정하세요(카테고리 지정 →)',
-    }
+    #: Y7-B — 400 `invalidInputs[].name`별 조치 문구. Y7-F: 표는 `naver_invalid.FIELDS` 한 곳(여기는 그 사본 — 옛 이름 호환).
+    from src.uploaders.naver_invalid import FIELDS as _NI_FIELDS
+    INVALID_INPUT_ACTIONS = {k: v[0] for k, v in _NI_FIELDS.items()}
+    del _NI_FIELDS
 
     @classmethod
     def invalid_input_lines(cls, body: str) -> list:
-        """400 본문 → `[(필드명, 조치 한 줄)]`. `invalidInputs`가 없으면 빈 목록."""
-        import json as _json
-        try:
-            data = _json.loads(body or '')
-        except (TypeError, ValueError):
-            return []
-        out = []
-        for it in (data or {}).get('invalidInputs') or [] if isinstance(data, dict) else []:
-            if not isinstance(it, dict):
-                continue
-            name = str(it.get('name') or '').strip()
-            act = cls.INVALID_INPUT_ACTIONS.get(name)
-            msg = str(it.get('message') or '').strip()
-            out.append((name, act or f"{name or '(필드 이름 없음)'} — 값 확인" + (f"({msg})" if msg else '')))
-        return out
+        """400 본문 → `[(필드명, 조치 한 줄)]`. `invalidInputs`가 없으면 빈 목록(매퍼 `naver_invalid` 한 곳)."""
+        from src.uploaders.naver_invalid import rows
+        return [(r["name"], r["line"]) for r in rows(body)]
 
     _WORD_SPLIT = re.compile(r"[^0-9A-Za-z\uac00-\ud7a3]+")
 
@@ -867,8 +917,9 @@ class NaverSmartStoreUploader(BaseUploader):
                                              body=self._resp_body(resp))
                     logger.warning('네이버 거부 — %s', last)
                     # Y7-B: 상태·본문을 따로 싣는다 — 400 `invalidInputs`는 필드별 조치로 바꿔 보여 준다.
+                    # Y7-F: 본문은 **자르지 않고** 싣는다 — 300자에서 잘라 `invalidInputs` 2개짜리 JSON을 못 읽었다(13:32 KST).
                     return {'error': f'네이버 거부 — {last}', 'http_status': resp.status_code,
-                            'body': self._resp_body(resp)}
+                            'body': self._resp_body(resp, limit=20000)}
                 resp.raise_for_status()
                 if resp.content:
                     return resp.json()

@@ -830,6 +830,13 @@ function kgpEtab(name) {
     el.classList.toggle('kgp-etab-hide', el.dataset.etab !== name);
   });
 }
+// Y7-F: 「상세페이지 꾸미기 →」처럼 고칠 곳이 탭이면 주소(?tab=detail)로 그 탭을 바로 연다.
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    var t = new URLSearchParams(location.search).get('tab');
+    if (t && document.querySelector('.kgp-etab-chip[data-etab="' + t.replace(/[^a-z]/g, '') + '"]')) kgpEtab(t.replace(/[^a-z]/g, ''));
+  } catch (e) {}
+});
 
 // ── 서버 주입 데이터 ──
 const _ITEM = {{ item | tojson }};
@@ -2165,8 +2172,12 @@ async function runPrevalidate() {
 //   한 줄이면 요약(message)이 곧 그 문장이다 — 목록을 또 펴면 같은 말이 두 번 나온다.
 // M1-1 — 설정이 비어 막혔을 때 **고치러 갈 화면** 링크(마켓 연동 › 그 마켓). 우리 앱 경로만 받는다.
 //   드로어(iframe) 안에서 눌러도 연동 화면이 드로어에 갇히지 않게 맨 위 창에서 연다(새 창 아님).
-function renderActionLink(url) {
+function renderActionLink(url, label) {
   if (!url || !/^\/seller\//.test(String(url))) return '';
+  // Y7-F: 서버 매퍼가 준 글자가 있으면 그대로(「상세페이지 꾸미기 →」 등) — 화면이 주소로 짐작하지 않는다.
+  if (label) {
+    return `<a class="btn btn-sm btn-ghost mt-2" data-role="action-link" target="_top" href="${kgpEscapeForHtml(url)}"><i class="bi bi-wrench"></i> ${kgpEscapeForHtml(label)}</a>`;
+  }
   // Y7-C 같은 유형: 네이버 카테고리 링크까지 「마켓 연동에서 채우기」로 적던 것 — 가는 곳 이름 그대로.
   if (/\/naver-category$/.test(String(url))) {
     return `<a class="btn btn-sm btn-ghost mt-2" data-role="action-link" target="_top" href="${kgpEscapeForHtml(url)}"><i class="bi bi-diagram-3"></i> 카테고리 지정 →</a>`;
@@ -2233,7 +2244,7 @@ function renderPrevalidateResults(results, pending, state) {
           ${(r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-ship-override">그래도 등록</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('rep_image') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-rep-override">대표 사진 그래도 등록</button>' : ''}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
-          ${renderActionLink(r.action_url)}
+          ${renderActionLink(r.action_url, r.action_label)}
         </div>
       </div>`;
   });
@@ -2419,13 +2430,13 @@ function renderUploadResults(data) {
     } else if (r.queued) {
       badges += `<span class="badge" style="background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)">${label} · 큐</span>`;
     } else {
-      _failedMarkets.push(r.market);
+      if (r.retryable) _failedMarkets.push(r.market);      // Y7-F: 400 입력값 거부·전송 전 보류는 다시 해도 같은 답 — 재시도 버튼 없음
       badges += `<span class="badge" style="background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)"><i class="bi bi-x-lg"></i> ${label} 실패</span>`;
     }
   });
   badges += '</div>';
   const retryBtn = _failedMarkets.length
-    ? `<button type="button" class="btn btn-sm btn-ghost mb-2" onclick="retryFailedUpload(${JSON.stringify(_failedMarkets).replace(/"/g, '&quot;')})"><i class="bi bi-arrow-clockwise"></i> 실패 ${_failedMarkets.length}개 마켓 재시도</button>`
+    ? `<button type="button" class="btn btn-sm btn-ghost mb-2" data-role="retry-failed" onclick="retryFailedUpload(${JSON.stringify(_failedMarkets).replace(/"/g, '&quot;')})"><i class="bi bi-arrow-clockwise"></i> 실패 ${_failedMarkets.length}개 마켓 재시도</button>`
     : '';
   let html = `<div class="mb-2 text-muted small">${summary}</div>` + badges + retryBtn;
   html += '<div class="list-group mb-2">';
@@ -2457,7 +2468,7 @@ function renderUploadResults(data) {
           <div class="small">${r.message}</div>
           ${renderDetailLines(r.details, 'text-danger')}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> 조치: ${r.hint}</div>` : ''}
-          ${renderActionLink(r.action_url)}
+          ${renderActionLink(r.action_url, r.action_label)}
           ${r.error_code ? `<div class="text-muted small">오류코드: ${r.error_code}</div>` : ''}
         </div>`;
     }

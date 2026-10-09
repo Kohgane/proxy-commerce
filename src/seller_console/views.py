@@ -4075,6 +4075,7 @@ def _pv_dict(r, rc=None) -> dict:
         "details": list(getattr(r, "details", None) or []),
         # M1-1 — 고치러 갈 화면(마켓 연동 › 그 마켓). env 이름은 싣지 않는다.
         "action_url": getattr(r, "action_url", "") or "",
+        "action_label": getattr(r, "action_label", "") or "",          # Y7-F
         # R2 — 재료가 덜 와서 멈춘 것(보강·번역하면 풀린다). 화면은 「막힘」 대신 「보류」.
         "hold": bool(getattr(r, "hold", False)),
         "fixes": list(getattr(r, "fixes", None) or []),

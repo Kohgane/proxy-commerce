@@ -493,8 +493,9 @@
          ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
          catLine(r) +
          (r.action_url ? '<div><a class="m5-fix" data-role="' + ((r.fixes || []).indexOf('naver_category') >= 0 ? 'm5-naver-category' : 'm5-action') + '" href="' + esc(r.action_url) + '">' +
-           ((r.fixes || []).indexOf('naver_category') >= 0 || r.error_code === 'naver_invalid_input'
-             ? (((r.category || {}).candidates || []).length ? '다른 카테고리 찾기 →' : '카테고리 지정 →') : '고치러 가기') + '</a></div>' : '') +
+           (r.action_label ? esc(r.action_label) :                                         // Y7-F: 서버 매퍼가 준 글자 그대로
+            ((r.fixes || []).indexOf('naver_category') >= 0
+             ? (((r.category || {}).candidates || []).length ? '다른 카테고리 찾기 →' : '카테고리 지정 →') : '고치러 가기')) + '</a></div>' : '') +
          // X2: 번역으로 풀리는 보류엔 버튼 하나 — 이 상품을 지금 옮기고 같은 마켓으로 다시 검증한다.
          (r.hold && (r.fixes || []).indexOf('translate') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-translate-recheck">번역하고 다시 검증</button></div>' : '');
@@ -667,7 +668,8 @@
                 (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>'
               : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
                 (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
-                  (['naver_invalid_input', 'category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기') +
+                  (r.action_label ? esc(r.action_label) :                                      // Y7-F: 서버 매퍼(필드별) 글자
+                   (['category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기')) +
                   '</a></div>' : '')) + '</div>';
       });
       doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
