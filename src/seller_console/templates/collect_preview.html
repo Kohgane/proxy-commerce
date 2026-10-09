@@ -834,6 +834,7 @@ function kgpEtab(name) {
 // ── 서버 주입 데이터 ──
 const _ITEM = {{ item | tojson }};
 const _EXTRA = {{ extra | tojson }};
+const _DETAIL_AUTO_ACTIVE = {{ 'true' if detail_auto_active else 'false' }};
 // Y6-C: 옵션 한국어(등록과 같은 사슬 option_ko) — 칸엔 한국어, 원문은 data-src로 들고 다닌다(저장 때 원문 보존)
 const _OPT_VIEW = {{ (opt_view or []) | tojson }};
 const _ITEM_ID = {{ item.id | tojson }};
@@ -1560,6 +1561,17 @@ function initEditor() {
   curSel.value = cur;
   document.getElementById('editDescription').value =
     _firstNonEmpty(_EXTRA.description_ko, _EXTRA.description);
+  // Y7-G: 사전검증이 상세 자동 초안을 만들어 그걸로 나가는 중 — 여기서 확인하고 바꾸면(저장) 그 글이 상세 설명이 된다.
+  if (_DETAIL_AUTO_ACTIVE && _EXTRA.detail_auto && _EXTRA.detail_auto.text) {
+    document.getElementById('editDescription').value = _EXTRA.detail_auto.text;
+    const _b = document.getElementById('aiDraftBadge');
+    if (_b) _b.style.display = '';
+    const _h = document.getElementById('aiDescHint');
+    if (_h) {
+      _h.style.display = '';
+      _h.textContent = '사전검증이 자동으로 만든 상세 초안이에요(지금 이 글로 등록돼요). 고치고 저장하면 그 글이 상세 설명이 됩니다.';
+    }
+  }
 
   // 키워드/태그 (배열이면 쉼표 결합)
   const kw = _EXTRA.keywords !== undefined ? _EXTRA.keywords : _EXTRA.tags;

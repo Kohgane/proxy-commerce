@@ -696,6 +696,38 @@ def korea_voltage_filter(payload: Dict[str, Any], market: str) -> Dict[str, Any]
 NAVER_PRICE_MAX = 999_999_990
 
 
+def detail_auto_note(pd: Dict[str, Any]) -> Dict[str, str]:
+    """상세 자동 초안으로 나가는가 → `{line, url, label}`, 아니면 {}(셀러 텍스트·꾸미기 블록이 있으면 초안을 쓰지 않는다)."""
+    from src.uploaders import naver_detail as _nd
+    a = _nd.auto_of(pd)
+    if not a or _nd._text_of(pd) or render_detail_blocks_html(pd.get("detail_blocks"), "smartstore"):
+        return {}
+    how = "AI" if a.get("provider") == "openai" else "확인된 정보로 정리"
+    iid = str(pd.get("item_id") or "")
+    return {"line": f"상세 자동 생성({how}) — 확인(바꾸기)",
+            "url": f"/seller/collect/preview/{iid}?tab=detail" if iid else "", "label": "확인(바꾸기)"}
+
+
+def naver_detail_verdict(pd: Dict[str, Any], market: str = "smartstore") -> Dict[str, Any]:
+    """Y7-G — 네이버 상세 본문 판정. **등록과 같은 본문·같은 업로더·같은 함수**(`naver_detail.judge`).
+
+    본문은 등록 페이로드 조립(`_payload_for_market` — 셀러 블록·셀러 카드 정제·네이버 본문·플러그 고지) 그대로.
+    상세 이미지는 실제로 네이버 CDN에 올려 본다(결과는 캐시 — 등록이 다시 올리지 않는다).
+    업로더를 못 만들면(자격 없음 — 앞 단계가 이미 막는다) 올리지 않고 그대로 잰다.
+    반환 `{html, ok, dropped, kept, cached}`.
+    """
+    from src.uploaders import naver_detail as _nd
+    payload, _ = UploadDispatcher._payload_for_market(dict(pd or {}), market)
+    up = None
+    try:
+        from src.channel_sync.smartstore_uploader import make_uploader
+        up = make_uploader()
+    except Exception as exc:                                     # noqa: BLE001
+        logger.info("[사전검증] 네이버 업로더 못 만듦(상세 이미지는 올리지 않고 잼): %s", exc)
+    return _nd.judge(payload.get("description_html") or "", up,
+                     str(payload.get("sku") or payload.get("vendor_sku") or pd.get("item_id") or ""))
+
+
 def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
     """Y7-F — 네이버 필수 칸을 **보내기 전에** 잰다. `[{short, line, fix, code, action_url, action_label}]`.
 
@@ -704,13 +736,18 @@ def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
     (대표 이미지·판매가 0은 위 공통 보류에 같은 사유코드로 붙는다.)
     """
     out: List[Dict[str, str]] = []
-    from src.uploaders import naver_detail as _nd
     from src.uploaders import naver_invalid as _ni
     iid = str(pd.get("item_id") or "")
-    if not render_detail_blocks_html(pd.get("detail_blocks"), "smartstore") and not _nd.has_content(pd):
+    v = naver_detail_verdict(pd)
+    if not v["ok"]:
         r = _ni.row("originProduct.detailContent", "", iid)
+        why = "상세 이미지도 상세 설명도 없어요(네이버는 빈 본문을 받지 않아요)"
+        if v["dropped"]:
+            # Y7-G: 이미지는 있었는데 네이버 CDN에 못 올린 것 — 사유를 그대로(등록도 같은 이유로 뺀다)
+            why = (f"상세 이미지 {len(v['dropped'])}장을 네이버에 못 올렸고 상세 설명이 없어요 — "
+                   + str(v["dropped"][0].get("reason") or "")[:120])
         out.append({"short": "상세 본문 비어 있음", "fix": "detail_blank", "code": "naver_required_detailContent",
-                    "line": r["line"] + " — 상세 이미지도 상세 설명도 없어요(네이버는 빈 본문을 받지 않아요)",
+                    "line": r["line"] + " — " + why,
                     "action_url": r["action_url"], "action_label": r["action_label"]})
     try:
         from src.uploaders.naver_options import plan as _plan
@@ -881,6 +918,14 @@ class UploadDispatcher:
                         r.category = _cat_describe(product_data)
                     except Exception as exc:                     # noqa: BLE001 — 한 줄 재료라 검증을 막지 않는다
                         logger.warning("[사전검증] 네이버 카테고리 한 줄 실패: %s", exc)
+                    # Y7-G: 셀러 상세 설명이 없어 사전검증이 만든 자동 초안으로 나간다 — 카드에 「확인(바꾸기)」 한 줄.
+                    if r.ok:
+                        _note = detail_auto_note(product_data)
+                        if _note and not r.action_url:
+                            # 한 줄 = 그 줄이 곧 「확인(바꾸기)」 링크(편집 화면 상세 탭)
+                            r.action_url, r.action_label = _note["url"], _note["line"]
+                        elif _note:
+                            r.details = list(r.details or []) + [_note["line"]]
             # Z9: 쿠팡 대표 사진 글자 판정이 아직이면 「대기 중」 한 줄(보류 아님) — 잡이 결과가 오면 다시 잰다.
             try:
                 from src.services.coupang_image_check import rep_pending as _rep_pending

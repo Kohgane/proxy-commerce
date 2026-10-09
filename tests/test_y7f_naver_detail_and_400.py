@@ -192,11 +192,18 @@ def test_upload_without_detail_is_held_before_naver(monkeypatch):
 def test_detail_images_go_to_naver_cdn_and_failed_ones_drop(monkeypatch):
     up = SS(account="chezgoga")
 
-    def fake_upload(urls):
-        ok = [u for u in urls if "bad" not in u]
-        return {"ok": bool(ok), "urls": [u.replace("https://res.cloudinary.com/x/", "https://shop-phinf.pstatic.net/") for u in ok],
-                "skipped": [{"url": u, "reason": "다운로드 실패"} for u in urls if "bad" in u], "reason": ""}
-    monkeypatch.setattr(up, "upload_images", fake_upload)
+    # Y7-G: 받기는 장마다(`_fetch_image`), 올리기는 받은 장끼리(`_upload_parts`) — 응답 순서로 짝짓는다
+    def fake_fetch(url, on_skip=None):
+        if "bad" in url:
+            on_skip(url, "다운로드 실패")
+            return None
+        return url
+
+    def fake_parts(parts):
+        return {"ok": True, "urls": [u.replace("https://res.cloudinary.com/x/", "https://shop-phinf.pstatic.net/") for u in parts],
+                "reason": ""}
+    monkeypatch.setattr(up, "_fetch_image", fake_fetch)
+    monkeypatch.setattr(up, "_upload_parts", fake_parts)
     body = ('<p>본문</p><img src="https://res.cloudinary.com/x/d1.jpg" alt=""><img src="https://res.cloudinary.com/x/bad.jpg" alt="">'
             '<img src="https://shop-phinf.pstatic.net/already.jpg" alt="">')
     out = up._detail_to_cdn(body, "S")
@@ -234,6 +241,14 @@ def test_prevalidate_holds_blank_detail_13_32(monkeypatch):
 
 
 def test_prevalidate_passes_with_detail_image_only(monkeypatch):
+    """Y7-G: 「상세 이미지가 있다」가 아니라 **네이버 CDN에 올라갔다**로 통과(등록과 같은 판정 — 실패 경로는 test_y7g)."""
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader as _U
+    import src.uploaders.naver_cdn_cache as _cc
+    monkeypatch.setattr(_cc, "get", lambda a, u: "")
+    monkeypatch.setattr(_cc, "put", lambda a, u, c: None)
+    monkeypatch.setattr(_U, "_fetch_image", lambda self, url, on_skip=None: url)
+    monkeypatch.setattr(_U, "_upload_parts", lambda self, parts: {"ok": True, "reason": "",
+                                                                   "urls": ["https://shop-phinf.pstatic.net/d1.jpg"] * len(parts)})
     pv = _pv(monkeypatch, _pleats(detail_images=["https://res.cloudinary.com/x/d1.jpg"]))
     assert pv.ok is True, pv
 
