@@ -4246,43 +4246,49 @@ def _pv_perf_diff(a: dict, b: dict) -> dict:
 
 
 def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
-    import time as _time
-    from . import market_credentials as mc
-    from src.utils import stall_guard as _sg
-    st0 = (_pv_store().state_get(_PV_JOB_KEY + job_id) or {})
-    deadline_ts = float(st0.get("started_ts") or _time.time()) + _PV_JOB_DEADLINE_SEC
-    t_job = _time.monotonic()
-    p0 = _pv_perf_now()
-    _sg.begin(f"pv_job:{job_id[:8]}")                            # Z9: 잡 스레드도 10초 스톨 감시
-    try:
-        t0 = _time.monotonic()
-        product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
-        _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
-        with mc.seller_market_env(_seller_id(), markets):
-            results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
+    """Z9 후속(오너 2026-10-09 13:31 KST 실측 — 잡 한 번에 연결 19회·합 385ms): 잡 전체가 DB 연결 1개를 함께 쓴다.
+
+    마켓별 스레드도 물려받는다(차례로). 요청 풀과는 섞지 않는다 — `pg.job_conn` 주석.
+    """
+    from src.db import pg as _pg
+    with _pg.job_conn():
+        import time as _time
+        from . import market_credentials as mc
+        from src.utils import stall_guard as _sg
+        t_job = _time.monotonic()
+        p0 = _pv_perf_now()                                          # 잡 연결을 여는 첫 읽기보다 먼저 — db_connect가 잡 줄에 실리게
+        st0 = (_pv_store().state_get(_PV_JOB_KEY + job_id) or {})
+        deadline_ts = float(st0.get("started_ts") or _time.time()) + _PV_JOB_DEADLINE_SEC
+        _sg.begin(f"pv_job:{job_id[:8]}")                            # Z9: 잡 스레드도 10초 스톨 감시
+        try:
             t0 = _time.monotonic()
-            _auto, product_data = _pv_auto_translate(product_data, data, results)
-            if _auto is not None:
-                _pv_update(job_id, auto_translate=_auto, stages={"auto_translate": int((_time.monotonic() - t0) * 1000)})
-                held = [r.market for r in results if r.hold and "translate" in (getattr(r, "fixes", None) or [])]
-                if held and _time.time() < deadline_ts - 1 and _auto.get("status") in ("done", "queued", "failed"):
-                    _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
-            _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
-    except Exception as exc:                                     # noqa: BLE001 — 잡은 죽지 않는다
-        logger.warning("[사전검증 잡] %s 실패: %s", job_id[:8], exc)
-        cur = _pv_store().state_get(_PV_JOB_KEY + job_id) or {}
-        missing = {m: _pv_transport_fail(m, "error", f"검증 못 함 — {type(exc).__name__}")
-                   for m in markets if m not in (cur.get("results") or {})}
-        _pv_update(job_id, results=missing, error=f"{type(exc).__name__}: {str(exc)[:160]}")
-    finally:
-        _sg.end()
-    elapsed = int((_time.monotonic() - t_job) * 1000)
-    perf = _pv_perf_diff(p0, _pv_perf_now())
-    cur = _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat(),
-                     elapsed_ms=elapsed, perf=perf)
-    # Z9: 잡 한 줄 — 요청 로그(slow_request)는 202로 이미 찍혀 이 시간이 어디에도 안 남는다.
-    logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
-                json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
+            product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
+            _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
+            with mc.seller_market_env(_seller_id(), markets):
+                results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
+                t0 = _time.monotonic()
+                _auto, product_data = _pv_auto_translate(product_data, data, results)
+                if _auto is not None:
+                    _pv_update(job_id, auto_translate=_auto, stages={"auto_translate": int((_time.monotonic() - t0) * 1000)})
+                    held = [r.market for r in results if r.hold and "translate" in (getattr(r, "fixes", None) or [])]
+                    if held and _time.time() < deadline_ts - 1 and _auto.get("status") in ("done", "queued", "failed"):
+                        _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
+                _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
+        except Exception as exc:                                     # noqa: BLE001 — 잡은 죽지 않는다
+            logger.warning("[사전검증 잡] %s 실패: %s", job_id[:8], exc)
+            cur = _pv_store().state_get(_PV_JOB_KEY + job_id) or {}
+            missing = {m: _pv_transport_fail(m, "error", f"검증 못 함 — {type(exc).__name__}")
+                       for m in markets if m not in (cur.get("results") or {})}
+            _pv_update(job_id, results=missing, error=f"{type(exc).__name__}: {str(exc)[:160]}")
+        finally:
+            _sg.end()
+        elapsed = int((_time.monotonic() - t_job) * 1000)
+        perf = _pv_perf_diff(p0, _pv_perf_now())
+        cur = _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat(),
+                         elapsed_ms=elapsed, perf=perf)
+        # Z9: 잡 한 줄 — 요청 로그(slow_request)는 202로 이미 찍혀 이 시간이 어디에도 안 남는다.
+        logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
+                    json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
 
 
 @bp.get("/collect/prevalidate/job/<job_id>")

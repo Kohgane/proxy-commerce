@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import logging
 import os
 import threading
@@ -226,6 +227,11 @@ def get_conn(*, autocommit: bool = False):
 @contextlib.contextmanager
 def tx():
     """트랜잭션 — 블록 정상 종료 시 commit, 예외 시 rollback. (커밋 후에만 성공 응답)"""
+    held = _job_hold()
+    if held is not None:
+        with _job_block(held, "db_write", write=True) as cur:
+            yield cur
+        return
     _perf_mark("db_write")
     conn = _connect(db_url(), autocommit=False)
     try:
@@ -343,6 +349,136 @@ def close_request_conn(_exc=None):
         pass
 
 
+class _JobConn:
+    """잡 하나가 쓰는 DB 연결 1개 — 처음 쓸 때 열고(1회용 `_connect`, 요청 풀 아님) 잡이 끝나면 닫는다.
+
+    Z9 후속(오너 2026-10-09 13:31 KST 실측): 사전검증 잡 한 번에 연결을 19번 열었다(회당 ~20ms, 합 385ms —
+    `db_connect`). 잡 상태 갱신(`_pv_update` = 읽기 1 + 쓰기 1)·자격 읽기·규칙 읽기가 쿼리마다 1회용이었다.
+
+    - **요청 풀과 섞지 않는다**(Z9에서 되돌린 것 — 백그라운드가 풀(5)을 쥐면 요청이 굶는다).
+    - 잡 스레드와 마켓별 스레드(`copy_context`로 물려받음)가 **한 연결을 차례로** 쓴다 — 블록(쿼리·트랜잭션) 하나씩
+      잠금. 남이 오래 쥐고 있으면(`PG_JOB_CONN_WAIT_SEC`, 기본 2초) 기다리지 않고 1회용으로(지금과 같음 — 더 나빠지지 않음).
+    - 같은 스레드가 블록 안에서 또 부르면(트랜잭션 안의 읽기 등) 1회용 — 예전 의미(따로 커밋된 연결) 그대로.
+    - 잡이 끝난 뒤에도 물려받은 스레드(마감 넘긴 마켓 스레드·백그라운드 판정)가 부르면 1회용. 쓰는 중에 잡이 끝나면
+      **그 블록이 끝날 때** 닫는다(남의 쿼리 도중에 닫지 않는다).
+    - 연결이 깨졌으면(`broken`/`closed`) 새로 연다.
+    """
+
+    def __init__(self):
+        self._cv = threading.Condition()
+        self._busy = False
+        self._holder = None
+        self._conn = None
+        self._done = False
+        self.opened = 0
+
+    def acquire(self):
+        """(연결, 새로 열었나) — 못 쓰면 None(호출부가 1회용 연결)."""
+        me = threading.get_ident()
+        with self._cv:
+            if self._done or self._holder == me:
+                return None
+            if not self._cv.wait_for(lambda: self._done or not self._busy, timeout=job_conn_wait_sec()):
+                logger.info("[DB] job_conn_busy — %ss 안에 잡 연결이 비지 않아 1회용 연결", job_conn_wait_sec())
+                return None
+            if self._done:
+                return None
+            self._busy, self._holder = True, me
+            c = self._conn
+        try:
+            is_new = False
+            if c is None or getattr(c, "closed", False) or getattr(c, "broken", False):
+                if c is not None:
+                    try:
+                        c.close()
+                    except Exception:
+                        pass
+                c = _connect(db_url(), autocommit=True)
+                is_new = True
+                with self._cv:
+                    self._conn = c
+                    self.opened += 1
+            return c, is_new
+        except Exception:
+            with self._cv:
+                self._conn = None
+            self.release()
+            raise
+
+    def release(self):
+        with self._cv:
+            self._busy, self._holder = False, None
+            if self._done:
+                self._close()
+            self._cv.notify()
+
+    def _close(self):
+        c, self._conn = self._conn, None
+        if c is not None:
+            try:
+                c.close()
+            except Exception:
+                pass
+
+    def finish(self):
+        """잡 끝 — 비어 있으면 지금 닫고, 누가 쓰는 중이면 그 블록 끝(`release`)에서 닫는다."""
+        with self._cv:
+            self._done = True
+            if not self._busy:
+                self._close()
+            self._cv.notify_all()
+
+
+_job_scope = contextvars.ContextVar("kgp_pg_job_conn", default=None)
+
+
+def job_conn_wait_sec() -> float:
+    try:
+        return max(0.1, float(os.getenv("PG_JOB_CONN_WAIT_SEC", "2") or 2))
+    except (TypeError, ValueError):
+        return 2.0
+
+
+def _job_hold():
+    """잡 범위 안이면 (범위, 연결, 새로 열었나) — 아니거나 못 쓰면 None(1회용 연결로)."""
+    sc = _job_scope.get()
+    if sc is None:
+        return None
+    got = sc.acquire()
+    return None if got is None else (sc, got[0], got[1])
+
+
+@contextlib.contextmanager
+def _job_block(held, kind: str, *, write: bool = False):
+    """잡 연결 한 블록 — 쓰기는 명시 트랜잭션(끝나면 commit, 예외면 rollback), 끝나면 반납."""
+    sc, conn, is_new = held
+    _perf_mark(kind, new_conn=is_new)
+    try:
+        with (conn.transaction() if write else contextlib.nullcontext()), conn.cursor() as cur, _timed_db():
+            yield cur
+    finally:
+        sc.release()
+
+
+@contextlib.contextmanager
+def job_conn():
+    """잡(백그라운드 작업) 범위 — 안에서 부르는 query()/tx()가 연결 1개를 함께 쓴다. 끝나면 닫는다.
+
+    `with pg.job_conn():` 안에서 `copy_context()`로 띄운 스레드도 같은 연결을 쓴다(차례로).
+    PG가 꺼져 있거나 이미 바깥 범위가 있으면 아무것도 안 한다(바깥 범위를 그대로 쓴다).
+    """
+    if _job_scope.get() is not None:
+        yield _job_scope.get()
+        return
+    sc = _JobConn()
+    token = _job_scope.set(sc)
+    try:
+        yield sc
+    finally:
+        _job_scope.reset(token)
+        sc.finish()
+
+
 @contextlib.contextmanager
 def query():
     """읽기 전용 — 요청 스레드는 요청 연결 1개를 재사용, 그 밖(잡·마켓별 스레드·백그라운드)은 1회용.
@@ -355,6 +491,11 @@ def query():
     if conn is not None:
         _perf_mark("db_read", new_conn=is_new)
         with conn.cursor() as cur, _timed_db():
+            yield cur
+        return
+    held = _job_hold()
+    if held is not None:
+        with _job_block(held, "db_read") as cur:
             yield cur
         return
     _perf_mark("db_read", new_conn=True)
