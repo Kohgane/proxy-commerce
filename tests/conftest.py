@@ -57,6 +57,9 @@ os.environ.setdefault("OPTION_TRANSLATE_AUTO_OFF", "1")
 # V(2026-10-03): 스마트스토어 승인은 **토큰을 실제로 발급해 보고** 판정한다(운영 기본 ON).
 #   테스트에서 켜 두면 계약마다 네이버에 토큰 요청을 보낸다 — 끄고, 판정을 재는 계약은 `_issue`를 목킹한다.
 os.environ.setdefault("SMARTSTORE_LIVE_PROBE", "0")
+# Y7-H(2026-10-09): 네이버 A/S 전화번호(스토어 `NAVER_AS_PHONE`) — 운영엔 늘 있다(19:46 400이 이 칸을 말하지 않음).
+#   없으면 사전검증이 `naver_required_afterServiceTelephoneNumber`로 보류한다(그 계약은 test_y7h가 따로 잰다).
+os.environ.setdefault("NAVER_AS_PHONE", "010-0000-0000")
 
 
 # ──────────────────────────────────────────────────────────
@@ -524,3 +527,16 @@ def _onebound_learned_limits_reset():
         pass
     yield
 
+
+@pytest.fixture(autouse=True)
+def _naver_store_less_addresses(request, monkeypatch):
+    """Y7-H(2026-10-09): 스토어 없는 맥락(테스트의 「smartstore」)의 출고지·반품지 주소 ID.
+
+    운영 두 스토어(셰고가·고코스모스)는 업로더 기본값이 있다. 비어 있으면 사전검증이 `naver_required_shippingAddressId`로
+    보류한다(정직 — 빈 주소로는 등록이 안 된다). 스토어별 기본값·주소록 계약을 재는 파일은
+    `NAVER_ADDRESS_DEFAULTS = False`로 끈다.
+    """
+    if getattr(request.module, "NAVER_ADDRESS_DEFAULTS", True):
+        for k, v in (("NAVER_SHIP_ADDRESS_ID", "1"), ("NAVER_RETURN_ADDRESS_ID", "2")):
+            if not os.getenv(k):
+                monkeypatch.setenv(k, v)

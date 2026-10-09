@@ -107,6 +107,8 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         # Y7-F — 셀러가 정한 최소구매수량(2 이상일 때만 네이버에 실림). 없으면 칸 자체를 안 보낸다.
         "min_purchase_quantity": pd.get("min_purchase_quantity") or 0,
         "item_id": str(pd.get("item_id") or "").strip(),
+        # Y7-H — 네이버 상품정보제공고시 제조국(중국 소싱처면 「중국」)·쿠팡 짧은 이름이 없을 때의 대체 재료.
+        "source_url": str(pd.get("source_url") or pd.get("url") or "").strip(),
     }
 
 

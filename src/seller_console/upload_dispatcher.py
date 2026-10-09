@@ -728,6 +728,54 @@ def naver_detail_verdict(pd: Dict[str, Any], market: str = "smartstore") -> Dict
                      str(payload.get("sku") or payload.get("vendor_sku") or pd.get("item_id") or ""))
 
 
+#: Y7-H — 다른 보류가 이미 맡는 칸(같은 말을 두 번 하지 않는다): 상세 본문·대표 이미지·판매가·카테고리·상품명.
+_NAVER_COVERED = ("originProduct.detailContent", "originProduct.images.representativeImage.url", "originProduct.salePrice",
+                  "originProduct.leafCategoryId", "originProduct.name")
+
+
+def naver_payload_holds(pd: Dict[str, Any], iid: str = "", market: str = "smartstore") -> List[Dict[str, str]]:
+    """Y7-H(오너 2026-10-09) — 등록 페이로드를 **등록과 같은 조립**으로 만들어 필수 칸 전수 표(`naver_required`)로 잰다.
+
+    빈 칸은 이미 기본값으로 채워진 뒤다 — 여기 걸리는 건 **채울 수 없는 칸**(A/S 연락처 미설정, 50자 이내 이름 없음 등)뿐.
+    사유코드 `naver_required_<칸>`. 업로더를 못 만들면(자격 없음 — 앞 단계가 막는다) 건너뛴다.
+    """
+    try:
+        from src.channel_sync.smartstore_uploader import make_uploader
+        from src.channel_sync._channel_bridge import to_collected
+        from src.uploaders import naver_required as _nr
+        payload, _ = UploadDispatcher._payload_for_market(dict(pd or {}), market)
+        up = make_uploader()
+        prepared = up.prepare_product(to_collected(payload))
+        body = up._build_product_payload({**prepared, "_option_plan": {}})
+        miss = _nr.missing(body, skip=_NAVER_COVERED)
+    except Exception as exc:                                     # noqa: BLE001 — 판정 못 하면 막지 않는다(등록이 같은 조립)
+        logger.info("[사전검증] 네이버 필수 칸 표 건너뜀: %s", exc)
+        return []
+    out = []
+    _fields = {m["field"] for m in miss}
+    for m in miss:
+        f = m["field"]
+        if f == "afterServiceDirector" and "afterServiceTelephoneNumber" in _fields:
+            continue                                             # 같은 A/S 연락처 — 한 줄만
+        if f in ("returnAddressId",) and "shippingAddressId" in _fields:
+            continue                                             # 같은 주소록 — 한 줄만
+        if f in ("itemName", "modelName"):
+            url, label = (f"/seller/collect/preview/{iid}" if iid else ""), "쿠팡 상품명 50자 이내로 →"
+            why = "품명·모델명은 50자 이내여야 해요 — 쿠팡용 짧은 상품명이 50자를 넘거나 비어 있어요(자르지 않아요)"
+        elif f in ("shippingAddressId", "returnAddressId"):
+            url, label = "/seller/markets/connect/smartstore", "주소 불러오기 →"
+            why = "출고지·반품지 주소 ID가 비어 있어요 — 스마트스토어 연동 화면에서 주소록을 불러와 주세요"
+        elif f in ("afterServiceDirector", "afterServiceTelephoneNumber"):
+            url, label = "/seller/markets/connect/smartstore", "A/S 연락처 넣기 →"
+            why = "A/S 전화번호가 비어 있어요 — 스마트스토어 연동 화면에서 넣어 주세요"
+        else:
+            url, label = "/seller/settings/naver-notice", "고시 기본값 →"
+            why = "기본값이 비어 있어요 — 네이버 상품정보제공고시 설정에서 채워 주세요"
+        out.append({"short": f"네이버 필수 칸: {m['label']}", "fix": "naver_required", "code": f"naver_required_{f}",
+                    "line": f"네이버 필수 칸 「{m['label']}」 — {why}", "action_url": url, "action_label": label})
+    return out
+
+
 def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
     """Y7-F — 네이버 필수 칸을 **보내기 전에** 잰다. `[{short, line, fix, code, action_url, action_label}]`.
 
@@ -749,6 +797,7 @@ def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
         out.append({"short": "상세 본문 비어 있음", "fix": "detail_blank", "code": "naver_required_detailContent",
                     "line": r["line"] + " — " + why,
                     "action_url": r["action_url"], "action_label": r["action_label"]})
+    out += naver_payload_holds(pd, iid)
     try:
         from src.uploaders.naver_options import plan as _plan
         op = _plan(pd)

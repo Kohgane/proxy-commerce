@@ -28,6 +28,7 @@ ACTIONS: Dict[str, tuple] = {
     "detail": ("상세페이지 꾸미기 →", "/seller/collect/preview/{iid}?tab=detail"),
     "thumb": ("썸네일 탭 →", "/seller/collect/preview/{iid}?tab=thumb"),
     "price": ("가격 탭 →", "/seller/collect/preview/{iid}?tab=price"),
+    "notice": ("고시 기본값 →", "/seller/settings/naver-notice"),
 }
 
 _ITEM_RE = re.compile(r'\{[^{}]*?"name"\s*:\s*"([^"]+)"[^{}]*?(?:"message"\s*:\s*"([^"]*)")?[^{}]*?\}')
@@ -58,7 +59,7 @@ def parse(body: str) -> List[Dict[str, str]]:
 
 def action_for(kind: str, item_id: str = "") -> Dict[str, str]:
     label, tpl = ACTIONS.get(kind, ("", ""))
-    if not label or not item_id:
+    if not label or ("{iid}" in tpl and not item_id):
         return {"label": "", "url": ""}
     return {"label": label, "url": tpl.format(iid=item_id)}
 
@@ -66,6 +67,9 @@ def action_for(kind: str, item_id: str = "") -> Dict[str, str]:
 def row(name: str, message: str = "", item_id: str = "") -> Dict[str, str]:
     """필드 하나 → `{name, line, action_label, action_url}`. 표에 없는 이름은 「필드 — 값 확인(네이버 메시지)」."""
     line, kind = FIELDS.get(name, ("", ""))
+    if not line and ".productInfoProvidedNotice." in name:
+        # Y7-H: 상품정보제공고시 칸 — 고칠 곳은 고시 기본값 설정(19:46 KST 400 `etc.itemName`·`etc.manufacturer`)
+        kind = "notice"
     if not line:
         line = f"{name or '(필드 이름 없음)'} — 값 확인" + (f"({message})" if message else "")
     act = action_for(kind, item_id)

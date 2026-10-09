@@ -1,0 +1,21 @@
+{% extends "_base_app.html" %}
+{% block title %}네이버 상품정보제공고시 — 고가브릿지{% endblock %}
+{% block content %}
+{# Y7-H(오너 2026-10-09): 네이버 상품정보제공고시 구매대행 기본값. 등록·사전검증이 이 값으로 고시 칸을 전부 채운다. #}
+<div class="ship-route mx-auto" data-role="naver-notice-settings">
+  <h1 class="pc-h2">네이버 상품정보제공고시 — {{ '공유 기본값' if shared else '계정 기본값' }}</h1>
+  {% if shared %}<p class="small text-muted">오너·가족 계정이 같은 값을 씁니다(공유 마켓과 같은 범위).</p>{% endif %}
+  <p class="text-muted">상품마다 따로 쓰지 않아도 이 값으로 고시 칸이 채워집니다. 품명·모델명은 쿠팡용 짧은 상품명(50자 이내), 제조자는 수집한 브랜드가 있으면 그 이름을 씁니다.
+    A/S 전화번호는 스마트스토어 연동 화면의 값을 씁니다.</p>
+  <form method="post" class="vstack gap-2">
+    {% for k, label, d in fields %}
+    <label class="d-block" data-field="{{ k }}"><span class="small fw-semibold">{{ label }}</span>
+      <input class="form-control form-control-sm" name="{{ k }}" value="{{ st[k] }}" maxlength="200" placeholder="{{ d }}"></label>
+    {% endfor %}
+    <button class="btn btn-primary sr-save" type="submit">저장</button>
+  </form>
+  {% if msg %}<p class="mt-2" data-role="naver-notice-msg">{{ msg }}</p>{% endif %}
+  <div class="small text-muted mt-3" data-role="naver-notice-types">의류(패션의류 카테고리)는 「의류」 고시로 소재·색상·치수·세탁방법·제조연월·품질보증기준까지,
+    그 밖은 「기타 재화」 고시로 보냅니다. 비워 둔 칸은 기본값으로 돌아갑니다.</div>
+</div>
+{% endblock %}

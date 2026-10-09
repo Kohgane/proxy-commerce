@@ -25,6 +25,10 @@ from src.pipeline import register_adapters as RA
 from src.uploaders.naver_uploader import NaverSmartStoreUploader as SS
 
 
+#: Y7-H: 이 파일은 **스토어별 주소 기본값·env 우선** 계약을 잰다 — conftest의 스토어 없는 맥락 주소 ID를 깔지 않는다.
+NAVER_ADDRESS_DEFAULTS = False
+
+
 _PRODUCT = {"title": "Fellow Stagg 주전자", "price": 894000, "sku": "B0GS4698H2",
             "description_html": "<p>상세</p>", "brand": "Fellow",
             "images": ["https://m.media-amazon.com/images/I/71a._SS1600_.jpg",
@@ -994,11 +998,11 @@ def _tpl(monkeypatch):
 
 
 def test_notice_etc_is_overridden_with_our_product(_tpl):
-    """① 고시정보 etc = **우리 상품 값**(쿠팡 고시와 같은 소스: 상품명·SKU·수집 브랜드·env 연락처)."""
+    """① 고시정보 etc = **우리 상품 값**. Y7-H: 품명·모델명 = 짧은 상품명(50자 이내, 자르지 않음) · 제조자 = 수집 브랜드."""
     etc = _tpl._build_product_payload(_PRODUCT)["originProduct"]["detailAttribute"][
         "productInfoProvidedNotice"]["etc"]
     assert etc["itemName"] == "Fellow Stagg 주전자"
-    assert etc["modelName"] == "B0GS4698H2"
+    assert etc["modelName"] == "Fellow Stagg 주전자"                 # Y7-H(오너): 모델명도 등록상품명
     assert etc["manufacturer"] == "Fellow"
     assert "HARVEST" not in json.dumps(etc, ensure_ascii=False)
 
@@ -1012,6 +1016,7 @@ def test_notice_as_director_from_env(monkeypatch):
         "detailAttribute"]["productInfoProvidedNotice"]["etc"]
     assert etc["afterServiceDirector"] == "02-1234-5678"
     monkeypatch.delenv("NAVER_CHEZGOGA_AS_PHONE")
+    monkeypatch.delenv("NAVER_AS_PHONE", raising=False)          # 무접두 폴백도 비운다(테스트 기본값)
     etc2 = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"][
         "detailAttribute"]["productInfoProvidedNotice"]["etc"]
     assert etc2["afterServiceDirector"] == ""          # 예시값 070-0000-0000 이 아니다
@@ -1096,27 +1101,28 @@ def test_notice_type_is_canon_etc_when_template_silent(monkeypatch):
 
 
 def test_notice_type_is_not_in_override(monkeypatch):
-    """② 타입은 **오버라이드 대상이 아니다** — 우리 페이로드가 타입을 들고 있으면 정본을 덮어버린다."""
+    """② Y7-H(오너 2026-10-09)로 계약 바뀜: 타입은 **우리가 카테고리로 정한다**(패션의류=WEAR, 그 밖=ETC) —
+    예전엔 템플릿 타입(ETC)을 그대로 두고 etc 네 칸만 덮어 19:46 KST 400(품명 50자·제조자 빈칸)이 났다."""
     monkeypatch.setattr(SS, "_template_cache", {}, raising=False)
     composed = SS(account="chezgoga")._compose_payload(_PRODUCT)
     notice = composed["originProduct"]["detailAttribute"]["productInfoProvidedNotice"]
-    assert "productInfoProvidedNoticeType" not in notice, "오버라이드가 타입을 들고 있다"
-    assert set(notice["etc"]) == {"itemName", "modelName", "manufacturer", "afterServiceDirector"}
+    assert notice["productInfoProvidedNoticeType"] == "ETC"
+    from src.uploaders.naver_notice import REQUIRED
+    assert set(REQUIRED["ETC"]) <= set(notice["etc"])                # 문서 칸 전부
 
 
 def test_template_notice_type_wins_over_fallback(monkeypatch):
-    """폴백은 **비었을 때만** — 템플릿이 타입을 주면 그쪽이 이긴다(다른 카테고리는 다른 타입)."""
+    """Y7-H: 고시 블록은 **통째로 우리 것** — 템플릿의 다른 타입 블록·예시값이 옆에 남지 않는다."""
     monkeypatch.setattr(SS, "_template_cache", {"originProduct": {"detailAttribute": {
         "productInfoProvidedNotice": {"productInfoProvidedNoticeType": "WEAR",
                                       "wear": {"material": "면"}}}}}, raising=False)
     n = SS(account="chezgoga")._build_product_payload(_PRODUCT)["originProduct"][
         "detailAttribute"]["productInfoProvidedNotice"]
-    assert n["productInfoProvidedNoticeType"] == "WEAR"      # 우리가 안 덮는다
-    assert n["wear"] == {"material": "면"}
+    assert n["productInfoProvidedNoticeType"] == "ETC" and "wear" not in n      # 카테고리 모름 → ETC, 템플릿 블록 없음
 
 
 def test_notice_common_clauses_inherited_untouched(monkeypatch):
-    """③ 상품 무관 공통 문구는 **템플릿 값 그대로 승계** — 오버라이드 불필요."""
+    """③ Y7-H: 공통 문구 5종은 **설정값**(기본값 = 정본 템플릿 문구) — 셀러가 「네이버 상품정보제공고시」 설정에서 바꾼다."""
     common = {"returnCostReason": "단순변심 반품비 부담",
               "noRefundReason": "사용 흔적 시 불가",
               "qualityAssuranceStandard": "관련법 및 소비자분쟁해결기준에 따름",
@@ -1124,9 +1130,15 @@ def test_notice_common_clauses_inherited_untouched(monkeypatch):
               "troubleShootingContents": "고객센터 문의"}
     monkeypatch.setattr(SS, "_template_cache", {"originProduct": {"detailAttribute": {
         "productInfoProvidedNotice": {"productInfoProvidedNoticeType": "ETC",
-                                      "etc": {**common, "itemName": "HARVEST LABEL 토트백",
+                                      "etc": {"itemName": "HARVEST LABEL 토트백",
                                               "modelName": "hgl-0187",
                                               "manufacturer": "HARVEST LABEL"}}}}}, raising=False)
+    from src.uploaders import naver_notice as NN
+    keys = {"returnCostReason": "return_cost_reason", "noRefundReason": "no_refund_reason",
+            "qualityAssuranceStandard": "quality_standard", "compensationProcedure": "compensation",
+            "troubleShootingContents": "trouble_shooting"}
+    NN.save_settings("p5", {keys[k]: v for k, v in common.items()}, shared=False)
+    monkeypatch.setattr(NN, "get_settings", lambda *a, **k: {**NN.DEFAULTS, **{keys[x]: v for x, v in common.items()}})
     p = SS(account="chezgoga")._build_product_payload(_PRODUCT)
     etc = p["originProduct"]["detailAttribute"]["productInfoProvidedNotice"]["etc"]
     for k, v in common.items():
@@ -1251,7 +1263,7 @@ def test_structural_defaults_inherited_from_real_template(_real_tpl):
 
 
 def test_notice_common_clauses_from_real_template(_real_tpl):
-    """공통 문구 5종은 템플릿 그대로, 상품별 4종은 우리 값."""
+    """공통 문구 5종 기본값 = 정본 템플릿 문구(설정 기본값), 상품별 칸은 우리 값(Y7-H: 모델명도 짧은 상품명)."""
     _, p = _real_tpl
     etc = p["originProduct"]["detailAttribute"]["productInfoProvidedNotice"]["etc"]
     assert etc["returnCostReason"] == "단순변심 왕복배송비"
@@ -1260,5 +1272,5 @@ def test_notice_common_clauses_from_real_template(_real_tpl):
     assert etc["compensationProcedure"] == "고객센터 협의"
     assert etc["troubleShootingContents"] == "고객센터 협의"
     assert etc["itemName"] == "Fellow Stagg 주전자"
-    assert etc["modelName"] == "B0GS4698H2"
+    assert etc["modelName"] == "Fellow Stagg 주전자"
     assert etc["manufacturer"] == "Fellow"
