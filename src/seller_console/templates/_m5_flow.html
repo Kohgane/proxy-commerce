@@ -666,7 +666,10 @@
                 // M6: 등록한 마켓은 전부 「검토 상태 보기」 → 상태 팝업(마켓에 그때 묻는다 · statusName·반려 사유·Wing/판매자센터).
                 '<div><button type="button" class="m5-fix" data-role="m5-review-btn" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">검토 상태 보기</button>' +
                 (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>'
-              : esc(r.message || '') + (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
+              : esc(r.message || '') +
+                // Y7-F: 「사유 2건(아래)」면 아래에 그 사유를 한 줄씩(예전엔 문장만 있고 목록이 없었다)
+                ((r.details || []).length > 1 ? '<ul data-role="m5-result-details">' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+                (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
                 (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
                   (r.action_label ? esc(r.action_label) :                                      // Y7-F: 서버 매퍼(필드별) 글자
                    (['category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기')) +

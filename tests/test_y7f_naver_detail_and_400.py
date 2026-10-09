@@ -228,6 +228,7 @@ def test_prevalidate_holds_blank_detail_13_32(monkeypatch):
     assert pv.ok is False and pv.hold is True
     assert pv.error_code == "naver_required_detailContent" and "detail_blank" in pv.fixes
     assert pv.action_url == "/seller/collect/preview/it-7f?tab=detail" and pv.action_label == "상세페이지 꾸미기 →"
+    assert pv.message == "사전검증 — 보류: 상세 본문 비어 있음 → 「상세페이지 꾸미기」에서 상세 설명이나 상세 이미지를 채운 후"
     from src.seller_console.views import _pv_dict
     assert _pv_dict(pv)["action_label"] == "상세페이지 꾸미기 →"
 
@@ -264,3 +265,4 @@ def test_screens_use_server_label_and_hide_retry_for_400():
     assert "new URLSearchParams(location.search).get('tab')" in cp
     assert m5.count("r.action_label ? esc(r.action_label)") == 2                         # 사전검증 줄·등록 결과 줄
     assert "'naver_invalid_input', 'category_not_leaf'" not in m5                         # 400을 카테고리로 짐작하던 것 제거
+    assert 'data-role="m5-result-details"' in m5                                         # 「사유 2건(아래)」 아래에 목록

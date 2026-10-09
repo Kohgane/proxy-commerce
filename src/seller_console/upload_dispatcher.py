@@ -749,6 +749,10 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」")
     if any(h["fix"] == "voltage" for h in holds):
         fixes.append("전압·플러그를 확인하거나 「그래도 등록」")
+    if any(h["fix"] == "detail_blank" for h in holds):
+        fixes.append("「상세페이지 꾸미기」에서 상세 설명이나 상세 이미지를 채운")     # Y7-F
+    if not fixes:                                         # 모르는 보류 종류 — 「→ 후」처럼 빈 조치를 쓰지 않는다
+        return f"사전검증 — 보류: {what}"
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
 
 
