@@ -456,7 +456,7 @@
   //   등록 버튼: 통과 또는 「그래도 등록」으로 풀리는 보류가 하나라도 있으면 켠다(전송 실패가 전체를 잠그지 않는다).
   var OVERRIDES = {ship_ratio: ['ship-ratio-override', '그래도 등록'], voltage: ['voltage-override', '전압·플러그 그래도 등록'],
                    rep_image: ['rep-image-override', '대표 사진 그래도 등록']};
-  var pvRows = {}, pvOrder = [], pvAuto = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
+  var pvRows = {}, pvOrder = [], pvAuto = null, pvAutoDetail = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
   // Y7-C: 스마트스토어 카테고리 — 정해졌으면 「카테고리 자동: … (바꾸기)」 한 줄, 못 정했으면 후보 칩(1탭 저장 → 그 마켓만 다시 검증).
   function catLine(r) {
     var c = r.category || {};
@@ -517,6 +517,13 @@
         ? '보류 전에 자동 번역을 돌리고 다시 확인했어요' + (pvAuto.reason ? ' — ' + esc(pvAuto.reason) : '') + '.'
         : '자동 번역을 시도했지만 옮기지 못했어요 — ' + esc(pvAuto.reason || pvAuto.status) + '.') + '</div>';
     }
+    // Y7-G: 네이버 상세 본문이 비어 보류 전에 상세 초안을 만들고 다시 확인한다 — 그동안 「보류」만 보이지 않게.
+    if (pvAutoDetail) {
+      h += '<div class="m5-note" data-role="m5-auto-detail" data-state="' + esc(pvAutoDetail.status || '') + '">' +
+        (pvAutoDetail.status === 'running' ? '상세 본문이 비어 상세 초안을 만드는 중이에요 — 만들어지면 다시 확인해요.'
+         : pvAutoDetail.status === 'done' ? '상세 본문이 비어 상세 초안을 자동으로 만들고 다시 확인했어요.'
+         : '상세 초안 자동 생성 실패 — ' + esc(pvAutoDetail.error || '사유 미상') + '. 「상세페이지 꾸미기」에서 채워 주세요.') + '</div>';
+    }
     pvOrder.forEach(function (m) { h += pvRowHtml(m); });
     if (pvState === 'running') h += '<div class="m5-note" data-role="m5-check-progress">마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳 확인됨 — 나머지는 오는 대로 보여 드려요.</div>';
     checksEl.innerHTML = h;
@@ -540,7 +547,7 @@
       if (jobNo !== pvJob) return;
       if (!d || !d.ok) { pvState = 'done'; pvPending = []; pvRender(); checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
       (d.results || []).forEach(function (r) { pvRows[r.market] = r; });
-      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvState = d.state;
+      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvState = d.state;
       pvRender();
       if (d.state === 'running') pvTimer = setTimeout(function () { pvPoll(jobNo, url); }, 3000);
       else checkBtn.disabled = false;
@@ -549,7 +556,7 @@
   function runCheck(markets, keep) {
     if (pvTimer) clearTimeout(pvTimer);
     var jobNo = ++pvJob;
-    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; }
+    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; pvAutoDetail = null; }
     markets.forEach(function (m) { delete pvRows[m]; if (pvOrder.indexOf(m) < 0) pvOrder.push(m); });
     pvPending = markets.slice(); pvState = 'running';
     checkBtn.disabled = true; pvRender();

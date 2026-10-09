@@ -2879,6 +2879,9 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 if _g:
                     product_data["images_effective"] = list(_g)
                 _warn_pages = _its.effective_summary(_uex).get("warn_idx") or []
+                # Y7-G: 사전검증이 만든 상세 자동 초안 — 등록도 같은 자리에서 싣는다(셀러 텍스트가 없을 때만 쓰인다)
+                if isinstance(_uex.get("detail_auto"), dict):
+                    product_data["detail_auto"] = _uex["detail_auto"]
     except Exception as exc:
         logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
 
@@ -4108,6 +4111,74 @@ def _pv_auto_translate(product_data: dict, data: dict, results) -> tuple:
     return _auto, product_data
 
 
+_PV_AUTO_DETAIL_IMAGES = 5
+
+
+def _pv_prewarm_naver_detail(product_data: dict, markets: list) -> bool:
+    """Y7-G — 네이버 상세 이미지를 **마켓별 12초 창 밖에서** 먼저 CDN에 올려 둔다(결과는 캐시). 마켓 검증은 캐시를 읽는다.
+
+    스토어마다 그 스토어 키로(등록과 같은 업로더). 실패해도 막지 않는다 — 마켓 검증이 같은 함수로 다시 잰다.
+    """
+    from .upload_dispatcher import _for_market, naver_detail_verdict
+    did = False
+    for m in markets:
+        try:
+            base, ctx = _for_market(m)
+            if base != "smartstore":
+                continue
+            with ctx:
+                v = naver_detail_verdict(dict(product_data))
+            did = True
+            logger.info("[사전검증] 네이버 상세 이미지 market=%s 올림 %d · 캐시 %d · 뺌 %d", m, v.get("kept", 0) - v.get("cached", 0),
+                        v.get("cached", 0), len(v.get("dropped") or []))
+        except Exception as exc:                                 # noqa: BLE001
+            logger.warning("[사전검증] 네이버 상세 이미지 미리 올리기 실패 market=%s: %s", m, exc)
+    return did
+
+
+def _pv_auto_detail(product_data: dict, data: dict, results) -> tuple:
+    """Y7-G(오너 2026-10-09): 네이버 「상세 본문 비어 있음」 보류는 보류 전에 **상세 초안부터** — `(info, product_data)`.
+
+    상품명·옵션·스펙으로 AI 상세 초안(편집 화면 기능과 같은 함수) + 대표·갤러리 사진 앞 5장 → 수집 기록 `detail_auto`에
+    저장 → 등록·다음 사전검증도 같은 초안을 쓴다(셀러가 상세 설명을 쓰면 그쪽이 이긴다). 초안이 비면 None — 지금처럼 보류.
+    """
+    if not (data.get("item_id") and any(r.hold and "detail_blank" in (getattr(r, "fixes", None) or []) for r in results)):
+        return None, product_data
+    iid = str(data["item_id"])
+    item = _get_owned_item(iid)
+    if not item:
+        return None, product_data
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    title = str(product_data.get("title_ko") or product_data.get("title") or ex.get("title_ko") or item.get("title") or "").strip()
+    if not title:
+        return {"status": "failed", "error": "제목 없음"}, product_data
+    try:
+        res = _ai_detail_draft(title, {**ex, "options": product_data.get("options") or ex.get("options") or []})
+    except Exception as exc:                                     # noqa: BLE001 — 실패면 지금처럼 보류
+        logger.warning("[사전검증] 상세 자동 생성 실패 item=%s: %s", iid[:8], exc)
+        return {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:120]}"}, product_data
+    text = str((res or {}).get("text") or "").strip()
+    imgs = [u for u in (product_data.get("images_effective") or product_data.get("images") or [])
+            if isinstance(u, str) and u.strip()][:_PV_AUTO_DETAIL_IMAGES]
+    if not text:
+        logger.info("[사전검증] 상세 자동 생성 빈 결과 item=%s status=%s", iid[:8], (res or {}).get("draft_status"))
+        return {"status": "failed", "error": (res or {}).get("draft_error") or "빈 초안"}, product_data
+    da = {"text": text, "images": imgs, "provider": (res or {}).get("provider") or "stub",
+          "draft_status": (res or {}).get("draft_status") or "", "at": datetime.now(timezone.utc).isoformat()}
+    ex["detail_auto"] = da
+    try:
+        from . import collect_history_store as _chs
+        _chs.update(iid, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
+    except Exception as exc:                                     # noqa: BLE001 — 저장 못 하면 등록이 초안을 못 본다
+        logger.warning("[사전검증] 상세 자동 초안 저장 실패 item=%s: %s", iid[:8], exc)
+        return {"status": "failed", "error": "초안 저장 실패"}, product_data
+    logger.info("[사전검증] 상세 자동 생성 item=%s provider=%s 글자=%d 사진=%d", iid[:8], da["provider"], len(text), len(imgs))
+    return {"status": "done", "provider": da["provider"]}, {**product_data, "detail_auto": da}
+
+
 def _pv_transport_fail(market: str, kind: str, why: str) -> dict:
     """전송 실패(시간 초과·예외) — 검증을 **못 한** 것이지 막힌 게 아니다. 화면은 「검증 못 함 — 다시 시도」."""
     from .upload_dispatcher import MARKET_LABELS
@@ -4265,6 +4336,9 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
             product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
             with mc.seller_market_env(_seller_id(), markets):
+                t0 = _time.monotonic()
+                if _pv_prewarm_naver_detail(product_data, markets):
+                    _pv_update(job_id, stages={"naver_detail_cdn": int((_time.monotonic() - t0) * 1000)})
                 results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
                 t0 = _time.monotonic()
                 _auto, product_data = _pv_auto_translate(product_data, data, results)
@@ -4273,6 +4347,17 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
                     held = [r.market for r in results if r.hold and "translate" in (getattr(r, "fixes", None) or [])]
                     if held and _time.time() < deadline_ts - 1 and _auto.get("status") in ("done", "queued", "failed"):
                         _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
+                # Y7-G: 네이버 「상세 본문 비어 있음」 보류 → 상세 초안 자동 생성 → 그 마켓만 다시 잰다
+                t0 = _time.monotonic()
+                if data.get("item_id") and any(r.hold and "detail_blank" in (getattr(r, "fixes", None) or []) for r in results):
+                    _pv_update(job_id, auto_detail={"status": "running"})       # 카드: 「상세 초안을 만드는 중…」
+                _ad, product_data = _pv_auto_detail(product_data, data, results)
+                if _ad is not None:
+                    _pv_update(job_id, auto_detail=_ad, stages={"auto_detail": int((_time.monotonic() - t0) * 1000)})
+                    held = [r.market for r in results if r.hold and "detail_blank" in (getattr(r, "fixes", None) or [])]
+                    if held and _ad.get("status") == "done" and _time.time() < deadline_ts - 1:
+                        results = [r for r in results if r.market not in held] + \
+                            _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
                 _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
         except Exception as exc:                                     # noqa: BLE001 — 잡은 죽지 않는다
             logger.warning("[사전검증 잡] %s 실패: %s", job_id[:8], exc)
@@ -4309,7 +4394,8 @@ def collect_prevalidate_job(job_id: str):
     rows = [res[m] for m in markets if m in res]
     return jsonify({"ok": True, "state": cur.get("state"), "results": rows,
                     "pending": [m for m in markets if m not in res],
-                    "auto_translate": cur.get("auto_translate"), "error": cur.get("error") or ""})
+                    "auto_translate": cur.get("auto_translate"), "auto_detail": cur.get("auto_detail"),
+                    "error": cur.get("error") or ""})
 
 
 @bp.post("/collect/localize")
@@ -9566,10 +9652,18 @@ def collect_preview_by_id(item_id: str):
         orig_title_shown = _mm(str(_ex_t.get("title_en") or _ex_t.get("title") or item.get("title") or ""))
     except Exception:
         orig_title_shown = ""
+    # Y7-G: 사전검증이 만든 상세 자동 초안으로 나가는 중이면(셀러 상세가 마켓 규칙에 다 걸러짐) 「확인(바꾸기)」 자리에서 그 초안을 보여 준다
+    try:
+        from .upload_dispatcher import detail_auto_note as _dan
+        _ex_a = extra if isinstance(extra, dict) else {}
+        detail_auto_active = bool(_dan({**_ex_a, "item_id": item_id}))
+    except Exception:
+        detail_auto_active = False
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
+        detail_auto_active=detail_auto_active,
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, ship_est=ship_est,
         field_src=field_src,
         page="collect_history",
@@ -9612,6 +9706,29 @@ def collect_classify():
     return jsonify({"ok": True, **res})
 
 
+def _ai_detail_draft(title: str, extra: dict, data: dict = None) -> dict:
+    """AI 상세 초안 — 편집 화면 「AI 상세 초안 생성」과 사전검증 자동 생성(Y7-G)이 **같은 함수**.
+
+    반환 `{text, provider, draft_status, draft_error}`. 키 없음·호출 실패면 확인된 정보만 구조화(가짜 상세 0).
+    """
+    data = data or {}
+    category = (data.get("category") or extra.get("category_code") or "").strip()
+    keywords = data.get("keywords") or extra.get("keywords") or []
+    specs = extra.get("detail_specs") or []
+    # 옵션도 스펙 힌트로(예: 색상/사이즈) — 확인된 정보만
+    for opt in (extra.get("options") or []):
+        if isinstance(opt, dict) and opt.get("name") and opt.get("values"):
+            specs = list(specs) + [[opt["name"], ", ".join(map(str, opt["values"][:8]))]]
+    from .ai.translator import AITranslator
+    return AITranslator().generate_description({
+        "title": title, "category": category, "keywords": keywords,
+        "specs": specs, "brand": extra.get("brand") or "",
+        "options": extra.get("options") or [],   # v56 STEP3: 키없음 구조초안에 옵션표 반영
+        # v87-W7 item4: 무키 폴백 품질 — 원문 상세 라인을 통째 보존해 '숫자 조각 리스트' 방지.
+        "description": extra.get("description") or extra.get("description_ko") or "",
+    })
+
+
 @bp.post("/collect/preview/<item_id>/ai-description")
 def collect_ai_description(item_id: str):
     """v39-E2 #3: 상세설명이 없거나 빈약할 때 AI 상세 '초안' 생성(자동 확정 금지 — 사용자 편집/승인).
@@ -9637,23 +9754,8 @@ def collect_ai_description(item_id: str):
     if not title:
         # Y5(오너 2026-10-04): 제목이 비면 초안 재료가 없다 — AI를 부르지 않고 무엇이 먼저인지 말한다.
         return jsonify({"ok": False, "skipped": True, "error": "제목 없음 — 보강 먼저(AI 상세 초안 건너뜀)"}), 200
-    category = (data.get("category") or extra.get("category_code") or "").strip()
-    keywords = data.get("keywords") or extra.get("keywords") or []
-    specs = extra.get("detail_specs") or []
-    # 옵션도 스펙 힌트로(예: 색상/사이즈) — 확인된 정보만
-    for opt in (extra.get("options") or []):
-        if isinstance(opt, dict) and opt.get("name") and opt.get("values"):
-            specs = list(specs) + [[opt["name"], ", ".join(map(str, opt["values"][:8]))]]
-
     try:
-        from .ai.translator import AITranslator
-        res = AITranslator().generate_description({
-            "title": title, "category": category, "keywords": keywords,
-            "specs": specs, "brand": extra.get("brand") or "",
-            "options": extra.get("options") or [],   # v56 STEP3: 키없음 구조초안에 옵션표 반영
-            # v87-W7 item4: 무키 폴백 품질 — 원문 상세 라인을 통째 보존해 '숫자 조각 리스트' 방지.
-            "description": extra.get("description") or extra.get("description_ko") or "",
-        })
+        res = _ai_detail_draft(title, extra, data)
     except Exception as exc:
         logger.warning("AI 상세 생성 오류: %s", exc)
         return jsonify({"ok": False, "error": "AI 상세 생성 중 오류가 발생했습니다."}), 500

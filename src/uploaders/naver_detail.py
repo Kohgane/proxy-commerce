@@ -11,6 +11,11 @@
 
 상세 이미지도 텍스트도 없으면 **빈 문자열**(고지만으로 본문을 채우지 않는다) — 사전검증이 `detail_blank`로 보류한다.
 셀러가 「상세페이지 꾸미기」로 직접 만든 블록이 있으면 그것이 정본이다(호출부가 이 함수를 부르지 않는다).
+
+Y7-G(오너 2026-10-09 15:56 KST — 사전검증 「통과」 → 등록 「상세 본문 비어 있음」):
+- 판정은 **`judge()` 하나** — 사전검증과 등록이 같은 본문(`build`)을 같은 업로더로 네이버 CDN에 올린 **뒤** 잰다.
+  예전 사전검증은 「상세 이미지 URL이 있다」로 통과시켰고, 등록은 그 장을 받아 → 변환 → 올리다 못 올려 빈 본문이 됐다.
+- 셀러 텍스트가 없으면 `detail_auto`(사전검증이 자동으로 만든 상세 초안 — 텍스트 + 갤러리 사진)를 쓴다.
 """
 from __future__ import annotations
 
@@ -35,13 +40,28 @@ def _text_of(pd: Dict[str, Any]) -> str:
     return "".join('<p style="margin:0 0 12px;white-space:pre-wrap">' + _html.escape(p) + "</p>" for p in paras)
 
 
-def detail_images(pd: Dict[str, Any]) -> List[str]:
-    """보낼 상세 이미지 — `//` 주소는 `https:`로 펴고, 가게 아이콘·추적 픽셀은 뺀다(등록 빌더와 같은 필터).
+def auto_of(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """사전검증이 만든 상세 자동 초안 `{text, images, provider, at}` — 없으면 {}. 셀러 텍스트가 있으면 쓰지 않는다(호출부 판단)."""
+    a = pd.get("detail_auto")
+    return a if isinstance(a, dict) and (str(a.get("text") or "").strip() or a.get("images")) else {}
 
-    13:32 그 상품: 상세 이미지 2장 = `//img.alicdn.com/…`(펴야 하는 주소) + 51×24 가게 아이콘 → 실제로 보낼 장은 1장.
-    """
+
+def _auto_text(pd: Dict[str, Any]) -> str:
+    txt = str(auto_of(pd).get("text") or "").strip()
+    if not txt:
+        return ""
+    try:
+        from src.seller_console.upload_dispatcher import market_description
+        txt = market_description(txt)
+    except Exception:
+        pass
+    paras = [p.strip() for p in txt.replace("\r", "").split("\n\n") if p.strip()]
+    return "".join('<p style="margin:0 0 12px;white-space:pre-wrap">' + _html.escape(p) + "</p>" for p in paras)
+
+
+def _expand(urls) -> List[str]:
     out = []
-    for u in pd.get("detail_images") or []:
+    for u in urls or []:
         if not isinstance(u, str):
             continue
         u = u.strip()
@@ -49,6 +69,15 @@ def detail_images(pd: Dict[str, Any]) -> List[str]:
             u = "https:" + u
         if u.startswith(("http://", "https://")) and u not in out:
             out.append(u)
+    return out
+
+
+def detail_images(pd: Dict[str, Any]) -> List[str]:
+    """보낼 상세 이미지 — `//` 주소는 `https:`로 펴고, 가게 아이콘·추적 픽셀은 뺀다(등록 빌더와 같은 필터).
+
+    13:32 그 상품: 상세 이미지 2장 = `//img.alicdn.com/…`(펴야 하는 주소) + 51×24 가게 아이콘 → 실제로 보낼 장은 1장.
+    """
+    out = _expand(pd.get("detail_images"))
     try:
         from src.collectors.collect_status import real_detail_images
         out = real_detail_images(out)
@@ -58,14 +87,17 @@ def detail_images(pd: Dict[str, Any]) -> List[str]:
 
 
 def has_content(pd: Dict[str, Any]) -> bool:
-    """상세 이미지 1장 이상 또는 텍스트가 있나 — 사전검증 `detail_blank` 판정."""
-    return bool(detail_images(pd)) or bool(_text_of(pd))
+    """상세 이미지 1장 이상 또는 텍스트(셀러 것 또는 자동 초안)가 있나 — **URL 기준**(올리기 전). 등록·사전검증 판정은 `judge`."""
+    return bool(detail_images(pd)) or bool(_text_of(pd)) or bool(auto_of(pd))
 
 
 def build(pd: Dict[str, Any]) -> str:
-    """상세페이지 HTML — 이미지도 텍스트도 없으면 ''."""
+    """상세페이지 HTML — 이미지도 텍스트도 없으면 ''. 셀러 텍스트가 없으면 자동 초안(텍스트 + 갤러리 사진)을 얹는다."""
     text = _text_of(pd)
     imgs = detail_images(pd)
+    if not text and auto_of(pd):
+        text = _auto_text(pd)
+        imgs = imgs + [u for u in _expand(auto_of(pd).get("images")) if u not in imgs]
     if not text and not imgs:
         return ""
     from src.seller_console.notice_texts import PURCHASE_AGENT_NOTICE
@@ -79,6 +111,20 @@ def build(pd: Dict[str, Any]) -> str:
                      + _html.escape(PURCHASE_AGENT_NOTICE) + "</p>")
     parts.append("</div>")
     return "".join(parts)
+
+
+def judge(html_body: str, uploader=None, sku: str = "") -> Dict[str, Any]:
+    """**등록과 사전검증이 같이 쓰는 판정** — 본문 이미지를 네이버 CDN에 올린 뒤(캐시 있으면 재사용) 내용이 남는지.
+
+    반환 `{html, ok, dropped:[{url, reason}], kept, cached}`. 업로더가 없거나 업로드를 끈 환경(`image_upload_enabled`
+    False)이면 올리지 않고 그대로 잰다(등록도 그 환경에선 올리지 않는다 — 같은 답).
+    못 올린 장만 빠지고 텍스트가 있으면 그대로 보낸다(오너 2번).
+    """
+    body = str(html_body or "")
+    rep: Dict[str, Any] = {"dropped": [], "kept": 0, "cached": 0}
+    if uploader is not None and getattr(uploader, "image_upload_enabled", False) and "<img" in body:
+        body = uploader._detail_to_cdn(body, sku, report=rep)
+    return {"html": body, "ok": body_has_content(body), **rep}
 
 
 def body_has_content(html_body: str) -> bool:

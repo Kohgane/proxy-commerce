@@ -279,13 +279,12 @@ class NaverSmartStoreUploader(BaseUploader):
                                 product.get('sku', ''),
                                 '; '.join(s['reason'] for s in shot['skipped']))
                 product = {**product, 'images': shot['urls']}
-            # Y7-F: 상세 본문의 이미지도 대표 사진과 같은 네이버 CDN으로(정본 템플릿도 shop-phinf 주소). 못 올린 장은 본문에서 뺀다.
-            if self.image_upload_enabled and '<img' in str(product.get('description_html') or ''):
-                product = {**product, 'description_html': self._detail_to_cdn(product.get('description_html') or '',
-                                                                              product.get('sku', ''))}
-            # Y7-F: 상세 본문이 비면 보내지 않는다 — 네이버까지 가서 400 `detailContent NotBlank`를 받지 않게(사전검증과 같은 판정).
+            # Y7-F/G: 상세 본문 이미지도 네이버 CDN으로(못 올린 장은 뺀다) → 내용이 남는지. **사전검증과 같은 함수**
+            #   (`naver_detail.judge`) — 사전검증이 이미 올린 장은 캐시에서 꺼내 다시 올리지 않는다.
             from src.uploaders import naver_detail as _nd
-            if not _nd.body_has_content(product.get('description_html') or ''):
+            _dv = _nd.judge(product.get('description_html') or '', self, product.get('sku', ''))
+            product = {**product, 'description_html': _dv['html']}
+            if not _dv['ok']:
                 from src.uploaders import naver_invalid as _ni
                 _r = _ni.row('originProduct.detailContent', '', str(product.get('item_id') or ''))
                 return {'success': False, 'held': True, 'sku': product.get('sku', ''),
@@ -621,8 +620,70 @@ class NaverSmartStoreUploader(BaseUploader):
 
     _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"[^>]*>', re.I)
 
-    def _detail_to_cdn(self, html_body: str, sku: str = '') -> str:
-        """상세 본문 `<img src>` → 네이버 CDN 주소. 이미 네이버(pstatic) 주소면 그대로. 못 올린 장의 `<img>`는 뺀다(외부 주소를 보내지 않음)."""
+    def cdn_map(self, urls, sku: str = '') -> dict:
+        """상세 이미지 URL → 네이버 CDN URL, **한 장씩** 사유를 달아. 반환 `{mapping: {원래 URL: CDN URL}, dropped: [{url, reason}], cached}`.
+
+        Y7-G(오너 2026-10-09 15:56 KST): 사전검증은 「상세 이미지 URL이 있다」로 통과, 등록은 같은 장을 받아 → 변환 → 올리다
+        못 올려 빈 본문 보류였다. 이제 **사전검증이 이 함수로 실제로 올리고** 결과를 캐시(`naver_cdn_cache`, 계정별)에 남긴다 —
+        등록은 같은 함수가 캐시를 먼저 보므로 **두 번 올리지 않는다**. 못 올린 장만 빼고(사유 로그), 나머지는 그대로.
+        예전엔 묶음 업로드 결과의 장 수가 안 맞으면 그 묶음 전체를 뺐다 — 이제 받기는 장마다, 올리기는 받은 장끼리 묶어
+        응답 순서로 짝짓는다.
+        """
+        from src.uploaders import naver_cdn_cache as _cc
+        acct = self.account or ''
+        mapping, dropped, cached, todo = {}, [], 0, []
+        for u in urls or []:
+            n = self.normalize_source_url(u)
+            if not n:
+                dropped.append({'url': str(u or ''), 'reason': 'URL 정규화 실패'})
+                continue
+            hit = _cc.get(acct, n)
+            if hit:
+                mapping[u] = hit
+                cached += 1
+                continue
+            todo.append((u, n))
+        # 받기는 장마다 따로(4장씩 동시) — 상세 이미지 20~30장 상품도 사전검증 시간 안에. 순서는 원래 순서 그대로.
+        fetched = []
+        if todo:
+            import concurrent.futures as _cf
+            import contextvars as _cv
+
+            def _one(un):
+                reasons = []
+                got = self._fetch_image(un[1], on_skip=lambda su, sr: reasons.append(sr))
+                return un, got, (reasons[0] if reasons else '사유 미상')
+            with _cf.ThreadPoolExecutor(max_workers=min(4, len(todo))) as ex:
+                outs = list(ex.map(lambda un: _cv.copy_context().run(_one, un), todo))
+            for (u, n), got, why in outs:
+                if got is None:
+                    dropped.append({'url': u, 'reason': why})
+                else:
+                    fetched.append((u, n, got))
+        todo = fetched
+        for i in range(0, len(todo), self.IMAGE_MAX_COUNT):
+            chunk = todo[i:i + self.IMAGE_MAX_COUNT]
+            up = self._upload_parts([g for _u, _n, g in chunk])
+            urls_out = up.get('urls') or []
+            if up.get('ok') and len(urls_out) == len(chunk):
+                for (u, n, _g), cdn in zip(chunk, urls_out):
+                    mapping[u] = cdn
+                    _cc.put(acct, n, cdn)
+                continue
+            why = up.get('reason') or ''
+            if up.get('ok'):
+                why = f'업로드 응답 장 수 불일치(보냄 {len(chunk)} · 받음 {len(urls_out)})'
+            for u, _n, _g in chunk:
+                dropped.append({'url': u, 'reason': f'네이버 CDN 업로드 실패 — {why}'})
+        for d in dropped:
+            logger.warning('상세 이미지 뺌 sku=%s — %s (%s)', sku, d['reason'][:240], str(d['url'])[-80:])
+        return {'mapping': mapping, 'dropped': dropped, 'cached': cached}
+
+    def _detail_to_cdn(self, html_body: str, sku: str = '', *, report: dict = None) -> str:
+        """상세 본문 `<img src>` → 네이버 CDN 주소. 이미 네이버(pstatic) 주소면 그대로. 못 올린 장의 `<img>`는 뺀다(외부 주소를 보내지 않음).
+
+        `report`(dict)를 주면 `dropped`·`kept`·`cached`를 채운다 — 사전검증 카드가 「n장 못 올림 — 사유」를 말한다.
+        """
         import html as _h
         srcs = []
         for m in self._IMG_SRC_RE.finditer(html_body or ''):
@@ -630,20 +691,13 @@ class NaverSmartStoreUploader(BaseUploader):
             if u.startswith(('http://', 'https://')) and 'pstatic.net' not in u and u not in srcs:
                 srcs.append(u)
         if not srcs:
+            if report is not None:
+                report.update(dropped=[], kept=0, cached=0)
             return html_body
-        mapping = {}
-        for i in range(0, len(srcs), self.IMAGE_MAX_COUNT):
-            chunk = srcs[i:i + self.IMAGE_MAX_COUNT]
-            shot = self.upload_images(chunk)
-            if not shot.get('ok'):
-                logger.warning('상세 이미지 업로드 실패 sku=%s — %s', sku, shot.get('reason'))
-                continue
-            skipped = {str(x.get('url') or '') for x in shot.get('skipped') or []}
-            kept = [u for u in chunk if (self.normalize_source_url(u) or u) not in skipped and u not in skipped]
-            if len(kept) == len(shot.get('urls') or []):
-                mapping.update(dict(zip(kept, shot['urls'])))
-            else:                                       # 짝을 못 맞추면 짐작하지 않는다 — 그 묶음은 빠진다
-                logger.warning('상세 이미지 짝 불일치 sku=%s — 보냄 %d · 받음 %d', sku, len(kept), len(shot.get('urls') or []))
+        got = self.cdn_map(srcs, sku)
+        mapping = got['mapping']
+        if report is not None:
+            report.update(dropped=got['dropped'], kept=len(mapping), cached=got['cached'])
 
         def _swap(m):
             u = _h.unescape(m.group(1))
@@ -682,10 +736,15 @@ class NaverSmartStoreUploader(BaseUploader):
                     'reason': ('업로드할 이미지 0장 — '
                                + '; '.join(s['reason'] for s in skipped[:3]))}
 
+        up = self._upload_parts(cleaned)
+        return {**up, 'skipped': skipped}
+
+    def _upload_parts(self, cleaned) -> dict:
+        """받아 둔 이미지(`FetchedImage`) 목록 → 네이버 CDN 업로드 한 번. 반환 {ok, urls, reason} — urls는 **보낸 순서 그대로**."""
         token = self._get_access_token()
         if not token:
             # 원문이 범인을 지목한다(invalid_client·GW.IP_NOT_ALLOWED·서명 오류 등) — 그대로 올린다.
-            return {'ok': False, 'urls': [], 'skipped': skipped,
+            return {'ok': False, 'urls': [],
                     'reason': f'네이버 토큰 발급 실패 — {self.token_error or "사유 미상"}'}
         # multipart 본문을 미리 조립해 **바이트로** 넘긴다 — 릴레이(mkt.php)가 body를 base64로
         #   그대로 전달하므로, 이렇게 하면 직결·릴레이 어느 경로든 같은 요청이 나간다.
@@ -720,10 +779,10 @@ class NaverSmartStoreUploader(BaseUploader):
                 data = resp.json()
                 out = [i.get('url') for i in (data.get('images') or []) if i.get('url')]
                 if not out:
-                    return {'ok': False, 'urls': [], 'skipped': skipped,
+                    return {'ok': False, 'urls': [],
                             'reason': f'네이버 응답에 이미지 URL 없음: {str(data)[:200]}'}
                 logger.info('네이버 이미지 업로드 성공 %d장(%dB 전송)', len(out), payload_bytes)
-                return {'ok': True, 'urls': out, 'skipped': skipped, 'reason': ''}
+                return {'ok': True, 'urls': out, 'reason': ''}
             except requests.exceptions.HTTPError as exc:
                 status = getattr(exc.response, 'status_code', None)
                 last = self._fail_detail('image_upload', att + 1, exc=exc, status=status,
@@ -737,7 +796,7 @@ class NaverSmartStoreUploader(BaseUploader):
                 last = self._fail_detail('image_upload', att + 1, exc=exc)
                 logger.warning('이미지 업로드 실패 — %s', last)
                 time.sleep(3 * (att + 1))
-        return {'ok': False, 'urls': [], 'skipped': skipped,
+        return {'ok': False, 'urls': [],
                 'reason': f'이미지 업로드 실패(최대 {self.IMAGE_RETRY}회, 전송 {payload_bytes}B): {last}'}
 
     # ── 실패 원문 노출(카나리 6차) ────────────────────────────────────────────────
