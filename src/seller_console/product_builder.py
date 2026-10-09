@@ -21,8 +21,13 @@ PRODUCT_KEYS = (
     "price", "price_original", "currency", "description", "description_ko", "images", "options", "keywords", "tags",
     "images_effective", "thumbnail", "url", "source", "brand", "category", "category_code", "gallery_images",
     "detail_images", "detail_blocks", "coupang_attributes", "coupang_option_pick", "skus", "option_values_ko",
-    "option_value_overrides", "option_names_ko", "option_name_overrides",
+    "option_value_overrides", "option_names_ko", "option_name_overrides", "coupang_option_names",
 )
+
+
+def _split_names(ex: dict) -> tuple:
+    from src.collectors.option_ko import split_name_overrides
+    return split_name_overrides(ex)
 
 
 def _extra(item: dict) -> dict:
@@ -109,7 +114,9 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "option_value_overrides": dict(ex.get("option_value_overrides") or {}),
         "option_names_ko": {str(o.get("name")): str(o.get("name_ko")) for o in options
                             if isinstance(o, dict) and o.get("name") and o.get("name_ko")},
-        "option_name_overrides": dict(ex.get("option_name_overrides") or {}),
+        # Y7-I: 축 이름 덮어쓰기 = 사람이 고친 보이는 이름만 · 쿠팡 메타 이름은 따로(원문 아닌 열쇠는 버림)
+        "option_name_overrides": _split_names(ex)[0],
+        "coupang_option_names": _split_names(ex)[1],
     }
     if not base["coupang_name"]:
         # F53 규칙안 — 서랍이 처음 열릴 때 채우는 그 값(오너가 안 고쳤으면).

@@ -25,13 +25,57 @@ def _val(v) -> str:
     return str(v.get("name") if isinstance(v, dict) else (v or "")).strip()
 
 
+def axis_key(option: Dict) -> str:
+    """Y7-I — 축의 **불변 열쇠** = 원래 옵션 이름(원문). 편집 화면은 보이는 이름을 `name`, 원문을 `src_name`에 싣는다."""
+    o = option or {}
+    return str(o.get("src_name") or o.get("name") or "").strip()
+
+
+def split_name_overrides(extra: Dict) -> tuple:
+    """Y7-I(오너 2026-10-09 23:25 KST 네이버 400 「중복된 옵션 — 색상」) — 저장된 축 이름 덮어쓰기를 **둘로 나눈다**.
+
+    `option_name_overrides` 한 표에 두 가지가 섞여 있었다:
+      ① 사람이 옵션 탭에서 고친 **보이는 이름**(Y6-C) — 모든 마켓·화면이 쓴다
+      ② 쿠팡 SKU 칸 「메타 속성 고르기」로 고른 **쿠팡 메타 이름**(F51-b-3, 예: 「패션의류/잡화 사이즈」) — 쿠팡만 쓴다
+    ②를 네이버 그룹 이름에 쓰면 「패션의류/잡화 사이즈」가 나가고, 열쇠가 원문이 아닌 줄(01:21 「패션의류/잡화 사이즈 → 색상」)은
+    보이는 이름으로 찾는 순간 사이즈 축을 「색상」으로 바꿔 네이버가 「중복된 옵션」으로 거부했다.
+
+    반환 `(human, coupang)`. 열쇠가 원래 옵션 이름이 아닌 줄은 **버린다**. ②는 `glossary_candidates`(kind=name)에
+    같은 (원문, 값)이 남아 있는 줄 + 새 표 `coupang_option_names`.
+    """
+    ex = extra or {}
+    srcs = {axis_key(o) for o in (ex.get("options") or []) if isinstance(o, dict)} - {""}     # 원문(편집 화면 모양이면 src_name)
+    nov = ex.get("option_name_overrides") if isinstance(ex.get("option_name_overrides"), dict) else {}
+    picks = {(str(g.get("orig") or ""), str(g.get("value") or "")) for g in (ex.get("glossary_candidates") or [])
+             if isinstance(g, dict) and g.get("kind") == "name"}
+    human, coupang = {}, {}
+    for k, v in nov.items():
+        k, v = str(k).strip(), str(v or "").strip()
+        if not k or not v or (srcs and k not in srcs):
+            continue
+        (coupang if (k, v) in picks else human)[k] = v
+    cp = ex.get("coupang_option_names") if isinstance(ex.get("coupang_option_names"), dict) else {}
+    for k, v in cp.items():
+        k, v = str(k).strip(), str(v or "").strip()
+        if k and v and (not srcs or k in srcs):
+            coupang[k] = v
+    return human, coupang
+
+
 def axis_ko(option: Dict, name_overrides: Dict = None) -> str:
-    """축 이름 한국어 — 직접 수정 → 축 용어집(颜色分类→색상) → 번역기 name_ko → 원문."""
+    """축 이름 한국어 — 직접 수정 → 축 용어집(颜色分类→색상) → 번역기 name_ko → 원문.
+
+    Y7-I: 덮어쓰기는 **원래 옵션 이름**(`axis_key`)으로만 찾는다 — 보이는 이름으로 찾으면 다른 축을 가로챈다(Y6-D와 같은 결함).
+    """
     from src.uploaders.coupang_options import OPTION_NAME_GLOSSARY
-    name = str((option or {}).get("name") or "").strip()
+    name = axis_key(option)
     ov = (name_overrides or {}).get(name)
     if str(ov or "").strip():
         return str(ov).strip()
+    # 편집 화면 모양(보이는 이름 + src_name) — 사람이 칸에 적은 이름(아직 저장 전일 수 있음)이 원문 해석보다 앞선다
+    vis = str((option or {}).get("name") or "").strip() if (option or {}).get("src_name") else ""
+    if vis and vis != name and not _cjk(vis):
+        return vis
     if name in OPTION_NAME_GLOSSARY:
         return OPTION_NAME_GLOSSARY[name]
     nk = str((option or {}).get("name_ko") or "").strip()
@@ -56,11 +100,14 @@ def options_view(product: Dict) -> List[Dict]:
     from src.uploaders.coupang_options import value_ko_map
     vko = value_ko_map(product)
     ov = _overrides(product)
-    nov = product.get("option_name_overrides") if isinstance(product.get("option_name_overrides"), dict) else {}
+    nov, cp = split_name_overrides(product)         # Y7-I: 사람이 고친 보이는 이름만(쿠팡 메타 이름·원문 아닌 열쇠 제외)
     out = []
     for o in product.get("options") or []:
         if not isinstance(o, dict):
             continue
+        if o.get("src_name") and str(o.get("name") or "").strip() == cp.get(axis_key(o)):
+            # 화면이 보인 이름이 그 축의 **쿠팡 메타 이름**(예전 화면이 섞어 보였다) — 사람이 고친 이름이 아니다
+            o = {**o, "name": o["src_name"]}
         vals = []
         for v in o.get("values") or []:
             src = _val(v)

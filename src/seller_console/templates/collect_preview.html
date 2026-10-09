@@ -1690,6 +1690,7 @@ function buildProductData() {
     option_names_ko: Object.fromEntries((Array.isArray(_EXTRA.options) ? _EXTRA.options : [])
       .filter(o => o && o.name && o.name_ko).map(o => [String(o.name), String(o.name_ko)])),
     option_name_overrides: Object.assign({}, _EXTRA.option_name_overrides || {}),
+    coupang_option_names: Object.assign({}, _EXTRA.coupang_option_names || {}),     // Y7-I: 쿠팡 메타 이름(쿠팡만)
   };
 }
 function kgpValuesKoMap() {
@@ -1817,7 +1818,7 @@ function kgpRenderCoupangOptions(d) {
         body: JSON.stringify({orig: el.dataset.cpName, name: el.value})});
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.ok) { el.disabled = false; return; }
-      _EXTRA.option_name_overrides = j.overrides || {};
+      _EXTRA.coupang_option_names = j.overrides || {};
       kgpLoadCoupangOptions();
     } catch (e) { el.disabled = false; }
   }));
