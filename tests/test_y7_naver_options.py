@@ -21,6 +21,7 @@ def _pleats(**over):
             for i, v in enumerate(SRC)]
     pd = {"sku": "PLEATS-1", "title_ko": "플리츠 미니멀 여성 여름 세트", "sell_price_krw": 52000, "price": 168,
           "currency": "CNY", "images": ["https://img.alicdn.com/a.jpg"],
+          "description": "플리츠 상의와 스커트 세트입니다.",       # Y7-F: 네이버 상세 본문 필수(빈 본문은 test_y7f가 잰다)
           "options": [{"name": "颜色分类", "values": list(SRC)}, {"name": "尺码", "values": ["均码"]}],
           "skus": skus,
           # Y7-B: 상품명으로 정할 수 없는 옷 — 오너가 지정한 네이버 리프(트리 캐시가 없으면 가드는 막지 않는다)

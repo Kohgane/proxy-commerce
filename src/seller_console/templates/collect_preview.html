@@ -830,13 +830,6 @@ function kgpEtab(name) {
     el.classList.toggle('kgp-etab-hide', el.dataset.etab !== name);
   });
 }
-// Y7-F: 「상세페이지 꾸미기 →」처럼 고칠 곳이 탭이면 주소(?tab=detail)로 그 탭을 바로 연다.
-document.addEventListener('DOMContentLoaded', function () {
-  try {
-    var t = new URLSearchParams(location.search).get('tab');
-    if (t && document.querySelector('.kgp-etab-chip[data-etab="' + t.replace(/[^a-z]/g, '') + '"]')) kgpEtab(t.replace(/[^a-z]/g, ''));
-  } catch (e) {}
-});
 
 // ── 서버 주입 데이터 ──
 const _ITEM = {{ item | tojson }};
@@ -2172,6 +2165,14 @@ async function runPrevalidate() {
 //   한 줄이면 요약(message)이 곧 그 문장이다 — 목록을 또 펴면 같은 말이 두 번 나온다.
 // M1-1 — 설정이 비어 막혔을 때 **고치러 갈 화면** 링크(마켓 연동 › 그 마켓). 우리 앱 경로만 받는다.
 //   드로어(iframe) 안에서 눌러도 연동 화면이 드로어에 갇히지 않게 맨 위 창에서 연다(새 창 아님).
+// Y7-F(탭 전환 함수와 떨어뜨려 둔다 — 탭 전환은 클래스만 바꾼다는 계약): 「상세페이지 꾸미기 →」처럼 고칠 곳이 탭이면 주소(?tab=detail)로 그 탭을 바로 연다.
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    var t = new URLSearchParams(location.search).get('tab');
+    if (t && document.querySelector('.kgp-etab-chip[data-etab="' + t.replace(/[^a-z]/g, '') + '"]')) kgpEtab(t.replace(/[^a-z]/g, ''));
+  } catch (e) {}
+});
+
 function renderActionLink(url, label) {
   if (!url || !/^\/seller\//.test(String(url))) return '';
   // Y7-F: 서버 매퍼가 준 글자가 있으면 그대로(「상세페이지 꾸미기 →」 등) — 화면이 주소로 짐작하지 않는다.
