@@ -193,7 +193,7 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
                dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」
                registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
-               registered_price=str((rec.get("price") or {}).get("line") or ""),
+               registered_price=_price_line(rec),
                tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
     with _LOCK:
         _CACHE[key] = (now, row)
@@ -202,6 +202,14 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
 
 #: M8(오너 2026-10-10) — 마켓 하나에 상태를 묻는 시간 상한. 넘으면 그 칸만 「상태 확인 실패」(다른 마켓은 기다리지 않는다).
 STATUS_TIMEOUT_SEC = 12.0
+
+
+def _price_line(rec: dict) -> str:
+    """등록 때 판매가 구성 줄 — M8-8 축소(오너 2026-10-10): 「→ 10원 올림 n원」에서 끝. #882 배포 직후 저장된 기록엔
+    「 · 마진 n%는 실수령…」 꼬리가 붙어 있을 수 있어 화면에서 뗀다(저장값은 그대로)."""
+    line = str((rec.get("price") or {}).get("line") or "")
+    i = line.find(" · 마진 ")
+    return line[:i] if i >= 0 else line
 
 
 def db_row(rec: dict) -> dict:
@@ -227,7 +235,7 @@ def db_row(rec: dict) -> dict:
             # 쿠팡 구매자 주소는 승인 뒤에만 생긴다(마지막 조회값) · 그 밖은 등록 기록의 주소(네이버 = 채널 번호 주소)
             "link": str(rv.get("link") or "") if m.startswith("coupang") else str(rec.get("external_url") or ""),
             "manage_url": manage, "manage_label": mlabel, "pending": True,
-            "registered_price": str((rec.get("price") or {}).get("line") or ""),
+            "registered_price": _price_line(rec),
             "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait")}
 
 

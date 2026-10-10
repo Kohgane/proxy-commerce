@@ -734,7 +734,6 @@
                    oninput="document.getElementById('uploadMarginPctDisplay').textContent=this.value">
             <span class="fw-bold text-teal" id="uploadMarginPctDisplay">{{ default_margin_pct|default(25)|int }}</span><span>%</span>
           </div>
-          <div class="form-text mb-3" data-role="margin-def">실수령 마진 — 판매가에서 수수료·원가·배대지·국제배송·관부가세·국내배송을 빼고 남는 몫이 판매가의 몇 %인지.</div>
 
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-ghost" data-bs-dismiss="modal">취소</button>
@@ -2235,7 +2234,7 @@ function renderPrevalidateResults(results, pending, state, queueNote) {
   const el = document.getElementById('prevalidateResults');
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
-  let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율(실수령 · 판매가 기준): <strong class="text-teal">${targetMarginPct}%</strong></div>`;
+  let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).

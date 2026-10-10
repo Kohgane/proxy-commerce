@@ -473,14 +473,11 @@ def sell_price_parts(buy_price, buy_currency, market, margin_pct, fx_rates=None,
     sell = (landed + dom) / denom
     out["sell_krw"] = float(round(sell, 2))
     final = int(-(-float(sell) // 10) * 10)
-    # M8-8: 「마진」이 무엇의 몇 %인지 줄에 같이 — 목표(실수령·판매가 기준)와, 사람이 흔히 재는 판매가 대비·원가 대비
-    rat = margin_ratios(final, cost, landed, market, domestic_shipping=dom, commission=comm)
-    out["ratios"] = rat
+    # M8-8 축소(오너 2026-10-10): 줄은 식과 결과까지만 — 마진 정의 설명·판매가 대비·원가 대비 숫자는 싣지 않는다.
+    #   세 비율은 값으로만 남긴다(`ratios` — 로그·진단용, 화면엔 안 씀). 정의는 `MARGIN_TERMS`.
+    out["ratios"] = margin_ratios(final, cost, landed, market, domestic_shipping=dom, commission=comm)
     out["line"] = (head + f" = {float(landed + dom):,.0f}원 ÷ (1 − 수수료 {float(comm):g}% − 마진 {float(margin_pct):g}%)"
-                   f" = {float(sell):,.0f}원 → 10원 올림 {final:,}원"
-                   f" · 마진 {float(margin_pct):g}%는 실수령(판매가 기준: {MARGIN_TERMS['net']})"
-                   f" · 같은 값의 판매가 대비 {rat['gross_on_sell']:g}%((판매가−원가)÷판매가)"
-                   + (f" · 원가 대비 {rat['markup_on_cost']:g}%" if rat['markup_on_cost'] is not None else ""))
+                   f" = {float(sell):,.0f}원 → 10원 올림 {final:,}원")
     return out
 
 
