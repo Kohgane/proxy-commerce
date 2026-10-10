@@ -491,6 +491,8 @@
          '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
          (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
          ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+         // Y7-M: 「주의」 칩 — 보류 아님(등록 막지 않음)
+         (r.cautions || []).map(function (x) { return '<div class="m5-note" data-role="m5-caution"><span class="pc-badge pc-badge-caution">주의</span> ' + esc(x) + '</div>'; }).join('') +
          catLine(r) +
          (r.action_url ? '<div><a class="m5-fix" data-role="' + ((r.fixes || []).indexOf('naver_category') >= 0 ? 'm5-naver-category' : 'm5-action') + '" href="' + esc(r.action_url) + '">' +
            (r.action_label ? esc(r.action_label) :                                         // Y7-F: 서버 매퍼가 준 글자 그대로
