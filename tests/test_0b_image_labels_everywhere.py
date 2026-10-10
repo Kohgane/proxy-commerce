@@ -72,22 +72,20 @@ def test_seller_translation_job_labels_each_page_tencent(monkeypatch, captured):
 
 
 def test_original_copies_are_labelled_original(monkeypatch, captured):
-    """`.webp`의 출처 — 크론이 원본을 내려받아 WebP로 저장본을 만든다(`process_image`)."""
+    """원본 저장본(크론) — Z10-B부터 원본 URL을 Cloudinary에 **원격 업로드**한다(이름표는 그대로 ORIGINAL)."""
     import src.api.extension_api as ext
     from src.media import image_pipeline as P
     monkeypatch.setattr(ext, "_cdn_configured", lambda: True)
-    monkeypatch.setattr(P, "_download_image", lambda url, *a, **k: _jpeg(), raising=False)
     got = []
 
-    def _proc(url, label=None, **kw):
+    def _up(src, label=None, **kw):
         got.append(label)
-        from types import SimpleNamespace
-        return SimpleNamespace(cdn_uploaded=True, processed_url=f"https://cdn/{public_id(label)}.webp")
+        return {"ok": True, "secure_url": f"https://cdn/{public_id(label)}.jpg"}
 
-    monkeypatch.setattr(P, "process_image", _proc)
+    monkeypatch.setattr(P, "upload_remote", _up)
     out = ext._store_image_copies(["https://img/a.jpg", "https://img/b.jpg"], item_id="it7", budget_sec=5)
     assert [l["pipeline"] for l in got] == ["ORIGINAL", "ORIGINAL"] and got[1]["page"] == "1"
-    assert all(u.endswith("_ORIGINAL.webp") and "_it7_p" in u for u in out["images_stored"])
+    assert all(u.endswith("_ORIGINAL.jpg") and "_it7_p" in u for u in out["images_stored"])
 
 
 def test_process_image_passes_the_label_to_the_upload(monkeypatch, captured):

@@ -232,6 +232,8 @@ def _resize_and_crop(
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(image_bytes))
+        if img.format == "JPEG":                    # Z10-B: JPEG은 목표 크기 근처로 줄여 푼다(원본 화소를 다 풀지 않음)
+            img.draft("RGB", (target_width, target_height))
         # 비율 유지 크롭
         src_w, src_h = img.size
         src_ratio = src_w / src_h
@@ -395,6 +397,75 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
     return out
 
 
+def remote_max_side() -> int:
+    """원격 업로드 때 Cloudinary가 들어오는 장에 거는 긴 변 상한(px) — `IMAGE_COPY_MAX_SIDE`(기본 2000). 0이면 원본 그대로."""
+    try:
+        return int(os.getenv("IMAGE_COPY_MAX_SIDE", "2000") or 0)
+    except (TypeError, ValueError):
+        return 2000
+
+
+def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeout: float = 30.0,
+                  folder: str = "") -> Dict[str, Any]:
+    """Z10-B — 원본 **URL을 그대로** Cloudinary에 넘긴다(원격 업로드 — Cloudinary가 직접 받아 간다). 우리 프로세스는
+    바이트를 만지지 않는다 → 메모리 0. `source`가 bytes면 그 바이트를 올린다(폴백 — 받은 자리에서 이미 줄인 것).
+
+    들어오는 장은 Cloudinary 쪽에서 긴 변 `remote_max_side()`(2,000px)로 줄여 저장한다(incoming transformation —
+    우리가 풀지 않는다). 반환은 `upload_bytes`와 같은 모양 `{ok, secure_url, public_id, bytes, error, keys}`."""
+    from src.utils.redact import scrub_infra
+    out: Dict[str, Any] = {"ok": False, "secure_url": "", "public_id": "", "bytes": 0, "error": "", "keys": [], "eager": []}
+    if not source:
+        out["error"] = "올릴 원본이 없습니다"
+        return out
+    if not _CDN_UPLOAD_ENABLED:
+        out["error"] = "IMAGE_CDN_UPLOAD_ENABLED=0 — 업로드가 꺼져 있습니다"
+        return out
+    if not _cloudinary_configured():
+        out["error"] = "Cloudinary 자격 미설정"
+        return out
+    if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
+        out["error"] = "ADAPTER_DRY_RUN=1 — 실제 업로드를 막았습니다"
+        return out
+    try:
+        import cloudinary
+        import cloudinary.uploader
+    except Exception as exc:
+        out["error"] = f"cloudinary 라이브러리 없음: {type(exc).__name__}"
+        return out
+    try:
+        cloudinary.config(cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"), api_key=os.getenv("CLOUDINARY_API_KEY"),
+                          api_secret=os.getenv("CLOUDINARY_API_SECRET"), secure=True)
+        public_id, context = "", None
+        if label:
+            from src.media.image_label import upload_opts
+            _lo = upload_opts(label)
+            folder = folder or _lo["folder"]
+            public_id, context = _lo["public_id"], _lo["context"]
+        base = os.getenv("CLOUDINARY_FOLDER", "proxy-commerce")
+        opts: Dict[str, Any] = {"folder": f"{base}/{folder}" if folder else base, "resource_type": "image",
+                                "timeout": float(timeout)}
+        side = remote_max_side()
+        if side > 0:
+            opts["transformation"] = [{"width": side, "height": side, "crop": "limit"}]
+        if public_id:
+            opts["public_id"] = public_id
+        if context:
+            opts["context"] = {str(k): str(v) for k, v in context.items()}
+        payload = io.BytesIO(source) if isinstance(source, (bytes, bytearray)) else str(source)
+        result = cloudinary.uploader.upload(payload, **opts) or {}
+    except Exception as exc:
+        out["error"] = scrub_infra(f"{type(exc).__name__}: {exc}")
+        return out
+    out["keys"] = sorted(str(k) for k in (result.keys() if hasattr(result, "keys") else []))
+    url = result.get("secure_url") or result.get("url")
+    if not url:
+        out["error"] = "업로드 응답에 주소가 없습니다 — 응답 키 목록: " + (", ".join(out["keys"]) or "(비어 있음)")
+        return out
+    out.update({"ok": True, "secure_url": str(url), "public_id": str(result.get("public_id") or ""),
+                "bytes": int(result.get("bytes") or 0)})
+    return out
+
+
 def _upload_to_cdn(image_bytes: bytes, *, prefer_webp: bool = False,
                    label: Optional[Dict[str, str]] = None) -> Optional[str]:
     """처리된 이미지 바이트를 Cloudinary에 올리고 보안 URL을 반환(없으면 None).
@@ -442,6 +513,17 @@ def process_image(
             success=False,
             error=f"다운로드 실패: {exc}",
         )
+
+    # Z10-B: JPEG 아닌 큰 장(PNG 등 — draft로 줄여 풀 수 없다)은 **풀지 않는다** — 워터마크·리사이즈·WebP를 건너뛰고 원본 바이트를 올린다.
+    from src.collectors.image_norm import image_head, decode_max_pixels
+    _fmt, _w, _h = image_head(image_bytes)
+    _cap = decode_max_pixels()
+    if _fmt and _fmt != "JPEG" and _cap and _w * _h > _cap:
+        logger.info("[이미지] %s %d×%d — 디코드 상한 초과, 가공 없이 올림: %s", _fmt, _w, _h, image_url)
+        cdn_url = _upload_to_cdn(image_bytes, label=label)
+        return ImageProcessResult(original_url=image_url, processed_url=cdn_url or image_url, processed_bytes=image_bytes,
+                                  width=_w, height=_h, format=_fmt, watermark_reason="디코드 상한 초과 — 가공 안 함",
+                                  cdn_uploaded=bool(cdn_url), file_size_bytes=len(image_bytes), success=True)
 
     # F43 — 「껐다」·「못 쟀다」·「재고 없었다」가 **서로 다른 값**으로 나간다.
     watermark_detected = False

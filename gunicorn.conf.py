@@ -40,11 +40,26 @@ def _worker_rss_mb():
     return -1
 
 
+def _active_jobs():
+    """지금 이 워커에서 도는 사전검증 잡·크론 이름(샘플러 `watch` 구간). 못 읽으면 빈 목록."""
+    try:
+        from src.utils import rss_sampler
+        return rss_sampler.active_names()
+    except Exception:
+        return []
+
+
 def post_request(worker, req, environ, resp):
     if _RSS_LIMIT_MB <= 0 or not getattr(worker, 'alive', False):
         return
     rss = _worker_rss_mb()
     if rss < _RSS_LIMIT_MB:
+        return
+    # Z10-B(오너 2026-10-11): 잡·크론이 도는 중이면 갈아끼우지 않는다 — 그 잡을 죽이면 카드가 「검증 못 함」으로 끝나고
+    #   다시 누르면 같은 일을 처음부터 한다. 잡이 끝난 뒤 첫 요청에서 다시 본다.
+    busy = _active_jobs()
+    if busy:
+        worker.log.warning('[RSS] worker pid=%s rss_mb=%d ≥ %d — 잡 %s 진행 중이라 이번엔 남는다', worker.pid, rss, _RSS_LIMIT_MB, busy)
         return
     import time as _t
     try:

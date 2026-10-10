@@ -55,32 +55,33 @@ def _read_text(raw: bytes):
 
 def check_bytes(raw: bytes) -> Dict[str, Any]:
     """`{state, w, h, square, long_side, small, white_pct, text, seen, flags[]}` — state: ok|unknown."""
-    try:
-        from PIL import Image
-        im = Image.open(io.BytesIO(raw))
-        w, h = im.size                                        # 크기는 머리말에서 — 원본 화소를 다 풀지 않는다
-        if max(w, h) > 400:
-            im.draft("RGB", (max(1, w // 4), max(1, h // 4)))  # Z7: JPEG는 1/4로 풀어 흰 배경만 잰다(메모리)
-        im.load()
-    except Exception as exc:                                  # noqa: BLE001 — 깨진 바이트·포맷 미지원
-        return {"state": "unknown", "why": f"이미지를 열지 못했어요({type(exc).__name__})", "flags": []}
+    # Z10-B(오너 2026-10-11 02:24 — 사전검증 3초 사이 +261MB): 예전엔 `draft`(JPEG 전용) 뒤 `load`·`convert("RGB")`를
+    #   **원본 크기에서** 했다 — 1번 장이 PNG면 원본 화소(RGBA)를 다 풀고 RGB 사본을 한 벌 더 만들었다(이 스레드는
+    #   `cpx-check` — 쿠팡이 같이 골라진 사전검증이 시작될 때 뜬다). 이제 크기는 머리말에서, 화소는 줄여서(한 장씩) 푼다.
+    #   서버가 풀면 안 되는 큰 PNG는 흰 배경을 재지 않는다(크기·글자 판정은 그대로 — 막지 않음).
+    from src.collectors.image_norm import image_head, open_small
+    fmt, w, h = image_head(raw)
+    if not (w and h):
+        return {"state": "unknown", "why": "이미지를 열지 못했어요(형식 미상)", "flags": []}
     long_side = max(w, h)
     square = abs(w - h) <= SQUARE_TOL * long_side
-    rgb = im.convert("RGB")
-    small = rgb.resize((max(1, w // 4), max(1, h // 4))) if long_side > 400 else rgb
-    del rgb, im
-    sw, sh = small.size
-    sbw, sbh = max(1, int(sw * BORDER_FRAC)), max(1, int(sh * BORDER_FRAC))
-    px = small.load()
-    total = white = 0
-    for y in range(sh):
-        for x in range(sw):
-            if sbw <= x < sw - sbw and sbh <= y < sh - sbh:
-                continue
-            r, g, b = px[x, y]
-            total += 1
-            white += r >= WHITE_MIN and g >= WHITE_MIN and b >= WHITE_MIN
-    white_pct = round(white / total * 100) if total else 0
+    small, _f, _w, _h, decode_why = open_small(raw, max(1, long_side // 4) if long_side > 400 else long_side)
+    white_pct = None
+    if small is not None:
+        sw, sh = small.size
+        sbw, sbh = max(1, int(sw * BORDER_FRAC)), max(1, int(sh * BORDER_FRAC))
+        px = small.load()
+        total = white = 0
+        for y in range(sh):
+            for x in range(sw):
+                if sbw <= x < sw - sbw and sbh <= y < sh - sbh:
+                    continue
+                r, g, b = px[x, y]
+                total += 1
+                white += r >= WHITE_MIN and g >= WHITE_MIN and b >= WHITE_MIN
+        white_pct = round(white / total * 100) if total else 0
+        small.close()
+        del px
     text, seen = _read_text(raw)
     flags = []
     if long_side < MIN_LONG_SIDE:
@@ -97,7 +98,7 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
         flags.append({"key": "not_square", "hold": False,
                       "line": f"정사각 아님({w}×{h}) — 쿠팡 검색 카드엔 가운데를 잘라 보여요"})
     return {"state": "ok", "w": w, "h": h, "square": square, "long_side": long_side,
-            "small": long_side < MIN_LONG_SIDE, "white_pct": white_pct,
+            "small": long_side < MIN_LONG_SIDE, "white_pct": white_pct, "decode_why": decode_why,
             "text": text, "seen": seen, "flags": flags, "ocr": "unavailable" if text is None else "ok", "ocr_why": ocr_why}
 
 
