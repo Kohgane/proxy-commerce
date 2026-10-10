@@ -64,6 +64,9 @@ os.environ.setdefault("NAVER_AS_PHONE", "010-0000-0000")
 #   가짜(시간 초과 계약 등)가 많아 한 잡이 다음 테스트의 잡을 줄 세우면 순서에 따라 깨진다 — 여기선 넉넉히. 줄 서기 계약은
 #   test_z10_prevalidate_memory가 1로 직접 건다.
 os.environ.setdefault("PREVALIDATE_JOB_CONCURRENCY", "8")
+# Z10: 잡 메모리 상한(PREVALIDATE_RSS_LIMIT_MB, 운영 400)은 **프로세스 RSS**를 본다 — 테스트 한 프로세스는 수천 개를 돌려 400MB를
+#   넘으므로(CI 실측) 여기선 끈다. 상한 계약은 test_z10_prevalidate_memory가 값을 직접 건다.
+os.environ.setdefault("PREVALIDATE_RSS_LIMIT_MB", "0")
 
 
 # ──────────────────────────────────────────────────────────
