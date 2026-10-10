@@ -45,6 +45,8 @@ def disp(monkeypatch):
     from src.seller_console.upload_dispatcher import DispatchResult, UploadResult
     monkeypatch.setenv("FAMILY_EMAILS", FAM)
     monkeypatch.setattr("src.services.image_reachability.check_all", lambda urls, labels=None: {"ok": True, "bad": []})
+    from src.seller_console import market_pick as MP
+    monkeypatch.setattr(MP, "save_last", lambda *a, **k: None)     # 「지난 선택」 공유 기록을 남기지 않는다(다른 테스트 기본 체크 오염)
     calls = []
 
     class _D:
