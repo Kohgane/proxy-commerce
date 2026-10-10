@@ -127,8 +127,8 @@ def test_memory_cap_stops_only_that_job(monkeypatch):
     d = prevalidate(c, {"product": {"title": "x", "price": 1}, "markets": ["elevenst"]})
     r = d["results"][0]
     assert r["transport"] == "memory_cap" and "메모리 상한" in r["message"] and "다시 눌러" in r["message"]
-    # 다음 사전검증은 평소대로(줄 서기 자리를 돌려줬다)
-    assert V._pv_semaphore().acquire(blocking=False)
+    # 다음 사전검증은 평소대로(줄 서기 자리를 돌려줬다) — 화면이 「끝남」을 본 직후 자리를 돌려주므로 잠깐 기다린다
+    assert V._pv_semaphore().acquire(timeout=5)
     V._pv_semaphore().release()
 
 
