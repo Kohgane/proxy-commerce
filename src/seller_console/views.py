@@ -4284,7 +4284,8 @@ def _pv_dict(r, rc=None) -> dict:
         r = PrevalidationResult(market=r.market, ok=False, error_code="image_unreachable",
                                 message=_reach.message(rc).split(" (")[0],
                                 hint="마켓 서버가 이 주소로 이미지를 받으러 와도 열리지 않습니다 — 그 장을 빼거나 다른 장으로 바꿔 주세요.",
-                                details=[_reach.describe(b) for b in rc["bad"][:8]])
+                                details=[_reach.describe(b) for b in rc["bad"][:8]],
+                                cautions=list(getattr(r, "cautions", None) or []))
     out = {
         "market": r.market,
         "market_label": MARKET_LABELS.get(r.market, r.market),
@@ -4308,6 +4309,8 @@ def _pv_dict(r, rc=None) -> dict:
         "category": dict(getattr(r, "category", None) or {}),
         # Z9 — 쿠팡 대표 사진 글자 판정 대기 중(보류 아님) — 잡이 결과가 오면 이 줄을 다시 그린다
         "rep_pending": bool(getattr(r, "rep_pending", False)),
+        # Y7-M — 「주의」 칩(보류 아님 · 등록 버튼 막지 않음)
+        "cautions": list(getattr(r, "cautions", None) or []),
     }
     if r.error_code == "meta_unavailable":
         # Z9 — 쿠팡 메타를 못 받았다: 화면은 「검증 못 함 — 다시 시도」(통과도 막힘도 아님)

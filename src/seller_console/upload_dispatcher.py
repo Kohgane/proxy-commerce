@@ -602,6 +602,8 @@ class PrevalidationResult:
     # Z9 — 쿠팡 대표 사진 글자 판정(OCR)이 아직 안 끝났다. 사전검증은 기다리지 않고 통과/판정하고,
     #   결과가 오면 잡이 이 마켓 줄을 다시 그린다(카드는 폴링으로 받는다). 보류 아님.
     rep_pending: bool = False
+    # Y7-M — 「주의」 칩(보류 아님 · 등록 막지 않음). 예: 옵션이 조각별 개별 판매인데 상품명이 「세트」.
+    cautions: List[str] = field(default_factory=list)
 
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
@@ -1048,6 +1050,15 @@ class UploadDispatcher:
                     r.details = list(r.details or []) + [_mk]
             except Exception as exc:                             # noqa: BLE001 — 안내 한 줄이라 검증을 막지 않는다
                 logger.warning("[사전검증] 상표 안내 줄 실패: %s", exc)
+            # Y7-M(오너 2026-10-10): 옵션이 조각별 개별 판매 + 상품명 「세트」 → 「주의」 칩(보류 아님 — 상품명은 셀러 판단)
+            try:
+                if base in _KO_OPTION_MARKETS:
+                    from src.uploaders.piece_split import caution as _piece_caution
+                    _pc = _piece_caution(product_data)
+                    if _pc and _pc not in (r.cautions or []):
+                        r.cautions = list(r.cautions or []) + [_pc]
+            except Exception as exc:                             # noqa: BLE001
+                logger.warning("[사전검증] 조각 판매 주의 칩 실패: %s", exc)
             # Z9: 쿠팡 대표 사진 글자 판정이 아직이면 「대기 중」 한 줄(보류 아님) — 잡이 결과가 오면 다시 잰다.
             try:
                 from src.services.coupang_image_check import rep_pending as _rep_pending
@@ -1820,6 +1831,15 @@ class UploadDispatcher:
     @staticmethod
     def _payload_for_market(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
         payload, localized = UploadDispatcher._payload_for_market_core(product_data, market)
+        # Y7-M(오너 2026-10-10): 옵션이 조각별 개별 판매(상의/스커트…)면 본문 「옵션·상세」 맨 앞에 안내 한 줄 — 한국어 마켓 전부.
+        #   네이버 「본문 다시 보내기」도 이 조립을 지나므로 기존 등록 상품에 그대로 반영된다.
+        try:
+            from src.markets.adapters.base import get_marketplace_meta
+            if str(get_marketplace_meta(market).get("locale") or "ko-KR").lower().startswith("ko"):
+                from src.uploaders import piece_split as _ps
+                payload = _ps.apply(payload)
+        except Exception as exc:                                     # noqa: BLE001 — 안내 한 줄이라 등록을 막지 않는다
+            logger.warning("[등록] 조각 판매 안내 줄 실패(그대로): %s", exc)
         return korea_voltage_filter(payload, market), localized
 
     @staticmethod

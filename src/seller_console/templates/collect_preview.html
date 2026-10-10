@@ -2224,6 +2224,14 @@ function renderDetailLines(lines, cls) {
     + lines.map(l => '<li>' + esc(l) + '</li>').join('') + '</ul>';
 }
 
+// Y7-M: 「주의」 칩 — 보류 아님(등록 버튼은 그대로). 예: 옵션이 조각별 개별 판매인데 상품명이 「세트」.
+function renderCautions(lines) {
+  if (!lines || !lines.length) return '';
+  const esc = kgpEscapeForHtml;
+  return lines.map(l => '<div class="small mt-1" data-role="pv-caution"><span class="pc-badge pc-badge-caution">주의</span> '
+    + esc(l) + '</div>').join('');
+}
+
 function renderPrevalidateResults(results, pending, state) {
   pending = pending || [];
   const running = state === 'running';
@@ -2255,6 +2263,7 @@ function renderPrevalidateResults(results, pending, state) {
           <div class="fw-semibold">${r.market_label || r.market} ${badge}${reach}</div>
           <div class="text-muted small">${r.message}</div>
           ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger')}
+          ${renderCautions(r.cautions)}
           ${renderCategoryLine(r)}
           ${(r.hold && (r.fixes || []).indexOf('translate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-translate-recheck">번역하고 다시 검증</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-ship-override">그래도 등록</button>' : ''}
