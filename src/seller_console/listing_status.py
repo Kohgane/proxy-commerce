@@ -76,6 +76,7 @@ def records(extra: dict) -> List[Dict]:
                     "product_id": pid, "channel_product_no": ch, "shown_no": ch or pid,     # 칩·「이미 등록됨」 번호(네이버 = 채널 번호)
                     "at": str(u.get("at") or ""), "account": acct,
                     "external_url": url, "review": rv,
+                    "price": u.get("price") if isinstance(u.get("price"), dict) else {},   # M8-8: 등록 때 판매가 재료
                     "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait"),
                     "state_label": str(rv.get("label") or "등록됨")})
     out.sort(key=lambda r: (_ORDER.get(r["market"], 99), r["at"]))
@@ -192,10 +193,81 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
                dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」
                registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
+               registered_price=str((rec.get("price") or {}).get("line") or ""),
                tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
     with _LOCK:
         _CACHE[key] = (now, row)
     return dict(row, cached=False)
+
+
+#: M8(오너 2026-10-10) — 마켓 하나에 상태를 묻는 시간 상한. 넘으면 그 칸만 「상태 확인 실패」(다른 마켓은 기다리지 않는다).
+STATUS_TIMEOUT_SEC = 12.0
+
+
+def db_row(rec: dict) -> dict:
+    """M8 — **DB만으로** 그린 팝업 한 줄(마켓에 묻지 않음). 상태는 마지막으로 알던 값(`uploaded[].review`) — 없으면 「상태 확인 중」.
+    등록 기록이 있는 마켓은 전부 즉시 보인다(번호·링크·「본문 다시 보내기」)."""
+    rv = rec.get("review") or {}
+    m = rec["market"]
+    manage = ""
+    if m.startswith("coupang") and rec.get("product_id"):
+        manage, mlabel = COUPANG_WING_MODIFY.format(sid=rec["product_id"]), "Wing에서 열기"
+    elif m.startswith("smartstore"):
+        manage, mlabel = NAVER_SELLER_HOME, "판매자센터 열기"
+    elif m == "elevenst":
+        manage, mlabel = ELEVENST_SELLER_HOME, "셀러오피스 열기"
+    else:
+        mlabel = ""
+    return {"market": m, "chip": rec["chip"], "market_label": rec["label"], "product_id": rec["product_id"],
+            "channel_product_no": rec.get("channel_product_no") or "", "sid": rec.get("shown_no") or rec["product_id"],
+            "dup_count": rec.get("dup_count") or 0, "registered_at": rec["at"],
+            "state": str(rv.get("state") or ""), "label": str(rv.get("label") or ""),
+            "comment": str(rv.get("comment") or ""), "status_raw": str(rv.get("status_raw") or ""),
+            "last_checked_at": str(rv.get("checked_at") or ""),
+            # 쿠팡 구매자 주소는 승인 뒤에만 생긴다(마지막 조회값) · 그 밖은 등록 기록의 주소(네이버 = 채널 번호 주소)
+            "link": str(rv.get("link") or "") if m.startswith("coupang") else str(rec.get("external_url") or ""),
+            "manage_url": manage, "manage_label": mlabel, "pending": True,
+            "registered_price": str((rec.get("price") or {}).get("line") or ""),
+            "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait")}
+
+
+def query_many(recs: List[dict], *, timeout: float = None, extra_fn=None) -> List[dict]:
+    """M8 — 마켓별 상태를 **병렬로** 묻는다. 마켓 하나가 `timeout`(기본 12초)을 넘기면 그 칸만 실패 줄 — 나머지는 기다리지 않는다.
+
+    22:13 KST 실측: 등록 기록 4건을 하나씩 물어 3.6초(릴레이 2.5초 × 직렬). `extra_fn(rec, row)`는 같은 일꾼 안에서
+    줄에 덧붙일 재료(네이버 판매가 구성 등). 요청 문맥(계정 키 선택 등 contextvars)은 일꾼마다 복사한다.
+    """
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor, wait
+    timeout = STATUS_TIMEOUT_SEC if timeout is None else float(timeout)
+    if not recs:
+        return []
+
+    def _one(rec):
+        row = query(rec)
+        if extra_fn is not None:
+            try:
+                extra_fn(rec, row)
+            except Exception as exc:                        # noqa: BLE001 — 덧붙일 한 줄이라 상태를 막지 않는다
+                row.setdefault("extra_error", f"{type(exc).__name__}: {str(exc)[:120]}")
+        return row
+
+    pool = ThreadPoolExecutor(max_workers=min(8, len(recs)), thread_name_prefix="mkt-status")
+    futs = [pool.submit(contextvars.copy_context().run, _one, r) for r in recs]
+    wait(futs, timeout=timeout)
+    out = []
+    for rec, f in zip(recs, futs):
+        if f.done() and f.exception() is None:
+            out.append(f.result())
+            continue
+        why = (f"{int(timeout)}초 안에 마켓이 답하지 않았어요" if not f.done()
+               else f"{type(f.exception()).__name__}: {str(f.exception())[:200]}")
+        row = db_row(rec)
+        row.update(state="unknown", label="상태 확인 실패", error=why, pending=False, tone="fail",
+                   checked_at=datetime.now(timezone.utc).isoformat(), cached=False, timed_out=not f.done())
+        out.append(row)
+    pool.shutdown(wait=False, cancel_futures=True)        # 늦은 일꾼은 혼자 끝난다(캐시에만 남음) — 응답은 기다리지 않는다
+    return out
 
 
 def remember(extra: dict, row: dict) -> bool:

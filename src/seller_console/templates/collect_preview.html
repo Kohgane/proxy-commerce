@@ -480,25 +480,19 @@
         <p class="text-muted small mb-2">편집을 마쳤다면 마켓을 골라 한 번에 등록하세요. 연결된 마켓·목표 마진율은 등록 창에서 선택합니다.</p>
         <button type="button" class="btn btn-success" onclick="openUploadModal()"><i class="bi bi-box-arrow-up-right"></i> 등록할 마켓 고르기</button>
         <div class="form-text mt-2">저장은 아래 <b>변경사항 저장</b>으로 언제든 가능해요. 등록 결과는 저장된 마켓별로 목록에 <b>등록됨</b> 뱃지로 남습니다.</div>
-        {# U2·U1b(오너 2026-10-02): 쿠팡 등록본 — 검토 상태(승인·검토중·반려 사유)와, 관리자면 **지금 규칙으로 다시 만든 상품명·검색어**를
-           쿠팡 원본과 비교해 고친 칸만 보내는 버튼. 쿠팡 수정은 「승인필요」라 판매중 상품도 다시 심사를 받는다(화면에 적음). #}
+        {# M8(오너 2026-10-10): 「쿠팡 등록본」 → **「마켓 등록본」** — 등록 기록 전 마켓(네이버 셰고가·고코스모스 포함). 줄을 누르면 상태 팝업.
+           U2·U1b: 관리자면 쿠팡 등록본을 **지금 규칙으로 다시 만든 상품명·검색어**와 비교해 고친 칸만 보내는 버튼(쿠팡 기록이 있을 때).
+           쿠팡 수정은 「승인필요」라 판매중 상품도 다시 심사를 받는다(화면에 적음). #}
         {% set _cp_up = [] %}
-        {% for u in (extra.get('uploaded') or []) if extra %}{% if (u.market or '').startswith('coupang') %}{% set _ = _cp_up.append(u) %}{% endif %}{% endfor %}
-        {% if _cp_up %}
+        {% for r in (market_records or []) %}{% if (r.market or '').startswith('coupang') %}{% set _ = _cp_up.append(r) %}{% endif %}{% endfor %}
+        {% if market_records %}
         <div class="kgp-inset mt-3" data-role="cp-live">
-          <div class="small fw-semibold mb-1">쿠팡 등록본</div>
-          {% for u in _cp_up %}
-          {% set rv = u.review or {} %}
-          <div class="d-flex flex-wrap align-items-center gap-2 small mb-1" data-role="cp-live-row" data-market="{{ u.market }}">
-            <span>{{ u.market_label or '쿠팡' }}</span>
-            <code>{{ u.product_id or '' }}</code>
-            <span class="pc-badge {{ 'pc-badge-on' if rv.state == 'approved' else ('pc-badge-off' if rv.state in ('rejected','deleted') else '') }}" data-role="cp-review-badge">{{ rv.label or '검토 상태 모름' }}</span>
-            {% if rv.comment %}<span class="text-muted">반려 사유: {{ rv.comment }}</span>{% endif %}
-          </div>
-          {% endfor %}
+          <div class="small fw-semibold mb-1" data-role="ml-title">마켓 등록본</div>
+          {% set ml_records = market_records %}{% set ml_item = item.id %}
+          {% include "_market_listings.html" %}
           <div class="d-flex flex-wrap gap-2 mt-2">
             <button type="button" class="btn btn-sm btn-ghost" id="cpReviewBtn" data-role="cp-review-btn"><i class="bi bi-hourglass-split"></i> 검토 상태 보기</button>
-            {% if is_admin %}
+            {% if is_admin and _cp_up %}
             <button type="button" class="btn btn-sm btn-ghost" id="cpLiveCheck" data-role="cp-live-check"><i class="bi bi-search"></i> 등록본 점검</button>
             <button type="button" class="btn btn-sm btn-cta" id="cpLiveSend" data-role="cp-live-send" hidden><i class="bi bi-send"></i> 고친 칸 쿠팡에 보내기</button>
             {% endif %}
@@ -734,11 +728,13 @@
           <h6 class="fw-semibold mb-2">2. 목표 마진율 설정</h6>
           <div class="d-flex align-items-center gap-3 mb-3">
             <label class="text-muted" for="uploadMarginPct">목표 마진율</label>
-            <input type="range" class="form-range kgp-w-sm" id="uploadMarginPct" min="5" max="50" value="22"
-                   
+            {# M8-8: 기본값 = 서버와 같은 출처(상품 값 → IMPORT_MARGIN_PCT). 예전엔 22를 하드코딩해 폰·팝업 줄(서버 기본)과 갈렸다. #}
+            <input type="range" class="form-range kgp-w-sm" id="uploadMarginPct" min="5" max="50" value="{{ default_margin_pct|default(25)|int }}"
+                   data-default="{{ default_margin_pct|default(25)|int }}"
                    oninput="document.getElementById('uploadMarginPctDisplay').textContent=this.value">
-            <span class="fw-bold text-teal" id="uploadMarginPctDisplay">22</span><span>%</span>
+            <span class="fw-bold text-teal" id="uploadMarginPctDisplay">{{ default_margin_pct|default(25)|int }}</span><span>%</span>
           </div>
+          <div class="form-text mb-3" data-role="margin-def">실수령 마진 — 판매가에서 수수료·원가·배대지·국제배송·관부가세·국내배송을 빼고 남는 몫이 판매가의 몇 %인지.</div>
 
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-ghost" data-bs-dismiss="modal">취소</button>
@@ -2165,7 +2161,7 @@ async function runPrevalidate() {
         pcToast(kgpFriendlyError(d || {}, '사전검증 결과 받기 실패'), 'error');
         return;
       }
-      renderPrevalidateResults(d.results || [], d.pending || [], d.state);
+      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '');
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
       else done();
     };
@@ -2232,19 +2228,21 @@ function renderCautions(lines) {
     + esc(l) + '</div>').join('');
 }
 
-function renderPrevalidateResults(results, pending, state) {
+function renderPrevalidateResults(results, pending, state, queueNote) {
   pending = pending || [];
   const running = state === 'running';
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
   const el = document.getElementById('prevalidateResults');
-  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
+  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
-  let html = `<div class="mb-2 text-muted small">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
+  let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율(실수령 · 판매가 기준): <strong class="text-teal">${targetMarginPct}%</strong></div>`;
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).
     // Z9: 시간 초과·예외는 검증을 **못 한** 것 — 「실패」(막힘)가 아니라 「검증 못 함」(다시 사전검증).
-    const badge = r.ok
+    // M8-7: 이미 등록 기록이 있는 마켓 — 통과가 아니라 「이미 등록됨」(업로드 버튼에서 빠짐 · 기록은 팝업에서 뺀다)
+    const badge = r.registered_no ? '<span class="pc-badge pc-badge-muted" data-role="prevalidate-registered">이미 등록됨</span>'
+      : r.ok
       ? '<span class="pc-badge pc-badge-on">통과</span>'
       : (r.hold ? '<span class="pc-badge pc-badge-off" data-role="prevalidate-hold">보류</span>'
                 : (r.transport ? '<span class="pc-badge pc-badge-muted" data-role="prevalidate-transport">검증 못 함</span>'
@@ -2270,6 +2268,7 @@ function renderPrevalidateResults(results, pending, state) {
           ${(r.hold && (r.fixes || []).indexOf('rep_image') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-rep-override">대표 사진 그래도 등록</button>' : ''}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
           ${renderActionLink(r.action_url, r.action_label)}
+          ${r.registered_no ? `<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-registered-open" data-market-status="${kgpEscapeForHtml(r.market)}" data-item="${kgpEscapeForHtml(_ITEM_ID)}">등록 기록 보기 · 빼기</button>` : ''}
         </div>
       </div>`;
   });
@@ -2285,7 +2284,10 @@ function renderPrevalidateResults(results, pending, state) {
   html += '</div>';
 
   if (running) {
-    html += '<div class="pc-status pc-status-info" data-role="pv-running">마켓마다 확인하는 중이에요 — 도착하는 대로 여기에 그려요.</div>';
+    html += queueNote
+      // Z10: 줄 서는 중 — 사전검증은 한 번에 하나(메모리 보호)
+      ? '<div class="pc-status pc-status-info" data-role="pv-queued">' + kgpEscapeForHtml(queueNote) + '</div>'
+      : '<div class="pc-status pc-status-info" data-role="pv-running">마켓마다 확인하는 중이에요 — 도착하는 대로 여기에 그려요.</div>';
   }
   if (_validatedMarkets.length === 0 && running) {
     document.getElementById('btnConfirmUpload').disabled = true;
@@ -2335,7 +2337,7 @@ function renderPrevalidateResults(results, pending, state) {
 let _confirmDup = false;
 async function runUpload(confirmWarn) {
   if (_validatedMarkets.length === 0) return;
-  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
+  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
   goToStep('stepUploading');
 
@@ -2442,7 +2444,9 @@ function cpLiveCheck(send) {
       method: send ? 'POST' : 'GET', credentials: 'same-origin',
       headers: send ? {'Content-Type': 'application/json'} : undefined, body: send ? '{}' : undefined})
     .then(r => r.json()).then(d => {
-      if (!d.ok) { out.textContent = d.error || '쿠팡 등록본을 읽지 못했어요.'; return; }
+      // M8: 쿠팡이 거부하면 ok:false + market_status·body 원문(응답 실패 코드는 우리 쪽 장애일 때만)
+      if (!d.ok) { out.textContent = (d.error || '쿠팡 등록본을 읽지 못했어요.')
+        + (d.market_status ? ` · 쿠팡 응답 HTTP ${d.market_status}` : '') + (d.body ? ` · 원문: ${String(d.body).slice(0, 300)}` : ''); return; }
       const rows = (d.changes || []).map(c => `<tr><td class="text-nowrap">${_cpEsc(c.field)}</td><td class="text-muted">${_cpEsc(c.before)}</td><td>${_cpEsc(c.after)}</td></tr>`).join('');
       out.innerHTML = `<div data-role="cp-live-plan"><b>${_cpEsc(d.market_label)} ${_cpEsc(d.sid)}</b>`
         + (rows ? `<table class="table table-sm mt-1 mb-1"><thead><tr><th class="text-nowrap">칸</th><th>쿠팡 지금</th><th>바꿀 값</th></tr></thead><tbody>${rows}</tbody></table>`

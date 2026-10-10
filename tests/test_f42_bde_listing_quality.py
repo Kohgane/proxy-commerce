@@ -222,7 +222,9 @@ def test_the_upload_path_applies_it():
     assert "_outbound_images" in calls_in(views.collect_upload)
     # M5 후속(2026-10-07)·Z9(10-09): 사전검증은 잡(`_pv_job`) 하나 — `_pv_prepare`를 지나고, 거기서 `_outbound_images`
     assert "_outbound_images" in calls_in(views._pv_prepare)
-    assert "_pv_prepare" in calls_in(views._pv_job) and not hasattr(views, "_pv_sync")
+    # Z10(10-10): 잡은 줄 서기·메모리 상한 껍데기(`_pv_job`) + 본문(`_pv_job_body`) — 본문이 `_pv_prepare`를 지난다
+    assert "_pv_job_body" in calls_in(views._pv_job) and "_pv_prepare" in calls_in(views._pv_job_body)
+    assert not hasattr(views, "_pv_sync")
     assert "drop_cross_duplicates" in calls_in(views._outbound_images)
 
 

@@ -1,0 +1,31 @@
+{# M8(오너 2026-10-10 22:13 폰) — 「마켓 등록본」: 등록 기록 **전 마켓**(쿠팡만이 아니라 셰고가·고코스모스 등 네이버까지).
+   DB만으로 그린다(마켓에 묻지 않음). 줄을 누르면 마켓 상태 팝업(그 마켓) — 상태·반려 사유·「본문 다시 보내기」는 팝업에서.
+   네이버는 채널 상품번호만 보인다(원상품번호는 로그·DB 내부용).
+   입력: ml_records(listing_status.records) · ml_item(상품 id). 데스크톱·폰 같은 조각. #}
+{% if ml_records %}
+<div class="ml-list" data-role="ml-list">
+  {% for r in ml_records %}
+  {% set rv = r.review or {} %}
+  <button type="button" class="ml-row" data-role="ml-row" data-market="{{ r.market }}" data-market-status="{{ r.market }}" data-item="{{ ml_item }}">
+    <span class="ml-name">{{ r.label }}</span>
+    <code class="ml-no" data-role="ml-no">{{ r.shown_no or '번호 없음' }}</code>
+    <span class="ml-state ml-tone-{{ r.tone }}" data-role="ml-state">{{ rv.label or '상태 보기' }}</span>
+  </button>
+  {% if rv.comment %}<div class="ml-reason">반려 사유: {{ rv.comment }}</div>{% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+<style>
+  .ml-list { display: grid; gap: 6px; }
+  .ml-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 10px; text-align: left;
+            border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: .9rem; }
+  .ml-row:hover { border-color: var(--teal); }
+  .ml-name { font-weight: 600; }
+  .ml-no { font-size: .85rem; color: var(--text-muted); background: transparent; }
+  .ml-state { margin-left: auto; padding: 0 10px; min-height: 24px; display: inline-flex; align-items: center; border-radius: 999px; font-size: .8rem; font-weight: 600;
+              background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
+  .ml-tone-ok { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+  .ml-tone-bad { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+  .ml-tone-fail { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange-strong, var(--orange)); }
+  .ml-reason { font-size: .85rem; color: var(--danger); padding: 0 10px 4px; overflow-wrap: anywhere; }
+</style>

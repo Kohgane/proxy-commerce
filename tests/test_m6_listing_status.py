@@ -178,7 +178,8 @@ def test_popup_390px_shows_state_reason_and_wing(item, coupang):
         pg.route("**/*", handle)
         pg.goto("http://kgp.test/seller/collect/history")
         pg.click(f'[data-role="mk-chip"][data-item="{item}"][data-market-status="coupang:woojoo"]')
-        pg.wait_for_selector('[data-role=mst-row][data-market="coupang:woojoo"]')
+        # M8: 팝업은 2단 — DB 줄이 먼저(「상태 확인 중…」), 마켓 상태가 오면 그 줄이 바뀐다. 상태가 채워진 줄을 잰다.
+        pg.wait_for_selector('[data-role=mst-row][data-market="coupang:woojoo"]:not([data-pending])', timeout=15000)
         woo = pg.inner_text('[data-role=mst-row][data-market="coupang:woojoo"]')
         href = pg.get_attribute('[data-role=mst-row][data-market="coupang:woojoo"] [data-role=mst-manage]', "href")
         b.close()
