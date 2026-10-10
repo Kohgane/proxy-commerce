@@ -2507,7 +2507,8 @@ function renderUploadResults(data) {
         : (r.external_url
           ? ` · <a href="${r.external_url}" target="_blank" rel="noopener noreferrer">상품 페이지 열기</a>`
           : '');
-      const idPart = r.external_product_id ? ` (ID: ${r.external_product_id})` : '';
+      const _shownNo = r.channel_product_no || r.external_product_id;   // 네이버 = 채널 상품번호만(오너 2026-10-10)
+      const idPart = _shownNo ? ` (상품번호: ${_shownNo})` : '';
       html += `
         <div class="list-group-item list-group-item-success">
           <div class="fw-semibold"><i class="bi bi-check-circle text-success"></i> ${r.market_label || r.market}${idPart} — 등록 성공${linkPart}</div>

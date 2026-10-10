@@ -3381,8 +3381,10 @@ def collect_upload_record_remove(item_id):
     same = [r for r in MS.records(extra) if r["market"] == market]
     if len(same) < 2:
         return jsonify({"ok": False, "error": "이 마켓 등록 기록이 하나뿐이라 빼지 않았어요(중복 정리 전용)."}), 409
-    if not any(r["product_id"] == pid for r in same):
+    hit = next((r for r in same if r["product_id"] == pid), None)
+    if not hit:
         return jsonify({"ok": False, "error": "그 번호의 등록 기록을 찾지 못했어요."}), 404
+    shown = hit.get("shown_no") or pid                            # 화면엔 채널 상품번호(네이버) — 원상품번호는 내부용
     kept, gone = [], []
     for u in extra.get("uploaded") or []:
         if isinstance(u, dict) and u.get("market") == market and MS.records({"uploaded": [u]})[0]["product_id"] == pid:
@@ -3398,7 +3400,7 @@ def collect_upload_record_remove(item_id):
     _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
     MS.reset_cache()
     logger.info("[등록 기록] 중복 정리 item=%s market=%s 뺀 번호=%s", str(item_id)[:8], market, pid)
-    return jsonify({"ok": True, "message": f"우리 기록에서 {pid}를 뺐어요 — 마켓의 상품은 판매자센터에서 지워 주세요."})
+    return jsonify({"ok": True, "message": f"우리 기록에서 {shown}를 뺐어요 — 마켓의 상품은 판매자센터에서 지워 주세요."})
 
 
 @bp.post("/collect/<item_id>/naver-resend-detail")
@@ -3428,7 +3430,7 @@ def collect_naver_resend_detail(item_id):
         extra = {}
     rec = next((r for r in MS.records(extra) if r["market"] == market), None)
     if not rec or not rec.get("product_id"):
-        return jsonify({"ok": False, "error": "이 스토어에 등록한 기록(원상품번호)이 없어요."}), 404
+        return jsonify({"ok": False, "error": "이 스토어에 등록한 기록이 없어요."}), 404
     from .product_builder import build_product as _build_product
     from .upload_dispatcher import build_dispatch_payload as _build_payload, UploadDispatcher, _for_market, mark_note
     from . import market_credentials as mc

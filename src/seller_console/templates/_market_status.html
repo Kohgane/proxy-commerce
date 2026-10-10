@@ -55,7 +55,8 @@
       '<div class="mst-top"><span>' + esc(r.market_label || r.chip) + '</span>' +
       '<span class="mst-badge ' + (TONE[r.tone] || '') + '" data-role="mst-state">' + esc(r.label || '확인 못 함') + '</span></div>' +
       '<div class="mst-meta">' + (r.channel_product_no || String(r.market || '').indexOf('smartstore') === 0
-        ? '원상품번호 ' + esc(r.product_id || '없음') + ' · 채널 상품번호 ' + esc(r.channel_product_no || '없음')
+        // 오너 2026-10-10: 네이버는 **채널 상품번호만** 보인다(원상품번호는 로그·DB 내부용)
+        ? '상품번호 ' + esc(r.channel_product_no || '확인 중')
         : '상품번호 ' + esc(r.product_id || '없음')) + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') +
       (r.status_raw ? ' · 마켓 표기 「' + esc(r.status_raw) + '」' : '') +
       ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') + '</div>';

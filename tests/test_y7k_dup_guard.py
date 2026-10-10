@@ -117,6 +117,7 @@ def test_1_remove_one_record_keeps_it_marked_and_never_calls_the_market(monkeypa
     c = _client("y7k-d")
     d = c.post(f"/seller/collect/{iid}/upload-record/remove", json={"market": "smartstore:chezgoga", "product_id": "13741121333"}).get_json()
     assert d["ok"] and "판매자센터" in d["message"]
+    assert "13802276439" in d["message"] and "13741121333" not in d["message"]       # 화면엔 채널 번호만(오너 2026-10-10)
     from src.seller_console import collect_history_store as CH
     ex = json.loads(CH.get(iid, seller_ids={"y7k-d"})["extra_json"])
     assert [u["product_id"] for u in ex["uploaded"]] == ["13742149801"]
@@ -141,6 +142,9 @@ def test_1_client_paths_go_through_the_guard():
     assert "needs_dup_confirm" in t and "_markRegistered(_lastUploadOk)" in t
     m = Path("src/seller_console/templates/_m5_flow.html").read_text(encoding="utf-8")
     assert "needs_dup_confirm" in m and "confirm_duplicate: !!confirmDup" in m
+    # 오너 2026-10-10: 등록 결과·결과 모달도 네이버는 채널 번호(원상품번호는 내부용)
+    assert "esc(r.channel_product_no || r.external_product_id" in m
+    assert "r.channel_product_no || r.external_product_id" in t
 
 
 # ── 2. 제목만 남은 섹션 ─────────────────────────────────────────────────────────────────────────
