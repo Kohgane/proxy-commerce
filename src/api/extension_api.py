@@ -1038,6 +1038,9 @@ def apply_enrich(item_id: str, ids: set, seller_id_val: str, data: dict) -> tupl
                 extra["field_sources"]["sku"] = str(_fs["sku"])[:40]
     # 상세설명: 20자↑ 실텍스트가 오고 기존이 빈약(<20자)하면 채움.
     _desc = str(data.get("description") or "").strip()
+    from src.uploaders.detail_ui_junk import is_junk as _ui_junk
+    if _ui_junk(_desc):
+        _desc = ""                    # Y7-N: 가게 UI 글자 — 병합(`merge_by_source`)이 이미 「UI 글자라 버림」으로 적었다
     if len(_desc) >= 20 and len(str(extra.get("description") or "").strip()) < 20:
         extra["description"] = _desc; changed["description"] = 1
     # 평점·리뷰수: 오고 기존 비었으면.
@@ -1291,11 +1294,19 @@ def collect_from_extension():
         except Exception as exc:
             logger.debug("이미지 union 보강 실패: %s", exc)
 
+    _desc_ui_dropped = ""
     # v16 P0: 사이트 공통 마케팅 필러는 상품 설명으로 저장하지 않는다(html 없어도 적용).
     # 리뷰(해당 제품)는 best-effort 추출(없으면 빈 리스트 — 가짜 리뷰 금지).
     try:
         from src.collectors.universal_scraper import is_filler_description, extract_reviews
         if is_filler_description(payload.get("description"), url):
+            payload["description"] = ""
+        # Y7-N(오너 2026-10-10): 가게 UI 글자(가게 이름·평점·호평률·발송·만족도)도 상세가 아니다 — 비우고 기록에 남긴다.
+        from src.uploaders.detail_ui_junk import is_junk as _ui_junk, REASON as _ui_reason
+        if _ui_junk(payload.get("description")):
+            from src.collectors.source_merge import label as _sl
+            _fsd = payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {}
+            _desc_ui_dropped = f"{_sl(_fsd.get('description') or 'tier2')} → {_ui_reason}"
             payload["description"] = ""
         if not payload.get("reviews") and isinstance(page_html, str) and page_html:
             _revs = extract_reviews(page_html)
@@ -1546,6 +1557,9 @@ def collect_from_extension():
         "field_sources": payload.get("field_sources") if isinstance(payload.get("field_sources"), dict) else {},
         "mode": _resolve_collect_mode(payload),   # v81 'core'(북마클릿) / v86-F 'simple'(목록 타일) / 'full'
     }
+    if _desc_ui_dropped:
+        _extra["merge_log"] = [{"at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "path": "collect",
+                                "changed": {}, "kept": {}, "dropped": {"description": _desc_ui_dropped}}]
     # F49-T 5부: 중국 소싱처 **목록 타일** 수집 = 「초안 + 상세 보강 대기」. 목록 카드엔 썸네일 1장뿐이다 —
     #   보강 축을 달아 두어야 확장 워커가 중간에 내려가도 서버 대기열(/enrich/pending)이 다시 집는다.
     if _extra.get("mode") == "simple" and _is_cn_source(url):

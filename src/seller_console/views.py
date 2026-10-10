@@ -3580,6 +3580,9 @@ def collect_coupang_options():
         from src.channel_sync import coupang_uploader as _cu
         with mc.seller_market_env(_seller_id(), ["coupang"]):
             out = _cu.option_form(product)
+        # Y7-N: 「사이즈」 값이 모델명 하나뿐인 축 → 옵션 이름 후보 「모델」(자동 적용 없음 · 쿠팡 메타 매핑은 그대로)
+        from src.uploaders.option_model_hint import suggestions as _model_hints
+        out["name_suggest"] = _model_hints(product)
     except Exception as exc:
         logger.warning("[쿠팡 옵션] 조회 실패: %s", exc)
         return jsonify({"ok": False, "user_message": True,
@@ -4288,6 +4291,10 @@ def _pv_prepare(data: dict, product_data: dict):
                        "voltage_split", "voltage_override", "naver_category_id"):
                 if _sx.get(_k):
                     product_data[_k] = _sx[_k]
+            # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본
+            from src.uploaders.detail_ui_junk import desc_is_junk as _dj
+            if _dj(_sx):
+                product_data["desc_ui_dropped"] = True
             # Y8 전압·플러그: 분리됐으면 SKU 판매 판정(sale_excluded·plug_notice)은 저장본이 정본
             if (_sx.get("voltage_split") or {}).get("state") == "split" and isinstance(_sx.get("skus"), list):
                 product_data["skus"] = _sx["skus"]
@@ -10085,11 +10092,22 @@ def collect_preview_by_id(item_id: str):
         detail_auto_active = bool(_dan({**_ex_a, "item_id": item_id}))
     except Exception:
         detail_auto_active = False
+    # Y7-N: 저장된 상세설명이 가게 UI 글자면 칸에 채우지 않고 사유 한 줄(값은 DB에 그대로 — 원문 보관)
+    try:
+        from src.uploaders.detail_ui_junk import note as _ui_note
+        desc_ui_note = _ui_note(extra if isinstance(extra, dict) else {})
+    except Exception:
+        desc_ui_note = ""
+    try:
+        from src.uploaders.option_model_hint import suggestions as _model_hints
+        option_name_hints = _model_hints(extra if isinstance(extra, dict) else {})
+    except Exception:
+        option_name_hints = []
     from src.utils.perf import perf_block as _pb
     with _pb("render"):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
-        detail_auto_active=detail_auto_active,
+        detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
         market_records=_market_records(extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, ship_est=ship_est,

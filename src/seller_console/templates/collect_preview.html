@@ -308,6 +308,12 @@
         </div>
         <div class="small mb-2 d-none" data-role="options-translate-out" id="optionsKoOut"></div>
         <div id="optionRows" class="vstack gap-2"></div>
+        {# Y7-N: 「사이즈」 값이 모델명 하나뿐 → 옵션 이름 후보(누르면 칸에 넣기만 — 저장은 셀러). 쿠팡 메타 매핑은 그대로. #}
+        {% for x in (option_name_hints or []) %}
+        <div class="small mt-2" data-role="opt-name-hint">{{ x.why }} — 옵션 이름 후보:
+          <button type="button" class="btn btn-ghost btn-sm py-0" data-hint-orig="{{ x.orig }}" data-hint-name="{{ x.suggest }}"
+                  onclick="kgpApplyNameHint(this)">{{ x.suggest }}</button></div>
+        {% endfor %}
         {# F49-T 2부 — 수집된 **SKU 실물**(조합·원가·참고가·재고). 원가 = 优惠前, 참고가 = 平台加补后(원가 계산 미사용).
            재고 0은 등록 대상에서 빠진다 — 사유를 그 줄에 적는다. #}
         {% set _skus = (extra.get('skus') if extra else None) or [] %}
@@ -517,6 +523,7 @@
         <span class="text-muted">마지막 갱신 {{ (_ml.at or '')|kst }}:</span>
         {% for f, why in (_ml.changed or {}).items() %}<span class="me-2">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} {{ why }}</span>{% endfor %}
         {% for f, why in (_ml.kept or {}).items() %}<span class="me-2 text-muted">{{ {'title':'제목','price':'가격','images':'갤러리','options':'옵션','sku':'SKU','description':'상세설명','detail_images':'상세이미지'}.get(f, f) }} 유지 — {{ why }}</span>{% endfor %}
+        {% for f, why in (_ml.dropped or {}).items() %}<span class="me-2" data-role="merge-dropped">{{ {'description':'상세설명'}.get(f, f) }}: {{ why }}</span>{% endfor %}
       {% endif %}</div>
     </div>
     {% endif %}
@@ -749,7 +756,7 @@
           <div id="prevalidateResults"></div>
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-ghost" onclick="goToStep('stepSelect')">← 다시 선택</button>
-            <button class="btn btn-success" id="btnConfirmUpload" onclick="runUpload()">
+            <button class="btn btn-success kgp-upload-go" id="btnConfirmUpload" onclick="runUpload()" disabled>
               <i class="bi bi-check-circle"></i> 통과 마켓에 업로드
             </button>
           </div>
@@ -830,6 +837,7 @@ function kgpEtab(name) {
 const _ITEM = {{ item | tojson }};
 const _EXTRA = {{ extra | tojson }};
 const _DETAIL_AUTO_ACTIVE = {{ 'true' if detail_auto_active else 'false' }};
+const _DESC_UI_NOTE = {{ (desc_ui_note or '')|tojson }};
 // Y6-C: 옵션 한국어(등록과 같은 사슬 option_ko) — 칸엔 한국어, 원문은 data-src로 들고 다닌다(저장 때 원문 보존)
 const _OPT_VIEW = {{ (opt_view or []) | tojson }};
 const _ITEM_ID = {{ item.id | tojson }};
@@ -1317,6 +1325,25 @@ function addOptionRow(name, values, src) {
   }
   row.querySelector('button').addEventListener('click', () => { row.remove(); if (srcLine) srcLine.remove(); });
 }
+// Y7-N(오너 2026-10-10): 「사이즈」 값이 모델명 하나뿐(【BLACKHOLES】) → 옵션 이름 후보 「모델」. 자동 적용 없음.
+function kgpModelHintsHtml(list) {
+  const esc = kgpEscapeForHtml;
+  return (list || []).map(x => `<div class="mt-2" data-role="opt-name-hint">${esc(x.why)} — 옵션 이름 후보: ` +
+    `<button type="button" class="btn btn-ghost btn-sm py-0" data-hint-orig="${esc(x.orig)}" data-hint-name="${esc(x.suggest)}" ` +
+    `onclick="kgpApplyNameHint(this)">${esc(x.suggest)}</button></div>`).join('');
+}
+function kgpApplyNameHint(btn) {
+  const orig = btn.dataset.hintOrig, name = btn.dataset.hintName;
+  let hit = false;
+  document.querySelectorAll('#optionRows .opt-row').forEach(row => {
+    let src = {};
+    try { src = JSON.parse(row.getAttribute('data-src') || '{}'); } catch (e) { src = {}; }
+    if (src.name === orig) { row.querySelector('.opt-name').value = name; hit = true; }
+  });
+  if (typeof pcToast === 'function') {
+    pcToast(hit ? `옵션 이름을 「${name}」으로 바꿔 두었어요 — 저장해야 반영돼요` : '옵션 탭에서 그 옵션을 찾지 못했어요', hit ? 'info' : 'warning');
+  }
+}
 function kgpToggleOptSrc(btn) {
   var on = !document.body.classList.contains('kgp-opt-src-on');
   document.body.classList.toggle('kgp-opt-src-on', on);
@@ -1555,7 +1582,11 @@ function initEditor() {
   }
   curSel.value = cur;
   document.getElementById('editDescription').value =
-    _firstNonEmpty(_EXTRA.description_ko, _EXTRA.description);
+    _DESC_UI_NOTE ? '' : _firstNonEmpty(_EXTRA.description_ko, _EXTRA.description);
+  if (_DESC_UI_NOTE) {                                   // Y7-N: 가게 UI 글자 — 칸에 채우지 않고 사유 한 줄
+    const _h0 = document.getElementById('aiDescHint');
+    if (_h0) { _h0.style.display = ''; _h0.dataset.role = 'desc-ui-junk'; _h0.textContent = _DESC_UI_NOTE; }
+  }
   // Y7-G: 사전검증이 상세 자동 초안을 만들어 그걸로 나가는 중 — 여기서 확인하고 바꾸면(저장) 그 글이 상세 설명이 된다.
   if (_DETAIL_AUTO_ACTIVE && _EXTRA.detail_auto && _EXTRA.detail_auto.text) {
     document.getElementById('editDescription').value = _EXTRA.detail_auto.text;
@@ -1801,6 +1832,8 @@ function kgpRenderCoupangOptions(d) {
     h += '<div class="mt-2" style="color:var(--success)"><i class="bi bi-check-lg"></i> 옵션 규칙 통과 — 「마켓 등록 → 사전검증」으로 진행하세요.</div>';
   }
   (d.notes || []).forEach(n => { h += `<div class="text-muted">${esc(n)}</div>`; });
+  // Y7-N: 옵션 이름 후보(자동 적용 없음) — 누르면 옵션 탭의 그 축 이름 칸에 넣기만 한다(저장은 셀러가)
+  h += kgpModelHintsHtml(d.name_suggest);
   h += `<button type="button" class="btn btn-ghost btn-sm mt-2" onclick="kgpLoadCoupangOptions()">
     <i class="bi bi-check2-circle"></i> 넣은 값으로 다시 확인</button>`;
   body.innerHTML = h;
@@ -2211,8 +2244,9 @@ function renderCategoryLine(r) {
   return '';
 }
 
-function renderDetailLines(lines, cls) {
-  if (!lines || lines.length < 2) return '';
+function renderDetailLines(lines, cls, message) {
+  // Y7-N: 한 줄이어도 요약(message)과 **다른** 말이면 보인다 — 「상세설명: 화면 읽기 → UI 글자라 버림」·「상표 표현 제거」가 숨었다
+  if (!lines || !lines.length || (lines.length < 2 && (message === undefined || lines[0] === message))) return '';
   const esc = (typeof kgpEscapeForHtml === 'function') ? kgpEscapeForHtml
     : (t => String(t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])));
   return '<ul class="small mb-0 mt-1 ps-3 ' + (cls || '') + '" data-role="detail-lines">'
@@ -2259,7 +2293,7 @@ function renderPrevalidateResults(results, pending, state, queueNote) {
         <div>
           <div class="fw-semibold">${r.market_label || r.market} ${badge}${reach}</div>
           <div class="text-muted small">${r.message}</div>
-          ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger')}
+          ${renderDetailLines(r.details, r.ok ? 'text-muted' : 'text-danger', r.message)}
           ${renderCautions(r.cautions)}
           ${renderCategoryLine(r)}
           ${(r.hold && (r.fixes || []).indexOf('translate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-translate-recheck">번역하고 다시 검증</button>' : ''}

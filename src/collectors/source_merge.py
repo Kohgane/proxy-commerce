@@ -81,6 +81,7 @@ def merge_by_source(extra: Dict[str, Any], incoming: Dict[str, Any], sources: Op
     manual = extra.get("manual_fields") if isinstance(extra.get("manual_fields"), dict) else {}
     changed: Dict[str, str] = {}
     kept: Dict[str, str] = {}
+    dropped: Dict[str, str] = {}                     # Y7-N: 들어왔지만 값이 아니라 버린 것(「상세설명: 화면 읽기 → UI 글자라 버림」)
     for field, keys in FIELD_KEYS.items():
         if keys[0] not in incoming:
             continue
@@ -94,6 +95,12 @@ def merge_by_source(extra: Dict[str, Any], incoming: Dict[str, Any], sources: Op
             if old_val != new_val:
                 kept[field] = "직접 수정한 값이라 유지"
             continue
+        if field == "description" and isinstance(new_val, str):
+            # Y7-N(오너 2026-10-10): 가게 UI 글자(가게 이름·평점·호평률·발송·만족도)는 본문이 아니다 — 쓰지 않고 기록만.
+            from src.uploaders.detail_ui_junk import is_junk as _ui_junk, REASON as _ui_reason
+            if _ui_junk(new_val):
+                dropped[field] = f"{label(new_src)} → {_ui_reason}"
+                continue
         if _empty(old_val):
             why = "빈 칸 채움"
         elif rank(new_src) > rank(old_src):
@@ -114,9 +121,12 @@ def merge_by_source(extra: Dict[str, Any], incoming: Dict[str, Any], sources: Op
             fs[field] = new_src
             extra["field_sources"] = stored_src = fs
         changed[field] = f"{label(old_src) if not _empty(old_val) else '비어 있음'}→{label(new_src)} ({why})"
-    if changed or kept:
+    if changed or kept or dropped:
         log: List[Dict[str, Any]] = list(extra.get("merge_log") or [])[-4:]
-        log.append({"at": _now(), "path": path, "changed": changed, "kept": kept})
+        entry = {"at": _now(), "path": path, "changed": changed, "kept": kept}
+        if dropped:
+            entry["dropped"] = dropped
+        log.append(entry)
         extra["merge_log"] = log
     return extra, changed, kept
 
