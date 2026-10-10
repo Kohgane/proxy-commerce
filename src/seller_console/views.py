@@ -7444,8 +7444,49 @@ def markets_connect():
     return render_template(
         "markets_connect.html", page="markets",
         market_statuses=statuses, market_chips=chips, single_market=None, guide_entry=None,
-        guide_map=guide_map(), coupang_accounts=_coupang_account_cards(seller), **_connect_ip_ctx(),
+        guide_map=guide_map(), coupang_accounts=_coupang_account_cards(seller), naver_as_rows=_naver_as_rows(),
+        **_connect_ip_ctx(),
     )
+
+
+def _naver_as_rows() -> list:
+    """Y7-L — 연동 화면 스마트스토어 「A/S 전화번호」 줄. 공유 사용자 = 스토어별(셰고가·고코스모스), 그 밖 = 내 스토어 하나.
+    값: 설정 → 서버 환경변수(공유 사용자만 — Z6 폴백 규칙). env 이름은 화면에 쓰지 않는다."""
+    try:
+        from src.uploaders import naver_as as _nas
+        from src.uploaders.naver_uploader import NaverSmartStoreUploader
+        from . import market_credentials as mc
+        shared = _shared_markets()
+        allow_env = mc.env_fallback_allowed()
+
+        def _env(acct):
+            if not allow_env:
+                return ""
+            return NaverSmartStoreUploader(account=acct or None)._acct_env("NAVER_AS_PHONE")
+        return _nas.rows(shared, _env)
+    except Exception as exc:                                       # noqa: BLE001 — 칸이 없으면 화면만 덜 그린다
+        logger.warning("[마켓 연동] A/S 전화 줄 실패: %s", exc)
+        return []
+
+
+@bp.post("/markets/naver-as")
+def markets_naver_as_save():
+    """Y7-L — 스마트스토어 A/S 전화번호 저장(셀러 설정 · 공유 사용자는 한 벌). 빈 칸은 그 스토어 설정 지움(서버 기본값으로)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    from src.uploaders import naver_as as _nas
+    data = request.get_json(force=True, silent=True) or {}
+    shared = _shared_markets()
+    allowed = {a for a, _l in _nas.STORES} if shared else {_nas.DEFAULT}
+    values = {str(k): str(v or "") for k, v in (data.get("values") or {}).items() if str(k) in allowed}
+    if not values:
+        return jsonify({"ok": False, "error": "저장할 스토어가 없어요."}), 400
+    try:
+        _nas.save(values, seller_id=_seller_id(), shared=shared)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    logger.info("[마켓 연동] A/S 전화 저장 seller=%s 스토어=%s", _seller_id()[:12], sorted(values))
+    return jsonify({"ok": True, "rows": _naver_as_rows(), "message": "A/S 전화번호를 저장했어요."})
 
 
 def _coupang_account_cards(seller: str) -> list:
@@ -7597,6 +7638,7 @@ def markets_connect_one(market):
         market_statuses=[mc.status(seller, market)], market_chips=chips,
         single_market=market, guide_entry=guide_entry,
         guide_map=guide_map(), coupang_accounts=(_coupang_account_cards(seller) if market == "coupang" else []),
+        naver_as_rows=(_naver_as_rows() if market == "smartstore" else []),
         **_connect_ip_ctx(),
     )
 

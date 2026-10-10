@@ -128,6 +128,26 @@
           {% endif %}
           {% endif %}
 
+          {% if m.market == 'smartstore' and naver_as_rows %}
+          {# Y7-L(오너 2026-10-10 19:55): 카드 「A/S 연락처 넣기 →」가 오는 자리 — 스토어별 A/S 전화(셀러 설정 · 비우면 서버 기본값) #}
+          <div class="mc-acct mb-3" id="naver-as" data-role="naver-as" tabindex="-1">
+            <div class="fw-semibold mb-1"><i class="bi bi-telephone"></i> A/S 전화번호</div>
+            <div class="small text-muted mb-2">네이버 상품마다 「A/S 안내」로 나가요(필수). 스토어마다 따로 넣을 수 있고, 비우면 서버 기본값을 써요.</div>
+            {% for r in naver_as_rows %}
+            <label class="d-block mb-2" data-role="naver-as-row" data-account="{{ r.account }}">
+              <span class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                <strong class="small">{{ r.label }}</strong>
+                <span class="mc-badge {{ 'on' if r.value else 'off' }} ms-auto" data-role="naver-as-source"><span class="mc-dot {{ 'on' if r.value else 'off' }}"></span> {{ r.source }}</span>
+              </span>
+              <input type="tel" inputmode="tel" class="form-control" data-role="naver-as-input" data-account="{{ r.account }}"
+                     value="{{ r.value if r.source == '설정' else '' }}" placeholder="{{ r.value if r.source == '서버 기본값' else '예: 010-1234-5678' }}" autocomplete="tel">
+            </label>
+            {% endfor %}
+            <button type="button" class="btn btn-primary btn-sm" data-action="naver-as-save"><i class="bi bi-check2"></i> A/S 전화번호 저장</button>
+            <div class="small mt-2" data-role="naver-as-out" aria-live="polite"></div>
+          </div>
+          {% endif %}
+
           <!-- 마스킹된 연동 정보 요약(민감정보 마스킹) -->
           {% set _shown = [] %}
           <div class="mc-kv mb-3">
@@ -589,5 +609,40 @@ document.querySelectorAll('.mc-open-drawer').forEach(b => b.addEventListener('cl
 document.addEventListener('keydown', e => { if (e.key === 'Escape') mcCloseDrawer(); });
 const mcNew = document.getElementById('mcNewMarket');
 if (mcNew) mcNew.addEventListener('click', () => { const f = mcNavs.find(n => n.dataset.connected !== '1') || mcNavs[0]; if (f) { mcSelect(f.dataset.market); mcOpenDrawer(f.dataset.market); } });
+</script>
+<script>
+// Y7-L: 스마트스토어 A/S 전화번호 — 저장(셀러 설정) · 카드 링크(#naver-as)로 들어오면 그 칸으로 스크롤·포커스
+(function () {
+  var box = document.getElementById('naver-as');
+  if (!box) return;
+  function focusBox() {
+    if (location.hash !== '#naver-as') return;
+    box.scrollIntoView({block: 'center'});
+    var first = box.querySelector('[data-role=naver-as-input]');
+    if (first) first.focus({preventScroll: true});
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', focusBox); else focusBox();
+  window.addEventListener('hashchange', focusBox);
+  var out = box.querySelector('[data-role=naver-as-out]');
+  box.querySelector('[data-action=naver-as-save]').addEventListener('click', function (ev) {
+    var btn = ev.currentTarget, values = {};
+    box.querySelectorAll('[data-role=naver-as-input]').forEach(function (i) { values[i.getAttribute('data-account')] = i.value.trim(); });
+    btn.disabled = true;
+    fetch('/seller/markets/naver-as', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                                       body: JSON.stringify({values: values})})
+      .then(function (r) { return r.json(); }).then(function (d) {
+        btn.disabled = false;
+        out.textContent = (d && (d.message || d.error)) || '저장하지 못했어요';
+        out.className = 'small mt-2 ' + (d && d.ok ? 'text-success' : 'text-danger');
+        (d && d.rows || []).forEach(function (r) {
+          var row = box.querySelector('[data-role=naver-as-row][data-account="' + r.account + '"]');
+          if (!row) return;
+          var b = row.querySelector('[data-role=naver-as-source]');
+          b.className = 'mc-badge ms-auto ' + (r.value ? 'on' : 'off');
+          b.innerHTML = '<span class="mc-dot ' + (r.value ? 'on' : 'off') + '"></span> ' + r.source;
+        });
+      }).catch(function () { btn.disabled = false; out.textContent = '네트워크 오류 — 다시 눌러 주세요'; out.className = 'small mt-2 text-danger'; });
+  });
+})();
 </script>
 {% endblock %}

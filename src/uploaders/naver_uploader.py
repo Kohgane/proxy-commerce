@@ -348,6 +348,17 @@ class NaverSmartStoreUploader(BaseUploader):
             logger.error('upload_product failed for sku=%s: %s', product.get('sku', ''), exc)
             return {'success': False, 'error': str(exc), 'sku': product.get('sku', '')}
 
+    def as_phone(self) -> str:
+        """Y7-L — A/S 전화: 셀러 설정(이 스토어) → 서버 환경변수(`NAVER_<STORE>_AS_PHONE` → `NAVER_AS_PHONE`)."""
+        try:
+            from src.uploaders import naver_as as _nas
+            v = _nas.saved(self.account or '')
+            if v:
+                return v
+        except Exception as exc:                                   # noqa: BLE001 — 설정 못 읽으면 env
+            logger.debug('A/S 설정 읽기 실패(env 폴백): %s', exc)
+        return self._acct_env('NAVER_AS_PHONE')
+
     def store_slug(self) -> str:
         """구매자 화면 주소의 스토어 자리 — env `NAVER_<STORE>_STORE_SLUG` → 확인된 표 → `main`."""
         return self._acct_env('NAVER_STORE_SLUG', self.STORE_SLUGS.get(self.account or '', '')) or 'main'
@@ -585,7 +596,7 @@ class NaverSmartStoreUploader(BaseUploader):
                         'brandName': product.get('brand', ''),
                     },
                     'afterServiceInfo': {
-                        'afterServiceTelephoneNumber': self._acct_env('NAVER_AS_PHONE'),
+                        'afterServiceTelephoneNumber': self.as_phone(),
                         'afterServiceGuideContent': product.get('return_info', '')
                                                     or '해외 구매대행 상품입니다.',
                     },
@@ -627,7 +638,7 @@ class NaverSmartStoreUploader(BaseUploader):
     def notice_for(self, product: dict) -> dict:
         """Y7-H — 상품정보제공고시(타입 + 그 타입 칸 전부). A/S 연락처는 스토어별 `NAVER_AS_PHONE`."""
         from src.uploaders import naver_notice as _nn
-        return _nn.build(product, as_phone=self._acct_env('NAVER_AS_PHONE'))
+        return _nn.build(product, as_phone=self.as_phone())
 
     @staticmethod
     def min_purchase_quantity(product: dict) -> int:

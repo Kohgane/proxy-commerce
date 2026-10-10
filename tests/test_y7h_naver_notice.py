@@ -106,7 +106,7 @@ def test_missing_as_phone_is_one_hold_line(fashion, monkeypatch):
     from src.seller_console.upload_dispatcher import naver_payload_holds
     holds = naver_payload_holds(_pleats(), "it-7h")
     assert [h["code"] for h in holds] == ["naver_required_afterServiceTelephoneNumber"]
-    assert holds[0]["action_url"] == "/seller/markets/connect/smartstore"
+    assert holds[0]["action_url"] == "/seller/markets/connect/smartstore#naver-as"        # Y7-L: 그 칸으로 바로
 
 
 def test_settings_change_the_defaults(fashion, monkeypatch):
