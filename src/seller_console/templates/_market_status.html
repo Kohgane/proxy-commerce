@@ -30,6 +30,8 @@
   .mst-resend { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px;
                 background: var(--ink); color: var(--hanji, var(--surface)); font-weight: 600; white-space: nowrap; }
   .mst-resend:disabled { opacity: .6; }
+  .mst-dup-remove { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--orange);
+                    border-radius: 999px; background: transparent; color: var(--orange-strong, var(--orange)); white-space: nowrap; }
   .mst-ok { color: var(--success); }
   .mst-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--teal); text-decoration: none; white-space: nowrap; }
 </style>
@@ -57,6 +59,7 @@
         : '상품번호 ' + esc(r.product_id || '없음')) + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') +
       (r.status_raw ? ' · 마켓 표기 「' + esc(r.status_raw) + '」' : '') +
       ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') + '</div>';
+    if (r.dup_count) h += '<div class="mst-err" data-role="mst-dup">같은 상품이 이 마켓에 ' + r.dup_count + '건 있어요 — 남길 번호를 정하고, 나머지는 판매자센터에서 지운 뒤 「이 기록 빼기」</div>';
     if (r.comment) h += '<div class="mst-reason" data-role="mst-reason"><b>반려 사유</b> ' + esc(r.comment) + '</div>';
     if (r.price_line) h += '<div class="mst-meta" data-role="mst-price-line">판매가 구성: ' + esc(r.price_line) + '</div>';
     if (r.error) h += '<div class="mst-err" data-role="mst-error">마켓에 묻지 못했어요 — ' + esc(r.error) + '</div>';
@@ -64,6 +67,9 @@
     if (r.manage_url) links += '<a href="' + esc(r.manage_url) + '" target="_blank" rel="noopener" data-role="mst-manage">' + esc(r.manage_label || '마켓에서 열기') + '</a>';
     if (r.link) links += '<a href="' + esc(r.link) + '" target="_blank" rel="noopener" data-role="mst-link">구매자 화면</a>';
     // Y7-J: 네이버 등록본 — 상세 본문만 지금 규칙(사진 위·글 아래·상표 제거)으로 다시 보낸다(가격·옵션·사진 칸은 그대로)
+    // Y7-K: 같은 마켓 2건 이상 — 그중 하나를 우리 기록에서 뺀다(마켓 상품 삭제는 판매자센터에서)
+    if (r.dup_count && r.product_id)
+      links += '<button type="button" class="mst-dup-remove" data-role="mst-dup-remove" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '">이 기록 빼기</button>';
     if (String(r.market || '').indexOf('smartstore') === 0 && r.product_id)
       links += '<button type="button" class="mst-resend" data-role="mst-resend" data-market="' + esc(r.market) + '">본문 다시 보내기</button>';
     if (links) h += '<div class="mst-links">' + links + '</div>';
@@ -115,6 +121,21 @@
   dlg.addEventListener('click', function (ev) {
     var rs = ev.target.closest && ev.target.closest('[data-role=mst-resend]');
     if (rs) { ev.preventDefault(); resend(rs); return; }
+    var dr = ev.target.closest && ev.target.closest('[data-role=mst-dup-remove]');
+    if (dr) {
+      ev.preventDefault();
+      var rowEl = dr.closest('[data-role=mst-row]');
+      dr.disabled = true;
+      fetch('/seller/collect/' + encodeURIComponent(curItem) + '/upload-record/remove', {method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({market: dr.getAttribute('data-market'), product_id: dr.getAttribute('data-pid')})})
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (d && d.ok) { window.kgpMarketStatus(curItem, dr.getAttribute('data-market')); return; }
+          dr.disabled = false;
+          var o = document.createElement('div'); o.className = 'mst-err'; o.textContent = (d && d.error) || '빼지 못했어요';
+          rowEl && rowEl.appendChild(o);
+        }).catch(function () { dr.disabled = false; });
+      return;
+    }
     if (ev.target === dlg || ev.target.closest('[data-role=mst-close]')) dlg.close ? dlg.close() : dlg.removeAttribute('open');
   });
   // M7: 이미 등록된 마켓(data-registered)을 다시 체크하면 「중복 등록」 확인 **한 번** — 이 화면에서 한 번 확인하면 다시 묻지 않는다.

@@ -391,9 +391,29 @@ def raw_error_meta(exc: Exception):
     return status, body
 
 
+def _exc_text(exc: Exception) -> str:
+    """예외 문자열 + 응답 본문 — Y7-K: 429의 진짜 사유(insufficient_quota·credit_balance_exhausted)는 **본문**에만 있다.
+    `str(HTTPError)`는 「429 Client Error: Too Many Requests」뿐이라 크레딧 소진을 속도 제한으로 읽었다."""
+    s = str(exc or "")
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        try:
+            s += " " + (getattr(resp, "text", "") or "")[:600]
+        except Exception:
+            pass
+    return s.lower()
+
+
+def is_credit_exhausted(exc: Exception) -> bool:
+    s = _exc_text(exc)
+    return "insufficient_quota" in s or "credit_balance_exhausted" in s or "no credits remaining" in s
+
+
 def _is_rate_limit_exc(exc: Exception) -> bool:
     resp = getattr(exc, "response", None)
     code = getattr(resp, "status_code", None) if resp is not None else None
+    if is_credit_exhausted(exc):
+        return False                                 # Y7-K: 크레딧 0은 기다려도 안 풀린다 — 재시도하지 않는다
     s = str(exc or "").lower()
     return code == 429 or "rate limit" in s or "rate_limit" in s or "too many requests" in s
 
@@ -502,7 +522,7 @@ def provider_label(name: str) -> str:
 #   ④401/403 무효 키. 각각 별 문구 + 짧은 사유코드(translate_stats 집계). 종전엔 ①③를 ②로 뭉갰다.
 def classify_translate_reason(exc: Exception) -> tuple:
     """(사유코드, 사람 문구) 반환. 코드는 translate_stats 집계용(budget/quota/rate_limit/auth/model/timeout/network/http/unknown)."""
-    s = str(exc or "").lower()
+    s = _exc_text(exc)                                # Y7-K: 응답 본문까지(429 크레딧 소진 판별)
     status = None
     resp = getattr(exc, "response", None)
     if resp is not None:
@@ -514,7 +534,7 @@ def classify_translate_reason(exc: Exception) -> tuple:
     if status in (401, 403) or "unauthorized" in s or "invalid_api_key" in s or "authenticationerror" in s:
         return ("auth", "API 키가 잘못됐거나 만료됐어요(키 재발급 후 재설정)")
     # ② 프로바이더 크레딧·결제 소진(429 insufficient_quota) — 진짜 '결제' 문제.
-    if "insufficient_quota" in s or ("quota" in s and "rate" not in s):
+    if "insufficient_quota" in s or "credit_balance_exhausted" in s or ("quota" in s and "rate" not in s):
         return ("quota", "프로바이더 크레딧·결제가 소진됐어요(해당 프로바이더 결제·플랜 확인)")
     # ③ 프로바이더 요청 속도 제한(429 rate limit) — 결제 아님, 잠시 후 재시도.
     if status == 429 or "rate limit" in s or "rate_limit" in s or "too many requests" in s:
@@ -528,6 +548,19 @@ def classify_translate_reason(exc: Exception) -> tuple:
     if status:
         return ("http", f"번역 API 오류(HTTP {status})")
     return ("unknown", "번역 API 호출에 실패했어요")
+
+
+#: Y7-K — AI 초안이 기본 문장으로 대신 나갈 때 화면 한 줄(영문 원문 없음). 코드 = `classify_translate_reason`
+DRAFT_FALLBACK_REASON = {
+    "quota": "OpenAI 크레딧 없음", "budget": "서버 월 예산 상한", "auth": "OpenAI 키 확인 필요",
+    "rate_limit": "OpenAI 요청이 몰려 잠시 막힘", "model": "AI 모델 설정 확인 필요", "timeout": "AI 응답 지연",
+    "network": "AI 서버 연결 실패",
+}
+
+
+def draft_user_line(code: str, status=None) -> str:
+    why = DRAFT_FALLBACK_REASON.get(code or "", "AI 호출 실패")
+    return f"{why}" + (f"(HTTP {status})" if status else "")
 
 
 def classify_translate_error(exc: Exception) -> str:
@@ -557,8 +590,8 @@ def _josa(word: str, with_final: str, without_final: str) -> str:
     return with_final
 
 
-def draft_source_lines(description: str) -> list:
-    """원문 상세에서 초안 재료로 쓸 줄 — 가게 통계·운영 줄(S2 표)·UI 쓰레기·상표 줄·초단문 제외."""
+def draft_source_lines(description: str, title: str = "") -> list:
+    """원문 상세에서 초안 재료로 쓸 줄 — 가게 통계·운영 줄(S2 표)·UI 쓰레기·상표 줄·초단문·**상품명과 같은 줄**(Y7-K) 제외."""
     from src.collectors import ko_polish as _kp
     txt, _d = _kp.drop_detail_lines(str(description or ""))
     txt, _m = _kp.gate_lines(txt)
@@ -569,6 +602,8 @@ def draft_source_lines(description: str) -> list:
             continue
         if re.fullmatch(r"[\d.,%\s]+", s):                     # 「4.8」 같은 숫자 조각
             continue
+        if title and re.sub(r"\s+", " ", s) == re.sub(r"\s+", " ", str(title).strip()):
+            continue                                            # 상품명 그대로(원문 상세가 제목만 담은 상품) — 내용 아님
         out.append(s)
     return out
 
@@ -627,7 +662,7 @@ def _structured_draft(title, category, keywords, specs, options, brand, descript
     if rows:
         lines += ["", "■ 옵션·상세"] + rows
 
-    src_lines = draft_source_lines(description)
+    src_lines = draft_source_lines(description, t)
     if src_lines:
         lines += ["", "■ 원문 상세"] + src_lines[:40]   # ★ 원문 라인 통째(숫자 조각으로 쪼개지 않음)
 
@@ -1016,6 +1051,7 @@ class AITranslator:
         from src.utils.env import env_present
         draft_status = "no_openai_key"
         draft_error = ""
+        draft_code = ""
         ai_call = {"called": False, "model": "", "prompt": "", "status": None, "error": "", "response_head": ""}
         if env_present("OPENAI_API_KEY") and not _dry_run():
             try:
@@ -1027,13 +1063,17 @@ class AITranslator:
                 _res["ai_call"] = ai_call
                 return _res
             except Exception as exc:
-                draft_error = failure_line(exc, "openai-draft")   # Y5: 사유·HTTP·재시도·원문 한 줄(계측 적재 포함)
+                full = failure_line(exc, "openai-draft")          # Y5: 사유·HTTP·재시도·원문 한 줄(계측 적재 포함)
                 draft_status = "openai_error"
-                ai_call["error"] = draft_error
-                logger.warning("AI 상세 생성 실패(%s) — 구조화 폴백(키 있음, 호출 실패): %s", draft_error, exc)
+                draft_code = classify_translate_reason(exc)[0]
+                # Y7-K(오너 2026-10-10): 화면엔 한국어 사유만 — 영문 원문은 관리자 로그·`ai_call`(관리 기록)에만
+                draft_error = draft_user_line(draft_code, raw_error_meta(exc)[0])
+                ai_call["error"] = full
+                ai_call["code"] = draft_code
+                logger.warning("AI 상세 생성 실패(%s) — 구조화 폴백(키 있음, 호출 실패): %s", full, exc)
 
         return {"text": _structured_draft(title, category, keywords, specs, options, brand, description),
-                "provider": "stub", "is_draft": True,
+                "provider": "stub", "is_draft": True, "draft_code": draft_code,
                 "draft_status": draft_status, "draft_error": draft_error, "ai_call": ai_call}
 
     @staticmethod
@@ -1051,7 +1091,7 @@ class AITranslator:
             if nm and vals:
                 opt_lines.append(f"- {nm}: {', '.join(vals[:12])}")
         spec_txt = "\n".join(f"- {l}: {v}" for l, v in specs[:20]) or "(스펙 표 없음)"
-        src = "\n".join(draft_source_lines(description)[:30]) or "(원문 상세 없음)"
+        src = "\n".join(draft_source_lines(description, title)[:30]) or "(원문 상세 없음)"
         return (
             "다음 상품의 한국어 상세설명 '초안'을 작성하세요.\n"
             "입력 정보(상품명·옵션·스펙·원문 상세)가 외국어(일본어·중국어 등)일 수 있습니다. **결과물은 처음부터 끝까지 "

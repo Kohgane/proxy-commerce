@@ -56,6 +56,8 @@
       {% for c in it.market_chips %}
       <button type="button" class="mk-chip tone-{{ c.tone }}" data-role="mk-chip" data-market-status="{{ c.market }}" data-item="{{ it.id }}"
               data-tone="{{ c.tone }}" title="{{ c.label }} — {{ c.state_label }}{{ ' · ' ~ (c.shown_no or c.product_id) if (c.shown_no or c.product_id) }} · 눌러서 검토 상태 보기">{{ c.chip }}</button>
+      {% if c.dup_count %}<button type="button" class="mk-chip mk-chip-dup" data-role="mk-dup-badge" data-market-status="{{ c.market }}" data-item="{{ it.id }}"
+              title="같은 상품이 이 마켓에 {{ c.dup_count }}건 등록돼 있어요 — 눌러서 정리">중복 {{ c.dup_count }}건 — 정리</button>{% endif %}
       {% endfor %}
     </div>
     {% endif %}

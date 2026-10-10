@@ -118,7 +118,13 @@ def market_description(desc: str) -> str:
 def tidy_sections(text: str) -> str:
     """Y7-J(오너 2026-10-10 3번) — 내용 없는 섹션 제목(「■ 원문 상세」 아래가 다 빠짐)은 빼고, 같은 글머리 줄(「· …」)은 한 번만.
     13802276439 본문: 「■ 옵션·상세」 아래 같은 두 줄이 두 번, 「■ 원문 상세」 아래는 가게 통계뿐(빠지고 제목만 남음)."""
+    import re as _re
     lines = str(text or "").split("\n")
+    _n = lambda t: _re.sub(r"\s+", " ", str(t or "")).strip()
+    # Y7-K(오너 2026-10-10): 첫 줄(상품명)과 같은 줄은 섹션 **내용**으로 세지 않는다 — 「■ 원문 상세」 아래 제목 한 줄만 남던 것
+    head = _n(next((l for l in lines if l.strip() and not l.strip().startswith("■")), ""))
+    first = next((i for i, l in enumerate(lines) if l.strip()), -1)
+    lines = [l for i, l in enumerate(lines) if i == first or not (head and _n(l) == head)]
     out, seen = [], set()
     for i, ln in enumerate(lines):
         st = ln.strip()
@@ -749,14 +755,21 @@ def detail_auto_note(pd: Dict[str, Any]) -> Dict[str, str]:
     a = _nd.auto_of(pd)
     if not a or _nd._text_of(pd) or render_detail_blocks_html(pd.get("detail_blocks"), "smartstore"):
         return {}
-    if a.get("provider") == "openai":
-        how = "AI"
-    elif a.get("draft_status") == "openai_error":
-        how = "AI 호출 실패 — 확인된 정보로 정리"            # Y7-J: 왜 AI 글이 아닌지 카드에서 바로 보이게
-    else:
-        how = "확인된 정보로 정리"
     iid = str(pd.get("item_id") or "")
-    return {"line": f"상세 자동 생성({how}) — 확인(바꾸기)",
+    if a.get("provider") == "openai":
+        line = "상세 자동 생성(AI) — 확인(바꾸기)"
+    elif a.get("draft_status") == "openai_error":
+        # Y7-K(오너 2026-10-10): 왜 AI 글이 아닌지 사람 말로 — 영문 원문은 관리자 로그에만
+        from src.seller_console.ai.translator import DRAFT_FALLBACK_REASON
+        code = str(a.get("draft_code") or "")
+        if not code:                                      # Y7-J 때 저장한 초안(코드 없음) — 남긴 응답 원문에서 읽는다
+            raw = (str(a.get("draft_error") or "") + " " + str((a.get("ai_call") or {}).get("response_head") or "")).lower()
+            code = "quota" if ("insufficient_quota" in raw or "credit_balance_exhausted" in raw or "no credits" in raw) else ""
+        why = DRAFT_FALLBACK_REASON.get(code, "AI 호출 실패")
+        line = f"AI 초안 대신 기본 문장을 썼어요 — {why} — 확인(바꾸기)"
+    else:
+        line = "상세 자동 생성(확인된 정보로 정리) — 확인(바꾸기)"
+    return {"line": line,
             "url": f"/seller/collect/preview/{iid}?tab=detail" if iid else "", "label": "확인(바꾸기)"}
 
 

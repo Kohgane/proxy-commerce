@@ -43,7 +43,9 @@ def test_ai_draft_429_is_retried_then_reported_raw(openai_key, monkeypatch):
     monkeypatch.setattr(requests, "post", lambda *a, **k: calls.append(1) or _Resp(429, '{"error":"rate_limit"}'))
     res = AITranslator().generate_description({"title": "블랙홀 무드등", "category": "", "keywords": [], "specs": []})
     assert len(calls) == 2                                               # 백오프 1회 재시도
-    assert res["draft_status"] == "openai_error" and "HTTP 429" in res["draft_error"] and "재시도 1회" in res["draft_error"]
+    # Y7-K(오너 2026-10-10): 화면 문구는 한국어 사유 + HTTP 코드만 — 재시도·영문 원문은 관리 기록(ai_call.error)·로그에
+    assert res["draft_status"] == "openai_error" and "HTTP 429" in res["draft_error"] and res["draft_code"] == "rate_limit"
+    assert "재시도 1회" in res["ai_call"]["error"]
 
 
 def test_budget_exhausted_says_server_budget(openai_key, monkeypatch):
