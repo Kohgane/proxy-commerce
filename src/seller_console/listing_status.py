@@ -6,7 +6,11 @@
 
 - 쿠팡: `GET seller-products/{sellerProductId}`의 `statusName`(승인대기중·승인완료·승인반려 …) + 반려 사유(이력).
   WING 딥링크는 오너가 준 실제 주소 형식 — `…/vendor-inventory/modify?vendorInventoryId={sellerProductId}`.
-- 스마트스토어: `GET /v2/products/origin-products/{originProductNo}`의 `originProduct.statusType`
+- 스마트스토어(Y7-J 오너 2026-10-10): **채널 상품번호 기준** — `GET /v2/products/channel-products/{channelProductNo}`의
+  `originProduct.statusType`(채널 번호가 없는 예전 기록만 `origin-products/{originProductNo}`). 구매자 주소도 채널 번호로
+  `smartstore.naver.com/{스토어}/products/{channelProductNo}`. 등록 기록은 두 번호를 다 가진다(`product_id`=원상품번호 ·
+  `channel_product_no`). 예전 기록은 주소(`…/products/{채널번호}`)에서 읽어 소급한다.
+- (옛) 스마트스토어: `GET /v2/products/origin-products/{originProductNo}`의 `originProduct.statusType`
   (문서 값: WAIT·SALE·OUTOFSTOCK·UNADMISSION·REJECTION·SUSPENSION·CLOSE·PROHIBITION·DELETE). 판매자센터는
   상품별 주소 형식을 확인하지 못해 **홈**으로만 연다(추측 주소 금지).
 - 11번가·멀티샵·Shopify: 상태 조회를 붙이지 않았다 — 「상태 조회 미연동」이라고 그대로 말한다(지어내지 않음).
@@ -64,13 +68,39 @@ def records(extra: dict) -> List[Dict]:
             hit = re.search(r"/(?:vp/products|products)/(\d+)", str(u.get("external_url") or ""))
             pid = hit.group(1) if hit else ""
         rv = u.get("review") if isinstance(u.get("review"), dict) else {}
+        acct = str(u.get("account") or m.partition(":")[2])
+        ch, url = channel_no_of(u), str(u.get("external_url") or "")
+        if m.startswith("smartstore") and ch:
+            url = naver_product_url(acct, ch)                    # Y7-J: 스토어 주소로(예전 기록의 `main`도 바로잡아 보인다)
         out.append({"market": m, "chip": chip_label(m), "label": str(u.get("market_label") or chip_label(m)),
-                    "product_id": pid, "at": str(u.get("at") or ""), "account": str(u.get("account") or m.partition(":")[2]),
-                    "external_url": str(u.get("external_url") or ""), "review": rv,
+                    "product_id": pid, "channel_product_no": ch, "shown_no": ch or pid,     # 칩·「이미 등록됨」 번호(네이버 = 채널 번호)
+                    "at": str(u.get("at") or ""), "account": acct,
+                    "external_url": url, "review": rv,
                     "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait"),
                     "state_label": str(rv.get("label") or "등록됨")})
     out.sort(key=lambda r: _ORDER.get(r["market"], 99))
     return out
+
+
+def channel_no_of(u: dict) -> str:
+    """네이버 등록 기록의 채널 상품번호 — 기록에 있으면 그것, 없으면 예전 주소(`…/products/{채널번호}`)에서(소급).
+    네이버 외 마켓은 ''."""
+    import re
+    if not str((u or {}).get("market") or "").startswith("smartstore"):
+        return ""
+    ch = str((u or {}).get("channel_product_no") or "").strip()
+    if ch:
+        return ch
+    hit = re.search(r"smartstore\.naver\.com/[^/]+/products/(\d+)", str((u or {}).get("external_url") or ""))
+    return hit.group(1) if hit else ""
+
+
+def naver_product_url(account: str, channel_no: str) -> str:
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader
+    try:
+        return NaverSmartStoreUploader(account=account or None).product_url(channel_no)
+    except Exception:
+        return f"https://smartstore.naver.com/main/products/{channel_no}" if channel_no else ""
 
 
 def _coupang(rec: dict) -> dict:
@@ -86,19 +116,23 @@ def _coupang(rec: dict) -> dict:
 def _naver(rec: dict) -> dict:
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
     pid = rec["product_id"]
+    ch = str(rec.get("channel_product_no") or "").strip()
     up = NaverSmartStoreUploader(account=rec["account"] or None)
-    out = {"sid": pid, "state": "unknown", "label": "확인 못 함", "status_raw": "", "comment": "", "link": "",
-           "manage_url": NAVER_SELLER_HOME, "manage_label": "판매자센터 열기", "error": ""}
-    res = up._api_request("GET", f"/v2/products/origin-products/{pid}")
+    out = {"sid": ch or pid, "state": "unknown", "label": "확인 못 함", "status_raw": "", "comment": "", "link": "",
+           "manage_url": NAVER_SELLER_HOME, "manage_label": "판매자센터 열기", "error": "",
+           "origin_product_no": pid, "channel_product_no": ch}
+    # Y7-J: 채널 상품번호 기준(구매자 화면 번호) — 없으면(예전 기록) 원상품번호로
+    res = up._api_request("GET", f"/v2/products/channel-products/{ch}" if ch else f"/v2/products/origin-products/{pid}")
     if not isinstance(res, dict) or "error" in res:
         out["error"] = str((res or {}).get("error") if isinstance(res, dict) else res)[:300]
         return out
     raw = str(((res.get("originProduct") or {}).get("statusType")) or "").strip()
     state, label = NAVER_STATES.get(raw, ("unknown", raw or "확인 못 함"))
     out.update(state=state, label=label, status_raw=raw)
-    ch = str(((res.get("smartstoreChannelProduct") or {}).get("channelProductNo")) or "").strip()
+    ch = ch or str(((res.get("smartstoreChannelProduct") or {}).get("channelProductNo")) or "").strip()
+    out["channel_product_no"] = ch
     if ch and state == "approved":
-        out["link"] = f"https://smartstore.naver.com/main/products/{ch}"
+        out["link"] = up.product_url(ch)
     return out
 
 
@@ -112,7 +146,7 @@ def _unsupported(rec: dict) -> dict:
 def query(rec: dict, *, now: Optional[float] = None) -> dict:
     """한 마켓의 지금 상태 — 60초 캐시. 결과에 `cached`(캐시에서 왔나)와 `checked_at`을 싣는다."""
     now = time.time() if now is None else now
-    key = (rec["market"], rec["product_id"])
+    key = (rec["market"], rec["product_id"], rec.get("channel_product_no") or "")
     with _LOCK:
         hit = _CACHE.get(key)
         if hit and now - hit[0] < CACHE_SEC:
@@ -148,6 +182,8 @@ def remember(extra: dict, row: dict) -> bool:
             u["review"] = {k: row.get(k) for k in ("state", "label", "comment", "link", "status_raw", "checked_at")}
             if row.get("product_id") and not u.get("product_id"):
                 u["product_id"] = row["product_id"]
+            if row.get("channel_product_no") and not u.get("channel_product_no"):
+                u["channel_product_no"] = row["channel_product_no"]          # Y7-J: 조회로 알게 된 채널 번호도 남긴다
             return True
     return False
 

@@ -130,7 +130,28 @@ def value_ko_map(product: Dict) -> Dict[str, str]:
 
 
 def resolve_option_value(value: str, *, values_ko: str = "", override: str = "") -> Dict:
-    """한 값의 한국어 — `{value, how, confirm, why}`. `value`가 비면 보류(`why`가 사유)."""
+    """한 값의 한국어 — `{value, how, confirm, why}`. `value`가 비면 보류(`why`가 사유).
+
+    Y7-J(오너 2026-10-10): 나갈 값에 든 상표(제목과 같은 표 — 「미야케」 등)는 **이름만** 지운다(`marks`에 라벨).
+    다 지워 남는 게 없으면 못 옮김(직접 넣기) — 상표 이름으로 옵션을 보내지 않는다.
+    """
+    r = _resolve_option_value(value, values_ko=values_ko, override=override)
+    if r.get("value"):
+        from src.collectors import ko_polish as _kp
+        cleaned, labs = _kp.strip_marks(r["value"])
+        if labs:
+            # F(10-06) 치환표에 있는 색 이름(디올 블루 → 딥 블루)은 그 제안으로 — 그냥 지우면 「블루」만 남아 다른 값과 겹친다
+            _bf = _kp.brand_value_fix(r["value"])
+            if _bf["hits"] and _bf["suggest"] and not _kp.has_han(_bf["suggest"]):
+                cleaned = _bf["suggest"]
+            if not cleaned:
+                return {"value": "", "how": "", "confirm": False, "marks": labs,
+                        "why": f"옵션 값이 상표({', '.join(labs)})뿐이에요 — 값을 직접 넣어 주세요"}
+            r = {**r, "value": cleaned, "marks": labs}
+    return r
+
+
+def _resolve_option_value(value: str, *, values_ko: str = "", override: str = "") -> Dict:
     from src.services.image_text_glossary import option_value_tokens
     v = str(value or "").strip()
     if str(override or "").strip():

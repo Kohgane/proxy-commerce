@@ -271,7 +271,8 @@ def _bump_provider_day(provider: str, ok: bool) -> None:
     진단 화면의 「호출 n」은 워커 메모리 카운터라 재시작·다른 워커면 0으로 보였다(오너 실측 「호출 0」 —
     같은 기간 운영 DB엔 papago 번역 46건). 이 수는 워커 둘·재시작에도 남는다. 실패는 조용히(번역을 막지 않는다).
     """
-    p = (provider or "").replace("-fallback", "").strip().lower()
+    # Y7-J: AI 상세 초안(`openai-draft`)도 openai 칸에 센다 — 10-09 초안 실패가 이 표에 아예 안 남았다.
+    p = (provider or "").replace("-fallback", "").replace("-draft", "").strip().lower()
     if p not in ("mymemory", "papago", "deepl", "azure", "openai"):
         return
     key, field = _PROV_DAY_PREFIX + _utc_day(), f"{p}_{'ok' if ok else 'fail'}"
@@ -541,92 +542,107 @@ _CAT_LABEL = {
 }
 
 
+#: Y7-J(오너 2026-10-10) — 상세 초안 형식 버전. 저장된 `detail_auto.v`가 이보다 낮으면 사전검증이 다시 만든다.
+DRAFT_VERSION = 2
+
+
+def _josa(word: str, with_final: str, without_final: str) -> str:
+    """받침 있으면 with_final(은·이), 없으면 without_final(는·가). 한글이 아니면 앞쪽 표기."""
+    w = str(word or "").strip()
+    if not w:
+        return without_final
+    ch = w[-1]
+    if "가" <= ch <= "힣":
+        return with_final if (ord(ch) - 0xAC00) % 28 else without_final
+    return with_final
+
+
+def draft_source_lines(description: str) -> list:
+    """원문 상세에서 초안 재료로 쓸 줄 — 가게 통계·운영 줄(S2 표)·UI 쓰레기·상표 줄·초단문 제외."""
+    from src.collectors import ko_polish as _kp
+    txt, _d = _kp.drop_detail_lines(str(description or ""))
+    txt, _m = _kp.gate_lines(txt)
+    out = []
+    for ln in txt.replace("\r", "").split("\n"):
+        s = ln.strip()
+        if len(s) < 4 or _is_input_junk(s) or _is_contaminated(s) or s in out:
+            continue
+        if re.fullmatch(r"[\d.,%\s]+", s):                     # 「4.8」 같은 숫자 조각
+            continue
+        out.append(s)
+    return out
+
+
 def _structured_draft(title, category, keywords, specs, options, brand, description="") -> str:
-    """v56 STEP3: 키 없음 모드 구조 초안 — **확인된 정보만** 실키·실값으로. 빈/플레이스홀더 행은 생략, 창작 0.
-    v87-W7 item4: description(원문 상세)을 받으면 원문 스펙 라인을 **통째 보존**해 '숫자 조각 리스트' 대신
-    사람이 읽는 원문 라인을 남긴다(무키 폴백 품질). UI 쓰레기 라인은 제외."""
+    """키 없음·AI 실패 때의 초안 — **확인된 정보만 문장으로**(Y7-J 오너 2026-10-10).
+
+    예전 형식은 「■ 특징」에 키워드(= 옛 번역 제목을 낱말로 자른 값)를 한 줄씩 나열했다 — 셰고가 13802276439
+    본문 「· 미야케 · 아키라의 · 미니멀리즘 …」. 이제 키워드는 쓰지 않는다(`keywords`는 호환용 인자).
+    순서: 상품 한 줄 → ■ 옵션·상세(옵션은 문장, 스펙은 「이름: 값」) → ■ 원문 상세(남는 줄이 있을 때만) →
+    ■ 사이즈·세탁 안내(의류) → ■ 배송·구매대행 안내. 「해외 정품」 같은 확인 안 된 주장은 쓰지 않는다.
+    """
+    from src.collectors import ko_polish as _kp
+
     def _clean(v):
         return str(v or "").strip()
 
     lines = []
     t = _clean(title)
-    # v60 STEP4: 제목이 오염어(Chat history 등)면 헤더로 쓰지 않음(STEP1이 근원 차단 — 방어적 이중 게이트).
     if t and _is_contaminated(t):
         t = ""
+    t = _kp.strip_marks(t)[0] if t else ""
     if t:
         lines.append(t)
-        # 후킹 1줄(항상 참인 일반 안내 — 없는 스펙 창작 아님).
-        lines.append("해외 정품 · 국내 배송으로 편하게 만나보세요.")
-    cat = _clean(category)
-    cat_label = _CAT_LABEL.get(cat, cat)      # 코드면 라벨, 아니면 원문(GEN·미상은 빈값)
-    head_bits = [b for b in (_clean(brand), cat_label) if b]
-    if head_bits:
-        lines.append(" · ".join(head_bits))
 
-    # 특징(키워드 — 실데이터만 · v60 STEP4 오염어 배제)
-    kws = []
-    for k in (keywords or []):
-        s = _clean(k)
-        if s and len(s) > 1 and s not in kws and not _is_contaminated(s):
-            kws.append(s)
-    if kws:
-        lines.append("")
-        lines.append("■ 특징")
-        for k in kws[:8]:
-            lines.append(f"· {k}")
-
-    # 옵션·상세(옵션 + 스펙 — 실키·실값, 'k'/'v' 류 1글자 플레이스홀더 배제)
-    rows = []
+    rows, seen = [], set()
     for opt in (options or []):
-        if isinstance(opt, dict):
-            name = _clean(opt.get("name"))
-            vals = [_clean(v) for v in (opt.get("values") or []) if _clean(v)]
-            if name and vals:
-                rows.append((name, ", ".join(vals[:12])))
+        if not isinstance(opt, dict):
+            continue
+        name = _clean(opt.get("name_ko") or opt.get("name"))
+        vals = []
+        for v in (opt.get("values_ko") or opt.get("values") or []):
+            vv = _kp.strip_marks(_clean(v.get("ko") or v.get("src") if isinstance(v, dict) else v))[0]
+            if vv and vv not in vals:
+                vals.append(vv)
+        if not name or not vals or name in seen:
+            continue
+        seen.add(name)
+        if len(vals) == 1:
+            rows.append(f"· {name}{_josa(name, '은', '는')} {vals[0]} 한 가지예요.")
+        else:
+            rows.append(f"· {name}{_josa(name, '은', '는')} {', '.join(vals[:12])}"
+                        f"{' 외' if len(vals) > 12 else ''} {len(vals)}가지 중에서 고를 수 있어요.")
     for sp in (specs or []):
         try:
             label, value = _clean(sp[0]), _clean(sp[1])
         except Exception:
             continue
-        if not label or not value or len(label) <= 1 or len(value) <= 1:
-            continue      # ★ '- k: v' 플레이스홀더/빈 행 생략
-        rows.append((label, value))
+        if not label or not value or len(label) <= 1 or len(value) <= 1 or label in seen:
+            continue      # ★ '- k: v' 플레이스홀더/빈 행 · 옵션과 같은 이름 생략(두 번 싣지 않음)
+        value = _kp.strip_marks(value)[0]
+        if not value:
+            continue
+        seen.add(label)
+        rows.append(f"· {label}: {value}")
     if rows:
-        lines.append("")
-        lines.append("■ 옵션·상세")
-        for name, val in rows:
-            lines.append(f"· {name}: {val}")
+        lines += ["", "■ 옵션·상세"] + rows
 
-    # v87-W7 item4: 원문 상세 라인을 통째 보존(숫자 조각 리스트 금지). 스펙 표가 빈약해도 원문 상세가
-    #   있으면 사람이 읽는 라인을 그대로 남긴다(UI 쓰레기·중복 라인·초단문 제외). 창작 0.
-    _desc = _clean(description)
-    if _desc:
-        _seen_rows = {(_clean(a) + ":" + _clean(b)) for a, b in rows}
-        _desc_lines = []
-        for _ln in _desc.replace("\r", "").split("\n"):
-            _s = _clean(_ln)
-            if len(_s) < 2 or _is_input_junk(_s) or _is_contaminated(_s):
-                continue
-            if _s in _desc_lines:
-                continue
-            _desc_lines.append(_s)
-        if _desc_lines:
-            lines.append("")
-            lines.append("■ 원문 상세")
-            for _s in _desc_lines[:40]:
-                lines.append(_s)   # ★ 원문 라인 통째(숫자 조각으로 쪼개지 않음)
+    src_lines = draft_source_lines(description)
+    if src_lines:
+        lines += ["", "■ 원문 상세"] + src_lines[:40]   # ★ 원문 라인 통째(숫자 조각으로 쪼개지 않음)
 
-    # 확인된 상세(키워드·옵션·스펙·원문상세)가 하나도 없으면 창작 대신 입력 요청(정직).
-    if not kws and not rows and not _clean(description):
-        lines.append("")
-        lines.append("· 확인된 상세 정보가 부족합니다. 소재·사이즈·용도 등을 직접 입력해 주세요.")
-    # 안내 틀(정직 boilerplate — 없는 스펙 창작 아님, 항상 참인 일반 안내)
-    lines.append("")
-    lines.append("■ 배송·구매대행 안내")
-    lines.append("· 해외 구매대행 상품으로, 주문 후 현지 배송·통관을 거쳐 발송됩니다.")
-    lines.append("· 모니터·조명 환경에 따라 실제 색상과 차이가 있을 수 있습니다.")
-    lines.append("· 정확한 사이즈·소재는 위 옵션·상세 정보를 확인해 주세요.")
-    lines.append("· 교환·반품은 판매 마켓과 구매대행 정책을 따릅니다.")
+    if _clean(category) == "CLO":
+        lines += ["", "■ 사이즈·세탁 안내",
+                  "· 사이즈는 옵션에 적힌 표기를 기준으로 해요. 실측 치수는 위 사진의 사이즈 안내를 확인해 주세요.",
+                  "· 세탁은 제품에 붙은 라벨 안내를 따라 주세요."]
+
+    if not rows and not src_lines:
+        lines += ["", "· 확인된 상세 정보가 부족합니다. 소재·사이즈·용도 등을 직접 입력해 주세요."]
+    lines += ["", "■ 배송·구매대행 안내",
+              "· 해외 구매대행 상품으로, 주문 후 현지 배송·통관을 거쳐 발송됩니다.",
+              "· 모니터·조명 환경에 따라 실제 색상과 차이가 있을 수 있습니다.",
+              "· 정확한 사이즈·소재는 위 옵션·상세 정보를 확인해 주세요.",
+              "· 교환·반품은 판매 마켓과 구매대행 정책을 따릅니다."]
     return "\n".join(lines).strip()
 
 
@@ -977,49 +993,88 @@ class AITranslator:
     def generate_description(self, product: dict) -> dict:
         """v39-E2 #3: 상세설명이 없거나 빈약할 때 한국어 상세 '초안'을 생성.
 
-        입력: {title, category, specs:[(label,value)], keywords, brand}
-        출력: {"text": str, "provider": "openai"|"stub", "is_draft": True}
-        - 큐레이터 톤(건방지지만 공손한 높임말). 없는 수치·허위 스펙 지어내기 금지(확인된 정보만).
-        - OPENAI 키 미설정/dry-run/실패 시 provider="stub" — 가짜 상세 생성 금지, 확인된 정보만 구조화.
+        입력: {title, category, specs:[(label,value)], options, description, brand}
+        출력: {"text", "provider": "openai"|"stub", "is_draft": True, "draft_status", "draft_error", "ai_call"}
+        - Y7-J(오너 2026-10-10): **문장형** — 상품 한 줄 소개 → 특징 3~5문장(소재·실루엣·착용 상황 — 옵션·카테고리·원문
+          상세에서만) → 사이즈·세탁 안내(해당 시). 제목 낱말 나열 금지·상표 금지. 키워드는 넣지 않는다(옛 번역 제목을
+          낱말로 자른 값이라 나열을 부른다 — 13802276439 「■ 특징 · 미야케 · 아키라의 …」).
+        - `ai_call` = 실제로 부른 기록 `{called, model, prompt, status, error, response_head}`(키 없으면 called False).
+        - OPENAI 키 미설정/dry-run/실패 시 provider="stub" — 확인된 정보만 문장으로(`_structured_draft`).
         """
-        title = (product.get("title") or "").strip()
+        from src.collectors import ko_polish as _kp
+        title = _kp.strip_marks((product.get("title") or "").strip())[0]
         category = (product.get("category") or "").strip()
-        brand = (product.get("brand") or "").strip()
+        brand = _kp.strip_marks((product.get("brand") or "").strip())[0]
 
-        # v87-W5: 입력 전처리 — 마켓 UI 쓰레기(레ビュー·신고·송료무료 등)를 스펙/키워드에서 제거한 뒤
-        #   초안에 넣는다. 종전엔 라쿠텐 UI 문구가 스펙/키워드에 섞여 초안이 오염됐다(오너 TSUMUGI).
-        keywords = _clean_keywords_for_draft(product.get("keywords") or [])
+        # v87-W5: 입력 전처리 — 마켓 UI 쓰레기(레ビュー·신고·송료무료 등)를 스펙에서 제거한 뒤 초안에 넣는다.
+        keywords = _clean_keywords_for_draft(product.get("keywords") or [])   # 호환 인자(초안엔 쓰지 않음)
         specs = _clean_specs_for_draft(product.get("specs") or [])
-
-        # 옵션(색상/사이즈 등)을 스펙 힌트로 흡수해 두면 키없음 구조초안이 풍부해진다.
         options = product.get("options") or []
         description = str(product.get("description") or "").strip()   # v87-W7 item4: 원문 상세 라인 보존용
 
-        # v87-W7a: 키 부재 vs 키 있으나 호출 실패를 **구분**한다. 종전엔 openai 실패도 provider="stub"로
-        #   폴백해 UI가 "AI 키가 설정되지 않아…"로 뭉갰다(키 있는데 미설정 오귀인 = 오너 결함). draft_status로
-        #   3분: openai(성공) / no_openai_key(키 부재) / openai_error(키 있으나 호출 실패+사유). 실패는 계측 적재.
+        # v87-W7a: 키 부재 vs 키 있으나 호출 실패를 **구분**한다 — draft_status 3분.
         from src.utils.env import env_present
         draft_status = "no_openai_key"
         draft_error = ""
+        ai_call = {"called": False, "model": "", "prompt": "", "status": None, "error": "", "response_head": ""}
         if env_present("OPENAI_API_KEY") and not _dry_run():
             try:
-                _res = self._describe_openai(title, category, specs, keywords, brand)
+                _res = self._describe_openai(title, category, specs, keywords, brand,
+                                             options=options, description=description, trace=ai_call)
                 _record_translate(True, provider="openai-draft")
+                _res["text"] = _kp.gate_lines(_res.get("text") or "")[0]   # 모델이 상표를 써도 그 줄은 뺀다
                 _res.setdefault("draft_status", "openai")
+                _res["ai_call"] = ai_call
                 return _res
             except Exception as exc:
                 draft_error = failure_line(exc, "openai-draft")   # Y5: 사유·HTTP·재시도·원문 한 줄(계측 적재 포함)
                 draft_status = "openai_error"
+                ai_call["error"] = draft_error
                 logger.warning("AI 상세 생성 실패(%s) — 구조화 폴백(키 있음, 호출 실패): %s", draft_error, exc)
 
-        # v56 STEP3: 키 없음/실패 모드 = 확인된 정보(제목·카테고리·키워드·옵션·스펙)만으로 **구조 초안**.
-        #   ★ '- k: v' 플레이스홀더 버그 수리: 실키·실값만 렌더, 값 없는 행은 생략, 창작 0.
-        #   v87-W7 item4: 원문 상세를 넘겨 '숫자 조각 리스트' 대신 원문 스펙 라인을 통째 보존.
         return {"text": _structured_draft(title, category, keywords, specs, options, brand, description),
                 "provider": "stub", "is_draft": True,
-                "draft_status": draft_status, "draft_error": draft_error}
+                "draft_status": draft_status, "draft_error": draft_error, "ai_call": ai_call}
 
-    def _describe_openai(self, title, category, specs, keywords, brand) -> dict:
+    @staticmethod
+    def draft_prompt(title, category, specs, brand, *, options=None, description="") -> str:
+        """AI 상세 초안 프롬프트 — 한 자리(보고·테스트가 같은 글을 본다)."""
+        cat_label = _CAT_LABEL.get(category, category)
+        opt_lines = []
+        for o in options or []:
+            if not isinstance(o, dict):
+                continue
+            nm = str(o.get("name_ko") or o.get("name") or "").strip()
+            vals = [str((v.get("ko") or v.get("src")) if isinstance(v, dict) else v).strip()
+                    for v in (o.get("values_ko") or o.get("values") or [])]
+            vals = [v for v in vals if v]
+            if nm and vals:
+                opt_lines.append(f"- {nm}: {', '.join(vals[:12])}")
+        spec_txt = "\n".join(f"- {l}: {v}" for l, v in specs[:20]) or "(스펙 표 없음)"
+        src = "\n".join(draft_source_lines(description)[:30]) or "(원문 상세 없음)"
+        return (
+            "다음 상품의 한국어 상세설명 '초안'을 작성하세요.\n"
+            "입력 정보(상품명·옵션·스펙·원문 상세)가 외국어(일본어·중국어 등)일 수 있습니다. **결과물은 처음부터 끝까지 "
+            "자연스러운 한국어 판매 문안**으로 작성하고, 원문 언어 조각을 남기거나 스펙 라벨·값을 기계 번역기 말투로 "
+            "직역하지 마세요. 쇼핑몰 UI 문구(리뷰/후기/신고/장바구니/찜/쿠폰/포인트/배송 배너·가게 평점·발송 시간 등)는 "
+            "상품 정보가 아니므로 **무시**하세요.\n"
+            "구성(이 순서, 문장형):\n"
+            "1) 상품 한 줄 소개 — 한 문장.\n"
+            "2) 특징 3~5개 — 한 줄에 한 문장. 소재·실루엣(모양)·구성·착용/사용 상황을 **아래 옵션·카테고리·원문 상세에서만** "
+            "추론하세요. 거기에 없는 사실(소재 이름·수치·인증·원산지·효능)은 절대 지어내지 마세요(모르면 쓰지 않음).\n"
+            "3) 사이즈·세탁 안내 — 의류·잡화처럼 해당될 때만 1~2문장(옵션의 사이즈 표기를 기준으로, 세탁은 라벨 안내).\n"
+            "금지: 상품명을 낱말로 쪼개 나열하기 · 상표·브랜드명(디자이너 이름 포함) · 마켓 금지어(최고/최상/유일/100%/완벽/"
+            "의학·과학 효능 단정) · 이모지·해시태그 · AI 특유의 정형 문장·번역체 · 「여러분」「~를 소개합니다」 같은 진부한 도입 · "
+            "감탄 남발.\n"
+            "톤: 공손하되 군더더기 없는 큐레이터 높임말, 사람이 직접 쓴 것처럼 짧고 구체적인 문장.\n\n"
+            f"상품명: {title}\n카테고리: {cat_label or '(미상)'}\n"
+            f"옵션:\n{chr(10).join(opt_lines) or '(옵션 없음)'}\n"
+            f"스펙:\n{spec_txt}\n"
+            f"원문 상세:\n{src}\n"
+        )
+
+    def _describe_openai(self, title, category, specs, keywords, brand, *, options=None, description="",
+                         trace=None) -> dict:
         import requests as _req
         import time as _time
         # v87-W10 item2: AI 초안도 요청 경로 — 워커 보호 예산(기본 8초)로 timeout 클램프.
@@ -1031,40 +1086,29 @@ class AITranslator:
             self._deadline = _time.time() + max(1.0, _b)
         api_key = __import__("src.utils.env", fromlist=["env_str"]).env_str("OPENAI_API_KEY")
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        spec_txt = "\n".join(f"- {l}: {v}" for l, v in specs[:20]) or "(스펙 표 없음)"
-        kw_txt = ", ".join(keywords[:15]) or "(없음)"
-        # v39-E2 #3 + CLAUDE.md: humanizer 의도 적용 — 사람이 직접 쓴 것처럼(AI 티·번역체·과장 금지).
-        prompt = (
-            "다음 상품의 한국어 상세설명 '초안'을 작성하세요. "
-            # v87-W5: 입력(상품명·스펙·키워드)이 외국어(일본어·중국어·영어)일 수 있다. 결과는 처음부터 끝까지
-            #   **자연스러운 한국어 판매 문안**이어야 하며, 원문 언어 조각을 남기거나 스펙 라벨/값을 기계 직역하지 않는다.
-            "입력 정보(상품명·스펙·키워드)가 외국어(일본어 등)일 수 있습니다. **결과물은 처음부터 끝까지 자연스러운 "
-            "한국어 판매 문안**으로 작성하고, 원문 언어(일본어·중국어 등) 조각을 그대로 남기거나 스펙 라벨·값을 기계 "
-            "번역기 말투로 직역하지 마세요. 스펙은 한국어로 자연스럽게 옮겨 정리하고, 소구점은 문장으로 풀어 주세요. "
-            "쇼핑몰 UI 문구(리뷰/후기/신고/장바구니/찜/쿠폰/포인트/배송 배너 등)는 상품 정보가 아니므로 **무시**하세요. "
-            "사람이 직접 쓴 것처럼 자연스럽게 — AI 특유의 정형 문장·번역체·진부한 도입(\"여러분~\", \"~를 소개합니다\")·"
-            "감탄 남발을 피하고, 짧고 구체적인 문장으로. "
-            "톤: 건방지지 않게 공손하되 군더더기 없는 큐레이터 높임말. "
-            "확인된 정보만 사용하고, 없는 수치·소재·인증·원산지 등은 절대 지어내지 마세요(모르면 쓰지 않음). "
-            "구성: 도입 1문장 → 특징 3~5(불릿) → 사용/주의 1~2 → 마무리 1문장. "
-            "마켓 금지어(최고/최상/유일/100%/완벽/의학·과학 효능 단정 등) 회피. "
-            "이모지·해시태그 금지.\n\n"
-            f"상품명: {title}\n브랜드: {brand or '(미상)'}\n카테고리: {category or '(미상)'}\n"
-            f"스펙:\n{spec_txt}\n키워드: {kw_txt}\n"
-        )
+        prompt = self.draft_prompt(title, category, specs, brand, options=options, description=description)
+        trace = trace if trace is not None else {}
+        trace.update(called=True, model=model, prompt=prompt)
         # Y5: AI 초안도 서버 월 예산(AI_MONTHLY_BUDGET_USD)에 묶고, 429는 백오프 1회 재시도(번역 체인과 같은 규칙).
         from decimal import Decimal as _D
         from src.ai.budget import BudgetGuard, BudgetExceededError
         _guard = BudgetGuard()
         if not _guard.can_spend(estimated_cost_usd=_D(str(len(prompt))) * _OPENAI_IN_USD + _D("900") * _OPENAI_OUT_USD):
             raise BudgetExceededError(_guard.summary())
-        resp = _post_with_429_retry(
-            _req, "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.5},
-            timeout=self._clamp_timeout(20),
-        )
+        try:
+            resp = _post_with_429_retry(
+                _req, "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.4},
+                timeout=self._clamp_timeout(20),
+            )
+        except Exception as exc:
+            st, body = raw_error_meta(exc)
+            trace.update(status=st, response_head=str(body or "")[:500])
+            raise
+        trace["status"] = getattr(resp, "status_code", 200)
         text = resp.json()["choices"][0]["message"]["content"].strip()
+        trace["response_head"] = text[:500]
         return {"text": text, "provider": "openai", "is_draft": True}
 
     # ------------------------------------------------------------------

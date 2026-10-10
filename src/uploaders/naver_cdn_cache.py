@@ -57,3 +57,24 @@ def put(account: str, url: str, cdn_url: str) -> None:
                                                 "at": datetime.now(timezone.utc).isoformat()})
     except Exception as exc:                      # noqa: BLE001
         logger.info("[네이버 CDN 캐시] 저장 실패(다음에 다시 올림): %s", exc)
+
+
+FAIL_PREFIX = "naver_cdn_fail:"
+
+
+def put_fail(account: str, url: str, reason: str) -> None:
+    """Y7-J(오너 2026-10-10) — 못 올린 장의 **사유**를 남긴다(캐시로 쓰지 않음 — 다음에 다시 시도한다).
+    실측: 13802276439 상세 1장(`…_1200x1200q30.jpg_.webp`)이 캐시에 없었는데 사유는 Render 로그에만 있어 읽지 못했다."""
+    try:
+        _store().state_set(_key(account, url).replace(PREFIX, FAIL_PREFIX, 1),
+                           {"src": str(url), "reason": str(reason or "")[:300],
+                            "at": datetime.now(timezone.utc).isoformat()})
+    except Exception as exc:                      # noqa: BLE001
+        logger.info("[네이버 CDN 캐시] 실패 사유 저장 실패: %s", exc)
+
+
+def get_fail(account: str, url: str) -> dict:
+    try:
+        return _store().state_get(_key(account, url).replace(PREFIX, FAIL_PREFIX, 1)) or {}
+    except Exception:                             # noqa: BLE001
+        return {}

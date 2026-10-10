@@ -55,7 +55,7 @@
     <div class="mk-chips mt-1" data-role="mk-chips">
       {% for c in it.market_chips %}
       <button type="button" class="mk-chip tone-{{ c.tone }}" data-role="mk-chip" data-market-status="{{ c.market }}" data-item="{{ it.id }}"
-              data-tone="{{ c.tone }}" title="{{ c.label }} — {{ c.state_label }}{{ ' · ' ~ c.product_id if c.product_id }} · 눌러서 검토 상태 보기">{{ c.chip }}</button>
+              data-tone="{{ c.tone }}" title="{{ c.label }} — {{ c.state_label }}{{ ' · ' ~ (c.shown_no or c.product_id) if (c.shown_no or c.product_id) }} · 눌러서 검토 상태 보기">{{ c.chip }}</button>
       {% endfor %}
     </div>
     {% endif %}

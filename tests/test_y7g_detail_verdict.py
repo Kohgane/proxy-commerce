@@ -101,7 +101,7 @@ def test_1556_item_prevalidate_and_registration_agree_and_upload_once(monkeypatc
     """CDN이 받아 주면 둘 다 통과 — 상세 이미지는 사전검증이 **한 번** 올리고 등록은 캐시를 쓴다."""
     from src.seller_console.upload_dispatcher import naver_detail_verdict, naver_required_holds
     v = naver_detail_verdict(_pleats())
-    assert v["ok"] is True and v["kept"] == 1 and not v["dropped"]
+    assert v["ok"] is True and v["kept"] == 3 and not v["dropped"]           # Y7-J: 갤러리 2장(위) + 상세 1장
     assert [h for h in naver_required_holds(_pleats()) if h["code"] == "naver_required_detailContent"] == []
     detail_ups = [u for u in cdn["uploaded"] if "shopmanager" in u]
     assert len(detail_ups) == 1                                                      # 사전검증이 올림
@@ -117,11 +117,19 @@ def test_1556_item_cdn_failure_both_hold_with_the_reason(monkeypatch, cdn):
     cdn["fail"]["shopmanager"] = "미허용 형식 webp → jpg 변환 실패"
     from src.seller_console.upload_dispatcher import naver_detail_verdict, naver_required_holds
     v = naver_detail_verdict(_pleats())
-    assert v["ok"] is False and v["dropped"][0]["reason"] == "미허용 형식 webp → jpg 변환 실패"
+    # Y7-J: 본문엔 대표·갤러리 사진이 늘 실린다 — 상세 1장만 못 올리면 그 장만 빠지고 통과(사유는 남는다)
+    assert v["ok"] is True and v["dropped"][0]["reason"] == "미허용 형식 webp → jpg 변환 실패"
+    cdn["fail"]["alicdn"] = "다운로드 실패(ConnectTimeout)"                         # 사진을 하나도 못 올리면 — 보류
+    from src.db import image_translate_queue_pg as _st
+    for _k in [k for k in list(getattr(_st, "_MEM_STATE", {})) if k.startswith("naver_cdn:")]:
+        _st._MEM_STATE.pop(_k, None)                                                   # 위에서 올린 갤러리 캐시를 비운다
+    v = naver_detail_verdict(_pleats())
+    assert v["ok"] is False
     hold = next(h for h in naver_required_holds(_pleats()) if h["code"] == "naver_required_detailContent")
-    assert "네이버에 못 올렸고" in hold["line"] and "변환 실패" in hold["line"]
+    assert "네이버에 못 올렸고" in hold["line"] and "다운로드 실패" in hold["line"]       # 첫 장(갤러리)의 사유
     res, sent = _register(monkeypatch, _pleats())
-    assert res["held"] is True and res["reason_code"] == "naver_required_detailContent"
+    # 사진을 하나도 못 받으면 등록은 대표 사진 업로드 단계에서 먼저 보류한다(본문 판정 전) — 어느 쪽이든 전송 0
+    assert res["held"] is True and ("이미지 업로드 실패" in res["error"] or res.get("reason_code") == "naver_required_detailContent")
     assert not [d for d in sent if isinstance(d, dict) and "originProduct" in d]     # 네이버에 안 보냄
 
 
@@ -136,7 +144,9 @@ def test_cdn_failure_with_text_sends_text_only(monkeypatch, cdn, caplog):
     res, sent = _register(monkeypatch, pd)
     assert res.get("success") is not False, res
     body = _detail_of(sent)
-    assert "가볍고 시원한 플리츠 세트예요." in body and "<img" not in body
+    # Y7-J: 못 올린 상세 1장만 빠지고, 대표·갤러리 사진(위)과 글(아래)은 그대로 나간다
+    assert "가볍고 시원한 플리츠 세트예요." in body and "shopmanager" not in body
+    assert body.count("<img") == 2 and body.index("<img") < body.index("가볍고")
     assert any("상세 이미지 뺌" in r.getMessage() and "ConnectTimeout" in r.getMessage() for r in caplog.records)
 
 
@@ -235,7 +245,8 @@ def test_blank_detail_auto_generates_and_passes(monkeypatch, cdn):
     d = _prevalidate(V, "y7g-auto", iid)
     row = d["results"][0]
     assert row["ok"] is True, row
-    assert len(runs) == 2 and all(n > 0 for n in runs), runs                          # 첫 검증 + 초안 뒤 다시 검증
+    # Y7-J: 셀러 글이 없으면 마켓 검증 **전에** 초안부터(사진은 늘 실리니 「빈 본문」을 기다리지 않는다) — 검증은 한 번
+    assert len(runs) == 1 and all(n > 0 for n in runs), runs
     # 카드 한 줄 = 그 줄이 곧 링크(편집 화면 상세 탭)
     assert row["action_url"] == f"/seller/collect/preview/{iid}?tab=detail"
     assert row["action_label"] == "상세 자동 생성(AI) — 확인(바꾸기)"
@@ -266,7 +277,7 @@ def test_auto_draft_reaches_registration_with_notices(monkeypatch, cdn):
     monkeypatch.setattr(VP, "plug_notice_needed", lambda skus: True)
     payload, _ = UD.UploadDispatcher._payload_for_market(pd, "smartstore")
     html = payload["description_html"]
-    assert "가볍게 걸치기 좋은 플리츠 세트예요." in html and html.count("<img") == 1
+    assert "가볍게 걸치기 좋은 플리츠 세트예요." in html and html.count("<img") == 2           # Y7-J: 갤러리 2장(위)
     assert html.count(PURCHASE_AGENT_NOTICE) == 1
     from src.seller_console.notice_texts import PLUG_CN_TITLE
     assert html.index(PLUG_CN_TITLE) < html.index("가볍게")                            # 플러그 고지는 맨 위
@@ -281,6 +292,7 @@ def test_auto_draft_failure_keeps_the_hold(monkeypatch, cdn):
         raise RuntimeError("openai 503")
     monkeypatch.setattr(T.AITranslator, "generate_description", boom)
     iid = _item("y7g-fail")
+    cdn["fail"]["alicdn"] = "다운로드 실패(ConnectTimeout)"     # Y7-J: 사진도 못 올리고 초안도 실패 — 그때만 보류
     d = _prevalidate(V, "y7g-fail", iid)
     row = d["results"][0]
     assert row["ok"] is False and row["error_code"] == "naver_required_detailContent"

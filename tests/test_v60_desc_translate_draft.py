@@ -83,6 +83,6 @@ def test_draft_blocks_contamination_and_structure():
                           ["MagSafe 호환", "Chat history", "360도 회전", "고가수집기"],
                           [], [{"name": "색상", "values": ["블랙", "화이트"]}], "andobil")
     assert "Chat history" not in d and "고가수집기" not in d      # 오염어 0
-    assert "MagSafe 호환" in d and "360도 회전" in d              # 실 키워드 유지
-    assert "■ 특징" in d and "■ 배송·구매대행 안내" in d          # 고정 구조
-    assert "국내 배송" in d                                       # 후킹 1줄
+    # Y7-J(오너 2026-10-10): 키워드는 초안에 나열하지 않는다 — 「해외 정품」 후킹 줄도 없앴다(확인 안 된 주장)
+    assert "■ 특징" not in d and "해외 정품" not in d and "■ 배송·구매대행 안내" in d          # 고정 구조
+    assert "색상은 블랙, 화이트 2가지 중에서 고를 수 있어요." in d and "국내 배송" not in d

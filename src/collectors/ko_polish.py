@@ -380,6 +380,57 @@ def mask_marks(text: str) -> str:
     return s
 
 
+_GATE_MODES = ("replica", "drop", "ip")
+
+
+def _mark_pat(n: str):
+    """상표 이름 한 개의 찾기 — 영문은 대소문자 무시, 한글은 낱말 경계(「미야케」가 「미야케아」 속에서만 걸리지 않게 앞뒤 한글 아님)."""
+    if n.isascii():
+        return re.compile(r"(?<![A-Za-z])" + re.escape(n) + r"(?![A-Za-z])", re.I)
+    return re.compile(re.escape(n))
+
+
+def mark_hits(text: str) -> List[str]:
+    """Y7-J(오너 2026-10-10) — 상세·초안·옵션 값·고시 칸에 든 **지울 상표**(replica·drop·ip) 라벨 목록. 호환 표기(compat)는 아니다."""
+    s = str(text or "")
+    out: List[str] = []
+    if not s:
+        return out
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") in _GATE_MODES and any(_mark_pat(n).search(s) for n in _tm_names(e)):
+            lab = str(e.get("label") or "")
+            if lab and lab not in out:
+                out.append(lab)
+    return out
+
+
+def strip_marks(text: str) -> tuple:
+    """상표 이름만 지운 글 → `(글, 라벨들)`. 옵션 값·고시 칸처럼 줄을 통째로 버릴 수 없는 칸에 쓴다."""
+    s = str(text or "")
+    labs = mark_hits(s)
+    if not labs:
+        return s, []
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") in _GATE_MODES and str(e.get("label") or "") in labs:
+            for n in _tm_names(e):
+                s = _mark_pat(n).sub(" ", s)
+    return _tidy(s), labs
+
+
+def gate_lines(text: str) -> tuple:
+    """Y7-J — 상세 본문·AI 초안은 상표가 든 **줄을 통째로** 뺀다 → `(글, 라벨들)`.
+    실측(오너 2026-10-10 셰고가 13802276439): 본문에 「· 미야케」「· 아키라의」가 실렸다(제목에선 지웠는데 상세엔 남았다)."""
+    labs: List[str] = []
+    keep = []
+    for ln in str(text or "").split("\n"):
+        hit = mark_hits(ln)
+        if hit:
+            labs += [h for h in hit if h not in labs]
+            continue
+        keep.append(ln)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip(), labs
+
+
 def replica_hits(text: str) -> List[str]:
     """가구 레플리카 상표(임스·허먼밀러·바르셀로나…)가 들어 있나 — 라벨 목록."""
     s = str(text or "")

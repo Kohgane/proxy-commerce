@@ -88,7 +88,8 @@ def test_naver_status_and_seller_center(monkeypatch):
     MS.reset_cache()
     monkeypatch.setattr(SS, "_api_request", lambda self, m, p, data=None: {"originProduct": {"statusType": "SALE"},
                                                                           "smartstoreChannelProduct": {"channelProductNo": 777}})
-    assert MS.query(MS.records(_extra())[2])["link"] == "https://smartstore.naver.com/main/products/777"
+    # Y7-J: 구매자 주소 = 스토어 주소(셰고가 chezgoga) + 채널 상품번호
+    assert MS.query(MS.records(_extra())[2])["link"] == "https://smartstore.naver.com/chezgoga/products/777"
     MS.reset_cache()
     monkeypatch.setattr(SS, "_api_request", lambda self, m, p, data=None: {"error": "네이버 거부 — http_status=404 body={...}"})
     row = MS.query(MS.records(_extra())[2])
