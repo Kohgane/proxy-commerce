@@ -2444,7 +2444,7 @@ function cpLiveCheck(send) {
       method: send ? 'POST' : 'GET', credentials: 'same-origin',
       headers: send ? {'Content-Type': 'application/json'} : undefined, body: send ? '{}' : undefined})
     .then(r => r.json()).then(d => {
-      // M8: 쿠팡이 거부하면 200 + ok:false + market_status·body 원문(502는 우리 쪽 장애일 때만)
+      // M8: 쿠팡이 거부하면 ok:false + market_status·body 원문(응답 실패 코드는 우리 쪽 장애일 때만)
       if (!d.ok) { out.textContent = (d.error || '쿠팡 등록본을 읽지 못했어요.')
         + (d.market_status ? ` · 쿠팡 응답 HTTP ${d.market_status}` : '') + (d.body ? ` · 원문: ${String(d.body).slice(0, 300)}` : ''); return; }
       const rows = (d.changes || []).map(c => `<tr><td class="text-nowrap">${_cpEsc(c.field)}</td><td class="text-muted">${_cpEsc(c.before)}</td><td>${_cpEsc(c.after)}</td></tr>`).join('');

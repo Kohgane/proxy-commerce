@@ -4652,15 +4652,20 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
             # 기다린 시간은 이 잡의 60초 마감에 넣지 않는다
             _pv_update(job_id, queued=False, queue_note="", started_ts=_time.time(),
                        started_at=datetime.now(timezone.utc).isoformat())
+        from src.db import pg as _pg
         try:
-            r0, _p0 = _rss.log("pv_job_start", markets=",".join(markets))
-            _pv_job_body(job_id, data, markets, dispatcher)
+            # Z9 후속 계약: 잡 전체(본문 + 끝 기록)가 DB 연결 1개 — 끝 기록(rss)도 같은 범위 안에서(중첩 job_conn은 바깥 것을 쓴다)
+            with _pg.job_conn():
+                r0, _p0 = _rss.log("pv_job_start", markets=",".join(markets))
+                try:
+                    _pv_job_body(job_id, data, markets, dispatcher)
+                finally:
+                    _gc.collect()
+                    r1, p1 = _rss.log("pv_job_end", markets=",".join(markets))
+                    if r0 >= 0 and r1 >= 0:
+                        _pv_update(job_id, rss={"start_mb": r0, "end_mb": r1, "delta_mb": r1 - r0, "peak_mb": p1})
         finally:
             sem.release()
-            _gc.collect()
-            r1, p1 = _rss.log("pv_job_end", markets=",".join(markets))
-            if r0 >= 0 and r1 >= 0:
-                _pv_update(job_id, rss={"start_mb": r0, "end_mb": r1, "delta_mb": r1 - r0, "peak_mb": p1})
     finally:
         _rss.JOB.reset(tok)
 
