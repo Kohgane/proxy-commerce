@@ -347,7 +347,8 @@ def test_6_popup_has_the_button():
     from pathlib import Path
     t = Path("src/seller_console/templates/_market_status.html").read_text(encoding="utf-8")
     assert 'data-role="mst-resend"' in t and "본문 다시 보내기" in t and "naver-resend-detail" in t
-    assert "채널 상품번호" in t and "mst-price-line" in t
+    # 오너 2026-10-10: 네이버는 채널 상품번호만 화면에(원상품번호는 로그·DB 내부용)
+    assert "'원상품번호" not in t and "'상품번호 ' + esc(r.channel_product_no" in t and "mst-price-line" in t
 
 
 # ── 7. 판매가 구성 ──────────────────────────────────────────────────────────────────────────────
