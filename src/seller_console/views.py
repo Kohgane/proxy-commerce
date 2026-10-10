@@ -2116,7 +2116,8 @@ def mobile_list_ctx(item: dict) -> dict:
     markets, market_pick = _market_rows(markets, product)
     _mark_registered(markets, ex)                       # M7: 이미 등록한 마켓은 기본 체크 해제 + 경고
     from .listing_status import records as _mk_records
-    market_chips = _mk_records(ex)
+    from .listing_status import chips as _mk_chips
+    market_chips = _mk_chips(ex)                         # Y7-K: 마켓당 칩 하나 + 중복 배지
     return {"item_id": str(item.get("id") or ""), "title": product["title"] or "(제목 없음)",
             "thumb": product["thumbnail"], "images_count": len(images),
             "price": str(product.get("price") or "") if has_price else "",
@@ -2939,6 +2940,14 @@ def collect_upload():
     #   터지면 **주소 채우기가 조용히 건너뛰어졌다**(카나리 4차 실측: 뽑힌 값 '').
     from .upload_dispatcher import build_dispatch_payload as _build_payload
     _owned = _get_owned_item(data.get("item_id") or "")
+    # Y7-K(오너 2026-10-10 18:09 KST — 셰고가 13742149801 새로 생성, 13741121333 이미 있음): 이미 등록된 마켓은
+    #   **확인 없이 다시 올리지 않는다**. 화면 가드(M7 체크 해제)는 「다시 등록」·「실패 마켓 재시도」가 건너뛰었다 —
+    #   입구 한 곳(서버)에서 막는다. 확인하면 `confirm_duplicate: true`로 다시 보낸다.
+    _dup = _already_registered(_owned, markets)
+    if _dup and not data.get("confirm_duplicate"):
+        return jsonify({"ok": False, "needs_dup_confirm": True, "registered": _dup,
+                        "error": "이미 등록된 마켓이 있어요 — 다시 올리면 같은 상품이 하나 더 생겨요: "
+                                 + " · ".join(f"{d['chip']} {d['shown_no']}" for d in _dup)}), 409
     # T4: 몸통의 기준은 **서버 빌더 하나** — 폼이 보낸 값은 오너가 방금 고친 값으로 얹는다(키 집합이 같아
     #   데스크톱 결과는 그대로, 폰·미리보기와 같은 빌더를 지난다).
     if _owned:
@@ -3033,6 +3042,24 @@ def collect_upload():
         return jsonify({"ok": False, "error": f"업로드 중 오류: {exc}"}), 500
 
 
+def _already_registered(item, markets) -> list:
+    """Y7-K — 이 상품의 등록 기록 중 이번 대상 마켓에 이미 있는 것 `[{market, chip, shown_no, date}]`."""
+    if not item or not markets:
+        return []
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        return []
+    from .listing_status import records as _mk_records
+    want = {str(m) for m in markets}
+    out = []
+    for r in _mk_records(extra):
+        if r["market"] in want:
+            out.append({"market": r["market"], "chip": r["chip"], "shown_no": r.get("shown_no") or r.get("product_id") or "",
+                        "date": str(r.get("at") or "")[:10]})
+    return out
+
+
 def _persist_upload_status(item_id, result_dict) -> None:
     """v44-1: 업로드 결과 중 '성공(success=true)' 마켓을 항목 extra_json.uploaded에 병합 저장.
 
@@ -3049,13 +3076,13 @@ def _persist_upload_status(item_id, result_dict) -> None:
             extra = json.loads(item.get("extra_json") or "{}") or {}
         except Exception:
             extra = {}
-        uploaded = extra.get("uploaded") if isinstance(extra.get("uploaded"), list) else []
-        by_market = {u.get("market"): u for u in uploaded if isinstance(u, dict) and u.get("market")}
+        uploaded = [u for u in (extra.get("uploaded") if isinstance(extra.get("uploaded"), list) else [])
+                    if isinstance(u, dict) and u.get("market")]
         now = datetime.now(timezone.utc).isoformat()
         changed = False
         for r in (result_dict.get("results") or []):
             if r.get("success") and r.get("market"):
-                by_market[r["market"]] = {
+                rec = {
                     "market": r["market"],
                     "market_label": r.get("market_label") or r["market"],
                     "external_url": r.get("external_url") or "",
@@ -3067,10 +3094,19 @@ def _persist_upload_status(item_id, result_dict) -> None:
                                 if r["market"].startswith(("coupang:", "smartstore:")) else ""),
                     "at": now,
                 }
+                # Y7-K(오너 2026-10-10): 같은 마켓이라도 **상품번호가 다르면 쌓는다** — 예전엔 마켓당 1건으로 덮어써
+                #   13742149801이 13741121333 기록을 지웠다(마켓엔 두 상품이 있는데 우리 기록엔 하나). 같은 번호면 갱신.
+                same = next((i for i, u in enumerate(uploaded) if u.get("market") == rec["market"]
+                             and (str(u.get("product_id") or "") == rec["product_id"] or not rec["product_id"]
+                                  or not str(u.get("product_id") or ""))), None)
+                if same is None:
+                    uploaded.append(rec)
+                else:
+                    uploaded[same] = {**uploaded[same], **{k: v for k, v in rec.items() if v}}
                 changed = True
         if not changed:
             return
-        extra["uploaded"] = list(by_market.values())
+        extra["uploaded"] = uploaded
         from .collect_history_store import update as _update
         _update(str(item_id), seller_ids=_seller_identities(),
                 extra_json=json.dumps(extra, ensure_ascii=False))
@@ -3318,6 +3354,51 @@ def _price_line_for(item: dict, market: str) -> str:
     parts = sell_price_parts(cost, cur, str(market).split(":")[0], margin, fx_rates=sell_fx_rates()[0],
                              shipping_fee=UploadDispatcher._engine_shipping_fee({**pd, "price_original": cost, "currency": cur}))
     return ("가장 싼 옵션 기준 — " if len(costs) > 1 else "") + parts["line"]
+
+
+@bp.post("/collect/<item_id>/upload-record/remove")
+def collect_upload_record_remove(item_id):
+    """Y7-K(오너 2026-10-10) — 「중복 n건 — 정리」: 같은 마켓 등록 기록 중 **하나를 우리 기록에서만** 뺀다.
+
+    마켓의 상품은 지우지 않는다(되돌릴 수 없는 일 — 판매자센터·WING에서 오너가). 빼고 나면 그 번호는 칩·상태 팝업·
+    「이미 등록됨」 판정에서 사라진다. 그 마켓 기록이 하나뿐이면 빼지 않는다(중복 정리용 — 등록 기록 지우기가 아님).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    market, pid = str(data.get("market") or "").strip(), str(data.get("product_id") or "").strip()
+    forbidden = _account_codes_forbidden([market])
+    if forbidden:
+        return forbidden
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        extra = {}
+    from . import listing_status as MS
+    same = [r for r in MS.records(extra) if r["market"] == market]
+    if len(same) < 2:
+        return jsonify({"ok": False, "error": "이 마켓 등록 기록이 하나뿐이라 빼지 않았어요(중복 정리 전용)."}), 409
+    if not any(r["product_id"] == pid for r in same):
+        return jsonify({"ok": False, "error": "그 번호의 등록 기록을 찾지 못했어요."}), 404
+    kept, gone = [], []
+    for u in extra.get("uploaded") or []:
+        if isinstance(u, dict) and u.get("market") == market and MS.records({"uploaded": [u]})[0]["product_id"] == pid:
+            gone.append(u)
+            continue
+        kept.append(u)
+    extra["uploaded"] = kept
+    # 지우지 않고 **삭제 표시로 보존**(오너 2026-10-10) — 무슨 번호를 언제 왜 뺐는지 남는다
+    now = datetime.now(timezone.utc).isoformat()
+    extra.setdefault("uploaded_removed", []).extend(
+        {**u, "removed_at": now, "removed_reason": "중복 정리(우리 기록에서 뺌 — 마켓 상품 삭제는 판매자센터)"} for u in gone)
+    from .collect_history_store import update as _update
+    _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
+    MS.reset_cache()
+    logger.info("[등록 기록] 중복 정리 item=%s market=%s 뺀 번호=%s", str(item_id)[:8], market, pid)
+    return jsonify({"ok": True, "message": f"우리 기록에서 {pid}를 뺐어요 — 마켓의 상품은 판매자센터에서 지워 주세요."})
 
 
 @bp.post("/collect/<item_id>/naver-resend-detail")
@@ -4329,6 +4410,7 @@ def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = Fa
     from .ai.translator import DRAFT_VERSION
     da = {"text": text, "images": imgs, "provider": (res or {}).get("provider") or "stub",
           "draft_status": (res or {}).get("draft_status") or "", "draft_error": (res or {}).get("draft_error") or "",
+          "draft_code": (res or {}).get("draft_code") or "",
           "ai_call": (res or {}).get("ai_call") or {}, "v": DRAFT_VERSION,
           "at": datetime.now(timezone.utc).isoformat()}
     ex["detail_auto"] = da
@@ -9238,8 +9320,8 @@ def _shape_collect_items(items, current_lang):
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
         # M7: 마켓별 소형 칩(등록된 마켓만) — 색은 마지막으로 알려진 상태(uploaded[].review). 목록은 마켓에 묻지 않는다.
-        from .listing_status import records as _mk_records
-        it["market_chips"] = _mk_records(ex)
+        from .listing_status import chips as _mk_chips
+        it["market_chips"] = _mk_chips(ex)              # Y7-K: 마켓당 칩 하나 + 중복 배지
         # U2: 마지막으로 물어본 쿠팡 검토 상태(승인·검토중·반려) — 목록 배지. 안 물어봤으면 비움(지어내지 않음).
         it["uploaded_review"] = [{"label": str(u.get("market_label") or u.get("market")),
                                   "state": (u.get("review") or {}).get("state") or "",

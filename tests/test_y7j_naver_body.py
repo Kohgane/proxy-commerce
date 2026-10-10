@@ -171,7 +171,8 @@ def test_2_openai_failure_is_recorded_with_reason(monkeypatch):
     assert "insufficient_quota" in res["ai_call"]["error"] and res["provider"] == "stub"
     from src.seller_console.upload_dispatcher import detail_auto_note
     note = detail_auto_note({"detail_auto": {"text": "x", "provider": "stub", "draft_status": "openai_error"}, "item_id": "i"})
-    assert note["line"] == "상세 자동 생성(AI 호출 실패 — 확인된 정보로 정리) — 확인(바꾸기)"
+    # Y7-K(오너 2026-10-10): 「AI 초안 대신 기본 문장을 썼어요 — 사유」(사유 코드 없으면 「AI 호출 실패」)
+    assert note["line"] == "AI 초안 대신 기본 문장을 썼어요 — AI 호출 실패 — 확인(바꾸기)"
 
 
 def test_2_old_draft_is_regenerated():

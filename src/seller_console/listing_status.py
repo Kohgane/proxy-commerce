@@ -78,8 +78,32 @@ def records(extra: dict) -> List[Dict]:
                     "external_url": url, "review": rv,
                     "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait"),
                     "state_label": str(rv.get("label") or "등록됨")})
-    out.sort(key=lambda r: _ORDER.get(r["market"], 99))
+    out.sort(key=lambda r: (_ORDER.get(r["market"], 99), r["at"]))
+    # Y7-K: 같은 상품·같은 마켓 등록이 2건 이상 — 카드 「중복 n건 — 정리」 재료
+    cnt: Dict[str, int] = {}
+    for r in out:
+        cnt[r["market"]] = cnt.get(r["market"], 0) + 1
+    for r in out:
+        r["dup_count"] = cnt[r["market"]] if cnt[r["market"]] > 1 else 0
     return out
+
+
+def chips(extra: dict) -> List[Dict]:
+    """M7 칩 — 마켓당 **한 개**(가장 최근 등록). 같은 마켓 등록이 2건 이상이면 `dup_count`로 카드가 「중복 n건 — 정리」를 단다."""
+    last: Dict[str, Dict] = {}
+    for r in records(extra):
+        last[r["market"]] = r                     # records는 (마켓 순서, 등록 시각) 정렬 — 마지막이 최근
+    return sorted(last.values(), key=lambda r: _ORDER.get(r["market"], 99))
+
+
+def duplicates(extra: dict) -> List[Dict]:
+    """Y7-K — 마켓별 중복 등록 `[{market, chip, count, numbers}]`(2건 이상만)."""
+    by: Dict[str, Dict] = {}
+    for r in records(extra):
+        if r["dup_count"]:
+            d = by.setdefault(r["market"], {"market": r["market"], "chip": r["chip"], "count": r["dup_count"], "numbers": []})
+            d["numbers"].append(r.get("shown_no") or r.get("product_id") or "")
+    return list(by.values())
 
 
 def channel_no_of(u: dict) -> str:
@@ -166,6 +190,7 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
             row = {"sid": rec["product_id"], "state": "unknown", "label": "확인 못 함",
                    "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
+               dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」
                registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
                tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
     with _LOCK:
@@ -178,7 +203,9 @@ def remember(extra: dict, row: dict) -> bool:
     if row.get("state") in ("unknown",) and row.get("error"):
         return False
     for u in (extra or {}).get("uploaded") or []:
-        if isinstance(u, dict) and u.get("market") == row.get("market"):
+        if isinstance(u, dict) and u.get("market") == row.get("market") and (
+                not row.get("product_id") or not u.get("product_id")
+                or str(u.get("product_id")) == str(row.get("product_id"))):   # Y7-K: 같은 마켓 2건이면 번호로 짝짓기
             u["review"] = {k: row.get(k) for k in ("state", "label", "comment", "link", "status_raw", "checked_at")}
             if row.get("product_id") and not u.get("product_id"):
                 u["product_id"] = row["product_id"]

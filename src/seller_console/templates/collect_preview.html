@@ -773,7 +773,7 @@
           <div id="uploadResults"></div>
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-ghost" data-bs-dismiss="modal">닫기</button>
-            <button class="btn btn-ghost" onclick="goToStep('stepSelect')">다시 등록</button>
+            <button class="btn btn-ghost" data-role="re-register" onclick="reRegister()">다시 등록</button>
           </div>
         </div>
 
@@ -2321,6 +2321,9 @@ function renderPrevalidateResults(results, pending, state) {
 }
 
 // ── 실제 업로드 ──
+// Y7-K(오너 2026-10-10): 이미 등록된 마켓은 서버가 확인 없이 다시 올리지 않는다(409 needs_dup_confirm) —
+//   「다시 등록」·「실패 마켓 재시도」·처음 등록 모두 같은 입구. 확인하면 그 한 번만 `confirm_duplicate`.
+let _confirmDup = false;
 async function runUpload(confirmWarn) {
   if (_validatedMarkets.length === 0) return;
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
@@ -2337,12 +2340,25 @@ async function runUpload(confirmWarn) {
         target_margin_pct: targetMarginPct,
         item_id: _ITEM_ID,                 // v44-1: 성공 마켓을 항목에 영속(목록 '등록됨' 뱃지)
         confirm_warn: !!confirmWarn,       // D2-3: 금칙어 확인을 이미 받았나
+        confirm_duplicate: _confirmDup,    // Y7-K: 이미 등록된 마켓 다시 올리기를 확인했나
       }),
     });
     const data = await resp.json();
+    _confirmDup = false;
+    if (data && data.needs_dup_confirm) {
+      goToStep('stepPrevalidate');   // Y7-K: 예전 'stepMarkets'는 없는 id라 TypeError(확인 창이 안 떴다)
+      if (await pcConfirm((data.error || '이미 등록된 마켓이 있어요.') + ' 그래도 하나 더 등록할까요?',
+                          {title: '중복 등록', confirmLabel: '중복 등록'})) {
+        _confirmDup = true;
+        return runUpload(confirmWarn);
+      }
+      _markRegistered((data.registered || []).map(r => r.market));   // 취소 — 그 마켓은 체크 해제(M7 가드)
+      goToStep('stepSelect');
+      return;
+    }
     // D2-3: 금칙어가 걸린 번역본이 섞여 있으면 **한 번 물어본다**(막지는 않는다).
     if (data && data.needs_confirm) {
-      goToStep('stepMarkets');
+      goToStep('stepPrevalidate');   // Y7-K: 예전 'stepMarkets'는 없는 id라 TypeError(확인 창이 안 떴다)
       if (await pcConfirm(kgpWarnConfirmText(data.warn_pages))) {
         return runUpload(true);
       }
@@ -2355,6 +2371,31 @@ async function runUpload(confirmWarn) {
       `<div class="pc-status pc-status-danger"><i class="bi bi-exclamation-triangle"></i> ${kgpEscapeForHtml(kgpFriendlyError(err))}</div>`;
     goToStep('stepResult');
   }
+}
+
+// Y7-K: 방금 성공한(또는 이미 등록된) 마켓 체크박스 — 체크 해제 + data-registered(다시 체크하면 M7 「중복 등록」 확인)
+let _lastUploadOk = [];
+function _markRegistered(markets) {
+  (markets || []).forEach(m => {
+    document.querySelectorAll('.market-upload-check').forEach(b => {
+      if (b.value !== m) return;
+      b.checked = false;
+      b.setAttribute('data-registered', '1');
+      // 처음 그릴 때 이미 등록된 줄과 같은 모양(.mk-dup) — 타일 안에 한 줄
+      const host = b.closest('label') || b.parentNode;
+      if (host && !host.querySelector('[data-role="mk-dup"],[data-role="mk-dup-just"]')) {
+        const n = document.createElement('span');
+        n.className = 'mk-dup d-block'; n.setAttribute('data-role', 'mk-dup-just');
+        n.textContent = '방금 등록됨 — 다시 올리면 같은 상품이 하나 더 생겨요';
+        host.appendChild(n);
+      }
+    });
+  });
+}
+// 「다시 등록」 — 선택 화면으로 돌아가되 방금 등록된 마켓은 체크를 풀어 둔다(예전엔 체크된 채라 그대로 또 올라갔다)
+function reRegister() {
+  _markRegistered(_lastUploadOk);
+  goToStep('stepSelect');
 }
 
 // v44-1: 실패한 마켓만 재시도(성공/큐는 건드리지 않음).
@@ -2434,6 +2475,8 @@ function renderUploadResults(data) {
     return;
   }
   const result = data.result;
+  _lastUploadOk = (result.results || []).filter(r => r.success).map(r => r.market);
+  _markRegistered(_lastUploadOk);
   const summary = `전체 ${result.total}개 · 성공 <strong class="text-success">${result.succeeded}</strong> · 실패 ${result.failed} · 큐 ${result.queued}`;
   // v44-1: 마켓별 결과 뱃지 row(한눈에) — 성공(체크·바로가기)·실패(엑스).
   let badges = '<div class="d-flex flex-wrap gap-2 mb-2">';
