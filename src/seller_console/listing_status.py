@@ -76,6 +76,7 @@ def records(extra: dict) -> List[Dict]:
                     "product_id": pid, "channel_product_no": ch, "shown_no": ch or pid,     # 칩·「이미 등록됨」 번호(네이버 = 채널 번호)
                     "at": str(u.get("at") or ""), "account": acct,
                     "external_url": url, "review": rv,
+                    "price": u.get("price") if isinstance(u.get("price"), dict) else {},   # M8-8: 등록 때 판매가 재료
                     "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait"),
                     "state_label": str(rv.get("label") or "등록됨")})
     out.sort(key=lambda r: (_ORDER.get(r["market"], 99), r["at"]))
@@ -192,6 +193,7 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
                dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」
                registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
+               registered_price=str((rec.get("price") or {}).get("line") or ""),
                tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
     with _LOCK:
         _CACHE[key] = (now, row)
@@ -225,6 +227,7 @@ def db_row(rec: dict) -> dict:
             # 쿠팡 구매자 주소는 승인 뒤에만 생긴다(마지막 조회값) · 그 밖은 등록 기록의 주소(네이버 = 채널 번호 주소)
             "link": str(rv.get("link") or "") if m.startswith("coupang") else str(rec.get("external_url") or ""),
             "manage_url": manage, "manage_label": mlabel, "pending": True,
+            "registered_price": str((rec.get("price") or {}).get("line") or ""),
             "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait")}
 
 

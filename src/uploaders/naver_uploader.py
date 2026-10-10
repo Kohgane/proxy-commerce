@@ -18,6 +18,23 @@ from .base_uploader import BaseUploader
 logger = logging.getLogger(__name__)
 
 
+def _nbytes(part) -> int:
+    """받은 사진의 바이트 수(`FetchedImage.data`) — 모르면 0(묶음 장 수 상한만 적용)."""
+    try:
+        return len(getattr(part, "data", b"") or b"")
+    except TypeError:
+        return 0
+
+
+def _chunk_bytes() -> int:
+    """Z10 — 네이버 CDN 업로드 한 번에 묶을 바이트 상한(`IMAGE_UPLOAD_CHUNK_BYTES`, 기본 4MB). 넘으면 그 자리에서 올리고 비운다.
+    한 묶음은 릴레이를 지나며 multipart·base64·JSON으로 7~8벌 뜬다 — 4MB면 30MB 안팎."""
+    try:
+        return max(1, int(os.getenv("IMAGE_UPLOAD_CHUNK_BYTES", str(4 * 1024 * 1024)) or 0))
+    except (TypeError, ValueError):
+        return 4 * 1024 * 1024
+
+
 class NaverSmartStoreUploader(BaseUploader):
     """Naver Commerce API (SmartStore)를 통한 상품 업로더."""
 
@@ -710,38 +727,62 @@ class NaverSmartStoreUploader(BaseUploader):
                 cached += 1
                 continue
             todo.append((u, n))
-        # 받기는 장마다 따로(4장씩 동시) — 상세 이미지 20~30장 상품도 사전검증 시간 안에. 순서는 원래 순서 그대로.
-        fetched = []
-        if todo:
-            import concurrent.futures as _cf
-            import contextvars as _cv
+        # Z10(오너 2026-10-10 22:29~22:35 KST — 네이버 사전검증 1건 +261MB, Render 512MB 초과 2회):
+        #   예전엔 **전부 받아 둔 뒤**(4장씩 동시 — webp→jpg 원본 해상도 변환도 4장 동시) 10장씩 올렸다 → 상세 20~30장이면
+        #   받은 바이트 전부 + multipart 사본 + 릴레이 base64 사본이 한꺼번에 떠 있었다.
+        #   이제 **한 장씩 받아 묶음을 채우고, 차면 올리고 버린다**(큰 원본은 받은 자리에서 줄임 — image_norm), 묶음이 10장이거나
+        #   `IMAGE_UPLOAD_CHUNK_BYTES`(기본 4MB)를 넘으면 그 자리에서 올리고 비운다. 순서는 원래 순서 그대로.
+        import gc as _gc
+        from src.utils import rss as _rss
+        chunk_cap = _chunk_bytes()
+        stat = {'fetched': 0, 'bytes': 0, 'uploads': 0}
 
-            def _one(un):
-                reasons = []
-                got = self._fetch_image(un[1], on_skip=lambda su, sr: reasons.append(sr))
-                return un, got, (reasons[0] if reasons else '사유 미상')
-            with _cf.ThreadPoolExecutor(max_workers=min(4, len(todo))) as ex:
-                outs = list(ex.map(lambda un: _cv.copy_context().run(_one, un), todo))
-            for (u, n), got, why in outs:
-                if got is None:
-                    dropped.append({'url': u, 'reason': why})
-                else:
-                    fetched.append((u, n, got))
-        todo = fetched
-        for i in range(0, len(todo), self.IMAGE_MAX_COUNT):
-            chunk = todo[i:i + self.IMAGE_MAX_COUNT]
-            up = self._upload_parts([g for _u, _n, g in chunk])
+        def _one(un):
+            reasons = []
+            got = self._fetch_image(un[1], on_skip=lambda su, sr: reasons.append(sr))
+            return un, got, (reasons[0] if reasons else '사유 미상')
+
+        def _flush(chunk):
+            if not chunk:
+                return
+            with _rss.span('cdn_upload', images=len(chunk), bytes=sum(_nbytes(g) for _u, _n, g in chunk)):
+                up = self._upload_parts([g for _u, _n, g in chunk])
+            stat['uploads'] += 1
             urls_out = up.get('urls') or []
             if up.get('ok') and len(urls_out) == len(chunk):
                 for (u, n, _g), cdn in zip(chunk, urls_out):
                     mapping[u] = cdn
                     _cc.put(acct, n, cdn)
+            else:
+                why = up.get('reason') or ''
+                if up.get('ok'):
+                    why = f'업로드 응답 장 수 불일치(보냄 {len(chunk)} · 받음 {len(urls_out)})'
+                for u, _n, _g in chunk:
+                    dropped.append({'url': u, 'reason': f'네이버 CDN 업로드 실패 — {why}'})
+            chunk.clear()
+            _gc.collect()
+
+        chunk, chunk_bytes = [], 0
+        for i, un in enumerate(todo):
+            # 한 장씩: 받기(큰 원본은 받은 자리에서 줄임) → 묶음에 담기 → 묶음이 차면 올리고 버림
+            _rss.guard('image_fetch', f'사진 {i + 1}/{len(todo)}장째')
+            with _rss.span('image_fetch', images=1, n=f'{i + 1}/{len(todo)}') as sp:
+                (u, n), got, why = _one(un)
+                sp['bytes'] = _nbytes(got)
+            if got is None:
+                dropped.append({'url': u, 'reason': why})
                 continue
-            why = up.get('reason') or ''
-            if up.get('ok'):
-                why = f'업로드 응답 장 수 불일치(보냄 {len(chunk)} · 받음 {len(urls_out)})'
-            for u, _n, _g in chunk:
-                dropped.append({'url': u, 'reason': f'네이버 CDN 업로드 실패 — {why}'})
+            stat['fetched'] += 1
+            stat['bytes'] += _nbytes(got)
+            chunk.append((u, n, got))
+            chunk_bytes += _nbytes(got)
+            got = None
+            if len(chunk) >= self.IMAGE_MAX_COUNT or chunk_bytes >= chunk_cap:
+                _flush(chunk)
+                chunk_bytes = 0
+        _flush(chunk)
+        logger.info('[네이버 CDN] sku=%s 받음 %d장 %dB · 올림 %d번 · 캐시 %d · 뺌 %d', sku, stat['fetched'], stat['bytes'],
+                    stat['uploads'], cached, len(dropped))
         for d in dropped:
             logger.warning('상세 이미지 뺌 sku=%s — %s (%s)', sku, d['reason'][:240], str(d['url'])[-80:])
             _cc.put_fail(acct, self.normalize_source_url(d['url']) or str(d['url']), d['reason'])   # Y7-J: 사유를 DB에도

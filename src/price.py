@@ -358,6 +358,50 @@ def net_margin_pct(sell_price_krw, landed_krw, market, domestic_shipping=None,
     return net / sell * Decimal('100')
 
 
+#: M8-8(오너 2026-10-10) — 「마진」 숫자의 **정의 한 곳**. 화면·로그·보고가 이 이름으로 말한다.
+#:   - net(목표 마진율 · 실수령)  = (판매가 − 판매가×수수료율 − 랜딩코스트 − 국내배송비) ÷ **판매가**   ← 등록 판매가 식의 목표값
+#:   - gross_on_sell(판매가 대비)  = (판매가 − 원가KRW) ÷ **판매가**                                     ← 수수료·배송 안 뺌(크게 나온다)
+#:   - markup_on_cost(원가 대비)   = (판매가 − 원가KRW) ÷ **원가KRW**                                    ← 예전 markup(2026-09-20 폐기)
+#:   랜딩코스트 = (원가KRW + 배대지수수료 + 국제배송비) × (1 + 관부가세율), 원가KRW = 원가 × 환율(`sell_fx_rates`).
+MARGIN_TERMS = {
+    "net": "(판매가 − 수수료 − 원가·배대지·국제배송·관부가세 − 국내배송) ÷ 판매가",
+    "gross_on_sell": "(판매가 − 원가KRW) ÷ 판매가",
+    "markup_on_cost": "(판매가 − 원가KRW) ÷ 원가KRW",
+}
+
+
+def target_margin_pct(product_data=None) -> float:
+    """M8-8 — 등록·사전검증·판매가 구성 줄이 **같이 쓰는** 목표 마진율(실수령 · 판매가 기준, %).
+
+    상품에 `target_margin_pct`(등록 창 슬라이더·일괄 가격 설정)가 있으면 그것, 없으면 서버 기본 `IMPORT_MARGIN_PCT`(25).
+    예전엔 데스크톱 슬라이더가 22를 하드코딩해 보냈고, 폰·팝업 줄은 서버 기본을 읽었다 — 같은 상품·같은 스토어인데
+    경로마다 다른 마진으로 판매가가 나왔다(21:11 vs 22:12 고코스모스 보고).
+    """
+    try:
+        v = (product_data or {}).get("target_margin_pct")
+        if v is not None and str(v).strip() != "":
+            return float(v)
+    except (TypeError, ValueError, AttributeError):
+        pass
+    try:
+        return float(os.getenv("IMPORT_MARGIN_PCT", "25"))
+    except (TypeError, ValueError):
+        return 25.0
+
+
+def margin_ratios(sell_krw, cost_krw, landed_krw, market, domestic_shipping=None, commission=None) -> dict:
+    """M8-8 — 한 판매가의 마진 세 가지(`MARGIN_TERMS`)를 **분자·분모째** 돌려준다(%). 수수료를 모르면 net은 None."""
+    sell, cost = Decimal(str(sell_krw or 0)), Decimal(str(cost_krw or 0))
+    out = {"net": None, "gross_on_sell": None, "markup_on_cost": None, "terms": dict(MARGIN_TERMS)}
+    if sell > 0:
+        n = net_margin_pct(sell, landed_krw, market, domestic_shipping=domestic_shipping, commission=commission)
+        out["net"] = None if n is None else float(round(n, 2))
+        out["gross_on_sell"] = float(round((sell - cost) / sell * 100, 2))
+    if cost > 0:
+        out["markup_on_cost"] = float(round((sell - cost) / cost * 100, 2))
+    return out
+
+
 def calc_sell_price(buy_price, buy_currency, market, margin_pct, fx_rates=None,
                     forwarder_fee=None, shipping_fee=None, customs_rate=None,
                     customs_threshold_krw=None, domestic_shipping=None,
@@ -428,8 +472,15 @@ def sell_price_parts(buy_price, buy_currency, market, margin_pct, fx_rates=None,
         return out
     sell = (landed + dom) / denom
     out["sell_krw"] = float(round(sell, 2))
+    final = int(-(-float(sell) // 10) * 10)
+    # M8-8: 「마진」이 무엇의 몇 %인지 줄에 같이 — 목표(실수령·판매가 기준)와, 사람이 흔히 재는 판매가 대비·원가 대비
+    rat = margin_ratios(final, cost, landed, market, domestic_shipping=dom, commission=comm)
+    out["ratios"] = rat
     out["line"] = (head + f" = {float(landed + dom):,.0f}원 ÷ (1 − 수수료 {float(comm):g}% − 마진 {float(margin_pct):g}%)"
-                   f" = {float(sell):,.0f}원 → 10원 올림 {int(-(-float(sell) // 10) * 10):,}원")
+                   f" = {float(sell):,.0f}원 → 10원 올림 {final:,}원"
+                   f" · 마진 {float(margin_pct):g}%는 실수령(판매가 기준: {MARGIN_TERMS['net']})"
+                   f" · 같은 값의 판매가 대비 {rat['gross_on_sell']:g}%((판매가−원가)÷판매가)"
+                   + (f" · 원가 대비 {rat['markup_on_cost']:g}%" if rat['markup_on_cost'] is not None else ""))
     return out
 
 

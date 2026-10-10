@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import re
 import uuid
 import hashlib
@@ -3094,6 +3095,7 @@ def _persist_upload_status(item_id, result_dict) -> None:
                     "account": (r["market"].partition(":")[2]
                                 if r["market"].startswith(("coupang:", "smartstore:")) else ""),
                     "at": now,
+                    "price": r.get("price") or {},           # M8-8: 이 등록의 판매가 재료(마진·환율·수수료·줄)
                 }
                 # Y7-K(오너 2026-10-10): 같은 마켓이라도 **상품번호가 다르면 쌓는다** — 예전엔 마켓당 1건으로 덮어써
                 #   13742149801이 13741121333 기록을 지웠다(마켓엔 두 상품이 있는데 우리 기록엔 하나). 같은 번호면 갱신.
@@ -3350,32 +3352,11 @@ def collect_market_status(item_id):
 
 
 def _price_line_for(item: dict, market: str) -> str:
-    """Y7-J(오너 2026-10-10) — 이 마켓 판매가의 구성 한 줄. 등록과 **같은 입력**(가장 싼 SKU 원가 · 실시간 환율 ·
-    배송비 엔진 · 마켓 수수료 · 남길 마진). 조합형 옵션이면 판매가 = 가장 싼 조합(나머지는 추가금)."""
+    """Y7-J(오너 2026-10-10) — 이 마켓 판매가의 구성 한 줄. M8-8: 등록과 **같은 함수**(`upload_dispatcher.price_parts_for`)."""
     from .product_builder import build_product as _build_product
-    from .upload_dispatcher import build_dispatch_payload as _build_payload, UploadDispatcher
-    from src.price import sell_price_parts, sell_fx_rates
+    from .upload_dispatcher import build_dispatch_payload as _build_payload, price_parts_for
     pd = _build_payload(_build_product(item, edits={}, seller_id=_seller_id()), item)
-    costs = []
-    for k in pd.get("skus") or []:
-        try:
-            if isinstance(k, dict) and float(k.get("price") or 0) > 0:
-                costs.append((float(k["price"]), str(k.get("currency") or pd.get("currency") or "").upper()))
-        except (TypeError, ValueError):
-            continue
-    if not costs:
-        try:
-            costs = [(float(pd.get("price_original") or pd.get("price")), str(pd.get("currency") or "").upper())]
-        except (TypeError, ValueError):
-            return "원가를 읽지 못해 판매가 구성을 낼 수 없어요"
-    cost, cur = min(costs)
-    try:
-        margin = float(pd.get("target_margin_pct"))
-    except (TypeError, ValueError):
-        margin = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
-    parts = sell_price_parts(cost, cur, str(market).split(":")[0], margin, fx_rates=sell_fx_rates()[0],
-                             shipping_fee=UploadDispatcher._engine_shipping_fee({**pd, "price_original": cost, "currency": cur}))
-    return ("가장 싼 옵션 기준 — " if len(costs) > 1 else "") + parts["line"]
+    return price_parts_for(pd, market)["line"]
 
 
 @bp.post("/collect/<item_id>/upload-record/remove")
@@ -3401,7 +3382,9 @@ def collect_upload_record_remove(item_id):
         extra = {}
     from . import listing_status as MS
     same = [r for r in MS.records(extra) if r["market"] == market]
-    if len(same) < 2:
+    # M8-7(오너 2026-10-10): 「다시 등록하려면 기록을 빼세요」 — 하나뿐인 기록도 **다시 등록용**으로는 뺄 수 있다(팝업에서 두 번 눌러야).
+    reregister = str(data.get("purpose") or "") == "reregister"
+    if len(same) < 2 and not reregister:
         return jsonify({"ok": False, "error": "이 마켓 등록 기록이 하나뿐이라 빼지 않았어요(중복 정리 전용)."}), 409
     hit = next((r for r in same if r["product_id"] == pid), None)
     if not hit:
@@ -3417,11 +3400,14 @@ def collect_upload_record_remove(item_id):
     # 지우지 않고 **삭제 표시로 보존**(오너 2026-10-10) — 무슨 번호를 언제 왜 뺐는지 남는다
     now = datetime.now(timezone.utc).isoformat()
     extra.setdefault("uploaded_removed", []).extend(
-        {**u, "removed_at": now, "removed_reason": "중복 정리(우리 기록에서 뺌 — 마켓 상품 삭제는 판매자센터)"} for u in gone)
+        {**u, "removed_at": now, "removed_reason": ("다시 등록하려고 뺌(우리 기록에서만 — 마켓 상품은 그대로)" if reregister
+                                                    else "중복 정리(우리 기록에서 뺌 — 마켓 상품 삭제는 판매자센터)")} for u in gone)
     from .collect_history_store import update as _update
     _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
     MS.reset_cache()
     logger.info("[등록 기록] 중복 정리 item=%s market=%s 뺀 번호=%s", str(item_id)[:8], market, pid)
+    if reregister:
+        return jsonify({"ok": True, "message": f"우리 기록에서 {shown}를 뺐어요 — 이제 다시 등록할 수 있어요(마켓의 그 상품은 그대로 남아요)."})
     return jsonify({"ok": True, "message": f"우리 기록에서 {shown}를 뺐어요 — 마켓의 상품은 판매자센터에서 지워 주세요."})
 
 
@@ -4605,12 +4591,87 @@ def _pv_perf_diff(a: dict, b: dict) -> dict:
     return {"segments_ms": seg, "counts": cnt, "external_ms_by_host": host}
 
 
+def _pv_registered_rows(item_id, markets) -> dict:
+    """M8-7 — 이번 사전검증 대상 중 **이미 등록 기록이 있는 마켓**의 카드 줄 `{market: row}`. 마켓에 묻지 않는다(DB만).
+    `ok=False`라 업로드 버튼(통과 마켓만)에서 빠진다. 다시 올리려면 마켓 상태 팝업에서 기록을 뺀다."""
+    if not item_id or not markets:
+        return {}
+    try:
+        hits = _already_registered(_get_owned_item(str(item_id)), markets)
+    except Exception as exc:                                     # noqa: BLE001 — 판정 못 하면 평소대로 잰다(Y7-K 업로드 가드가 남아 있다)
+        logger.warning("[사전검증] 등록 기록 확인 실패: %s", exc)
+        return {}
+    from .upload_dispatcher import MARKET_LABELS
+    out = {}
+    for h in hits:
+        m = h["market"]
+        if m in out:                                             # 같은 마켓 2건이면 첫 줄만(번호는 팝업에서 전부)
+            continue
+        out[m] = {"market": m, "market_label": MARKET_LABELS.get(m, m), "ok": False, "hold": False,
+                  "error_code": "already_registered", "registered_no": h["shown_no"],
+                  "message": f"이미 등록됨 {h['shown_no']} · 다시 등록하려면 기록을 빼세요",
+                  "hint": "", "details": [], "fixes": ["registered"], "cautions": [], "category": {},
+                  "action_url": "", "action_label": "", "reach_ok": None, "reach_ms": None, "reach_detail": "",
+                  "rep_pending": False, "ms": 0}
+    return out
+
+
+#: Z10(오너 2026-10-10 22:29~22:35 KST OOM — 네이버 사전검증 1건 +261MB, PC·폰 동시 사전검증 중 512MB 초과 2회):
+#:   사전검증 잡은 **프로세스당 동시 1개**(`PREVALIDATE_JOB_CONCURRENCY`). 나머지는 줄을 서고 카드에 「앞 작업이 끝나면 시작」.
+_PV_SEM_LOCK = threading.Lock()
+_PV_SEM = {"sem": None, "n": 0}
+
+
+def _pv_semaphore():
+    n = max(1, int(os.getenv("PREVALIDATE_JOB_CONCURRENCY", "1") or 1))
+    with _PV_SEM_LOCK:
+        if _PV_SEM["sem"] is None or _PV_SEM["n"] != n:
+            _PV_SEM["sem"], _PV_SEM["n"] = threading.BoundedSemaphore(n), n
+        return _PV_SEM["sem"]
+
+
+_PV_QUEUE_WAIT_SEC = float(os.getenv("PREVALIDATE_QUEUE_WAIT_SEC", "90") or 90)
+
+
 def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
+    """Z10 — 줄 서기(프로세스당 1개) · 잡 id를 RSS 로그에 · 메모리 상한(400MB) 넘으면 그 잡만 멈춤 · 끝나면 gc."""
+    import gc as _gc
+    import time as _time
+    from src.utils import rss as _rss
+    tok = _rss.JOB.set(job_id)
+    sem = _pv_semaphore()
+    try:
+        if not sem.acquire(blocking=False):
+            _pv_update(job_id, queued=True, queue_note="앞 사전검증이 끝나면 시작해요(메모리 보호 — 한 번에 하나씩)")
+            _rss.log("pv_queued", markets=",".join(markets))
+            if not sem.acquire(timeout=_PV_QUEUE_WAIT_SEC):
+                _pv_update(job_id, state="done", queued=False, results={
+                    m: _pv_transport_fail(m, "busy", f"검증 못 함 — 앞 사전검증이 {int(_PV_QUEUE_WAIT_SEC)}초 넘게 걸려 시작하지 못했어요(다시 눌러 주세요)")
+                    for m in markets})
+                return
+            # 기다린 시간은 이 잡의 60초 마감에 넣지 않는다
+            _pv_update(job_id, queued=False, queue_note="", started_ts=_time.time(),
+                       started_at=datetime.now(timezone.utc).isoformat())
+        try:
+            r0, _p0 = _rss.log("pv_job_start", markets=",".join(markets))
+            _pv_job_body(job_id, data, markets, dispatcher)
+        finally:
+            sem.release()
+            _gc.collect()
+            r1, p1 = _rss.log("pv_job_end", markets=",".join(markets))
+            if r0 >= 0 and r1 >= 0:
+                _pv_update(job_id, rss={"start_mb": r0, "end_mb": r1, "delta_mb": r1 - r0, "peak_mb": p1})
+    finally:
+        _rss.JOB.reset(tok)
+
+
+def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
     """Z9 후속(오너 2026-10-09 13:31 KST 실측 — 잡 한 번에 연결 19회·합 385ms): 잡 전체가 DB 연결 1개를 함께 쓴다.
 
     마켓별 스레드도 물려받는다(차례로). 요청 풀과는 섞지 않는다 — `pg.job_conn` 주석.
     """
     from src.db import pg as _pg
+    from src.utils import rss as _rss
     with _pg.job_conn():
         import time as _time
         from . import market_credentials as mc
@@ -4624,16 +4685,26 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
             t0 = _time.monotonic()
             product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
+            # M8-7(오너 2026-10-10): 이미 등록 기록이 있는 마켓은 **재지 않고** 「이미 등록됨 {번호}」 — 업로드 버튼에서 빠진다
+            #   (통과가 아니다). Y7-K 업로드 가드(409 needs_dup_confirm)는 그대로 — 2중.
+            reg = _pv_registered_rows(data.get("item_id"), markets)
+            if reg:
+                _pv_update(job_id, results=reg)
+                markets = [m for m in markets if m not in reg]
             with mc.seller_market_env(_seller_id(), markets):
                 # Y7-J: 네이버로 나가는데 셀러 글이 없으면(초안이 없거나 옛 형식) 마켓 검증 **전에** 초안부터 — 본문 = 사진 위 · 글 아래
                 if data.get("item_id") and _pv_needs_auto_text(product_data, markets):
                     t0 = _time.monotonic()
                     _pv_update(job_id, auto_detail={"status": "running"})
-                    _ad0, product_data = _pv_auto_detail(product_data, data, [], force=True)
+                    with _rss.span("ai_draft"):
+                        _ad0, product_data = _pv_auto_detail(product_data, data, [], force=True)
                     if _ad0 is not None:
                         _pv_update(job_id, auto_detail=_ad0, stages={"auto_detail": int((_time.monotonic() - t0) * 1000)})
                 t0 = _time.monotonic()
-                if _pv_prewarm_naver_detail(product_data, markets):
+                _rss.guard("naver_detail_prewarm")
+                with _rss.span("naver_detail_prewarm"):
+                    _warm = _pv_prewarm_naver_detail(product_data, markets)
+                if _warm:
                     _pv_update(job_id, stages={"naver_detail_cdn": int((_time.monotonic() - t0) * 1000)})
                 results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
                 t0 = _time.monotonic()
@@ -4655,6 +4726,14 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
                         results = [r for r in results if r.market not in held] + \
                             _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
                 _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
+        except _rss.MemoryCapExceeded as exc:
+            # Z10: 메모리 상한 — **이 잡만** 멈춘다(워커·다른 요청은 산다). 카드에 원문과 다음 행동.
+            logger.warning("[사전검증 잡] %s 메모리 상한: %s", job_id[:8], exc)
+            cur = _pv_store().state_get(_PV_JOB_KEY + job_id) or {}
+            n_img = len(product_data.get("detail_images") or []) if isinstance(locals().get("product_data"), dict) else 0
+            missing = {m: _pv_transport_fail(m, "memory_cap", f"검증 못 함 — {exc} · 상세 사진 {n_img}장 중 몇 장을 빼고 다시 눌러 주세요")
+                       for m in markets if m not in (cur.get("results") or {})}
+            _pv_update(job_id, results=missing, error=str(exc)[:200])
         except Exception as exc:                                     # noqa: BLE001 — 잡은 죽지 않는다
             logger.warning("[사전검증 잡] %s 실패: %s", job_id[:8], exc)
             cur = _pv_store().state_get(_PV_JOB_KEY + job_id) or {}
@@ -4682,7 +4761,9 @@ def collect_prevalidate_job(job_id: str):
     if not cur or str(cur.get("owner") or "") != _seller_id():
         return jsonify({"ok": False, "error": "검증 작업을 찾지 못했어요 — 사전검증을 다시 눌러 주세요."}), 404
     markets = list(cur.get("markets") or [])
-    if cur.get("state") == "running" and _time.time() > float(cur.get("started_ts") or 0) + _PV_JOB_DEADLINE_SEC + 5:
+    # Z10: 줄 서 있는 잡은 마감을 세지 않는다(시작하면 started_ts를 다시 적는다) — 줄 대기 상한은 잡 쪽(_PV_QUEUE_WAIT_SEC)
+    if cur.get("state") == "running" and not cur.get("queued") and \
+            _time.time() > float(cur.get("started_ts") or 0) + _PV_JOB_DEADLINE_SEC + 5:
         miss = {m: _pv_transport_fail(m, "timeout", f"검증 못 함 — {int(_PV_JOB_DEADLINE_SEC)}초 안에 끝나지 않았어요")
                 for m in markets if m not in (cur.get("results") or {})}
         cur = _pv_update(str(job_id), results=miss, state="done")
@@ -4691,6 +4772,8 @@ def collect_prevalidate_job(job_id: str):
     return jsonify({"ok": True, "state": cur.get("state"), "results": rows,
                     "pending": [m for m in markets if m not in res],
                     "auto_translate": cur.get("auto_translate"), "auto_detail": cur.get("auto_detail"),
+                    "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중
+                    "rss": cur.get("rss") or {},
                     "error": cur.get("error") or ""})
 
 
@@ -10003,6 +10086,7 @@ def collect_preview_by_id(item_id: str):
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         detail_auto_active=detail_auto_active,
         market_records=_market_records(extra),
+        default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, ship_est=ship_est,
         field_src=field_src,
         page="collect_history",

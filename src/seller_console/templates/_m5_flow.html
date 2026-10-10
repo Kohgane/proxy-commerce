@@ -490,6 +490,12 @@
         '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 시도</button> ' +
         '<button type="button" class="m5-fix" data-role="m5-uncheck-market" data-market="' + esc(r.market) + '">이 마켓 빼기</button></div></div>';
     }
+    // M8-7: 이미 등록 기록이 있는 마켓 — 「이미 등록됨 {번호}」(업로드 대상에서 빠짐) + 그 마켓 상태 팝업(기록 빼기)
+    if (r.registered_no) {
+      return '<div class="m5-res is-hold" data-market="' + esc(r.market) + '" data-ok="0" data-role="m5-registered">' +
+        '<b>' + esc(r.market_label) + ' — 이미 등록됨</b>' + esc(r.message || '') +
+        '<div><button type="button" class="m5-fix" data-role="m5-registered-open" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">등록 기록 보기 · 빼기</button></div></div>';
+    }
     var h = '<div class="m5-res ' + (r.ok ? 'is-ok' : (r.hold ? 'is-hold' : 'is-bad')) + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '"' +
          (r.hold ? ' data-role="m5-hold"' : '') + '>' +
          '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
@@ -531,7 +537,10 @@
          : '상세 초안 자동 생성 실패 — ' + esc(pvAutoDetail.error || '사유 미상') + '. 「상세페이지 꾸미기」에서 채워 주세요.') + '</div>';
     }
     pvOrder.forEach(function (m) { h += pvRowHtml(m); });
-    if (pvState === 'running') h += '<div class="m5-note" data-role="m5-check-progress">마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳 확인됨 — 나머지는 오는 대로 보여 드려요.</div>';
+    if (pvState === 'running') h += pvQueue
+      // Z10: 줄 서는 중(프로세스당 사전검증 1개 — 메모리 보호)
+      ? '<div class="m5-note" data-role="m5-check-progress" data-queued="1">' + esc(pvQueue) + '</div>'
+      : '<div class="m5-note" data-role="m5-check-progress">마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳 확인됨 — 나머지는 오는 대로 보여 드려요.</div>';
     checksEl.innerHTML = h;
     okMarkets = pvOrder.filter(function (m) { return pvRows[m] && pvRows[m].ok; });
     var held = pvOrder.filter(function (m) { return pvRows[m] && overridable(pvRows[m]); });
@@ -547,6 +556,7 @@
       : (anyHold ? '보류된 마켓을 보강하거나 「그래도 등록」을 누르면 등록할 수 있어요.'
         : '통과한 마켓이 없어요 — 위 사유를 고친 뒤 다시 사전검증해 주세요.')));
   }
+  var pvQueue = '';
   function pvPoll(jobNo, url) {
     if (jobNo !== pvJob) return;
     fetch(url, {credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (d) {
@@ -554,6 +564,7 @@
       if (!d || !d.ok) { pvState = 'done'; pvPending = []; pvRender(); checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
       (d.results || []).forEach(function (r) { pvRows[r.market] = r; });
       pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvState = d.state;
+      pvQueue = d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '';
       pvRender();
       if (d.state === 'running') pvTimer = setTimeout(function () { pvPoll(jobNo, url); }, 3000);
       else checkBtn.disabled = false;

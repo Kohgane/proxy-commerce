@@ -70,7 +70,9 @@
       (r.checked_at ? ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') : '') + '</div>';
     if (r.dup_count) h += '<div class="mst-err" data-role="mst-dup">같은 상품이 이 마켓에 ' + r.dup_count + '건 있어요 — 남길 번호를 정하고, 나머지는 판매자센터에서 지운 뒤 「이 기록 빼기」</div>';
     if (r.comment) h += '<div class="mst-reason" data-role="mst-reason"><b>반려 사유</b> ' + esc(r.comment) + '</div>';
-    if (r.price_line) h += '<div class="mst-meta" data-role="mst-price-line">판매가 구성: ' + esc(r.price_line) + '</div>';
+    // M8-8: 등록 때 쓴 재료(마진·환율·수수료) — 지금 다시 낸 줄과 다르면 무엇이 달랐는지 바로 보인다
+    if (r.registered_price) h += '<div class="mst-meta" data-role="mst-price-registered">등록 때 판매가 구성: ' + esc(r.registered_price) + '</div>';
+    if (r.price_line) h += '<div class="mst-meta" data-role="mst-price-line">' + (r.registered_price ? '지금 다시 내면: ' : '판매가 구성: ') + esc(r.price_line) + '</div>';
     if (r.error) h += '<div class="mst-err" data-role="mst-error">상태 확인 실패 — ' + esc(r.error) + '</div>';
     var links = '';
     if (r.manage_url) links += '<a href="' + esc(r.manage_url) + '" target="_blank" rel="noopener" data-role="mst-manage">' + esc(r.manage_label || '마켓에서 열기') + '</a>';
@@ -79,6 +81,9 @@
     // Y7-K: 같은 마켓 2건 이상 — 그중 하나를 우리 기록에서 뺀다(마켓 상품 삭제는 판매자센터에서)
     if (r.dup_count && r.product_id)
       links += '<button type="button" class="mst-dup-remove" data-role="mst-dup-remove" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '">이 기록 빼기</button>';
+    // M8-7: 기록이 하나뿐이어도 **다시 등록하려면** 뺄 수 있다(두 번 눌러야 빠짐 · 마켓의 상품은 그대로 — 판매자센터에서)
+    else if (r.product_id)
+      links += '<button type="button" class="mst-dup-remove" data-role="mst-dup-remove" data-single="1" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '">기록 빼기(다시 등록용)</button>';
     if (String(r.market || '').indexOf('smartstore') === 0 && r.product_id)
       links += '<button type="button" class="mst-resend" data-role="mst-resend" data-market="' + esc(r.market) + '">본문 다시 보내기</button>';
     if (links) h += '<div class="mst-links">' + links + '</div>';
@@ -190,9 +195,15 @@
     if (dr) {
       ev.preventDefault();
       var rowEl = dr.closest('[data-role=mst-row]');
+      if (dr.getAttribute('data-single') === '1' && dr.getAttribute('data-armed') !== '1') {
+        dr.setAttribute('data-armed', '1');
+        dr.textContent = '한 번 더 누르면 빼요 — 마켓 상품은 그대로';
+        return;
+      }
       dr.disabled = true;
       fetch('/seller/collect/' + encodeURIComponent(curItem) + '/upload-record/remove', {method: 'POST', credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({market: dr.getAttribute('data-market'), product_id: dr.getAttribute('data-pid')})})
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({market: dr.getAttribute('data-market'), product_id: dr.getAttribute('data-pid'),
+          purpose: dr.getAttribute('data-single') === '1' ? 'reregister' : 'dedupe'})})
         .then(function (r) { return r.json(); }).then(function (d) {
           if (d && d.ok) { window.kgpMarketStatus(curItem, dr.getAttribute('data-market')); return; }
           dr.disabled = false;

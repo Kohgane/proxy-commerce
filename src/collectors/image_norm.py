@@ -186,23 +186,67 @@ def convert_image_bytes(body: bytes, *, target: str = CONVERT_TARGET_EXT):
     fmt = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG"}.get(tgt)
     if not fmt:
         return None
-    try:
-        with Image.open(BytesIO(bytes(body or b""))) as im:
-            im.load()
+    # Z10(오너 2026-10-10 22:29~22:35 KST OOM): 변환은 **원본 해상도 디코드**다 — 타오바오 상세 webp(790×15000 등)는
+    #   RGBA 디코드만 수십 MB, 흰 배경 플래튼(RGB 한 벌 더)까지 두 배. 예전엔 4장이 동시에 이걸 했다(+261MB · 512MB 초과).
+    #   ① 프로세스당 **한 번에 한 장**(`_CONVERT_LOCK`) ② 픽셀 상한(`IMAGE_CONVERT_MAX_PIXELS`, 기본 1,200만)을 넘으면
+    #   디코드 직후 `thumbnail`로 줄여서 플래튼(두 번째 벌은 줄인 크기) — JPEG 원본이면 `draft`로 디코드부터 줄인다
+    #   ③ 중간 버퍼는 바로 놓는다.
+    max_px = _convert_max_pixels()
+    with _CONVERT_LOCK:
+        im = rgba = flat = None
+        try:
+            im = Image.open(BytesIO(body or b""))
+            w, h = im.size
+            if max_px and w * h > max_px:
+                scale = (max_px / float(w * h)) ** 0.5
+                tw, th = max(1, int(w * scale)), max(1, int(h * scale))
+                if im.format == "JPEG":
+                    im.draft("RGB", (tw, th))                   # JPEG은 디코드 단계에서 1/2·1/4·1/8로
+                im.load()
+                im.thumbnail((tw, th))
+            else:
+                im.load()
             if fmt == "JPEG":
                 if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
-                    rgba = im.convert("RGBA")
+                    rgba = im if im.mode == "RGBA" else im.convert("RGBA")
+                    im = None
                     flat = Image.new("RGB", rgba.size, (255, 255, 255))
-                    flat.paste(rgba, mask=rgba.split()[-1])      # 알파 → 흰 배경 플래튼
-                    im = flat
+                    flat.paste(rgba, mask=rgba.getchannel("A"))       # 알파 → 흰 배경 플래튼
+                    rgba.close()
+                    rgba = None
+                    im, flat = flat, None
                 elif im.mode != "RGB":
-                    im = im.convert("RGB")
+                    rgb = im.convert("RGB")
+                    im.close()
+                    im = rgb
             out = BytesIO()
             im.save(out, format=fmt, quality=_JPEG_QUALITY)
             return out.getvalue()
-    except Exception as exc:
-        logger.warning("이미지 변환 실패(%s): %s", tgt, exc)
-        return None
+        except Exception as exc:
+            logger.warning("이미지 변환 실패(%s): %s", tgt, exc)
+            return None
+        finally:
+            for x in (im, rgba, flat):
+                try:
+                    if x is not None:
+                        x.close()
+                except Exception:                                # noqa: BLE001
+                    pass
+
+
+import threading as _threading
+
+#: Z10 — 원본 해상도 디코드는 프로세스당 한 장씩(동시 4장이 512MB를 넘겼다).
+_CONVERT_LOCK = _threading.Lock()
+
+
+def _convert_max_pixels() -> int:
+    """변환 픽셀 상한(가로×세로) — `IMAGE_CONVERT_MAX_PIXELS`(기본 12,000,000 ≈ 790×15,000). 0이면 줄이지 않는다."""
+    import os
+    try:
+        return int(os.getenv("IMAGE_CONVERT_MAX_PIXELS", "12000000") or 0)
+    except (TypeError, ValueError):
+        return 12_000_000
 
 
 def _skip(on_skip, url: str, reason: str):
@@ -265,10 +309,101 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
             logger.info("이미지 형식 변환 %s → %s (%s, %dB): %s",
                         ext, part.ext, part.content_type, len(part.data), u)
             return part
+    if allowed_formats and len(body) > _shrink_bytes():
+        # Z10(오너 2026-10-10 BLACKHOLES +261MB): 타오바오 원본(크기 꼬리 없는 4,000px+ JPEG·PNG)은 장당 수 MB다 —
+        #   네이버 업로드 한 번에 그 바이트가 받은 목록·multipart·릴레이 base64·JSON 문자열로 7~8벌 동시에 뜬다.
+        #   픽셀 상한(`IMAGE_UPLOAD_MAX_PIXELS`, 기본 800만 ≈ 2,828px 정사각)을 넘는 큰 장은 받은 자리에서 줄여 다시 담는다
+        #   (JPEG은 `draft`로 디코드부터 작게 · 한 번에 한 장). 줄이지 못하면 원본 그대로(막지 않음).
+        small = shrink_image_bytes(body, max_pixels=_upload_max_pixels(), max_width=_upload_max_width())
+        if small is not None and len(small) < len(body):
+            part = _make_part(small, CONVERT_TARGET_EXT)
+            if part is not None:
+                logger.info("이미지 줄임 %s %dB → %s %dB: %s", ext, len(body), part.ext, len(part.data), u)
+                return part
     part = _make_part(body, ext)
     if part is None:
         return _skip(on_skip, u, f'메타 생성 실패(선언 {ext} vs 실제 {detect_image_format(body) or "미상"})')
     return part
+
+
+def _shrink_bytes() -> int:
+    """이 바이트를 넘는 장만 줄여 본다 — `IMAGE_SHRINK_OVER_BYTES`(기본 1.5MB)."""
+    import os
+    try:
+        return int(os.getenv("IMAGE_SHRINK_OVER_BYTES", str(1536 * 1024)) or 0)
+    except (TypeError, ValueError):
+        return 1536 * 1024
+
+
+def _upload_max_pixels() -> int:
+    """픽셀 상한(가로×세로) — `IMAGE_UPLOAD_MAX_PIXELS`(기본 1,600만). 세로로 긴 상세 사진(790×15,000)은 건드리지 않는 값."""
+    import os
+    try:
+        return int(os.getenv("IMAGE_UPLOAD_MAX_PIXELS", "16000000") or 0)
+    except (TypeError, ValueError):
+        return 16_000_000
+
+
+def _upload_max_width() -> int:
+    """가로 상한 — `IMAGE_UPLOAD_MAX_WIDTH`(기본 2,000px). 4,160px 원본은 2,000px로(JPEG은 디코드부터 1/2)."""
+    import os
+    try:
+        return int(os.getenv("IMAGE_UPLOAD_MAX_WIDTH", "2000") or 0)
+    except (TypeError, ValueError):
+        return 2000
+
+
+def shrink_image_bytes(body: bytes, *, max_pixels: int, max_width: int = 0):
+    """Z10 — 가로가 `max_width`를 넘거나 픽셀이 `max_pixels`를 넘으면 비율 그대로 줄여 JPEG(흰 배경 플래튼)으로.
+    둘 다 안 넘으면 None(그대로 쓴다). 프로세스당 한 장씩(`_CONVERT_LOCK`). 실패하면 None."""
+    if not max_pixels and not max_width:
+        return None
+    try:
+        from io import BytesIO
+        from PIL import Image
+    except Exception:
+        return None
+    with _CONVERT_LOCK:
+        im = None
+        try:
+            im = Image.open(BytesIO(body or b""))
+            w, h = im.size
+            scale = 1.0
+            if max_width and w > max_width:
+                scale = min(scale, max_width / float(w))
+            if max_pixels and w * h > max_pixels:
+                scale = min(scale, (max_pixels / float(w * h)) ** 0.5)
+            if scale >= 1.0:
+                return None
+            tw, th = max(1, int(w * scale)), max(1, int(h * scale))
+            if im.format == "JPEG":
+                im.draft("RGB", (tw, th))
+            im.load()
+            im.thumbnail((tw, th))
+            if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                rgba = im if im.mode == "RGBA" else im.convert("RGBA")    # 이미 RGBA면 사본을 만들지 않는다
+                flat = Image.new("RGB", rgba.size, (255, 255, 255))
+                flat.paste(rgba, mask=rgba.getchannel("A"))
+                if rgba is not im:
+                    rgba.close()
+                im.close()
+                im = flat
+            elif im.mode != "RGB":
+                rgb = im.convert("RGB")
+                im.close()
+                im = rgb
+            out = BytesIO()
+            im.save(out, format="JPEG", quality=_JPEG_QUALITY)
+            return out.getvalue()
+        except Exception as exc:                                  # noqa: BLE001 — 못 줄이면 원본(막지 않음)
+            logger.info("이미지 줄이기 실패(원본 사용): %s", exc)
+            return None
+        finally:
+            try:
+                if im is not None:
+                    im.close()
+            except Exception:                                     # noqa: BLE001
+                pass
 
 
 def screen_images(urls, *, probe_fn=None, min_px: int = MIN_PX, max_px: int = MAX_PX) -> dict:

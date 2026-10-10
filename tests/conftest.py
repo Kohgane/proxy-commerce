@@ -60,6 +60,10 @@ os.environ.setdefault("SMARTSTORE_LIVE_PROBE", "0")
 # Y7-H(2026-10-09): 네이버 A/S 전화번호(스토어 `NAVER_AS_PHONE`) — 운영엔 늘 있다(19:46 400이 이 칸을 말하지 않음).
 #   없으면 사전검증이 `naver_required_afterServiceTelephoneNumber`로 보류한다(그 계약은 test_y7h가 따로 잰다).
 os.environ.setdefault("NAVER_AS_PHONE", "010-0000-0000")
+# Z10(2026-10-10): 운영은 사전검증 잡을 프로세스당 1개만 돌린다(메모리 보호 — 나머지는 줄 선다). 테스트는 마켓을 멈추게 하는
+#   가짜(시간 초과 계약 등)가 많아 한 잡이 다음 테스트의 잡을 줄 세우면 순서에 따라 깨진다 — 여기선 넉넉히. 줄 서기 계약은
+#   test_z10_prevalidate_memory가 1로 직접 건다.
+os.environ.setdefault("PREVALIDATE_JOB_CONCURRENCY", "8")
 
 
 # ──────────────────────────────────────────────────────────

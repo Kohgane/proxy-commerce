@@ -728,11 +728,13 @@
           <h6 class="fw-semibold mb-2">2. 목표 마진율 설정</h6>
           <div class="d-flex align-items-center gap-3 mb-3">
             <label class="text-muted" for="uploadMarginPct">목표 마진율</label>
-            <input type="range" class="form-range kgp-w-sm" id="uploadMarginPct" min="5" max="50" value="22"
-                   
+            {# M8-8: 기본값 = 서버와 같은 출처(상품 값 → IMPORT_MARGIN_PCT). 예전엔 22를 하드코딩해 폰·팝업 줄(서버 기본)과 갈렸다. #}
+            <input type="range" class="form-range kgp-w-sm" id="uploadMarginPct" min="5" max="50" value="{{ default_margin_pct|default(25)|int }}"
+                   data-default="{{ default_margin_pct|default(25)|int }}"
                    oninput="document.getElementById('uploadMarginPctDisplay').textContent=this.value">
-            <span class="fw-bold text-teal" id="uploadMarginPctDisplay">22</span><span>%</span>
+            <span class="fw-bold text-teal" id="uploadMarginPctDisplay">{{ default_margin_pct|default(25)|int }}</span><span>%</span>
           </div>
+          <div class="form-text mb-3" data-role="margin-def">실수령 마진 — 판매가에서 수수료·원가·배대지·국제배송·관부가세·국내배송을 빼고 남는 몫이 판매가의 몇 %인지.</div>
 
           <div class="d-flex gap-2 mt-3">
             <button class="btn btn-ghost" data-bs-dismiss="modal">취소</button>
@@ -2159,7 +2161,7 @@ async function runPrevalidate() {
         pcToast(kgpFriendlyError(d || {}, '사전검증 결과 받기 실패'), 'error');
         return;
       }
-      renderPrevalidateResults(d.results || [], d.pending || [], d.state);
+      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '');
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
       else done();
     };
@@ -2226,19 +2228,21 @@ function renderCautions(lines) {
     + esc(l) + '</div>').join('');
 }
 
-function renderPrevalidateResults(results, pending, state) {
+function renderPrevalidateResults(results, pending, state, queueNote) {
   pending = pending || [];
   const running = state === 'running';
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
   const el = document.getElementById('prevalidateResults');
-  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
+  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
-  let html = `<div class="mb-2 text-muted small">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
+  let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율(실수령 · 판매가 기준): <strong class="text-teal">${targetMarginPct}%</strong></div>`;
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).
     // Z9: 시간 초과·예외는 검증을 **못 한** 것 — 「실패」(막힘)가 아니라 「검증 못 함」(다시 사전검증).
-    const badge = r.ok
+    // M8-7: 이미 등록 기록이 있는 마켓 — 통과가 아니라 「이미 등록됨」(업로드 버튼에서 빠짐 · 기록은 팝업에서 뺀다)
+    const badge = r.registered_no ? '<span class="pc-badge pc-badge-muted" data-role="prevalidate-registered">이미 등록됨</span>'
+      : r.ok
       ? '<span class="pc-badge pc-badge-on">통과</span>'
       : (r.hold ? '<span class="pc-badge pc-badge-off" data-role="prevalidate-hold">보류</span>'
                 : (r.transport ? '<span class="pc-badge pc-badge-muted" data-role="prevalidate-transport">검증 못 함</span>'
@@ -2264,6 +2268,7 @@ function renderPrevalidateResults(results, pending, state) {
           ${(r.hold && (r.fixes || []).indexOf('rep_image') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-rep-override">대표 사진 그래도 등록</button>' : ''}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
           ${renderActionLink(r.action_url, r.action_label)}
+          ${r.registered_no ? `<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-registered-open" data-market-status="${kgpEscapeForHtml(r.market)}" data-item="${kgpEscapeForHtml(_ITEM_ID)}">등록 기록 보기 · 빼기</button>` : ''}
         </div>
       </div>`;
   });
@@ -2279,7 +2284,10 @@ function renderPrevalidateResults(results, pending, state) {
   html += '</div>';
 
   if (running) {
-    html += '<div class="pc-status pc-status-info" data-role="pv-running">마켓마다 확인하는 중이에요 — 도착하는 대로 여기에 그려요.</div>';
+    html += queueNote
+      // Z10: 줄 서는 중 — 사전검증은 한 번에 하나(메모리 보호)
+      ? '<div class="pc-status pc-status-info" data-role="pv-queued">' + kgpEscapeForHtml(queueNote) + '</div>'
+      : '<div class="pc-status pc-status-info" data-role="pv-running">마켓마다 확인하는 중이에요 — 도착하는 대로 여기에 그려요.</div>';
   }
   if (_validatedMarkets.length === 0 && running) {
     document.getElementById('btnConfirmUpload').disabled = true;
@@ -2329,7 +2337,7 @@ function renderPrevalidateResults(results, pending, state) {
 let _confirmDup = false;
 async function runUpload(confirmWarn) {
   if (_validatedMarkets.length === 0) return;
-  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || 22;
+  const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
   goToStep('stepUploading');
 

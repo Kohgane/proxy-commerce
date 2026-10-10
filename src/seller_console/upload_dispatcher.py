@@ -526,6 +526,7 @@ class UploadResult:
     action_url: str = ""                       # M1-1 — 고치러 갈 화면(마켓 연동 등)
     action_label: str = ""                     # Y7-F — 그 버튼의 글자(「상세페이지 꾸미기 →」 등). 비면 화면이 주소로 고른다
     channel_product_no: Optional[str] = None   # Y7-J — 네이버 채널 상품번호(구매자 주소·상태 조회). 원상품번호는 external_product_id
+    price: Dict[str, Any] = field(default_factory=dict)   # M8-8 — 이 등록의 판매가 재료(`price_snapshot`)
 
 
 #: Y7-F — 다시 눌러 볼 만한 실패(통신·일시 오류)만. 400 입력값 거부·전송 전 보류는 다시 해도 같은 답 — 「재시도」를 보이지 않는다.
@@ -751,6 +752,42 @@ def korea_voltage_filter(payload: Dict[str, Any], market: str) -> Dict[str, Any]
 NAVER_PRICE_MAX = 999_999_990
 
 
+def price_parts_for(pd: Dict[str, Any], market: str) -> Dict[str, Any]:
+    """M8-8 — 이 마켓 판매가의 구성(`price.sell_price_parts`) — 등록과 **같은 입력**: 가장 싼 SKU 원가(조합형이면
+    판매가 = 가장 싼 조합) · `sell_fx_rates`(실시간 우선) · 배송비 엔진 · 마켓 수수료 · `target_margin_pct`."""
+    from src.price import sell_price_parts, sell_fx_rates, target_margin_pct
+    costs = []
+    for k in pd.get("skus") or []:
+        try:
+            if isinstance(k, dict) and float(k.get("price") or 0) > 0:
+                costs.append((float(k["price"]), str(k.get("currency") or pd.get("currency") or "").upper()))
+        except (TypeError, ValueError):
+            continue
+    if not costs:
+        try:
+            costs = [(float(pd.get("price_original") or pd.get("price")), str(pd.get("currency") or "").upper())]
+        except (TypeError, ValueError):
+            return {"line": "원가를 읽지 못해 판매가 구성을 낼 수 없어요"}
+    cost, cur = min(costs)
+    rates, info = sell_fx_rates()
+    parts = sell_price_parts(cost, cur, str(market).split(":")[0], target_margin_pct(pd), fx_rates=rates,
+                             shipping_fee=UploadDispatcher._engine_shipping_fee({**pd, "price_original": cost, "currency": cur}))
+    fx = info.get(cur) or {}
+    parts["fx_label"] = str(fx.get("label") or "")
+    parts["fx_updated_at"] = str(fx.get("updated_at") or "")
+    parts["line"] = ("가장 싼 옵션 기준 — " if len(costs) > 1 else "") + parts["line"]
+    return parts
+
+
+def price_snapshot(pd: Dict[str, Any], market: str) -> Dict[str, Any]:
+    """M8-8 — 등록 기록에 남길 판매가 재료 한 벌(작게)."""
+    p = price_parts_for(pd, market)
+    from datetime import datetime as _dt, timezone as _tz
+    return {k: p.get(k) for k in ("sell_krw", "margin_pct", "commission_pct", "fx", "fx_label", "fx_updated_at",
+                                  "cost_krw", "landed_krw", "domestic_krw", "shipping_krw", "line")} | {
+        "at": _dt.now(_tz.utc).isoformat()}
+
+
 def detail_auto_note(pd: Dict[str, Any]) -> Dict[str, str]:
     """상세 자동 초안으로 나가는가 → `{line, url, label}`, 아니면 {}(셀러 텍스트·꾸미기 블록이 있으면 초안을 쓰지 않는다)."""
     from src.uploaders import naver_detail as _nd
@@ -853,8 +890,12 @@ def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
     """
     out: List[Dict[str, str]] = []
     from src.uploaders import naver_invalid as _ni
+    from src.utils import rss as _rss
     iid = str(pd.get("item_id") or "")
-    v = naver_detail_verdict(pd)
+    _rss.guard("detail_judge")
+    with _rss.span("detail_judge") as _sp:                                   # Z10: 사진 받기·CDN 올리기 포함
+        v = naver_detail_verdict(pd)
+        _sp.update(kept=v.get("kept"), cached=v.get("cached"), dropped=len(v.get("dropped") or []))
     if not v["ok"]:
         r = _ni.row("originProduct.detailContent", "", iid)
         why = "상세 이미지도 상세 설명도 없어요(네이버는 빈 본문을 받지 않아요)"
@@ -865,10 +906,12 @@ def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
         out.append({"short": "상세 본문 비어 있음", "fix": "detail_blank", "code": "naver_required_detailContent",
                     "line": r["line"] + " — " + why,
                     "action_url": r["action_url"], "action_label": r["action_label"]})
-    out += naver_payload_holds(pd, iid)
+    with _rss.span("notice"):                                                # 고시·필수 칸(등록과 같은 조립)
+        out += naver_payload_holds(pd, iid)
     try:
         from src.uploaders.naver_options import plan as _plan
-        op = _plan(pd)
+        with _rss.span("option_build", skus=len(pd.get("skus") or [])):
+            op = _plan(pd)
     except Exception:
         op = {}
     if op.get("mode") == "combo":
@@ -1125,7 +1168,9 @@ class UploadDispatcher:
             try:
                 from src.uploaders import naver_categories as _ncat
                 from .market_cred_view import current_naver_account as _cna_r
-                _nch = _ncat.hold(pd, account=_cna_r() or "")
+                from src.utils import rss as _rss
+                with _rss.span("category_resolve", market=market):           # Z10: 단계별 RSS·ms
+                    _nch = _ncat.hold(pd, account=_cna_r() or "")
             except Exception:
                 _nch = None
             if _nch:
@@ -1573,7 +1618,14 @@ class UploadDispatcher:
         # 판매가는 **마켓마다** 낸다(수수료율이 다르다). 루프 밖에서 한 번 내면
         #   수수료 낮은 마켓엔 비싸게, 높은 마켓엔 손해로 나간다.
         enriched = self._ensure_sell_price_krw(product_data, market)
-        return self._upload_to_market(enriched, market)
+        res = self._upload_to_market(enriched, market)
+        if res.success:
+            # M8-8: 이 등록에 쓴 판매가 재료(마진·환율·수수료·판매가 줄)를 기록 — 같은 상품·스토어 숫자가 다르면 무엇이 달랐는지 남는다
+            try:
+                res.price = price_snapshot(enriched, market)
+            except Exception as exc:                             # noqa: BLE001 — 기록 한 줄이라 등록 결과를 바꾸지 않는다
+                logger.warning("[등록] 판매가 기록 실패: %s", exc)
+        return res
 
     @staticmethod
     def _engine_shipping_fee(product_data: Dict[str, Any]):
@@ -1609,10 +1661,8 @@ class UploadDispatcher:
         cur = str(product_data.get("currency") or "").strip().upper()
         if not cur:
             return 0.0, "원가 통화를 알 수 없습니다"
-        try:
-            margin = float(product_data.get("target_margin_pct"))
-        except (TypeError, ValueError):
-            margin = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
+        from src.price import target_margin_pct
+        margin = target_margin_pct(product_data)              # M8-8: 마진 출처 한 곳(상품 값 → 서버 기본)
         try:
             from src.price import calc_sell_price, reference_market, sell_fx_rates
             # F51-b 6: 드로어 미리보기와 **같은 환율**(실시간 우선) — 무엇을 썼는지는 `sell_fx_rates` info.
@@ -1678,8 +1728,8 @@ class UploadDispatcher:
         if cur == "KRW":
             return round(krw), ""
         try:
-            from src.price import _build_fx_rates
-            rate = float(_build_fx_rates().get(f"{cur}KRW") or 0)
+            from src.price import sell_fx_rates                 # M8-8: 판매가 식과 같은 환율(실시간 우선)
+            rate = float(sell_fx_rates()[0].get(f"{cur}KRW") or 0)
         except Exception as exc:
             return None, f"{cur} 환율을 구하지 못했습니다: {type(exc).__name__}"
         if rate <= 0:
@@ -1725,16 +1775,16 @@ class UploadDispatcher:
         if not price_orig or price_orig <= 0:
             return pd
 
-        margin_pct = pd.get("target_margin_pct")
-        try:
-            margin_pct = float(margin_pct)
-        except (TypeError, ValueError):
-            margin_pct = float(os.getenv("IMPORT_MARGIN_PCT", "25"))
+        from src.price import target_margin_pct
+        margin_pct = target_margin_pct(pd)                    # M8-8: 마진 출처 한 곳
 
         try:
-            from src.price import calc_sell_price, reference_market, _build_fx_rates
+            from src.price import calc_sell_price, reference_market, sell_fx_rates
 
-            fx_rates = _build_fx_rates()
+            # M8-8(오너 2026-10-10): 옵션 조합 판매가(`with_sku_prices` → `_landed_krw`)·판매가 구성 줄과 **같은 환율**.
+            #   예전엔 여기만 `_build_fx_rates()`(실시간은 FX_USE_LIVE=1일 때만 — 아니면 설정값·고정 185)라
+            #   단일 판매가와 조합 판매가·팝업 줄이 서로 다른 환율로 나왔다.
+            fx_rates = sell_fx_rates()[0]
             sell_krw = float(
                 calc_sell_price(
                     buy_price=price_orig,
