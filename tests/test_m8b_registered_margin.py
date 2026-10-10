@@ -97,7 +97,8 @@ def test_8_desktop_slider_defaults_to_server_margin(monkeypatch):
     iid = _item("m8b-slider")
     h = _client("m8b-slider", monkeypatch).get(f"/seller/collect/preview/{iid}").get_data(as_text=True)
     assert 'id="uploadMarginPct" min="5" max="50" value="35"' in h
-    assert "목표 마진율(실수령 · 판매가 기준)" in h and 'data-role="margin-def"' in h
+    # M8-8 축소(오너 2026-10-10): 헤더는 「목표 마진율: n%」만 — 괄호 설명·정의 줄 없음
+    assert "목표 마진율: <strong" in h and "실수령 · 판매가 기준" not in h and 'data-role="margin-def"' not in h
 
 
 def test_8_single_price_uses_same_fx_as_combo_and_line(monkeypatch):
@@ -118,15 +119,17 @@ def test_8_single_price_uses_same_fx_as_combo_and_line(monkeypatch):
     assert single == int(round(combo)) == int(round(parts["sell_krw"]))      # 같은 입력 → 같은 숫자
 
 
-def test_8_price_line_spells_out_numerator_and_denominator(monkeypatch):
-    from src.price import sell_price_parts, MARGIN_TERMS
+def test_8_price_line_ends_at_the_rounded_price(monkeypatch):
+    """M8-8 축소(오너 2026-10-10): 줄은 「… ÷ (1 − 수수료 n% − 마진 m%) = X원 → 10원 올림 Y원」에서 끝."""
+    from src.price import sell_price_parts
     monkeypatch.setenv("MARKET_COMMISSION_PCT_SMARTSTORE", "5.5")
     from decimal import Decimal as D
     p = sell_price_parts(168, "CNY", "smartstore", 25,
                          fx_rates={"CNYKRW": D("200.45"), "JPYKRW": D("9.0"), "USDKRW": D("1350"), "EURKRW": D("1470")})
-    assert "마진 25%는 실수령(판매가 기준: " + MARGIN_TERMS["net"] + ")" in p["line"]
-    assert "판매가 대비" in p["line"] and "원가 대비" in p["line"]
-    r = p["ratios"]
+    import re
+    assert re.search(r"÷ \(1 − 수수료 5\.5% − 마진 25%\) = [\d,]+원 → 10원 올림 [\d,]+원$", p["line"]), p["line"]
+    assert "실수령" not in p["line"] and "판매가 대비" not in p["line"] and "원가 대비" not in p["line"]
+    r = p["ratios"]                                                            # 값은 남긴다(화면엔 안 씀)
     assert abs(r["net"] - 25) < 0.1                                            # 식이 목표를 정확히 남긴다(10원 올림 오차)
     assert r["gross_on_sell"] > r["net"] and r["markup_on_cost"] > r["gross_on_sell"]
 
@@ -153,5 +156,9 @@ def test_8_registration_records_price_snapshot_and_popup_shows_it(monkeypatch):
     d = c.get(f"/seller/collect/{iid}/market-status?phase=db&market=smartstore:gocosmos").get_json()
     row = [r for r in d["rows"] if r["product_id"] == "13742400999"][0]
     assert row["registered_price"].startswith("원가 168 CNY×200.45")
+    # #882 직후 저장된 긴 줄(「 · 마진 35%는 실수령(…)」 꼬리)도 화면에선 「10원 올림 n원」에서 끝
+    from src.seller_console.listing_status import _price_line
+    assert _price_line({"price": {"line": "… = 84,665원 → 10원 올림 84,670원 · 마진 35%는 실수령(판매가 기준: …) · 같은 값의 판매가 대비 60.55%"}}) \
+        == "… = 84,665원 → 10원 올림 84,670원"
     t = Path("src/seller_console/templates/_market_status.html").read_text(encoding="utf-8")
     assert "등록 때 판매가 구성" in t and "지금 다시 내면" in t
