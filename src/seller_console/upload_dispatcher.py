@@ -108,6 +108,11 @@ def market_description(desc: str) -> str:
     from src.collectors import ko_polish as _kp
     from src.seller_console.ai.translator import _BILINGUAL_DIVIDER
     s = str(desc or "").split(_BILINGUAL_DIVIDER)[0]
+    # Y7-N(오너 2026-10-10): 본문 전체가 가게 UI 글자(가게 이름·평점·호평률·발송·만족도)면 **비어 있음** — 남은 한두 줄이
+    #   셀러 글로 읽혀 상세 자동 초안을 막았다(BLACKHOLES 번역본 「침묵 방랑자 / 평균 2일 이내 발송」).
+    from src.uploaders.detail_ui_junk import is_junk as _ui_junk
+    if _ui_junk(s):
+        return ""
     s, _dropped = _kp.drop_detail_lines(s)
     keep = [ln for ln in s.split("\n") if not (_kp.has_han(ln) and not _re.search("[가-힣]", ln))]
     # Y7-J(오너 2026-10-10): 상표가 든 줄은 통째로 뺀다(제목과 같은 상표 표 — 「미야케」 등). 카드 한 줄은 `outbound_mark_labels`.
@@ -1086,6 +1091,14 @@ class UploadDispatcher:
                             r.action_url, r.action_label = _note["url"], _note["line"]
                         elif _note:
                             r.details = list(r.details or []) + [_note["line"]]
+            # Y7-N(오너 2026-10-10): 상세설명이 가게 UI 글자라 버렸으면 카드에 사유 한 줄(보류 아님 — 자동 초안이 채운다)
+            try:
+                from src.uploaders.detail_ui_junk import note as _ui_note
+                _un = _ui_note(product_data)
+                if _un and _un not in (r.details or []):
+                    r.details = list(r.details or []) + [_un]
+            except Exception as exc:                             # noqa: BLE001 — 안내 한 줄이라 검증을 막지 않는다
+                logger.warning("[사전검증] 상세 UI 글자 안내 줄 실패: %s", exc)
             # Y7-J(오너 2026-10-10): 나갈 글자(상세·초안·옵션 값·브랜드)에서 상표를 지웠으면 카드에 한 줄(보류 아님)
             try:
                 _mk = mark_note(product_data)

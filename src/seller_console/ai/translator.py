@@ -593,6 +593,9 @@ def _josa(word: str, with_final: str, without_final: str) -> str:
 def draft_source_lines(description: str, title: str = "") -> list:
     """원문 상세에서 초안 재료로 쓸 줄 — 가게 통계·운영 줄(S2 표)·UI 쓰레기·상표 줄·초단문·**상품명과 같은 줄**(Y7-K) 제외."""
     from src.collectors import ko_polish as _kp
+    from src.uploaders.detail_ui_junk import is_junk as _ui_junk
+    if _ui_junk(str(description or "")):
+        return []                                               # Y7-N: 본문 전체가 가게 UI 글자 — 재료 0
     txt, _d = _kp.drop_detail_lines(str(description or ""))
     txt, _m = _kp.gate_lines(txt)
     out = []
