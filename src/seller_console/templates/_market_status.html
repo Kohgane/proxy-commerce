@@ -1,5 +1,6 @@
 {# M6(오너 2026-10-08) — 마켓 상태 팝업. 목록 칩·등록됨 배지·폰 카드 「검토 상태 보기」가 같은 팝업을 연다.
-   데이터: GET /seller/collect/<id>/market-status[?market=…] — 열 때만 마켓에 묻는다(60초 캐시). 한 페이지에 한 번만 넣는다. #}
+   데이터: GET /seller/collect/<id>/market-status?phase=db|status[&market=…] — M8: ① db = 등록 기록만(즉시)
+   ② status = 마켓별 병렬·12초 상한(60초 캐시). 한 페이지에 한 번만 넣는다. #}
 <dialog class="mst" id="kgpMarketStatus" data-role="market-status" aria-labelledby="mstTitle">
   <div class="mst-head">
     <h2 class="mst-title" id="mstTitle">마켓 상태</h2>
@@ -23,6 +24,10 @@
   .mst-badge.is-ok { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
   .mst-badge.is-bad { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
   .mst-badge.is-fail { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange-strong, var(--orange)); }
+  .mst-badge.is-pending { background: transparent; border: 1px dashed var(--border); color: var(--text-muted); font-weight: 500; }
+  .mst-retry-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .mst-retry { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 999px;
+               background: transparent; color: var(--text); font-weight: 600; white-space: nowrap; }
   .mst-meta { font-size: .85rem; color: var(--text-muted); margin-top: 4px; overflow-wrap: anywhere; }
   .mst-reason { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--danger); background: var(--bg); overflow-wrap: anywhere; }
   .mst-err { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--orange); background: var(--bg); font-size: .85rem; overflow-wrap: anywhere; }
@@ -51,19 +56,22 @@
     return (k.getUTCMonth() + 1) + '-' + p(k.getUTCDate()) + ' ' + p(k.getUTCHours()) + ':' + p(k.getUTCMinutes()) + ' KST';
   }
   function row(r) {
-    var h = '<div class="mst-row" data-role="mst-row" data-market="' + esc(r.market) + '" data-state="' + esc(r.state) + '">' +
+    // M8: 1단(DB)은 상태가 오기 전 — 마지막으로 알던 값이 있으면 그것(흐리게), 없으면 「상태 확인 중…」
+    var badge = r.pending ? (r.label ? r.label + ' · 확인 중…' : '상태 확인 중…') : (r.label || '확인 못 함');
+    var h = '<div class="mst-row" data-role="mst-row" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '" data-state="' + esc(r.state) + '"' +
+      (r.pending ? ' data-pending="1"' : '') + '>' +
       '<div class="mst-top"><span>' + esc(r.market_label || r.chip) + '</span>' +
-      '<span class="mst-badge ' + (TONE[r.tone] || '') + '" data-role="mst-state">' + esc(r.label || '확인 못 함') + '</span></div>' +
+      '<span class="mst-badge ' + (r.pending ? 'is-pending' : (TONE[r.tone] || '')) + '" data-role="mst-state">' + esc(badge) + '</span></div>' +
       '<div class="mst-meta">' + (r.channel_product_no || String(r.market || '').indexOf('smartstore') === 0
         // 오너 2026-10-10: 네이버는 **채널 상품번호만** 보인다(원상품번호는 로그·DB 내부용)
         ? '상품번호 ' + esc(r.channel_product_no || '확인 중')
         : '상품번호 ' + esc(r.product_id || '없음')) + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') +
       (r.status_raw ? ' · 마켓 표기 「' + esc(r.status_raw) + '」' : '') +
-      ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') + '</div>';
+      (r.checked_at ? ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') : '') + '</div>';
     if (r.dup_count) h += '<div class="mst-err" data-role="mst-dup">같은 상품이 이 마켓에 ' + r.dup_count + '건 있어요 — 남길 번호를 정하고, 나머지는 판매자센터에서 지운 뒤 「이 기록 빼기」</div>';
     if (r.comment) h += '<div class="mst-reason" data-role="mst-reason"><b>반려 사유</b> ' + esc(r.comment) + '</div>';
     if (r.price_line) h += '<div class="mst-meta" data-role="mst-price-line">판매가 구성: ' + esc(r.price_line) + '</div>';
-    if (r.error) h += '<div class="mst-err" data-role="mst-error">마켓에 묻지 못했어요 — ' + esc(r.error) + '</div>';
+    if (r.error) h += '<div class="mst-err" data-role="mst-error">상태 확인 실패 — ' + esc(r.error) + '</div>';
     var links = '';
     if (r.manage_url) links += '<a href="' + esc(r.manage_url) + '" target="_blank" rel="noopener" data-role="mst-manage">' + esc(r.manage_label || '마켓에서 열기') + '</a>';
     if (r.link) links += '<a href="' + esc(r.link) + '" target="_blank" rel="noopener" data-role="mst-link">구매자 화면</a>';
@@ -103,23 +111,79 @@
       }).catch(function (e) { btn.disabled = false; btn.textContent = '본문 다시 보내기';
         if (out) { out.className = 'mst-err'; out.textContent = '네트워크 오류 — ' + ((e && e.message) || e); } });
   }
-  window.kgpMarketStatus = function (itemId, market) {
-    curItem = itemId;
-    body.textContent = '마켓에 묻는 중…';
-    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
-    var url = '/seller/collect/' + encodeURIComponent(itemId) + '/market-status' + (market ? '?market=' + encodeURIComponent(market) : '');
+  // M8(오너 2026-10-10 22:13 폰 Safari): 2단 — ① DB만으로 즉시(번호·링크·「본문 다시 보내기」) ② 마켓 상태(병렬·12초 상한)로 칸만 채움.
+  //   폰 망 전환 중 fetch가 끊겨도 팝업은 닫히지 않고, 그 자리에 「다시 시도」 한 줄.
+  var curMarket = '', seq = 0;
+  function getJSON(url) {
     return fetch(url, {credentials: 'same-origin'}).then(function (r) {
       return r.text().then(function (t) {
         try { return JSON.parse(t); } catch (e) { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }
       });
-    }).then(function (d) {
-      if (!d || !d.ok) { body.innerHTML = '<div class="mst-err" data-role="mst-error">' + esc((d && d.error) || '불러오지 못했어요') + '</div>'; return d; }
-      body.innerHTML = (d.rows || []).length ? d.rows.map(row).join('') : '<p data-role="mst-empty">' + esc(d.message || '등록 기록이 없어요.') + '</p>';
-      document.dispatchEvent(new CustomEvent('kgp:market-status', {detail: {itemId: itemId, rows: d.rows || []}}));
+    });
+  }
+  function msUrl(phase) {
+    return '/seller/collect/' + encodeURIComponent(curItem) + '/market-status?phase=' + phase +
+      (curMarket ? '&market=' + encodeURIComponent(curMarket) : '');
+  }
+  function retryLine(role, msg) {
+    return '<div class="mst-err mst-retry-line" data-role="' + role + '">' + esc(msg) +
+      ' <button type="button" class="mst-retry" data-role="mst-retry">다시 시도</button></div>';
+  }
+  function swapRow(oldEl, html) {
+    var tmp = document.createElement('div'); tmp.innerHTML = html;
+    var nu = tmp.firstElementChild;
+    // 누르는 중이거나 결과가 뜬 「본문 다시 보내기」는 그대로 옮겨 심는다(상태가 와도 결과 줄이 사라지지 않게)
+    ['mst-resend', 'mst-resend-out'].forEach(function (role) {
+      var o = oldEl.querySelector('[data-role=' + role + ']'), n = nu.querySelector('[data-role=' + role + ']');
+      if (o && n) n.replaceWith(o);
+    });
+    oldEl.replaceWith(nu);
+  }
+  function loadStatus(my) {
+    var old = body.querySelector('[data-role=mst-status-fail]'); if (old) old.remove();
+    return getJSON(msUrl('status')).then(function (d) {
+      if (my !== seq) return d;
+      if (!d || !d.ok) throw new Error((d && d.error) || '상태를 받지 못했어요');
+      (d.rows || []).forEach(function (r) {
+        var el = body.querySelector('[data-role=mst-row][data-market="' + r.market + '"][data-pid="' + (r.product_id || '') + '"]');
+        if (el) swapRow(el, row(r)); else body.insertAdjacentHTML('beforeend', row(r));
+      });
+      document.dispatchEvent(new CustomEvent('kgp:market-status', {detail: {itemId: curItem, rows: d.rows || []}}));
       return d;
-    }).catch(function (e) { body.innerHTML = '<div class="mst-err" data-role="mst-error">네트워크 오류 — ' + esc((e && e.message) || e) + '</div>'; });
+    }).catch(function (e) {
+      if (my !== seq) return;
+      [].forEach.call(body.querySelectorAll('[data-role=mst-row][data-pending] [data-role=mst-state]'), function (b) {
+        b.textContent = '상태 확인 실패'; b.className = 'mst-badge is-fail'; });
+      body.insertAdjacentHTML('afterbegin', retryLine('mst-status-fail', '마켓 상태를 받지 못했어요 — ' + ((e && e.message) || e) + ' · 아래 번호·버튼은 그대로 쓸 수 있어요.'));
+    });
+  }
+  function load() {
+    var my = ++seq;
+    body.innerHTML = '<p class="mst-meta" data-role="mst-loading">등록 기록을 불러오는 중…</p>';
+    return getJSON(msUrl('db')).then(function (d) {
+      if (my !== seq) return d;
+      if (!d || !d.ok) throw new Error((d && d.error) || '불러오지 못했어요');
+      if (!(d.rows || []).length) { body.innerHTML = '<p data-role="mst-empty">' + esc(d.message || '등록 기록이 없어요.') + '</p>'; return d; }
+      body.innerHTML = d.rows.map(row).join('');
+      return loadStatus(my);
+    }).catch(function (e) {
+      if (my !== seq) return;
+      body.innerHTML = retryLine('mst-error', '불러오지 못했어요 — ' + ((e && e.message) || e));
+    });
+  }
+  window.kgpMarketStatus = function (itemId, market) {
+    curItem = itemId; curMarket = market || '';
+    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+    return load();
   };
   dlg.addEventListener('click', function (ev) {
+    var rt = ev.target.closest && ev.target.closest('[data-role=mst-retry]');
+    if (rt) {
+      ev.preventDefault();
+      // DB 단계가 안 됐으면 처음부터, 됐으면 상태만 다시
+      if (body.querySelector('[data-role=mst-row]')) loadStatus(seq); else load();
+      return;
+    }
     var rs = ev.target.closest && ev.target.closest('[data-role=mst-resend]');
     if (rs) { ev.preventDefault(); resend(rs); return; }
     var dr = ev.target.closest && ev.target.closest('[data-role=mst-dup-remove]');

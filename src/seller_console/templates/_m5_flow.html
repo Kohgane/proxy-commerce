@@ -30,6 +30,9 @@
     <div class="m5-title" data-role="m5-title">{{ m5.title }}</div>
     {# M7: 이미 등록된 마켓 칩(목록과 같은 칩) — 누르면 상태 팝업 #}
     {% if m5.market_chips %}<div class="mk-chips" data-role="mk-chips">{% for c in m5.market_chips %}<button type="button" class="mk-chip tone-{{ c.tone }}" data-role="mk-chip" data-market-status="{{ c.market }}" data-item="{{ m5.item_id }}" data-tone="{{ c.tone }}" title="{{ c.label }} — {{ c.state_label }}">{{ c.chip }}</button>{% if c.dup_count %}<button type="button" class="mk-chip mk-chip-dup" data-role="mk-dup-badge" data-market-status="{{ c.market }}" data-item="{{ m5.item_id }}" title="같은 상품이 이 마켓에 {{ c.dup_count }}건 등록돼 있어요 — 눌러서 정리">중복 {{ c.dup_count }}건 — 정리</button>{% endif %}{% endfor %}</div>{% endif %}
+    {# M8: 「마켓 등록본」 — 데스크톱과 같은 조각(등록 기록 전 마켓 · 네이버는 채널 번호). 줄을 누르면 상태 팝업. #}
+    {% if m5.market_records %}<div class="m5-ml" data-role="m5-ml"><div class="m5-k" data-role="ml-title">마켓 등록본</div>
+      {% set ml_records = m5.market_records %}{% set ml_item = m5.item_id %}{% include "_market_listings.html" %}</div>{% endif %}
     {% if m5.translit %}<div class="m5-warn" data-role="m5-translit"><span class="pc-badge pc-badge-off">확인 필요</span>
       중국어 발음을 그대로 옮긴 말 같아요(용어집에 없음): {% for t in m5.translit %}<strong>{{ t }}</strong>{{ ', ' if not loop.last }}{% endfor %} — 뜻으로 옮긴 말인지 확인해 주세요.</div>{% endif %}
     {% if m5.brand_romanized %}<div class="m5-warn" data-role="m5-brand-romanized"><span class="pc-badge pc-badge-off">브랜드 표기 — 확인</span>
@@ -205,6 +208,7 @@
   .m5-meta { color: var(--text-muted); margin: 4px 0 10px; }
   .m5-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 6px 0; }
   .m5-k { color: var(--text-muted); font-size: .9rem; flex: 0 0 auto; }
+  .m5-ml { margin: 8px 0; display: grid; gap: 6px; }
   .m5-v { font-weight: 600; word-break: break-word; min-width: 0; }
   .m5-warn { color: var(--warn); font-size: .9rem; }
   .m5-sku { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; font-size: .95rem; }

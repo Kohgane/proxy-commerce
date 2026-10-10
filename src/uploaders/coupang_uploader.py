@@ -605,15 +605,23 @@ class CoupangUploader(BaseUploader):
         out['foreign'] = [list(x) for x in self.foreign_fields(data)]
         return out
 
-    def live_fix_plan(self, data: dict, *, name: str = '', search_tags=None) -> dict:
+    def live_fix_plan(self, data: dict, *, name: str = '', search_tags=None, brand=None) -> dict:
         """U1b — 쿠팡 원본(`data`)을 **고칠 칸만** 바꾼 수정 몸통 + 바뀌는 것 목록. 아무것도 안 바뀌면 `changes` 빈 목록.
 
         - 상품명(seller/display/general) → `name`(F53 정본)
         - 검색어(모든 item) → `search_tags`(정리된 값 — 한자·지어낸 이름·상표 낱말 뺀 것)
+        - 브랜드(M8 오너 2026-10-10 22:13): 원본 `brand`가 **비어 있으면** 등록과 같은 해석(`coupang_brand_field` —
+          `COUPANG_BRAND_GENERIC=1`이면 매칭 실패·빈 브랜드 → "GENERIC"). 쿠팡은 빈 brand로 올린 상품의 **수정**을
+          「brandId … GENERIC」 400으로 거부한다(5,691건 예전 정본 `""`). 원본에 브랜드가 있으면 손대지 않는다.
         나머지 칸(가격·재고·옵션·이미지)은 **손대지 않는다** — 승인 상품의 가격·재고는 수정 API로 못 바꾼다(쿠팡 문서).
         """
         body = json.loads(json.dumps(data or {}))
         changes = []
+        if brand is not None and not str(body.get('brand') or '').strip():
+            b = coupang_brand_field(str(brand or ''))
+            if b:
+                changes.append({'field': '브랜드', 'before': '(비어 있음)', 'after': b})
+                body['brand'] = b
         if name and name != body.get('sellerProductName'):
             changes.append({'field': '상품명', 'before': body.get('sellerProductName') or '', 'after': name})
             for k in ('sellerProductName', 'displayProductName', 'generalProductName'):
@@ -640,12 +648,16 @@ class CoupangUploader(BaseUploader):
             res = self._api_request('PUT', self.MODIFY_PATH, data=body)
         except Exception as exc:
             return {'success': False, 'error': str(exc)}
+        # M8: 쿠팡이 **답을 했는지**(HTTP 상태·본문 원문)를 같이 돌려준다 — 거부(4xx)는 마켓의 답, 응답 없음은 우리 쪽 장애
+        status = (getattr(self, 'last_sign', None) or {}).get('status')
         if not isinstance(res, dict) or 'error' in res:
-            return {'success': False, 'error': (res or {}).get('error') if isinstance(res, dict) else '응답 없음'}
+            return {'success': False, 'error': (res or {}).get('error') if isinstance(res, dict) else '응답 없음',
+                    'market_status': status, 'body': (res or {}).get('error_body', '') if isinstance(res, dict) else ''}
         code = str(res.get('code') or '').upper()
         if code and code not in ('SUCCESS', '200', 'OK'):
-            return {'success': False, 'error': f"쿠팡 수정 거부: {res.get('message') or code}"}
-        return {'success': True}
+            return {'success': False, 'error': f"쿠팡 수정 거부: {res.get('message') or code}",
+                    'market_status': status, 'body': json.dumps(res, ensure_ascii=False)[:8000]}
+        return {'success': True, 'market_status': status}
 
     def request_approval(self, seller_product_id: str) -> dict:
         """SAVED(반려/임시저장) 상품 재승인 요청 — `PUT .../seller-products/{sid}/approvals` 한 방.

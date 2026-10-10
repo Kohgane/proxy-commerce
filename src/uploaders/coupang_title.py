@@ -19,6 +19,7 @@ import os
 
 logger = logging.getLogger(__name__)
 import re
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional
 
 MAX_LEN = 100
@@ -197,12 +198,44 @@ def _dedupe(tokens: List[str]) -> List[str]:
     return out
 
 
+_MODIFIERS_PATH = os.path.join(os.path.dirname(__file__), "coupang_name_modifiers.json")
+
+
+@lru_cache(maxsize=1)
+def _modifiers() -> frozenset:
+    """M8 — 끝에 혼자 남으면 뺄 단독 수식어(`coupang_name_modifiers.json`)."""
+    try:
+        import json as _json
+        with open(_MODIFIERS_PATH, encoding="utf-8") as fh:
+            return frozenset(str(x).strip() for x in (_json.load(fh).get("modifiers") or []) if str(x).strip())
+    except Exception as exc:                          # noqa: BLE001 — 표를 못 읽으면 빼지 않는다(이름은 그대로)
+        logger.warning("쿠팡 상품명 수식어 표를 읽지 못했어요: %s", exc)
+        return frozenset()
+
+
+def _drop_dangling(s: str) -> str:
+    """M8(오너 2026-10-10) — 끝 낱말이 **단독 수식어**(디자인·감각·스타일…)면 뺀다(여럿이면 차례로). 한 낱말만 남으면 그대로.
+    실측: 플리츠 세트 쿠팡명 「플리츠 미니멀 여성 여름 세트 디자인」(하한 20자를 채우려 제목 뒤 「디자인」을 보탬)."""
+    toks = str(s or "").split()
+    mods = _modifiers()
+    while len(toks) > 1:
+        last = toks[-1].strip(",.·()[]「」'\"")
+        bare = _PARTICLE_TAIL.sub("", last) if len(last) > 2 else last
+        if last in mods or bare in mods:
+            toks.pop()
+            continue
+        break
+    return " ".join(toks)
+
+
 def _fit(s: str) -> str:
+    """100자 상한 — **낱말 경계**에서 자르고, 잘린 끝이 단독 수식어면 그것도 뺀다(M8)."""
     s = re.sub(r"\s{2,}", " ", s).strip()
     if len(s) <= MAX_LEN:
         return s
     cut = s[:MAX_LEN]
-    return cut[:cut.rfind(" ")].strip() if " " in cut else cut
+    cut = cut[:cut.rfind(" ")].strip() if " " in cut else cut
+    return _drop_dangling(cut)
 
 
 def _source_title(product: Dict[str, Any]) -> str:
@@ -245,7 +278,10 @@ def _extend_to_floor(name: str, title: str, brand: str) -> tuple:
         name = f"{name} {t}"
         if len(name) >= MIN_LEN:
             break
-    return _fit(name), added
+    # M8: 보탠 끝 낱말이 단독 수식어(「…여름 세트 디자인」)면 뺀다 — 하한을 못 채우면 아래 경고가 말한다(지어내지 않음)
+    fitted = _drop_dangling(_fit(name))
+    added = [t for t in added if t in fitted.split()]
+    return fitted, added
 
 
 def build_name(product: Dict[str, Any], brand_pos: str = "front") -> Dict[str, Any]:
@@ -276,7 +312,7 @@ def build_name(product: Dict[str, Any], brand_pos: str = "front") -> Dict[str, A
         parts["extended"] = added
     warnings = check_name(name)
     if len(name) < MIN_LEN:
-        warnings.append(f"쿠팡 상품명이 {MIN_LEN}자보다 짧아요({len(name)}자) — 제목에 보탤 낱말이 없어요, 직접 보태 주세요")
+        warnings.append(f"쿠팡 상품명이 {MIN_LEN}자보다 짧아요({len(name)}자) — 제목에 보탤 낱말이 없어요(꾸밈말 「디자인」 같은 건 붙이지 않아요), 직접 보태 주세요")
     return {"name": name, "parts": parts, "source": "rule", "warnings": warnings}
 
 

@@ -2129,6 +2129,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
             "market_chips": market_chips,
+            "market_records": _market_records(ex),       # M8: 「마켓 등록본」 — 데스크톱과 같은 줄
             "product": product,
             "risks": risks, "mixed_types": mixed, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or "")), **_m5_ship(product),
             **_m5_video(ex)}
@@ -3245,6 +3246,16 @@ def _coupang_uploads(extra: dict) -> list:
     return out
 
 
+def _market_records(extra) -> list:
+    """M8(오너 2026-10-10) — 「마켓 등록본」 카드 재료: 등록 기록 **전 마켓**(쿠팡만이 아니라). DB만 — 마켓에 묻지 않는다."""
+    try:
+        from .listing_status import records as _recs
+        return _recs(extra if isinstance(extra, dict) else {})
+    except Exception as exc:                                     # noqa: BLE001 — 카드 한 칸이라 화면을 막지 않는다
+        logger.warning("[마켓 등록본] 기록 읽기 실패: %s", exc)
+        return []
+
+
 def _coupang_up_for(account: str):
     """그 계정 키로 만든 업로더(계정이 없으면 기존 판정 그대로)."""
     from src.seller_console.market_cred_view import coupang_account
@@ -3314,17 +3325,28 @@ def collect_market_status(item_id):
     recs = [r for r in MS.records(extra) if not want or r["market"] == want]
     if not recs:
         return jsonify({"ok": True, "rows": [], "message": "이 마켓에 등록한 기록이 없어요."})
-    rows = [MS.query(r) for r in recs]
-    for r in rows:
-        if str(r.get("market") or "").startswith("smartstore"):
+    import time as _time
+    t0 = _time.monotonic()
+    # M8(오너 2026-10-10 22:13 폰): 1단 = **DB만**(마켓에 묻지 않음 — 번호·링크·「본문 다시 보내기」가 바로 뜬다)
+    if str(request.args.get("phase") or "") == "db":
+        rows = [MS.db_row(r) for r in recs]
+        return jsonify({"ok": True, "phase": "db", "rows": rows, "elapsed_ms": int((_time.monotonic() - t0) * 1000)})
+
+    def _price(rec, row):
+        if str(row.get("market") or "").startswith("smartstore"):
             try:
-                r["price_line"] = _price_line_for(item, r["market"])      # Y7-J: 판매가가 어디서 왔나 한 줄
+                row["price_line"] = _price_line_for(item, row["market"])  # Y7-J: 판매가가 어디서 왔나 한 줄
             except Exception as exc:                                     # noqa: BLE001 — 한 줄 재료라 팝업을 막지 않는다
-                r["price_line"] = f"판매가 구성을 내지 못했어요 — {type(exc).__name__}: {str(exc)[:120]}"
+                row["price_line"] = f"판매가 구성을 내지 못했어요 — {type(exc).__name__}: {str(exc)[:120]}"
+    # 2단 = 마켓별 **병렬** + 12초 상한(넘은 마켓만 「상태 확인 실패」) — 60초 캐시는 그대로
+    rows = MS.query_many(recs, extra_fn=_price)
+    ms = int((_time.monotonic() - t0) * 1000)
+    logger.info("[마켓 상태] item=%s 마켓 %d곳 병렬 %dms 캐시 %d 실패 %d", str(item_id)[:8], len(rows), ms,
+                sum(1 for r in rows if r.get("cached")), sum(1 for r in rows if r.get("error")))
     if any(MS.remember(extra, r) for r in rows if not r.get("cached")):
         from .collect_history_store import update as _update
         _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
-    return jsonify({"ok": True, "rows": rows})
+    return jsonify({"ok": True, "phase": "status", "rows": rows, "elapsed_ms": ms})
 
 
 def _price_line_for(item: dict, market: str) -> str:
@@ -3490,7 +3512,18 @@ def _live_fix_target(item, up) -> dict:
     pd = _build_payload(_build_product(item, edits={}, seller_id=_seller_id()), item)
     prepared = up.prepare_product(to_collected(prepared_input(pd)))
     return {"name": prepared.get("title") or "", "name_source": prepared.get("coupang_name_source") or "",
-            "search_tags": up.search_tags_for(prepared)}
+            "search_tags": up.search_tags_for(prepared),
+            "brand": str(prepared.get("brand") or "")}                 # M8: 등록과 같은 brand 해석 재료
+
+
+def _market_refusal(up, err: str, body: str = "") -> tuple:
+    """M8(오너 2026-10-10) — 마켓 호출 실패를 응답 코드로: 마켓이 **답을 했으면**(4xx·5xx·code 거부) 200 + ok:false +
+    `market_status`·`body` 원문, 답이 없으면(릴레이·네트워크·키) 우리 쪽 장애 502. 22:13 실측: 쿠팡 400 「brandId … GENERIC」을
+    우리가 502로 돌려 「서버 장애」로 보였다."""
+    status = (getattr(up, "last_sign", None) or {}).get("status")
+    if status:
+        return {"market_status": int(status), "body": str(body or err or "")[:8000]}, 200
+    return {"market_status": None, "body": str(body or "")[:8000]}, 502
 
 
 @bp.route("/collect/<item_id>/live-fix", methods=["GET", "POST"])
@@ -3521,9 +3554,10 @@ def collect_live_fix(item_id):
     up = _coupang_up_for(u["account"])
     live = up.get_product(u["sid"])
     if "error" in live:
-        return jsonify({"ok": False, "error": f"쿠팡 상품을 읽지 못했어요 — {live['error']}", "sid": u["sid"]}), 502
+        extra_out, code = _market_refusal(up, str(live["error"]))
+        return jsonify({"ok": False, "error": f"쿠팡 상품을 읽지 못했어요 — {live['error']}", "sid": u["sid"], **extra_out}), code
     target = _live_fix_target(item, up)
-    plan = up.live_fix_plan(live, name=target["name"], search_tags=target["search_tags"])
+    plan = up.live_fix_plan(live, name=target["name"], search_tags=target["search_tags"], brand=target["brand"])
     out = {"ok": True, "sid": u["sid"], "market": u["market"], "market_label": u["label"],
            "changes": plan["changes"], "foreign_now": [list(x) for x in up.foreign_fields(live)],
            "note": "쿠팡 상품 수정은 승인필요 API예요 — 보내면 판매중 상품도 다시 심사를 받아요."}
@@ -3535,7 +3569,10 @@ def collect_live_fix(item_id):
     logger.info("[등록본 교정] sid=%s market=%s 바뀐 칸=%s 결과=%s", u["sid"], u["market"],
                 [c["field"] for c in plan["changes"]], res.get("success"))
     if not res.get("success"):
-        return jsonify(dict(out, ok=False, sent=False, error=f"쿠팡이 수정을 받지 않았어요 — {res.get('error')}")), 502
+        # M8: 쿠팡이 거부(4xx)한 건 마켓의 답 — 200 + ok:false + 원문. 502는 답을 못 받았을 때만(우리 쪽 장애).
+        code = 200 if res.get("market_status") else 502
+        return jsonify(dict(out, ok=False, sent=False, error=f"쿠팡이 수정을 받지 않았어요 — {res.get('error')}",
+                            market_status=res.get("market_status"), body=str(res.get("body") or "")[:8000])), code
     return jsonify(dict(out, sent=True, message="쿠팡에 고친 칸을 보냈어요 — 다시 심사가 끝나면 반영돼요."))
 
 
@@ -9965,6 +10002,7 @@ def collect_preview_by_id(item_id: str):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         detail_auto_active=detail_auto_active,
+        market_records=_market_records(extra),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, ship_est=ship_est,
         field_src=field_src,
         page="collect_history",
