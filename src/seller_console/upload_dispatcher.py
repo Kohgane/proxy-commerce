@@ -831,8 +831,9 @@ def naver_payload_holds(pd: Dict[str, Any], iid: str = "", market: str = "smarts
             url, label = "/seller/markets/connect/smartstore", "주소 불러오기 →"
             why = "출고지·반품지 주소 ID가 비어 있어요 — 스마트스토어 연동 화면에서 주소록을 불러와 주세요"
         elif f in ("afterServiceDirector", "afterServiceTelephoneNumber"):
-            url, label = "/seller/markets/connect/smartstore", "A/S 연락처 넣기 →"
-            why = "A/S 전화번호가 비어 있어요 — 스마트스토어 연동 화면에서 넣어 주세요"
+            # Y7-L: 연동 화면의 「A/S 전화번호」 칸으로 바로(예전엔 그 화면에 칸이 없었다)
+            url, label = "/seller/markets/connect/smartstore#naver-as", "A/S 연락처 넣기 →"
+            why = "A/S 전화번호가 비어 있어요 — 스마트스토어 연동 화면 「A/S 전화번호」 칸에 넣어 주세요"
         else:
             url, label = "/seller/settings/naver-notice", "고시 기본값 →"
             why = "기본값이 비어 있어요 — 네이버 상품정보제공고시 설정에서 채워 주세요"
