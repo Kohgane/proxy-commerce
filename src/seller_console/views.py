@@ -2890,6 +2890,11 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 # Y7-G: 사전검증이 만든 상세 자동 초안 — 등록도 같은 자리에서 싣는다(셀러 텍스트가 없을 때만 쓰인다)
                 if isinstance(_uex.get("detail_auto"), dict):
                     product_data["detail_auto"] = _uex["detail_auto"]
+                # 반려 사유 자동 수정(오너 2026-10-13) — 사전검증이 고친 글자를 등록도 같은 자리에서 싣는다
+                #   (화면 값이 원래 값 그대로일 때만 — 셀러가 손으로 고친 칸은 셀러가 이긴다 · 되돌린 기록은 안 싣는다)
+                if isinstance(_uex.get("reject_autofix"), dict):
+                    from src.services import reject_autofix as _raf
+                    product_data.update(_raf.apply(product_data, _uex["reject_autofix"]))
     except Exception as exc:
         logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
 
@@ -4461,6 +4466,98 @@ def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = Fa
             {**product_data, "detail_auto": da})
 
 
+#: 자동 수정 뒤 다시 잴 시간(마켓 12초)을 남긴다 — 이보다 적게 남았으면 이번엔 묻지 않는다(다음 사전검증에서).
+_PV_AUTOFIX_RESERVE_SEC = 14.0
+
+
+def _pv_autofix_public(rec: dict) -> dict:
+    """잡 결과·카드에 싣는 모양 — 호출 원문(ai_call)은 빼고(기록엔 남는다)."""
+    return {"status": rec.get("status") or "", "error": str(rec.get("error") or "")[:300], "why": rec.get("why") or "",
+            "model": rec.get("model") or "", "undone": bool(rec.get("undone")),
+            "changes": [{k: c.get(k) for k in ("label", "before", "after")} for c in (rec.get("changes") or [])],
+            "reasons": [{k: r.get(k) for k in ("market", "kind", "line")} for r in (rec.get("reasons") or [])]}
+
+
+def _pv_auto_fix(job_id: str, product_data: dict, data: dict, results, deadline_ts: float) -> tuple:
+    """반려 사유 자동 수정 — `(카드 모양 | None, product_data, 다시 잴 마켓)`. 고칠 글자 사유가 없으면 None(아무 일 없음).
+
+    고치는 칸·검증·저장 규칙은 `src.services.reject_autofix` 머리말. 저장은 수집 기록 `reject_autofix`(원래 값과 같이) —
+    등록은 `_outbound_images`가 같은 기록을 싣는다(사전검증이 본 글자 = 등록이 보내는 글자).
+    """
+    import time as _time
+    from src.services import reject_autofix as _raf
+    if not data.get("item_id"):
+        return None, product_data, []
+    iid = str(data["item_id"])
+    item = _get_owned_item(iid)
+    if not item:
+        return None, product_data, []
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    reasons = _raf.collect(product_data, results, ex)
+    if not reasons:
+        _saved = product_data.get("reject_autofix")
+        if isinstance(_saved, dict) and _saved.get("status") == "done" and not _saved.get("undone"):
+            # 지난 사전검증이 고친 글자가 실려 이번엔 사유가 안 났다 — 카드에 무엇을 고쳤는지 + 되돌리기를 계속 보인다
+            return {**_pv_autofix_public(_saved), "status": "applied"}, product_data, []
+        return None, product_data, []
+    left = deadline_ts - _time.time() - _PV_AUTOFIX_RESERVE_SEC
+    if left < 5:
+        return ({"status": "skipped", "error": "시간이 모자라 이번엔 자동 수정을 하지 않았어요 — 사전검증을 한 번 더 눌러 주세요",
+                 "changes": [], "reasons": reasons}, product_data, [])
+    _pv_update(job_id, auto_fix={"status": "running", "reasons": reasons, "changes": []})   # 카드: 「사유를 고치는 중…」
+    prev = ex.get("reject_autofix") if isinstance(ex.get("reject_autofix"), dict) else None
+    rec = _raf.run(product_data, reasons, timeout=min(25.0, left), previous=prev)
+    if rec.get("status") == "cached":
+        rec = {**prev, "status": prev.get("status")}
+        logger.info("[반려 자동 수정] item=%s 같은 재료로 이미 물었음 — 지난 결과(%s) 그대로", iid[:8], rec.get("status"))
+    elif rec.get("status") in ("done", "nochange", "failed"):
+        ex["reject_autofix"] = rec
+        try:
+            from . import collect_history_store as _chs
+            _chs.update(iid, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
+        except Exception as exc:                                     # noqa: BLE001 — 저장 못 하면 등록이 고친 글자를 못 싣는다 → 쓰지 않는다
+            logger.warning("[반려 자동 수정] 기록 저장 실패 item=%s: %s", iid[:8], exc)
+            return ({"status": "failed", "error": "고친 기록을 저장하지 못해 쓰지 않았어요", "changes": [], "reasons": reasons},
+                    product_data, [])
+    logger.info("[반려 자동 수정] item=%s status=%s 칸=%d 오류=%s", iid[:8], rec.get("status"),
+                len(rec.get("changes") or []), str(rec.get("error") or "")[:200])
+    if rec.get("status") != "done" or rec.get("undone"):
+        return _pv_autofix_public(rec), product_data, []
+    fixed = _raf.apply(product_data, rec)
+    if _raf.current_fields(fixed) == _raf.current_fields(product_data):
+        # 화면 값이 원래 값과 달라(셀러가 그 칸을 고쳤다) 실을 칸이 없다 — 셀러 값 그대로 둔다
+        return _pv_autofix_public(rec), product_data, []
+    markets = list(dict.fromkeys(r["market"] for r in reasons if r.get("market")))
+    return _pv_autofix_public(rec), fixed, markets
+
+
+@bp.post("/collect/<item_id>/reject-autofix/undo")
+def collect_reject_autofix_undo(item_id):
+    """반려 사유 자동 수정 **되돌리기** — 기록은 지우지 않고 `undone` 표시(등록·사전검증이 더는 싣지 않는다 · 같은 재료로 다시 묻지 않는다)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        extra = {}
+    rec = extra.get("reject_autofix")
+    if not isinstance(rec, dict) or rec.get("status") != "done":
+        return jsonify({"ok": False, "error": "되돌릴 자동 수정이 없어요."}), 404
+    if not rec.get("undone"):
+        rec["undone"] = True
+        rec["undone_at"] = datetime.now(timezone.utc).isoformat()
+        from .collect_history_store import update as _update
+        _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
+        logger.info("[반려 자동 수정] 되돌림 item=%s 칸=%d", str(item_id)[:8], len(rec.get("changes") or []))
+    return jsonify({"ok": True, "message": "자동 수정을 되돌렸어요 — 원래 글자로 다시 사전검증해 주세요."})
+
+
 def _pv_transport_fail(market: str, kind: str, why: str) -> dict:
     """전송 실패(시간 초과·예외) — 검증을 **못 한** 것이지 막힌 게 아니다. 화면은 「검증 못 함 — 다시 시도」."""
     from .upload_dispatcher import MARKET_LABELS
@@ -4729,7 +4826,9 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                     _pv_update(job_id, auto_translate=_auto, stages={"auto_translate": int((_time.monotonic() - t0) * 1000)})
                     held = [r.market for r in results if r.hold and "translate" in (getattr(r, "fixes", None) or [])]
                     if held and _time.time() < deadline_ts - 1 and _auto.get("status") in ("done", "queued", "failed"):
-                        _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
+                        # 다음 단계(상세 초안·반려 자동 수정)가 **다시 잰 판정**을 보게 results 를 갈아 끼운다
+                        results = [r for r in results if r.market not in held] + \
+                            _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
                 # Y7-G: 네이버 「상세 본문 비어 있음」 보류 → 상세 초안 자동 생성 → 그 마켓만 다시 잰다
                 t0 = _time.monotonic()
                 if data.get("item_id") and any(r.hold and "detail_blank" in (getattr(r, "fixes", None) or []) for r in results):
@@ -4741,6 +4840,14 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                     if held and _ad.get("status") == "done" and _time.time() < deadline_ts - 1:
                         results = [r for r in results if r.market not in held] + \
                             _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
+                # 반려 사유 자동 수정(오너 2026-10-13): 글자로 풀 보류(표시광고 문구·상품명 원문·지난 반려 사유) → Claude → 그 마켓만 다시 잰다
+                t0 = _time.monotonic()
+                _af, product_data, _af_markets = _pv_auto_fix(job_id, product_data, data, results, deadline_ts)
+                if _af is not None:
+                    _pv_update(job_id, auto_fix=_af, stages={"auto_fix": int((_time.monotonic() - t0) * 1000)})
+                    if _af_markets and _time.time() < deadline_ts - 1:
+                        results = [r for r in results if r.market not in _af_markets] + \
+                            _pv_run_markets(job_id, product_data, _af_markets, dispatcher, rc, deadline_ts)
                 _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
         except _rss.MemoryCapExceeded as exc:
             # Z10: 메모리 상한 — **이 잡만** 멈춘다(워커·다른 요청은 산다). 카드에 원문과 다음 행동.
@@ -4788,6 +4895,7 @@ def collect_prevalidate_job(job_id: str):
     return jsonify({"ok": True, "state": cur.get("state"), "results": rows,
                     "pending": [m for m in markets if m not in res],
                     "auto_translate": cur.get("auto_translate"), "auto_detail": cur.get("auto_detail"),
+                    "auto_fix": cur.get("auto_fix"),                                          # 반려 사유 자동 수정
                     "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중
                     "rss": cur.get("rss") or {},
                     "error": cur.get("error") or ""})
