@@ -106,7 +106,12 @@ def section(text: str) -> str:
 
 def entry_text(e: dict) -> str:
     e = e or {}
-    return " ".join(str(e.get(k) or "") for k in ("source_text", "target_text", "ocr_text"))
+    t = " ".join(str(e.get(k) or "") for k in ("source_text", "target_text", "ocr_text"))
+    try:                                          # Y11: 편집본에서 지운 상자 글자는 빼고(판촉·상표 판정이 편집본 기준)
+        from src.services.image_translate_store import erased_out
+        return erased_out(e, t)
+    except Exception:                             # noqa: BLE001
+        return t
 
 
 def verdict(e: dict, orig_url: str) -> Dict[str, str]:

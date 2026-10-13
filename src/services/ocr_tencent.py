@@ -121,3 +121,45 @@ def read(raw: bytes) -> Dict:
     logger.info("[텐센트 OCR] %d조각 %dms req=%s", len(lines), int((time.monotonic() - t0) * 1000),
                 str(body.get("RequestId") or "")[:36])
     return {"ok": True, "code": "", "why": "", "lines": lines, "text": " ".join(t for t, _ in lines)}
+
+
+def read_boxes(raw: bytes) -> Dict:
+    """Y11(오너 2026-10-14) — 글자 상자까지. `{ok, boxes:[{x,y,w,h,src}], size:[W,H], why}` — 좌표는 **원본 크기** 기준
+    (보낼 때 줄인 비율만큼 되돌린다). 사진 편집(지우기·글자 고치기)이 쓴다. 확신 50 미만 조각은 뺀다."""
+    if not raw:
+        return {"ok": False, "why": "이미지 바이트 없음", "boxes": [], "size": [0, 0]}
+    if not is_configured():
+        return {"ok": False, "why": "텐센트 키 미설정", "boxes": [], "size": [0, 0]}
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(raw)) as im0:
+            W, H = im0.size                                # 헤더만 — 풀지 않는다
+        small = shrink(raw)
+        with Image.open(io.BytesIO(small)) as im1:
+            sw, sh = im1.size
+    except Exception as exc:                                # noqa: BLE001
+        return {"ok": False, "why": f"이미지를 열지 못했어요({type(exc).__name__})", "boxes": [], "size": [0, 0]}
+    kx, ky = (W / sw if sw else 1.0), (H / sh if sh else 1.0)
+    try:
+        body = _call(base64.b64encode(small).decode("ascii"))
+    except Exception as exc:                                # noqa: BLE001
+        code = getattr(exc, "code", "") or type(exc).__name__
+        return {"ok": False, "why": f"텐센트 OCR 실패({code})", "boxes": [], "size": [W, H]}
+    boxes = []
+    for d in body.get("TextDetections") or []:
+        d = d or {}
+        txt = str(d.get("DetectedText") or "").strip()
+        try:
+            conf = float(d.get("Confidence") or 0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        p = d.get("ItemPolygon") or {}
+        if not txt or conf < MIN_CONFIDENCE or not p:
+            continue
+        try:
+            boxes.append({"x": int(float(p.get("X") or 0) * kx), "y": int(float(p.get("Y") or 0) * ky),
+                          "w": int(float(p.get("Width") or 0) * kx), "h": int(float(p.get("Height") or 0) * ky),
+                          "src": txt[:120], "tgt": ""})
+        except (TypeError, ValueError):
+            continue
+    return {"ok": True, "why": "", "boxes": boxes[:40], "size": [W, H]}

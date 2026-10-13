@@ -38,6 +38,18 @@ window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
   if (open && risk.ai_waits) h += '<div class="kgp-risk-why" data-role="risk-ai-wait">AI 자동수정은 위 항목을 고른 뒤에 돌아요.</div>';
   return h + '</div>';
 };
+// Y11 — 사전검증 전 자동 판촉 지우기 결과 한 줄(폰·데스크톱 공용)
+window.kgpImgEditNote = window.kgpImgEditNote || function (rows) {
+  if (!rows || !rows.length) return '';
+  var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); };
+  var done = rows.filter(function (r) { return r.url; }), skip = rows.filter(function (r) { return !r.url; });
+  var cr = done.reduce(function (a, r) { return a + (+r.credits || 0); }, 0);
+  var h = '<div class="kgp-risk" data-role="img-edit-note">';
+  if (done.length) h += '<div>사진 ' + done.map(function (r) { return r.idx + 1; }).join('·') + '번에서 판촉 상자 ' +
+      done.reduce(function (a, r) { return a + (r.erased_n || 0); }, 0) + '개를 자동으로 지웠어요 — 「쿠팡 노출」의 「사진 편집」에서 확인·되돌리기 <span class="kgp-risk-sub">(' + cr.toFixed(3) + '크레딧)</span></div>';
+  skip.forEach(function (r) { h += '<div class="kgp-risk-why">사진 ' + (r.idx + 1) + '번 — ' + esc(r.skipped) + '</div>'; });
+  return h + '</div>';
+};
 window.kgpRiskAct = window.kgpRiskAct || function (itemId, btn) {
   var action = btn.getAttribute('data-action'), key = btn.getAttribute('data-key') || '';
   btn.disabled = true;

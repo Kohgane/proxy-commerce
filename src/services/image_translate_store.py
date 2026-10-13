@@ -162,6 +162,17 @@ def read_translated(item_id: str, idx: int, *, kind: str = "gallery") -> bytes:
 DENSE_TEXT_LINES = 8
 
 
+def erased_out(e: dict, text: str) -> str:
+    """Y11 — 편집본에서 지운 상자(원문·번역문)의 글자를 뺀 나머지. 편집본을 쓰는 장일 때만."""
+    ed = (e or {}).get("edit") if isinstance((e or {}).get("edit"), dict) else None
+    if not ed or not (e or {}).get("use", True) or str((e or {}).get("url") or "") != str(ed.get("url") or ""):
+        return text
+    for frag in ed.get("erased") or []:
+        if frag:
+            text = text.replace(str(frag), " ")
+    return text
+
+
 def promo_of(e: dict) -> list:
     """T3(오너 2026-09-30-H): 이 장의 OCR 글(원문·번역문)에 걸린 판촉 어휘 — 88VIP·쿠폰·기간 할인·TOP1 …
 
@@ -176,7 +187,8 @@ def promo_of(e: dict) -> list:
         return []
     out = []
     for t in (e.get("source_text"), e.get("target_text")):
-        for h in promo_hits(str(t or "")):
+        t = erased_out(e, str(t or ""))                 # Y11: 사진 편집으로 지운 상자의 글자는 이제 사진에 없다
+        for h in promo_hits(t):
             if h not in out:
                 out.append(h)
     return out
@@ -218,7 +230,17 @@ def text_geometry(result: dict) -> dict:
             bottom += a
     ratio = round(min(area / (W * H), 1.0), 3)
     band = "top" if area and top / area >= 0.6 else ("bottom" if area and bottom / area >= 0.6 else "")
-    return {"text_area": ratio, "band": band}
+    # Y11(오너 2026-10-14): 사진 편집(글자 상자 지우기·고치기)이 쓸 줄 상자 — 좌표는 공급사에 보낸 그림 기준(box_size)
+    boxes = []
+    for l in lines[:40]:
+        b = l["box"]
+        try:
+            boxes.append({"x": int(float(b.get("x") or 0)), "y": int(float(b.get("y") or 0)),
+                          "w": int(float(b.get("w") or 0)), "h": int(float(b.get("h") or 0)),
+                          "src": str(l.get("source") or "")[:120], "tgt": str(l.get("target") or "")[:120]})
+        except (TypeError, ValueError):
+            continue
+    return {"text_area": ratio, "band": band, "box_size": [int(W), int(H)], "boxes": boxes}
 
 
 def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "",

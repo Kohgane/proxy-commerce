@@ -84,5 +84,7 @@ def test_banner_geometry_is_recorded_from_now_on():
     b64 = base64.b64encode(buf.getvalue()).decode()
     lines = [{"box": {"x": 0, "y": 0, "w": 800, "h": 100}}, {"box": {"x": 0, "y": 60, "w": 800, "h": 80}}]
     g = store.text_geometry({"lines": lines, "image_b64": b64})
-    assert g == {"text_area": 0.225, "band": "top"}
+    assert {k: g[k] for k in ("text_area", "band")} == {"text_area": 0.225, "band": "top"}
+    # Y11: 사진 편집이 쓸 줄 상자·그림 크기도 함께 적는다
+    assert g["box_size"] == [800, 800] and [b["h"] for b in g["boxes"]] == [100, 80]
     assert store.text_geometry({"lines": [], "image_b64": b64}) == {}      # 못 재면 비움(추정 0)

@@ -2362,3 +2362,37 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   background: var(--surface); color: var(--text); font-size: var(--caption); }
 .kgp-risk-btn.is-main { background: var(--ink); border-color: var(--ink); color: var(--cream); }
 .kgp-risk-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* Y11 사진 편집(_image_edit.html) — 풀스크린 시트 · 상자 오버레이(분류별 테두리) · 바닥 시트 3버튼. 강조 버튼은 「적용」·「지우기」 하나씩. */
+.kie { position: fixed; inset: 0; z-index: 1080; background: color-mix(in srgb, var(--ink) 55%, transparent); display: flex; align-items: flex-end; }
+.kie[hidden] { display: none; }
+.kie-panel { background: var(--surface); width: 100%; max-height: 100dvh; overflow-y: auto; border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: var(--space-2) var(--space-3) var(--space-4); }
+.kie-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
+.kie-x { min-height: 44px; border: 0; background: none; color: var(--text-muted); }
+.kie-stage { position: relative; width: 100%; border-radius: var(--radius); overflow: hidden; background: var(--bg); }
+.kie-stage img { display: block; width: 100%; height: auto; }
+.kie-box { position: absolute; padding: 0; background: transparent; border: 2px solid var(--text-muted); border-radius: 4px; min-width: 18px; min-height: 18px; }
+.kie-box.is-promo { border-color: var(--orange); }
+.kie-box.is-brand { border-color: var(--teal); }
+.kie-box.is-risk { border-color: var(--danger); }
+.kie-box.do-erase { background: color-mix(in srgb, var(--orange) 28%, transparent); border-style: solid; }
+.kie-box.do-text { background: color-mix(in srgb, var(--teal) 22%, transparent); }
+.kie-box.is-done { background: transparent; border-style: dashed; }   /* 이미 편집본에 들어간 상자 — 결과가 보이게 테두리만 */
+.kie-subj { position: absolute; border: 2px dashed color-mix(in srgb, var(--ink) 45%, transparent); pointer-events: none; }
+.kie-legend, .kie-cost, .kie-note { font-size: var(--caption); color: var(--text-muted); margin: var(--space-1) 0; }
+.kie-k { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--text-muted); border-radius: 2px; margin: 0 2px 0 var(--space-1); vertical-align: -1px; }
+.kie-k.is-promo { border-color: var(--orange); } .kie-k.is-brand { border-color: var(--teal); } .kie-k.is-risk { border-color: var(--danger); }
+.kie-acts, .kie-sheet-acts { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: var(--space-2) 0; }
+.kie-btn { min-height: 44px; padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: var(--caption); }
+.kie-btn.is-main { background: var(--ink); border-color: var(--ink); color: var(--cream); }
+.kie-btn:disabled { opacity: .5; }
+.kie-btn:focus-visible, .kie-box:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.kie-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1090; background: var(--surface); border-top: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: var(--space-3); box-shadow: var(--shadow-lg); }
+.kie-sheet[hidden], .kie-text[hidden] { display: none; }
+.kie-sheet-title { font-size: var(--body); word-break: keep-all; overflow-wrap: anywhere; }
+.kie-text { display: grid; gap: var(--space-1); }
+.kie-label { font-size: var(--caption); color: var(--text-muted); }
+.kie-err { color: var(--danger); font-size: var(--caption); }
+.cpx-tile.is-out img { filter: grayscale(1) contrast(.85); }
+.cpx-out-why { font-size: var(--caption); color: var(--text-muted); margin: 2px 0; word-break: keep-all; overflow-wrap: anywhere; }
