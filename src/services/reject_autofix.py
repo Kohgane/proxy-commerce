@@ -45,7 +45,9 @@ def model() -> str:
 def enabled() -> bool:
     if str(os.getenv("REJECT_AUTOFIX_ENABLED", "1")).strip().lower() in ("0", "false", "off", "no"):
         return False
-    return bool(_api_key())
+    # Y8: Anthropic 우선 · OpenAI 폴백 — 둘 중 하나라도 있으면 켠다
+    from src.ai import llm as _llm
+    return bool(_api_key()) or _llm.openai_ready()
 
 
 def _api_key() -> str:
@@ -171,15 +173,51 @@ _SCHEMA = {
 
 
 def _call(fields: Dict[str, Any], reasons: List[dict], timeout: float) -> Tuple[Optional[dict], dict]:
-    """`(tool_input, ai_call)` — 실패면 tool_input None, ai_call.error에 원문."""
-    user = ("사유:\n" + "\n".join(f"- [{r['market']}] {r['line']}" for r in reasons)
+    """`(tool_input, ai_call)` — 실패면 tool_input None, ai_call.error에 원문.
+
+    Y8(오너 2026-10-13): Anthropic 먼저(도구 강제 JSON), 실패하면 OpenAI(JSON 모드)로 한 번 더. 둘 다 서버 월 예산
+    `AI_MONTHLY_BUDGET_USD`에 묶고 `[AI] provider= model= tokens= usd=` 한 줄을 남긴다(`src.ai.llm`).
+    """
+    from src.ai import llm as _llm
+    got, ai_call = (_call_anthropic(fields, reasons, timeout) if _api_key()
+                    else (None, {"provider": "anthropic", "model": model(), "error": "ANTHROPIC_API_KEY 없음"}))
+    if got is None and _llm.openai_ready():
+        user = _user_prompt(fields, reasons)
+        r = _llm.complete(user + "\n\n답은 JSON 객체 하나만 — 키: " + ", ".join(_SCHEMA["required"]),
+                          system=_SYSTEM.replace(f"답은 반드시 {_TOOL} 도구로만 한다.", "답은 JSON 객체 하나만."),
+                          max_tokens=1500, purpose="reject_autofix", timeout=timeout, json_mode=True, providers=["openai"])
+        j = _llm.parse_json(r.get("text") or "") if r.get("text") else None
+        fb = {"provider": "openai", "model": r.get("model") or "", "prompt_head": user[:600],
+              "response_head": str(r.get("text") or "")[:600], "error": "" if j else str(r.get("error") or "JSON 답 아님"),
+              "anthropic_error": ai_call.get("error") or ""}
+        if j:
+            fb["tokens"] = {"in": r.get("tokens_in"), "out": r.get("tokens_out")}
+            return j, fb
+        fb["error"] = "Anthropic: " + (ai_call.get("error") or "실패") + " · OpenAI: " + fb["error"]
+        return None, fb
+    return got, ai_call
+
+
+def _user_prompt(fields: Dict[str, Any], reasons: List[dict]) -> str:
+    return ("사유:\n" + "\n".join(f"- [{r['market']}] {r['line']}" for r in reasons)
             + "\n\n지금 값(JSON):\n" + json.dumps({k: v for k, v in fields.items() if k != "title_field"},
                                                 ensure_ascii=False, indent=1))
+
+
+def _call_anthropic(fields: Dict[str, Any], reasons: List[dict], timeout: float) -> Tuple[Optional[dict], dict]:
+    from decimal import Decimal
+    from src.ai import llm as _llm
+    from src.ai.budget import BudgetGuard
+    user = _user_prompt(fields, reasons)
     body = {"model": model(), "max_tokens": 1500, "system": _SYSTEM,
             "tools": [{"name": _TOOL, "description": "고친 칸을 돌려준다", "input_schema": _SCHEMA}],
             "tool_choice": {"type": "tool", "name": _TOOL},
             "messages": [{"role": "user", "content": user}]}
     ai_call = {"provider": "anthropic", "model": model(), "prompt_head": user[:600], "response_head": "", "error": ""}
+    guard = BudgetGuard()
+    if not guard.can_spend(estimated_cost_usd=_llm.cost_usd(model(), (len(_SYSTEM) + len(user)) // 2, 1500)):
+        ai_call["error"] = "서버 월 예산 상한(AI_MONTHLY_BUDGET_USD)에 도달해 부르지 않았어요"
+        return None, ai_call
     req = urllib.request.Request(API_URL, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), method="POST",
                                  headers={"x-api-key": _api_key(), "anthropic-version": API_VERSION,
                                           "content-type": "application/json"})
@@ -193,15 +231,25 @@ def _call(fields: Dict[str, Any], reasons: List[dict], timeout: float) -> Tuple[
         except Exception:
             pass
         ai_call["error"] = f"HTTP {exc.code} {txt[:300]}"
+        _llm._log("anthropic", model(), 0, 0, Decimal(0), "reject_autofix", ok=False, why=ai_call["error"])
         return None, ai_call
     except Exception as exc:                                      # noqa: BLE001 — 시간 초과·망 오류
         ai_call["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        _llm._log("anthropic", model(), 0, 0, Decimal(0), "reject_autofix", ok=False, why=ai_call["error"])
         return None, ai_call
     ai_call["response_head"] = raw[:600]
     try:
         d = json.loads(raw)
         usage = d.get("usage") or {}
         ai_call["tokens"] = {"in": usage.get("input_tokens"), "out": usage.get("output_tokens")}
+        _tin, _tout = int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
+        _usd = _llm.cost_usd(model(), _tin, _tout)
+        ai_call["usd"] = float(_usd)
+        try:
+            guard.record(cost_usd=_usd, provider="anthropic", tokens=_tin + _tout, note="reject_autofix")
+        except Exception:                                          # noqa: BLE001 — 기록 실패는 호출 실패가 아니다
+            pass
+        _llm._log("anthropic", model(), _tin, _tout, _usd, "reject_autofix")
         for blk in d.get("content") or []:
             if blk.get("type") == "tool_use" and blk.get("name") == _TOOL and isinstance(blk.get("input"), dict):
                 return blk["input"], ai_call
@@ -212,6 +260,19 @@ def _call(fields: Dict[str, Any], reasons: List[dict], timeout: float) -> Tuple[
 
 
 # ── 검증 ──────────────────────────────────────────────────────────────────────
+
+def _y8_gate(new: str, old: str) -> str:
+    """Y8 5 — 상표·IP(새로 들어온 것)는 위 `new_marks`(#889) 몫. 여기선 원문에 없는 고유명·영문 이름(브랜드) 추가를 막는다."""
+    from src.collectors.ko_polish import invented_names
+    try:
+        inv = invented_names(old, new)
+    except Exception:
+        inv = []
+    if inv:
+        return f"원문에 없는 고유명({', '.join(inv)})을 만들었어요"
+    added = [w for w in re.findall(r"[A-Za-z][A-Za-z0-9&'-]+", new) if w.lower() not in str(old or "").lower()]
+    return f"원문에 없는 영문 이름({', '.join(added[:3])})을 넣었어요" if added else ""
+
 
 def _changes(before: Dict[str, Any], got: Dict[str, Any]) -> Tuple[List[dict], List[str]]:
     """`(changes, problems)` — 바뀐 칸 목록과 우리 판정 위반."""
@@ -241,6 +302,8 @@ def _changes(before: Dict[str, Any], got: Dict[str, Any]) -> Tuple[List[dict], L
             problems.append(f"{label}에 한자·가나가 남았어요")
         elif new_marks(old, new):
             problems.append(f"{label}에 상표 이름이 새로 들어갔어요 「{new_marks(old, new)[0]}」")
+        elif _y8_gate(new, old):                                  # Y8 5: IP·상표 게이트 · 원문에 없는 영문 이름(브랜드) 추가 금지
+            problems.append(f"{label} — {_y8_gate(new, old)}")
         else:
             changes.append({"field": field, "label": label, "before": old, "after": new})
 
@@ -328,6 +391,8 @@ def apply(product_data: Dict[str, Any], rec: Optional[dict]) -> Dict[str, Any]:
     opts = None
     applied = 0
     for c in rec.get("changes") or []:
+        if c.get("undone"):                                       # Y8: 카드에서 그 칸만 되돌렸다
+            continue
         f = c.get("field")
         if f == "option":
             if opts is None:

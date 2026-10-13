@@ -2193,7 +2193,7 @@ async function runPrevalidate() {
         pcToast(kgpFriendlyError(d || {}, '사전검증 결과 받기 실패'), 'error');
         return;
       }
-      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '', d.auto_fix);
+      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '', d.auto_fix, d.ai_fix);
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
       else done();
     };
@@ -2279,7 +2279,28 @@ function renderAutoFix(a) {
     + (st === 'nochange' ? '반려 사유를 살펴봤지만 글자로 고칠 부분이 없었어요 — ' : '반려 사유 자동 수정 못 함 — ') + esc(a.error || '사유 미상') + '</div>';
 }
 
-function renderPrevalidateResults(results, pending, state, queueNote, autoFix) {
+// Y8(오너 2026-10-13): AI 자동수정 — 「AI가 고쳤어요 — 옵션값 2개 · 카테고리 1개」 + 항목마다 「되돌리기」(되돌리면 다시 보류)
+function renderAiFix(a) {
+  if (!a) return '';
+  const esc = kgpEscapeForHtml;
+  const rounds = a.rounds || [], s = a.summary || {};
+  const cost = a.calls ? `AI ${a.calls}회` + (a.usd ? ` · $${Number(a.usd).toFixed(4)}` : '') : '';
+  if (a.state === 'running') {
+    return `<div class="pc-status pc-status-info" data-role="pv-ai-fix" data-state="running">AI가 보류 사유를 고치는 중이에요${rounds.length ? ' — ' + rounds.length + '회전 끝' : ''}${cost ? ' · ' + cost : ''}</div>`;
+  }
+  let h = '';
+  if (s.line) {
+    h += `<div class="pc-status pc-status-info" data-role="pv-ai-fix" data-state="done"><b data-role="pv-ai-fix-line">${esc(s.line)}</b>${cost ? ' <span class="text-muted small">' + esc(cost) + '</span>' : ''}<ul class="small mb-0 mt-1 ps-3">`
+      + (s.items || []).map(it => `<li data-role="pv-ai-fix-item" data-key="${esc(it.key)}"><span class="pc-badge pc-badge-muted">${esc(it.kind_label)}</span> ${esc(it.label || '')}${it.why ? ' <span class="text-muted">(' + esc(it.why) + ')</span>' : ''} <button type="button" class="btn btn-sm btn-ghost py-0" data-role="pv-ai-revert" data-key="${esc(it.key)}">되돌리기</button></li>`).join('')
+      + '</ul></div>';
+  }
+  const fails = [];
+  rounds.forEach(r => (r.log || []).forEach(x => { if (x.indexOf('AI 실패') >= 0) fails.push(x); }));
+  if (fails.length) h += `<div class="small text-muted" data-role="pv-ai-fix-fail">AI 자동수정 — ${esc(fails.join(' · '))}</div>`;
+  return h;
+}
+
+function renderPrevalidateResults(results, pending, state, queueNote, autoFix, aiFix) {
   pending = pending || [];
   const running = state === 'running';
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
@@ -2287,7 +2308,9 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix) {
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
   let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
-  html += renderAutoFix(autoFix);
+  // 반려 사유 자동 수정(#886): 고친 글자는 아래 Y8 「AI가 고쳤어요」 한 줄에 합쳐 보인다 — 여기선 진행·실패만
+  if (!(autoFix && ['done', 'applied'].indexOf(autoFix.status) >= 0 && !autoFix.undone && aiFix && (aiFix.summary || {}).line)) html += renderAutoFix(autoFix);
+  html += renderAiFix(aiFix);
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).
@@ -2371,6 +2394,15 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix) {
       if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
       runPrevalidate();
     } catch (e) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
+  // Y8: AI 수정 되돌리기 — 원래 값으로, 다시 AI가 고치지 않게 막고 다시 검증(그 보류가 다시 보인다)
+  el.querySelectorAll('[data-role="pv-ai-revert"]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '되돌리는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/ai-fix/revert', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key: b.dataset.key})})).json();
+      if (!t.ok) { b.disabled = false; b.textContent = '되돌리기'; pcToast(t.error || '되돌리지 못했어요', 'warning'); return; }
+      window._kgpRefreshFromStore = true; runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = '되돌리기'; pcToast(kgpFriendlyError(e), 'error'); }
   }));
   // Y7-O: 선주문 보류 — 확인했다면 「선주문 그래도 등록」(발송 소요는 마켓 상한까지)
   el.querySelectorAll('[data-role="pv-leadtime-override"]').forEach(b => b.addEventListener('click', async () => {

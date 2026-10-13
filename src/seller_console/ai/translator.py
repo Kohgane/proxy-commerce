@@ -34,11 +34,11 @@ _CONTAM_RE = re.compile(
 #: 문체 지시를 **실제로 따를 수 있는** 프로바이더 (D3-4 ④).
 #:   사전형·통계형 MT(mymemory·papago·deepl·azure)는 「평서형 종결 금지」 같은 지시를 받을
 #:   자리가 없다. 거기에 지시를 보내 놓고 「지시했다」고 적으면 그건 **따른 척**이다.
-STYLE_CAPABLE = ("openai",)
+STYLE_CAPABLE = ("anthropic", "openai")
 
 #: R0(오너 2026-10-01): 기본 체인 순서 — Papago → DeepL → Azure → OpenAI → MyMemory(마지막).
 #:   `TRANSLATE_CHAIN_ORDER`(쉼표)로 바꾼다. MyMemory를 아예 빼려면 순서에서 지우거나 `TRANSLATE_DISABLE_MYMEMORY=1`.
-DEFAULT_CHAIN_ORDER = ("papago", "deepl", "azure", "openai", "mymemory")
+DEFAULT_CHAIN_ORDER = ("papago", "deepl", "azure", "anthropic", "openai", "mymemory")
 
 #: Papago 하루 글자 상한(우리 쪽 비용 가드). 넘으면 그날은 Papago를 건너뛰고 DeepL로 내려간다.
 #:   NCP Papago Translation은 **무료 제공량이 없는 종량제**(100만 자 단위 과금 — 검색 결과 기준, 공식 요금 페이지는
@@ -507,7 +507,7 @@ def reset_translate_stats() -> None:
 
 # v87-W7 회수: 실패 메시지에 **프로바이더명 명시** — 체인 도입 후 어느 단이 죽었는지 오너가 바로 알아야 한다.
 _PROVIDER_LABEL = {"mymemory": "MyMemory", "papago": "Papago", "deepl": "DeepL",
-                   "azure": "Azure", "openai": "OpenAI"}
+                   "azure": "Azure", "anthropic": "Anthropic", "openai": "OpenAI"}
 
 
 def provider_label(name: str) -> str:
@@ -558,8 +558,10 @@ DRAFT_FALLBACK_REASON = {
 }
 
 
-def draft_user_line(code: str, status=None) -> str:
+def draft_user_line(code: str, status=None, provider: str = "openai") -> str:
     why = DRAFT_FALLBACK_REASON.get(code or "", "AI 호출 실패")
+    if provider == "anthropic":                       # Y8: 같은 사유표, 공급자 이름만 Anthropic
+        why = why.replace("OpenAI", "Anthropic") if "OpenAI" in why else f"Anthropic {why}"
     return f"{why}" + (f"(HTTP {status})" if status else "")
 
 
@@ -715,9 +717,15 @@ class AITranslator:
             names = [n.strip().lower() for n in override.split(",") if n.strip()]
         else:
             names = list(DEFAULT_CHAIN_ORDER)
+        # Y8(오너 2026-10-13): AI 단은 Anthropic 우선 — 순서 env에 OpenAI만 적혀 있어도 그 바로 앞에 Anthropic을 둔다.
+        if "openai" in names and "anthropic" not in names:
+            names.insert(names.index("openai"), "anthropic")
+        from src.ai import llm as _llm
         chain = []
         for n in names:
             if n == "openai" and not env_present("OPENAI_API_KEY"):
+                continue
+            if n == "anthropic" and not _llm.anthropic_ready():
                 continue
             if n == "deepl" and not env_present("DEEPL_API_KEY"):
                 continue
@@ -728,7 +736,7 @@ class AITranslator:
                 continue
             if n == "mymemory" and os.getenv("TRANSLATE_DISABLE_MYMEMORY") == "1":
                 continue
-            if n in ("mymemory", "papago", "deepl", "azure", "openai") and n not in chain:
+            if n in ("mymemory", "papago", "deepl", "azure", "anthropic", "openai") and n not in chain:
                 chain.append(n)
         return chain
 
@@ -814,6 +822,8 @@ class AITranslator:
                     res = self._translate_deepl(title, description)
                 elif name == "azure":
                     res = self._translate_azure(title, description)
+                elif name == "anthropic":
+                    res = self._translate_anthropic(title, description, style=style)
                 elif name == "openai":
                     res = self._translate_openai(title, description, style=style)
                 else:
@@ -1056,6 +1066,25 @@ class AITranslator:
         draft_error = ""
         draft_code = ""
         ai_call = {"called": False, "model": "", "prompt": "", "status": None, "error": "", "response_head": ""}
+        # Y8(오너 2026-10-13): Anthropic 우선 — 실패하면 아래 OpenAI(예전 경로 그대로)로. 둘 다 실패해야 기본 문장.
+        anth_line, anth_code = "", ""
+        from src.ai import llm as _llm
+        if _llm.anthropic_ready() and not _dry_run():
+            prompt = self.draft_prompt(title, category, specs, brand, options=options, description=description)
+            ai_call.update(called=True, model=_llm.model_for("large"), prompt=prompt)
+            r = _llm.complete(prompt, size="large", max_tokens=1500, purpose="detail_draft",
+                              timeout=float(os.getenv("AI_DRAFT_TIMEOUT_SEC", "25") or 25), providers=["anthropic"])
+            if r.get("text"):
+                _record_translate(True, provider="anthropic-draft")
+                ai_call.update(status=200, response_head=r["text"][:500], usd=r.get("usd"))
+                return {"text": _kp.gate_lines(r["text"])[0], "provider": "anthropic", "is_draft": True,
+                        "draft_status": "anthropic", "ai_call": ai_call}
+            exc = r.get("first_exc")
+            anth_code = classify_translate_reason(exc)[0] if exc is not None else "unknown"
+            anth_line = draft_user_line(anth_code, getattr(exc, "status_code", None), provider="anthropic")
+            ai_call["error"] = "anthropic: " + str(r.get("error") or "")[:300]
+            draft_status, draft_error, draft_code = "anthropic_error", anth_line, anth_code
+            logger.warning("AI 상세 생성 Anthropic 실패(%s) — OpenAI로", r.get("error"))
         if env_present("OPENAI_API_KEY") and not _dry_run():
             try:
                 _res = self._describe_openai(title, category, specs, keywords, brand,
@@ -1071,12 +1100,14 @@ class AITranslator:
                 draft_code = classify_translate_reason(exc)[0]
                 # Y7-K(오너 2026-10-10): 화면엔 한국어 사유만 — 영문 원문은 관리자 로그·`ai_call`(관리 기록)에만
                 draft_error = draft_user_line(draft_code, raw_error_meta(exc)[0])
-                ai_call["error"] = full
+                if anth_line:                                     # Y8: 두 공급자 사유를 한 줄에(Anthropic 먼저)
+                    draft_error = f"{anth_line} · {draft_error}"
+                ai_call["error"] = ((ai_call.get("error") or "") + " | " if anth_line else "") + full
                 ai_call["code"] = draft_code
                 logger.warning("AI 상세 생성 실패(%s) — 구조화 폴백(키 있음, 호출 실패): %s", full, exc)
 
         return {"text": _structured_draft(title, category, keywords, specs, options, brand, description),
-                "provider": "stub", "is_draft": True, "draft_code": draft_code,
+                "provider": "stub", "is_draft": True, "draft_code": draft_code, "draft_code_anthropic": anth_code,
                 "draft_status": draft_status, "draft_error": draft_error, "ai_call": ai_call}
 
     @staticmethod
@@ -1158,6 +1189,55 @@ class AITranslator:
     # 내부 구현
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _translate_prompts(title: str, description: str, style: str = "") -> tuple:
+        """번역 + 카피 프롬프트 `(system, prompt)` — OpenAI·Anthropic 단이 같은 글을 쓴다(Y8)."""
+        # v60 STEP3: 이커머스 특화 프롬프트(직역투·음차 박멸). 브랜드/모델/규격 원문 보존, 자연 판매 문체.
+        system = (
+            "당신은 해외 상품을 한국 오픈마켓(쿠팡·스마트스토어)에 등록하는 전문 상품 번역가입니다. "
+            "다음 규칙을 반드시 지키세요.\n"
+            "1) 브랜드명·모델명·규격(치수·용량·재질·호환 기종 예: MagSafe, iPhone 15)은 **원문 그대로 보존**"
+            " — 억지 음차(예: 안도빌)·직역 금지.\n"
+            "2) 마케팅 수식어(ultra-thin, premium 등)는 **자연스러운 한국어 판매 문체**로(예: 초슬림, 프리미엄).\n"
+            "3) 단위 변환 금지(inch·mm·g 원문 단위 유지). 없는 스펙 창작 금지.\n"
+            "4) 상품명은 한국 관례 **브랜드 + 핵심 스펙 + 용도** 순, 자연스러운 명사구(어색한 조사·번역기 말투 금지).\n"
+            "5) 설명은 원문 불릿(·) 구조를 유지하며 한국어로."
+        )
+        if style:
+            # D3-4 ④ — 호출부가 준 문체 지시(예: 상품 이미지 광고 카피체). 규칙 뒤에 붙인다.
+            system += "\n6) 문체: " + str(style)
+        prompt = (
+            "아래 상품을 위 규칙대로 한국어로 번역하고, 마켓용 판매 카피도 만드세요.\n"
+            f"[제목]\n{title}\n\n[설명]\n{description}\n\n"
+            "JSON으로만 답변:\n"
+            '{"title_ko":"브랜드+핵심스펙+용도 자연문","description_ko":"불릿 유지 한국어",'
+            '"copy_coupang":"...","copy_smartstore":"...","copy_11st":"..."}'
+        )
+        return system, prompt
+
+    def _translate_anthropic(self, title: str, description: str, *, style: str = "") -> dict:
+        """Y8(오너 2026-10-13): 번역 체인의 AI 단 — Anthropic(ANTHROPIC_MODEL_SMALL) 먼저, 실패하면 체인이 OpenAI로 내려간다."""
+        from src.ai import llm as _llm
+        system, prompt = self._translate_prompts(title, description, style)
+        _in_len = len(title) + len(description)
+        r = _llm.complete(prompt, system=system + "\n답은 JSON 객체 하나만(설명·코드 펜스 없이).", size="small",
+                          max_tokens=max(900, min(3000, 1000 + _in_len)), purpose="translate",
+                          timeout=self._clamp_timeout(30 if _in_len > 400 else 15), providers=["anthropic"])
+        result = _llm.parse_json(r.get("text") or "") if r.get("text") else None
+        if not result or not str(result.get("title_ko") or result.get("description_ko") or "").strip():
+            why = r.get("error") or "응답이 JSON이 아님"
+            exc = r.get("first_exc")
+            reason = record_translate_failure(exc, "anthropic") if exc is not None else why
+            logger.warning("Anthropic 번역 실패(%s)", reason)
+            return {"title_ko": title, "description_ko": description, "provider": "anthropic-fallback", "error": reason,
+                    "copy_coupang": f"[anthropic-fallback] {title}", "copy_smartstore": f"[anthropic-fallback] {title}",
+                    "copy_11st": f"[anthropic-fallback] {title}"}
+        result.setdefault("title_ko", "")
+        result.setdefault("description_ko", "")
+        result["provider"] = "anthropic"
+        _record_translate(True, provider="anthropic")
+        return result
+
     def _translate_openai(self, title: str, description: str, *, style: str = "") -> dict:
         """OpenAI GPT-4o-mini로 번역 + 카피 생성."""
         try:
@@ -1167,27 +1247,7 @@ class AITranslator:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
-            # v60 STEP3: 이커머스 특화 프롬프트(직역투·음차 박멸). 브랜드/모델/규격 원문 보존, 자연 판매 문체.
-            system = (
-                "당신은 해외 상품을 한국 오픈마켓(쿠팡·스마트스토어)에 등록하는 전문 상품 번역가입니다. "
-                "다음 규칙을 반드시 지키세요.\n"
-                "1) 브랜드명·모델명·규격(치수·용량·재질·호환 기종 예: MagSafe, iPhone 15)은 **원문 그대로 보존**"
-                " — 억지 음차(예: 안도빌)·직역 금지.\n"
-                "2) 마케팅 수식어(ultra-thin, premium 등)는 **자연스러운 한국어 판매 문체**로(예: 초슬림, 프리미엄).\n"
-                "3) 단위 변환 금지(inch·mm·g 원문 단위 유지). 없는 스펙 창작 금지.\n"
-                "4) 상품명은 한국 관례 **브랜드 + 핵심 스펙 + 용도** 순, 자연스러운 명사구(어색한 조사·번역기 말투 금지).\n"
-                "5) 설명은 원문 불릿(·) 구조를 유지하며 한국어로."
-            )
-            if style:
-                # D3-4 ④ — 호출부가 준 문체 지시(예: 상품 이미지 광고 카피체). 규칙 뒤에 붙인다.
-                system += "\n6) 문체: " + str(style)
-            prompt = (
-                "아래 상품을 위 규칙대로 한국어로 번역하고, 마켓용 판매 카피도 만드세요.\n"
-                f"[제목]\n{title}\n\n[설명]\n{description}\n\n"
-                "JSON으로만 답변:\n"
-                '{"title_ko":"브랜드+핵심스펙+용도 자연문","description_ko":"불릿 유지 한국어",'
-                '"copy_coupang":"...","copy_smartstore":"...","copy_11st":"..."}'
-            )
+            system, prompt = self._translate_prompts(title, description, style)
             # v87-W6 item 2 근원: max_tokens=900 고정이 **긴 상세(일본어 721자 등) + 제목 + 마켓 카피 3종**을
             #   한 JSON으로 뽑을 때 출력이 잘려 json.loads 실패 → openai-fallback(원문 유지)로 '조용한 실패 다발'
             #   이었다. 입력 길이에 비례해 상한을 잡고(캡 3000 — AI 예산 존중), 타임아웃도 길이 대응해 늘린다.

@@ -460,7 +460,7 @@
   //   등록 버튼: 통과 또는 「그래도 등록」으로 풀리는 보류가 하나라도 있으면 켠다(전송 실패가 전체를 잠그지 않는다).
   var OVERRIDES = {ship_ratio: ['ship-ratio-override', '그래도 등록'], voltage: ['voltage-override', '전압·플러그 그래도 등록'],
                    rep_image: ['rep-image-override', '대표 사진 그래도 등록']};
-  var pvRows = {}, pvOrder = [], pvAuto = null, pvAutoDetail = null, pvAutoFix = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
+  var pvRows = {}, pvOrder = [], pvAuto = null, pvAutoDetail = null, pvAutoFix = null, pvAiFix = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
   // Y7-C: 스마트스토어 카테고리 — 정해졌으면 「카테고리 자동: … (바꾸기)」 한 줄, 못 정했으면 후보 칩(1탭 저장 → 그 마켓만 다시 검증).
   function catLine(r) {
     var c = r.category || {};
@@ -539,6 +539,28 @@
     return '<div class="m5-note" data-role="m5-auto-fix" data-state="' + esc(st) + '">' +
       (st === 'nochange' ? '반려 사유를 살펴봤지만 글자로 고칠 부분이 없었어요 — ' : '반려 사유 자동 수정 못 함 — ') + esc(a.error || '사유 미상') + '</div>';
   }
+  // Y8(오너 2026-10-13): AI 자동수정 — 「AI가 고쳤어요 — 옵션값 2개 · 카테고리 1개」 + 항목마다 「되돌리기」(되돌리면 다시 보류)
+  function aiFixHtml(a) {
+    if (!a) return '';
+    var rounds = a.rounds || [], s = a.summary || {}, cost = a.calls ? ' · AI ' + a.calls + '회' + (a.usd ? ' · $' + Number(a.usd).toFixed(4) : '') : '';
+    if (a.state === 'running') {
+      return '<div class="m5-note" data-role="m5-ai-fix" data-state="running">AI가 보류 사유를 고치는 중이에요' +
+        (rounds.length ? ' — ' + rounds.length + '회전 끝' : '') + cost + '</div>';
+    }
+    var h = '';
+    if (s.line) {
+      h += '<div class="m5-res is-ok" data-role="m5-ai-fix" data-state="done"><b data-role="m5-ai-fix-line">' + esc(s.line) + '</b>' +
+        '<span class="m5-note">' + esc(cost.replace(/^ · /, '')) + '</span><ul>' + (s.items || []).map(function (it) {
+          return '<li data-role="m5-ai-fix-item" data-key="' + esc(it.key) + '"><span class="pc-badge">' + esc(it.kind_label) + '</span> ' + esc(it.label || '') +
+            (it.why ? ' <span class="m5-note">(' + esc(it.why) + ')</span>' : '') +
+            ' <button type="button" class="m5-fix" data-role="m5-ai-revert" data-key="' + esc(it.key) + '">되돌리기</button></li>';
+        }).join('') + '</ul></div>';
+    }
+    var fails = [];
+    rounds.forEach(function (r) { (r.log || []).forEach(function (x) { if (x.indexOf('AI 실패') >= 0) fails.push(x); }); });
+    if (fails.length) h += '<div class="m5-note" data-role="m5-ai-fix-fail">AI 자동수정 — ' + esc(fails.join(' · ')) + '</div>';
+    return h;
+  }
   function pvRender() {
     var h = '';
     if (pvAuto) {
@@ -553,8 +575,9 @@
          : pvAutoDetail.status === 'done' ? '상세 본문이 비어 상세 초안을 자동으로 만들고 다시 확인했어요.'
          : '상세 초안 자동 생성 실패 — ' + esc(pvAutoDetail.error || '사유 미상') + '. 「상세페이지 꾸미기」에서 채워 주세요.') + '</div>';
     }
-    // 반려 사유 자동 수정(오너 2026-10-13): 글자로 풀 보류(표시광고 문구·상품명 원문·지난 반려 사유)를 Claude로 고치고 다시 확인 — 무엇을 → 무엇으로 + 되돌리기
-    if (pvAutoFix) h += autoFixHtml(pvAutoFix);
+    // 반려 사유 자동 수정(#886): 고친 글자는 아래 Y8 「AI가 고쳤어요」 한 줄에 합쳐 보인다 — 여기선 진행·실패만
+    if (pvAutoFix && !(['done', 'applied'].indexOf(pvAutoFix.status) >= 0 && !pvAutoFix.undone && pvAiFix && (pvAiFix.summary || {}).line)) h += autoFixHtml(pvAutoFix);
+    h += aiFixHtml(pvAiFix);
     pvOrder.forEach(function (m) { h += pvRowHtml(m); });
     if (pvState === 'running') h += pvQueue
       // Z10: 줄 서는 중(프로세스당 사전검증 1개 — 메모리 보호)
@@ -582,7 +605,7 @@
       if (jobNo !== pvJob) return;
       if (!d || !d.ok) { pvState = 'done'; pvPending = []; pvRender(); checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
       (d.results || []).forEach(function (r) { pvRows[r.market] = r; });
-      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvAutoFix = d.auto_fix || pvAutoFix; pvState = d.state;
+      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvAutoFix = d.auto_fix || pvAutoFix; pvAiFix = d.ai_fix || pvAiFix; pvState = d.state;
       pvQueue = d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '';
       pvRender();
       if (d.state === 'running') pvTimer = setTimeout(function () { pvPoll(jobNo, url); }, 3000);
@@ -592,7 +615,7 @@
   function runCheck(markets, keep) {
     if (pvTimer) clearTimeout(pvTimer);
     var jobNo = ++pvJob;
-    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; pvAutoDetail = null; pvAutoFix = null; }
+    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; pvAutoDetail = null; pvAutoFix = null; pvAiFix = null; }
     markets.forEach(function (m) { delete pvRows[m]; if (pvOrder.indexOf(m) < 0) pvOrder.push(m); });
     pvPending = markets.slice(); pvState = 'running';
     checkBtn.disabled = true; pvRender();
@@ -622,6 +645,15 @@
       post('/seller/collect/' + encodeURIComponent(itemId) + '/reject-autofix/undo', {}).then(function (d) {
         if (!d.ok) { b.disabled = false; hint(d.error || '되돌리지 못했어요'); return; }
         resetGo(); runCheck(pvOrder.slice(), false);
+      });
+      return;
+    }
+    // Y8: AI 수정 「되돌리기」 — 그 항목을 원래 값으로, 다시 AI가 고치지 않게 막고 전체를 다시 검증(그 보류가 다시 보인다)
+    if (role === 'm5-ai-revert') {
+      b.disabled = true; b.textContent = '되돌리는 중…';
+      post('/seller/collect/' + encodeURIComponent(itemId) + '/ai-fix/revert', {key: b.getAttribute('data-key')}).then(function (t) {
+        if (!t.ok) { b.disabled = false; b.textContent = '되돌리기'; b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '되돌리지 못했어요') + '</div>'); return; }
+        refreshFromStore = true; checkBtn.click();
       });
       return;
     }

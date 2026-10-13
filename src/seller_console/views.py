@@ -2901,6 +2901,9 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 if isinstance(_uex.get("reject_autofix"), dict):
                     from src.services import reject_autofix as _raf
                     product_data.update(_raf.apply(product_data, _uex["reject_autofix"]))
+                # Y8: 사전검증 AI 수정 — 등록도 사전검증이 본 값 그대로(화면이 새로고침 전 값을 보내도)
+                from src.services import ai_fix as _aif
+                _aif.overlay(product_data, _uex)
     except Exception as exc:
         logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
 
@@ -4335,6 +4338,11 @@ def _pv_prepare(data: dict, product_data: dict):
                        "voltage_split", "voltage_override", "naver_category_id", "lead_time_override", "option_leadtime"):
                 if _sx.get(_k):
                     product_data[_k] = _sx[_k]
+            # Y8: 저장된 AI 수정(옵션 값·카테고리·상품명·원산지·쿠팡 필수옵션) — 화면이 들고 있는 값보다 저장본이 정본
+            from src.services import ai_fix as _aif
+            _aif.overlay(product_data, _sx)
+            if "detail" in _aif.blocked(_sx):
+                product_data["ai_detail_blocked"] = True                 # 상세 초안 「되돌리기」 — 다시 만들지 않는다
             # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본
             from src.uploaders.detail_ui_junk import desc_is_junk as _dj
             if _dj(_sx):
@@ -4448,7 +4456,7 @@ def _pv_needs_auto_text(product_data: dict, markets: list) -> bool:
     예전엔 「본문이 비면」(사진도 글도 없으면)만 초안을 만들었다 — 이제 본문엔 갤러리 사진이 늘 실리므로 그 조건은
     거의 안 걸린다. 글이 없으면 사진만 나간다. 그래서 「글이 없으면」으로 본다.
     """
-    if not any(str(m).split(":")[0] == "smartstore" for m in (markets or [])):
+    if not any(str(m).split(":")[0] == "smartstore" for m in (markets or [])) or product_data.get("ai_detail_blocked"):
         return False
     from src.uploaders import naver_detail as _nd
     from .upload_dispatcher import render_detail_blocks_html
@@ -4467,7 +4475,7 @@ def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = Fa
     Y7-J: `force` — 셀러 글이 없거나 초안이 옛 형식이면 마켓 검증 **전에** 만든다(`_pv_needs_auto_text`).
     저장: `v`(형식 버전) · `draft_error` · `ai_call`(실제 호출 — 모델·프롬프트·응답 앞부분·오류).
     """
-    if not data.get("item_id"):
+    if not data.get("item_id") or product_data.get("ai_detail_blocked"):
         return None, product_data
     if not (force or any(r.hold and "detail_blank" in (getattr(r, "fixes", None) or []) for r in results)):
         return None, product_data
@@ -4497,6 +4505,7 @@ def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = Fa
     da = {"text": text, "images": imgs, "provider": (res or {}).get("provider") or "stub",
           "draft_status": (res or {}).get("draft_status") or "", "draft_error": (res or {}).get("draft_error") or "",
           "draft_code": (res or {}).get("draft_code") or "",
+          "draft_code_anthropic": (res or {}).get("draft_code_anthropic") or "",
           "ai_call": (res or {}).get("ai_call") or {}, "v": DRAFT_VERSION,
           "at": datetime.now(timezone.utc).isoformat()}
     ex["detail_auto"] = da
@@ -4602,6 +4611,71 @@ def collect_reject_autofix_undo(item_id):
         _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
         logger.info("[반려 자동 수정] 되돌림 item=%s 칸=%d", str(item_id)[:8], len(rec.get("changes") or []))
     return jsonify({"ok": True, "message": "자동 수정을 되돌렸어요 — 원래 글자로 다시 사전검증해 주세요."})
+
+
+#: Y8 — AI 자동수정 구간은 잡 마감(60초)에 이만큼 더 준다(AI 호출 + 그 마켓 재검증). 폴링도 같은 값을 더해 기다린다.
+_PV_AI_EXTRA_SEC = float(os.getenv("PREVALIDATE_AI_EXTRA_SEC", "60") or 60)
+
+
+def _pv_ai_fix(job_id: str, product_data: dict, data: dict, results: list, dispatcher, rc, prior_calls: int = 0) -> tuple:
+    """Y8(오너 2026-10-13) — 보류 사유 AI 자동수정: 고칠 수 있는 보류 → AI(Anthropic 우선) → 적용 → 그 마켓만 다시 사전검증.
+    최대 2회전 · 상품당 6회. 잡 결과 `ai_fix`: {state, rounds:[{round, calls, usd, applied, log, markets}], calls, usd, summary}.
+    반환 `(results, product_data)`."""
+    import time as _time
+    from src.services import ai_fix as _af
+    from src.ai import llm as _llm
+    iid = str(data.get("item_id") or "")
+    if not iid:
+        return results, product_data
+    def _load():
+        try:
+            return json.loads((_get_owned_item(iid) or {}).get("extra_json") or "{}") or {}
+        except Exception:
+            return {}
+    ex = _load()
+    enabled = os.getenv("PREVALIDATE_AI_FIX", "1") != "0" and _llm.any_ready()
+    if not enabled or not _af.plan(product_data, ex, results):
+        sm = _af.summary(ex)
+        if sm:
+            _pv_update(job_id, ai_fix={"state": "done", "rounds": [], "calls": 0, "usd": 0.0, "summary": sm})
+        return results, product_data
+    t0 = _time.monotonic()
+    _pv_update(job_id, ai_fix={"state": "running", "rounds": [], "calls": 0, "usd": 0.0}, ai_extend=_PV_AI_EXTRA_SEC)
+    # 같은 잡에서 #886 반려 사유 자동 수정이 이미 한 번 불렀으면 상품당 6회에 센다
+    rounds, calls, usd = [], int(prior_calls or 0), 0.0
+    from . import collect_history_store as _chs
+    for rnd in range(1, _af.MAX_ROUNDS + 1):
+        if rnd > 1 and not _af.plan(product_data, ex, results):        # 다시 잰 결과에 고칠 게 남지 않았다
+            break
+        out = _af.run_round(product_data, ex, results, calls_left=_af.MAX_CALLS - calls)
+        calls += out["calls"]
+        usd += out["usd"]
+        try:
+            _chs.update(iid, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
+        except Exception as exc:                                      # noqa: BLE001 — 저장 못 하면 등록이 그 값을 못 본다
+            logger.warning("[AI 자동수정] 저장 실패 item=%s: %s", iid[:8], exc)
+            out["log"].append("저장 실패 — 적용 취소")
+            out["applied"], out["markets"] = [], []
+        row = {"round": rnd, "calls": out["calls"], "usd": round(out["usd"], 5), "applied": out["applied"],
+               "log": out["log"], "markets": out["markets"], "providers": out["providers"]}
+        rounds.append(row)
+        logger.info("[AI 자동수정] job=%s item=%s round=%d calls=%d usd=%.5f applied=%s log=%s", job_id[:8], iid[:8], rnd,
+                    out["calls"], out["usd"], out["applied"], out["log"])
+        _pv_update(job_id, ai_fix={"state": "running", "rounds": rounds, "calls": calls, "usd": round(usd, 5)})
+        if not out["applied"]:
+            break
+        held = [m for m in out["markets"] if any(r.market == m and not r.ok for r in results)]
+        if held:
+            new = _pv_run_markets(job_id, product_data, held, dispatcher, rc, _time.time() + _PV_MARKET_TIMEOUT_SEC + 1)
+            got = {r.market for r in new}
+            results = [r for r in results if r.market not in got] + new
+            row["after"] = {r.market: ("ok" if r.ok else (r.error_code or "hold")) for r in new}
+        if calls >= _af.MAX_CALLS:
+            break
+    _pv_update(job_id, ai_fix={"state": "done", "rounds": rounds, "calls": calls, "usd": round(usd, 5),
+                               "summary": _af.summary(ex)},
+               stages={"ai_fix": int((_time.monotonic() - t0) * 1000)})
+    return results, product_data
 
 
 def _pv_transport_fail(market: str, kind: str, why: str) -> dict:
@@ -4894,6 +4968,10 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                     if _af_markets and _time.time() < deadline_ts - 1:
                         results = [r for r in results if r.market not in _af_markets] + \
                             _pv_run_markets(job_id, product_data, _af_markets, dispatcher, rc, deadline_ts)
+                # Y8: 남은 보류 중 AI가 고칠 수 있는 것 → AI → 적용 → 그 마켓만 다시(최대 2회전·6회)
+                with _rss.span("ai_fix"):
+                    results, product_data = _pv_ai_fix(job_id, product_data, data, results, dispatcher, rc,
+                                                       prior_calls=int(bool(_af and _af.get("status") in ("done", "nochange", "failed"))))
                 _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
         except _rss.MemoryCapExceeded as exc:
             # Z10: 메모리 상한 — **이 잡만** 멈춘다(워커·다른 요청은 산다). 카드에 원문과 다음 행동.
@@ -4932,7 +5010,7 @@ def collect_prevalidate_job(job_id: str):
     markets = list(cur.get("markets") or [])
     # Z10: 줄 서 있는 잡은 마감을 세지 않는다(시작하면 started_ts를 다시 적는다) — 줄 대기 상한은 잡 쪽(_PV_QUEUE_WAIT_SEC)
     if cur.get("state") == "running" and not cur.get("queued") and \
-            _time.time() > float(cur.get("started_ts") or 0) + _PV_JOB_DEADLINE_SEC + 5:
+            _time.time() > float(cur.get("started_ts") or 0) + _PV_JOB_DEADLINE_SEC + float(cur.get("ai_extend") or 0) + 5:
         miss = {m: _pv_transport_fail(m, "timeout", f"검증 못 함 — {int(_PV_JOB_DEADLINE_SEC)}초 안에 끝나지 않았어요")
                 for m in markets if m not in (cur.get("results") or {})}
         cur = _pv_update(str(job_id), results=miss, state="done")
@@ -4942,9 +5020,34 @@ def collect_prevalidate_job(job_id: str):
                     "pending": [m for m in markets if m not in res],
                     "auto_translate": cur.get("auto_translate"), "auto_detail": cur.get("auto_detail"),
                     "auto_fix": cur.get("auto_fix"),                                          # 반려 사유 자동 수정
+                    "ai_fix": cur.get("ai_fix"),                                                      # Y8
                     "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중
                     "rss": cur.get("rss") or {},
                     "error": cur.get("error") or ""})
+
+
+@bp.post("/collect/<item_id>/ai-fix/revert")
+def collect_ai_fix_revert(item_id: str):
+    """Y8 — 카드 「되돌리기」: AI가 고친 그 항목을 원래 값으로 돌리고 다시 AI가 고치지 않게 막는다(→ 다음 사전검증에서 다시 보류)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    key = str((request.get_json(force=True, silent=True) or {}).get("key") or "")[:200]
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from src.services import ai_fix as _af
+    if not _af.revert(ex, key):
+        return jsonify({"ok": False, "error": "되돌릴 AI 수정을 찾지 못했어요 — 이미 되돌렸을 수 있어요."}), 404
+    from . import collect_history_store as _chs
+    ok = _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
+    if ok is False:
+        return jsonify({"ok": False, "error": "저장하지 못했어요 — 다시 눌러 주세요."}), 502
+    logger.info("[AI 자동수정] 되돌리기 item=%s key=%s", item_id[:8], key[:60])
+    return jsonify({"ok": True, "key": key, "summary": _af.summary(ex)})
 
 
 @bp.post("/collect/localize")

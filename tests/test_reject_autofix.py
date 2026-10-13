@@ -297,7 +297,7 @@ def test_cards_render_auto_fix_and_undo():
     pv = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert "pvAutoFix = d.auto_fix || pvAutoFix" in m5 and 'data-role="m5-autofix-undo"' in m5
     assert "/reject-autofix/undo" in m5 and "/reject-autofix/undo" in pv
-    assert "renderAutoFix(autoFix)" in pv and "d.auto_fix)" in pv and 'data-role="pv-autofix-undo"' in pv
+    assert "renderAutoFix(autoFix)" in pv and "d.auto_fix, d.ai_fix)" in pv and 'data-role="pv-autofix-undo"' in pv
 
 
 def test_outbound_images_real_function_applies_saved_fix(monkeypatch):

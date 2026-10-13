@@ -800,8 +800,11 @@ def detail_auto_note(pd: Dict[str, Any]) -> Dict[str, str]:
     if not a or _nd._text_of(pd) or render_detail_blocks_html(pd.get("detail_blocks"), "smartstore"):
         return {}
     iid = str(pd.get("item_id") or "")
-    if a.get("provider") == "openai":
+    if a.get("provider") in ("openai", "anthropic"):
         line = "상세 자동 생성(AI) — 확인(바꾸기)"
+    elif a.get("draft_status") == "anthropic_error":
+        # Y8: Anthropic만 있고 실패 — 그 사유(저장된 한 줄)
+        line = f"AI 초안 대신 기본 문장을 썼어요 — {a.get('draft_error') or 'Anthropic 호출 실패'} — 확인(바꾸기)"
     elif a.get("draft_status") == "openai_error":
         # Y7-K(오너 2026-10-10): 왜 AI 글이 아닌지 사람 말로 — 영문 원문은 관리자 로그에만
         from src.seller_console.ai.translator import DRAFT_FALLBACK_REASON
@@ -810,6 +813,9 @@ def detail_auto_note(pd: Dict[str, Any]) -> Dict[str, str]:
             raw = (str(a.get("draft_error") or "") + " " + str((a.get("ai_call") or {}).get("response_head") or "")).lower()
             code = "quota" if ("insufficient_quota" in raw or "credit_balance_exhausted" in raw or "no credits" in raw) else ""
         why = DRAFT_FALLBACK_REASON.get(code, "AI 호출 실패")
+        if a.get("draft_code_anthropic"):                 # Y8: Anthropic이 먼저 실패한 뒤 OpenAI도 실패 — 둘 다
+            from src.seller_console.ai.translator import draft_user_line
+            why = draft_user_line(a["draft_code_anthropic"], provider="anthropic") + " · " + why
         line = f"AI 초안 대신 기본 문장을 썼어요 — {why} — 확인(바꾸기)"
     else:
         line = "상세 자동 생성(확인된 정보로 정리) — 확인(바꾸기)"
