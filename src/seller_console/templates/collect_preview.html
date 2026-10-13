@@ -2193,7 +2193,7 @@ async function runPrevalidate() {
         pcToast(kgpFriendlyError(d || {}, '사전검증 결과 받기 실패'), 'error');
         return;
       }
-      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '');
+      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '', d.auto_fix);
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
       else done();
     };
@@ -2261,7 +2261,36 @@ function renderCautions(lines) {
     + esc(l) + '</div>').join('');
 }
 
-function renderPrevalidateResults(results, pending, state, queueNote) {
+// AF1(오너 2026-10-13 「사전검증에 반려사유 자동수정 붙여라」): 글자로 풀 반려 사유(표시광고 문구·남은 원문·옵션 값 미해석·영문 제목)를
+//   Claude가 고친 결과 — 무엇을 무엇으로 바꿨는지 그대로 · 규칙에 걸려 버린 조각도 · 되돌리기(그 상품은 끔) / 다시 켜기.
+function renderAutoFix(af) {
+  if (!af || !af.status) return '';
+  const esc = kgpEscapeForHtml;
+  const li = (xs) => (xs || []).map(x => '<li>' + esc(x) + '</li>').join('');
+  const rej = (af.rejected || []).length
+    ? '<div class="small text-muted" data-role="pv-autofix-rejected">규칙에 걸려 쓰지 않은 답: ' + (af.rejected || []).map(esc).join(' · ') + '</div>' : '';
+  const why = (af.reasons || []).length ? ' — 사유: ' + (af.reasons || []).map(esc).join(' · ') : '';
+  if (af.status === 'running') {
+    return '<div class="pc-status pc-status-info small mb-2" data-role="pv-autofix-running">반려 사유를 고치는 중이에요(Claude)…</div>';
+  }
+  if (af.status === 'done') {
+    return '<div class="pc-status pc-status-success small mb-2" data-role="pv-autofix-done">'
+      + '<div><b>반려 사유 자동 수정 ' + (af.n || 0) + '건</b>' + why + ' — 고친 뒤 같은 판정으로 다시 쟀어요</div>'
+      + '<ul class="mb-1 ps-3" data-role="pv-autofix-lines">' + li(af.lines) + '</ul>' + rej
+      + '<button type="button" class="btn btn-sm btn-ghost mt-1" data-role="pv-autofix-undo">되돌리기</button></div>';
+  }
+  if (af.status === 'off') {
+    return '<div class="pc-status pc-status-warning small mb-2" data-role="pv-autofix-off">이 상품은 자동 수정을 꺼 뒀어요' + why
+      + '<div><button type="button" class="btn btn-sm btn-ghost mt-1" data-role="pv-autofix-on">자동 수정 켜고 다시 검증</button></div></div>';
+  }
+  const head = af.status === 'unavailable' ? '자동 수정을 부르지 못했어요'
+    : (af.status === 'rejected' ? '자동 수정 답이 규칙에 걸려 쓰지 않았어요'
+    : (af.status === 'skipped' ? '같은 내용으로 방금 실패해 다시 부르지 않았어요(6시간 — 내용을 바꾸면 다시 시도)' : '자동 수정 실패'));
+  return '<div class="pc-status pc-status-warning small mb-2" data-role="pv-autofix-failed"><div><b>' + head + '</b>' + why + '</div>'
+    + (af.error ? '<div data-role="pv-autofix-error">' + esc(af.error) + '</div>' : '') + rej + '</div>';
+}
+
+function renderPrevalidateResults(results, pending, state, queueNote, autoFix) {
   pending = pending || [];
   const running = state === 'running';
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
@@ -2269,6 +2298,7 @@ function renderPrevalidateResults(results, pending, state, queueNote) {
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
   let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
+  html += renderAutoFix(autoFix);
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).
@@ -2343,6 +2373,18 @@ function renderPrevalidateResults(results, pending, state, queueNote) {
       if (!t.ok && !t.saved) { b.disabled = false; b.textContent = '번역하고 다시 검증'; pcToast('옮기지 못했어요 — ' + (t.reason || t.error || ''), 'warning'); return; }
       window._kgpRefreshFromStore = true; runPrevalidate();
     } catch (e) { b.disabled = false; b.textContent = '번역하고 다시 검증'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
+  // AF1: 자동 수정 되돌리기(그 상품은 끔) · 다시 켜기 → 다시 검증
+  el.querySelectorAll('[data-role="pv-autofix-undo"], [data-role="pv-autofix-on"]').forEach(b => b.addEventListener('click', async () => {
+    const act = b.dataset.role === 'pv-autofix-undo' ? 'undo' : 'on';
+    const label = b.textContent;
+    b.disabled = true; b.textContent = act === 'undo' ? '되돌리는 중…' : '켜는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/auto-fix/' + act, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+      if (!t.ok) { b.disabled = false; b.textContent = label; pcToast(t.error || '저장하지 못했어요', 'warning'); return; }
+      pcToast(t.message || '바꿨어요', 'success');
+      runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = label; pcToast(kgpFriendlyError(e), 'error'); }
   }));
   el.querySelectorAll('[data-role="pv-ship-override"]').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true; b.textContent = '기록하는 중…';

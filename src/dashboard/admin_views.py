@@ -727,6 +727,14 @@ def diagnostics_test_telegram():
         return {"ok": False, "error": "테스트 메시지 발송 중 오류가 발생했습니다."}, 500
 
 
+@admin_panel_bp.post("/diagnostics/claude-ping")
+def diagnostics_claude_ping():
+    """AF1 — Claude(ANTHROPIC_API_KEY) 연결 확인. 결과 = 모델·ms·토큰·비용 또는 실패 원문(키 값 없음)."""
+    from flask import jsonify
+    from src.ai import claude_client
+    return jsonify(claude_client.ping())
+
+
 @admin_panel_bp.get("/diagnostics/telegram-health")
 def diagnostics_telegram_health():
     """텔레그램 health_check JSON (Phase 136)."""
@@ -3667,6 +3675,19 @@ _DIAGNOSTICS_TEMPLATE = """
         {% else %}
         <div class="text-muted small">AI 예산 요약을 불러오지 못했습니다(ai_spend 시트 미연결 등). 가드 미작동 시 번역 실패는 프로바이더(OpenAI 등) 사유입니다.</div>
         {% endif %}
+      </div>
+    </div>
+
+    <!-- AF1(오너 2026-10-13): Claude 연결 확인 — 키가 있는 곳에서 버튼으로 잰다(키 값은 화면·로그에 없음) -->
+    <div class="card mb-4" data-role="claude-ping-card">
+      <div class="card-header fw-bold">Claude 연결 (사전검증 반려 사유 자동 수정)</div>
+      <div class="card-body">
+        <div class="small text-muted mb-2">ANTHROPIC_API_KEY로 짧은 질문 한 번 — 모델 · 걸린 시간 · 토큰 · 비용(서버 월 예산에 기록)을 그대로 보여 줍니다.</div>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-role="claude-ping"
+                onclick="this.disabled=true;var b=this;fetch('/admin/diagnostics/claude-ping',{method:'POST'}).then(r=>r.json()).then(d=>{document.getElementById('claudePingOut').textContent=JSON.stringify(d,null,2);b.disabled=false}).catch(e=>{document.getElementById('claudePingOut').textContent=String(e);b.disabled=false})">
+          Claude 연결 확인
+        </button>
+        <pre class="small mt-2 mb-0" id="claudePingOut" data-role="claude-ping-out"></pre>
       </div>
     </div>
 
