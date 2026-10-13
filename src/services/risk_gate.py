@@ -14,7 +14,8 @@
   e 표시광고 과장(Y7-J `ban_hits`) — 주의(보류는 기존 Y7-J가 마켓 판정에서 따로 건다)
 - `holds(scan)` — 사전검증 보류 줄(결정 안 된 보류·차단 · 이미지 검사 대기).
 - `apply(extra, key, action)` — 「빼고 등록」(낱말 제거 + 걸린 사진 제외) · 「그래도 등록」(기록) · 「등록 안 함」.
-- 학습: 같은 낱말에 「그래도 등록」 2번이면 허용 후보(설정에서 확정) · 「빼고 등록」은 그 낱말의 기본 동작으로 기억(다음 상품은 자동으로 뺀다).
+- 학습: 같은 낱말에 「그래도 등록」 2번이면 허용 후보(설정에서 확정) · 「빼고 등록」은 그 낱말의 기본 동작으로 기억(다음 상품은 자동으로 뺀다)
+  — **상표/캐릭터/디자인만**(오너 2026-10-13). 인증·과장·레플리카·블랙리스트는 매번 묻는다.
 """
 from __future__ import annotations
 
@@ -349,6 +350,11 @@ def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = ""
     return {"ok": True, "hit": h}
 
 
+def _auto_strippable(key: str) -> bool:
+    """오너(2026-10-13): 「빼고 등록」 자동 적용은 **상표/캐릭터/디자인** 토큰에만 — 인증·과장 카테고리는 매번 묻는다."""
+    return str(key or "").startswith("tm:")
+
+
 def _learn(key: str, action: str, h: dict) -> None:
     """같은 낱말에 「그래도 등록」 2번 → 허용 후보 · 「빼고 등록」 → 그 낱말의 기본 동작."""
     try:
@@ -360,8 +366,8 @@ def _learn(key: str, action: str, h: dict) -> None:
         if action == "allow":
             k["allow"] = int(k.get("allow") or 0) + 1
             k.pop("default", None)
-        elif action == "strip":
-            k["default"] = "strip"
+        elif action == "strip" and _auto_strippable(key):
+            k["default"] = "strip"               # 상표/캐릭터/디자인만 기억 — 인증·과장·레플리카·블랙리스트는 매번 묻는다
         keys[key] = k
         st.state_set(_LEARN_KEY, {"keys": keys})
     except Exception as exc:                                       # noqa: BLE001
@@ -389,7 +395,7 @@ def auto_apply(extra: dict, *, by: str = "auto") -> List[str]:
     for h in scan(extra)["hits"]:
         if h["decided"] or h["grade"] == "caution":
             continue
-        if (mem.get(h["key"]) or {}).get("default") == "strip":
+        if _auto_strippable(h["key"]) and (mem.get(h["key"]) or {}).get("default") == "strip":
             strip_extra(extra, h)
             extra.setdefault("risk_decisions", {})[h["key"]] = {
                 "action": "strip", "auto": True, "by": by, "at": datetime.now(timezone.utc).isoformat(), "found": h["found"][:6],

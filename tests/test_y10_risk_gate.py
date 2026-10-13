@@ -322,3 +322,23 @@ def test_kc_notice_in_market_payload():
               description="책상 위에 두고 쓰는 무선 충전 거치대예요.")
     payload, _loc = UploadDispatcher._payload_for_market(pd, "coupang")
     assert str(payload.get("description") or "").startswith(PURCHASE_AGENT_NOTICE)
+
+
+def test_auto_strip_is_only_for_trademark_character_design():
+    """오너(2026-10-13): 「빼고 등록」 자동 적용은 상표/캐릭터/디자인에만 — 인증·과장 카테고리는 매번 묻는다."""
+    from src.services import risk_gate as R
+    # 상표(캐릭터) — 기억해서 다음 상품은 자동으로 뺀다
+    R.decide({"title_ko": "산리오 쿠로미 파우치"}, "tm:산리오", "strip")
+    nxt = {"title_ko": "쿠로미 키링"}
+    assert R.auto_apply(nxt) == ["산리오"] and "쿠로미" not in nxt["title_ko"]
+    # 인증(수입식품 보류) — 빼고 등록을 골라도 기억하지 않는다 → 다음 상품에서 다시 묻는다
+    first = {"title_ko": "수입 식품 간식 세트"}
+    assert R.decide(first, "cert:food", "strip")["ok"]
+    again = {"title_ko": "식품 선물 세트"}
+    assert R.auto_apply(again) == []
+    assert [h["short"] for h in R.holds(R.scan(again))] == ["위험(보류) — 인증: 수입식품: 식품"]
+    assert "default" not in (R.learned().get("cert:food") or {})
+    # 레플리카 의심(상표와 같이 나온 신호)도 자동으로 빼지 않는다
+    R.decide({"title_ko": "임스 스타일 라운지체어", "description_ko": "임스 스타일"}, "replica", "strip")
+    rep = {"title_ko": "임스 스타일 의자"}
+    assert "레플리카 의심" not in R.auto_apply(rep)
