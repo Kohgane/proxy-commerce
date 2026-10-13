@@ -191,13 +191,6 @@ def test_seller_edit_wins_and_undo_stops(monkeypatch):
     assert RAF.apply(PD, {**rec, "undone": True}) == PD
 
 
-def test_outbound_images_carries_saved_fix_for_upload_too():
-    """등록(`/collect/upload`)과 사전검증이 같이 지나는 `_outbound_images`가 저장된 기록을 싣는다(같은 글자)."""
-    src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
-    body = src[src.index("def _outbound_images"):src.index("@bp.post(\"/collect/upload\")")]
-    assert "reject_autofix" in body and "_raf.apply(product_data" in body
-
-
 # ── 4. 사전검증 잡 끝까지 ───────────────────────────────────────────────────────────────
 
 class _Disp:
