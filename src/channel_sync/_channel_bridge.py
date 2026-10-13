@@ -114,6 +114,8 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "source_url": str(pd.get("source_url") or pd.get("url") or "").strip(),
         # Y7-O — 선주문 발송 소요(일, 마켓 상한까지) — 「그래도 등록」 뒤 쿠팡 출고소요일·네이버 발송예정일. 없으면 0(기존 값).
         "lead_time_days": int(pd.get("lead_time_days") or 0),
+        # Y8 — 원산지(고시정보 실값). 원문에 적힌 것만 AI가 채운다(`ai_fix` e). 없으면 빈 값(쿠팡 폴백 문구).
+        "origin": str(pd.get("origin") or "").strip(),
     }
 
 
