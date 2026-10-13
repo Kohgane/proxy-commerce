@@ -115,6 +115,8 @@ def verdict(e: dict, orig_url: str) -> Dict[str, str]:
     st = str(e.get("status") or "")
     why = url_exclusion(fix_url(orig_url)) or str(e.get("exclude") or "") or text_exclusion(entry_text(e))
     sec = str(e.get("section") or section(entry_text(e)))
+    if e.get("risk_exclude"):                     # Y10: 리스크 게이트 「빼고 등록」 — 「그래도 넣기」로 무르지 않는다(게이트에서 결정을 바꾼다)
+        return {"use": "excluded", "reason": str(e["risk_exclude"]), "section": sec}
     if why and not e.get("promo_include"):
         return {"use": "excluded", "reason": why, "section": sec}
     if st == "done" and e.get("url") and e.get("use", True):

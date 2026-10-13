@@ -1,0 +1,49 @@
+{# Y10 리스크 게이트 위험 블록 — 폰 카드(_m5_flow)·데스크톱 사전검증(collect_preview)이 같은 렌더러를 쓴다.
+   한 줄마다 ① 무엇이 어디서(원문 낱말·위치·사진 번호) ② 등급(차단·보류·주의) ③ 「빼고 등록」·「그래도 등록」(차단엔 없음)·「등록 안 함」.
+   버튼은 data-role="risk-act" data-key data-action — 각 화면이 눌림을 받아 /risk-decision 후 사전검증을 다시 돈다. #}
+<script>
+window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
+  if (!risk || !((risk.hits || []).length || risk.waiting || (risk.skip && risk.skip.reason))) return '';
+  var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); };
+  var hits = risk.hits || [];
+  var open = hits.filter(function (h) { return h.grade !== 'caution' && !(h.decided === 'allow' && h.grade !== 'block'); }).length;
+  var h = '<div class="kgp-risk" data-role="risk-block" data-open="' + open + '">';
+  h += '<div class="kgp-risk-head"><strong>위험 ' + hits.length + '건</strong>' +
+       (open ? ' <span class="kgp-risk-sub">— 고를 때까지 등록을 멈춰요</span>' : ' <span class="kgp-risk-sub">— 다 골랐어요</span>') + '</div>';
+  if (risk.skip && risk.skip.reason) {
+    h += '<div class="kgp-risk-skip" data-role="risk-skip"><span class="pc-badge pc-badge-danger">등록 보류: ' + esc(risk.skip.reason) + '</span>' +
+         ' <button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="" data-action="reset">보류 풀기</button></div>';
+  }
+  hits.forEach(function (x) {
+    var badge = x.grade === 'block' ? 'pc-badge-danger' : (x.grade === 'hold' ? 'pc-badge-off' : 'pc-badge-caution');
+    var done = x.decided === 'strip' ? '뺐어요' : (x.decided === 'allow' ? '그래도 등록(기록)' : '');
+    h += '<div class="kgp-risk-row" data-role="risk-row" data-key="' + esc(x.key) + '" data-grade="' + esc(x.grade) + '">' +
+      '<div><span class="pc-badge ' + badge + '">' + esc(x.grade_label) + '</span> <b>' + esc(x.cat) + '</b>: ' + esc((x.found || []).join('·')) + '</div>' +
+      (x.where_line ? '<div class="kgp-risk-where" data-role="risk-where">' + esc(x.where_line) + '</div>' : '') +
+      (x.why ? '<div class="kgp-risk-why">' + esc(x.why) + '</div>' : '');
+    if (done) {
+      h += '<div class="kgp-risk-done" data-role="risk-done">' + esc(done) + ' <button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="' + esc(x.key) + '" data-action="reset">다시 고르기</button></div>';
+    } else if (x.grade !== 'caution') {
+      h += '<div class="kgp-risk-acts">' +
+        '<button type="button" class="kgp-risk-btn is-main" data-role="risk-act" data-key="' + esc(x.key) + '" data-action="strip">빼고 등록</button>' +
+        (x.can_allow ? '<button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="' + esc(x.key) + '" data-action="allow">그래도 등록</button>' : '') +
+        '<button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="' + esc(x.key) + '" data-action="skip" data-reason="' + esc(x.cat + ' ' + (x.found || [])[0]) + '">등록 안 함</button></div>';
+    }
+    h += '</div>';
+  });
+  if (risk.waiting) h += '<div class="kgp-risk-wait" data-role="risk-wait">이미지 검사 대기 ' + esc(risk.waiting) + '장 — 사진 속 글자를 다 읽으면 다시 검사해요.</div>';
+  if (open && risk.ai_waits) h += '<div class="kgp-risk-why" data-role="risk-ai-wait">AI 자동수정은 위 항목을 고른 뒤에 돌아요.</div>';
+  return h + '</div>';
+};
+window.kgpRiskAct = window.kgpRiskAct || function (itemId, btn) {
+  var action = btn.getAttribute('data-action'), key = btn.getAttribute('data-key') || '';
+  btn.disabled = true;
+  return fetch('/seller/collect/' + encodeURIComponent(itemId) + '/risk-decision', {method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({key: key, action: action, reason: btn.getAttribute('data-reason') || ''})})
+    .then(function (r) { return r.json(); })
+    .then(function (d) { if (!d.ok) { btn.disabled = false; } return d; })
+    .catch(function () { btn.disabled = false; return {ok: false, error: '저장하지 못했어요 — 다시 눌러 주세요'}; });
+};
+</script>

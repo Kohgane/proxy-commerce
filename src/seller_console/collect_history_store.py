@@ -167,6 +167,7 @@ def list_items(
                 "price": _ex.get("price"),       # 등록 가능 판정에 쓰인다
                 # F49-T 5부: 목록 타일 보강 여부(enrich_axes가 읽는다) · 이미지 완료 기준(「이미지 부족」 배지).
                 "enriched": _ex.get("enriched"), "image_check": _ex.get("image_check"),
+                "risk_skip": _ex.get("risk_skip"),   # Y10 목록 칩 「등록 보류: 사유」
             }, ensure_ascii=False)
     return result
 
