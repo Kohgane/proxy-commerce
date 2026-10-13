@@ -2193,7 +2193,7 @@ async function runPrevalidate() {
         pcToast(kgpFriendlyError(d || {}, '사전검증 결과 받기 실패'), 'error');
         return;
       }
-      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '');
+      renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '', d.auto_fix);
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
       else done();
     };
@@ -2261,7 +2261,25 @@ function renderCautions(lines) {
     + esc(l) + '</div>').join('');
 }
 
-function renderPrevalidateResults(results, pending, state, queueNote) {
+// 반려 사유 자동 수정(오너 2026-10-13) — 글자로 풀 보류(표시광고 문구·상품명 원문·지난 반려 사유)를 고친 결과 한 덩어리 + 되돌리기
+function renderAutoFix(a) {
+  if (!a) return '';
+  const esc = kgpEscapeForHtml;
+  const st = a.status || '';
+  if (st === 'running') return '<div class="pc-status pc-status-info mb-2" data-role="pv-auto-fix" data-state="running">반려 사유를 자동으로 고치는 중이에요 — 고치면 그 마켓만 다시 확인해요.</div>';
+  if ((st === 'done' || st === 'applied') && !a.undone) {
+    return `<div class="pc-status pc-status-info mb-2" data-role="pv-auto-fix" data-state="${esc(st)}">`
+      + (st === 'applied' ? '반려 사유 자동 수정한 글자로 확인했어요' : '반려 사유를 자동으로 고치고 다시 확인했어요')
+      + '<ul class="small mb-0 mt-1 ps-3">' + (a.changes || []).map(c => `<li>${esc(c.label)} 「${esc(c.before)}」 → 「${esc(c.after)}」</li>`).join('') + '</ul>'
+      + '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-autofix-undo">자동 수정 되돌리기</button></div>';
+  }
+  if (st === 'done' && a.undone) return '<div class="pc-status pc-status-info mb-2" data-role="pv-auto-fix" data-state="undone">자동 수정을 되돌렸어요 — 원래 글자로 검증해요.</div>';
+  if (st === 'skipped' && !(a.reasons || []).length) return '';
+  return `<div class="pc-status pc-status-warning mb-2" data-role="pv-auto-fix" data-state="${esc(st)}">`
+    + (st === 'nochange' ? '반려 사유를 살펴봤지만 글자로 고칠 부분이 없었어요 — ' : '반려 사유 자동 수정 못 함 — ') + esc(a.error || '사유 미상') + '</div>';
+}
+
+function renderPrevalidateResults(results, pending, state, queueNote, autoFix) {
   pending = pending || [];
   const running = state === 'running';
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
@@ -2269,6 +2287,7 @@ function renderPrevalidateResults(results, pending, state, queueNote) {
   const targetMarginPct = parseInt(document.getElementById('uploadMarginPct').value) || parseInt(document.getElementById('uploadMarginPct').dataset.default) || 25;
 
   let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
+  html += renderAutoFix(autoFix);
   html += '<div class="list-group mb-3">';
   results.forEach(r => {
     // R2: 재료가 덜 와서 멈춘 것은 「실패」가 아니라 「보류」(보강·번역하면 풀린다).
@@ -2361,6 +2380,14 @@ function renderPrevalidateResults(results, pending, state, queueNote) {
       if (!t.ok) { b.disabled = false; b.textContent = '선주문 그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
       runPrevalidate();
     } catch (e) { b.disabled = false; b.textContent = '선주문 그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
+  el.querySelectorAll('[data-role="pv-autofix-undo"]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '되돌리는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/reject-autofix/undo', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+      if (!t.ok) { b.disabled = false; b.textContent = '자동 수정 되돌리기'; pcToast(t.error || '되돌리지 못했어요', 'warning'); return; }
+      runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = '자동 수정 되돌리기'; pcToast(kgpFriendlyError(e), 'error'); }
   }));
   // Y7: 쿠팡 대표 사진 보류 — 「쿠팡 노출」 탭에서 대표를 바꾸거나, 이 장 그대로 「그래도 등록」
   el.querySelectorAll('[data-role="pv-rep-override"]').forEach(b => b.addEventListener('click', async () => {
