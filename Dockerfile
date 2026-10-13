@@ -53,7 +53,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${PORT:-10000}/health || exit 1
 
 ENV PORT=10000 \
-    GUNICORN_WORKERS=2 \
+    GUNICORN_WORKERS=1 \
     GUNICORN_TIMEOUT=120 \
     APP_ENV=${APP_ENV}
 

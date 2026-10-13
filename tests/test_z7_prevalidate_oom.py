@@ -164,6 +164,7 @@ def test_rss_reader_returns_numbers():
 @pytest.mark.parametrize("workers,mr,jit", [("2", 200, 50), ("3", 200, 50), ("1", 0, 0)])
 def test_gunicorn_max_requests_only_with_two_or_more_workers(monkeypatch, workers, mr, jit):
     monkeypatch.setenv("GUNICORN_WORKERS", workers)
+    monkeypatch.setenv("GUNICORN_MAX_WORKERS", workers)        # Z10-C: 기본 상한 1 — 워커를 늘리는 경우를 재려면 상한도 같이
     monkeypatch.delenv("GUNICORN_MAX_REQUESTS", raising=False)
     monkeypatch.delenv("GUNICORN_MAX_REQUESTS_JITTER", raising=False)
     conf = runpy.run_path(str(Path(__file__).resolve().parents[1] / "gunicorn.conf.py"))

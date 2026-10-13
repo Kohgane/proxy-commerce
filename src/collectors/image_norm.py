@@ -367,7 +367,7 @@ def _offload_big(u: str, body: bytes, ext: str, need_convert: bool, on_skip):
     est = int(w * h * 18 / 1048576)                                # 실측 4160² WebP → JPEG 한 장 +310MB
     try:
         from src.utils import rss as _rss
-        cur, lim = _rss.read_mb()[0], _rss.job_limit_mb()
+        cur, lim = _rss.instance_mb(), _rss.job_limit_mb()          # Z10-C: 인스턴스 합계 기준
     except Exception:                                              # noqa: BLE001
         cur, lim = -1, 0
     if lim > 0 and cur >= 0 and cur + est > lim:

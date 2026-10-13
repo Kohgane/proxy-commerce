@@ -4715,6 +4715,13 @@ def _pv_start_job(data: dict, markets: list, dispatcher):
     import contextvars as _cv
     import threading as _th
     import uuid as _uuid
+    # Z10-C(오너 2026-10-13 20:09 OOM): 인스턴스 메모리 합계가 상한(420MB) 이상이면 새 사전검증을 시작하지 않는다
+    from src.utils import rss as _rss
+    _ok_mem, _cur_mb, _lim_mb = _rss.start_ok()
+    if not _ok_mem:
+        logger.warning("[PV] 시작 거부 — 인스턴스 메모리 %dMB ≥ %dMB", _cur_mb, _lim_mb)
+        return jsonify({"ok": False, "error": _rss.BUSY_MESSAGE, "busy_memory": True,
+                        "memory_mb": _cur_mb, "limit_mb": _lim_mb}), 503
     job_id = _uuid.uuid4().hex
     now = datetime.now(timezone.utc)
     _pv_store().state_set(_PV_JOB_KEY + job_id, {
@@ -4858,7 +4865,8 @@ _PV_QUEUE_WAIT_SEC = float(os.getenv("PREVALIDATE_QUEUE_WAIT_SEC", "90") or 90)
 
 
 def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
-    """Z10 — 줄 서기(프로세스당 1개) · 잡 id를 RSS 로그에 · 메모리 상한(400MB) 넘으면 그 잡만 멈춤 · 끝나면 gc."""
+    """Z10 — 줄 서기(프로세스당 1개) · 잡 id를 RSS 로그에 · 메모리 상한 넘으면 그 잡만 멈춤 · 끝나면 gc.
+    Z10-C: 상한은 **인스턴스 합계**(시작 420 · 중단 460MB — `rss.start_ok`/`rss.guard`)."""
     import gc as _gc
     import time as _time
     from src.utils import rss as _rss
@@ -4876,6 +4884,14 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
             # 기다린 시간은 이 잡의 60초 마감에 넣지 않는다
             _pv_update(job_id, queued=False, queue_note="", started_ts=_time.time(),
                        started_at=datetime.now(timezone.utc).isoformat())
+        # Z10-C: 줄을 서 있던 사이 메모리가 찼으면 시작하지 않는다(그 마켓들은 「검증 못 함 — 메모리 여유 없음」)
+        _ok_mem, _cur_mb, _lim_mb = _rss.start_ok()
+        if not _ok_mem:
+            _rss.log("pv_refused_memory", instance_mb=_cur_mb, limit_mb=_lim_mb)
+            _pv_update(job_id, state="done", queued=False, results={
+                m: _pv_transport_fail(m, "memory", f"검증 못 함 — {_rss.BUSY_MESSAGE}(인스턴스 {_cur_mb}MB)") for m in markets})
+            sem.release()                                                # 잡은 시작하지 않았다 — 자리를 바로 돌려준다
+            return
         from src.db import pg as _pg
         try:
             # Z9 후속 계약: 잡 전체(본문 + 끝 기록)가 DB 연결 1개 — 끝 기록(rss)도 같은 범위 안에서(중첩 job_conn은 바깥 것을 쓴다)
@@ -4891,7 +4907,8 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 r1, p1 = _rss.log("pv_job_end", markets=",".join(markets))
                 if r0 >= 0 and r1 >= 0:
                     _pv_update(job_id, rss={"start_mb": r0, "end_mb": r1, "delta_mb": r1 - r0, "peak_mb": _w["peak"],
-                                            "peak_at_ms": _w["peak_at"], "hwm_mb": p1})
+                                            "peak_at_ms": _w["peak_at"], "hwm_mb": p1,
+                                            "instance_base_mb": _w.get("inst_base"), "instance_peak_mb": _w.get("inst_peak")})
         finally:
             sem.release()
     finally:

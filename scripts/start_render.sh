@@ -25,10 +25,10 @@ if [ "${RUN_SEED:-0}" = "1" ]; then
 fi
 
 echo "[start_render] Starting gunicorn on 0.0.0.0:${PORT}..."
+# Z10-C(2026-10-13): 워커 수·스레드·타임아웃은 gunicorn.conf.py 한 곳에서(여기서 워커 수 인자로 덮으면 1워커 상한이 무시된다)
 exec gunicorn src.order_webhook:app \
+    --config gunicorn.conf.py \
     --bind "0.0.0.0:${PORT}" \
-    --workers "${GUNICORN_WORKERS:-2}" \
-    --timeout "${GUNICORN_TIMEOUT:-120}" \
     --log-level "${GUNICORN_LOG_LEVEL:-info}" \
     --access-logfile - \
     --access-logformat '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms "%(a)s"' \

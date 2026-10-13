@@ -46,18 +46,27 @@ def _clean():
 # ---------------------------------------------------------------------------
 
 def test_worker_count_is_more_than_one():
-    """이 계약의 **전제**를 못박는다. 1이 되면 전제가 바뀐 것이니 같이 보게 한다."""
+    """이 계약의 **전제** — Z10-C(2026-10-13 OOM)로 기본 워커는 1(상한 `GUNICORN_MAX_WORKERS`)이 됐다. 그래도 서버 전역
+    차례표는 남긴다: 배포 순간 새·옛 인스턴스가 겹치고, 플랜을 올려 상한을 풀면 워커가 다시 둘 이상이 된다."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gconf_z10c", ROOT / "gunicorn.conf.py")
+    for env, want in (({}, 1), ({"GUNICORN_WORKERS": "2"}, 1), ({"GUNICORN_WORKERS": "2", "GUNICORN_MAX_WORKERS": "2"}, 2)):
+        old = {k: os.environ.get(k) for k in ("GUNICORN_WORKERS", "GUNICORN_MAX_WORKERS")}
+        try:
+            for k in old:
+                os.environ.pop(k, None)
+            os.environ.update(env)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            assert mod.workers == want and mod.worker_class == "gthread" and mod.threads == 8
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
     sh = (ROOT / "scripts/start_render.sh").read_text(encoding="utf-8")
-    conf = (ROOT / "gunicorn.conf.py").read_text(encoding="utf-8")
-
-    m = re.search(r'--workers "\$\{GUNICORN_WORKERS:-(\d+)\}"', sh)
-    assert m, "진입점에서 워커 수를 못 읽었다"
-    assert int(m.group(1)) >= 2, "워커가 하나면 프로세스 잠금으로 족하다 — 전제가 바뀌었다"
-
-    m2 = re.search(r"workers = int\(os\.getenv\('GUNICORN_WORKERS', '(\d+)'\)\)", conf)
-    assert m2 and int(m2.group(1)) >= 2
-    # 스레드도 여럿이다 — 같은 워커 안에서도 겹칠 수 있다는 뜻(프로세스 잠금이 여전히 필요한 이유).
-    assert "gthread" in conf and "threads" in conf
+    assert "--workers" not in sh and "--config gunicorn.conf.py" in sh       # 진입점이 conf 상한을 덮지 않는다
 
 
 def test_translate_takes_a_server_wide_turn():

@@ -279,6 +279,13 @@ def _drain(max_pages: int = 10_000) -> int:
         job = q.lease_next()
         if not job:
             return n
+        # Z10-C: 인스턴스 메모리 합계가 상한 이상이면 이 장은 대기로 되돌리고 멈춘다(다음 접수·크론이 다시 깨운다)
+        from src.utils import rss as _rss
+        _ok_mem, _cur_mb, _lim_mb = _rss.start_ok()
+        if not _ok_mem:
+            q.requeue(job["id"])
+            logger.warning("[이미지번역·자동] 메모리 여유 없음(%dMB ≥ %dMB) — 대기", _cur_mb, _lim_mb)
+            return n
         took, today = q.take_start(_day_key(), daily_cap())
         if not took:
             q.requeue(job["id"])                  # 보내지 않았다 — 대기로(내일 KST 자정 뒤 다시)

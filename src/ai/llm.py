@@ -57,9 +57,10 @@ def _env(name: str) -> str:
 def anthropic_ready() -> bool:
     if not _env("ANTHROPIC_API_KEY"):
         return False
+    # Z10-C: 「있나」만 본다 — import하면 SDK(+39MB)가 워커에 눌러앉는다. 실제로 부를 때만 import한다.
     try:
-        import anthropic  # noqa: F401
-        return True
+        import importlib.util
+        return importlib.util.find_spec("anthropic") is not None
     except Exception:
         return False
 
