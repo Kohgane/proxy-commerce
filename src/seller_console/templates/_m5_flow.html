@@ -460,7 +460,7 @@
   //   등록 버튼: 통과 또는 「그래도 등록」으로 풀리는 보류가 하나라도 있으면 켠다(전송 실패가 전체를 잠그지 않는다).
   var OVERRIDES = {ship_ratio: ['ship-ratio-override', '그래도 등록'], voltage: ['voltage-override', '전압·플러그 그래도 등록'],
                    rep_image: ['rep-image-override', '대표 사진 그래도 등록']};
-  var pvRows = {}, pvOrder = [], pvAuto = null, pvAutoDetail = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
+  var pvRows = {}, pvOrder = [], pvAuto = null, pvAutoDetail = null, pvAutoFix = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
   // Y7-C: 스마트스토어 카테고리 — 정해졌으면 「카테고리 자동: … (바꾸기)」 한 줄, 못 정했으면 후보 칩(1탭 저장 → 그 마켓만 다시 검증).
   function catLine(r) {
     var c = r.category || {};
@@ -522,6 +522,20 @@
            ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override" data-override="rep-image-override" data-label="대표 사진 그래도 등록">대표 사진 그래도 등록</button></div>' : '');
     return h + '</div>';
   }
+  function autoFixHtml(a) {
+    var st = a.status || '';
+    if (st === 'running') return '<div class="m5-note" data-role="m5-auto-fix" data-state="running">반려 사유를 자동으로 고치는 중이에요 — 고치면 그 마켓만 다시 확인해요.</div>';
+    if ((st === 'done' || st === 'applied') && !a.undone) {
+      return '<div class="m5-note" data-role="m5-auto-fix" data-state="' + esc(st) + '">' +
+        (st === 'applied' ? '반려 사유 자동 수정한 글자로 확인했어요:' : '반려 사유를 자동으로 고치고 다시 확인했어요:') +
+        '<ul>' + (a.changes || []).map(function (c) { return '<li>' + esc(c.label) + ' 「' + esc(c.before) + '」 → 「' + esc(c.after) + '」</li>'; }).join('') + '</ul>' +
+        '<button type="button" class="m5-fix" data-role="m5-autofix-undo">자동 수정 되돌리기</button></div>';
+    }
+    if (st === 'done' && a.undone) return '<div class="m5-note" data-role="m5-auto-fix" data-state="undone">자동 수정을 되돌렸어요 — 원래 글자로 검증해요.</div>';
+    if (st === 'skipped' && !(a.reasons || []).length) return '';
+    return '<div class="m5-note" data-role="m5-auto-fix" data-state="' + esc(st) + '">' +
+      (st === 'nochange' ? '반려 사유를 살펴봤지만 글자로 고칠 부분이 없었어요 — ' : '반려 사유 자동 수정 못 함 — ') + esc(a.error || '사유 미상') + '</div>';
+  }
   function pvRender() {
     var h = '';
     if (pvAuto) {
@@ -536,6 +550,8 @@
          : pvAutoDetail.status === 'done' ? '상세 본문이 비어 상세 초안을 자동으로 만들고 다시 확인했어요.'
          : '상세 초안 자동 생성 실패 — ' + esc(pvAutoDetail.error || '사유 미상') + '. 「상세페이지 꾸미기」에서 채워 주세요.') + '</div>';
     }
+    // 반려 사유 자동 수정(오너 2026-10-13): 글자로 풀 보류(표시광고 문구·상품명 원문·지난 반려 사유)를 Claude로 고치고 다시 확인 — 무엇을 → 무엇으로 + 되돌리기
+    if (pvAutoFix) h += autoFixHtml(pvAutoFix);
     pvOrder.forEach(function (m) { h += pvRowHtml(m); });
     if (pvState === 'running') h += pvQueue
       // Z10: 줄 서는 중(프로세스당 사전검증 1개 — 메모리 보호)
@@ -563,7 +579,7 @@
       if (jobNo !== pvJob) return;
       if (!d || !d.ok) { pvState = 'done'; pvPending = []; pvRender(); checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
       (d.results || []).forEach(function (r) { pvRows[r.market] = r; });
-      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvState = d.state;
+      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvAutoFix = d.auto_fix || pvAutoFix; pvState = d.state;
       pvQueue = d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '';
       pvRender();
       if (d.state === 'running') pvTimer = setTimeout(function () { pvPoll(jobNo, url); }, 3000);
@@ -573,7 +589,7 @@
   function runCheck(markets, keep) {
     if (pvTimer) clearTimeout(pvTimer);
     var jobNo = ++pvJob;
-    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; pvAutoDetail = null; }
+    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; pvAutoDetail = null; pvAutoFix = null; }
     markets.forEach(function (m) { delete pvRows[m]; if (pvOrder.indexOf(m) < 0) pvOrder.push(m); });
     pvPending = markets.slice(); pvState = 'running';
     checkBtn.disabled = true; pvRender();
@@ -598,6 +614,14 @@
     if (!b) return;
     var role = b.getAttribute('data-role') || '';
     if (role === 'm5-retry-market') { runCheck([b.getAttribute('data-market')], true); return; }
+    if (role === 'm5-autofix-undo') {
+      b.disabled = true;
+      post('/seller/collect/' + encodeURIComponent(itemId) + '/reject-autofix/undo', {}).then(function (d) {
+        if (!d.ok) { b.disabled = false; hint(d.error || '되돌리지 못했어요'); return; }
+        resetGo(); runCheck(pvOrder.slice(), false);
+      });
+      return;
+    }
     if (role === 'm5-cat-pick') {
       var mk = b.getAttribute('data-market');
       checksEl.querySelectorAll('[data-role=m5-cat-pick]').forEach(function (x) { x.disabled = true; });
