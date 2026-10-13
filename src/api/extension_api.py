@@ -629,7 +629,7 @@ def collect_enrich_pending():
 #   → 예산을 **장마다** 건다(아래 `_copy_one`). 「예산이 문서에만 있었다」와 같은 뿌리다.
 IMAGE_STORE_BUDGET_SEC = 8
 IMAGE_STORE_CAP = 12
-IMAGE_STORE_PER_IMAGE_SEC = 6          # 한 장에 걸 수 있는 벽시계 상한
+IMAGE_STORE_PER_IMAGE_SEC = 20         # 한 장에 걸 수 있는 시간(원격 업로드·소켓 타임아웃) — Z10-B: 스레드를 버리지 않으므로 넉넉히
 
 
 def _cdn_configured() -> bool:
@@ -645,29 +645,33 @@ def _cdn_configured() -> bool:
         return False
 
 
-def _copy_one(process_image, url: str, budget_sec: float, label=None):
-    """한 장을 **벽시계 예산 안에서만** 처리한다. 넘기면 버리고 다음 장으로.
+def _copy_one(url: str, budget_sec: float, label=None) -> dict:
+    """Z10-B(오너 2026-10-11 02:10·02:20·02:30 OOM = 이 크론 시각): 한 장 — `{url, how, why}`(url 비면 실패).
 
-    내려받기의 `timeout=10`은 **소켓 타임아웃**이지 전송 총량 마감이 아니다 —
-    느리게 흘려 보내는 서버에는 마감이 없는 것과 같다. 그래서 시간을 여기서 건다.
-    (넘긴 스레드는 소켓 타임아웃에 걸려 스스로 끝난다. 결과만 버린다.)
+    예전엔 장마다 **스레드를 띄워** `process_image`(받기 → OpenCV 워터마크 → Pillow 원본 크기 리사이즈 → WebP → 업로드)를 돌리고
+    6초를 넘기면 **결과만 버리고 스레드는 둔 채** 다음 장으로 갔다 — 느린 타오바오 원본이면 버린 스레드들이 원본 화소를
+    풀어 쥔 채로 겹쳐 돌았다(크론이 끝난 뒤에도). 이제 스레드 없이 한 장씩:
+      ① **원격 업로드** — 원본 URL만 Cloudinary에 넘긴다(Cloudinary가 직접 받아 간다 · 긴 변 2,000px로 저장). 우리 메모리 0.
+      ② ①이 실패하면(Cloudinary가 그 주소를 못 받음) 우리가 받아(받은 자리에서 큰 JPEG은 줄임 · PNG 등 큰 장은 풀지 않음)
+         바이트를 올리고 버린다. 시간은 소켓 타임아웃(예산 안)으로 건다.
     """
-    import threading
-    box: dict = {}
-
-    def _run():
-        try:
-            box["r"] = process_image(url, label=label) if label else process_image(url)
-        except Exception as exc:
-            box["e"] = exc
-
-    th = threading.Thread(target=_run, daemon=True)
-    th.start()
-    th.join(budget_sec)
-    if th.is_alive():
-        logger.info("[이미지저장] 한 장이 %.0f초를 넘겨 버림(원본 유지)", budget_sec)
-        return None
-    return box.get("r")
+    from src.media.image_pipeline import upload_remote
+    t = max(3.0, float(budget_sec))
+    r = upload_remote(url, label=label, timeout=t)
+    if r.get("ok"):
+        return {"url": r["secure_url"], "how": "remote", "why": ""}
+    why_remote = r.get("error") or "원격 업로드 실패"
+    from src.collectors.image_norm import fetch_image_bytes
+    reasons = []
+    got = fetch_image_bytes(url, timeout=min(t, 20.0), allowed_formats={"jpg", "png", "gif", "bmp", "webp"},
+                            on_skip=lambda _u, why: reasons.append(why))
+    if got is None:
+        return {"url": "", "how": "bytes", "why": f"원격: {why_remote} · 직접 받기: {(reasons or ['실패'])[0]}"}
+    r2 = upload_remote(got.data, label=label, timeout=t)
+    got = None
+    if r2.get("ok"):
+        return {"url": r2["secure_url"], "how": "bytes", "why": f"원격 실패({why_remote[:80]}) → 직접 받아 올림"}
+    return {"url": "", "how": "bytes", "why": f"원격: {why_remote} · 바이트 업로드: {r2.get('error') or '실패'}"}
 
 
 def _store_image_copies(images: list, *, already=None,
@@ -678,10 +682,11 @@ def _store_image_copies(images: list, *, already=None,
     CDN 미설정이면 저장본은 **비운다**: 원본 URL을 "저장본"이라 부르면 그게 가짜다.
     왜 비었는지는 `images_stored_note`에 남긴다(다음 사람이 그걸로 시간을 안 쓰게).
 
-    **요청 경로에서 부르지 않는다**(F22) — 크론이 부른다. 응답을 기다리는 사람이 있는 자리에서
-    남의 서버에서 이미지를 내려받으면, 그 서버가 느린 날 우리가 502가 된다.
+    **요청 경로에서 부르지 않는다**(F22) — 크론이 부른다. Z10-B: 한 장씩·스레드 없이·원격 업로드 우선(`_copy_one`).
     """
+    import gc as _gc
     import time as _t
+    from src.utils import rss as _rss
     out: dict = {}
     urls = [u for u in (images or []) if u][:IMAGE_STORE_CAP]
     if not urls:
@@ -689,13 +694,10 @@ def _store_image_copies(images: list, *, already=None,
     if not _cdn_configured():
         # 만들기 전에 **둘 데가 있는지부터** 본다. 없으면 아무것도 내려받지 않는다.
         return {"images_stored_note": "CDN 미설정 — 원본 URL만 보관(저장본 없음)"}
-    try:
-        from src.media.image_pipeline import process_image
-    except Exception as exc:                                   # pragma: no cover
-        return {"images_stored_note": f"이미지 파이프라인 미가용: {type(exc).__name__}"}
 
     stored, deadline = [], _t.monotonic() + budget_sec
     stopped_early = False
+    ways, last_why = {"remote": 0, "bytes": 0}, ""
     # 0-b — 원본 저장본에도 이름표(ORIGINAL). 한 번의 크론 처리 = 한 run.
     from src.media.image_label import make_label, run_stamp
     _run = run_stamp("copy")
@@ -704,23 +706,24 @@ def _store_image_copies(images: list, *, already=None,
         if left <= 0:
             stopped_early = True
             break
-        r = _copy_one(process_image, u, min(left, IMAGE_STORE_PER_IMAGE_SEC),
-                      label=make_label(_run, item_id, _i, "ORIGINAL", folder="seller"))
-        if r is None:
-            continue
-        # **업로드가 실제로 됐을 때만** 저장본으로 센다. 파이프라인은 미설정 시 원본 URL을
-        #   그대로 돌려주므로, 그 값을 저장본이라 적으면 같은 URL을 두 번 적는 셈이다.
-        if getattr(r, "cdn_uploaded", False) and getattr(r, "processed_url", ""):
-            stored.append(r.processed_url)
+        with _rss.span("image_copy", item=item_id[:8], n=f"{_i + 1}/{len(urls)}") as sp:
+            r = _copy_one(u, min(left, IMAGE_STORE_PER_IMAGE_SEC),
+                          label=make_label(_run, item_id, _i, "ORIGINAL", folder="seller"))
+            sp["how"] = r["how"] if r["url"] else "fail"
+        _gc.collect()
+        if r["url"]:
+            stored.append(r["url"])
+            ways[r["how"]] += 1
+        else:
+            last_why = r["why"]
+            logger.info("[이미지저장] item=%s %d번째 못 올림 — %s", item_id[:8], _i + 1, r["why"][:200])
 
     if stored:
-        # F22: 예전엔 여기서 `_union`을 불렀는데 그 이름은 `collect_enrich` **안에만** 있었다
-        #   (module-level NameError). CDN이 켜지는 날 처음 터졌을 잠복 결함이다.
         out["images_stored"] = _union_images(list(already or []), stored)
-        out["images_stored_note"] = (f"{len(stored)}/{len(urls)}장 저장"
+        out["images_stored_note"] = (f"{len(stored)}/{len(urls)}장 저장(원격 {ways['remote']} · 직접 {ways['bytes']})"
                                      + (" · 예산 내 중단" if stopped_early else ""))
     else:
-        out["images_stored_note"] = ("처리 실패 — 원본 URL만 보관"
+        out["images_stored_note"] = ("처리 실패 — 원본 URL만 보관" + (f"({last_why[:120]})" if last_why else "")
                                      + (" · 예산 내 중단" if stopped_early else ""))
     return out
 

@@ -44,22 +44,23 @@ class _Res:
     processed_url = ""
 
 
-def test_per_image_budget_is_wall_clock():
-    """한 장이 예산을 넘기면 **그 장을 버리고** 넘어간다.
+def test_per_image_budget_no_abandoned_threads(monkeypatch):
+    """한 장의 시간은 **소켓 타임아웃(예산)**으로 건다 — 스레드를 띄웠다 버리지 않는다(Z10-B).
 
-    예전엔 마감을 장과 장 사이에서만 봐서, 한 장이 분 단위로 가도 아무도 안 끊었다.
+    예전엔 장마다 스레드를 띄우고 예산을 넘기면 결과만 버렸다 — 버린 스레드가 원본 화소를 쥔 채 겹쳐 돌아
+    02:10·02:20·02:30 OOM(크론 시각)과 겹쳤다.
     """
-    from src.api.extension_api import _copy_one
-
-    def never_returns(url, **kw):
-        time.sleep(30)
-        return _Res()
-
-    t0 = time.monotonic()
-    out = _copy_one(never_returns, "https://img.example/a.jpg", 0.4)
-    elapsed = time.monotonic() - t0
-    assert out is None, "예산을 넘긴 장은 결과로 쓰지 않는다"
-    assert elapsed < 3.0, f"예산 0.4초인데 {elapsed:.1f}초 걸렸다 — 벽시계 예산이 아니다"
+    import threading
+    from src.api import extension_api as ea
+    from src.media import image_pipeline as P
+    seen = []
+    monkeypatch.setattr(P, "upload_remote", lambda src, **kw: seen.append(kw.get("timeout")) or
+                        {"ok": True, "secure_url": "https://cdn.example/a.jpg"})
+    before = threading.active_count()
+    out = ea._copy_one("https://img.example/a.jpg", 0.4)
+    assert out["url"] == "https://cdn.example/a.jpg" and out["how"] == "remote"
+    assert seen and seen[0] >= 0.4                                     # 예산이 소켓 타임아웃으로 넘어간다
+    assert threading.active_count() == before                          # 새 스레드 0
 
 
 def test_copy_skips_entirely_without_cdn():
@@ -71,14 +72,14 @@ def test_copy_skips_entirely_without_cdn():
     from src.api import extension_api as ea
     calls = []
 
-    def spy(url, **kw):
-        calls.append(url)
-        return _Res()
+    def spy(src, **kw):
+        calls.append(src)
+        return {"ok": True, "secure_url": "x"}
 
     with patch.object(ea, "_cdn_configured", return_value=False), \
-         patch("src.media.image_pipeline.process_image", spy):
+         patch("src.media.image_pipeline.upload_remote", spy):
         out = ea._store_image_copies([f"https://img/{i}.jpg" for i in range(5)])
-    assert calls == [], "CDN이 없는데 이미지를 내려받았다"
+    assert calls == [], "CDN이 없는데 이미지를 올렸다"
     assert "CDN 미설정" in out.get("images_stored_note", "")
 
 
@@ -89,13 +90,8 @@ def test_store_copies_uses_a_name_that_exists():
     CDN을 켜는 날 처음 터졌을 잠복 NameError였다.
     """
     from src.api import extension_api as ea
-
-    class Ok:
-        cdn_uploaded = True
-        processed_url = "https://cdn.example/x.jpg"
-
     with patch.object(ea, "_cdn_configured", return_value=True), \
-         patch("src.media.image_pipeline.process_image", lambda u, **kw: Ok()):
+         patch("src.media.image_pipeline.upload_remote", lambda src, **kw: {"ok": True, "secure_url": "https://cdn.example/x.jpg"}):
         out = ea._store_image_copies(["https://img/0.jpg"], already=["https://cdn.example/old.jpg"])
     assert out.get("images_stored"), "저장본이 기록되지 않았다"
     assert "https://cdn.example/x.jpg" in out["images_stored"]

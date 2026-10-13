@@ -25,8 +25,10 @@ _JOBS: Dict[str, dict] = {}       # 이름 → {state, started_at, started_ts, f
 def _run(name: str, fn: Callable[[], dict]) -> None:
     t0 = time.monotonic()
     ok, result, error = True, None, ""
+    from src.utils import rss_sampler as _smp
     try:
-        result = fn()
+        with _smp.watch(f"cron_{name}"):              # Z10-B: 크론도 200ms 샘플러(구간 피크·워커 재시작 훅이 본다)
+            result = fn()
         if isinstance(result, dict) and result.get("ok") is False:
             ok = False
     except Exception as exc:                                   # noqa: BLE001 — 백그라운드는 죽지 않는다

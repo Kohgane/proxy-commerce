@@ -47,16 +47,30 @@ def is_configured() -> bool:
     return _ok()
 
 
+#: 공급사가 그대로 받는 원본 한도 — 긴 변(문서: 20~10,000px) · base64 7MB.
+RAW_MAX_SIDE = 10000
+RAW_MAX_B64 = 7 * 1024 * 1024
+
+
 def shrink(raw: bytes, max_side: int = MAX_SIDE) -> bytes:
-    """긴 변 `max_side`px JPEG로 — 보내는 바이트·디코딩 메모리를 줄인다. 못 열면 예외."""
-    from PIL import Image
-    with Image.open(io.BytesIO(raw)) as im:
-        im.draft("RGB", (max_side, max_side))            # JPEG는 디코딩 단계에서 미리 줄인다(메모리 절약)
-        im = im.convert("RGB")
-        im.thumbnail((max_side, max_side))
+    """긴 변 `max_side`px JPEG로 — 보내는 바이트·디코딩 메모리를 줄인다. 못 열면 예외.
+
+    Z10-B(오너 2026-10-11 02:24): 예전엔 `draft`(JPEG 전용) 뒤 `convert("RGB")`를 **원본 크기에서** 했다 — PNG는 draft가
+    안 먹어 원본 화소 그대로 풀고 RGB 사본까지 한 벌 더. 이제 `image_norm.open_small`(줄이기 먼저 · 한 장씩)이고,
+    서버가 풀면 안 되는 큰 PNG는 **풀지 않고 원본 바이트를 그대로** 보낸다(공급사가 PNG를 받는다 · 한도 안일 때만)."""
+    from src.collectors.image_norm import open_small
+    im, _fmt, w, h, why = open_small(raw, max_side)
+    if im is None:
+        if w and h and max(w, h) <= RAW_MAX_SIDE and len(raw) * 4 / 3 <= RAW_MAX_B64:
+            logger.info("[텐센트 OCR] 원본 그대로 보냄(%s) — %s", f"{w}×{h}", why)
+            return bytes(raw)
+        raise ValueError(why or "이미지를 열지 못했어요")
+    try:
         out = io.BytesIO()
         im.save(out, "JPEG", quality=85)
-    return out.getvalue()
+        return out.getvalue()
+    finally:
+        im.close()
 
 
 def _unavailable(why: str) -> Dict:

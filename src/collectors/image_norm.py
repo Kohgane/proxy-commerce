@@ -298,7 +298,17 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
         allow = {str(a).lower().lstrip(".") for a in allowed_formats}
         if "jpg" in allow:
             allow.add("jpeg")
-        if ext not in allow:
+        need_convert = ext not in allow
+        if need_convert or len(body) > _shrink_bytes():
+            # Z10-B(오너 픽스처 실측): 줄여 풀 수 없는 큰 장(WebP·PNG)을 우리가 바꾸면 한 장 +310MB — 먼저 Cloudinary에 맡긴다.
+            off = _offload_big(u, body, ext, need_convert, on_skip)
+            if off is _KEEP_RAW:
+                return _make_part(body, ext) or _skip(on_skip, u, f'메타 생성 실패({ext})')
+            if off is _SKIPPED:
+                return None
+            if off is not None:
+                return off
+        if need_convert:
             converted = convert_image_bytes(body, target=CONVERT_TARGET_EXT)
             if converted is None:
                 return _skip(on_skip, u, f'미허용 형식 {ext} → {CONVERT_TARGET_EXT} 변환 실패')
@@ -324,6 +334,46 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
     if part is None:
         return _skip(on_skip, u, f'메타 생성 실패(선언 {ext} vs 실제 {detect_image_format(body) or "미상"})')
     return part
+
+
+_KEEP_RAW = object()
+_SKIPPED = object()
+
+
+def _offload_big(u: str, body: bytes, ext: str, need_convert: bool, on_skip):
+    """큰 원본(JPEG 아님 · 화소 > `decode_max_pixels`)을 **풀지 않고** 다룬다. 해당 없으면 None(평소 경로).
+
+    ① Cloudinary가 긴 변 2,000px JPEG로 만든 사본을 받아 쓴다(`image_pipeline.small_copy`).
+    ② 못 하면: 형식이 마켓 허용이면 원본 그대로(`_KEEP_RAW` — 줄이기만 포기), 바꿔야 하는데(WebP) 이 프로세스가 풀 여유가
+       없으면(지금 RSS + 추정 > 잡 상한) **그 장만 빼고 사유**를 남긴다. 여유가 있으면 None → 평소처럼 한 장씩 바꾼다."""
+    fmt, w, h = image_head(body)
+    cap = decode_max_pixels()
+    if not w or fmt == "JPEG" or not cap or w * h <= cap:
+        return None
+    try:
+        from src.media.image_pipeline import small_copy
+        small, why = small_copy(u)
+    except Exception as exc:                                      # noqa: BLE001
+        small, why = None, f"{type(exc).__name__}"
+    if small:
+        part = _make_part(small, CONVERT_TARGET_EXT)
+        if part is not None:
+            logger.info("이미지 Cloudinary 사본 %s %d×%d %dB → %s %dB: %s", fmt, w, h, len(body), part.ext, len(part.data), u)
+            return part
+        why = "Cloudinary 사본 메타 불일치"
+    if not need_convert:
+        logger.info("이미지 줄이기 건너뜀(%s %d×%d — %s · 원본 그대로): %s", fmt, w, h, why, u)
+        return _KEEP_RAW
+    est = int(w * h * 18 / 1048576)                                # 실측 4160² WebP → JPEG 한 장 +310MB
+    try:
+        from src.utils import rss as _rss
+        cur, lim = _rss.read_mb()[0], _rss.job_limit_mb()
+    except Exception:                                              # noqa: BLE001
+        cur, lim = -1, 0
+    if lim > 0 and cur >= 0 and cur + est > lim:
+        return _skip(on_skip, u, f'{fmt} {w}×{h} — 바꾸려면 서버 메모리 약 {est}MB가 더 필요해 뺐어요'
+                                 f'(지금 {cur}MB · 상한 {lim}MB · Cloudinary 사본: {why})') or _SKIPPED
+    return None
 
 
 def _shrink_bytes() -> int:
@@ -375,6 +425,10 @@ def shrink_image_bytes(body: bytes, *, max_pixels: int, max_width: int = 0):
                 scale = min(scale, (max_pixels / float(w * h)) ** 0.5)
             if scale >= 1.0:
                 return None
+            _cap = decode_max_pixels()
+            if im.format != "JPEG" and _cap and w * h > _cap:
+                logger.info("이미지 줄이기 건너뜀(%s %d×%d — 디코드 상한 %d 초과, 원본 사용)", im.format, w, h, _cap)
+                return None                                       # Z10-B: 못 줄여 푸는 형식은 원본 화소가 통째로 뜬다
             tw, th = max(1, int(w * scale)), max(1, int(h * scale))
             if im.format == "JPEG":
                 im.draft("RGB", (tw, th))
@@ -404,6 +458,82 @@ def shrink_image_bytes(body: bytes, *, max_pixels: int, max_width: int = 0):
                     im.close()
             except Exception:                                     # noqa: BLE001
                 pass
+
+
+def decode_max_pixels() -> int:
+    """Z10-B — 우리 프로세스가 **풀어도 되는** 화소 상한(가로×세로) — `IMAGE_DECODE_MAX_PIXELS`(기본 1,200만 ≈ 3,464px 정사각).
+
+    JPEG은 `draft`로 디코드 단계에서 1/2·1/4·1/8로 줄여 풀 수 있다. **PNG·GIF·BMP·WebP는 못 줄여 푼다** — 원본 화소 그대로
+    (RGBA면 화소당 4바이트)가 한 번에 뜨고, RGB 변환하면 한 벌 더. 02:24 사전검증(BLACKHOLES 1번 장 = 303KB **PNG**)
+    3초 사이 +261MB가 이 모양이다(파일은 작아도 화소가 크다 — 단색 배경 PNG는 압축이 매우 잘 된다).
+    상한을 넘는 JPEG 아닌 장은 **풀지 않는다** — 호출부가 「판정 못 함」(막지 않음)이나 원본 바이트 그대로 보내기로 간다."""
+    import os
+    try:
+        return int(os.getenv("IMAGE_DECODE_MAX_PIXELS", "12000000") or 0)
+    except (TypeError, ValueError):
+        return 12_000_000
+
+
+def image_head(raw: bytes) -> tuple:
+    """`(형식, 가로, 세로)` — 머리말만 읽는다(화소는 안 푼다). 못 읽으면 `("", 0, 0)`."""
+    try:
+        from io import BytesIO
+        from PIL import Image
+        with Image.open(BytesIO(raw or b"")) as im:
+            return str(im.format or ""), int(im.size[0]), int(im.size[1])
+    except Exception:                                             # noqa: BLE001
+        return "", 0, 0
+
+
+def open_small(raw: bytes, max_side: int) -> tuple:
+    """Z10-B — 이미지 바이트 → **긴 변 `max_side` 이하 RGB**(투명은 흰 배경) — `(이미지 | None, 형식, 가로, 세로, 사유)`.
+
+    - 머리말로 크기부터 본다. JPEG은 `draft`로 줄여 푼다(원본 화소를 다 풀지 않음).
+    - JPEG이 아니고 화소가 `decode_max_pixels()`를 넘으면 **풀지 않고** None + 사유.
+    - 푸는 것은 프로세스당 한 장씩(`_CONVERT_LOCK`) — 대표 사진 판정·OCR·네이버 변환이 같은 줄에 선다.
+    - 줄이기(`thumbnail`)를 RGB 변환보다 **먼저** — 원본 크기 RGB 사본을 만들지 않는다.
+    """
+    try:
+        from io import BytesIO
+        from PIL import Image
+    except Exception as exc:                                       # noqa: BLE001
+        return None, "", 0, 0, f"Pillow 없음({type(exc).__name__})"
+    try:
+        im = Image.open(BytesIO(raw or b""))
+    except Exception as exc:                                       # noqa: BLE001
+        return None, "", 0, 0, f"이미지를 열지 못했어요({type(exc).__name__})"
+    fmt, (w, h) = str(im.format or ""), im.size
+    side = max(1, int(max_side or 1))
+    cap = decode_max_pixels()
+    if fmt != "JPEG" and cap and w * h > cap:
+        im.close()
+        return None, fmt, w, h, (f"{fmt or '이미지'} {w}×{h}(화소 {w * h / 1e6:.0f}M)이 서버 디코드 상한 {cap / 1e6:.0f}M을 넘어 "
+                                 f"풀지 않았어요")
+    with _CONVERT_LOCK:
+        try:
+            if fmt == "JPEG":
+                im.draft("RGB", (side, side))
+            im.load()
+            im.thumbnail((side, side))
+            if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                rgba = im if im.mode == "RGBA" else im.convert("RGBA")
+                flat = Image.new("RGB", rgba.size, (255, 255, 255))
+                flat.paste(rgba, mask=rgba.getchannel("A"))
+                if rgba is not im:
+                    rgba.close()
+                im.close()
+                im = flat
+            elif im.mode != "RGB":
+                rgb = im.convert("RGB")
+                im.close()
+                im = rgb
+            return im, fmt, w, h, ""
+        except Exception as exc:                                   # noqa: BLE001
+            try:
+                im.close()
+            except Exception:                                      # noqa: BLE001
+                pass
+            return None, fmt, w, h, f"이미지를 풀지 못했어요({type(exc).__name__})"
 
 
 def screen_images(urls, *, probe_fn=None, min_px: int = MIN_PX, max_px: int = MAX_PX) -> dict:

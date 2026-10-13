@@ -44,7 +44,9 @@
              (c.text ? '텍스트 있음 — 반려 가능(읽은 글자 「' + esc(c.seen) + '」)'
                      : (c.text === false ? '글자·워터마크 안 보임'
                                          : '글자 판정 못 함(' + esc(c.ocr_why || '텐센트 OCR 실패') + ') — 등록은 막지 않아요')) + '</li>');
-    out.push('<li class="cpx-ck is-info" data-role="cpx-check-white">흰 배경 ' + c.white_pct + '%(가장자리 띠 기준)</li>');
+    out.push('<li class="cpx-ck ' + (c.white_pct == null ? 'is-unk' : 'is-info') + '" data-role="cpx-check-white">' +
+             (c.white_pct == null ? '흰 배경 못 잼 — ' + esc(c.decode_why || '사진을 풀지 않았어요') + '(등록은 막지 않아요)'
+                                  : '흰 배경 ' + c.white_pct + '%(가장자리 띠 기준)') + '</li>');
     return out.join('');
   }
   function render(d) {

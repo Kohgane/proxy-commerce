@@ -81,6 +81,13 @@ def guard(stage: str, detail: str = "") -> None:
     if lim <= 0:
         return
     cur, _peak = read_mb()
+    if cur <= lim:
+        # Z10-B: 경계 사이에 넘었다가 내려왔어도(샘플러가 봤다) 이 잡은 멈춘다 — 다음 장에서 또 넘는다
+        from src.utils import rss_sampler as _smp
+        hit = _smp.over(JOB.get())
+        if hit:
+            cur = hit[0]
+            detail = (detail + " · " if detail else "") + f"샘플러가 {hit[2]}ms에 {hit[0]}MB를 봤어요"
     if cur > lim:
         log("cap_exceeded", job=JOB.get()[:8], at=stage, limit_mb=lim, detail=detail)
         raise MemoryCapExceeded(stage, cur, lim, detail)
