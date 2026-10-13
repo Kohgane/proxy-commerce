@@ -430,3 +430,67 @@ def test_0_translate_anthropic_small_model(monkeypatch, ai):
     out = AITranslator().translate_product({"title": "北欧电视柜", "description": "黑色"})
     assert out["provider"] == "anthropic" and out["title_ko"] == "북유럽 TV 스탠드"
     assert ai.calls[-1]["model"] == "claude-haiku-4-5"
+
+
+# ── 2f'. 쿠팡 「메타 속성 고르기」 — 옵션 축 이름 → 그 카테고리 메타 속성(목록 안에서만) ─────────────────
+
+def _f51_unknown_axis():
+    from tests.test_f51_coupang_multi_sku import META, _product, _skus
+    p = _product(_skus())
+    p["options"] = [{"name": "尺码", "values": p["options"][0]["values"]}]           # 메타에 없는 축 이름(실물 617129397971)
+    return META, p
+
+
+def test_2f_axis_meta_pick_from_real_plan(ai):
+    """실제 쿠팡 계획(`plan_for`)이 낸 「메타 속성 고르기」 재료 → AI가 목록 안에서 하나 → 다시 계획하면 그 보류가 사라진다."""
+    from src.uploaders import coupang_options as O
+    from src.services import ai_fix as AF
+    META, p = _f51_unknown_axis()
+    plan = O.plan_for(META["attributes"], p)
+    assert plan["name_picks"] and plan["name_picks"][0]["choices"] == ["색상", "수량"]
+    res = [{"market": "coupang:woojoo", "ok": False, "error_code": "coupang_hold", "details": plan["holds"],
+            "name_picks": plan["name_picks"]}]
+    [task] = [t for t in AF.plan(p, {}, res) if t["kind"] == "coupang_axis"]
+    assert task["picks"][0]["orig"] == "尺码"
+    ai.answers["other"] = {"picks": [{"orig": "尺码", "meta": "색상", "why": "값이 색 이름(白色 등)"}]}
+    ex = {}
+    out = AF.run_round(p, ex, res, calls_left=6)
+    assert out["applied"] == ["coupang_axis:尺码"] and ex["coupang_option_names"] == {"尺码": "색상"}
+    assert ex["manual_fields"]["coupang_axis:尺码"].startswith("ai:")
+    plan2 = O.plan_for(META["attributes"], p)                                           # p에도 적용됨(이번 검증 재료)
+    assert not plan2["name_picks"] and not any("메타 속성에 없어" in h for h in plan2["holds"])
+    assert AF.summary(ex)["line"] == "AI가 고쳤어요 — 쿠팡 옵션 속성 1개"
+    # 되돌리기 → 표에서 빠지고 다시 묻지 않는다(→ 다시 보류)
+    assert AF.revert(ex, "coupang_axis:尺码") and ex["coupang_option_names"] == {}
+    assert not [t for t in AF.plan(p, ex, res) if t["kind"] == "coupang_axis"]
+
+
+def test_2f_axis_pick_outside_list_is_dropped():
+    from src.services import ai_fix as AF
+    t = {"kind": "coupang_axis", "markets": ["coupang"], "picks": [{"orig": "尺码", "label": "尺码", "candidate": "사이즈",
+                                                                   "choices": ["색상", "수량"]}]}
+    ex = {}
+    assert AF._apply(t, {"picks": [{"orig": "尺码", "meta": "사이즈"}]}, {}, ex, {}) == []
+    assert "coupang_option_names" not in ex and ex["ai_fix_rejects"]["coupang_axis:尺码"] == "목록 밖 이름"
+
+
+def test_2f_precheck_hold_carries_name_picks():
+    """실제 `CoupangUploader.precheck`(통신만 대역) → 「메타 속성 고르기」 재료가 판정 결과에 실린다(AI가 같은 재료로 고른다)."""
+    from src.uploaders.coupang_uploader import CoupangUploader
+    from tests.test_f51_coupang_multi_sku import META
+    _, p = _f51_unknown_axis()
+
+    class U(CoupangUploader):
+        def _api_request(self, method, path, data=None, **kw):
+            if "predict" in path:
+                return {"data": {"predictedCategoryId": "69195", "predictedCategoryName": "충전 거치대"}}
+            return {"data": META}
+
+        def outbound_for_delivery(self):
+            return "OB1", ""
+
+        def is_agent_buy(self):
+            return False
+    up = U(access_key="ak", secret_key="sk", vendor_id="A1")
+    out = up.precheck({**p, "title": p["title_ko"], "category_id": "69195"})
+    assert out["ok"] is False and out["name_picks"][0]["orig"] == "尺码" and out["name_picks"][0]["choices"]

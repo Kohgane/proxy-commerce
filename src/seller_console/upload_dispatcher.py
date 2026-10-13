@@ -610,6 +610,8 @@ class PrevalidationResult:
     rep_pending: bool = False
     # Y7-M — 「주의」 칩(보류 아님 · 등록 막지 않음). 예: 옵션이 조각별 개별 판매인데 상품명이 「세트」.
     cautions: List[str] = field(default_factory=list)
+    # Y8 f — 쿠팡 메타에 없는 옵션 축 이름 `[{orig, label, candidate, choices}]`(「메타 속성 고르기」 재료). AI 자동수정이 하나를 고른다.
+    name_picks: List[Dict[str, Any]] = field(default_factory=list)
 
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
@@ -1547,7 +1549,7 @@ class UploadDispatcher:
                     market=market, ok=False, error_code="coupang_hold",
                     message=lines_message("등록하면 쿠팡이 거부할 것이라 여기서 멈췄습니다", chk["holds"]),
                     hint=" · ".join(chk.get("notes") or []),
-                    details=list(chk["holds"]))
+                    details=list(chk["holds"]), name_picks=list(chk.get("name_picks") or []))
             if chk.get("notes"):
                 # 참고 사항은 힌트 한 자리에만 — 목록에도 적으면 같은 말이 두 번 나온다.
                 return PrevalidationResult(market=market, ok=True, message="사전검증 통과",

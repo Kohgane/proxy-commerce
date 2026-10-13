@@ -1001,6 +1001,7 @@ class CoupangUploader(BaseUploader):
         holds.extend(plan['holds'])
         notes.extend(plan['notes'])
         out.update(attributes=plan['attributes'], search_extra=plan['search_extra'])
+        out['name_picks'] = list(plan.get('name_picks') or [])      # Y8 f: 메타에 없는 옵션 축 — AI가 메타 속성 하나를 고른다
         if plan.get('multi'):
             out['items_plan'] = list(plan.get('items') or [])
             low = [it for it in out['items_plan'] if (self._as_int(it.get('sell_price_krw')) or 0) < 10]

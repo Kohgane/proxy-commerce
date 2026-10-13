@@ -10,7 +10,9 @@
                      그 답에도 같은 가드(IP·상표·원문에 없는 영문 이름)를 건다 — `reject_autofix._changes`
   d `detail`         상세 본문 비어 있음/가게 UI 글자 → 상세 초안(기존 `_pv_auto_detail` — Anthropic 우선으로 바뀜). 여기선 카드 줄·되돌리기만
   e `notice`         고시정보 빈칸 — **원문에 적힌 것만**(원산지 등). 못 찾으면 그대로(「상세페이지 참조」 유지) → `origin`
-  f `coupang_attr`   쿠팡 필수 구매옵션(메타 속성) 값 → `coupang_attributes`
+  f `coupang_axis`   쿠팡 「메타 속성 고르기」 — 메타에 없는 옵션 축 이름을 그 카테고리 메타 속성 중 하나로(목록 밖 금지)
+                     → `coupang_option_names`(쿠팡 전용 — 네이버 그룹 이름·화면엔 안 나감, 편집 화면 드롭다운과 같은 표)
+    `coupang_attr`   쿠팡 필수 구매옵션(메타 속성) 값이 비었을 때 근거 있는 값 → `coupang_attributes`
 
 AI가 절대 안 건드리는 것: 가격·마진·배송·브랜드 칸(GENERIC)·등록된 마켓 기록·「그래도 등록」 플래그·선주문 보류.
 가드: IP·상표 게이트(`ko_polish.ip_hits/mark_hits/replica_hits`), 원문에 없는 고유명(`invented_names`), 한자·가나가 섞인 답은 버림.
@@ -30,7 +32,7 @@ MAX_CALLS = 6
 RETRY_AFTER = timedelta(hours=24)          # 검사에 떨어진 항목은 하루 동안 다시 묻지 않는다(같은 돈을 또 쓰지 않게)
 
 KIND_LABEL = {"option_value": "옵션값", "naver_category": "카테고리", "title": "상품명", "detail": "상세",
-              "notice": "고시정보", "coupang_attr": "쿠팡 필수옵션"}
+              "notice": "고시정보", "coupang_attr": "쿠팡 필수옵션", "coupang_axis": "쿠팡 옵션 속성"}
 _KANA = re.compile(r"[぀-ヿ]")
 _HAN = re.compile(r"[㐀-鿿豈-﫿]")
 _MAX_VALUE = 25
@@ -175,6 +177,19 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
                 mk.append(str(_res_get(r, "market")))
     if names:
         tasks.append({"kind": "coupang_attr", "markets": sorted(set(mk)), "names": names[:6]})
+    # f' 쿠팡 「메타 속성 고르기」 — 메타에 없는 옵션 축 이름을 이 카테고리 메타 속성 중 하나로(고를 목록 = 쿠팡 메타 그대로)
+    picks, mk = [], []
+    for r in results or []:
+        if _res_get(r, "ok") or not str(_res_get(r, "market") or "").startswith("coupang"):
+            continue
+        for p in _res_get(r, "name_picks") or []:
+            orig = str((p or {}).get("orig") or "").strip()
+            if orig and p.get("choices") and not _skip(ex, "coupang_axis:" + orig) and all(x["orig"] != orig for x in picks):
+                picks.append({"orig": orig, "label": str(p.get("label") or orig), "candidate": str(p.get("candidate") or ""),
+                              "choices": [str(c) for c in p["choices"]][:40]})
+                mk.append(str(_res_get(r, "market")))
+    if picks:
+        tasks.append({"kind": "coupang_axis", "markets": sorted(set(mk)), "picks": picks[:4]})
     return tasks
 
 
@@ -218,6 +233,17 @@ def _prompt(task: dict, pd: dict) -> Tuple[str, str]:
                 "상품정보고시의 원산지(제조국)가 위 규격표·상세 원문에 **글자로 적혀 있으면** 그 나라를 한국어로 답하세요"
                 "(예: 产地 中国 → 중국). 적혀 있지 않으면 null(추정 금지 — 소싱처 나라로 짐작하지 마세요).\n"
                 '답 형식: {"origin": "나라 이름 또는 null", "why": "근거가 된 원문 글자"}', "small")
+    if k == "coupang_axis":
+        rows = []
+        for p in task["picks"]:
+            vals = next((o.get("values") for o in (pd.get("options") or []) if isinstance(o, dict)
+                         and p["orig"] in (o.get("src_name"), o.get("name"))), []) or []
+            rows.append(f"- 옵션 「{p['label']}」(원문 {p['orig']}) 값 예: {', '.join(str(v) for v in vals[:6])}\n"
+                        f"  고를 수 있는 쿠팡 메타 속성: {' | '.join(p['choices'])}")
+        return (_context(pd) + "\n\n쿠팡 카테고리 메타에 이 옵션 이름이 없어 등록이 멈췄어요. 각 옵션을 **아래 목록 중 하나**의 "
+                "쿠팡 메타 속성으로 연결하세요(목록 밖 이름 금지 · 값의 뜻과 맞는 것 · 맞는 게 없으면 그 옵션은 빼세요).\n"
+                + "\n".join(rows) + '\n\n답 형식: {"picks": [{"orig": "원문 옵션 이름", "meta": "고른 메타 속성", "why": "한 줄 근거"}]}',
+                "small")
     if k == "coupang_attr":
         return (_context(pd) + "\n\n쿠팡 카테고리가 요구하는 필수 구매옵션 값을 정하세요: " + ", ".join(task["names"])
                 + "\n위 상품명·옵션에 근거가 있는 값만(한국어 또는 숫자, 30자 이하). 근거가 없으면 그 속성은 빼세요. "
@@ -284,6 +310,23 @@ def _apply(task: dict, ans: dict, pd: dict, ex: dict, meta: dict) -> List[str]:
         pd["origin"] = origin
         _mark(ex, "notice:origin", k, f"원산지 {origin}", before, origin, str(ans.get("why") or ""), meta)
         done.append("notice:origin")
+    elif k == "coupang_axis":
+        got = ans.get("picks") if isinstance(ans.get("picks"), list) else []
+        names = dict(ex.get("coupang_option_names") or {}) if isinstance(ex.get("coupang_option_names"), dict) else {}
+        for p in task["picks"]:
+            key = "coupang_axis:" + p["orig"]
+            a = next((x for x in got if isinstance(x, dict) and str(x.get("orig") or "").strip() == p["orig"]), None)
+            chosen = str((a or {}).get("meta") or "").strip()
+            if not chosen or chosen not in p["choices"]:
+                _tried(ex, key, "목록 밖 이름" if chosen else "답 없음")
+                continue
+            before = names.get(p["orig"], "")
+            names[p["orig"]] = chosen
+            _mark(ex, key, k, f"{p['label']} → {chosen}", before, chosen, str((a or {}).get("why") or ""), meta)
+            done.append(key)
+        if done:
+            ex["coupang_option_names"] = names
+            pd["coupang_option_names"] = dict(names)
     elif k == "coupang_attr":
         got = ans.get("attributes") if isinstance(ans.get("attributes"), list) else []
         cur = [a for a in (ex.get("coupang_attributes") or []) if isinstance(a, dict)]
@@ -354,6 +397,12 @@ def overlay(pd: dict, ex: dict) -> dict:
                 pd["naver_category_id"] = after
         elif key == "notice:origin":
             pd["origin"] = pd.get("origin") or after
+        elif key.startswith("coupang_axis:"):
+            cn = dict(pd.get("coupang_option_names") or {}) if isinstance(pd.get("coupang_option_names"), dict) else {}
+            o = key.split(":", 1)[1]
+            if cn.get(o) in (None, "", before, after):
+                cn[o] = after
+            pd["coupang_option_names"] = cn
         elif key.startswith("coupang_attr:"):
             n = key.split(":", 1)[1]
             cur = next((a for a in attrs if a.get("attributeTypeName") == n), None)
@@ -373,6 +422,15 @@ def overlay(pd: dict, ex: dict) -> dict:
                     ov.pop(v, None)
         elif key == "naver_category" and str(pd.get("naver_category_id") or "") == str(after):
             pd["naver_category_id"] = before
+        elif key.startswith("coupang_axis:"):
+            cn = dict(pd.get("coupang_option_names") or {}) if isinstance(pd.get("coupang_option_names"), dict) else {}
+            o = key.split(":", 1)[1]
+            if cn.get(o) == after:
+                if before:
+                    cn[o] = before
+                else:
+                    cn.pop(o, None)
+                pd["coupang_option_names"] = cn
         elif key == "notice:origin" and pd.get("origin") == after:
             pd["origin"] = before
         elif key.startswith("coupang_attr:"):
@@ -456,6 +514,14 @@ def revert(ex: dict, key: str) -> bool:
             ex["origin"] = before
         else:
             ex.pop("origin", None)
+    elif key.startswith("coupang_axis:"):
+        cn = dict(ex.get("coupang_option_names") or {})
+        o = key.split(":", 1)[1]
+        if before:
+            cn[o] = before
+        else:
+            cn.pop(o, None)
+        ex["coupang_option_names"] = cn
     elif key.startswith("coupang_attr:"):
         n = key.split(":", 1)[1]
         cur = [x for x in (ex.get("coupang_attributes") or []) if isinstance(x, dict) and x.get("attributeTypeName") != n]
