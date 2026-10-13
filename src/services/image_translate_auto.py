@@ -28,7 +28,23 @@ logger = logging.getLogger(__name__)
 
 ENV_CAP = "IMAGE_TRANSLATE_DAILY_CAP"
 # Z3-2(오너 2026-10-04): 건당 상한 = 대표 1 + 갤러리 5(갤러리 0~5번) + 상세 10. 넘는 장은 원본 유지.
-PER_ITEM_CAP = {"gallery": 6, "detail": 10}
+# Y9(오너 2026-10-13): 상세는 수집 즉시 전 장(「상세 사진 번역 중 n/28」) — 상한 `IMAGE_TRANSLATE_DETAIL_CAP`(기본 30).
+#   주소만 봐도 뺄 장(스페이서·작은 아이콘)은 보내지 않는다(`detail_image_plan.url_exclusion`).
+PER_ITEM_CAP = {"gallery": 6, "detail": 30}
+
+
+def per_item_cap(kind: str) -> int:
+    if kind == "detail":
+        try:
+            return max(0, int(os.getenv("IMAGE_TRANSLATE_DETAIL_CAP", str(PER_ITEM_CAP["detail"]))))
+        except (TypeError, ValueError):
+            return PER_ITEM_CAP["detail"]
+    return PER_ITEM_CAP.get(kind, 6)
+
+
+def d3_enabled() -> bool:
+    """Y9: D3(박스+원문 → 우리가 지우고 그리기)는 `IMAGE_TRANSLATE_D3=1`일 때만. 기본은 텐센트 본선(갤러리와 같은 결과물)."""
+    return os.getenv("IMAGE_TRANSLATE_D3", "0") == "1"
 DEFAULT_CAP = 200
 FAIL_PAUSE_AT = 20
 SOURCES = ("taobao", "tmall", "1688")
@@ -209,23 +225,42 @@ def enqueue_after_enrich(user_id: str, item_id: str, url: str, extra: dict) -> i
             return 0
     except Exception:
         return 0
-    done = set()
+    from src.services import detail_image_plan as _dip
+    done, redo, cut_text = set(), [], set()
+    from src.db.image_translate_queue_pg import is_no_text
     for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
         for e in (extra.get(key) or []):
-            if isinstance(e, dict) and e.get("status") in ("done", "skipped"):
-                done.add((kind, int(e.get("idx", -1))))
-    pages, over = [], 0
+            if not isinstance(e, dict):
+                continue
+            i = int(e.get("idx", -1))
+            if kind == "detail" and not e.get("promo_include") and _dip.text_exclusion(_dip.entry_text(e)):
+                cut_text.add(i)                   # Y9: 이미 읽은 글자가 판촉·스토어 배너 — 등록에서 빠지니 번역도 안 보낸다(「그래도 넣기」면 다시)
+                continue
+            if e.get("vendor") == "d3" and not d3_enabled():
+                if is_no_text(str(e.get("error_message") or e.get("reason") or "")):
+                    done.add((kind, i))           # 「그릴 줄 없음」 = 글자 없는 사진 — 다시 보내도 같은 답(원본 그대로)
+                else:
+                    redo.append((kind, i))        # Y9: 옛 D3 결과(한국어 없이 글자만 지움 · 실패) → 텐센트 본선으로 다시
+            elif e.get("status") in ("done", "skipped", "excluded"):
+                done.add((kind, i))
+    pages, over, cut = [], 0, 0
     for key, kind in (("images", "gallery"), ("detail_images", "detail")):
-        cap = PER_ITEM_CAP[kind]
+        cap = per_item_cap(kind)
         for i, u in enumerate([u for u in (extra.get(key) or []) if u]):
             if i >= cap:
                 over += 1                       # Z3-2: 건당 상한 넘는 장은 원본 그대로(보내지 않는다)
                 continue
+            if kind == "detail" and (_dip.url_exclusion(_dip.fix_url(u)) or i in cut_text):
+                cut += 1                        # Y9: 스페이서·작은 아이콘 — 보내지 않는다(등록에서도 빠진다)
+                continue
             if (kind, i) not in done:
                 pages.append((kind, i))
-    if over:
-        logger.info("[이미지번역·자동] item=%s 건당 상한(대표1+갤러리5+상세10) 넘는 %d장은 원본 유지", item_id, over)
+    if over or cut:
+        logger.info("[이미지번역·자동] item=%s 건당 상한 넘는 %d장 원본 유지 · 등록에서 빠질 %d장(스페이서·아이콘·판촉 배너) 안 보냄", item_id, over, cut)
     n = _q().enqueue(user_id, item_id, pages) if pages else 0
+    want_redo = [p for p in redo if p in set(pages)]
+    if want_redo:
+        n += _q().requeue_pages(item_id, want_redo)
     if n:
         logger.info("[이미지번역·자동] 접수 item=%s %s장(갤러리+상세)", item_id, n)
         kick()
@@ -342,11 +377,87 @@ def _translate_job(job: dict) -> tuple:
     if st not in ("done", "skipped") and _q().is_no_text(why):
         # Y4: 글자 없는 사진 = **성공(원본 유지)**. 실패로 세면 차단기가 멀쩡한 큐를 멈춘다(실측 20장 중 14장이 이것).
         return "skipped", f"글자 없는 사진 — 원본 그대로({why[:60]})"
+    if st == "excluded":                          # Y9: 주소·크기로 뺀 장 — 보내지 않았다(실패 아님)
+        return "skipped", str(entry.get("reason") or "")
     return (st if st in ("done", "skipped") else "failed"), why
 
 
 def translate_page(url: str, *, idx: int, kind: str, item_id: str, seller_id: str, title: str = "") -> dict:
-    """한 장 = 벤치 최신 D3 파이프라인. `images_ko` 한 줄(`build_entry` 모양)을 돌려준다."""
+    """한 장 → `images_ko` 한 줄(`build_entry` 모양). Y9: 기본은 **텐센트 본선**(갤러리 「번역」 버튼과 같은 결과물),
+    `IMAGE_TRANSLATE_D3=1`일 때만 옛 D3 파이프라인."""
+    if not d3_enabled():
+        return translate_page_tencent(url, idx=idx, kind=kind, item_id=item_id, seller_id=seller_id)
+    return translate_page_d3(url, idx=idx, kind=kind, item_id=item_id, seller_id=seller_id, title=title)
+
+
+def translate_page_tencent(url: str, *, idx: int, kind: str, item_id: str, seller_id: str) -> dict:
+    """Y9(오너 2026-10-13) — 텐센트 `ImageTranslateLLM` 본선. 받기 전에 주소 정리(`//`·알리 webp 꼬리), 보내기 전에 JPEG 정규화
+    (webp·gif 첫 프레임 → JPEG · 긴 변 ≤ 4096 · ≤ 4MB — `InvalidParameterValue.Data` 2장의 원인). 글자 없는 사진
+    (`PictureWithoutText`)은 실패가 아니라 원본 그대로(`use=True`). 번역 결과 글자에 판촉·스토어 문구가 있으면 `exclude` 사유."""
+    import time as _time
+    from src.media.image_label import make_label, run_stamp
+    from src.services import detail_image_plan as dip
+    from src.services import image_text_precheck as precheck
+    from src.services import image_translate_budget as budget
+    from src.services import image_translate_store as istore
+    from src.services import image_translate_tencent as tc
+    t0 = _time.monotonic()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    u = dip.fix_url(url)
+    why_x = dip.url_exclusion(u)
+    if why_x:
+        return {"idx": int(idx), "kind": kind, "status": "excluded", "vendor": "rule", "ms": 0, "at": now_iso,
+                "exclude": why_x, "reason": "등록에서 뺍니다 — " + why_x}
+    raw, why = tc.fetch_image(u)
+    if not raw:
+        return istore.build_entry(idx, {"ok": False, "vendor": "tencent", "error_class": "FetchFailed", "error_message": why,
+                                        "hint": "원본 주소가 아직 열려 있는지 확인하세요."},
+                                  item_id=item_id, seller_id=seller_id, kind=kind)
+    data, info = dip.prepare_for_tencent(raw)
+    del raw
+    if data is None:
+        return istore.build_entry(idx, {"ok": False, "vendor": "tencent", "error_class": "ConvertFailed",
+                                        "error_message": f"텐센트 입력으로 바꾸지 못했어요 — {info.get('note')}"},
+                                  item_id=item_id, seller_id=seller_id, kind=kind)
+    sz = dip.size_exclusion(int(info.get("w") or 0), int(info.get("h") or 0))
+    if sz:
+        return {"idx": int(idx), "kind": kind, "status": "excluded", "vendor": "rule", "ms": 0, "at": now_iso,
+                "exclude": sz, "reason": "등록에서 뺍니다 — " + sz}
+    # Z3-2 ① OCR 먼저 — 한자가 없다고 **확신**하면 이미지 번역에 안 보낸다(모르면 보냄).
+    has, seen = precheck.han_text(data)
+    if has is False:
+        budget.record_skip("ocr")
+        return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "tencent-ocr", "use": True, "ms": 0, "at": now_iso,
+                "ocr_text": str(seen or "")[:500], "section": dip.section(seen),
+                "reason": "글자 없는 사진(OCR 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
+    m = budget.mode()
+    ok_send, spent, cap = budget.can_send(m)
+    if not ok_send:
+        budget.record_skip("budget")
+        return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "budget", "use": True, "ms": 0, "at": now_iso,
+                "reason": f"이번 달 이미지 번역 예산 소진(${spent:.2f}/${cap:.0f}) — 원본으로 등록합니다"}
+    res = tc.translate_image(data=data, mode=m)
+    budget.record_call(m, bool(res.get("ok")))
+    if not res.get("ok") and "PictureWithoutText" in str(res.get("error_code") or ""):
+        return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "tencent", "use": True,
+                "ms": int(res.get("ms") or 0), "at": now_iso, "reason": "글자 없는 사진 — 원본 그대로"}
+    label = make_label(run_stamp("auto"), item_id, idx, "TENCENT", folder="seller")
+    entry = istore.build_entry(idx, res, item_id=item_id, seller_id=seller_id, kind=kind, label=label)
+    entry["vendor"] = "tencent"
+    if info.get("converted"):
+        entry["input_note"] = info.get("note")
+    if entry.get("status") == "done":
+        text = dip.entry_text(entry)
+        entry["section"] = dip.section(text)
+        x = dip.text_exclusion(text)
+        if x:
+            entry["exclude"] = x
+    entry["wall_ms"] = int((_time.monotonic() - t0) * 1000)
+    return entry
+
+
+def translate_page_d3(url: str, *, idx: int, kind: str, item_id: str, seller_id: str, title: str = "") -> dict:
+    """한 장 = 벤치 최신 D3 파이프라인(`IMAGE_TRANSLATE_D3=1`일 때만)."""
     from src.media.image_label import make_label, run_stamp
     from src.services import image_translate_bench as bench
     from src.services import image_translate_store as istore

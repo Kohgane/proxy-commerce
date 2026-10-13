@@ -22,7 +22,11 @@ def _wire(monkeypatch, *, has_han, ok=True):
     from src.services import image_text_precheck as P
     from src.services import image_translate_tencent as tc
     calls = []
-    monkeypatch.setattr(tc, "fetch_image", lambda url: (b"jpgbytes", ""))
+    import io
+    from PIL import Image
+    _buf = io.BytesIO()
+    Image.new("RGB", (400, 400), (200, 200, 200)).save(_buf, "JPEG")      # Y9: 본선은 보내기 전 이미지를 열어 본다(진짜 JPEG)
+    monkeypatch.setattr(tc, "fetch_image", lambda url: (_buf.getvalue(), ""))
     monkeypatch.setattr(P, "han_text", lambda raw: (has_han, "加厚" if has_han else ""))
 
     def fake_translate(url="", data=b"", mode=0, **kw):
@@ -70,9 +74,11 @@ def test_per_item_cap_16(fresh):
     from src.services import image_translate_auto as A, image_translate_tencent as tc
     fresh.setattr(tc, "is_configured", lambda: True)
     fresh.setattr(A, "kick", lambda: None)
-    extra = {"images": [f"g{i}" for i in range(9)], "detail_images": [f"d{i}" for i in range(14)]}
+    extra = {"images": [f"g{i}" for i in range(9)], "detail_images": [f"d{i}" for i in range(34)]}
     n = A.enqueue_after_enrich("u", "item-cap", "https://item.taobao.com/item.htm?id=1", extra)
-    assert n == 16                                        # 대표1+갤러리5(0~5) + 상세10
+    assert n == 36                                        # 대표1+갤러리5(0~5) + 상세 30(Y9: 수집 즉시 전 장 — 기본 30)
+    fresh.setenv("IMAGE_TRANSLATE_DETAIL_CAP", "10")      # 오너가 줄이면(Z3-2 값) 그만큼
+    assert A.enqueue_after_enrich("u", "item-cap2", "https://item.taobao.com/item.htm?id=2", extra) == 16
 
 
 def test_status_line_for_diagnostics(fresh):

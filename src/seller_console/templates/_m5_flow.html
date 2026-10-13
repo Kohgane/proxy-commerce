@@ -465,7 +465,7 @@
   //   등록 버튼: 통과 또는 「그래도 등록」으로 풀리는 보류가 하나라도 있으면 켠다(전송 실패가 전체를 잠그지 않는다).
   var OVERRIDES = {ship_ratio: ['ship-ratio-override', '그래도 등록'], voltage: ['voltage-override', '전압·플러그 그래도 등록'],
                    rep_image: ['rep-image-override', '대표 사진 그래도 등록']};
-  var pvRows = {}, pvOrder = [], pvAuto = null, pvAutoDetail = null, pvAutoFix = null, pvAiFix = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
+  var pvRows = {}, pvOrder = [], pvAuto = null, pvAutoDetail = null, pvAutoFix = null, pvAiFix = null, pvDetailTr = null, pvPending = [], pvState = '', pvTimer = null, pvJob = 0;
   // Y7-C: 스마트스토어 카테고리 — 정해졌으면 「카테고리 자동: … (바꾸기)」 한 줄, 못 정했으면 후보 칩(1탭 저장 → 그 마켓만 다시 검증).
   function catLine(r) {
     var c = r.category || {};
@@ -582,6 +582,11 @@
     }
     // 반려 사유 자동 수정(#886): 고친 글자는 아래 Y8 「AI가 고쳤어요」 한 줄에 합쳐 보인다 — 여기선 진행·실패만
     if (pvAutoFix && !(['done', 'applied'].indexOf(pvAutoFix.status) >= 0 && !pvAutoFix.undone && pvAiFix && (pvAiFix.summary || {}).line)) h += autoFixHtml(pvAutoFix);
+    // Y9: 상세 사진 번역이 아직 끝나지 않았으면 한 줄(보류 아님)
+    if (pvDetailTr && pvDetailTr.pending) {
+      h += '<div class="m5-note" data-role="m5-detail-translate">상세 사진 번역 중 ' + esc(pvDetailTr.done) + '/' + esc(pvDetailTr.total) +
+        ' — 끝나면 번역본으로 나가요(지금 등록하면 남은 장은 원본으로 나가요).</div>';
+    }
     h += aiFixHtml(pvAiFix);
     pvOrder.forEach(function (m) { h += pvRowHtml(m); });
     if (pvState === 'running') h += pvQueue
@@ -610,7 +615,7 @@
       if (jobNo !== pvJob) return;
       if (!d || !d.ok) { pvState = 'done'; pvPending = []; pvRender(); checksEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="m5-check-error">' + esc((d && d.error) || '검증 결과를 받지 못했어요') + '</div>'); checkBtn.disabled = false; return; }
       (d.results || []).forEach(function (r) { pvRows[r.market] = r; });
-      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvAutoFix = d.auto_fix || pvAutoFix; pvAiFix = d.ai_fix || pvAiFix; pvState = d.state;
+      pvPending = d.pending || []; pvAuto = d.auto_translate || pvAuto; pvAutoDetail = d.auto_detail || pvAutoDetail; pvAutoFix = d.auto_fix || pvAutoFix; pvAiFix = d.ai_fix || pvAiFix; pvDetailTr = d.detail_translate || pvDetailTr; pvState = d.state;
       pvQueue = d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '';
       pvRender();
       if (d.state === 'running') pvTimer = setTimeout(function () { pvPoll(jobNo, url); }, 3000);
@@ -620,7 +625,7 @@
   function runCheck(markets, keep) {
     if (pvTimer) clearTimeout(pvTimer);
     var jobNo = ++pvJob;
-    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; pvAutoDetail = null; pvAutoFix = null; pvAiFix = null; }
+    if (!keep) { pvRows = {}; pvOrder = markets.slice(); pvAuto = null; pvAutoDetail = null; pvAutoFix = null; pvAiFix = null; pvDetailTr = null; }
     markets.forEach(function (m) { delete pvRows[m]; if (pvOrder.indexOf(m) < 0) pvOrder.push(m); });
     pvPending = markets.slice(); pvState = 'running';
     checkBtn.disabled = true; pvRender();

@@ -2337,3 +2337,14 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
    머리줄 자체를 줄바꿈하고 각 항목은 한 줄로 둔다. */
 .ch-card-table .op-card-head { flex-wrap: wrap; row-gap: 6px; }
 .ch-card-table .op-card-head > *, .ch-card-table .op-card-head .rp-step-eyebrow { white-space: nowrap; }
+
+/* Y9 — 상세 사진 판정 그리드(편집 화면 「상세페이지」 탭). 폰 390px에서 3열. */
+.kgp-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--space-2); width: 100%; }
+.kgp-dcell { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.kgp-dcell.is-excluded { border-style: dashed; }
+.kgp-dcell.is-excluded .kgp-dcell-img { filter: grayscale(1) contrast(.8); }   /* 사진만 — 사유 글자는 흐리지 않는다(AA) */
+.kgp-dcell-img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--bg); }
+.kgp-dcell-meta { padding: var(--space-1) var(--space-1) 0; font-size: var(--caption); line-height: 1.3; }
+.kgp-dcell-pos { color: var(--text-muted); white-space: nowrap; }
+.kgp-dcell-why { padding: 0 var(--space-1); font-size: var(--caption); color: var(--text-muted); line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; }
+.kgp-dcell-inc { padding: 2px var(--space-1) var(--space-1); font-size: var(--caption); display: flex; align-items: center; gap: 4px; }

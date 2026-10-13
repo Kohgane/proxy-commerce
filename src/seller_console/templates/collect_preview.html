@@ -1180,6 +1180,11 @@ function renderDetailGallery() {
   }
   block.style.display = '';
   g.innerHTML = '';
+  // Y9(오너 2026-10-13): 서버 판정표(번역/원본/제외 + 사유 · 등록 순서)가 지금 목록과 같으면 그걸로 그린다.
+  if (Array.isArray(KGP_DETAIL_PLAN) && KGP_DETAIL_PLAN.length === urls.length && urls.length) {
+    kgpDetailPlanRender(g);
+    return;
+  }
   urls.forEach((u) => {
     const a = document.createElement('a');
     a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = '상세설명 이미지';
@@ -1188,6 +1193,46 @@ function renderDetailGallery() {
       'class="kgp-strip-img" onerror="this.parentElement.style.display=\'none\'">';
     g.appendChild(a);
   });
+}
+
+// Y9: 상세 이미지 판정표 — 장마다 번역본/원본/제외(사유) · 「그래도 넣기」 · 등록 n번째(상한 20, 상품 사진·치수 앞 · 브랜드 이야기 뒤)
+var KGP_DETAIL_PLAN = {{ (imgko_detail_plan or []) | tojson }};
+const KGP_DV_LABEL = {translated: ['번역', 'pc-badge-on'], original: ['원본', 'pc-badge-muted'], excluded: ['제외', 'pc-badge-danger'],
+                      pending: ['번역 대기', 'pc-badge-off'], failed: ['원본(번역 실패)', 'pc-badge-off']};
+function kgpDetailPlanRender(g) {
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const plan = KGP_DETAIL_PLAN || [];
+  const n = {translated: 0, original: 0, excluded: 0, pending: 0, failed: 0};
+  plan.forEach(p => { n[p.verdict || 'original'] = (n[p.verdict || 'original'] || 0) + 1; });
+  const out = plan.filter(p => p.outbound_pos > 0).length;
+  let h = '<div class="small mb-2" data-role="detail-plan-summary">상세 사진 ' + plan.length + '장 — 번역 ' + n.translated +
+    ' · 원본 ' + (n.original + n.failed) + ' · 제외 ' + n.excluded + (n.pending ? ' · 번역 대기 ' + n.pending : '') +
+    ' → <b>등록 ' + out + '장</b> <span class="text-muted">(최대 20장 · 상품 사진·치수표 먼저, 브랜드 이야기는 뒤로)</span></div>';
+  h += '<div class="kgp-dgrid" data-role="detail-plan-grid">' + plan.map(p => {
+    const lab = KGP_DV_LABEL[p.verdict] || KGP_DV_LABEL.original;
+    const img = (p.verdict === 'translated' && p.translated_url) ? p.translated_url : p.url;
+    const ex = p.verdict === 'excluded';
+    const canInclude = ex || p.promo_include;
+    return '<div class="kgp-dcell' + (ex ? ' is-excluded' : '') + '" data-role="detail-plan-cell" data-idx="' + p.idx + '" data-verdict="' + esc(p.verdict) + '">' +
+      '<img src="' + esc(img) + '" alt="상세 ' + (p.idx + 1) + '" loading="lazy" referrerpolicy="no-referrer" class="kgp-dcell-img">' +
+      '<div class="kgp-dcell-meta"><span class="pc-badge ' + lab[1] + '">' + (p.idx + 1) + ' · ' + lab[0] + '</span>' +
+      (p.outbound_pos ? ' <span class="kgp-dcell-pos">등록 ' + p.outbound_pos + '번째</span>' : '') + '</div>' +
+      '<div class="kgp-dcell-why">' + esc(ex ? '등록에서 뺍니다 — ' + p.verdict_reason : p.verdict_reason) + '</div>' +
+      (canInclude ? '<label class="kgp-dcell-inc"><input type="checkbox" class="form-check-input"' + (p.promo_include ? ' checked' : '') +
+        ' onchange="kgpDetailInclude(' + p.idx + ', this.checked)"> 그래도 넣기</label>' : '') +
+      '</div>';
+  }).join('') + '</div>';
+  g.innerHTML = h;
+}
+async function kgpDetailInclude(idx, on) {
+  try {
+    const r = await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/image-promo', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({kind: 'detail', idx: idx, include: !!on})});
+    const d = await r.json();
+    if (!d.ok) { pcToast(d.error || '저장하지 못했어요', 'warning'); return; }
+    KGP_DETAIL_PLAN = d.plan || KGP_DETAIL_PLAN;
+    renderDetailGallery();
+  } catch (e) { pcToast(kgpFriendlyError(e), 'error'); }
 }
 
 // ── v40-C: 마켓별 상세페이지 블록 에디터 ──
@@ -1453,13 +1498,15 @@ async function aiDescribe() {
     if (hint) {
       hint.style.display = '';
       // v87-W7a: 실패 사유 3분 — '키 미설정' / '키 있으나 호출 실패(사유)' / OpenAI 초안 성공. 오귀인 박멸.
-      if (data.provider === 'openai') {
+      // Y8 보강(오너 2026-10-13 20:11 실측): Anthropic 우선 — 성공이면 provider 'anthropic'. 예전엔 'openai'만 성공으로 봐서
+      //   Anthropic 초안이 나와도 「OPENAI_API_KEY 미설정」이라고 적었다.
+      if (data.provider === 'openai' || data.provider === 'anthropic') {
         hint.textContent = 'AI가 생성한 초안이에요. 사실과 다른 부분은 직접 고쳐 주세요(자동 확정 안 됨).';
-      } else if (data.draft_status === 'openai_error') {
+      } else if (data.draft_status === 'openai_error' || data.draft_status === 'anthropic_error') {
         hint.textContent = 'AI 키는 설정돼 있지만 호출에 실패해 확인된 정보만 구조화했어요 — 사유: '
           + (data.draft_error || '원인 미상') + '. (모델명·키 유효성 확인 후 다시 시도)';
       } else {
-        hint.textContent = 'AI 키(OPENAI_API_KEY)가 설정되지 않아 확인된 정보(제목·옵션·원문 상세)만 구조화했어요. 키 설정 시 자연스러운 초안이 생성됩니다.';
+        hint.textContent = 'AI 키가 설정되지 않아 확인된 정보(제목·옵션·원문 상세)만 구조화했어요. 키 설정 시 자연스러운 초안이 생성됩니다.';
       }
     }
   } catch (e) {
@@ -2193,6 +2240,7 @@ async function runPrevalidate() {
         pcToast(kgpFriendlyError(d || {}, '사전검증 결과 받기 실패'), 'error');
         return;
       }
+      window._kgpDetailTr = d.detail_translate || null;             // Y9: 상세 사진 번역 진행(보류 아님)
       renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '', d.auto_fix, d.ai_fix);
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
       else done();
@@ -2301,6 +2349,7 @@ function renderAiFix(a) {
 }
 
 function renderPrevalidateResults(results, pending, state, queueNote, autoFix, aiFix) {
+  const detailTr = window._kgpDetailTr || null;
   pending = pending || [];
   const running = state === 'running';
   _validatedMarkets = results.filter(r => r.ok).map(r => r.market);
@@ -2310,6 +2359,10 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix, a
   let html = `<div class="mb-2 text-muted small" data-role="pv-margin-head">목표 마진율: <strong class="text-teal">${targetMarginPct}%</strong></div>`;
   // 반려 사유 자동 수정(#886): 고친 글자는 아래 Y8 「AI가 고쳤어요」 한 줄에 합쳐 보인다 — 여기선 진행·실패만
   if (!(autoFix && ['done', 'applied'].indexOf(autoFix.status) >= 0 && !autoFix.undone && aiFix && (aiFix.summary || {}).line)) html += renderAutoFix(autoFix);
+  if (detailTr && detailTr.pending) {                // Y9: 상세 사진 번역이 아직(보류 아님)
+    html += '<div class="pc-status pc-status-info" data-role="pv-detail-translate">상세 사진 번역 중 ' + detailTr.done + '/' + detailTr.total +
+      ' — 끝나면 번역본으로 나가요(지금 등록하면 남은 장은 원본으로 나가요).</div>';
+  }
   html += renderAiFix(aiFix);
   html += '<div class="list-group mb-3">';
   results.forEach(r => {

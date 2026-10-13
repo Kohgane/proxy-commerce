@@ -127,6 +127,29 @@ def retry_failed(item_id: str) -> int:
         return int(cur.rowcount or 0)
 
 
+def requeue_pages(item_id: str, pages) -> int:
+    """Y9: 이미 끝난(완료·실패·건너뜀) 장을 **그 장만** 다시 대기로 — 옛 D3 결과를 텐센트 본선으로 다시 돌릴 때. 돌린 장 수.
+    대기·진행 중인 장은 건드리지 않는다(같은 장을 두 번 보내 두 번 청구되지 않게)."""
+    want = {(str(k), int(i)) for k, i in pages or []}
+    if not want:
+        return 0
+    if not _enabled():
+        n = 0
+        with _LOCK:
+            for r in _MEM_Q:
+                if r["item_id"] == str(item_id) and (r["kind"], int(r["idx"])) in want and r["status"] not in ("queued", "running"):
+                    r.update(status="queued", reason="", started_at=None, finished_at=None)
+                    n += 1
+        return n
+    n = 0
+    with pg.tx() as cur:
+        for k, i in want:
+            cur.execute("UPDATE image_translate_queue SET status='queued', reason='', started_at=NULL, finished_at=NULL "
+                        "WHERE item_id=%s AND kind=%s AND idx=%s AND status NOT IN ('queued','running')", (str(item_id), k, i))
+            n += int(cur.rowcount or 0)
+    return n
+
+
 def counts(item_id: str = "") -> dict:
     """`{queued, running, done, failed, skipped}` — 상품 하나 또는 전체."""
     out = {"queued": 0, "running": 0, "done": 0, "failed": 0, "skipped": 0}

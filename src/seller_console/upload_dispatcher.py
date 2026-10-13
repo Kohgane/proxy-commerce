@@ -1235,13 +1235,23 @@ class UploadDispatcher:
             holds.append({"short": f"중국 표준 콘센트({', '.join(_plug)}) — 소싱 제외", "fix": "block",
                           "line": f"「{_plug[0]}」 — 중국 표준(国标) 콘센트·멀티탭은 국내 콘센트 규격과 달라 쓸 수 없고 "
                                   "전기용품 KC 인증 대상이라 소싱하지 않습니다."})
+        # Y9(오너 2026-10-13): 상표·IP는 상품명·옵션만이 아니라 **본문·사진 속 글자(OCR)**에 있어도 같은 보류 — 어디서 찾았는지 함께.
+        _body = str(pd.get("description_ko") or pd.get("description") or "")
+        _ocr = str(pd.get("image_ocr_text") or "")
         _rep = _kp.replica_hits(_risk_text)
+        _rep_where = []
+        for _lab, _txt in (("본문", _body), ("사진 속 글자", _ocr)):
+            _h = [x for x in _kp.replica_hits(_txt) if x not in _rep]
+            if _h:
+                _rep += _h
+                _rep_where.append(f"{_lab}({', '.join(_h)})")
         if _rep:
             holds.append({"short": f"상표 위험({', '.join(_rep)})", "fix": "trademark",
-                          "line": f"가구 레플리카 상표({', '.join(_rep)})가 들어 있어 등록을 보류합니다 — 쿠팡 지재권 신고 대상."})
+                          "line": f"가구 레플리카 상표({', '.join(_rep)})가 들어 있어 등록을 보류합니다 — 쿠팡 지재권 신고 대상."
+                                  + (f" 찾은 곳: {' · '.join(_rep_where)}" if _rep_where else "")})
         # Y6(오너 2026-10-04): 영화·게임·애니 IP명(星际穿越·漫威·迪士尼·宝可梦…) — 제목에선 이미 지웠고(ko_polish),
         #   등록은 라이선스 확인 전까지 보류. 원문 제목까지 본다(번역 제목엔 IP명이 없어도 원문에 있다).
-        _ip = _kp.ip_hits(_risk_text)
+        _ip = _kp.ip_hits(_risk_text) or [x for x in _kp.ip_hits(_body + " " + _ocr)]
         if _ip:
             holds.append({"short": f"상표 확인 보류({', '.join(_ip)})", "fix": "trademark",
                           "line": f"영화·게임·애니 IP({', '.join(_ip)})가 원문 제목에 있어요 — 상품명에선 지웠고, "

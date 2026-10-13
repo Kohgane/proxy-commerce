@@ -399,6 +399,11 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
             out.append(_origin_or_cdn(orig, cdn_map, i))
     # T3: 프로모션 의심 장은 기본 제외(오너가 「그래도 넣기」를 켠 장은 넣는다). 전부 빠지면 대표 이미지가
     #   없어 등록이 막히므로 그땐 빼지 않는다(요약에 그대로 보인다).
+    if kind == "detail":
+        # Y9(오너 2026-10-13): 상세는 판촉·스토어 UI·수상 배너·스페이서·아이콘을 빼고(「그래도 넣기」는 넣는다),
+        #   상품 사진·치수·소재 앞 · 브랜드 스토리 뒤 · 상한 20장(네이버 본문 길이 보호)에서 자른다.
+        from src.services import detail_image_plan as _dip
+        return [u for _i, u in _dip.arrange(list(enumerate(out)), by_idx, originals)]
     drop = {i for i in range(len(originals)) if promo_excluded(by_idx.get(i) or {})}
     pairs = list(enumerate(out))
     if drop and len(drop) < len(out):
@@ -537,6 +542,10 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
 
     cdn_map = origin_cdn_map(ex, kind)
     _rep = rep_index(ex, originals, kind)
+    _order = {}
+    if kind == "detail":
+        from src.services import detail_image_plan as _dip
+        _order = {i: n + 1 for n, (i, _u) in enumerate(_dip.arrange(list(enumerate(originals)), by_idx, originals))}
     plan = []
     for i, orig in enumerate(originals):
         e = by_idx.get(i) or {}
@@ -568,6 +577,8 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
             "promo": promo_of(e),
             "promo_include": bool(e.get("promo_include")),
             "promo_excluded": promo_excluded(e),
+            # Y9: 상세 — 번역/원본/제외 판정 + 사유 · 등록 순서(빠지면 0)
+            **(_detail_verdict(e, orig, _order.get(i, 0)) if kind == "detail" else {}),
             "stored_by": e.get("stored_by", ""),
             # F27: 「번역했다고 적혀 있는데 바이트가 없다」 — 사라진 것이다. 그렇게 말한다.
             "gone": gone,
@@ -576,6 +587,17 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
             "cdn_error": str((blob or {}).get("cdn_error") or ""),
         })
     return plan
+
+
+def _detail_verdict(e: dict, orig: str, pos: int) -> dict:
+    from src.services import detail_image_plan as _dip
+    v = _dip.verdict(e, orig)
+    out = {"verdict": v["use"], "verdict_reason": v["reason"], "section": v["section"], "outbound_pos": int(pos or 0)}
+    if v["use"] == "excluded":
+        out["promo_excluded"] = True                  # 화면 「그래도 넣기」가 같은 칸을 본다
+    elif e.get("promo_include") and (_dip.url_exclusion(_dip.fix_url(orig)) or e.get("exclude") or _dip.text_exclusion(_dip.entry_text(e))):
+        out["promo_excluded"] = False
+    return out
 
 
 def set_use_flags(extra: dict, flags: dict, *, kind: str = "gallery") -> list:
