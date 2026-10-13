@@ -124,7 +124,7 @@ def test_health_supplement_is_caution_only():
     ex = {"title_ko": "비타민C 1000 건강기능식품 120정", "description_ko": "하루 1정 섭취하는 영양제예요.", "keywords": ["비타민", "영양제"]}
     sc = R.scan(ex)
     assert {h["grade"] for h in sc["hits"]} == {"caution"}
-    assert [h["label"] for h in sc["hits"]] == ["주의: 건강기능식품(인허가 보유)"]
+    assert [h["label"] for h in sc["hits"]] == ["건강기능식품(인허가 보유)"]
     assert R.holds(sc) == []
 
 
@@ -266,3 +266,59 @@ def test_ai_fixes_wait_until_risk_is_decided(monkeypatch):
     assert d["risk"]["count"] == 2 and d["risk"]["ai_waits"] is True
     row = d["results"][0]
     assert row["hold"] and "위험(보류)" in row["message"]
+
+
+# ── Y10-B(오너 2026-10-13): 인증 등급 조정 — 전기·전파·어린이 = 주의 + 본문 맨 위 KC 고지 ─────────────────
+
+CHARGER = {"title_ko": "무선 충전기 맥세이프 거치대 15W", "description_ko": "책상 위에 두고 쓰는 무선 충전 거치대예요.",
+           "keywords": ["무선충전기", "거치대"]}
+
+
+def test_wireless_charger_is_caution_with_kc_notice_not_hold():
+    from src.services import risk_gate as R
+    sc = R.scan(CHARGER)
+    assert {h["label"]: h["grade"] for h in sc["hits"]} == {"KC 고지문 넣음(전기용품)": "caution", "KC 고지문 넣음(전파·무선)": "caution"}
+    assert R.holds(sc) == []
+    assert R.notice_kinds(sc) == {"kc": ["KC 고지문 넣음(전기용품)", "KC 고지문 넣음(전파·무선)"], "voltage": True}
+
+
+def test_grades_after_y10b():
+    from src.services import risk_gate as R
+    g = lambda t: {h["label"]: h["grade"] for h in R.scan({"title_ko": t})["hits"]}
+    assert g("어린이 원목 블록 장난감") == {"KC 고지문 넣음(어린이제품)": "caution"}
+    assert g("블루투스 스피커") == {"KC 고지문 넣음(전파·무선)": "caution"}
+    assert g("가정용 의료기기 저주파 마사지기")["의약품·의료기기"] == "block"           # 차단 유지
+    assert g("수입 식품 간식 세트") == {"인증: 수입식품": "hold"}                          # 식품 보류 유지
+    assert g("건기식 원료 분말 1kg")["인증: 건기식 원료 수입"] == "hold"                   # 원료 수입 보류
+    assert g("건강기능식품 비타민 120정") == {"건강기능식품(인허가 보유)": "caution"}      # 완제품 주의
+    assert g("화장품 세럼 30ml") == {"화장품(인허가 보유)": "caution"}
+
+
+def test_kc_notice_goes_on_top_once_for_korean_markets():
+    from src.seller_console.notice_texts import PURCHASE_AGENT_NOTICE, VOLTAGE_TITLE
+    from src.seller_console.upload_dispatcher import korea_kc_notice
+    from src.services import risk_gate as R
+    pd = dict(CHARGER, description="책상 위에 두고 쓰는 무선 충전 거치대예요.",
+              description_html="<p>책상 위에 두고 쓰는 무선 충전 거치대예요.</p>", kc_notice_kinds=R.notice_kinds(R.scan(CHARGER)))
+    out = korea_kc_notice(pd, "coupang:woojoo")
+    assert out["description"].startswith(PURCHASE_AGENT_NOTICE + "\n" + VOLTAGE_TITLE)
+    assert out["description"].endswith("책상 위에 두고 쓰는 무선 충전 거치대예요.")
+    assert out["description_html"].startswith('<p class="kgp-agent-notice">') and VOLTAGE_TITLE in out["description_html"]
+    assert out["kc_notice"] == {"kc": ["KC 고지문 넣음(전기용품)", "KC 고지문 넣음(전파·무선)"], "voltage": True}
+    again = korea_kc_notice(out, "smartstore")
+    assert again["description"].count(PURCHASE_AGENT_NOTICE) == 1 and again["description"].count(VOLTAGE_TITLE) == 1
+    assert korea_kc_notice(pd, "shopify") is pd                                      # 국내 마켓만
+    plug = korea_kc_notice(dict(pd, plug_notice=True), "coupang")                    # 플러그 안내가 이미 붙었으면 전압 안내 생략
+    assert VOLTAGE_TITLE not in plug["description"] and plug["kc_notice"]["voltage"] is False
+    plain = korea_kc_notice({"title_ko": "원목 의자", "description": "튼튼해요."}, "coupang")
+    assert "kc_notice" not in plain and plain["description"] == "튼튼해요."
+
+
+def test_kc_notice_in_market_payload():
+    """등록 몸통(마켓별 조립)을 지나면 맨 위에 붙어 있다 — 사전검증·등록이 같은 조립."""
+    from src.seller_console.notice_texts import PURCHASE_AGENT_NOTICE
+    from src.seller_console.upload_dispatcher import UploadDispatcher
+    pd = dict(CHARGER, title="무선 충전기 맥세이프 거치대 15W", price=19900, images=["https://img.alicdn.com/a.jpg"],
+              description="책상 위에 두고 쓰는 무선 충전 거치대예요.")
+    payload, _loc = UploadDispatcher._payload_for_market(pd, "coupang")
+    assert str(payload.get("description") or "").startswith(PURCHASE_AGENT_NOTICE)

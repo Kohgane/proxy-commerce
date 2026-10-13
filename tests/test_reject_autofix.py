@@ -245,8 +245,6 @@ def test_job_fixes_rechecks_and_undo(monkeypatch):
     monkeypatch.setattr(V, "_account_codes_forbidden", lambda m: None)
     monkeypatch.setattr(V, "_pv_registered_rows", lambda iid, m: {})
     monkeypatch.setattr(RAF, "_call", _good_fix)
-    # Y10: 「무선 충전기」는 리스크 게이트(전파·전기용품 KC)가 먼저 세운다 — 여기선 반려 자동 수정만 본다(게이트는 test_y10_risk_gate)
-    monkeypatch.setattr(V, "_risk_scan_for", lambda *a, **k: {"hits": [], "waiting": 0, "skip": {}})
 
     def outbound(pd, iid):                      # 실제 `_outbound_images`의 「저장 기록 싣기」 줄과 같은 동작(이미지·도달 생략)
         it = V._get_owned_item(iid) or {}
@@ -265,6 +263,9 @@ def test_job_fixes_rechecks_and_undo(monkeypatch):
     r = c.post("/seller/collect/prevalidate", json={"product": product, "markets": ["coupang:woojoo"], "item_id": iid})
     j = _poll(c, r.get_json()["poll"])
     row = j["results"][0]
+    # Y10-B: 「무선 충전기」는 리스크 게이트 **주의**(전파·전기용품 — KC 고지문 넣음)로 통과한다 — 보류가 아니라 AI 자동 수정이 돈다
+    assert {h["label"] for h in j["risk"]["hits"]} >= {"KC 고지문 넣음(전기용품)", "KC 고지문 넣음(전파·무선)"}
+    assert {h["grade"] for h in j["risk"]["hits"]} == {"caution"} and not j["risk"]["ai_waits"]
     assert j["auto_fix"]["status"] == "done", j["auto_fix"]
     assert row["ok"] and [c["after"] for c in j["auto_fix"]["changes"]] == ["무선 충전기 맥세이프 거치대", "무선 충전기 거치대", "블랙"]
     assert [x[1] for x in disp.calls] == [PD["coupang_name"], "무선 충전기 거치대"]         # 그 마켓만 다시 쟀다

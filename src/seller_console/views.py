@@ -2978,6 +2978,7 @@ def collect_upload():
             from src.services import risk_gate as _rg
             _rex = json.loads(_owned.get("extra_json") or "{}") or {}
             _rsc = _risk_scan_for(str(data.get("item_id")), _rex, product_data)
+            product_data["kc_notice_kinds"] = _rg.notice_kinds(_rsc)                      # Y10-B 본문 맨 위 KC 고지
             _rh = _rg.holds(_rsc)
             if _rh:
                 return jsonify({"ok": False, "risk": _rg.card(_rsc), "user_message": True, "step": "위험 검사",
@@ -4368,6 +4369,8 @@ def _pv_prepare(data: dict, product_data: dict):
             product_data["detail_translate_progress"] = _detail_translate_progress(str(data["item_id"]), _sx)
             # Y10: 리스크 게이트 — 기억된 「빼고 등록」은 바로 적용(저장) → 저장된 「빼고 등록」을 몸통에도 → 전 위치 검사
             product_data["_risk"] = _risk_scan_for(str(data["item_id"]), _sx, product_data)
+            from src.services import risk_gate as _rgk
+            product_data["kc_notice_kinds"] = _rgk.notice_kinds(product_data["_risk"])    # Y10-B 본문 맨 위 KC 고지
             # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본
             from src.uploaders.detail_ui_junk import desc_is_junk as _dj
             if _dj(_sx):

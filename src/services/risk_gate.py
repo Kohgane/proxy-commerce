@@ -121,7 +121,7 @@ def fields(extra: dict) -> Dict[str, str]:
     specs = " ".join(f"{k} {v}" for kv in (ex.get("detail_specs") or []) if isinstance(kv, (list, tuple)) and len(kv) == 2
                      for k, v in [kv])
     return {
-        "상품명": " ".join(str(ex.get(k) or "") for k in ("title_ko", "coupang_name")),
+        "상품명": " ".join(dict.fromkeys(str(ex.get(k) or "") for k in ("title_ko", "coupang_name"))),   # 쿠팡명 = 상품명이면 한 번
         "검색어": " ".join(dict.fromkeys(str(x) for x in list(ex.get("keywords") or []) + list(ex.get("tags") or []))),
         "옵션": "\n".join(opts),
         "본문": "\n".join([body_ko, body_src, str(da.get("text") or "")]),
@@ -406,6 +406,15 @@ def enforce(pd: dict, extra: dict) -> dict:
             h = {"names": d["names"], "case": bool(d.get("case")), "images": [], "cat": d.get("cat", ""), "found": d.get("found") or []}
             strip_extra(pd, h)
     return pd
+
+
+def notice_kinds(sc: dict) -> dict:
+    """Y10-B — 주의 등급 중 본문에 KC 고지를 넣을 것 `{kc: [라벨…], voltage: bool}`(없으면 빈 dict)."""
+    want = {c["label"]: c for c in tokens().get("cert") or [] if c.get("notice") == "kc"}
+    labs = [h["label"] for h in (sc or {}).get("hits") or [] if h["label"] in want]
+    if not labs:
+        return {}
+    return {"kc": labs, "voltage": any(want[l].get("voltage") for l in labs)}
 
 
 def card(sc: dict) -> dict:

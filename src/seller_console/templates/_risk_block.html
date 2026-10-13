@@ -9,8 +9,10 @@ window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
   var hits = risk.hits || [];
   var open = hits.filter(function (h) { return h.grade !== 'caution' && !(h.decided === 'allow' && h.grade !== 'block'); }).length;
   var h = '<div class="kgp-risk" data-role="risk-block" data-open="' + open + '">';
-  h += '<div class="kgp-risk-head"><strong>위험 ' + hits.length + '건</strong>' +
-       (open ? ' <span class="kgp-risk-sub">— 고를 때까지 등록을 멈춰요</span>' : ' <span class="kgp-risk-sub">— 다 골랐어요</span>') + '</div>';
+  var cautionOnly = hits.length && hits.every(function (x) { return x.grade === 'caution'; });
+  h += '<div class="kgp-risk-head"><strong>' + (cautionOnly ? '주의 ' : '위험 ') + hits.length + '건</strong>' +
+       (open ? ' <span class="kgp-risk-sub">— 고를 때까지 등록을 멈춰요</span>'
+        : (cautionOnly ? ' <span class="kgp-risk-sub">— 등록은 그대로 진행돼요</span>' : ' <span class="kgp-risk-sub">— 다 골랐어요</span>')) + '</div>';
   if (risk.skip && risk.skip.reason) {
     h += '<div class="kgp-risk-skip" data-role="risk-skip"><span class="pc-badge pc-badge-danger">등록 보류: ' + esc(risk.skip.reason) + '</span>' +
          ' <button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="" data-action="reset">보류 풀기</button></div>';
