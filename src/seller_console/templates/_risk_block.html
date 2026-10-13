@@ -16,10 +16,10 @@ window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
          ' <button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="" data-action="reset">보류 풀기</button></div>';
   }
   hits.forEach(function (x) {
-    var badge = x.grade === 'block' ? 'pc-badge-danger' : (x.grade === 'hold' ? 'pc-badge-off' : 'pc-badge-caution');
+    var tone = x.grade === 'block' ? 'pc-badge-danger' : (x.grade === 'hold' ? 'pc-badge-off' : 'pc-badge-caution');
     var done = x.decided === 'strip' ? '뺐어요' : (x.decided === 'allow' ? '그래도 등록(기록)' : '');
     h += '<div class="kgp-risk-row" data-role="risk-row" data-key="' + esc(x.key) + '" data-grade="' + esc(x.grade) + '">' +
-      '<div><span class="pc-badge ' + badge + '">' + esc(x.grade_label) + '</span> <b>' + esc(x.cat) + '</b>: ' + esc((x.found || []).join('·')) + '</div>' +
+      '<div><span class="pc-badge ' + tone + '">' + esc(x.grade_label) + '</span> <b>' + esc(x.cat) + '</b>: ' + esc((x.found || []).join('·')) + '</div>' +
       (x.where_line ? '<div class="kgp-risk-where" data-role="risk-where">' + esc(x.where_line) + '</div>' : '') +
       (x.why ? '<div class="kgp-risk-why">' + esc(x.why) + '</div>' : '');
     if (done) {
