@@ -23,6 +23,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _limits_on(monkeypatch):
+    """conftest는 테스트 프로세스(500MB+)가 거부되지 않게 문지기를 꺼 둔다 — 여기선 운영 기본값으로 켠다."""
+    monkeypatch.setenv("INSTANCE_MEM_START_MAX_MB", "420")
+    monkeypatch.delenv("PREVALIDATE_RSS_LIMIT_MB", raising=False)
+    monkeypatch.delenv("INSTANCE_MEM_ABORT_MB", raising=False)
+
+
 # ── ② 인스턴스 합계 ──────────────────────────────────────────────────────────────────────────
 
 def test_outside_gunicorn_counts_only_this_process():
@@ -84,8 +92,7 @@ def test_under_gunicorn_needs_gunicorn_as_the_parent_program(monkeypatch, tmp_pa
 
 def test_start_and_abort_limits(monkeypatch):
     from src.utils import rss
-    for k in ("INSTANCE_MEM_START_MAX_MB", "INSTANCE_MEM_ABORT_MB", "PREVALIDATE_RSS_LIMIT_MB"):
-        monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("INSTANCE_MEM_START_MAX_MB", raising=False)
     assert rss.start_limit_mb() == 420 and rss.job_limit_mb() == 460
     monkeypatch.setattr(rss, "instance_mb", lambda: 419)
     assert rss.start_ok() == (True, 419, 420)
@@ -228,8 +235,9 @@ def test_romanize_does_not_load_the_phrase_dictionary():
 def test_concurrent_prevalidate_and_preview_stay_under_450mb(tmp_path):
     pytest.importorskip("gunicorn")
     env = dict(os.environ, Z10C_QUICK="1", Z10C_CDN_DIR=str(tmp_path))
-    for k in ("GUNICORN_WORKERS", "GUNICORN_MAX_WORKERS", "GUNICORN_THREADS"):
-        env.pop(k, None)
+    for k in ("GUNICORN_WORKERS", "GUNICORN_MAX_WORKERS", "GUNICORN_THREADS", "INSTANCE_MEM_START_MAX_MB",
+              "PREVALIDATE_RSS_LIMIT_MB", "INSTANCE_MEM_ABORT_MB"):
+        env.pop(k, None)                                                        # 운영 기본값 그대로 띄운다
     out = subprocess.run([sys.executable, str(ROOT / "scripts/z10c_measure.py"), str(ROOT), "pytest"],
                          cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
     assert out.returncode == 0, out.stderr[-2000:]

@@ -67,6 +67,9 @@ os.environ.setdefault("PREVALIDATE_JOB_CONCURRENCY", "8")
 # Z10: 잡 메모리 상한(PREVALIDATE_RSS_LIMIT_MB, 운영 400)은 **프로세스 RSS**를 본다 — 테스트 한 프로세스는 수천 개를 돌려 400MB를
 #   넘으므로(CI 실측) 여기선 끈다. 상한 계약은 test_z10_prevalidate_memory가 값을 직접 건다.
 os.environ.setdefault("PREVALIDATE_RSS_LIMIT_MB", "0")
+# Z10-C: 새 잡·크론 시작 문지기(INSTANCE_MEM_START_MAX_MB, 운영 420)도 같다 — gunicorn 밖에선 이 프로세스만 세는데
+#   테스트 프로세스는 500MB를 넘는다. 끄고, 문지기 테스트(test_z10c_instance_memory)가 직접 켠다.
+os.environ.setdefault("INSTANCE_MEM_START_MAX_MB", "0")
 
 
 # ──────────────────────────────────────────────────────────
