@@ -406,7 +406,8 @@ def remote_max_side() -> int:
 
 
 def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeout: float = 30.0,
-                  folder: str = "") -> Dict[str, Any]:
+                  folder: str = "", public_id: str = "", overwrite: Optional[bool] = None, fmt: str = "",
+                  max_side: Optional[int] = None) -> Dict[str, Any]:
     """Z10-B — 원본 **URL을 그대로** Cloudinary에 넘긴다(원격 업로드 — Cloudinary가 직접 받아 간다). 우리 프로세스는
     바이트를 만지지 않는다 → 메모리 0. `source`가 bytes면 그 바이트를 올린다(폴백 — 받은 자리에서 이미 줄인 것).
 
@@ -435,16 +436,20 @@ def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeou
     try:
         cloudinary.config(cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"), api_key=os.getenv("CLOUDINARY_API_KEY"),
                           api_secret=os.getenv("CLOUDINARY_API_SECRET"), secure=True)
-        public_id, context = "", None
+        context = None
         if label:
             from src.media.image_label import upload_opts
             _lo = upload_opts(label)
             folder = folder or _lo["folder"]
-            public_id, context = _lo["public_id"], _lo["context"]
+            public_id, context = public_id or _lo["public_id"], _lo["context"]
         base = os.getenv("CLOUDINARY_FOLDER", "proxy-commerce")
         opts: Dict[str, Any] = {"folder": f"{base}/{folder}" if folder else base, "resource_type": "image",
                                 "timeout": float(timeout)}
-        side = remote_max_side()
+        side = remote_max_side() if max_side is None else int(max_side)
+        if overwrite is not None:
+            opts["overwrite"] = bool(overwrite)
+        if fmt:
+            opts["format"] = fmt
         if side > 0:
             opts["transformation"] = [{"width": side, "height": side, "crop": "limit"}]
         if public_id:
@@ -464,6 +469,29 @@ def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeou
     out.update({"ok": True, "secure_url": str(url), "public_id": str(result.get("public_id") or ""),
                 "bytes": int(result.get("bytes") or 0)})
     return out
+
+
+def small_copy(url: str, *, max_side: int = 2000, timeout: float = 20.0) -> tuple:
+    """Z10-B — 큰 원본(WebP·PNG — 우리 프로세스가 줄여 풀 수 없다)을 **Cloudinary가** 긴 변 `max_side` JPEG로 만들게 하고
+    그 작은 사본만 받아 온다 → `(bytes | None, 사유)`. 우리 프로세스는 원본 화소를 풀지 않는다.
+
+    실측(오너 픽스처 BLACKHOLES 2~5번 = 4160×4160 WebP): 우리가 WebP → JPEG로 바꾸면 한 장에 **+310MB**(Pillow WebP 디코더가
+    원본 RGBA 바이트 66MB + 그 이미지 + 줄이기). 같은 원본은 같은 이름(`conv_<sha1>`)으로 한 번만 만든다(`overwrite=False`)."""
+    import hashlib
+    pid = "conv_" + hashlib.sha1(str(url).encode("utf-8")).hexdigest()[:24]
+    r = upload_remote(url, folder="conv", public_id=pid, overwrite=False, fmt="jpg", max_side=max_side, timeout=timeout)
+    if not r.get("ok"):
+        return None, r.get("error") or "Cloudinary 사본 실패"
+    try:
+        import requests
+        resp = requests.get(r["secure_url"], timeout=timeout)
+        resp.raise_for_status()
+        body = resp.content or b""
+    except Exception as exc:                                       # noqa: BLE001
+        return None, f"Cloudinary 사본 받기 실패({type(exc).__name__})"
+    if not body:
+        return None, "Cloudinary 사본이 비어 있습니다"
+    return body, ""
 
 
 def _upload_to_cdn(image_bytes: bytes, *, prefer_webp: bool = False,

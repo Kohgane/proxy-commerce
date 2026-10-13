@@ -298,7 +298,17 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
         allow = {str(a).lower().lstrip(".") for a in allowed_formats}
         if "jpg" in allow:
             allow.add("jpeg")
-        if ext not in allow:
+        need_convert = ext not in allow
+        if need_convert or len(body) > _shrink_bytes():
+            # Z10-B(오너 픽스처 실측): 줄여 풀 수 없는 큰 장(WebP·PNG)을 우리가 바꾸면 한 장 +310MB — 먼저 Cloudinary에 맡긴다.
+            off = _offload_big(u, body, ext, need_convert, on_skip)
+            if off is _KEEP_RAW:
+                return _make_part(body, ext) or _skip(on_skip, u, f'메타 생성 실패({ext})')
+            if off is _SKIPPED:
+                return None
+            if off is not None:
+                return off
+        if need_convert:
             converted = convert_image_bytes(body, target=CONVERT_TARGET_EXT)
             if converted is None:
                 return _skip(on_skip, u, f'미허용 형식 {ext} → {CONVERT_TARGET_EXT} 변환 실패')
@@ -324,6 +334,46 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
     if part is None:
         return _skip(on_skip, u, f'메타 생성 실패(선언 {ext} vs 실제 {detect_image_format(body) or "미상"})')
     return part
+
+
+_KEEP_RAW = object()
+_SKIPPED = object()
+
+
+def _offload_big(u: str, body: bytes, ext: str, need_convert: bool, on_skip):
+    """큰 원본(JPEG 아님 · 화소 > `decode_max_pixels`)을 **풀지 않고** 다룬다. 해당 없으면 None(평소 경로).
+
+    ① Cloudinary가 긴 변 2,000px JPEG로 만든 사본을 받아 쓴다(`image_pipeline.small_copy`).
+    ② 못 하면: 형식이 마켓 허용이면 원본 그대로(`_KEEP_RAW` — 줄이기만 포기), 바꿔야 하는데(WebP) 이 프로세스가 풀 여유가
+       없으면(지금 RSS + 추정 > 잡 상한) **그 장만 빼고 사유**를 남긴다. 여유가 있으면 None → 평소처럼 한 장씩 바꾼다."""
+    fmt, w, h = image_head(body)
+    cap = decode_max_pixels()
+    if not w or fmt == "JPEG" or not cap or w * h <= cap:
+        return None
+    try:
+        from src.media.image_pipeline import small_copy
+        small, why = small_copy(u)
+    except Exception as exc:                                      # noqa: BLE001
+        small, why = None, f"{type(exc).__name__}"
+    if small:
+        part = _make_part(small, CONVERT_TARGET_EXT)
+        if part is not None:
+            logger.info("이미지 Cloudinary 사본 %s %d×%d %dB → %s %dB: %s", fmt, w, h, len(body), part.ext, len(part.data), u)
+            return part
+        why = "Cloudinary 사본 메타 불일치"
+    if not need_convert:
+        logger.info("이미지 줄이기 건너뜀(%s %d×%d — %s · 원본 그대로): %s", fmt, w, h, why, u)
+        return _KEEP_RAW
+    est = int(w * h * 18 / 1048576)                                # 실측 4160² WebP → JPEG 한 장 +310MB
+    try:
+        from src.utils import rss as _rss
+        cur, lim = _rss.read_mb()[0], _rss.job_limit_mb()
+    except Exception:                                              # noqa: BLE001
+        cur, lim = -1, 0
+    if lim > 0 and cur >= 0 and cur + est > lim:
+        return _skip(on_skip, u, f'{fmt} {w}×{h} — 바꾸려면 서버 메모리 약 {est}MB가 더 필요해 뺐어요'
+                                 f'(지금 {cur}MB · 상한 {lim}MB · Cloudinary 사본: {why})') or _SKIPPED
+    return None
 
 
 def _shrink_bytes() -> int:

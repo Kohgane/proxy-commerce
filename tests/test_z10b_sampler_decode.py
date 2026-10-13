@@ -203,3 +203,79 @@ def test_remote_upload_passes_url_and_size_limit(monkeypatch):
     r = P.upload_remote("https://img.alicdn.com/a.png", timeout=12)
     assert r["ok"] and got["src"] == "https://img.alicdn.com/a.png"            # 바이트가 아니라 URL
     assert got["transformation"] == [{"width": 2000, "height": 2000, "crop": "limit"}] and got["timeout"] == 12.0
+
+
+# ── 실사진 픽스처(오너 2026-10-13 · BLACKHOLES 5장) — 머리말만 읽는다(테스트가 원본을 풀지 않게) ─────────────────
+
+from pathlib import Path as _P
+
+_FIX = _P("tests/fixtures/realimages/blackholes")
+_PNG = _FIX / "O1CN01yqZT4K3oxSKAOX2W_!!3596090318.png"
+_WEBP = _FIX / "O1CN01f9Vrp5CshwF8RgLQ_!!3596090318.jpg"
+
+
+def test_fixture_heads_are_what_production_got():
+    from src.collectors.image_norm import image_head, open_small
+    assert image_head(_PNG.read_bytes()) == ("PNG", 5120, 5120)
+    assert image_head(_WEBP.read_bytes()) == ("WEBP", 4160, 4160)        # URL은 .jpg — 서버가 WebP로 준다
+    for p in (_PNG, _WEBP):
+        im, fmt, w, h, why = open_small(p.read_bytes(), 1024)
+        assert im is None and "풀지 않았어요" in why                          # WebP도 「JPEG 아님」 — 안 푼다
+
+
+def _fake_get(body, ct):
+    class R:
+        content, headers = body, {"Content-Type": ct}
+
+        def raise_for_status(self):
+            return None
+    return lambda *a, **k: R()
+
+
+def test_naver_fetch_big_webp_uses_cloudinary_copy(monkeypatch):
+    from src.collectors import image_norm as N
+    from src.media import image_pipeline as P
+    monkeypatch.setattr("requests.get", _fake_get(_WEBP.read_bytes(), "image/webp"))
+    small = _jpeg(2000, 2000)
+    asked = []
+    monkeypatch.setattr(P, "small_copy", lambda url, **k: asked.append(url) or (small, ""))
+    monkeypatch.setattr(N, "convert_image_bytes", lambda *a, **k: pytest.fail("WebP 원본을 우리가 풀었다"))
+    part = N.fetch_image_bytes("https://img.alicdn.com/a.jpg", allowed_formats={"jpg", "png", "gif", "bmp"})
+    assert part.ext == "jpg" and part.data == small and asked == ["https://img.alicdn.com/a.jpg"]
+
+
+def test_naver_fetch_big_png_without_cdn_keeps_raw(monkeypatch):
+    from src.collectors import image_norm as N
+    from src.media import image_pipeline as P
+    raw = _PNG.read_bytes()
+    monkeypatch.setattr("requests.get", _fake_get(raw, "image/png"))
+    monkeypatch.setattr(P, "small_copy", lambda url, **k: (None, "Cloudinary 자격 미설정"))
+    monkeypatch.setattr(N, "shrink_image_bytes", lambda *a, **k: pytest.fail("PNG 원본을 우리가 풀었다"))
+    part = N.fetch_image_bytes("https://img.alicdn.com/a.png", allowed_formats={"jpg", "png", "gif", "bmp"})
+    assert part.ext == "png" and part.data == raw                             # 네이버가 받는 형식 — 원본 그대로
+
+
+def test_naver_fetch_big_webp_without_cdn_or_headroom_is_dropped(monkeypatch):
+    from src.collectors import image_norm as N
+    from src.media import image_pipeline as P
+    from src.utils import rss
+    monkeypatch.setattr("requests.get", _fake_get(_WEBP.read_bytes(), "image/webp"))
+    monkeypatch.setattr(P, "small_copy", lambda url, **k: (None, "Cloudinary 자격 미설정"))
+    monkeypatch.setattr(N, "convert_image_bytes", lambda *a, **k: pytest.fail("여유 없이 WebP를 풀었다"))
+    monkeypatch.setenv("PREVALIDATE_RSS_LIMIT_MB", str(rss.read_mb()[0] + 100))   # 추정 ~297MB > 여유 100MB
+    why = []
+    part = N.fetch_image_bytes("https://img.alicdn.com/a.jpg", allowed_formats={"jpg", "png", "gif", "bmp"},
+                               on_skip=lambda u, r: why.append(r))
+    assert part is None and "서버 메모리 약" in why[0] and "Cloudinary 사본: Cloudinary 자격 미설정" in why[0]
+
+
+def test_small_copy_asks_cloudinary_for_a_2000px_jpeg_once(monkeypatch):
+    from src.media import image_pipeline as P
+    got = {}
+    monkeypatch.setattr(P, "upload_remote", lambda src, **kw: got.update(src=src, **kw) or
+                        {"ok": True, "secure_url": "https://res.cloudinary.com/x/conv/a.jpg"})
+    monkeypatch.setattr("requests.get", _fake_get(b"\xff\xd8\xffJPEG", "image/jpeg"))
+    body, why = P.small_copy("https://img.alicdn.com/a.jpg")
+    assert body == b"\xff\xd8\xffJPEG" and not why
+    assert got["fmt"] == "jpg" and got["max_side"] == 2000 and got["overwrite"] is False
+    assert got["public_id"].startswith("conv_") and got["folder"] == "conv"

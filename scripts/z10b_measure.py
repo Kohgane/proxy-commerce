@@ -1,6 +1,6 @@
 """Z10-B 재현 하네스 — **실제 BLACKHOLES 갤러리 5장**(픽스처)으로 사전검증 앞 구간·이미지 저장본 크론의 RSS 피크.
 
-    python scripts/z10b_measure.py <픽스처 폴더> <pv|cron|cron-fallback>
+    python scripts/z10b_measure.py <픽스처 폴더> <pv|pv-nocdn|cron|cron-fallback>
 
 픽스처 폴더: `tests/fixtures/realimages/blackholes/` — 파일 이름이 원본 URL의 마지막 조각(`O1CN01…_!!3596090318.png` 등).
 alicdn 대신 그 파일을 돌려준다(가짜 이미지로 재지 않는다 — 오너 2026-10-11). 마켓·Cloudinary·텐센트 호출은 막는다(응답만 흉내).
@@ -11,6 +11,8 @@ pv   = 02:24:30~33 구간에 같이 도는 것: `cpx-check`(쿠팡 대표 사진
        네이버 상세 사전 올리기 `cdn_map`(5장 받기 → 묶음 업로드 흉내). 둘을 **동시에**(실제처럼 다른 스레드).
 cron = `/cron/image-copies` 한 회전(그 상품 5장). 전: `process_image`(받아 풀어 가공) · 후: 원격 업로드(URL만).
 cron-fallback = 후 코드에서 Cloudinary가 원격으로 못 받는 경우(직접 받아 올림 폴백).
+pv-nocdn = Cloudinary 미설정(사본 못 만듦) — 큰 WebP를 우리가 바꿀 여유가 없으면 그 장만 뺀다(`PREVALIDATE_RSS_LIMIT_MB`로 여유 조절).
+pv 모드의 Cloudinary 2000px 사본은 **다른 프로세스**가 미리 만든다(Z10B_CDN_DIR) — 측정 프로세스에선 그 작은 JPEG만 받는다.
 """
 from __future__ import annotations
 
@@ -105,6 +107,9 @@ def patch_network():
     real_get = requests.get
 
     def fake_get(url, *a, **k):
+        if str(url).startswith("https://res.cloudinary.com/") and "/conv/" in str(url):
+            from urllib.parse import unquote
+            return _Resp(_cdn_small(unquote(str(url).split("/conv/", 1)[1])), "image/jpeg")
         if "alicdn.com" in str(url):
             return _Resp(_bytes(str(url)), _ct(str(url)))
         return real_get(url, *a, **k)
@@ -131,12 +136,30 @@ def patch_network():
 
         def fake_upload(src, **opts):
             n = len(src.getvalue()) if hasattr(src, "getvalue") else 0
-            sent.append({"remote": isinstance(src, str), "bytes": n})
+            sent.append({"remote": isinstance(src, str), "bytes": n, "fmt": opts.get("format", "")})
+            if isinstance(src, str) and opts.get("format") == "jpg":     # small_copy — Cloudinary가 만든 2000px JPEG
+                from urllib.parse import quote
+                return {"secure_url": "https://res.cloudinary.com/x/conv/" + quote(src, safe=""), "public_id": "c"}
             return {"secure_url": f"https://res.cloudinary.com/x/{len(sent)}.jpg", "public_id": str(len(sent)), "bytes": n}
         CU.upload = fake_upload
         globals()["SENT"] = sent
     except Exception:
         pass
+
+
+def _cdn_small(url: str) -> bytes:
+    """Cloudinary가 돌려줄 2000px JPEG — **다른 프로세스**에서 미리 만들어 둔 파일(이 프로세스 측정에 안 섞이게)."""
+    import hashlib
+    import subprocess
+    out = Path(os.getenv("Z10B_CDN_DIR", "/tmp")) / ("cdn_" + hashlib.sha1(url.encode()).hexdigest()[:16] + ".jpg")
+    if not out.exists():
+        src = _file_for(url)
+        subprocess.run([sys.executable, "-I", "-c",
+                        "import sys;from PIL import Image;im=Image.open(sys.argv[1]);im.thumbnail((2000,2000));"
+                        "bg=Image.new('RGB',im.size,(255,255,255));"
+                        "bg.paste(im,mask=im.getchannel('A')) if im.mode=='RGBA' else bg.paste(im.convert('RGB'));"
+                        "bg.save(sys.argv[2],'JPEG',quality=85)", str(src), str(out)], check=True)
+    return out.read_bytes()
 
 
 def describe():
@@ -203,13 +226,29 @@ def run_cron(fallback: bool):
 
 
 if __name__ == "__main__":
+    import contextlib
     import logging
     logging.basicConfig(level=logging.WARNING)
     patch_network()
     describe()
-    if MODE == "pv":
-        run_pv()
-    else:
-        run_cron(MODE == "cron-fallback")
+    # Z10_TRACE=1이면 rss_sampler(200ms → 여기선 50ms)로 피크 순간 tracemalloc 상위 5·스레드 프레임도 찍는다
+    trace = None
+    if os.getenv("Z10_TRACE") == "1":
+        os.environ.setdefault("Z10_SAMPLE_MS", "50")
+        from src.utils import rss_sampler as _S
+        trace = _S.watch("measure_" + MODE)
+    with (trace or contextlib.nullcontext()) as w:
+        if MODE in ("pv", "pv-nocdn"):
+            if MODE == "pv":
+                os.environ.update(CLOUDINARY_CLOUD_NAME="x", CLOUDINARY_API_KEY="x", CLOUDINARY_API_SECRET="x")
+            else:
+                for k in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"):
+                    os.environ.pop(k, None)
+            run_pv()
+        else:
+            run_cron(MODE == "cron-fallback")
+    if w:
+        print(json.dumps({"trace_peak_mb": w["peak"], "trace_base_mb": w["base"], "at_ms": w["peak_at"],
+                          "tracemalloc_top5": w["top"], "stacks_at_peak": w["stacks"]}, ensure_ascii=False))
     time.sleep(0.3)        # 버린 스레드(전 코드)가 끝까지 돌며 쥐는 메모리도 표본에 — 아래 한 번 더
     print(json.dumps({"after_300ms_rss_mb": rss_mb(), "threads_alive": threading.active_count()}))
