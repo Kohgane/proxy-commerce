@@ -151,6 +151,7 @@ _SYSTEM = (
     "(4) 사유와 상관없는 칸·단어는 그대로 둔다. 상품명은 100자 이내. "
     "(5) 옵션 값은 개수와 순서를 바꾸지 않는다(고칠 값만 바꾼다). "
     "(6) 지난 반려 사유가 사진·서류·카테고리·상표권처럼 글자로 풀 수 없는 것이면 아무것도 바꾸지 말고 fixable=false로 답한다. "
+    "(7) 지금 값에 없는 브랜드·상표 이름(가구 디자이너 상표·캐릭터·영화·게임 이름 등)은 원문에 있어도 새로 넣지 않는다. "
     f"답은 반드시 {_TOOL} 도구로만 한다."
 )
 
@@ -214,9 +215,17 @@ def _call(fields: Dict[str, Any], reasons: List[dict], timeout: float) -> Tuple[
 
 def _changes(before: Dict[str, Any], got: Dict[str, Any]) -> Tuple[List[dict], List[str]]:
     """`(changes, problems)` — 바뀐 칸 목록과 우리 판정 위반."""
-    from src.collectors.ko_polish import ban_hits, has_foreign
+    from src.collectors.ko_polish import ban_hits, has_foreign, mark_hits
     changes: List[dict] = []
     problems: List[str] = []
+
+    def new_marks(old, new):
+        # 파이프라인이 일부러 지우는 상표(레플리카·IP·drop — T3·Y6·Y7-J)를 답이 **새로** 들였나. 원래 있던 이름은 상표 보류가 맡는다.
+        try:
+            had = set(mark_hits(str(old or "")))
+            return [m for m in mark_hits(new) if m not in had]
+        except Exception:                                         # noqa: BLE001 — 규칙 못 읽으면 이 판정만 건너뛴다
+            return []
 
     def name_change(field, label, old, new):
         new = re.sub(r"\s+", " ", str(new or "")).strip()
@@ -230,6 +239,8 @@ def _changes(before: Dict[str, Any], got: Dict[str, Any]) -> Tuple[List[dict], L
             problems.append(f"{label}에 표시광고 문구가 남았어요 「{ban_hits(new)[0]}」")
         elif has_foreign(new):
             problems.append(f"{label}에 한자·가나가 남았어요")
+        elif new_marks(old, new):
+            problems.append(f"{label}에 상표 이름이 새로 들어갔어요 「{new_marks(old, new)[0]}」")
         else:
             changes.append({"field": field, "label": label, "before": old, "after": new})
 
@@ -258,6 +269,8 @@ def _changes(before: Dict[str, Any], got: Dict[str, Any]) -> Tuple[List[dict], L
                 problems.append(f"옵션 값에 표시광고 문구가 남았어요 「{ban_hits(b)[0]}」")
             elif has_foreign(b):
                 problems.append("옵션 값에 한자·가나가 남았어요")
+            elif new_marks(a, b):
+                problems.append(f"옵션 값에 상표 이름이 새로 들어갔어요 「{new_marks(a, b)[0]}」")
             else:
                 changes.append({"field": "option", "option": i, "index": j, "label": f"옵션 「{o['name']}」",
                                 "before": a, "after": b})
