@@ -386,6 +386,11 @@
   var okMarkets = [];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  // Z10-C: 잡조차 못 띄운 줄(메모리 여유 없음 등)도 사람 이름으로 — 코드(「coupang:woojoo」)를 그대로 보이지 않는다
+  function mkLabel(m) {
+    var el = root.querySelector('label.m5-mk[data-market="' + m + '"] .m5-mk-body > span');
+    return (el && el.textContent.trim()) || m;
+  }
   function picked() { return Array.prototype.map.call(root.querySelectorAll('input[name=m5-market]:checked'),
     function (i) { return i.value; }); }
   function post(url, body) {
@@ -624,7 +629,7 @@
       if (jobNo !== pvJob) return;
       if (!d.ok || !d.job_id) {
         // 작업조차 못 띄웠다 — 그 마켓들은 「검증 못 함」(전송 실패)으로, 다시 시도할 수 있게.
-        markets.forEach(function (m) { pvRows[m] = {market: m, market_label: m, ok: false, transport: 'error', message: '검증 못 함 — ' + (d.error || ('HTTP ' + d._status))}; });
+        markets.forEach(function (m) { pvRows[m] = {market: m, market_label: mkLabel(m), ok: false, transport: 'error', message: '검증 못 함 — ' + (d.error || ('HTTP ' + d._status))}; });
         pvPending = []; pvState = 'done'; checkBtn.disabled = false; pvRender(); return;
       }
       pvPoll(jobNo, d.poll);
