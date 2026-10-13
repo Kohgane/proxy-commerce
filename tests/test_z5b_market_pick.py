@@ -18,6 +18,8 @@ def _env(monkeypatch):
     from src.seller_console import market_cred_view as MCV, smartstore_routing as SR, market_credentials as mc
     st.reset_for_tests()
     monkeypatch.setenv("FAMILY_EMAILS", "mom@example.com, Bro@Example.com")
+    # Y7-O 5: 공유 마켓의 WC 자동 체크 제외를 끈다 — 이 파일은 「지난 등록·설정·묶음」 순서를 WC로도 잰다(제외는 test_y7o_leadtime.py)
+    monkeypatch.setenv("MARKET_NO_AUTO_CHECK", "")
     monkeypatch.delenv("MARKET_DEFAULT_BUSINESS", raising=False)
     monkeypatch.setattr(MCV, "coupang_account_choices", lambda: [
         {"code": "coupang:gogane", "account": "gogane", "label": "쿠팡 — 고가네", "ready": True, "missing": []},

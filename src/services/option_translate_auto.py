@@ -85,6 +85,13 @@ def rule_pass(extra: dict) -> dict:
     """
     changed = False
     pending: list = []
+    # Y7-O(오너 2026-10-12): 옵션 값 끝 발송 소요(「（2-3周发货）」)는 옵션이 아니다 — 먼저 떼어 `lead_time`으로(값은 「泡泡粉」만 옮긴다)
+    try:
+        from src.collectors import option_leadtime as _olt
+        if _olt.apply(extra):
+            changed = True
+    except Exception as exc:
+        logger.warning("[발송 소요 분리] 실패(원래대로): %s", exc)
     # Y8 확장(오너 2026-10-05): 옵션 값 속 전압·플러그(110V·220V·国内用·美规·英规…)를 별도 축으로 — SKU마다 국내 판매 판정
     try:
         from src.collectors import voltage_plug as _vp

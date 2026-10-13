@@ -23,6 +23,9 @@ FAM, OWNER, STRANGER = "fam@example.com", "owner@example.com", "stranger@example
 def _env(monkeypatch):
     monkeypatch.setenv("FAMILY_EMAILS", FAM)
     monkeypatch.delenv("ADMIN_EMAILS", raising=False)
+    # Y7-O 5: 공유 마켓은 기본으로 WC를 저절로 체크하지 않는다 — 이 파일은 「오너 설정이 가족 카드로 이어지나」를 WC(테스트 env에서
+    #   연결된 유일한 마켓)로 재므로 그 제외를 끈다. 기본 제외는 tests/test_y7o_leadtime.py가 잰다.
+    monkeypatch.setenv("MARKET_NO_AUTO_CHECK", "")
     for k, v in {"WC_URL": "https://shop.example.com", "WC_KEY": "ck_test", "WC_SECRET": "cs_test"}.items():
         monkeypatch.setenv(k, v)
     monkeypatch.delenv("SHIPPING_RATE_KRW_PER_KG_CN", raising=False)

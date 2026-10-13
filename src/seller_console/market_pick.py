@@ -102,12 +102,21 @@ def _bundle_codes() -> tuple:
     return BUNDLE.get(biz, BUNDLE["woojoo"])
 
 
+def no_auto_codes() -> tuple:
+    """Y7-O 5(오너 2026-10-12): 공유 마켓에서 **저절로 체크하지 않는** 마켓 — `MARKET_NO_AUTO_CHECK`(기본 `woocommerce`).
+    코가네멀티샵(WC)은 Bluehost 쪽 ReadTimeout(5,386ms)으로 매번 「검증 못 함」이었다 — 줄은 그대로 두고(손으로 고를 수 있다)
+    지난 등록·설정·묶음 어느 쪽에서도 기본 체크만 하지 않는다."""
+    raw = os.getenv("MARKET_NO_AUTO_CHECK", "woocommerce")
+    return tuple(c.strip() for c in raw.split(",") if c.strip())
+
+
 def apply_checks(markets: list, sc: str, shared: bool = True) -> dict:
     """`markets`(화면 줄) 각 줄의 `checked`를 정하고 `{source, codes}`를 돌려준다. 줄은 지우지도 막지도 않는다.
     공유 마켓이 아닌 셀러(자기 키)의 묶음 기본은 예전 그대로 「쿠팡」 한 줄."""
     codes = [m.get("code") for m in markets]
+    skip = no_auto_codes() if shared else ()
     for source, pick in (("last", get_last(sc)), ("setting", get_default(sc))):
-        hit = [c for c in pick if c in codes]
+        hit = [c for c in pick if c in codes and c not in skip]
         if hit:
             for m in markets:
                 m["checked"] = m.get("code") in hit
@@ -116,7 +125,7 @@ def apply_checks(markets: list, sc: str, shared: bool = True) -> dict:
     hit = []
     for m in markets:
         # 묶음 기본은 키가 있고(쿠팡) 승인된(스마트스토어) 줄만 — 안 되는 줄을 미리 켜 두지 않는다(손으로는 켤 수 있다)
-        m["checked"] = bool(m.get("code") in bundle
+        m["checked"] = bool(m.get("code") in bundle and m.get("code") not in skip
                             and (not shared or (m.get("connected") and not m.get("pending"))))
         if m["checked"]:
             hit.append(m["code"])
