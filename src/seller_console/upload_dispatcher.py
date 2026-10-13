@@ -755,6 +755,47 @@ def korea_voltage_filter(payload: Dict[str, Any], market: str) -> Dict[str, Any]
         return payload
 
 
+def korea_kc_notice(payload: Dict[str, Any], market: str) -> Dict[str, Any]:
+    """Y10-B(오너 2026-10-13) — 리스크 게이트 「주의: KC 고지문 넣음」(전기용품·전파·어린이제품) 상품은 **국내 마켓** 본문 맨 위에
+    구매대행 KC 고지(`PURCHASE_AGENT_NOTICE`, 기존 문장) + 전기용품이면 전압 안내. 이미 있으면 다시 넣지 않는다
+    (220V+중국 플러그 SKU면 `korea_voltage_filter`가 플러그 안내 + KC 고지를 먼저 붙였다 — 전압 안내는 그때 생략).
+    무엇을 넣을지는 사전검증·등록이 몸통에 실은 `kc_notice_kinds`(사진 속 글자까지 본 검사) — 없으면 몸통 글자로 다시 잰다."""
+    if not _is_korea_market(market):
+        return payload
+    try:
+        kinds = payload.get("kc_notice_kinds")
+        if kinds is None:
+            from src.services import risk_gate as _rg
+            kinds = _rg.notice_kinds(_rg.scan(payload))
+        if not kinds:
+            return payload
+        import html as _h
+        from .notice_texts import PURCHASE_AGENT_NOTICE, VOLTAGE_LINES, VOLTAGE_TITLE
+        out = dict(payload)
+        volt = bool(kinds.get("voltage")) and not out.get("plug_notice")
+        for key in ("description_html", "description"):
+            cur = str(out.get(key) or "")
+            if key == "description_html" and not cur.strip():
+                continue
+            if key == "description_html":
+                head = "" if PURCHASE_AGENT_NOTICE in cur else '<p class="kgp-agent-notice">' + _h.escape(PURCHASE_AGENT_NOTICE) + "</p>"
+                if volt and VOLTAGE_TITLE not in cur:
+                    head += ('<div class="kgp-voltage-notice"><p><strong>' + _h.escape(VOLTAGE_TITLE) + "</strong></p>"
+                             + "".join("<p>" + _h.escape(x) + "</p>" for x in VOLTAGE_LINES) + "</div>")
+                out[key] = head + cur
+            else:
+                parts = [] if PURCHASE_AGENT_NOTICE in cur else [PURCHASE_AGENT_NOTICE]
+                if volt and VOLTAGE_TITLE not in cur:
+                    parts.append("\n".join((VOLTAGE_TITLE,) + tuple(VOLTAGE_LINES)))
+                if parts:
+                    out[key] = "\n".join(parts) + ("\n\n" + cur if cur.strip() else "")
+        out["kc_notice"] = {"kc": list(kinds.get("kc") or []), "voltage": volt}
+        return out
+    except Exception as exc:                                    # noqa: BLE001 — 고지 실패가 등록을 막지 않는다(사유는 로그)
+        logger.warning("[등록] KC 고지 넣기 실패(그대로): %s", exc)
+        return payload
+
+
 #: 네이버 문서 상한(판매가·옵션가 모두 ≤ 999,999,990). 옵션가의 「판매가 대비 %」 범위는 문서에서 확인하지 못해 재지 않는다.
 NAVER_PRICE_MAX = 999_999_990
 
@@ -1957,7 +1998,7 @@ class UploadDispatcher:
                 payload["lead_time_days"] = _ld
         except Exception as exc:                                     # noqa: BLE001
             logger.warning("[등록] 선주문 발송 소요 계산 실패(정본 7일): %s", exc)
-        return korea_voltage_filter(payload, market), localized
+        return korea_kc_notice(korea_voltage_filter(payload, market), market), localized
 
     @staticmethod
     def _payload_for_market_core(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
