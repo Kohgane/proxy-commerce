@@ -170,8 +170,9 @@ def item_failure(item_id: str, extra: dict) -> dict:
     failed = []
     for key in ("images_ko", "detail_images_ko"):
         for e in (extra.get(key) or []):
-            if isinstance(e, dict) and e.get("status") == "failed":
-                failed.append(e)
+            if isinstance(e, dict) and e.get("status") == "failed" and not _q().is_no_text(
+                    " ".join(str(e.get(k) or "") for k in ("error_code", "error_message", "reason"))):
+                failed.append(e)                                 # Y11: 옛 「글자 없는 사진」(PictureWithoutText) 장은 실패 아님
     try:
         st = status(item_id)
     except Exception:                                            # noqa: BLE001 — 상태를 못 읽어도 장별 실패는 말한다

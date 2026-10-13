@@ -3887,9 +3887,16 @@ def coupang_exposure_data(item: dict) -> dict:
     eff = its.effective_images(ex, originals=originals, item_id=iid)
     order = [i for i, _u in its.rep_first([(p["idx"], p) for p in plan.values() if not p.get("promo_excluded")]
                                           or [(p["idx"], p) for p in plan.values()], originals, ex)]
+    _edits = {int(e.get("idx", -1)): e.get("edit") for e in (ex.get("images_ko") or [])
+              if isinstance(e, dict) and isinstance(e.get("edit"), dict) and e.get("url") == e["edit"].get("url")}
     strip = [{"idx": i, "url": eff[n] if n < len(eff) else plan[i]["url"], "original": plan[i]["original"],
               "source": plan[i]["source"], "translatable": plan[i]["translatable"], "use": plan[i]["use"],
-              "rep": n == 0} for n, i in enumerate(order)]
+              "rep": n == 0, "edited": (_edits.get(i) or {}).get("by") or ""} for n, i in enumerate(order)]
+    # Y11: 등록에서 빠진 갤러리 사진(판촉 의심·위험 제외) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
+    _risk_x = {int(e.get("idx", -1)) for e in (ex.get("images_ko") or []) if isinstance(e, dict) and e.get("risk_exclude")}
+    left_out = [{"idx": i, "original": plan[i]["original"], "url": plan[i]["url"],
+                 "reason": "위험 항목으로 뺌" if i in _risk_x else "프로모션 의심 — " + ", ".join((plan[i].get("promo") or [])[:3])}
+                for i in sorted(plan) if i not in order or i in _risk_x]
     price, why = UploadDispatcher.sell_price_in(dict(product), "KRW", "coupang")
     rep = eff[0] if eff else ""
     # Y6-C B: 대표 사진 판정(내려받기 + OCR)은 요청 밖에서 — 아직이면 {state: pending}, 화면이 3초마다 /check로 묻는다.
@@ -3898,7 +3905,7 @@ def coupang_exposure_data(item: dict) -> dict:
     hold = cic.hold(dict(product, images_effective=eff, rep_image_override=ov), "coupang", cached_only=True) if rep else None
     return {"ok": True, "name": product.get("coupang_name") or product.get("title") or "",
             "price": int(price) if price else None, "price_why": "" if price else (why or "판매가를 못 냈어요"),
-            "rep": rep, "rep_original": strip[0]["original"] if strip else "", "strip": strip[:10], "check": chk,
+            "rep": rep, "rep_original": strip[0]["original"] if strip else "", "strip": strip[:10], "left_out": left_out[:10], "check": chk,
             "hold": hold, "override": ov if ov and ov.get("url") == rep else None,
             # M5 후속: 이미지 번역이 왜 안 됐나(공급사 원문) — 카드 「나갈 사진」 옆 배지. 없으면 null.
             "imgko_fail": _imgko_failure(iid, ex)}
@@ -5026,6 +5033,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
         _sg.begin(f"pv_job:{job_id[:8]}")                            # Z9: 잡 스레드도 10초 스톨 감시
         try:
             t0 = _time.monotonic()
+            _pv_auto_image_edit(job_id, data)                          # Y11: 판촉 상자(제품 밖) 자동 지우기 — 이미지 배열을 만들기 전에
             product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
             # Y10: 리스크 게이트 — 카드 「위험 n건」. 결정 안 된 보류·차단이 있으면 AI(상세 초안·반려 자동 수정·Y8)는
@@ -5145,10 +5153,96 @@ def collect_prevalidate_job(job_id: str):
                     "auto_fix": cur.get("auto_fix"),                                          # 반려 사유 자동 수정
                     "ai_fix": cur.get("ai_fix"),                                                      # Y8
                     "risk": cur.get("risk"),                                                          # Y10 위험 블록
+                    "image_edit": cur.get("image_edit"),                                              # Y11 자동 판촉 지우기
                     "detail_translate": cur.get("detail_translate"),                                  # Y9
                     "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중
                     "rss": cur.get("rss") or {},
                     "error": cur.get("error") or ""})
+
+
+def _image_edit_item(item_id: str):
+    """Y11 공용 — `(item, extra)` 또는 `(None, 오류 응답)`."""
+    if not _check_auth():
+        return None, (jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401)
+    item = _get_owned_item(item_id)
+    if item is None:
+        return None, (jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404)
+    try:
+        return item, json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        return item, {}
+
+
+def _image_edit_save(item_id: str, ex: dict) -> bool:
+    from . import collect_history_store
+    return bool(collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+
+
+@bp.route("/collect/<item_id>/image-edit/<kind>/<int:idx>", methods=["GET", "POST"])
+def collect_image_edit(item_id: str, kind: str, idx: int):
+    """Y11 사진 편집 — GET: 상자 목록(판촉·로고·일반·상표 위험 · 제품 영역 · 비용) · POST `{ops:[{id, action: erase|text, text?}]}`: 편집본.
+
+    상자가 저장돼 있지 않은 옛 장은 GET 때 텐센트 OCR로 한 번 읽어 저장한다. 지우기·글자 고치기는 Cloudinary가 원본을 직접 받아 간다."""
+    if kind not in ("gallery", "detail"):
+        return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from src.services import image_edit as _ie
+    if request.method == "GET":
+        had = bool((_ie._entry(ex, kind, idx) or {}).get("boxes"))
+        p = _ie.plan(ex, kind, idx)
+        if not had and (_ie._entry(ex, kind, idx) or {}).get("boxes"):
+            _image_edit_save(item_id, ex)                         # OCR로 새로 읽은 상자 — 다음엔 다시 안 부른다
+        return jsonify(dict(p, ok=True, kind=kind, idx=idx, orig=_ie._original(ex, kind, idx)))
+    body = request.get_json(force=True, silent=True) or {}
+    ops = [o for o in (body.get("ops") or []) if isinstance(o, dict)][:40]
+    r = _ie.apply(ex, kind, idx, ops, by="user")
+    if not r.get("ok"):
+        return jsonify(r), 409
+    if not _image_edit_save(item_id, ex):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    return jsonify(dict(r, plan=_ie.plan(ex, kind, idx)))           # 상자는 저장분 — OCR 다시 안 부름(배지는 사진 한 번 받아 다시 찾음)
+
+
+@bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/revert")
+def collect_image_edit_revert(item_id: str, kind: str, idx: int):
+    """Y11 「되돌리기」 — 편집 전 장(번역본·원본)으로. 편집 비용은 이미 쓴 것이라 그대로 기록에 남는다."""
+    if kind not in ("gallery", "detail"):
+        return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from src.services import image_edit as _ie
+    r = _ie.revert(ex, kind, idx)
+    if not r.get("ok"):
+        return jsonify(r), 409
+    if not _image_edit_save(item_id, ex):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    return jsonify({"ok": True})
+
+
+def _pv_auto_image_edit(job_id: str, data: dict) -> None:
+    """Y11 자동 1차 — 사전검증 전에 판촉 의심 갤러리 장의 「판촉 + 제품 영역 밖」 상자를 지운 편집본을 만들어 둔다
+    (사용자는 결과만 확인·되돌리기 — 3클릭 유지). 끄기: `IMAGE_EDIT_AUTO=0`. 실패는 카드에 사유만(사전검증은 그대로)."""
+    if not data.get("item_id") or os.getenv("IMAGE_EDIT_AUTO", "1") == "0":
+        return
+    from src.services import image_edit as _ie
+    if not _ie.configured()[0]:
+        return
+    item_id = str(data["item_id"])
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return
+    try:
+        res = _ie.auto_promo(ex)
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[사진 편집·자동] item=%s 실패: %s", item_id, exc)
+        return
+    if any(r.get("url") for r in res):
+        _image_edit_save(item_id, ex)
+    if res:
+        _pv_update(job_id, image_edit=res)
 
 
 @bp.post("/collect/<item_id>/risk-decision")

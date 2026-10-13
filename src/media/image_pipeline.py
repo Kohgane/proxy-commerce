@@ -407,7 +407,7 @@ def remote_max_side() -> int:
 
 def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeout: float = 30.0,
                   folder: str = "", public_id: str = "", overwrite: Optional[bool] = None, fmt: str = "",
-                  max_side: Optional[int] = None) -> Dict[str, Any]:
+                  max_side: Optional[int] = None, eager: Optional[list] = None) -> Dict[str, Any]:
     """Z10-B — 원본 **URL을 그대로** Cloudinary에 넘긴다(원격 업로드 — Cloudinary가 직접 받아 간다). 우리 프로세스는
     바이트를 만지지 않는다 → 메모리 0. `source`가 bytes면 그 바이트를 올린다(폴백 — 받은 자리에서 이미 줄인 것).
 
@@ -456,6 +456,8 @@ def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeou
             opts["public_id"] = public_id
         if context:
             opts["context"] = {str(k): str(v) for k, v in context.items()}
+        if eager:                                     # Y11: 원격 업로드와 같은 호출에서 파생본(gen_remove·글자 얹기)
+            opts["eager"] = eager
         payload = io.BytesIO(source) if isinstance(source, (bytes, bytearray)) else str(source)
         result = cloudinary.uploader.upload(payload, **opts) or {}
     except Exception as exc:
@@ -467,7 +469,8 @@ def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeou
         out["error"] = "업로드 응답에 주소가 없습니다 — 응답 키 목록: " + (", ".join(out["keys"]) or "(비어 있음)")
         return out
     out.update({"ok": True, "secure_url": str(url), "public_id": str(result.get("public_id") or ""),
-                "bytes": int(result.get("bytes") or 0)})
+                "bytes": int(result.get("bytes") or 0), "eager": list(result.get("eager") or []),
+                "width": int(result.get("width") or 0), "height": int(result.get("height") or 0)})
     return out
 
 

@@ -181,7 +181,7 @@ def started_since(since) -> int:
 
 
 #: Y4(오너 2026-10-04): **글자 없는 사진은 실패가 아니다** — 원본을 그대로 쓰면 된다. 예전 기록(`failed`)도 세지 않는다.
-NO_TEXT_MARKERS = ("그릴 줄이 없습니다", "无文本")
+NO_TEXT_MARKERS = ("그릴 줄이 없습니다", "无文本", "PictureWithoutText")
 
 
 def is_no_text(reason) -> bool:
