@@ -164,6 +164,7 @@ def test_queued_prevalidate_does_not_start_if_memory_filled_while_waiting(monkey
         return real_body(job_id, data, markets, dispatcher)                    # 안 불려야 한다
     monkeypatch.setattr(V, "_pv_job_body", body)
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: object())
+    monkeypatch.setattr(rss, "instance_mb", lambda: 200)                         # 처음엔 여유(풀 스위트 프로세스는 500MB+)
     c = _client("z10c-q")
     j1 = c.post("/seller/collect/prevalidate", json={"product": {"title": "a"}, "markets": ["elevenst"]}).get_json()
     assert started.wait(5)
