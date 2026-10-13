@@ -53,6 +53,8 @@ _LEAN_EXTRA = (
     # F49-T 5부: 목록 타일 보강 여부(enrich_axes) · 이미지 완료 기준(「이미지 부족」 배지) — 작은 값만.
     "'enriched', extra_json->'enriched',"
     "'image_check', extra_json->'image_check',"
+    # Y10: 「등록 안 함」 — 목록 칩 「등록 보류: 사유」(작은 dict)
+    "'risk_skip', extra_json->'risk_skip',"
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
     "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END,"
     # lean은 이미지를 **첫 장만** 싣는다 → 개수를 세면 늘 1이다. 실제 장수는 SQL이 세서 보낸다.

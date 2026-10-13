@@ -2061,6 +2061,8 @@ def mobile_list_ctx(item: dict) -> dict:
         missing.append("SKU(옵션별 가격)")
     # T3: 위험 플래그(유통기한 임박·떨이 / 가구 레플리카 상표) — 카드에서 먼저 말한다. 사전검증이 같은 판정으로 보류.
     risks = []
+    if isinstance(ex.get("risk_skip"), dict) and ex["risk_skip"].get("reason"):
+        risks.append("등록 보류: " + str(ex["risk_skip"]["reason"]))          # Y10 「등록 안 함」
     try:
         from src.collectors import ko_polish as _kp3
         _rt = " ".join([str(product.get("title_src") or ""), str(product.get("title") or "")]
@@ -2970,6 +2972,18 @@ def collect_upload():
         from .product_builder import build_product as _build_product
         product_data = _build_product(_owned, edits=product_data, seller_id=_seller_id())
     product_data = _build_payload(product_data, _owned)
+    # Y10: 리스크 게이트 — 결정 안 된 보류·차단·「등록 안 함」·이미지 검사 대기면 보내지 않는다(사전검증과 같은 판정, 직접 호출 우회 0).
+    if _owned:
+        try:
+            from src.services import risk_gate as _rg
+            _rex = json.loads(_owned.get("extra_json") or "{}") or {}
+            _rsc = _risk_scan_for(str(data.get("item_id")), _rex, product_data)
+            _rh = _rg.holds(_rsc)
+            if _rh:
+                return jsonify({"ok": False, "risk": _rg.card(_rsc), "user_message": True, "step": "위험 검사",
+                                "error": "위험 항목을 먼저 정해 주세요 — " + " · ".join(h["short"] for h in _rh[:3])}), 409
+        except Exception as exc:                                 # noqa: BLE001 — 검사 실패로 등록을 막지는 않는다(사유는 로그)
+            logger.warning("[리스크] 등록 전 검사 실패 item=%s: %s", data.get("item_id"), exc)
 
     # S1(오너 2026-10-02): 이미지 배열·외부 도달 확인은 **사전검증과 같은 함수**(`_outbound_images`)를 지난다 —
     #   R2와 같은 교훈: 사전검증 「통과」 뒤 등록에서 「우리 서버 주소」로 막히던 자리.
@@ -4220,9 +4234,14 @@ def settings_markets():
         msg = "저장했어요 — 다음 카드부터 이 마켓이 처음 체크돼요." if codes else "설정을 비웠어요."
     rows, pick = _market_rows(base)
     names = {m["code"]: m["label"] for m in rows}
+    from src.services import risk_gate as _rg
+    try:
+        _rc, _ra = _rg.allow_candidates(), sorted(_rg.allowlist())
+    except Exception:                                            # noqa: BLE001
+        _rc, _ra = [], []
     return render_template("market_settings.html", rows=rows, saved=_mp.get_default(sc), msg=msg,
                            pick_label=pick["label"] or ("쿠팡" if pick["codes"] else ""), pick_codes=pick["codes"],
-                           pick_names=[names.get(c, c) for c in pick["codes"]])
+                           pick_names=[names.get(c, c) for c in pick["codes"]], risk_candidates=_rc, risk_allow=_ra)
 
 
 @bp.route("/settings/naver-notice", methods=["GET", "POST"])
@@ -4347,6 +4366,8 @@ def _pv_prepare(data: dict, product_data: dict):
             product_data["image_ocr_text"] = _ocr_text_of(_sx)
             # Y9: 상세 사진 번역 진행(사전검증 카드 「상세 사진 번역 중 n/28」)
             product_data["detail_translate_progress"] = _detail_translate_progress(str(data["item_id"]), _sx)
+            # Y10: 리스크 게이트 — 기억된 「빼고 등록」은 바로 적용(저장) → 저장된 「빼고 등록」을 몸통에도 → 전 위치 검사
+            product_data["_risk"] = _risk_scan_for(str(data["item_id"]), _sx, product_data)
             # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본
             from src.uploaders.detail_ui_junk import desc_is_junk as _dj
             if _dj(_sx):
@@ -4359,6 +4380,33 @@ def _pv_prepare(data: dict, product_data: dict):
     if data.get("refresh_from_store") and data.get("item_id"):
         product_data = _merge_stored_translation(product_data, str(data["item_id"]))
     return product_data, _rc
+
+
+def _risk_pending_images(item_id: str) -> int:
+    """Y10 — 사진 속 글자를 아직 읽는 중인 장(이미지 번역 큐 대기·진행). 못 세면 0(게이트가 멈춰 서지 않게)."""
+    try:
+        from src.db import image_translate_queue_pg as _q
+        c = _q.counts(item_id) or {}
+        return int(c.get("queued") or 0) + int(c.get("running") or 0)
+    except Exception:                                            # noqa: BLE001
+        return 0
+
+
+def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
+    """Y10 — 사전검증·등록 공용: 기억된 「빼고 등록」 자동 적용(저장) · 몸통에 저장된 결정 반영 · 검사 결과."""
+    from src.services import risk_gate as _rg
+    try:
+        if _rg.auto_apply(extra, by=_seller_id()):
+            from . import collect_history_store as _chs
+            _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[리스크] 기억된 빼기 적용 실패 item=%s: %s", item_id, exc)
+    _rg.enforce(product_data, extra)
+    view = dict(extra)
+    for k in ("title_ko", "coupang_name", "description", "description_ko", "keywords", "tags", "options", "detail_specs", "brand"):
+        if product_data.get(k):
+            view[k] = product_data[k]
+    return _rg.scan(view, pending_images=_risk_pending_images(item_id))
 
 
 def _ocr_text_of(extra: dict) -> str:
@@ -4977,6 +5025,13 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
             t0 = _time.monotonic()
             product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
+            # Y10: 리스크 게이트 — 카드 「위험 n건」. 결정 안 된 보류·차단이 있으면 AI(상세 초안·반려 자동 수정·Y8)는
+            #   **유저가 고른 뒤에** 돈다(오너: 게이트가 먼저, AI는 「빼고 등록」 뒤에만 상품명·본문을 다시 쓴다).
+            from src.services import risk_gate as _rgate
+            _risk = product_data.get("_risk") if isinstance(product_data.get("_risk"), dict) else None
+            _risk_open = bool(_risk and _rgate.holds(_risk))
+            if _risk and (_risk.get("hits") or _risk.get("waiting") or _risk.get("skip")):
+                _pv_update(job_id, risk=dict(_rgate.card(_risk), ai_waits=_risk_open))
             # Y9: 상세 사진 번역이 아직이면 카드에 「상세 사진 번역 중 n/28」(보류 아님 — 끝나면 번역본으로 나간다)
             _dtp = product_data.get("detail_translate_progress") or {}
             if _dtp.get("pending"):
@@ -4989,7 +5044,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 markets = [m for m in markets if m not in reg]
             with mc.seller_market_env(_seller_id(), markets):
                 # Y7-J: 네이버로 나가는데 셀러 글이 없으면(초안이 없거나 옛 형식) 마켓 검증 **전에** 초안부터 — 본문 = 사진 위 · 글 아래
-                if data.get("item_id") and _pv_needs_auto_text(product_data, markets):
+                if data.get("item_id") and not _risk_open and _pv_needs_auto_text(product_data, markets):
                     t0 = _time.monotonic()
                     _pv_update(job_id, auto_detail={"status": "running"})
                     with _rss.span("ai_draft"):
@@ -5016,7 +5071,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 t0 = _time.monotonic()
                 if data.get("item_id") and any(r.hold and "detail_blank" in (getattr(r, "fixes", None) or []) for r in results):
                     _pv_update(job_id, auto_detail={"status": "running"})       # 카드: 「상세 초안을 만드는 중…」
-                _ad, product_data = _pv_auto_detail(product_data, data, results)
+                _ad, product_data = (None, product_data) if _risk_open else _pv_auto_detail(product_data, data, results)
                 if _ad is not None:
                     _pv_update(job_id, auto_detail=_ad, stages={"auto_detail": int((_time.monotonic() - t0) * 1000)})
                     held = [r.market for r in results if r.hold and "detail_blank" in (getattr(r, "fixes", None) or [])]
@@ -5025,16 +5080,18 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                             _pv_run_markets(job_id, product_data, held, dispatcher, rc, deadline_ts)
                 # 반려 사유 자동 수정(오너 2026-10-13): 글자로 풀 보류(표시광고 문구·상품명 원문·지난 반려 사유) → Claude → 그 마켓만 다시 잰다
                 t0 = _time.monotonic()
-                _af, product_data, _af_markets = _pv_auto_fix(job_id, product_data, data, results, deadline_ts)
+                _af, product_data, _af_markets = (None, product_data, []) if _risk_open else \
+                    _pv_auto_fix(job_id, product_data, data, results, deadline_ts)
                 if _af is not None:
                     _pv_update(job_id, auto_fix=_af, stages={"auto_fix": int((_time.monotonic() - t0) * 1000)})
                     if _af_markets and _time.time() < deadline_ts - 1:
                         results = [r for r in results if r.market not in _af_markets] + \
                             _pv_run_markets(job_id, product_data, _af_markets, dispatcher, rc, deadline_ts)
                 # Y8: 남은 보류 중 AI가 고칠 수 있는 것 → AI → 적용 → 그 마켓만 다시(최대 2회전·6회)
-                with _rss.span("ai_fix"):
-                    results, product_data = _pv_ai_fix(job_id, product_data, data, results, dispatcher, rc,
-                                                       prior_calls=int(bool(_af and _af.get("status") in ("done", "nochange", "failed"))))
+                if not _risk_open:
+                    with _rss.span("ai_fix"):
+                        results, product_data = _pv_ai_fix(job_id, product_data, data, results, dispatcher, rc,
+                                                           prior_calls=int(bool(_af and _af.get("status") in ("done", "nochange", "failed"))))
                 _pv_rep_check_followup(job_id, product_data, results, rc, deadline_ts, dispatcher)
         except _rss.MemoryCapExceeded as exc:
             # Z10: 메모리 상한 — **이 잡만** 멈춘다(워커·다른 요청은 산다). 카드에 원문과 다음 행동.
@@ -5084,10 +5141,61 @@ def collect_prevalidate_job(job_id: str):
                     "auto_translate": cur.get("auto_translate"), "auto_detail": cur.get("auto_detail"),
                     "auto_fix": cur.get("auto_fix"),                                          # 반려 사유 자동 수정
                     "ai_fix": cur.get("ai_fix"),                                                      # Y8
+                    "risk": cur.get("risk"),                                                          # Y10 위험 블록
                     "detail_translate": cur.get("detail_translate"),                                  # Y9
                     "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중
                     "rss": cur.get("rss") or {},
                     "error": cur.get("error") or ""})
+
+
+@bp.post("/collect/<item_id>/risk-decision")
+def collect_risk_decision(item_id: str):
+    """Y10 위험 블록 버튼 — `{key, action: strip|allow|skip|reset, reason?}` → 저장 · 갱신된 위험 카드.
+
+    strip = 「빼고 등록」(그 낱말을 상품명·검색어·옵션·본문·참수에서 지우고 걸린 사진은 등록에서 뺀다) ·
+    allow = 「그래도 등록」(기록 · 차단 등급엔 없음) · skip = 「등록 안 함」(목록·카드에 「등록 보류: 사유」 칩) · reset = 결정 지우기.
+    화면은 받은 뒤 사전검증을 다시 돌린다(빼고 난 상품으로 다시 잰다).
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    body = request.get_json(force=True, silent=True) or {}
+    action = str(body.get("action") or "")
+    if action not in ("strip", "allow", "skip", "reset"):
+        return jsonify({"ok": False, "error": "알 수 없는 선택이에요."}), 400
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from src.services import risk_gate as _rg
+    r = _rg.decide(ex, str(body.get("key") or "")[:80], action, by=_seller_id(), reason=str(body.get("reason") or "")[:60])
+    if not r.get("ok"):
+        return jsonify({"ok": False, "error": r.get("error") or "저장하지 못했어요."}), 409
+    from . import collect_history_store
+    upd = {"extra_json": json.dumps(ex, ensure_ascii=False)}
+    if action == "strip" and ex.get("title_ko"):
+        upd["title"] = ex["title_ko"]
+    if not collect_history_store.update(item_id, seller_ids=_seller_identities(), **upd):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    return jsonify({"ok": True, "action": action, "risk": _rg.card(_rg.scan(ex, pending_images=_risk_pending_images(item_id))),
+                    # 데스크톱 편집 칸을 뺀 값으로(안 그러면 다음 「저장」이 옛 상품명을 다시 쓴다)
+                    "fields": {k: ex.get(k) for k in ("title_ko", "description_ko", "keywords") if action == "strip" and k in ex}})
+
+
+@bp.post("/settings/risk-allow")
+def settings_risk_allow():
+    """Y10 학습 — 「그래도 등록」 2번 쌓인 낱말을 허용 목록으로 확정(또는 빼기). `{label, on}`."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    body = request.get_json(force=True, silent=True) or {}
+    label = str(body.get("label") or "").strip()[:40]
+    if not label:
+        return jsonify({"ok": False, "error": "허용할 이름이 없어요."}), 400
+    from src.services import risk_gate as _rg
+    return jsonify({"ok": True, "allow": _rg.confirm_allow(label, bool(body.get("on", True))),
+                    "candidates": _rg.allow_candidates()})
 
 
 @bp.post("/collect/<item_id>/ai-fix/revert")
@@ -9872,6 +9980,8 @@ def _shape_collect_items(items, current_lang):
         # F49-T 5부: 이미지 완료 기준 미달(갤러리 < 원본 · 상세 0) — 사유와 함께 배지.
         _ic = ex.get("image_check") if isinstance(ex.get("image_check"), dict) else None
         it["image_short"] = (_ic.get("reason") or "이미지 부족") if (_ic and not _ic.get("ok")) else ""
+        # Y10: 「등록 안 함」 — 목록 칩 「등록 보류: 사유」
+        it["risk_skip"] = str((ex.get("risk_skip") or {}).get("reason") or "") if isinstance(ex.get("risk_skip"), dict) else ""
         # F24: 소싱 판정 뱃지 — 봇이 담을 때 원칙으로 재서 적어 둔 값. 판정이 없으면 뱃지도 없다
         #   (없는 뱃지를 만들지 않는다 — 「판정 없음」이라는 뱃지가 제일 쓸모없다).
         try:

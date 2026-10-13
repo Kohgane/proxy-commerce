@@ -404,7 +404,8 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
         #   상품 사진·치수·소재 앞 · 브랜드 스토리 뒤 · 상한 20장(네이버 본문 길이 보호)에서 자른다.
         from src.services import detail_image_plan as _dip
         return [u for _i, u in _dip.arrange(list(enumerate(out)), by_idx, originals)]
-    drop = {i for i in range(len(originals)) if promo_excluded(by_idx.get(i) or {})}
+    # Y10: 리스크 게이트 「빼고 등록」으로 뺀 장(상표·디자인이 사진 속 글자에 있던 장)도 뺀다
+    drop = {i for i in range(len(originals)) if promo_excluded(by_idx.get(i) or {}) or (by_idx.get(i) or {}).get("risk_exclude")}
     pairs = list(enumerate(out))
     if drop and len(drop) < len(out):
         pairs = [(i, u) for i, u in pairs if i not in drop]

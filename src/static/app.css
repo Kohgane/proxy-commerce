@@ -2348,3 +2348,17 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kgp-dcell-pos { color: var(--text-muted); white-space: nowrap; }
 .kgp-dcell-why { padding: 0 var(--space-1); font-size: var(--caption); color: var(--text-muted); line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; }
 .kgp-dcell-inc { padding: 2px var(--space-1) var(--space-1); font-size: var(--caption); display: flex; align-items: center; gap: 4px; }
+
+/* Y10 리스크 게이트 위험 블록 — 폰 카드·데스크톱 사전검증 공용(_risk_block.html). 강조는 버튼 하나(「빼고 등록」)만. */
+.kgp-risk { border: 1px solid var(--border); border-left: 3px solid var(--orange); border-radius: var(--radius); background: var(--surface);
+  padding: var(--space-2) var(--space-3); margin: 0 0 var(--space-2); }
+.kgp-risk-head { font-size: var(--body); margin-bottom: var(--space-1); }
+.kgp-risk-sub, .kgp-risk-why, .kgp-risk-wait { color: var(--text-muted); font-size: var(--caption); }
+.kgp-risk-row { border-top: 1px solid var(--border); padding: var(--space-2) 0; line-height: 1.45; word-break: keep-all; overflow-wrap: anywhere; }
+.kgp-risk-where { font-size: var(--caption); color: var(--text); margin-top: 2px; }
+.kgp-risk-acts, .kgp-risk-done, .kgp-risk-skip { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; margin-top: var(--space-1); }
+.kgp-risk-done { font-size: var(--caption); color: var(--teal); }
+.kgp-risk-btn { min-height: 44px; padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: var(--caption); }
+.kgp-risk-btn.is-main { background: var(--ink); border-color: var(--ink); color: var(--cream); }
+.kgp-risk-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }

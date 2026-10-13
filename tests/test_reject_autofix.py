@@ -245,6 +245,8 @@ def test_job_fixes_rechecks_and_undo(monkeypatch):
     monkeypatch.setattr(V, "_account_codes_forbidden", lambda m: None)
     monkeypatch.setattr(V, "_pv_registered_rows", lambda iid, m: {})
     monkeypatch.setattr(RAF, "_call", _good_fix)
+    # Y10: 「무선 충전기」는 리스크 게이트(전파·전기용품 KC)가 먼저 세운다 — 여기선 반려 자동 수정만 본다(게이트는 test_y10_risk_gate)
+    monkeypatch.setattr(V, "_risk_scan_for", lambda *a, **k: {"hits": [], "waiting": 0, "skip": {}})
 
     def outbound(pd, iid):                      # 실제 `_outbound_images`의 「저장 기록 싣기」 줄과 같은 동작(이미지·도달 생략)
         it = V._get_owned_item(iid) or {}

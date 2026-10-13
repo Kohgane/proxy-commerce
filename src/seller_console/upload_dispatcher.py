@@ -938,8 +938,8 @@ def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
 
 def readiness_message(holds: List[Dict[str, str]]) -> str:
     """「사전검증 — 보류: 이미지 0장·판매가 없음 → PC 확장에서 보강 후」 — 무엇이 모자라고 어디서 채우는지 한 줄."""
-    if any(h["fix"] == "block" for h in holds):
-        return "사전검증 — 보류: " + next(h["short"] for h in holds if h["fix"] == "block")
+    if any(h["fix"] in ("block", "risk_block") for h in holds):
+        return "사전검증 — 보류: " + next(h["short"] for h in holds if h["fix"] in ("block", "risk_block"))
     what = "·".join(h["short"] for h in holds)
     fixes = []
     if any(h["fix"] == "pc" for h in holds):
@@ -963,6 +963,10 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("선주문을 확인하고 「선주문 그래도 등록」")
     if any(h["fix"] == "detail_blank" for h in holds):
         fixes.append("「상세페이지 꾸미기」에서 상세 설명이나 상세 이미지를 채운")     # Y7-F
+    if any(h["fix"] in ("risk", "risk_block") for h in holds):
+        fixes.append("위험 블록에서 「빼고 등록」·「그래도 등록」·「등록 안 함」 중 고른")   # Y10
+    if any(h["fix"] == "risk_wait" for h in holds):
+        fixes.append("사진 속 글자 읽기가 끝난")
     if not fixes:                                         # 모르는 보류 종류 — 「→ 후」처럼 빈 조치를 쓰지 않는다
         return f"사전검증 — 보류: {what}"
     return f"사전검증 — 보류: {what} → {' · '.join(fixes)} 후"
@@ -1238,9 +1242,14 @@ class UploadDispatcher:
         # Y9(오너 2026-10-13): 상표·IP는 상품명·옵션만이 아니라 **본문·사진 속 글자(OCR)**에 있어도 같은 보류 — 어디서 찾았는지 함께.
         _body = str(pd.get("description_ko") or pd.get("description") or "")
         _ocr = str(pd.get("image_ocr_text") or "")
-        _rep = _kp.replica_hits(_risk_text)
+        # Y10: 리스크 게이트가 붙은 사전검증(`_risk`)이면 상표·IP·인증은 게이트가 본다(전 위치 · 결정 버튼) — 옛 상표 보류는 겹치지 않게 끈다.
+        _rg_scan = pd.get("_risk") if isinstance(pd.get("_risk"), dict) else None
+        if _rg_scan is not None:
+            from src.services import risk_gate as _rg
+            holds.extend(_rg.holds(_rg_scan))
+        _rep = _kp.replica_hits(_risk_text) if _rg_scan is None else []
         _rep_where = []
-        for _lab, _txt in (("본문", _body), ("사진 속 글자", _ocr)):
+        for _lab, _txt in ((("본문", _body), ("사진 속 글자", _ocr)) if _rg_scan is None else ()):
             _h = [x for x in _kp.replica_hits(_txt) if x not in _rep]
             if _h:
                 _rep += _h
@@ -1251,7 +1260,7 @@ class UploadDispatcher:
                                   + (f" 찾은 곳: {' · '.join(_rep_where)}" if _rep_where else "")})
         # Y6(오너 2026-10-04): 영화·게임·애니 IP명(星际穿越·漫威·迪士尼·宝可梦…) — 제목에선 이미 지웠고(ko_polish),
         #   등록은 라이선스 확인 전까지 보류. 원문 제목까지 본다(번역 제목엔 IP명이 없어도 원문에 있다).
-        _ip = _kp.ip_hits(_risk_text) or [x for x in _kp.ip_hits(_body + " " + _ocr)]
+        _ip = (_kp.ip_hits(_risk_text) or [x for x in _kp.ip_hits(_body + " " + _ocr)]) if _rg_scan is None else []
         if _ip:
             holds.append({"short": f"상표 확인 보류({', '.join(_ip)})", "fix": "trademark",
                           "line": f"영화·게임·애니 IP({', '.join(_ip)})가 원문 제목에 있어요 — 상품명에선 지웠고, "

@@ -1,0 +1,40 @@
+{
+  "_doc": "Y10 리스크 게이트(오너 2026-10-13 「걸릴 것 같으면 다 빼자 — 사전검증에서 보여 주고 유저가 고른다」). 등급: block=차단(「그래도 등록」 없음) · hold=보류(기본) · caution=주의(표시만). 이름 맞추기: 한자는 그대로 포함, 한글은 앞 글자가 한글이 아닐 때(「타임스」 속 「임스」는 아님), 라틴은 앞뒤가 영문자가 아닐 때(대소문자 무시, case:true면 구분). 상표 표(ko_polish_rules.json trademarks의 replica·ip·drop)도 같은 게이트로 함께 읽는다 — 여기엔 그 표에 없는 것만 더 적는다.",
+  "trademark": [
+    {"label": "임스", "kind": "디자인", "names": ["Eames", "임스", "이임스", "伊姆斯", "伊默斯"]},
+    {"label": "허먼밀러", "kind": "디자인", "names": ["Herman Miller", "HermanMiller", "허먼밀러", "허먼 밀러", "赫曼米勒"]},
+    {"label": "비트라", "kind": "디자인", "names": ["Vitra", "비트라", "维特拉"]},
+    {"label": "자하 하디드", "kind": "디자인", "names": ["Zaha Hadid", "자하 하디드", "자하하디드", "扎哈哈迪德", "扎哈·哈迪德"]},
+    {"label": "이세이 미야케", "kind": "디자인", "names": ["Issey Miyake", "ISSEY MIYAKE", "이세이 미야케", "이세이미야케", "三宅一生", "PLEATS PLEASE", "플리츠 플리즈", "플리츠플리즈", "BAO BAO", "바오바오"]},
+    {"label": "다이슨", "kind": "상표", "names": ["Dyson", "다이슨", "戴森"]},
+    {"label": "슈프림", "kind": "상표", "names": ["SUPREME", "슈프림"], "case": true},
+    {"label": "레고", "kind": "상표", "names": ["LEGO", "Lego", "레고", "乐高"], "case": true},
+    {"label": "디즈니", "kind": "캐릭터", "names": ["Disney", "디즈니", "迪士尼", "Mickey Mouse", "미키마우스", "米奇"]},
+    {"label": "산리오", "kind": "캐릭터", "names": ["Sanrio", "산리오", "三丽鸥", "Hello Kitty", "헬로키티", "凯蒂猫", "Kuromi", "쿠로미", "库洛米", "My Melody", "마이멜로디", "美乐蒂", "Cinnamoroll", "시나모롤", "玉桂狗"]},
+    {"label": "포켓몬", "kind": "캐릭터", "names": ["Pokemon", "Pokémon", "포켓몬", "宝可梦", "Pikachu", "피카츄", "皮卡丘"]},
+    {"label": "샤넬", "kind": "명품", "names": ["Chanel", "CHANEL", "샤넬", "香奈儿"]},
+    {"label": "루이비통", "kind": "명품", "names": ["Louis Vuitton", "LOUIS VUITTON", "루이비통", "루이 비통", "路易威登"]},
+    {"label": "구찌", "kind": "명품", "names": ["Gucci", "GUCCI", "구찌", "古驰"]},
+    {"label": "에르메스", "kind": "명품", "names": ["Hermès", "Hermes", "HERMES", "에르메스", "爱马仕"]},
+    {"label": "디올", "kind": "명품", "names": ["Dior", "DIOR", "디올", "迪奥"]},
+    {"label": "프라다", "kind": "명품", "names": ["Prada", "PRADA", "프라다", "普拉达"]}
+  ],
+  "replica_signals": ["复刻", "同款", "平替", "1:1", "1比1", "高仿", "原单", "仿制", "원단 같은", "스타일", "레플리카", "replica", "Replica", "REPLICA", "카피", "copy"],
+  "cert": [
+    {"key": "drug", "label": "의약품·의료기기", "grade": "block", "why": "판매 불가 — 의약품·의료기기는 구매대행으로 팔 수 없어요",
+     "names": ["의약품", "의료기기", "의료용", "처방", "医疗器械", "药品", "处方药", "医用"]},
+    {"key": "electric", "label": "인증: 전기용품(KC)", "grade": "hold", "why": "전기용품 안전인증(KC) 확인 필요 — 110V·220V 표기도 확인",
+     "names": ["110V", "220V", "110v", "220v", "전압", "충전기", "어댑터", "콘센트", "멀티탭", "电源适配器", "充电器", "插头", "插座", "锂电池"]},
+    {"key": "kids", "label": "인증: 어린이제품", "grade": "hold", "why": "어린이제품 안전확인(KC) 대상인지 확인 필요",
+     "names": ["어린이", "유아용", "아동용", "키즈", "儿童", "婴儿", "幼儿", "宝宝"]},
+    {"key": "radio", "label": "인증: 전파(무선)", "grade": "hold", "why": "전파 인증(KC 적합성) 확인 필요 — 블루투스·무선",
+     "names": ["블루투스", "무선", "Bluetooth", "WiFi", "Wi-Fi", "蓝牙", "无线", "遥控"]},
+    {"key": "food", "label": "인증: 수입식품", "grade": "hold", "why": "수입식품 신고 대상인지 확인 필요",
+     "names": ["식품", "먹는", "食品", "零食", "茶叶", "咖啡豆"]},
+    {"key": "supplement", "label": "주의: 건강기능식품(인허가 보유)", "grade": "caution", "why": "인허가 보유 — 표시·광고 문구만 확인",
+     "names": ["건강기능식품", "건기식", "영양제", "비타민", "유산균", "프로바이오틱스", "保健品", "维生素", "益生菌"], "shadows": ["food"]},
+    {"key": "cosmetic", "label": "주의: 화장품(인허가 보유)", "grade": "caution", "why": "인허가 보유 — 표시·광고 문구만 확인",
+     "names": ["화장품", "스킨케어", "세럼", "에센스", "化妆品", "护肤", "精华液", "面霜"]}
+  ],
+  "allow": []
+}

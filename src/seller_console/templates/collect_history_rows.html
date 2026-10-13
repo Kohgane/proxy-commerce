@@ -49,6 +49,10 @@
     <span class="pc-badge pc-badge-danger mt-1"
           title="{{ it.vendor_sku_expected or '상품 주소에서 식별자를 찾지 못했습니다' }} — 이대로는 마켓에 등록할 수 없어요"><i class="bi bi-hash"></i> 식별자 없음</span>
     {% endif %}
+    {# Y10: 위험 블록에서 「등록 안 함」을 고른 상품 — 「등록 보류: 사유」 #}
+    {% if it.risk_skip %}
+    <span class="pc-badge pc-badge-danger mt-1" data-role="risk-skip-chip">등록 보류: {{ it.risk_skip }}</span>
+    {% endif %}
     {# M7(오너 2026-10-08): 등록된 마켓만 소형 칩 — 색 = 마지막으로 알려진 상태(승인대기 회색·승인완료 초록·반려 빨강·실패 주황).
        칩을 누르면 M6 상태 팝업(그때 마켓에 묻는다). 목록을 그릴 땐 마켓에 묻지 않는다. #}
     {% if it.market_chips %}
