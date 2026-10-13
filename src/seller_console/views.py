@@ -4343,6 +4343,10 @@ def _pv_prepare(data: dict, product_data: dict):
             _aif.overlay(product_data, _sx)
             if "detail" in _aif.blocked(_sx):
                 product_data["ai_detail_blocked"] = True                 # 상세 초안 「되돌리기」 — 다시 만들지 않는다
+            # Y9: 상표·IP 검사 재료 — 등록에 나갈 사진의 글자(텐센트 OCR 원문·번역문). 제외된 장은 안 나가므로 뺀다.
+            product_data["image_ocr_text"] = _ocr_text_of(_sx)
+            # Y9: 상세 사진 번역 진행(사전검증 카드 「상세 사진 번역 중 n/28」)
+            product_data["detail_translate_progress"] = _detail_translate_progress(str(data["item_id"]), _sx)
             # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본
             from src.uploaders.detail_ui_junk import desc_is_junk as _dj
             if _dj(_sx):
@@ -4355,6 +4359,44 @@ def _pv_prepare(data: dict, product_data: dict):
     if data.get("refresh_from_store") and data.get("item_id"):
         product_data = _merge_stored_translation(product_data, str(data["item_id"]))
     return product_data, _rc
+
+
+def _ocr_text_of(extra: dict) -> str:
+    """Y9 — 갤러리·상세 사진의 글자(번역 결과의 원문·번역문, OCR 판정 글자). 등록에서 빠지는 상세 장은 뺀다."""
+    from src.services import detail_image_plan as _dip
+    parts = []
+    for e in (extra.get("images_ko") or []):
+        if isinstance(e, dict):
+            parts.append(_dip.entry_text(e))
+    originals = [u for u in (extra.get("detail_images") or []) if u]
+    for e in (extra.get("detail_images_ko") or []):
+        if not isinstance(e, dict):
+            continue
+        i = int(e.get("idx", -1))
+        if 0 <= i < len(originals) and _dip.verdict(e, originals[i])["use"] == "excluded":
+            continue
+        parts.append(_dip.entry_text(e))
+    return " ".join(p for p in parts if p.strip())[:20000]
+
+
+def _detail_translate_progress(item_id: str, extra: dict) -> dict:
+    """Y9 — 상세 사진 번역이 끝났나 `{total, done, pending}`. 대기·진행 중인 장(큐)이 있으면 pending>0."""
+    total = len([u for u in (extra.get("detail_images") or []) if u])
+    if not total:
+        return {}
+    try:
+        from src.db import image_translate_queue_pg as _q
+        c = _q.counts(item_id) or {}
+    except Exception:                                            # noqa: BLE001 — 못 세면 카드에 안 띄운다
+        return {}
+    pending = int(c.get("queued") or 0) + int(c.get("running") or 0)          # 이 상품의 대기·진행 장(갤러리 포함)
+    from src.services import detail_image_plan as _dip
+    cut = {i for i, u in enumerate([u for u in (extra.get("detail_images") or []) if u])
+           if _dip.url_exclusion(_dip.fix_url(u))}                                  # 주소로 뺀 장(보내지 않음) = 끝난 장
+    done = len(cut) + sum(1 for e in (extra.get("detail_images_ko") or []) if isinstance(e, dict)
+                          and int(e.get("idx", -1)) not in cut
+                          and e.get("status") in ("done", "skipped", "excluded", "failed") and e.get("vendor") != "d3")
+    return {"total": total, "done": min(done, total), "pending": pending}
 
 
 def _pv_dict(r, rc=None) -> dict:
@@ -4935,6 +4977,10 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
             t0 = _time.monotonic()
             product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
+            # Y9: 상세 사진 번역이 아직이면 카드에 「상세 사진 번역 중 n/28」(보류 아님 — 끝나면 번역본으로 나간다)
+            _dtp = product_data.get("detail_translate_progress") or {}
+            if _dtp.get("pending"):
+                _pv_update(job_id, detail_translate=_dtp)
             # M8-7(오너 2026-10-10): 이미 등록 기록이 있는 마켓은 **재지 않고** 「이미 등록됨 {번호}」 — 업로드 버튼에서 빠진다
             #   (통과가 아니다). Y7-K 업로드 가드(409 needs_dup_confirm)는 그대로 — 2중.
             reg = _pv_registered_rows(data.get("item_id"), markets)
@@ -5038,6 +5084,7 @@ def collect_prevalidate_job(job_id: str):
                     "auto_translate": cur.get("auto_translate"), "auto_detail": cur.get("auto_detail"),
                     "auto_fix": cur.get("auto_fix"),                                          # 반려 사유 자동 수정
                     "ai_fix": cur.get("ai_fix"),                                                      # Y8
+                    "detail_translate": cur.get("detail_translate"),                                  # Y9
                     "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중
                     "rss": cur.get("rss") or {},
                     "error": cur.get("error") or ""})

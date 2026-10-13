@@ -29,6 +29,7 @@ def auto(monkeypatch):
     from src.services import image_translate_tencent as tc
     q.reset_for_tests()
     monkeypatch.setenv("IMAGE_TRANSLATE_AUTO_SYNC", "1")
+    monkeypatch.setenv("IMAGE_TRANSLATE_D3", "1")   # Y9: D3 파이프라인 계약 — 이제 env로 켤 때만 돈다(기본은 텐센트 본선)
     calls = {"tc": 0, "fail_urls": set(), "no_text": set()}
 
     def _tc(url="", **k):
