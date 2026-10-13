@@ -14849,8 +14849,16 @@ def collect_image_promo(item_id: str):
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(),
                                         extra_json=json.dumps(extra, ensure_ascii=False)):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    queued = 0
+    if kind == "detail" and data.get("include"):
+        # Y9: 판촉·배너라 번역을 안 보냈던 상세 장 — 「그래도 넣기」면 이제 넣으니 번역 줄에(이미 번역된 장은 다시 안 보낸다)
+        try:
+            from src.services import image_translate_auto as _ita
+            queued = _ita.enqueue_after_enrich(_seller_id(), item_id, str(item.get("url") or ""), extra)
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("[Y9 그래도 넣기] 번역 접수 실패 item=%s: %s", item_id, exc)
     return jsonify({"ok": True, "kind": kind, "plan": store.effective_plan(extra, kind=kind),
-                    "summary": store.effective_summary(extra)})
+                    "summary": store.effective_summary(extra), "queued": queued})
 
 
 @bp.post("/collect/<item_id>/translate-images")

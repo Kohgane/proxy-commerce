@@ -121,6 +121,10 @@ def verdict(e: dict, orig_url: str) -> Dict[str, str]:
         return {"use": "translated", "reason": "한국어 번역" + (" · 그래도 넣기" if why else ""), "section": sec}
     if st == "skipped":
         return {"use": "original", "reason": str(e.get("reason") or "글자 없는 사진 — 원본 그대로"), "section": sec}
+    # 옛 D3 기록: 실패로 적혔지만 사유가 「그릴 줄 없음(글자 없는 사진)」 — 실패가 아니라 원본 그대로 쓰는 장(Y9 ③)
+    from src.db.image_translate_queue_pg import is_no_text
+    if st in ("failed", "error") and is_no_text(str(e.get("error_message") or e.get("reason") or "")):
+        return {"use": "original", "reason": "글자 없는 사진 — 원본 그대로", "section": sec}
     if st in ("queued", "running", ""):
         return {"use": "pending" if st else "original", "reason": "번역 대기" if st else "아직 번역 안 함 — 원본", "section": sec}
     return {"use": "failed", "reason": str(e.get("error_message") or e.get("error_class") or "실패")[:120] + " — 원본으로",

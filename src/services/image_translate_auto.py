@@ -226,14 +226,21 @@ def enqueue_after_enrich(user_id: str, item_id: str, url: str, extra: dict) -> i
     except Exception:
         return 0
     from src.services import detail_image_plan as _dip
-    done, redo = set(), []
+    done, redo, cut_text = set(), [], set()
+    from src.db.image_translate_queue_pg import is_no_text
     for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
         for e in (extra.get(key) or []):
             if not isinstance(e, dict):
                 continue
             i = int(e.get("idx", -1))
+            if kind == "detail" and not e.get("promo_include") and _dip.text_exclusion(_dip.entry_text(e)):
+                cut_text.add(i)                   # Y9: 이미 읽은 글자가 판촉·스토어 배너 — 등록에서 빠지니 번역도 안 보낸다(「그래도 넣기」면 다시)
+                continue
             if e.get("vendor") == "d3" and not d3_enabled():
-                redo.append((kind, i))            # Y9: 옛 D3 결과(한국어 없이 글자만 지움 · 그릴 줄 없음) → 텐센트 본선으로 다시
+                if is_no_text(str(e.get("error_message") or e.get("reason") or "")):
+                    done.add((kind, i))           # 「그릴 줄 없음」 = 글자 없는 사진 — 다시 보내도 같은 답(원본 그대로)
+                else:
+                    redo.append((kind, i))        # Y9: 옛 D3 결과(한국어 없이 글자만 지움 · 실패) → 텐센트 본선으로 다시
             elif e.get("status") in ("done", "skipped", "excluded"):
                 done.add((kind, i))
     pages, over, cut = [], 0, 0
@@ -243,13 +250,13 @@ def enqueue_after_enrich(user_id: str, item_id: str, url: str, extra: dict) -> i
             if i >= cap:
                 over += 1                       # Z3-2: 건당 상한 넘는 장은 원본 그대로(보내지 않는다)
                 continue
-            if kind == "detail" and _dip.url_exclusion(_dip.fix_url(u)):
+            if kind == "detail" and (_dip.url_exclusion(_dip.fix_url(u)) or i in cut_text):
                 cut += 1                        # Y9: 스페이서·작은 아이콘 — 보내지 않는다(등록에서도 빠진다)
                 continue
             if (kind, i) not in done:
                 pages.append((kind, i))
     if over or cut:
-        logger.info("[이미지번역·자동] item=%s 건당 상한 넘는 %d장 원본 유지 · 주소로 뺀 %d장(스페이서·아이콘) 안 보냄", item_id, over, cut)
+        logger.info("[이미지번역·자동] item=%s 건당 상한 넘는 %d장 원본 유지 · 등록에서 빠질 %d장(스페이서·아이콘·판촉 배너) 안 보냄", item_id, over, cut)
     n = _q().enqueue(user_id, item_id, pages) if pages else 0
     want_redo = [p for p in redo if p in set(pages)]
     if want_redo:

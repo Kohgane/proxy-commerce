@@ -165,9 +165,44 @@ def test_1_stored_d3_results_are_requeued_for_tencent(monkeypatch):
     ex["images"] = [f"https://img.alicdn.com/g{i}.jpg" for i in range(5)]
     n = A.enqueue_after_enrich("u", "4ebaf1b8", "https://detail.tmall.com/item.htm?id=1", ex)
     jobs = [(r["kind"], r["idx"]) for r in q._MEM_Q if r["item_id"] == "4ebaf1b8"]
-    detail = sorted(i for k, i in jobs if k == "detail")
-    assert detail == [i for i in range(28) if i not in (1, 27)]                  # 26장(아이콘·스페이서 빼고 — 옛 D3 결과 포함)
-    assert n == 26 + 5
+    detail = sorted(i + 1 for k, i in jobs if k == "detail")
+    # 텐센트로 다시 가는 상세 = 6장: 옛 D3 번역본(글자만 지움) 8·17·21·24 + 실패 1(내려받기)·19(입력 무효)
+    #   안 보냄: 아이콘·스페이서(2·28) · 판촉·스토어 배너로 읽힌 장(5·7·10·11·12·18) · 「그릴 줄 없음」 14장(글자 없는 사진 — 다시 보내도 같은 답)
+    assert detail == [1, 8, 17, 19, 21, 24]
+    assert n == 6 + 5
+    q.reset_for_tests()
+
+
+def test_3_old_d3_no_text_record_is_original_not_failure():
+    """옛 D3 기록 「그릴 줄이 없습니다(원본 그대로)」는 실패가 아니다 — 글자 없는 사진, 원본으로 쓴다(카드·등록 모두)."""
+    from src.services import detail_image_plan as P
+    rows = {r["no"]: r for r in P.table(_ex())}
+    assert rows[3]["use"] == "original" and rows[3]["reason"] == "글자 없는 사진 — 원본 그대로"
+    assert [r["no"] for r in rows.values() if r["use"] == "failed"] == [1, 19]     # 진짜 실패만
+
+
+def test_4_include_anyway_queues_that_detail_page(monkeypatch):
+    """판촉 배너라 번역을 안 보냈던 장 — 「그래도 넣기」면 번역 줄에 들어간다(그 장만)."""
+    from src.db import image_translate_queue_pg as q
+    from src.services import image_translate_auto as A
+    from src.services import image_translate_tencent as tc
+    from src.seller_console import collect_history_store as S
+    from src.order_webhook import app
+    q.reset_for_tests()
+    monkeypatch.delenv("IMAGE_TRANSLATE_D3", raising=False)
+    monkeypatch.setattr(tc, "is_configured", lambda: True)
+    monkeypatch.setattr(A, "kick", lambda: None)
+    ex = _ex()
+    iid = S.append(source="extension", url="https://detail.tmall.com/item.htm?id=4", seller_id="y9-inc", title="x",
+                   price="1", currency="CNY", extra=ex)
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y9-inc"
+    d = c.post(f"/seller/collect/{iid}/image-promo", json={"kind": "detail", "idx": 4, "include": True}).get_json()
+    assert d["ok"] and d["queued"] >= 1
+    sent = sorted(i + 1 for r in q._MEM_Q if r["item_id"] == iid for i in [r["idx"]] if r["kind"] == "detail")
+    assert 5 in sent and not ({7, 10, 11, 12, 18} & set(sent))                    # 켠 5번만 — 다른 배너는 여전히 안 보냄
     q.reset_for_tests()
 
 
