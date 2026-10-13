@@ -519,7 +519,10 @@
            ? '<div><button type="button" class="m5-fix" data-role="m5-voltage-override" data-override="voltage-override" data-label="전압·플러그 그래도 등록">전압·플러그 그래도 등록</button></div>' : '') +
          // Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트) — 위 「쿠팡 노출」에서 대표를 바꾸거나 여기서 「그래도 등록」
          (r.hold && (r.fixes || []).indexOf('rep_image') >= 0
-           ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override" data-override="rep-image-override" data-label="대표 사진 그래도 등록">대표 사진 그래도 등록</button></div>' : '');
+           ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override" data-override="rep-image-override" data-label="대표 사진 그래도 등록">대표 사진 그래도 등록</button></div>' : '') +
+         // Y7-O: 선주문(옵션 값 「2-3周发货」) — 오너 방침상 등록 버튼이 저절로 풀지 않는다(OVERRIDES 밖). 이 버튼만 푼다.
+         (r.hold && (r.fixes || []).indexOf('lead_time') >= 0
+           ? '<div><button type="button" class="m5-fix" data-role="m5-leadtime-override" data-override="lead-time-override" data-label="선주문 그래도 등록">선주문 그래도 등록</button></div>' : '');
     return h + '</div>';
   }
   function autoFixHtml(a) {

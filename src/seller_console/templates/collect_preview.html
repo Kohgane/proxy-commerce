@@ -2318,6 +2318,7 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix) {
           ${(r.hold && (r.fixes || []).indexOf('translate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-translate-recheck">번역하고 다시 검증</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-ship-override">그래도 등록</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('rep_image') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-rep-override">대표 사진 그래도 등록</button>' : ''}
+          ${(r.hold && (r.fixes || []).indexOf('lead_time') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-leadtime-override">선주문 그래도 등록</button>' : ''}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
           ${renderActionLink(r.action_url, r.action_label)}
           ${r.registered_no ? `<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-registered-open" data-market-status="${kgpEscapeForHtml(r.market)}" data-item="${kgpEscapeForHtml(_ITEM_ID)}">등록 기록 보기 · 빼기</button>` : ''}
@@ -2370,6 +2371,15 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix) {
       if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
       runPrevalidate();
     } catch (e) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
+  // Y7-O: 선주문 보류 — 확인했다면 「선주문 그래도 등록」(발송 소요는 마켓 상한까지)
+  el.querySelectorAll('[data-role="pv-leadtime-override"]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '기록하는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/lead-time-override', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+      if (!t.ok) { b.disabled = false; b.textContent = '선주문 그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
+      runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = '선주문 그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
   }));
   el.querySelectorAll('[data-role="pv-autofix-undo"]').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true; b.textContent = '되돌리는 중…';

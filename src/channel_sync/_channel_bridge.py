@@ -112,6 +112,8 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "item_id": str(pd.get("item_id") or "").strip(),
         # Y7-H — 네이버 상품정보제공고시 제조국(중국 소싱처면 「중국」)·쿠팡 짧은 이름이 없을 때의 대체 재료.
         "source_url": str(pd.get("source_url") or pd.get("url") or "").strip(),
+        # Y7-O — 선주문 발송 소요(일, 마켓 상한까지) — 「그래도 등록」 뒤 쿠팡 출고소요일·네이버 발송예정일. 없으면 0(기존 값).
+        "lead_time_days": int(pd.get("lead_time_days") or 0),
     }
 
 

@@ -951,6 +951,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("「쿠팡 노출」 탭에서 대표 사진을 바꾸거나 「그래도 등록」")
     if any(h["fix"] == "voltage" for h in holds):
         fixes.append("전압·플러그를 확인하거나 「그래도 등록」")
+    if any(h["fix"] == "lead_time" for h in holds):
+        fixes.append("선주문을 확인하고 「선주문 그래도 등록」")
     if any(h["fix"] == "detail_blank" for h in holds):
         fixes.append("「상세페이지 꾸미기」에서 상세 설명이나 상세 이미지를 채운")     # Y7-F
     if not fixes:                                         # 모르는 보류 종류 — 「→ 후」처럼 빈 조치를 쓰지 않는다
@@ -1106,6 +1108,14 @@ class UploadDispatcher:
                     r.details = list(r.details or []) + [_mk]
             except Exception as exc:                             # noqa: BLE001 — 안내 한 줄이라 검증을 막지 않는다
                 logger.warning("[사전검증] 상표 안내 줄 실패: %s", exc)
+            # Y7-O: 선주문(발송 소요 꼬리) → 「주의」 칩 「선주문 — 발송 2~3주」(보류 줄과 별개로 늘 보이게)
+            try:
+                from src.collectors.option_leadtime import caution as _lt_caution
+                _ltc = _lt_caution(product_data)
+                if _ltc and _ltc not in (r.cautions or []):
+                    r.cautions = list(r.cautions or []) + [_ltc]
+            except Exception as exc:                             # noqa: BLE001
+                logger.warning("[사전검증] 선주문 주의 칩 실패: %s", exc)
             # Y7-M(오너 2026-10-10): 옵션이 조각별 개별 판매 + 상품명 「세트」 → 「주의」 칩(보류 아님 — 상품명은 셀러 판단)
             try:
                 if base in _KO_OPTION_MARKETS:
@@ -1247,6 +1257,15 @@ class UploadDispatcher:
                 _vh = None
             if _vh:
                 holds.append(_vh)
+        # Y7-O(오너 2026-10-12): 선주문(옵션 값 「2-3周发货」) — 자동 등록 체인에선 보류(팔린 브랜드만 선주문), 「그래도 등록」으로 푼다.
+        if _is_korea_market(market):
+            try:
+                from src.collectors.option_leadtime import hold as _lt_hold
+                _lth = _lt_hold(pd, market)
+            except Exception:
+                _lth = None
+            if _lth:
+                holds.append(_lth)
         # Y7(오너 2026-10-04): 쿠팡 대표 사진(등록이 보낼 첫 장) — 긴 변 500px 미만·글자/워터마크면 보류(「그래도 등록」으로 푼다).
         #   못 재면(다운로드·엔진 없음) 막지 않는다.
         #   Z9(오너 2026-10-09): 사전검증 안에서 OCR을 **기다리지 않는다** — 재 둔 결과(캐시)만 읽고, 없으면 백그라운드로
@@ -1903,6 +1922,14 @@ class UploadDispatcher:
                 payload = _ps.apply(payload)
         except Exception as exc:                                     # noqa: BLE001 — 안내 한 줄이라 등록을 막지 않는다
             logger.warning("[등록] 조각 판매 안내 줄 실패(그대로): %s", exc)
+        # Y7-O: 선주문 발송 소요(마켓 상한까지) — 쿠팡 출고소요일·네이버 발송예정일. 보류가 먼저 막고, 「그래도 등록」 뒤에만 여기까지 온다.
+        try:
+            from src.collectors.option_leadtime import days_for as _lt_days
+            _ld = _lt_days(payload, market)
+            if _ld:
+                payload["lead_time_days"] = _ld
+        except Exception as exc:                                     # noqa: BLE001
+            logger.warning("[등록] 선주문 발송 소요 계산 실패(정본 7일): %s", exc)
         return korea_voltage_filter(payload, market), localized
 
     @staticmethod

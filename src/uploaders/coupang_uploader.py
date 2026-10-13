@@ -505,6 +505,7 @@ class CoupangUploader(BaseUploader):
             'option_name_overrides': collected.get('option_name_overrides') or {},
             'coupang_option_names': collected.get('coupang_option_names') or {},          # Y7-I
             'tags': collected.get('tags', []),
+            'lead_time_days': int(collected.get('lead_time_days') or 0),        # Y7-O: 선주문 출고소요일(0이면 정본 7일)
             'shipping_fee': 0,
             'delivery_days': '7-14',
             'return_info': '해외직구 상품으로 반품/교환이 불가합니다',
@@ -1462,7 +1463,8 @@ class CoupangUploader(BaseUploader):
             'maximumBuyCount': 3,                            # 정본
             'maximumBuyForPerson': 0,
             'maximumBuyForPersonPeriod': 1,
-            'outboundShippingTimeDay': 7,                    # 정본(구매대행 출고 7일)
+            # 정본(구매대행 출고 7일) · Y7-O: 선주문(옵션 값 「2-3周发货」)이면 그 일수(쿠팡 상한 20일까지 — 「그래도 등록」 뒤)
+            'outboundShippingTimeDay': max(7, int(product.get('lead_time_days') or 0)),
             'unitCount': 1,
             'adultOnly': 'EVERYONE',
             'taxType': 'TAX',

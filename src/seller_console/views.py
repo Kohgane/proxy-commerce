@@ -2887,6 +2887,12 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 # Y7-I: 축 이름 덮어쓰기는 서버 저장값을 둘로 나눠 싣는다(화면이 보낸 표를 믿지 않는다 — 원문 아닌 열쇠·쿠팡 메타 이름 분리)
                 from src.collectors.option_ko import split_name_overrides as _sno
                 product_data["option_name_overrides"], product_data["coupang_option_names"] = _sno(_uex)
+                # Y7-O: 옵션 발송 소요(저장본이 정본 — 편집 화면이 보내는 옵션엔 없다) · 「선주문 그래도 등록」
+                _lts = [o.get("lead_time") for o in (_uex.get("options") or []) if isinstance(o, dict) and o.get("lead_time")]
+                if _lts:
+                    product_data["option_lead_time"] = _lts
+                if _uex.get("lead_time_override"):
+                    product_data["lead_time_override"] = _uex["lead_time_override"]
                 # Y7-G: 사전검증이 만든 상세 자동 초안 — 등록도 같은 자리에서 싣는다(셀러 텍스트가 없을 때만 쓰인다)
                 if isinstance(_uex.get("detail_auto"), dict):
                     product_data["detail_auto"] = _uex["detail_auto"]
@@ -3802,6 +3808,30 @@ def collect_ship_ratio_override(item_id):
     return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+@bp.post("/collect/<item_id>/lead-time-override")
+def collect_lead_time_override(item_id):
+    """Y7-O: 선주문(옵션 값 발송 소요 꼬리) 보류를 **그래도 등록**으로 푼다 — 자동 등록 체인은 풀지 않는다(오너 방침).
+    누가·언제·어떤 원문이었는지 남긴다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from src.collectors import option_leadtime as _olt
+    s = _olt.summary(ex) or {}
+    rec = {"at": datetime.now(timezone.utc).isoformat(), "by": str(session.get("email") or _seller_id()),
+           "raw": s.get("raw") or "", "max_days": s.get("max_days")}
+    ex["lead_time_override"] = rec
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    logger.warning("[선주문] 그래도 등록 — item=%s by=%s · %s", item_id, rec["by"], rec["raw"])
+    return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
 @bp.post("/collect/<item_id>/voltage-override")
 def collect_voltage_override(item_id):
     """Y8 전압·플러그: 「전압/플러그 불일치」(모든 SKU 국내 판매 제외)를 **그래도 등록**으로 푼다. 누가·언제·무슨 사유였는지 남긴다."""
@@ -4292,8 +4322,17 @@ def _pv_prepare(data: dict, product_data: dict):
         try:
             _sx = json.loads((_get_owned_item(str(data["item_id"])) or {}).get("extra_json") or "{}") or {}
             product_data.setdefault("item_id", str(data["item_id"]))
+            # Y7-O: 옵션 값 끝 발송 소요(「（2-3周发货）」)가 아직 안 떼어진 기록이면 지금 한 번 떼고 저장 — 보내는 옵션·SKU도 그 값으로
+            from src.collectors import option_leadtime as _olt
+            if _olt.apply(_sx):
+                from . import collect_history_store as _chs
+                _chs.update(str(data["item_id"]), seller_ids=_seller_identities(), extra_json=json.dumps(_sx, ensure_ascii=False))
+                product_data["options"], product_data["skus"] = _sx.get("options") or [], _sx.get("skus") or []
+            _lts = [o.get("lead_time") for o in (_sx.get("options") or []) if isinstance(o, dict) and o.get("lead_time")]
+            if _lts:
+                product_data["option_lead_time"] = _lts
             for _k in ("ship_ratio_override", "ship_mode", "ship_input", "option_translate_diag", "rep_image_override", "option_split", "options_src",
-                       "voltage_split", "voltage_override", "naver_category_id"):
+                       "voltage_split", "voltage_override", "naver_category_id", "lead_time_override", "option_leadtime"):
                 if _sx.get(_k):
                     product_data[_k] = _sx[_k]
             # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본
@@ -4350,6 +4389,13 @@ def _pv_dict(r, rc=None) -> dict:
     if r.error_code == "meta_unavailable":
         # Z9 — 쿠팡 메타를 못 받았다: 화면은 「검증 못 함 — 다시 시도」(통과도 막힘도 아님)
         out["transport"] = "meta_unavailable"
+    # Y7-O 4(오너 2026-10-12 그분 폰): 전각 괄호「（」「）」가 □로 보였다 — 카드 **표시 글자만** 반각(저장값은 원문).
+    from src.collectors.option_leadtime import display as _hw
+    for _k in ("message", "hint"):
+        if isinstance(out.get(_k), str):
+            out[_k] = _hw(out[_k])
+    for _k in ("details", "cautions"):
+        out[_k] = [_hw(x) if isinstance(x, str) else x for x in out[_k]]
     return out
 
 

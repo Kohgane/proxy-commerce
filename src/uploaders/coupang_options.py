@@ -129,6 +129,34 @@ def value_ko_map(product: Dict) -> Dict[str, str]:
     return out
 
 
+def lost_tokens(src: str, ko: str) -> List[str]:
+    """Y7-O(오너 2026-10-12): 번역기가 원문의 영문·숫자를 잃었나 — 잃은 것만 돌려준다.
+
+    예전엔 원문 토큰(「2-3」)을 번역 값에서 **글자 그대로** 찾았다 → 「2~3주」를 못 알아봐 5마켓 전부 보류.
+    이제 비교 전에 NFKC(전각 괄호·숫자·물결 → 반각)로 맞추고, **숫자는 숫자끼리 순서대로** 본다 — 범위 구분자
+    (-·~·–·∼·to·至)는 따지지 않는다. 영문이 든 토큰(PD65W·XL)은 대소문자 무시 포함 여부.
+    """
+    import unicodedata
+    from src.collectors.option_leadtime import nfkc as _n      # 제어문자 구분자(0x04)도 공백으로
+    s = _n(src)
+    k = _n(ko).lower()
+    alpha = [t for t in _ASCII_TOK.findall(s) if re.search(r"[A-Za-z]", t)]
+    lost = [t for t in alpha if t.lower() not in k]                  # 원문 표기 그대로 돌려준다(PD20W)
+    rest = s
+    for t in alpha:                                                  # 영문 토큰 안의 숫자(PD20W의 20)는 숫자 비교에서 뺀다
+        rest = rest.replace(t, " ")
+    nums_s = re.findall(r"\d+(?:\.\d+)?", rest)
+    nums_k = re.findall(r"\d+(?:\.\d+)?", k)
+    missing, pos = [], 0
+    for n in nums_s:                                   # 순서대로 — 찾으면 그 뒤부터, 못 찾으면 자리를 그대로 둔다
+        hit = next((j for j in range(pos, len(nums_k)) if float(nums_k[j]) == float(n)), None)
+        if hit is None:
+            missing.append(n)
+        else:
+            pos = hit + 1
+    return lost + missing
+
+
 def resolve_option_value(value: str, *, values_ko: str = "", override: str = "") -> Dict:
     """한 값의 한국어 — `{value, how, confirm, why}`. `value`가 비면 보류(`why`가 사유).
 
@@ -193,7 +221,7 @@ def _resolve_option_value(value: str, *, values_ko: str = "", override: str = ""
         if _inv:
             return {"value": "", "how": "", "confirm": False,
                     "why": f"번역기 값에 원문에 없는 이름({', '.join(_inv)})이 생겼습니다 — 값을 직접 넣어 주세요"}
-        lost = [tok for tok in _ASCII_TOK.findall(v) if tok.lower() not in ko.lower()]
+        lost = lost_tokens(v, ko)
         if not lost:
             return {"value": ko, "how": "translator", "confirm": True, "why": ""}
         return {"value": "", "how": "", "confirm": False,

@@ -1,0 +1,9 @@
+{
+  "_doc": "Y7-O(오너 2026-10-12 12:28 KST 그분 폰, 타오바오 ICE) — 옵션 값 끝에 붙은 **발송 소요·판매 상태** 토큰. 값에서 떼어 `options[].lead_time`에 둔다(값은 「泡泡粉」만 번역). range=「N-M+단위+发货」, single=「N+단위+发货」, words=날짜 없는 상태어(presale=선주문, stock=현재고 — 발송 소요 아님). 단위 → 일: 周/星期/礼拜=7, 天/日=1, 个月/月=30. 비교 전 NFKC(전각 괄호·숫자 → 반각).",
+  "units": {"周": 7, "星期": 7, "礼拜": 7, "天": 1, "日": 1, "个月": 30, "月": 30, "weeks": 7, "week": 7, "days": 1, "day": 1},
+  "ship_words": ["发货", "内发货", "左右发货", "后发货", "内发", "发出", "出货", "ship", "ships"],
+  "presale_words": ["预售", "预定", "预订", "定制", "订制"],
+  "stock_words": ["现货", "现货速发", "现货秒发", "当天发", "当天发货", "24小时发货", "48小时发货"],
+  "max_days": {"coupang": 20, "smartstore": 14},
+  "max_days_source": "쿠팡 outboundShippingTimeDay 상한 20일(오너 운영 메모 apply_1002v) · 네이버 expectedDeliveryPeriodType TWO~FOURTEEN(커머스 API 문서 — 주문제작 발송예정 2~14일)"
+}

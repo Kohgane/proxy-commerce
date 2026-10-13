@@ -474,6 +474,21 @@ class NaverSmartStoreUploader(BaseUploader):
             logger.error('get_categories failed: %s', exc)
             return []
 
+    _PERIOD = {2: 'TWO', 3: 'THREE', 4: 'FOUR', 5: 'FIVE', 6: 'SIX', 7: 'SEVEN', 8: 'EIGHT', 9: 'NINE', 10: 'TEN',
+               11: 'ELEVEN', 12: 'TWELVE', 13: 'THIRTEEN', 14: 'FOURTEEN'}
+
+    @classmethod
+    def expected_delivery(cls, days) -> dict:
+        """Y7-O — 선주문 발송 소요(일) → `deliveryInfo` 칸(`customProductAfterOrderYn` · `expectedDeliveryPeriodType`).
+        0·없음이면 빈 dict(기존 그대로). 커머스 API 문서: 주문제작 발송예정 TWO~FOURTEEN(2~14일) — 넘으면 14(호출부가 이미 상한)."""
+        try:
+            d = int(days or 0)
+        except (TypeError, ValueError):
+            d = 0
+        if d <= 0:
+            return {}
+        return {'customProductAfterOrderYn': True, 'expectedDeliveryPeriodType': cls._PERIOD[min(max(d, 2), 14)]}
+
     def prepare_product(self, collected: dict) -> dict:
         """수집된 상품을 Naver SmartStore 업로드 형식으로 변환한다."""
         if not collected:
@@ -506,6 +521,7 @@ class NaverSmartStoreUploader(BaseUploader):
             '_names_ko': collected.get('_names_ko') or {},
             'option_name_overrides': collected.get('option_name_overrides') or {},
             'tags': collected.get('tags', []),
+            'lead_time_days': int(collected.get('lead_time_days') or 0),            # Y7-O: 선주문 발송예정일(일)
             'min_purchase_quantity': collected.get('min_purchase_quantity') or 0,     # Y7-F: 셀러가 2 이상으로 정했을 때만 실림
             # Y7-H: 상품정보제공고시 재료 — 품명·모델명(50자)은 「[해외직구] + 상품명」이 아니라 짧은 이름, 제조국은 소싱처로
             'coupang_name': str(collected.get('coupang_name') or '').strip(),
@@ -599,6 +615,8 @@ class NaverSmartStoreUploader(BaseUploader):
                     'deliveryAttributeType': 'NORMAL',
                     'deliveryCompany': self._acct_env('NAVER_DELIVERY_COMPANY', 'CJGLS'),
                     'deliveryFee': {'deliveryFeeType': 'FREE'},
+                    # Y7-O: 선주문(옵션 값 「2-3周发货」)이면 주문 확인 후 제작 + 발송예정 n일(문서: TWO~FOURTEEN — 「그래도 등록」 뒤만)
+                    **self.expected_delivery(product.get('lead_time_days')),
                     'claimDeliveryInfo': {
                         # 정본: 반품 25,000 / 교환 50,000 (해외 구매대행 실비).
                         'returnDeliveryFee': self.RETURN_FEE,
