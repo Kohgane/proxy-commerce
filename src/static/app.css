@@ -2385,7 +2385,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kie-acts, .kie-sheet-acts { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: var(--space-2) 0; }
 .kie-btn { min-height: 44px; padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: var(--caption); }
 .kie-btn.is-main { background: var(--ink); border-color: var(--ink); color: var(--cream); }
-.kie-btn:disabled { opacity: .5; }
+.kie-btn:disabled { background: var(--surface); border-color: var(--border); color: var(--text-muted); cursor: not-allowed; }   /* 흐리기(opacity) 대신 색 — 글자 대비 유지 */
 .kie-btn:focus-visible, .kie-box:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .kie-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1090; background: var(--surface); border-top: 1px solid var(--border);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: var(--space-3); box-shadow: var(--shadow-lg); }
