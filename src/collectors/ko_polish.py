@@ -807,6 +807,10 @@ _HAN_ONLY = re.compile("^[㐀-䶿一-鿿]+$")
 
 def romanize(han: str) -> str:
     """한자 → 병음 대문자 붙여쓰기(성조 없음). 라이브러리가 없거나 못 옮긴 글자가 있으면 빈 문자열(정직)."""
+    # Z10-C(오너 2026-10-13 OOM): 구(phrase) 사전을 싣지 않는다 — 워커 메모리 +57MB → +14MB. 브랜드명 2~4자의 다음자(多音字)
+    #   몇 개는 덜 정확해질 수 있다(「重庆」 chong → zhong). 「브랜드 표기 — 확인」 배지로 사람이 보는 칸이라 받아들인다.
+    import os as _os
+    _os.environ.setdefault("PYPINYIN_NO_PHRASES", "1")
     try:
         from pypinyin import lazy_pinyin
     except Exception:

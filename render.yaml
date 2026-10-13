@@ -2,7 +2,7 @@ services:
   # ──────────────────────────────────────────────────────────────────
   # 실제 운영 서비스 (Render Free tier)
   # 제약사항:
-  #   - RAM: 512MB (GUNICORN_WORKERS=2 권장)
+  #   - RAM: 512MB — Z10-C(2026-10-13): 워커 1 · 스레드 8(2워커 합계로 OOM). gunicorn.conf.py가 GUNICORN_MAX_WORKERS(기본 1)로 묶는다
   #   - 15분 비활성 시 슬립 (cold start 약 30~60초)
   #   - 커스텀 도메인: kohganepercentiii.com (별도 등록 필요)
   # ──────────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ services:
       - key: FX_DISABLE_NETWORK
         value: "1"
       - key: GUNICORN_WORKERS
-        value: "2"
+        value: "1"
       - key: GUNICORN_TIMEOUT
         value: "120"
       - key: GUNICORN_LOG_LEVEL
@@ -75,7 +75,7 @@ services:
       - key: FX_DISABLE_NETWORK
         value: "1"
       - key: GUNICORN_WORKERS
-        value: "2"
+        value: "1"
       - key: GUNICORN_TIMEOUT
         value: "120"
       - key: GUNICORN_LOG_LEVEL

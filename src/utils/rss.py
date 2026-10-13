@@ -57,12 +57,158 @@ import time as _time
 JOB: "_cv.ContextVar[str]" = _cv.ContextVar("rss_job", default="")
 
 
-def job_limit_mb() -> int:
-    """잡 하나가 넘으면 안 되는 프로세스 RSS(MB) — `PREVALIDATE_RSS_LIMIT_MB`(기본 400). 0이면 끈다."""
+# ── Z10-C(오너 2026-10-13 20:09 KST OOM) — 기준을 **인스턴스 합계**로 ─────────────────────────────────────────────────
+#   실측(Z10-B 배포 뒤): pv_job_peak 301·308MB(base 158·162 + 잡 143·146) — 잡은 400 상한 아래였는데 Render 512MB 초과.
+#   워커가 2개라 다른 워커(base 160 + 그쪽 요청)가 더해졌다. 그래서 잡·크론의 문지기는 **인스턴스 전체**를 본다:
+#   - 새 잡·크론 시작: 합계 ≥ `INSTANCE_MEM_START_MAX_MB`(기본 420)면 거부(「메모리 여유 없음 — 잠시 후」)
+#   - 진행 중인 잡: 합계 ≥ `INSTANCE_MEM_ABORT_MB`(기본 460)면 그 잡만 멈춘다(`guard`)
+#   합계 = max(cgroup 익명 메모리(파일 캐시 제외), master + 워커 PSS 합). PSS는 preload로 공유된 페이지를
+#   나눠 센다(RSS를 더하면 master·worker가 같은 페이지를 두 번 센다).
+
+def _read_int(path: str) -> int:
     try:
-        return int(_os.getenv("PREVALIDATE_RSS_LIMIT_MB", "400") or 400)
+        with open(path, encoding="ascii") as fh:
+            return int(fh.read().strip().split()[0])
+    except (OSError, ValueError, IndexError):
+        return -1
+
+
+def _stat_value(path: str, key: str) -> int:
+    try:
+        with open(path, encoding="ascii") as fh:
+            for line in fh:
+                k, _, v = line.partition(" ")
+                if k == key:
+                    return int(v)
+    except (OSError, ValueError):
+        pass
+    return -1
+
+
+def cgroup_mb() -> int:
+    """cgroup **익명 메모리**(MB) — v2 `anon + shmem`, v1 `total_rss + total_shmem`. 파일 캐시는 빼고 본다(커널이 먼저
+    돌려받는 몫이라 OOM 판정과 다르다 — 사용량 전체로 재면 캐시만으로 「여유 없음」이 된다). 못 읽으면 -1."""
+    v2 = "/sys/fs/cgroup/memory.stat"
+    anon = _stat_value(v2, "anon")
+    if anon >= 0:
+        return (anon + max(0, _stat_value(v2, "shmem"))) // (1024 * 1024)
+    v1 = "/sys/fs/cgroup/memory/memory.stat"
+    rss_ = _stat_value(v1, "total_rss")
+    if rss_ >= 0:
+        return (rss_ + max(0, _stat_value(v1, "total_shmem"))) // (1024 * 1024)
+    return -1
+
+
+def _pss_kb(pid) -> int:
+    for path, key in ((f"/proc/{pid}/smaps_rollup", "Pss:"), (f"/proc/{pid}/status", "VmRSS:")):
+        try:
+            with open(path, encoding="ascii", errors="ignore") as fh:
+                for line in fh:
+                    if line.startswith(key):
+                        return int(line.split()[1])
+        except OSError:
+            continue
+    return -1
+
+
+def _cmdline(pid) -> str:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            return fh.read().replace(b"\0", b" ").decode("utf-8", "ignore")
+    except OSError:
+        return ""
+
+
+def _children(pid) -> list:
+    out = []
+    try:
+        for d in _os.listdir("/proc"):
+            if not d.isdigit():
+                continue
+            try:
+                with open(f"/proc/{d}/stat", encoding="ascii", errors="ignore") as fh:
+                    st = fh.read()
+                ppid = int(st.rsplit(")", 1)[1].split()[1])
+            except (OSError, ValueError, IndexError):
+                continue
+            if ppid == int(pid):
+                out.append(int(d))
+    except OSError:
+        pass
+    return out
+
+
+def under_gunicorn() -> bool:
+    """이 프로세스가 gunicorn 워커인가 — 부모의 실행 파일·첫 인자(또는 프로세스 이름 `gunicorn: master`)에 gunicorn.
+    (셸 명령 문자열 어딘가에 낱말이 들어 있는 것으로 판정하지 않는다.)"""
+    try:
+        with open(f"/proc/{_os.getppid()}/cmdline", "rb") as fh:
+            argv = [a.decode("utf-8", "ignore") for a in fh.read().split(b"\0") if a][:2]
+    except OSError:
+        return False
+    return any(_os.path.basename(a.split()[0] if a else "").startswith("gunicorn") for a in argv)
+
+
+def family_pids() -> list:
+    """메모리를 함께 세는 프로세스 — gunicorn 워커면 master + 그 자식 전부(다른 워커 포함), 아니면 이 프로세스만.
+    (테스트·CI·개발 셸에서 같은 기계의 엉뚱한 프로세스를 세지 않는다.)"""
+    me = _os.getpid()
+    if under_gunicorn():
+        master = _os.getppid()
+        return [master] + _children(master)
+    return [me]
+
+
+def processes_pss_mb() -> int:
+    """`family_pids()`의 PSS 합(MB) — preload로 공유한 페이지를 나눠 센다(RSS를 더하면 두 번 센다). 못 읽으면 -1."""
+    vals = [_pss_kb(p) for p in family_pids()]
+    vals = [v for v in vals if v >= 0]
+    return sum(vals) // 1024 if vals else -1
+
+
+def instance_mb() -> int:
+    """인스턴스 메모리 합계 MB. gunicorn 아래(운영)면 max(cgroup 익명 메모리, master+워커 PSS 합) — 컨테이너엔 우리 프로세스만
+    있다. 그 밖(테스트·개발)이면 이 프로세스 PSS만. 못 읽으면 이 프로세스 RSS."""
+    vals = [processes_pss_mb()]
+    if under_gunicorn() or _os.getenv("INSTANCE_MEM_SOURCE", "") == "cgroup":
+        vals.append(cgroup_mb())
+    vals = [v for v in vals if v >= 0]
+    if vals:
+        return max(vals)
+    return read_mb()[0]
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(_os.getenv(name, str(default)) or default)
     except (TypeError, ValueError):
-        return 400
+        return default
+
+
+def start_limit_mb() -> int:
+    """새 잡·크론을 시작하지 않는 인스턴스 합계(MB) — `INSTANCE_MEM_START_MAX_MB`(기본 420). 0이면 끈다."""
+    return _env_int("INSTANCE_MEM_START_MAX_MB", 420)
+
+
+def job_limit_mb() -> int:
+    """진행 중인 잡을 멈추는 인스턴스 합계(MB) — `INSTANCE_MEM_ABORT_MB`(기본 460). 0이면 끈다.
+    Z10-C: 예전엔 **프로세스** RSS 400(`PREVALIDATE_RSS_LIMIT_MB`)이었다 — 워커 2개 합으로 터지는 걸 못 막았다.
+    옛 이름을 env에 둔 곳(대시보드·테스트)은 그 값을 그대로 쓴다(새 이름이 있으면 새 이름이 이긴다)."""
+    if _os.getenv("INSTANCE_MEM_ABORT_MB", "").strip() == "" and _os.getenv("PREVALIDATE_RSS_LIMIT_MB", "").strip():
+        return _env_int("PREVALIDATE_RSS_LIMIT_MB", 460)
+    return _env_int("INSTANCE_MEM_ABORT_MB", 460)
+
+
+def start_ok() -> tuple:
+    """`(시작해도 되나, 합계 MB, 상한 MB)` — 새 잡·크론 문지기. 상한 0이거나 못 재면 통과."""
+    lim = start_limit_mb()
+    if lim <= 0:
+        return True, -1, lim
+    cur = instance_mb()
+    return (cur < 0 or cur < lim), cur, lim
+
+
+BUSY_MESSAGE = "메모리 여유 없음 — 잠시 후 다시 눌러 주세요"
 
 
 class MemoryCapExceeded(RuntimeError):
@@ -70,7 +216,7 @@ class MemoryCapExceeded(RuntimeError):
 
     def __init__(self, stage: str, rss_mb: int, limit_mb: int, detail: str = ""):
         self.stage, self.rss_mb, self.limit_mb, self.detail = stage, rss_mb, limit_mb, detail
-        super().__init__(f"메모리 상한 — {stage}에서 {rss_mb}MB(상한 {limit_mb}MB){(' · ' + detail) if detail else ''}")
+        super().__init__(f"메모리 상한 — {stage}에서 인스턴스 합계 {rss_mb}MB(상한 {limit_mb}MB){(' · ' + detail) if detail else ''}")
 
 
 def guard(stage: str, detail: str = "") -> None:
@@ -80,7 +226,7 @@ def guard(stage: str, detail: str = "") -> None:
     lim = job_limit_mb()
     if lim <= 0:
         return
-    cur, _peak = read_mb()
+    cur = instance_mb()                                   # Z10-C: 인스턴스 합계
     if cur <= lim:
         # Z10-B: 경계 사이에 넘었다가 내려왔어도(샘플러가 봤다) 이 잡은 멈춘다 — 다음 장에서 또 넘는다
         from src.utils import rss_sampler as _smp

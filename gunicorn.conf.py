@@ -2,9 +2,13 @@ import os
 
 bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 # I/O 바운드(Google Sheets/마켓 API 왕복)라 gthread로 동시성↑ — 워커당 스레드로 블로킹 호출 겹치기 (v8 속도).
-workers = int(os.getenv('GUNICORN_WORKERS', '2'))
+# Z10-C(오너 2026-10-13 20:09 KST OOM — Render 512MB): 워커 2개 × (base 160 + 사전검증 잡 146 + 동시 요청) > 512.
+#   잡 하나는 상한 아래였고 **합계**가 넘었다 → 워커 1개 · 스레드 8(gthread). 사전검증 1개 + 요청 동시 처리는 스레드로.
+#   Render 대시보드에 예전 값 `GUNICORN_WORKERS=2`가 남아 있어도 `GUNICORN_MAX_WORKERS`(기본 1)로 묶는다 —
+#   플랜을 올리면(Standard 2GB) 그때 `GUNICORN_MAX_WORKERS`를 올린다.
+workers = max(1, min(int(os.getenv('GUNICORN_WORKERS', '1') or 1), int(os.getenv('GUNICORN_MAX_WORKERS', '1') or 1)))
 worker_class = os.getenv('GUNICORN_WORKER_CLASS', 'gthread')
-threads = int(os.getenv('GUNICORN_THREADS', '4'))
+threads = int(os.getenv('GUNICORN_THREADS', '8'))
 timeout = int(os.getenv('GUNICORN_TIMEOUT', '120'))
 # Z7(오너 2026-10-08 OOM): 워커 2개 이상이면 요청 200±50번마다 워커를 갈아끼운다 — 누수 보험(한 워커가 커져도 오래 안 간다).
 #   워커 1개면 재시작 순간 받을 곳이 없으므로 켜지 않는다. 0을 주면 끈다.
@@ -21,6 +25,7 @@ errorlog = '-'
 loglevel = os.getenv('GUNICORN_LOG_LEVEL', 'info')
 preload_app = True
 
+# Z10-C: 워커 1개에선 이 재시작이 서비스를 잠깐 비운다 — 잡·크론이 없을 때만(아래 `_active_jobs`) · 같은 상한.
 # Z10(오너 2026-10-10 22:34·22:35 KST — Render 512MB 초과 2회): 워커 RSS 상한 — 요청이 끝났는데 이 워커가
 #   `WORKER_RSS_LIMIT_MB`(기본 380)를 넘었으면 **이 워커만** 조용히 갈아끼운다(받던 요청은 끝내고 나간다).
 #   두 워커가 동시에 넘으면 서비스 전체가 비므로, 다른 워커가 최근 `WORKER_RSS_RESTART_GAP_SEC`(60초) 안에 나갔으면 기다린다.

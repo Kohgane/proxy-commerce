@@ -107,6 +107,7 @@ def _loop() -> None:
                 return
             watches = list(_ACTIVE.values())
         cur, _hwm = _rss.read_mb()
+        inst = _rss.instance_mb()                       # Z10-C: 인스턴스 합계(상한 판정·피크 기록)
         now = time.monotonic()
         lim = _rss.job_limit_mb()
         traced = None
@@ -119,8 +120,10 @@ def _loop() -> None:
                         traced = (_tm_top5(), _top_frames(me))
                     w["traced_mb"] = cur
                     w["top"], w["stacks"] = traced
-            if lim > 0 and cur > lim and not w.get("over") and w.get("job"):
-                w["over"] = (cur, lim, int((now - w["t0"]) * 1000))
+            if inst > w["inst_peak"]:
+                w["inst_peak"], w["inst_peak_at"] = inst, int((now - w["t0"]) * 1000)
+            if lim > 0 and inst > lim and not w.get("over") and w.get("job"):
+                w["over"] = (inst, lim, int((now - w["t0"]) * 1000))
                 if not w.get("stacks"):
                     w["stacks"] = _top_frames(me)
         time.sleep(interval_sec())
@@ -149,7 +152,9 @@ def watch(name: str, job: str = ""):
                 tracemalloc.start(1)
         except Exception:                                            # noqa: BLE001
             tr = False
+    inst0 = _rss.instance_mb()
     w = {"name": name, "job": job or "", "t0": time.monotonic(), "base": base, "peak": base, "peak_at": 0,
+         "inst_base": inst0, "inst_peak": inst0, "inst_peak_at": 0,
          "samples": 0, "trace": tr, "traced_mb": base, "top": [], "stacks": [], "over": None}
     with _LOCK:
         _SEQ[0] += 1
@@ -164,8 +169,11 @@ def watch(name: str, job: str = ""):
             idle = not _ACTIVE
         cur, _ = _rss.read_mb()
         w["peak"] = max(w["peak"], cur)
+        w["inst_peak"] = max(w["inst_peak"], _rss.instance_mb())
         extra = {"job": (job or "")[:8], "base_mb": base, "delta_mb": w["peak"] - base if base >= 0 else "",
                  "at_ms": w["peak_at"], "samples": w["samples"],
+                 # Z10-C: 인스턴스 합계(이 워커 + master + 다른 프로세스) — OOM 판정은 이 숫자다
+                 "inst_base_mb": w["inst_base"], "inst_peak_mb": w["inst_peak"], "inst_at_ms": w["inst_peak_at"],
                  "over": f"{w['over'][0]}>{w['over'][1]}" if w["over"] else ""}
         if w["top"]:
             extra["top"] = " | ".join(w["top"])

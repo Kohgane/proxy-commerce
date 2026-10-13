@@ -181,6 +181,8 @@ def test_worker_restarts_alone_over_rss_limit(monkeypatch, tmp_path):
     import importlib.util
     monkeypatch.setenv("WORKER_RSS_LIMIT_MB", "380")
     monkeypatch.setenv("WORKER_RSS_RESTART_STAMP", str(tmp_path / "stamp"))
+    monkeypatch.setenv("GUNICORN_WORKERS", "2")             # Z10-C: 기본은 1워커 — 2워커일 때의 재시작 규칙을 잰다
+    monkeypatch.setenv("GUNICORN_MAX_WORKERS", "2")
     spec = importlib.util.spec_from_file_location("gconf", "gunicorn.conf.py")
     g = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(g)

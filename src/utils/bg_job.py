@@ -42,7 +42,14 @@ def _run(name: str, fn: Callable[[], dict]) -> None:
 
 
 def start(name: str, fn: Callable[[], dict]) -> Tuple[bool, dict]:
-    """`(시작했나, 상태)` — 이미 도는 중이면 시작하지 않는다."""
+    """`(시작했나, 상태)` — 이미 도는 중이면 시작하지 않는다. Z10-C: 인스턴스 메모리 합계가 상한(420MB) 이상이어도
+    시작하지 않는다(상태 `busy_memory`) — 크론은 다음 주기에 다시 온다."""
+    from src.utils import rss as _rss
+    ok_mem, cur_mb, lim_mb = _rss.start_ok()
+    if not ok_mem:
+        logger.warning("[CRON] job=%s 시작 거부 — 인스턴스 메모리 %dMB ≥ %dMB", name, cur_mb, lim_mb)
+        return False, {"job": name, "state": "refused", "busy_memory": True, "memory_mb": cur_mb, "limit_mb": lim_mb,
+                       "error": _rss.BUSY_MESSAGE}
     with _LOCK:
         cur = _JOBS.get(name) or {}
         t = cur.get("thread")
@@ -95,5 +102,8 @@ def accepted(name: str, started: bool, state: dict):
     from flask import jsonify
     if started:
         return jsonify({"ok": True, "started": True, "job": name, "status_url": "/cron/jobs"}), 202
+    if state.get("busy_memory"):                                   # Z10-C: 메모리 여유 없음 — 다음 주기에 다시
+        return jsonify({"ok": False, "started": False, "job": name, "error": state.get("error"),
+                        "memory_mb": state.get("memory_mb"), "limit_mb": state.get("limit_mb")}), 503
     return jsonify({"ok": False, "started": False, "job": name, "error": "진행 중",
                     "running_sec": state.get("running_sec")}), 409
