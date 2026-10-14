@@ -11,7 +11,7 @@ HTML = ('<script id="__NEXT_DATA__">{"g":{"goodsNm":"오버핏 후드","salePric
 def _stub(monkeypatch):
     monkeypatch.setattr(service, "fetch_html", lambda u: HTML)
     monkeypatch.setattr(service, "current_fx", lambda: 1020.0)
-    monkeypatch.setenv("PROXY_INTL_SHIP_TABLE_JSON", json.dumps({"US": [[0.5, 15], [1, 22]]}))
+    monkeypatch.setenv("PROXY_INTL_SHIP_TABLE_KRW_JSON", json.dumps({"US": {"carrier": "YunExpress", "ddp": True, "tiers": [[0.5, 14900], [1, 19000]]}}))
 
 
 def test_ssrf_blocked():
@@ -28,7 +28,7 @@ def test_quoted():
 
 def test_pending_without_weight_or_table(monkeypatch):
     assert service.make_quote("https://www.musinsa.com/p/1", "US", None)["status"] == "pending_shipping"
-    monkeypatch.delenv("PROXY_INTL_SHIP_TABLE_JSON")
+    monkeypatch.delenv("PROXY_INTL_SHIP_TABLE_KRW_JSON")
     assert service.make_quote("https://www.musinsa.com/p/1", "US", 0.5)["status"] == "pending_shipping"
 
 
@@ -55,3 +55,14 @@ def test_route_and_rate_limit():
     for _ in range(12):
         last = c.post("/proxy/quote", json={"url": "x"})
     assert last.status_code == 429
+
+
+def test_ddp_quote_has_no_separate_duty_and_says_included():
+    r = service.make_quote("https://www.musinsa.com/p/1", "US", 0.5, duty_rate=0.1)
+    assert r["ddp"] is True
+    text = " ".join(r["lines"])
+    assert "included" in text and "Estimated import duty" not in text
+
+
+def test_over_table_weight_is_pending():
+    assert service.make_quote("https://www.musinsa.com/p/1", "US", 3.0)["status"] == "pending_shipping"
