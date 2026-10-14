@@ -257,7 +257,8 @@ def translate_plan(extra: dict, *, retry: bool = False) -> dict:
             if e.get("vendor") == "d3" and not d3_enabled():
                 send.append((kind, i, "d3"))                     # Y9: 옛 D3 결과(글자만 지움 · 「그릴 줄 없음」 포함) → 텐센트 본선
             elif st == "done":
-                if isinstance(e.get("boxes"), list) and e.get("box_size"):
+                from src.services.image_translate_store import has_boxes
+                if has_boxes(e):                                 # Y11-F: 상자 있는 번역본은 다시 안 보낸다(빈 상자 목록은 「없음」)
                     skip["done"].append((kind, i))
                 elif retry:
                     send.append((kind, i, "no_boxes"))           # 상자 없는 옛 번역본 — 편집하려면 상자가 있어야 한다
@@ -427,6 +428,10 @@ def _drain(max_pages: int = 10_000) -> int:
     return n
 
 
+def _entry_of(extra: dict, ko_key: str, idx: int) -> dict:
+    return next((e for e in (extra.get(ko_key) or []) if isinstance(e, dict) and int(e.get("idx", -1)) == int(idx)), {})
+
+
 def _translate_job(job: dict) -> tuple:
     """한 장 — `(status, reason)`. 결과는 상품의 `images_ko`/`detail_images_ko`에 장별로 적는다."""
     import json as _json
@@ -444,6 +449,10 @@ def _translate_job(job: dict) -> tuple:
     originals = [u for u in (extra.get(src_key) or []) if u]
     if not (0 <= idx < len(originals)):
         return "skipped", "그 장이 더는 없습니다"
+    # Y11-F: 줄에 선 뒤 다른 길(편집기 「번역하고 글자 상자 받기」 등)이 이미 번역해 상자를 얻었으면 — 보내지도 덮지도 않는다.
+    #   (줄은 접수 시점의 판단이다 — 꺼낼 때 지금 상태를 다시 본다. 실측 18:20 KST 갤러리 3)
+    if istore.has_boxes(_entry_of(extra, ko_key, idx)):
+        return "skipped", istore.PROTECTED_REASON
     entry = translate_page(originals[idx], idx=idx, kind=kind, item_id=item_id, seller_id=uid,
                            title=str(extra.get("title_en") or extra.get("title") or row.get("title") or ""))
     # 저장 직전 다시 읽는다 — 그 사이 다른 장이 적혔을 수 있다(장별 병합).
@@ -453,6 +462,8 @@ def _translate_job(job: dict) -> tuple:
     except Exception:
         extra = {}
     by_idx = {int(e.get("idx", -1)): e for e in (extra.get(ko_key) or []) if isinstance(e, dict)}
+    if istore.has_boxes(by_idx.get(idx)):
+        return "skipped", istore.PROTECTED_REASON               # 번역하는 사이 상자 있는 번역본이 생겼다 — 덮지 않는다
     istore.carry_versions(by_idx.get(idx), entry)               # Y11-E: 다시 번역해도 앞선 번역본·편집본은 버전으로 남는다
     by_idx[idx] = entry
     by_idx.pop(-1, None)

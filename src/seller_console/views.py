@@ -5304,6 +5304,10 @@ def collect_image_edit_translate(item_id: str, kind: str, idx: int):
             return jsonify(out), 409 if out.get("already_running") else 400
         return jsonify({"ok": True, "queued": True, "message": "번역하는 중이에요 — 끝나면 글자 상자가 보여요"}), 202
     from src.services import image_translate_auto as _ita
+    from src.services import image_translate_store as _its
+    if _its.has_boxes(next((e for e in (ex.get("detail_images_ko") or [])
+                            if isinstance(e, dict) and int(e.get("idx", -1)) == idx), None)):
+        return jsonify({"ok": False, "protected": True, "error": _its.PROTECTED_REASON}), 409   # Y11-F
     q = _ita._q()
     n = q.requeue_pages(item_id, [("detail", idx)]) or q.enqueue(_seller_id(), item_id, [("detail", idx)])
     if not n:

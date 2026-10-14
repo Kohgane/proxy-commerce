@@ -318,6 +318,19 @@ def banned_in(text: str, seller_id: str = "") -> list:
         return []
 
 
+def has_boxes(e: Optional[dict]) -> bool:
+    """Y11-F(오너 2026-10-14) — **「done + 글자 상자 있음」인 장은 어떤 경로로도 다시 보내지 않는다(덮어쓰지 않는다).**
+
+    실측 18:20 KST VRSUK 갤러리 3: 17:26 「다시 번역」이 줄에 넣은 장(그땐 상자 없음, 상한이라 대기)을 17:28 편집기 「번역하고 글자
+    상자 받기」가 따로 번역해 상자를 얻었는데, 배포 뒤 큐가 그 낡은 줄을 꺼내 OCR 사전검사(「한자 0」)로 장을 통째 덮었다.
+    조건은 done **그리고** 상자가 비어 있지 않음 — done이라도 상자가 없는(옛) 번역본은 「다시 번역」이 다시 보낸다(편집에 상자가 필요)."""
+    return bool(isinstance(e, dict) and e.get("status") == "done"
+                and isinstance(e.get("boxes"), list) and len(e["boxes"]) > 0)
+
+
+PROTECTED_REASON = "이미 번역됨 — 글자 상자 있음(덮어쓰지 않음)"
+
+
 def carry_versions(old: Optional[dict], new: dict) -> None:
     """Y11-E: 다시 번역해도 **앞서 만든 편집본은 버전 목록에 남는다**(예전엔 장째 바뀌어 조용히 사라졌다).
     원본·편집본의 상자 기록(`vboxes`)도 그림이 그대로라 같이 옮긴다. 새 번역본이 지금 버전이 된다."""

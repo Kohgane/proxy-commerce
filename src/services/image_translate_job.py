@@ -99,11 +99,17 @@ def accept(item_id: str, seller_id: str, indices, *, seller_ids=None) -> dict:
         if not (0 <= i < len(images)):
             skipped.append({"idx": i, "reason": "그런 장이 없습니다"})
             continue
+        if istore.has_boxes(next((e for e in (extra.get("images_ko") or [])
+                                  if isinstance(e, dict) and int(e.get("idx", -1)) == i), None)):
+            skipped.append({"idx": i, "reason": istore.PROTECTED_REASON})   # Y11-F: 상자 있는 번역본은 다시 안 보낸다
+            continue
         queued.append(i)
         entries.append({"idx": i, "status": "queued", "at": _now(),
                         "vendor": "tencent", "ms": 0})
     if not queued:
-        return {"ok": False, "error": "번역할 이미지를 골라 주세요.", "skipped": skipped}
+        prot = [s for s in skipped if s["reason"] == istore.PROTECTED_REASON]
+        return {"ok": False, "skipped": skipped, "protected": bool(prot),
+                "error": (istore.PROTECTED_REASON + " — 편집 화면에서 글자 상자를 바로 쓸 수 있어요") if prot else "번역할 이미지를 골라 주세요."}
 
     extra["images_ko"] = istore.merge_images_ko(extra, entries)
     if not _save(item_id, ids, extra):
@@ -138,6 +144,9 @@ def _run(item_id: str, seller_id: str, indices, seller_ids) -> None:
             images = [u for u in (extra.get("images") or []) if u]
             if not (0 <= i < len(images)):
                 continue
+            if istore.has_boxes(next((e for e in (extra.get("images_ko") or [])
+                                      if isinstance(e, dict) and int(e.get("idx", -1)) == i), None)):
+                continue                                         # Y11-F: 그 사이 상자 있는 번역본이 생겼다 — 보내지 않는다
             result = tc.translate_image(url=images[i])
             entry = istore.build_entry(i, result, item_id=item_id, seller_id=seller_id,
                                        label=make_label(run_id, item_id, i, "TENCENT", folder="seller"))
