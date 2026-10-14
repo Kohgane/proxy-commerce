@@ -86,7 +86,12 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
     flags = []
     if long_side < MIN_LONG_SIDE:
         flags.append({"key": "small", "hold": True, "line": f"반려 예상 — 500px 미만(긴 변 {long_side}px)"})
-    if text:
+    geom = _text_geometry(raw, w, h) if text else {}
+    if text and geom.get("minor"):
+        # Y11-D: 소품(책등 등)의 작고 흐린 글자 — 차단이 아니라 주의. 지우려면 사진 편집(지우면 주소가 바뀌어 바로 다시 잰다).
+        flags.append({"key": "text_small", "hold": False,
+                      "line": f"소품 글자(작음) — 지우려면 사진 편집(읽은 글자 「{seen}」 · 면적 {geom['area_pct']}%)"})
+    elif text:
         flags.append({"key": "text", "hold": True, "line": f"텍스트 있음 — 반려 가능(읽은 글자 「{seen}」)"})
     ocr_why = ""
     if text is None:
@@ -99,7 +104,75 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
                       "line": f"정사각 아님({w}×{h}) — 쿠팡 검색 카드엔 가운데를 잘라 보여요"})
     return {"state": "ok", "w": w, "h": h, "square": square, "long_side": long_side,
             "small": long_side < MIN_LONG_SIDE, "white_pct": white_pct, "decode_why": decode_why,
-            "text": text, "seen": seen, "flags": flags, "ocr": "unavailable" if text is None else "ok", "ocr_why": ocr_why}
+            "text": text, "seen": seen, "flags": flags, "ocr": "unavailable" if text is None else "ok", "ocr_why": ocr_why,
+            "text_geometry": geom}
+
+
+#: Y11-D(오너 2026-10-14) — 「소품 글자(작음)」 기준: 글자 상자 총면적이 사진의 0.5% 미만 **이고** OCR 확신이 낮을 때만.
+MINOR_AREA = float(os.getenv("COUPANG_TEXT_MINOR_AREA", "0.005") or 0.005)
+MINOR_CONF = float(os.getenv("COUPANG_TEXT_MINOR_CONF", "85") or 85)
+_ALNUM_RUN = re.compile(r"[A-Za-z0-9]{3,}")
+
+
+def _known_words() -> set:
+    """반례 예외 — 상품 사진·워터마크 낱말 + 쿠팡 브랜드 목록(소문자)."""
+    import json as _json
+    base = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploaders")
+    out = set()
+    try:
+        with open(os.path.join(base, "photo_text_words.json"), encoding="utf-8") as f:
+            out |= {str(w).lower() for w in (_json.load(f).get("words") or [])}
+    except Exception:                                            # noqa: BLE001
+        pass
+    try:
+        with open(os.path.join(base, "coupang_brands.json"), encoding="utf-8") as f:
+            for b in (_json.load(f).get("brands") or []):
+                for tok in _ALNUM_RUN.findall(str(b if isinstance(b, str) else (b or {}).get("name") or "")):
+                    out.add(tok.lower())
+    except Exception:                                            # noqa: BLE001
+        pass
+    return out
+
+
+def real_word_hit(text: str) -> str:
+    """상자 글자 안에 「진짜 낱말」이 있나 — 영숫자 3자 이상 낱말이 목록에 있거나, 상표(risk_tokens)에 걸리면 그 낱말. 없으면 ""."""
+    t = str(text or "")
+    words = _known_words()
+    for run in _ALNUM_RUN.findall(t):
+        if run.lower() in words:
+            return run
+    try:
+        from src.services import risk_gate as _rg
+        for e in _rg._trademark_entries():
+            if _rg._find(t, e.get("names") or [], bool(e.get("case"))):
+                return str((e.get("names") or [""])[0])
+    except Exception:                                            # noqa: BLE001
+        pass
+    return ""
+
+
+def _text_geometry(raw: bytes, w: int, h: int) -> Dict[str, Any]:
+    """글자 상자 면적·확신 — `{area_pct, conf, minor, word}`. 상자를 못 읽으면 `{}`(= 예전처럼 「반려 가능」, 내리지 않는다).
+    작은 워터마크·로고는 진짜 반려 사유라, **진짜 낱말·상표**가 있으면 면적과 상관없이 내리지 않는다(오너 반례)."""
+    try:
+        from src.services import ocr_tencent as O
+        from src.utils.locks import try_lock
+        with try_lock(_OCR_SEM, code="ocr_busy", what="대표 사진 글자 상자(OCR 동시 1개)") as got:
+            if not got:
+                return {}
+            got_boxes = O.read_boxes(raw)
+    except Exception:                                            # noqa: BLE001
+        return {}
+    boxes = got_boxes.get("boxes") or [] if got_boxes.get("ok") else []
+    W, H = (got_boxes.get("size") or [w, h])[:2] if got_boxes.get("ok") else (w, h)
+    if not boxes or not (W and H):
+        return {}
+    area = sum(max(0, b.get("w", 0)) * max(0, b.get("h", 0)) for b in boxes) / float(W * H)
+    confs = [float(b.get("conf")) for b in boxes if b.get("conf") is not None]
+    conf = round(sum(confs) / len(confs), 1) if confs else 100.0
+    word = real_word_hit(" ".join(str(b.get("src") or "") for b in boxes))
+    minor = area < MINOR_AREA and conf < MINOR_CONF and not word
+    return {"area_pct": round(area * 100, 2), "conf": conf, "minor": minor, "word": word, "boxes": len(boxes)}
 
 
 def _bytes_for(url: str) -> tuple:

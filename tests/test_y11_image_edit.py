@@ -332,7 +332,7 @@ def test_ocr_boxes_are_scaled_back_to_original(monkeypatch):
         {"DetectedText": "흐림", "Confidence": 20, "ItemPolygon": {"X": 1, "Y": 1, "Width": 1, "Height": 1}}]})
     r = O.read_boxes(b.getvalue())
     assert r["ok"] and r["size"] == [2048, 2048]
-    assert r["boxes"] == [{"x": 20, "y": 40, "w": 200, "h": 60, "src": "满300减50", "tgt": ""}]   # 1024로 보냈다 → ×2
+    assert r["boxes"] == [{"x": 20, "y": 40, "w": 200, "h": 60, "src": "满300减50", "tgt": "", "conf": 99.0}]   # 1024로 보냈다 → ×2 · Y11-D 확신 같이
 
 
 def test_old_entry_reads_boxes_once_via_route(cloud, monkeypatch):

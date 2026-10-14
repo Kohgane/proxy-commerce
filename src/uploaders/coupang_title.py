@@ -79,6 +79,13 @@ def _dup_tokens(s: str) -> List[str]:
 
 
 # ── 재료 뽑기 ───────────────────────────────────────────────────────────
+# Y11-D(오너 2026-10-14): 제목 맨 앞 라틴 이름이 괄호에 **붙어** 있으면 그게 브랜드다 — 「VRSUK{비즈니스 시리즈} …」.
+_BRAND_GLUED = re.compile(r"^\s*([A-Za-z][A-Za-z0-9&\-.]{1,30})(?=[{\[(（【])")
+#: 괄호 묶음 하나 — {…} [ … ] ( … ) （…） 【…】. 묶음은 **통째로** 남기거나 통째로 뗀다(반토막 금지).
+_BRACKET_GROUP = re.compile(r"[{\[(（【]([^{}\[\]()（）【】]*)[}\])）】]")
+_HANGUL_ANY = re.compile(r"[가-힣]")
+
+
 def brand_of(product: Dict[str, Any]) -> str:
     b = str(product.get("brand") or "").strip()
     if b:
@@ -87,7 +94,17 @@ def brand_of(product: Dict[str, Any]) -> str:
         m = _BRAND_PAREN.search(str(product.get(key) or ""))
         if m:
             return m.group(1).strip()
+    for key in ("title_ko", "title"):
+        m = _BRAND_GLUED.match(str(product.get(key) or ""))
+        if m:
+            return m.group(1).strip()
     return ""
+
+
+def _whole_groups(t: str) -> str:
+    """괄호 묶음을 **통째로** — 한글이 든 묶음은 괄호만 벗겨 낱말을 다 남기고, 한글이 없는 묶음(「(SPORTLINK)」·「{商务系列}」)은 통째로 뗀다.
+    실측(VRSUK): 「VRSUK{비즈니스 시리즈}」를 띄어쓰기로 자르니 「VRSUK{비즈니스」는 버려지고 「시리즈}」만 남아 쿠팡명이 「시리즈 심플 …」."""
+    return _BRACKET_GROUP.sub(lambda m: f" {m.group(1)} " if _HANGUL_ANY.search(m.group(1)) else " ", str(t or ""))
 
 
 def _strip_brand_chunk(title: str, brand: str) -> str:
@@ -96,6 +113,7 @@ def _strip_brand_chunk(title: str, brand: str) -> str:
         # 「수행 방패(SPORTLINK)는 」 — 음역 브랜드 + (원표기) + 조사를 통째로.
         t = re.sub(r"^[^,()]{0,16}\(\s*" + re.escape(brand) + r"\s*\)\s*(?:은|는|이|가)?\s*", "", t)
         t = re.sub(re.escape(brand), " ", t, flags=re.I)
+    t = re.sub(r"\s+", " ", _whole_groups(t))
     return t.strip(" ,")
 
 

@@ -187,6 +187,15 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
             except Exception as exc:               # noqa: BLE001 — 조용한 실패 금지
                 logger.error("번역 드레인 오류(백그라운드): %s", exc)
                 d = {"ok": False, "error": str(exc), "processed": 0}
+            # Y11-D(오너 10-14): 이미지 번역 큐는 이 틱이 깨운 적이 없었다 — 접수·「다시 번역」 때만 돌아서, 상한이 풀려도(카운터 정정)
+            #   대기 114장이 그대로 섰다. 틱마다 깨운다(이미 돌고 있으면 그대로 · 상한이 찼으면 꺼냈다가 대기로 되돌린다 · 별도 스레드).
+            try:
+                from src.services import image_translate_auto as _ita
+                if os.getenv("IMAGE_TRANSLATE_AUTO_SYNC") != "1":
+                    _ita.kick()
+                    result["imgko_kick"] = True
+            except Exception as exc:               # noqa: BLE001 — 이미지 큐 깨우기 실패가 번역 틱을 막지 않는다
+                logger.warning("이미지 번역 큐 깨우기 실패(틱은 계속): %s", exc)
             drain_sec = _t.monotonic() - t0
             pilot_budget = tick_budget - (_t.monotonic() - t0)
             if pilot_budget >= _PILOT_MIN_SEC:

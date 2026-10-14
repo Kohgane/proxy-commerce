@@ -185,7 +185,7 @@ def read_boxes(raw: bytes) -> Dict:
         try:
             boxes.append({"x": int(float(p.get("X") or 0) * kx), "y": int(float(p.get("Y") or 0) * ky),
                           "w": int(float(p.get("Width") or 0) * kx), "h": int(float(p.get("Height") or 0) * ky),
-                          "src": txt[:120], "tgt": ""})
+                          "src": txt[:120], "tgt": "", "conf": round(conf, 1)})
         except (TypeError, ValueError):
             continue
     return {"ok": True, "why": "", "boxes": boxes[:40], "size": [W, H]}

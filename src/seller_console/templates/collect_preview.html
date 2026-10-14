@@ -2092,7 +2092,7 @@ async function saveEdits() {
     const out = await resp.json();
     if (!out.ok) { pcToast(kgpFriendlyError(out), 'error'); }
     else {
-      pcToast('변경사항을 저장했습니다.', 'success');
+      pcToast('변경사항을 저장했습니다.' + (out.notice ? ' · ' + out.notice : ''), 'success');   // Y11-D: 「빈 블록 n개 무시」
       // v39 C: 편집 드로어(iframe)에서 저장 시 부모 목록에 알려 닫을 때 새로고침.
       try { if (window.parent && window.parent !== window) window.parent.postMessage({ kgp: 'preview-saved' }, '*'); } catch (e) {}
     }

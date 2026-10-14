@@ -3914,17 +3914,16 @@ def coupang_exposure_data(item: dict) -> dict:
             # M5 후속: 이미지 번역이 왜 안 됐나(공급사 원문) — 카드 「나갈 사진」 옆 배지. 없으면 null.
             "imgko_fail": _imgko_failure(iid, ex),
             # Y11-C2: 실패가 없어도 「다시 번역」 자리 + 오늘 텐센트 호출 수(공급사 미연결이면 null — 누를 곳을 만들지 않는다)
-            "imgko_status": _imgko_status()}
+            "imgko_status": _imgko_status(iid)}
 
 
-def _imgko_status():
+def _imgko_status(item_id: str = ""):
     try:
         from src.services import image_translate_tencent as _tc
         if not _tc.is_configured():
             return None
         from src.services import image_translate_auto as _ita
-        st = _ita.status()
-        return {"today": st.get("today"), "cap": st.get("cap")}
+        return _ita.queue_line(item_id)                        # Y11-D: 상한·대기는 실패 배지가 아니라 이 줄이 말한다
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[이미지번역] 오늘 호출 수 읽기 실패: %s", exc)
         return None
@@ -10967,6 +10966,7 @@ def collect_preview_save(item_id: str):
         extra["detail_fold"] = bool(data.get("detail_fold"))
     # v40-C: 마켓별 상세페이지 블록(공통 + 마켓 오버라이드) 보존.
     _db = data.get("detail_blocks")
+    _blank_blocks = 0
     if isinstance(_db, dict):
         clean = {}
         for mkey, blocks in _db.items():
@@ -10975,8 +10975,15 @@ def collect_preview_save(item_id: str):
             norm = []
             for b in blocks:
                 if isinstance(b, dict) and b.get("type") in ("text", "image", "highlight", "divider"):
-                    norm.append({"type": b["type"], "content": str(b.get("content") or "")[:5000]})
-            clean[str(mkey)[:20]] = norm
+                    content = str(b.get("content") or "")[:5000]
+                    if b["type"] != "divider" and not content.strip():
+                        _blank_blocks += 1         # Y11-D: 빈 블록(이미지 주소·글 없음)은 저장하지 않는다
+                        continue
+                    norm.append({"type": b["type"], "content": content})
+            # Y11-D(오너 10-14 캡처): 쿠팡 탭에 빈 이미지 블록 하나만 있으면 「쿠팡 전용 꾸미기」로 잡혀 공통 블록이 가려졌다
+            #   → 비어 버린 마켓 칸은 없앤다(그 마켓은 공통을 쓴다). 공통은 빈 목록이어도 둔다.
+            if norm or str(mkey) == "common":
+                clean[str(mkey)[:20]] = norm
         extra["detail_blocks"] = clean
     if options is not None:
         extra["options"] = options
@@ -11029,7 +11036,8 @@ def collect_preview_save(item_id: str):
     if not ok:
         return jsonify({"ok": False, "error": "저장에 실패했습니다."}), 500
 
-    return jsonify({"ok": True, "product": extra})
+    return jsonify({"ok": True, "product": extra,
+                    "notice": f"빈 블록 {_blank_blocks}개 무시" if _blank_blocks else ""})
 
 
 # ---------------------------------------------------------------------------

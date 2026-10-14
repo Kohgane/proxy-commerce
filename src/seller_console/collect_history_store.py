@@ -76,6 +76,16 @@ def append(
     그래서 여기서 찍는다 — 경로마다 찍으면 언젠가 한 경로가 빠진다.
     """
     extra = dict(extra or {})
+    # Y11-D: 광고 클릭 링크(click.simba)는 상품 정규 주소로 — 원래 링크는 `raw_url` 컬럼에(「원본 보기」가 과금 클릭을 열지 않게)
+    raw_url = ""
+    try:
+        from src.collectors.product_key import canonical_source_url
+        _canon = canonical_source_url(url or "")
+        if _canon and _canon != (url or ""):
+            raw_url, url = str(url), _canon
+            extra.setdefault("raw_url", raw_url)          # 화면(「주소 후보」)은 extra에서 읽는다 — 컬럼은 원본 보존용
+    except Exception as exc:                  # 정규화 실패가 수집을 막지 않는다
+        logger.warning("[수집] 주소 정규화 실패(원래 주소로): %s", exc)
     if not str(extra.get("vendor_sku") or "").strip():
         try:
             from src.collectors.product_key import sku_expectation, vendor_sku
@@ -90,7 +100,7 @@ def append(
     if _b:
         return _b.append(source=source, url=url, title=title, image=image, price=price,
                          currency=currency, status=status, preview_url=preview_url,
-                         extra=extra, seller_id=seller_id, return_durable=return_durable)
+                         extra=extra, seller_id=seller_id, return_durable=return_durable, raw_url=raw_url)
 
     item_id = secrets.token_hex(6)
     domain = urlparse(url).netloc
@@ -109,6 +119,7 @@ def append(
         "preview_url": preview_url or f"/seller/collect/preview/{item_id}",
         "extra_json": json.dumps(extra or {}, ensure_ascii=False),
         "seller_id": seller_id or "",
+        "raw_url": raw_url,
     }
     _in_memory.append(row_data)
     if return_durable:

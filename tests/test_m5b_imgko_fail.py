@@ -74,9 +74,12 @@ def test_item_failure_reads_page_failure_then_breaker_then_cap(monkeypatch):
     f = A.item_failure("i2", {})
     assert f["code"] == "breaker_open" and "20장" in f["raw"]
     A.resume()
-    monkeypatch.setattr(A, "daily_cap", lambda: 0)
-    f = A.item_failure("i2", {})
-    assert f["code"] == "cap_reached" and "오늘" in f["raw"]
+    # Y11-D(오너 10-14 17:27): 오늘 상한은 실패 배지가 아니다(빨간 「…/320장 — IMAGE_TRANSLATE_DAILY_CAP」·환경변수 이름 노출 금지)
+    #   → 대기 줄(queue_line)이 「대기 중 n장 (오늘 상한 도달 …)」으로 말한다
+    monkeypatch.setattr(A, "daily_cap", lambda: 1)
+    q.take_start(A._day_key(), 10 ** 9)
+    assert A.item_failure("i2", {}) == {}
+    assert A.queue_line("i2") == {"today": 1, "cap": 1, "in_line": 1, "cap_full": True}
 
 
 def _client(**sess):
