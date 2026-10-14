@@ -91,10 +91,16 @@ def test_translate_image_returns_boxes_in_original_frame(monkeypatch):
         out = tc.translate_image(url=ORIG_URL)
     assert out["ok"] and out["box_frame"] == "rot180" and out["angle_raw"] == 180.0
     assert all(_in_book(l["box"]) for l in out["lines"])
-    monkeypatch.setattr(istore, "store_translated", lambda *a, **k: {"url": KO_URL, "stored_by": "cdn", "bytes": 9})
+    # Y11-G(오너): 사진이 통째 돌아간 틀(180°) = 글자가 거꾸로 = 소품 — 상자 전부 소품이면 번역본을 만들지 않는다(원본 그대로)
+    assert out["prop_all"] and all(l["prop"] for l in out["lines"])
+    stored = []
+    monkeypatch.setattr(istore, "store_translated", lambda *a, **k: stored.append(1) or {"url": KO_URL, "stored_by": "cdn", "bytes": 9})
     e = istore.build_entry(3, out, item_id="4ebaf1b8", kind="gallery")
-    assert e["box_frame"] == "rot180" and e["translated_url"] == KO_URL and e["boxes_img"] == KO_URL
-    assert all(_in_book(b) for b in e["boxes"])
+    assert e["status"] == "skipped" and e["prop_only"] and e["reason"] == istore.PROP_ONLY_REASON and stored == []
+    assert "Zaha Hadid" in e["prop_text"] and "translated_url" not in e
+    book = istore.build_entry(3, out, item_id="4ebaf1b8", kind="gallery", prop_exempt=True)   # 반례: 책·포스터 상품
+    assert book["status"] == "done" and book["translated_url"] == KO_URL and book["box_frame"] == "rot180"
+    assert all(_in_book(b) for b in book["boxes"])
 
 
 # ── 2. 옛 상자(틀 확인 전) · 그림이 바뀌면 상자 무효 ─────────────────────────────────────────
@@ -116,9 +122,13 @@ def test_old_translated_boxes_are_checked_and_fixed_before_drawing(monkeypatch):
     monkeypatch.setattr(E, "_fetch", lambda u: {ORIG_URL: ORIG, KO_URL: KO}.get(u, b""))
     ex = _vrsuk_extra()
     p = E.plan(ex, "gallery", 3, small=None, fetch=False)
-    assert p["current"] == "translated" and len(p["boxes"]) == 5
-    assert all(_in_book(b) for b in p["boxes"])                                               # 빈 벽에 상자 0
     assert ex["images_ko"][0]["box_frame"] == "rot180" and ex["images_ko"][0]["boxes_img"] == KO_URL
+    # Y11-G: 거꾸로 놓인 책등 = 소품 — 탭할 상자 0 · 「소품 글자 5개 보기」로만(책등 위, 빈 벽엔 0)
+    assert p["current"] == "translated" and p["boxes"] == [] and len(p["prop_boxes"]) == 5
+    assert all(_in_book(b) for b in p["prop_boxes"]) and "소품 글자만" in p["why"]
+    ex["title_ko"] = "이탈리아 건축 디자인 도서 세트"                                         # 반례: 책 상품이면 소품 규칙 끔
+    p = E.plan(ex, "gallery", 3, small=None, fetch=False)
+    assert len(p["boxes"]) == 5 and all(_in_book(b) for b in p["boxes"])
 
 
 def test_old_boxes_that_cannot_be_checked_are_dropped_and_read_again_by_ocr(monkeypatch):

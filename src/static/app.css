@@ -2383,6 +2383,10 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   background: var(--surface); color: var(--text); font-size: var(--caption); white-space: nowrap; }
 .kie-ver.is-on { background: var(--ink); border-color: var(--ink); color: var(--cream); }
 .kie-ver:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.kie-ver.is-wait { color: var(--text-muted); border-style: dashed; cursor: progress; }   /* Y11-G: 만드는 중인 편집본 */
+/* Y11-G: 소품 글자(책등·표지·포장) — 보기만, 회색 점선 · 탭 안 됨 */
+.kie-prop { position: absolute; border: 2px dashed var(--text-muted); border-radius: 4px; pointer-events: none; }
+.kie-prop-toggle { margin-top: var(--space-1); }
 .kie-legend, .kie-cost, .kie-note { font-size: var(--caption); color: var(--text-muted); margin: var(--space-1) 0; }
 .kie-k { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--text-muted); border-radius: 2px; margin: 0 2px 0 var(--space-1); vertical-align: -1px; }
 .kie-k.is-promo { border-color: var(--orange); } .kie-k.is-brand { border-color: var(--teal); } .kie-k.is-risk { border-color: var(--danger); }

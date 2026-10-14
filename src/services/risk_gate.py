@@ -131,17 +131,41 @@ def fields(extra: dict) -> Dict[str, str]:
     }
 
 
-def _images(extra: dict):
-    """`[(kind, idx, 이름, 글자)]` — 번역 기록이 있는 장(OCR·원문·번역문)."""
+def _images(extra: dict, *, props: Optional[list] = None):
+    """`[(kind, idx, 이름, 글자)]` — 번역 기록이 있는 장(OCR·원문·번역문).
+
+    Y11-G(오너): 소품(책등·책 표지·포장) 글자는 글자가 아니다 — 위험 검사에서 빼고, `props`가 주어지면 거기에
+    `(kind, idx, 이름, 소품 글자)`로 따로 담는다(상표가 걸려도 「참고」 한 줄). 책·포스터 상품(반례)이면 빼지 않는다."""
     from src.services.detail_image_plan import entry_text
+    from src.services import prop_text as PT
+    off = PT.exempt(extra)
     out = []
     for key, kind, lab in (("images_ko", "gallery", "사진"), ("detail_images_ko", "detail", "상세")):
         for e in (extra or {}).get(key) or []:
             if isinstance(e, dict) and e.get("idx") is not None and not e.get("risk_exclude"):   # 이미 뺀 장은 안 센다
                 t = entry_text(e)
+                nm = f"{lab} {int(e['idx']) + 1}"
+                pt = "" if off else _prop_text(e, t)
+                if pt and props is not None:
+                    props.append((kind, int(e["idx"]), nm, pt))
+                if pt:
+                    for frag in sorted({x for x in re.split(r"\s{2,}|\n", pt) if x.strip()} | {pt}, key=len, reverse=True):
+                        t = t.replace(frag, " ")
                 if t.strip():
-                    out.append((kind, int(e["idx"]), f"{lab} {int(e['idx']) + 1}", t))
+                    out.append((kind, int(e["idx"]), nm, t))
     return out
+
+
+def _prop_text(e: dict, text: str) -> str:
+    """그 장의 소품 글자 — 장 전체가 소품(소품 글자뿐 · 사진이 통째 돌아간 틀)이면 장의 글자 전부, 아니면 소품 표시 상자의 글자."""
+    from src.services import prop_text as PT
+    if e.get("prop_only") or str(e.get("box_frame") or "") in PT.ROTATED_FRAMES:
+        return str(e.get("prop_text") or "") + " " + text if e.get("prop_only") else text
+    frags = []
+    for b in e.get("boxes") or []:
+        if isinstance(b, dict) and b.get("prop"):
+            frags += [str(b.get("src") or ""), str(b.get("tgt") or "")]
+    return " ".join(f for f in frags if f.strip())
 
 
 # ── 검사 ───────────────────────────────────────────────────────────────────────────────────
@@ -192,7 +216,8 @@ def scan(extra: dict, *, pending_images: int = 0) -> dict:
     """한 상품 전부 — `{hits, waiting, decided}`. `pending_images` = 아직 번역(OCR) 중인 장 수(「이미지 검사 대기 n장」)."""
     ex = extra or {}
     where_text = fields(ex)
-    imgs = _images(ex)
+    props: list = []
+    imgs = _images(ex, props=props)
     allow = allowlist()
     hits: List[dict] = []
     tm_hits = []
@@ -246,7 +271,18 @@ def scan(extra: dict, *, pending_images: int = 0) -> dict:
         h["grade_label"] = GRADE_LABEL[h["grade"]]
         h["can_allow"] = h["grade"] != "block"
     hits.sort(key=lambda h: (GRADE_ORDER[h["grade"]], h["cat"]))
-    return {"hits": hits, "waiting": int(pending_images or 0),
+    # Y11-G: 상표가 소품 글자에만 걸리면 차단·주의가 아니다 — 「참고: 소품(사진 4)에 'Zaha Hadid'」 한 줄(오너가 책 표지는 괜찮다고 정함)
+    notes, seen = [], set()
+    from src.services.prop_text import note_line
+    for e in _trademark_entries():
+        if e["label"] in allow:
+            continue
+        for _k, _i, nm, txt in props:
+            for f in _find(txt, e.get("names") or [], bool(e.get("case"))):
+                if (nm, f) not in seen:
+                    seen.add((nm, f))
+                    notes.append({"label": e["label"], "found": f, "where": nm, "line": note_line(f, nm)})
+    return {"hits": hits, "notes": notes, "waiting": int(pending_images or 0),
             "skip": (ex.get("risk_skip") or {}) if isinstance(ex.get("risk_skip"), dict) else {}}
 
 
@@ -429,4 +465,5 @@ def card(sc: dict) -> dict:
     for h in sc.get("hits") or []:
         rows.append({k: h.get(k) for k in ("key", "cat", "label", "grade", "grade_label", "found", "decided", "can_allow", "why")}
                     | {"where_line": where_line(h)})
-    return {"count": len(rows), "hits": rows, "waiting": sc.get("waiting") or 0, "skip": sc.get("skip") or {}}
+    return {"count": len(rows), "hits": rows, "waiting": sc.get("waiting") or 0, "skip": sc.get("skip") or {},
+            "notes": [n["line"] for n in sc.get("notes") or []]}

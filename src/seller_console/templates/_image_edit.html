@@ -53,6 +53,11 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
         '" data-role="kie-box" data-id="' + esc(b.id) + '" style="' + rectStyle(b, W, H) + '"' + (st.confirm ? ' disabled' : '') +
         ' aria-label="' + esc(b.cls_label + ' ' + (b.text || '')) + '"></button>';
     }).join('');
+    if (st.showProp) {  // Y11-G: 소품(책등·표지·포장) 글자 — 글자가 아니다. 보기만(회색 점선 · 탭 안 됨 · 적용 개수에 안 듦)
+      overlay += (p.prop_boxes || []).map(function (b) {
+        return '<div class="kie-prop" data-role="kie-prop" style="' + rectStyle(b, W, H) + '" title="' + esc(b.text || '') + '" aria-hidden="true"></div>';
+      }).join('');
+    }
     if (st.confirm) {   // 적용 전 확인 — 실제로 보낼 지울 영역(상자 + 높이 10% 여유)만 빨갛게
       overlay += (p.boxes || []).filter(function (b) { return ids.indexOf(b.id) >= 0; }).map(function (b) {
         return '<div class="kie-er" data-role="kie-er" style="' + rectStyle(b.er || b, W, H) + '" aria-hidden="true"></div>';
@@ -61,9 +66,10 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
     var spent = (p.spent || 0) ? ' · 이 사진에 쓴 비용 ' + esc(p.spent) + '크레딧' : '';
     var vers = (p.versions || []);
     var h = '<div class="kie-vers" data-role="kie-vers" role="group" aria-label="사진 버전">' + vers.map(function (v) {
-      var on = v.key === p.current;
-      return '<button type="button" class="kie-ver' + (on ? ' is-on' : '') + '" data-role="kie-ver" data-key="' + esc(v.key) + '"' +
-        (on ? ' aria-pressed="true"' : ' aria-pressed="false"') + (st.confirm ? ' disabled' : '') + '>' + esc(v.label) + '</button>';
+      var on = v.key === p.current, wait = v.ready === false;   // Y11-G: 만드는 중인 편집본 — 회색 · 못 고름
+      return '<button type="button" class="kie-ver' + (on ? ' is-on' : '') + (wait ? ' is-wait' : '') + '" data-role="kie-ver" data-key="' + esc(v.key) + '"' +
+        (on ? ' aria-pressed="true"' : ' aria-pressed="false"') + ((st.confirm || wait) ? ' disabled' : '') + '>' +
+        esc(v.label) + (wait ? ' · 만드는 중…' : '') + '</button>';
     }).join('') + '</div>';
     h += '<div class="kie-stage" data-role="kie-stage"><img src="' + esc(showUrl) + '" alt="편집할 사진" referrerpolicy="no-referrer">' + overlay + '</div>';
     if ((p.boxes || []).length) {
@@ -71,6 +77,13 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
         ' · 글자 상자를 탭해서 고르세요(기본은 그대로 두기)</p>';
     } else {
       h += '<p class="kie-note" data-role="kie-empty">' + esc(p.why || '이 사진에서 글자를 못 찾았어요 — 지울 것이 없어요') + '</p>';
+    }
+    if ((p.prop_boxes || []).length) {
+      h += '<button type="button" class="kie-btn kie-prop-toggle" data-role="kie-prop-toggle" aria-pressed="' + (st.showProp ? 'true' : 'false') + '">' +
+        (st.showProp ? '소품 글자 숨기기' : '소품 글자 ' + p.prop_boxes.length + '개 보기') + '</button>';
+    }
+    if (vers.some(function (v) { return v.ready === false; })) {
+      h += '<p class="kie-note" data-role="kie-wait">편집본을 만드는 중이에요 — 다 되면 칩이 켜져요(지금은 바로 전 버전을 보여 드려요)</p>';
     }
     if (st.confirm) {
       h += '<p class="kie-confirm" data-role="kie-confirm">빨간 부분만 지워요 — 글자 상자와 둘레 여유(상자 높이의 10%)뿐이에요. 그 밖은 그대로예요.</p>' +
@@ -114,6 +127,15 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       return p;
     });
   }
+  function waitReady(n) {     // Y11-G: 만드는 중인 편집본 — 4초마다 다시 열어 칩이 켜지는지 본다(최대 2분)
+    if (!st || n > 30 || root.hidden) return;
+    setTimeout(function () {
+      if (!st || root.hidden) return;
+      load(true).then(function (p) {
+        if (p && p.ok && (p.versions || []).some(function (v) { return v.ready === false; })) waitReady(n + 1);
+      });
+    }, 4000);
+  }
   function poll() {          // 「번역하고 글자 상자 받기」 뒤 — 4초마다, 최대 2분
     if (!st || !st.polls) return;
     if (st.polls > 30) { st.polls = 0; render(); return; }
@@ -140,6 +162,7 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       sheet.hidden = true; render(); return;
     }
     if (role === 'kie-apply') { st.confirm = true; render(); return; }       // 한 번 더 — 지울 영역부터 보여 준다
+    if (role === 'kie-prop-toggle') { st.showProp = !st.showProp; render(); return; }
     if (role === 'kie-ver' || role === 'kie-original') {      // 버전 고르기 · 「원본으로」 = 수집 원본
       var key = role === 'kie-original' ? 'original' : b.getAttribute('data-key');
       if (!key || key === st.plan.current) return;
@@ -157,6 +180,7 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       call(base(), {ops: ops}).then(function (r) {
         if (!r || !r.ok) { st.confirm = false; render(); body.insertAdjacentHTML('beforeend', '<p class="kie-err" data-role="kie-err">' + esc((r && r.error) || '적용하지 못했어요') + '</p>'); return; }
         st.changed = true; st.confirm = false; st.plan = r.plan || st.plan; render();
+        if (r.pending) waitReady(0);
       });
       return;
     }
@@ -175,8 +199,9 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
   });
   return {
     open: function (itemId, kind, idx, done) {
-      st = {itemId: itemId, kind: kind || 'gallery', idx: +idx, plan: null, choice: {}, done: done, changed: false, confirm: false, polls: 0};
-      root.hidden = false; sheet.hidden = true; load();
+      st = {itemId: itemId, kind: kind || 'gallery', idx: +idx, plan: null, choice: {}, done: done, changed: false, confirm: false, polls: 0, showProp: false};
+      root.hidden = false; sheet.hidden = true;
+      load().then(function (p) { if (p && p.ok && (p.versions || []).some(function (v) { return v.ready === false; })) waitReady(0); });
     }
   };
 })();

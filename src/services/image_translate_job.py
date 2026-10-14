@@ -148,8 +148,10 @@ def _run(item_id: str, seller_id: str, indices, seller_ids) -> None:
                                       if isinstance(e, dict) and int(e.get("idx", -1)) == i), None)):
                 continue                                         # Y11-F: 그 사이 상자 있는 번역본이 생겼다 — 보내지 않는다
             result = tc.translate_image(url=images[i])
+            from src.services import prop_text as _pt
             entry = istore.build_entry(i, result, item_id=item_id, seller_id=seller_id,
-                                       label=make_label(run_id, item_id, i, "TENCENT", folder="seller"))
+                                       label=make_label(run_id, item_id, i, "TENCENT", folder="seller"),
+                                       prop_exempt=_pt.exempt(extra))
             done_entries.append(entry)
             extra["images_ko"] = istore.merge_images_ko(extra, [entry])
             _save(item_id, seller_ids, extra)

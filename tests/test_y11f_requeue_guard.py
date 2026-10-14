@@ -68,7 +68,7 @@ def _drain_with(monkeypatch, sent, on_send=None):
     from src.services import image_translate_auto as A
     monkeypatch.setattr(A, "daily_cap", lambda: 320)
 
-    def fake(url, *, idx, kind, item_id, seller_id, title=""):
+    def fake(url, *, idx, kind, item_id, seller_id, title="", **_kw):
         sent.append((kind, idx))
         if on_send:
             on_send(kind, idx)

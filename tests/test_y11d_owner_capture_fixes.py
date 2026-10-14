@@ -111,27 +111,39 @@ def ocr(monkeypatch):
     return state
 
 
-def test_tiny_blurry_prop_text_is_caution_not_rejection_vrsuk(ocr):
-    """VRSUK 대표사진 실측: 책등 글자 「OUIY TAHTZ OYLNTE」「HRるtk工4品る艺k blllY」(OCR이 깨진 글자로 읽음)."""
+def test_tiny_blurry_prop_text_is_not_text_at_all_vrsuk(ocr):
+    """VRSUK 대표사진 실측: 책등 글자 「OUIY TAHTZ OYLNTE」「HRるtk工4品る艺k blllY」(OCR이 깨진 글자로 읽음).
+    Y11-D는 「소품 글자(작음)」 주의였다 → Y11-G(오너): 소품 글자는 글자가 아니다 — 줄 자체가 없다.
+    반례: 책·포스터 상품이면 소품 규칙을 끈다 → 예전 「소품 글자(작음)」 줄로 돌아온다."""
     from src.services import coupang_image_check as C
     ocr["text"] = "OUIY TAHTZ OYLNTE HRるtk工4品る艺k blllY"
     ocr["boxes"] = [{"x": 600, "y": 300, "w": 30, "h": 40, "src": "OUIY TAHTZ OYLNTE", "conf": 62.0},
                     {"x": 640, "y": 300, "w": 25, "h": 40, "src": "HRるtk工4品る艺k blllY", "conf": 55.0}]
     r = C.check_bytes(_jpeg())
-    keys = {f["key"]: f for f in r["flags"]}
-    assert "text" not in keys and keys["text_small"]["hold"] is False
-    assert keys["text_small"]["line"].startswith("소품 글자(작음) — 지우려면 사진 편집")
-    assert r["text_geometry"]["area_pct"] < 0.5 and r["text_geometry"]["minor"]
+    assert not {"text", "text_small"} & {f["key"] for f in r["flags"]}
+    assert r["prop_only"] and r["prop_n"] == 2 and r["text"] is False
+    book = C.apply_exempt(r, True)
+    keys = {f["key"]: f for f in book["flags"]}
+    assert keys["text_small"]["line"].startswith("소품 글자(작음) — 지우려면 사진 편집") and keys["text_small"]["hold"] is False
 
 
-@pytest.mark.parametrize("words", ["www.tmall.com", "OFFICIAL STORE", "VRSUK Italian brand", "Zaha Hadid"])
-def test_small_watermark_with_real_word_or_trademark_stays_rejection(ocr, words):
-    """반례(오너): 작은 워터마크·로고는 진짜 반려 사유 — 사전 낱말·상표(risk_tokens)면 면적 무관하게 「반려 가능」 유지."""
+@pytest.mark.parametrize("words", ["www.tmall.com", "OFFICIAL STORE", "VRSUK Italian brand"])
+def test_small_watermark_with_real_word_stays_rejection(ocr, words):
+    """반례(오너 Y11-D): 작은 워터마크·로고는 진짜 반려 사유 — 사진·워터마크 낱말이 있으면 소품이 아니고 「반려 가능」 유지."""
     from src.services import coupang_image_check as C
     ocr["text"] = words
     ocr["boxes"] = [{"x": 700, "y": 760, "w": 60, "h": 20, "src": words, "conf": 60.0}]
     keys = {f["key"] for f in C.check_bytes(_jpeg())["flags"]}
     assert "text" in keys and "text_small" not in keys, words
+
+
+def test_trademark_on_a_prop_is_not_a_rejection(ocr):
+    """Y11-G(오너): 소품(책 표지)의 상표 토큰은 차단·주의가 아니다 — 대표사진 판정엔 줄 없음(위험 목록에 「참고」만, 별도 테스트)."""
+    from src.services import coupang_image_check as C
+    ocr["text"] = "Zaha Hadid"
+    ocr["boxes"] = [{"x": 700, "y": 760, "w": 60, "h": 20, "src": "Zaha Hadid", "conf": 60.0}]
+    r = C.check_bytes(_jpeg())
+    assert r["prop_only"] and not {"text", "text_small"} & {f["key"] for f in r["flags"]}
 
 
 def test_big_or_confident_text_stays_rejection(ocr):

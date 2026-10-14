@@ -235,16 +235,22 @@ def text_geometry(result: dict) -> dict:
     for l in lines[:40]:
         b = l["box"]
         try:
-            boxes.append({"x": int(float(b.get("x") or 0)), "y": int(float(b.get("y") or 0)),
-                          "w": int(float(b.get("w") or 0)), "h": int(float(b.get("h") or 0)),
-                          "src": str(l.get("source") or "")[:120], "tgt": str(l.get("target") or "")[:120]})
+            bx = {"x": int(float(b.get("x") or 0)), "y": int(float(b.get("y") or 0)),
+                  "w": int(float(b.get("w") or 0)), "h": int(float(b.get("h") or 0)),
+                  "src": str(l.get("source") or "")[:120], "tgt": str(l.get("target") or "")[:120]}
+            if l.get("prop"):
+                bx["prop"] = True                           # Y11-G: 소품 글자 — 편집 화면 기본 숨김 · 위험 검사 「참고」만
+            boxes.append(bx)
         except (TypeError, ValueError):
             continue
     return {"text_area": ratio, "band": band, "box_size": [int(W), int(H)], "boxes": boxes}
 
 
+PROP_ONLY_REASON = "소품 글자뿐(책등·표지·포장 등) — 원본 그대로"
+
+
 def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "",
-                kind: str = "gallery", label: Optional[Dict[str, str]] = None) -> dict:
+                kind: str = "gallery", label: Optional[Dict[str, str]] = None, prop_exempt: bool = False) -> dict:
     """공급사 결과 1장 → `images_ko` 한 줄. **이 모양을 만드는 자리는 여기 하나다.**
 
     `status`: `done`(번역본이 실제로 놓였다) / `failed`(사유 있음) / `skipped`(할 게 없었다)
@@ -265,6 +271,13 @@ def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "
         })
         return entry
 
+    if result.get("prop_all") and not prop_exempt:
+        # Y11-G(오너): 상자가 전부 소품 글자면 번역본을 만들지 않는다 — 수집 원본이 나간다(텐센트 호출은 이미 했다 · 카운터 1).
+        props = [str(l.get("source") or "") for l in (result.get("lines") or []) if l.get("prop")]
+        entry.update({"status": "skipped", "use": True, "reason": PROP_ONLY_REASON, "prop_only": True,
+                      "prop_text": " ".join(props)[:500], "box_frame": str(result.get("box_frame") or ""),
+                      "source_text": str(result.get("source_text") or "")[:2000]})
+        return entry
     target_text = str(result.get("target_text") or "")
     placed = store_translated(item_id, int(idx), result.get("image_b64") or "",
                               seller_id=seller_id, kind=kind, label=label)

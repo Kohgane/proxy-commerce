@@ -61,8 +61,19 @@ def unopened() -> bool:
     return bool(_UNOPEN_AT[0]) and time.monotonic() - _UNOPEN_AT[0] < UNOPEN_HOLD_SEC
 
 
+#: Y11-G(오너 2026-10-14): 「글자를 못 찾았다」는 실패가 아니라 **글자 없음**이다 — 화면에 코드 원문을 안 보인다.
+NO_TEXT_CODES = ("FailedOperation.ImageNoText",)
+NO_TEXT_LABEL = "글자 없음(OCR)"
+
+
+def no_text(exc) -> bool:
+    return str(getattr(exc, "code", "") or "") in NO_TEXT_CODES
+
+
 def _fail_why(exc) -> str:
     code = getattr(exc, "code", "") or type(exc).__name__
+    if str(code) in NO_TEXT_CODES:
+        return NO_TEXT_LABEL
     if str(code) == UNOPEN_CODE:
         _UNOPEN_AT[0] = time.monotonic()
         return UNOPEN_WHY
@@ -129,6 +140,8 @@ def read(raw: bytes) -> Dict:
     try:
         body = _call(base64.b64encode(small).decode("ascii"))
     except Exception as exc:                                # noqa: BLE001 — 키·네트워크·공급사 오류 전부 「확인 못 함」
+        if no_text(exc):                                     # Y11-G: 글자 없음 — 실패 아님
+            return {"ok": True, "code": "", "why": "", "lines": [], "text": ""}
         code = getattr(exc, "code", "") or type(exc).__name__
         msg = str(getattr(exc, "message", "") or exc)[:80]
         logger.warning("[텐센트 OCR] 호출 실패 %s: %s (%dms)", code, msg, int((time.monotonic() - t0) * 1000))
@@ -169,6 +182,8 @@ def read_boxes(raw: bytes) -> Dict:
     try:
         body = _call(base64.b64encode(small).decode("ascii"))
     except Exception as exc:                                # noqa: BLE001
+        if no_text(exc):                                     # Y11-G: 글자 없음 — 실패 아님(상자 0)
+            return {"ok": True, "why": "", "boxes": [], "size": [W, H], "angle": 0.0}
         why = _fail_why(exc)
         return {"ok": False, "why": why, "code": "ocr_unopened" if why == UNOPEN_WHY else "ocr_failed", "boxes": [], "size": [W, H]}
     # Y11-E(오너 2026-10-14): 텐센트는 기울거나 뒤집힌 글자를 **돌려 세운 그림 기준**으로 줄 수 있다(이미지 번역 실측: 180°).
@@ -189,8 +204,13 @@ def read_boxes(raw: bytes) -> Dict:
         if not rect:
             continue
         x, y, w, h = rect
-        boxes.append({"x": int(x * kx), "y": int(y * ky), "w": int(w * kx), "h": int(h * ky),
-                      "src": txt[:120], "tgt": "", "conf": round(conf, 1)})
+        bx = {"x": int(x * kx), "y": int(y * ky), "w": int(w * kx), "h": int(h * ky),
+              "src": txt[:120], "tgt": "", "conf": round(conf, 1)}
+        from src.services.prop_text import tilt_of
+        t = tilt_of(d.get("Polygon"))                        # Y11-G: 소품 판정용 기울기(거꾸로 = 180 근처)
+        if t is not None:
+            bx["tilt"] = t
+        boxes.append(bx)
     return {"ok": True, "why": "", "boxes": boxes[:40], "size": [W, H], "angle": angle}
 
 

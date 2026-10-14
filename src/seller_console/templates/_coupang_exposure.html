@@ -42,7 +42,8 @@
              (c.square ? '정사각' : '정사각 아님 — 검색 카드엔 가운데를 잘라 보여요(위 카드가 잘린 모습)') + '</li>');
     // Y11-D: 소품(책등 등)의 작고 흐린 글자는 서버가 「주의」 깃발(text_small, 보류 아님)로 내린다 — 그 줄을 그대로 쓴다.
     var minor = (c.flags || []).filter(function (f) { return f && f.key === 'text_small'; })[0];
-    out.push('<li class="cpx-ck ' + (minor ? 'is-warn' : (c.text ? 'is-bad' : (c.text === false ? 'is-ok' : 'is-unk'))) + '" data-role="cpx-check-text">' +
+    // Y11-G: 소품(책등·책 표지·포장) 글자뿐인 사진 — 글자가 아니다. 줄 자체를 안 그린다.
+    if (!c.prop_only) out.push('<li class="cpx-ck ' + (minor ? 'is-warn' : (c.text ? 'is-bad' : (c.text === false ? 'is-ok' : 'is-unk'))) + '" data-role="cpx-check-text">' +
              (minor ? esc(minor.line) : c.text ? '텍스트 있음 — 반려 가능(읽은 글자 「' + esc(c.seen) + '」)'
                      : (c.text === false ? '글자·워터마크 안 보임'
                                          : '글자 판정 못 함(' + esc(c.ocr_why || '텐센트 OCR 실패') + ') — 등록은 막지 않아요')) + '</li>');

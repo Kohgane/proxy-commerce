@@ -3905,6 +3905,8 @@ def coupang_exposure_data(item: dict) -> dict:
     rep = eff[0] if eff else ""
     # Y6-C B: 대표 사진 판정(내려받기 + OCR)은 요청 밖에서 — 아직이면 {state: pending}, 화면이 3초마다 /check로 묻는다.
     chk = cic.start_check(rep) if rep else {"state": "unknown", "why": "이미지 0장", "flags": []}
+    from src.services import prop_text as _pt
+    chk = cic.apply_exempt(chk, _pt.exempt(ex))                 # Y11-G 반례: 책·포스터·간판 상품이면 소품 규칙 끔
     ov = ex.get("rep_image_override") if isinstance(ex.get("rep_image_override"), dict) else {}
     hold = cic.hold(dict(product, images_effective=eff, rep_image_override=ov), "coupang", cached_only=True) if rep else None
     return {"ok": True, "name": product.get("coupang_name") or product.get("title") or "",
@@ -3949,6 +3951,11 @@ def collect_coupang_exposure_check(item_id):
     from src.services import coupang_image_check as cic
     rep = str(request.args.get("rep") or "")
     chk = cic.start_check(rep) if rep else {"state": "unknown", "why": "이미지 0장", "flags": []}
+    try:
+        from src.services import prop_text as _pt
+        chk = cic.apply_exempt(chk, _pt.exempt(json.loads(item.get("extra_json") or "{}") or {}))   # Y11-G 반례
+    except Exception:                                            # noqa: BLE001
+        pass
     hold = None
     if chk.get("state") == "ok":
         try:
@@ -5234,6 +5241,7 @@ def collect_image_edit(item_id: str, kind: str, idx: int):
         _image_edit_save(item_id, ex)                            # Y11-B: 색 덩어리 편집본은 열자마자 되돌린다
     if request.method == "GET":
         before = json.dumps(_ie._entry(ex, kind, idx) or {}, sort_keys=True, ensure_ascii=False)
+        _ie.refresh_pending(ex, kind, idx)                       # Y11-G: 만드는 중이던 편집본이 다 됐으면 칩을 켠다
         p = _ie.plan(ex, kind, idx)
         if json.dumps(_ie._entry(ex, kind, idx) or {}, sort_keys=True, ensure_ascii=False) != before:
             _image_edit_save(item_id, ex)                         # OCR로 새로 읽은 상자 · 틀을 바로잡은 상자 — 다음엔 다시 안 부른다
