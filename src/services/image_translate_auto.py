@@ -195,26 +195,120 @@ def item_failure(item_id: str, extra: dict) -> dict:
     return {}
 
 
+#: Y11-C 건너뛴 사유(사람 말) — 접수·건너뜀 응답과 테스트가 같은 표를 쓴다.
+SKIP_LABEL = {"spacer": "스페이서", "icon": "아이콘", "dup": "중복", "cap": "건당 상한", "done": "이미 번역"}
+
+
+def _is_pwt(e: dict) -> bool:
+    """Y11-C(오너 2026-10-14): 「글자 없는 사진」은 텐센트 `PictureWithoutText`일 때만. D3 「그릴 줄 없음」·OCR 「한자 0」·
+    `Data` 오류 같은 다른 실패는 글자 없음이 아니다(「번역 실패 — 원문」)."""
+    if not isinstance(e, dict):
+        return False
+    return _q().is_no_text(" ".join(str(e.get(k) or "") for k in ("error_code", "error_message", "reason")))
+
+
+def translate_plan(extra: dict, *, retry: bool = False) -> dict:
+    """Y11-C — 이 상품에서 번역 줄에 넣을 장 · 건너뛸 장(사유) · 글자 없는 장. **한 곳에서 정한다**(자동 접수·「다시 번역」 공용).
+
+    실측 10-14 16:07 VRSUK: 「등록에서 빠질 8장(스페이서·아이콘·판촉 배너) 안 보냄」 — 판촉 배너·상표 위험 장은 번역 → 글자 상자 →
+    **사용자 편집 대상**이다(등록 제외 여부는 편집 뒤 Y10 결정). 그래서 빼는 것은 **스페이서(1px)·아이콘(작은 그림)·중복**뿐이다
+    (+ 오너 Z3-2 건당 상한). 판촉·스토어 배너로 읽혔다는 이유로는 빼지 않는다.
+
+    `retry`(「다시 번역」)면 글자 상자가 없는 옛 번역본(#896 이전)·OCR 「한자 0」으로 건너뛴 장도 다시 보낸다 — 편집에 상자가 필요하다.
+    반환 `{send:[(kind, idx, why)], skip:{사유: [(kind, idx)]}, no_text:[(kind, idx)]}`.
+    """
+    from src.services import detail_image_plan as _dip
+    send, skip, no_text = [], {k: [] for k in SKIP_LABEL}, []
+    for src_key, ko_key, kind in (("images", "images_ko", "gallery"), ("detail_images", "detail_images_ko", "detail")):
+        ents = {int(e.get("idx", -1)): e for e in (extra.get(ko_key) or []) if isinstance(e, dict)}
+        cap, seen = per_item_cap(kind), set()
+        for i, u in enumerate([u for u in (extra.get(src_key) or []) if u]):
+            fu = _dip.fix_url(u)
+            ux = _dip.url_exclusion(fu)
+            if ux:
+                skip["spacer" if "스페이서" in ux else "icon"].append((kind, i))
+                continue
+            if fu in seen:
+                skip["dup"].append((kind, i))
+                continue
+            seen.add(fu)
+            if i >= cap:
+                skip["cap"].append((kind, i))                    # Z3-2: 건당 상한 넘는 장은 원본 유지(보내지 않는다)
+                continue
+            e = ents.get(i) or {}
+            st = e.get("status")
+            if st == "excluded" and e.get("vendor") == "rule":     # 받아 보니 작은 그림·스페이서(크기 규칙) — 보내지 않았다
+                skip["spacer" if "스페이서" in str(e.get("exclude") or e.get("reason") or "") else "icon"].append((kind, i))
+                continue
+            if _is_pwt(e):
+                no_text.append((kind, i))                        # 텐센트가 「글자 없음」이라 답한 장 — 다시 보내도 같은 답
+                continue
+            if e.get("vendor") == "d3" and not d3_enabled():
+                send.append((kind, i, "d3"))                     # Y9: 옛 D3 결과(글자만 지움 · 「그릴 줄 없음」 포함) → 텐센트 본선
+            elif st == "done":
+                if isinstance(e.get("boxes"), list) and e.get("box_size"):
+                    skip["done"].append((kind, i))
+                elif retry:
+                    send.append((kind, i, "no_boxes"))           # 상자 없는 옛 번역본 — 편집하려면 상자가 있어야 한다
+                else:
+                    skip["done"].append((kind, i))
+            elif st in ("skipped", "excluded") and not retry:
+                skip["done"].append((kind, i))
+            elif st in ("queued", "running"):
+                send.append((kind, i, "waiting"))
+            else:
+                send.append((kind, i, "failed" if st == "failed" else ("ocr_skip" if st == "skipped" else "new")))
+    return {"send": send, "skip": skip, "no_text": no_text}
+
+
+def plan_line(plan: dict, accepted: int, waiting: int = 0) -> str:
+    """「접수 4장 · 건너뜀 8장(스페이서 1 · 아이콘 1 · 이미 번역 6) · 글자 없음 1장」 — 실제 수만(지어낸 숫자 0)."""
+    sk = [(SKIP_LABEL[k], len(v)) for k, v in plan["skip"].items() if v]
+    n_skip = sum(n for _l, n in sk)
+    parts = [f"접수 {accepted}장"]
+    if waiting:
+        parts.append(f"이미 대기 중 {waiting}장")
+    if n_skip:
+        parts.append(f"건너뜀 {n_skip}장(" + " · ".join(f"{l} {n}" for l, n in sk) + ")")
+    if plan["no_text"]:
+        parts.append(f"글자 없음 {len(plan['no_text'])}장")
+    return " · ".join(parts)
+
+
 def retry_item(user_id: str, item_id: str, url: str, extra: dict, *, may_resume: bool) -> dict:
-    """「다시 번역」 — 이 상품의 실패한 장만 다시 대기로(+아직 안 넣은 장 접수). 차단기가 멈춰 있으면 공유 사용자만 재개."""
-    n = _q().retry_failed(item_id)
-    n += enqueue_after_enrich(user_id, item_id, url, extra)
+    """「다시 번역」 — `translate_plan(retry=True)`이 고른 장만 줄에 넣는다(새 줄 + 끝난 줄 다시 대기). 차단기가 멈춰 있으면 공유 사용자만 재개.
+
+    Y11-C: 예전엔 큐의 「실패」 줄을 통째로 되살려(`retry_failed`) 이미 번역된 장(갤러리 1~3)까지 다시 돌려 덮어썼고,
+    화면은 그 줄 수(「26장을 다시 넣었어요」)를 말했다 — 실제 접수(4장)와 달랐다. 이제 계획과 접수 수만 말한다."""
+    plan = translate_plan(extra, retry=True)
+    q = _q()
+    pages = [(k, i) for k, i, _w in plan["send"]]
+    new = q.enqueue(user_id, item_id, pages) if pages else 0
+    again = q.requeue_pages(item_id, pages) if pages else 0
+    accepted = new + again
+    waiting = max(0, len(pages) - accepted)                  # 이미 대기·진행 중인 장(같은 장을 두 번 보내지 않는다)
     st = pause_state()
     resumed = False
     if st.get("paused") and may_resume:
         resume()
         resumed = True
-    elif n:
+    elif accepted:
         kick()
     s2 = status(item_id)
-    return {"ok": True, "requeued": n, "resumed": resumed, "paused": bool(s2.get("paused")) and not resumed,
-            "pause_reason": s2.get("pause_reason") or "", "today": s2.get("today"), "cap": s2.get("cap")}
+    logger.info("[이미지번역·다시] item=%s %s", item_id, plan_line(plan, accepted, waiting))
+    return {"ok": True, "requeued": accepted, "accepted": accepted, "waiting": waiting, "resumed": resumed,
+            "paused": bool(s2.get("paused")) and not resumed, "pause_reason": s2.get("pause_reason") or "",
+            "today": s2.get("today"), "cap": s2.get("cap"), "line": plan_line(plan, accepted, waiting),
+            "pages": [{"kind": k, "idx": i, "why": w} for k, i, w in plan["send"]],
+            "skipped": {k: [{"kind": a, "idx": b} for a, b in v] for k, v in plan["skip"].items() if v},
+            "no_text": [{"kind": a, "idx": b} for a, b in plan["no_text"]]}
 
 
 # ── 접수 ──────────────────────────────────────────────────────────────────────
 
 def enqueue_after_enrich(user_id: str, item_id: str, url: str, extra: dict) -> int:
-    """보강 완료된 중국 소싱처 초안 → 갤러리+상세를 장 단위로 큐에. 이미 번역된 장·큐에 있는 장은 건너뛴다."""
+    """보강 완료된 중국 소싱처 초안 → 갤러리+상세를 장 단위로 큐에(`translate_plan`). 이미 번역된 장·큐에 있는 장은 건너뛴다.
+    Y11-C: 판촉·스토어 배너로 읽힌 장도 **보낸다**(편집 대상) — 빼는 건 스페이서·아이콘·중복(+건당 상한)뿐."""
     src = source_of(url)
     if not src or not settings(user_id).get(src):
         return 0
@@ -226,44 +320,14 @@ def enqueue_after_enrich(user_id: str, item_id: str, url: str, extra: dict) -> i
             return 0
     except Exception:
         return 0
-    from src.services import detail_image_plan as _dip
-    done, redo, cut_text = set(), [], set()
-    from src.db.image_translate_queue_pg import is_no_text
-    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
-        for e in (extra.get(key) or []):
-            if not isinstance(e, dict):
-                continue
-            i = int(e.get("idx", -1))
-            if kind == "detail" and not e.get("promo_include") and _dip.text_exclusion(_dip.entry_text(e)):
-                cut_text.add(i)                   # Y9: 이미 읽은 글자가 판촉·스토어 배너 — 등록에서 빠지니 번역도 안 보낸다(「그래도 넣기」면 다시)
-                continue
-            if e.get("vendor") == "d3" and not d3_enabled():
-                if is_no_text(str(e.get("error_message") or e.get("reason") or "")):
-                    done.add((kind, i))           # 「그릴 줄 없음」 = 글자 없는 사진 — 다시 보내도 같은 답(원본 그대로)
-                else:
-                    redo.append((kind, i))        # Y9: 옛 D3 결과(한국어 없이 글자만 지움 · 실패) → 텐센트 본선으로 다시
-            elif e.get("status") in ("done", "skipped", "excluded"):
-                done.add((kind, i))
-    pages, over, cut = [], 0, 0
-    for key, kind in (("images", "gallery"), ("detail_images", "detail")):
-        cap = per_item_cap(kind)
-        for i, u in enumerate([u for u in (extra.get(key) or []) if u]):
-            if i >= cap:
-                over += 1                       # Z3-2: 건당 상한 넘는 장은 원본 그대로(보내지 않는다)
-                continue
-            if kind == "detail" and (_dip.url_exclusion(_dip.fix_url(u)) or i in cut_text):
-                cut += 1                        # Y9: 스페이서·작은 아이콘 — 보내지 않는다(등록에서도 빠진다)
-                continue
-            if (kind, i) not in done:
-                pages.append((kind, i))
-    if over or cut:
-        logger.info("[이미지번역·자동] item=%s 건당 상한 넘는 %d장 원본 유지 · 등록에서 빠질 %d장(스페이서·아이콘·판촉 배너) 안 보냄", item_id, over, cut)
+    plan = translate_plan(extra)
+    pages = [(k, i) for k, i, _w in plan["send"]]
     n = _q().enqueue(user_id, item_id, pages) if pages else 0
-    want_redo = [p for p in redo if p in set(pages)]
-    if want_redo:
-        n += _q().requeue_pages(item_id, want_redo)
+    redo = [(k, i) for k, i, w in plan["send"] if w == "d3"]
+    if redo:
+        n += _q().requeue_pages(item_id, redo)              # Y9: 옛 D3 결과 → 텐센트 본선으로 다시
     if n:
-        logger.info("[이미지번역·자동] 접수 item=%s %s장(갤러리+상세)", item_id, n)
+        logger.info("[이미지번역·자동] item=%s %s", item_id, plan_line(plan, n))
         kick()
     return n
 
@@ -322,11 +386,13 @@ def _drain(max_pages: int = 10_000) -> int:
             q.requeue(job["id"])
             logger.warning("[이미지번역·자동] 메모리 여유 없음(%dMB ≥ %dMB) — 대기", _cur_mb, _lim_mb)
             return n
-        took, today = q.take_start(_day_key(), daily_cap())
-        if not took:
+        today = q.day_count(_day_key())
+        if today >= daily_cap():
             q.requeue(job["id"])                  # 보내지 않았다 — 대기로(내일 KST 자정 뒤 다시)
             logger.info("[이미지번역·자동] 일일 상한 도달(%s/%s) — 대기", today, daily_cap())
             return n
+        # Y11-C: 「오늘 n/상한」은 **텐센트에 실제로 보낸 수**다 — 세는 곳은 `translate_image`(PictureWithoutText도 1회 ·
+        #   OCR 「한자 0」·스페이서·예산 건너뜀은 0회). 예전엔 줄에서 꺼낼 때마다 셌다(보내지 않은 장도).
         try:
             status_, reason = _translate_job(job)
         except Exception as exc:                   # pragma: no cover
@@ -378,6 +444,9 @@ def _translate_job(job: dict) -> tuple:
     if st not in ("done", "skipped") and _q().is_no_text(why):
         # Y4: 글자 없는 사진 = **성공(원본 유지)**. 실패로 세면 차단기가 멀쩡한 큐를 멈춘다(실측 20장 중 14장이 이것).
         return "skipped", f"글자 없는 사진 — 원본 그대로({why[:60]})"
+    if st not in ("done", "skipped") and _q().is_benign(why):
+        # Y11-C: 옛 D3 「그릴 줄 없음」 — 큐는 멈추지 않지만(Y4) **글자 없는 사진이라 부르지 않는다**(PWT만 그렇게 부른다)
+        return "skipped", f"원본 그대로 — 그릴 줄 없음(D3) · {why[:60]}"
     if st == "excluded":                          # Y9: 주소·크기로 뺀 장 — 보내지 않았다(실패 아님)
         return "skipped", str(entry.get("reason") or "")
     return (st if st in ("done", "skipped") else "failed"), why
@@ -430,7 +499,7 @@ def translate_page_tencent(url: str, *, idx: int, kind: str, item_id: str, selle
         budget.record_skip("ocr")
         return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "tencent-ocr", "use": True, "ms": 0, "at": now_iso,
                 "ocr_text": str(seen or "")[:500], "section": dip.section(seen),
-                "reason": "글자 없는 사진(OCR 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
+                "reason": "중국어 글자 없음(OCR 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
     m = budget.mode()
     ok_send, spent, cap = budget.can_send(m)
     if not ok_send:
@@ -441,7 +510,7 @@ def translate_page_tencent(url: str, *, idx: int, kind: str, item_id: str, selle
     budget.record_call(m, bool(res.get("ok")))
     if not res.get("ok") and "PictureWithoutText" in str(res.get("error_code") or ""):
         return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "tencent", "use": True,
-                "ms": int(res.get("ms") or 0), "at": now_iso, "reason": "글자 없는 사진 — 원본 그대로"}
+                "ms": int(res.get("ms") or 0), "at": now_iso, "reason": "글자 없는 사진(PictureWithoutText) — 원본 그대로"}
     label = make_label(run_stamp("auto"), item_id, idx, "TENCENT", folder="seller")
     entry = istore.build_entry(idx, res, item_id=item_id, seller_id=seller_id, kind=kind, label=label)
     entry["vendor"] = "tencent"
@@ -474,7 +543,7 @@ def translate_page_d3(url: str, *, idx: int, kind: str, item_id: str, seller_id:
     if has is False:
         budget.record_skip("ocr")
         return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "tencent-ocr", "ms": 0, "at": now_iso,
-                "reason": "글자 없는 사진(OCR 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
+                "reason": "중국어 글자 없음(OCR 판정 — 한자 0) — 원본 그대로" + (f" · 읽은 글자 「{seen}」" if seen else "")}
     # ② 월 예산(계정 전체 하나) — 넘으면 보내지 않고 원본으로 등록을 계속한다.
     m = budget.mode()
     ok_send, spent, cap = budget.can_send(m)

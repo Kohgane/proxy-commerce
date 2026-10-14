@@ -117,11 +117,14 @@ def test_retry_requeues_failed_pages_and_resume_is_shared_only(monkeypatch):
     q.finish(job["id"], "failed", "FailedOperation.ServiceIsolate")
     A.pause("번역 실패 20장 누적")
     d = _client(user_id="m5b-img", user_email="stranger@example.com").post(f"/seller/collect/{iid}/image-translate/retry").get_json()
-    assert d["ok"] and d["requeued"] == 1 and d["paused"] and "관리자가 재개" in d["message"]
-    assert q.counts(iid)["queued"] == 1 and A.pause_state().get("paused")
+    # Y11-C: 「다시 번역」 = 번역 계획 그대로 — 실패한 상세 1장 + 아직 안 보낸 갤러리 2장 = 접수 3장(응답이 그 수를 말한다)
+    assert d["ok"] and d["requeued"] == 3 and d["paused"] and "관리자가 재개" in d["message"]
+    assert d["message"].startswith("접수 3장") and "오늘 텐센트 호출 0/" in d["message"]
+    assert q.counts(iid)["queued"] == 3 and A.pause_state().get("paused")
     q.finish(q.lease_next()["id"], "failed", "x")
     d = _client(user_id="m5b-img", user_email="mom@example.com").post(f"/seller/collect/{iid}/image-translate/retry").get_json()
-    assert d["requeued"] == 1 and d["resumed"] and not A.pause_state().get("paused") and "다시 돌렸어요" in d["message"]
+    assert d["requeued"] == 1 and d["waiting"] == 2 and d["resumed"] and not A.pause_state().get("paused")
+    assert "접수 1장 · 이미 대기 중 2장" in d["message"] and "다시 돌렸어요" in d["message"]
 
 
 def test_card_template_shows_badge_and_retry():

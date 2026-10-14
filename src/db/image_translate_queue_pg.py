@@ -181,7 +181,14 @@ def started_since(since) -> int:
 
 
 #: Y4(오너 2026-10-04): **글자 없는 사진은 실패가 아니다** — 원본을 그대로 쓰면 된다. 예전 기록(`failed`)도 세지 않는다.
-NO_TEXT_MARKERS = ("그릴 줄이 없습니다", "无文本", "PictureWithoutText")
+#: Y11-C(오너 2026-10-14): **텐센트 `PictureWithoutText`만** 글자 없는 사진이다. D3 「그릴 줄이 없습니다」는 글자가 있어도 났다
+#:   (VRSUK 상세 4번 쿠폰 사진 — 다시 보내니 텐센트 상자 34개) → 「번역 실패 — 원문」으로 둔다.
+NO_TEXT_MARKERS = ("无文本", "PictureWithoutText")
+
+
+#: 차단기가 **진짜 실패로 세지 않는** 사유 — 글자 없는 사진(PWT) + 옛 D3 「그릴 줄 없음」(Y4 오너 결정은 그대로: 큐를 멈추지 않는다).
+#:   화면 분류(「글자 없는 사진」)는 `is_no_text`(PWT만), 차단기는 `is_benign` — 둘을 나눴다(Y11-C).
+BENIGN_MARKERS = NO_TEXT_MARKERS + ("그릴 줄이 없습니다",)
 
 
 def is_no_text(reason) -> bool:
@@ -189,12 +196,17 @@ def is_no_text(reason) -> bool:
     return any(m in r for m in NO_TEXT_MARKERS)
 
 
+def is_benign(reason) -> bool:
+    r = str(reason or "")
+    return any(m in r for m in BENIGN_MARKERS)
+
+
 def failed_since(since) -> int:
     """차단기가 세는 **진짜 실패** 수(글자 없는 사진 제외)."""
     if not _enabled():
         with _LOCK:
             return sum(1 for r in _MEM_Q if r["status"] == "failed" and r["finished_at"] and r["finished_at"] >= since
-                       and not is_no_text(r.get("reason")))
+                       and not is_benign(r.get("reason")))
     with pg.query() as cur:
         cur.execute("SELECT count(*) FROM image_translate_queue WHERE status='failed' AND finished_at >= %s "
                     "AND coalesce(reason,'') NOT LIKE %s AND coalesce(reason,'') NOT LIKE %s",
@@ -203,7 +215,7 @@ def failed_since(since) -> int:
 
 
 def failure_breakdown(since) -> list:
-    """Y4: 실패 사유 분포 `[(사유, 건수, 글자없음?)]` — 진단·보고용."""
+    """Y4: 실패 사유 분포 `[(사유, 건수, 차단기 제외?)]` — 진단·보고용(글자 없는 사진·옛 D3 「그릴 줄 없음」 = 제외)."""
     if not _enabled():
         with _LOCK:
             rows = {}
@@ -211,11 +223,11 @@ def failure_breakdown(since) -> list:
                 if r["status"] == "failed" and r["finished_at"] and r["finished_at"] >= since:
                     k = str(r.get("reason") or "")[:80]
                     rows[k] = rows.get(k, 0) + 1
-        return sorted(((k, n, is_no_text(k)) for k, n in rows.items()), key=lambda x: -x[1])
+        return sorted(((k, n, is_benign(k)) for k, n in rows.items()), key=lambda x: -x[1])
     with pg.query() as cur:
         cur.execute("SELECT left(coalesce(reason,''),80), count(*) FROM image_translate_queue "
                     "WHERE status='failed' AND finished_at >= %s GROUP BY 1 ORDER BY 2 DESC", (since,))
-        return [(r[0], int(r[1]), is_no_text(r[0])) for r in cur.fetchall()]
+        return [(r[0], int(r[1]), is_benign(r[0])) for r in cur.fetchall()]
 
 
 def labeled_pages(limit: int = 60) -> list:
@@ -230,14 +242,15 @@ def labeled_pages(limit: int = 60) -> list:
                     continue
                 if r["status"] == "done":
                     out.append((r["user_id"], r["item_id"], r["kind"], int(r["idx"]), True))
-                elif is_no_text(reason) or "글자 없는 사진" in reason:
+                elif is_no_text(reason):
                     out.append((r["user_id"], r["item_id"], r["kind"], int(r["idx"]), False))
         return out[:limit]
     with pg.query() as cur:
+        # Y11-C: 「글자 없음」 라벨은 텐센트 PWT만 — 옛 D3 「그릴 줄 없음」은 글자가 있어도 났다(라벨로 쓰면 OCR 정확도가 거짓이 된다)
         cur.execute("SELECT user_id, item_id, kind, idx, status, coalesce(reason,'') FROM image_translate_queue "
-                    "WHERE status='done' OR reason LIKE %s OR reason LIKE %s OR reason LIKE %s "
+                    "WHERE status='done' OR reason LIKE %s OR reason LIKE %s "
                     "ORDER BY finished_at DESC NULLS LAST LIMIT %s",
-                    ("%그릴 줄이 없습니다%", "%无文本%", "%글자 없는 사진%", int(limit)))
+                    ("%无文本%", "%PictureWithoutText%", int(limit)))
         for uid, iid, kind, idx, st, reason in cur.fetchall():
             if "로컬 판정" in reason or "OCR 판정" in reason:
                 continue                                   # 우리 판정으로 건너뛴 장은 라벨이 아니다(순환)

@@ -3967,7 +3967,7 @@ def collect_coupang_exposure(item_id):
 
 @bp.post("/collect/<item_id>/image-translate/retry")
 def collect_image_translate_retry(item_id):
-    """M5 후속 「다시 번역」: 이 상품의 실패한 장만 다시 큐로(일일 상한 안에서). 차단기가 멈춰 있으면 공유 사용자만 재개."""
+    """「다시 번역」(Y11-C): `translate_plan(retry=True)`이 고른 장만 줄에 — 응답은 실제 접수·건너뜀(사유)·글자 없음 수. 차단기가 멈춰 있으면 공유 사용자만 재개."""
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
     item = _get_owned_item(item_id)
@@ -3981,8 +3981,10 @@ def collect_image_translate_retry(item_id):
     from . import market_pick as _mp
     out = _ita.retry_item(str(item.get("seller_id") or _seller_id()), item_id, str(item.get("url") or ""), ex,
                           may_resume=_mp.session_is_shared())
-    msg = (f"{out['requeued']}장을 다시 넣었어요 — 오늘 {out['today']}/{out['cap']}장 사용" if out["requeued"]
-           else "다시 넣을 실패한 장이 없어요")
+    # Y11-C: 실제 접수 수만 말한다(예전 「26장을 다시 넣었어요」는 큐의 옛 실패 줄 수였다 — 실제 접수 4장)
+    msg = f"{out['line']} · 오늘 텐센트 호출 {out['today']}/{out['cap']}장"
+    if not out["accepted"] and not out.get("waiting"):
+        msg = "다시 보낼 장이 없어요 — " + msg
     if out["paused"]:
         msg += f" · 번역 큐가 멈춰 있어요({out['pause_reason'][:80]}) — 관리자가 재개해야 돌아요"
     elif out["resumed"]:
