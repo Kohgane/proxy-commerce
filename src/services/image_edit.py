@@ -41,6 +41,8 @@ PAD_RATIO = 0.10
 SUBJECT_MAX_RATIO = 0.70
 ENV_AUTO = "IMAGE_EDIT_AUTO"
 NO_TEXT_WHY = "이 사진에서 글자를 못 찾았어요 — 지울 것이 없어요"
+#: Y11-C2: 건당 상한을 넘어 번역을 보내지 않은 장(원본) — 편집은 OCR 상자로
+CAPPED_LABEL = "상한 — 번역 안 됨(원본)"
 
 
 def auto_enabled() -> bool:
@@ -244,21 +246,22 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
     if isinstance(e.get("boxes"), list) and e.get("box_size"):
         return {"ok": True, "boxes": e["boxes"], "size": e["box_size"], "source": e.get("boxes_source") or "translate",
                 "why": "" if e["boxes"] else NO_TEXT_WHY}
-    from src.db.image_translate_queue_pg import is_no_text
-    if e.get("status") in ("failed", "skipped") and is_no_text(
-            " ".join(str(e.get(k) or "") for k in ("error_code", "error_message", "reason"))) or str(
-            e.get("reason") or "").startswith("글자 없는 사진"):
+    from src.services.image_translate_auto import _is_pwt, per_item_cap
+    if e.get("status") in ("failed", "skipped") and _is_pwt(e):   # Y11-C: 「글자 없음」은 텐센트 PictureWithoutText만
         return {"ok": True, "boxes": [], "size": [0, 0], "source": "translate", "why": NO_TEXT_WHY}
-    if not _translated(e):
+    # Y11-C2(오너 2026-10-14): 건당 상한(갤러리 6 · 상세 30)을 넘은 장은 번역을 보내지 않는다(우회 안 함) — 원본에서 OCR로 상자를 읽어 편집
+    capped = int(idx) >= per_item_cap(kind) and not _translated(e)
+    if not _translated(e) and not capped:
         return {"ok": False, "boxes": [], "size": [0, 0], "need_translate": True,
                 "why": "아직 이 사진을 번역하지 않았어요 — 번역하면 글자 상자를 받아요(번역이 먼저예요)"}
     url = base_url(extra, kind, idx)
     if not url:
-        return {"ok": False, "why": "사진 주소가 없어요", "boxes": [], "size": [0, 0]}
+        return {"ok": False, "why": "사진 주소가 없어요", "boxes": [], "size": [0, 0], "capped": capped}
     from src.services import ocr_tencent as O
     if O.unopened():
-        return {"ok": False, "why": O.UNOPEN_WHY + " · 개통 전에는 다시 번역하면 번역 결과의 글자 상자를 써요",
-                "boxes": [], "size": [0, 0], "need_translate": True}
+        return {"ok": False, "boxes": [], "size": [0, 0], "need_translate": not capped, "capped": capped,
+                "why": (CAPPED_LABEL + " · " + O.UNOPEN_WHY) if capped else
+                       (O.UNOPEN_WHY + " · 개통 전에는 다시 번역하면 번역 결과의 글자 상자를 써요")}
     try:
         import requests
         r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
@@ -269,13 +272,21 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
     del raw
     if not got.get("ok"):
         why = got.get("why") or "글자 상자를 읽지 못했어요"
+        if capped:
+            return {"ok": False, "why": CAPPED_LABEL + " · " + why, "boxes": [], "size": [0, 0], "capped": True}
         return {"ok": False, "why": why + " · 다시 번역하면 번역 결과의 글자 상자를 써요", "boxes": [], "size": [0, 0],
                 "need_translate": True}
     e = _entry(extra, kind, idx, create=True)
     e.update(boxes=got["boxes"], box_size=got["size"], boxes_source="ocr", boxes_at=datetime.now(timezone.utc).isoformat())
     if not e.get("source_text"):
         e["ocr_text"] = " ".join(b["src"] for b in got["boxes"])[:2000]
-    return {"ok": True, "boxes": got["boxes"], "size": got["size"], "source": "ocr", "why": "" if got["boxes"] else NO_TEXT_WHY}
+    return {"ok": True, "boxes": got["boxes"], "size": got["size"], "source": "ocr", "capped": capped,
+            "why": "" if got["boxes"] else NO_TEXT_WHY}
+
+
+def _cap_of(kind: str) -> int:
+    from src.services.image_translate_auto import per_item_cap
+    return per_item_cap(kind)
 
 
 def legacy_ops(ed: Optional[dict]) -> bool:
@@ -333,7 +344,9 @@ def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, re
     e = _entry(extra, kind, idx) or {}
     ed = e.get("edit") if isinstance(e.get("edit"), dict) else None
     why = bx.get("why") or ("" if boxes else NO_TEXT_WHY)
+    capped = bool(bx.get("capped")) or (int(idx) >= _cap_of(kind) and not _translated(_entry(extra, kind, idx) or {}))
     return {"ok": True, "why": why, "need_translate": bool(bx.get("need_translate")), "source": bx.get("source", ""),
+            "capped": capped, "capped_label": CAPPED_LABEL if capped else "",
             "url": url, "size": [W, H], "real": [int(real[0] or 0), int(real[1] or 0)], "boxes": boxes,
             "subject": subj, "auto": auto_enabled(), "edit": ed, "cost": cost(0), "today": today_count(), "cap": daily_cap(),
             "spent": round(sum(float(x.get("credits") or 0) for x in (ed or {}).get("history") or []), 3) if ed else 0.0}

@@ -23,6 +23,7 @@ import os
 import re
 import threading
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,8 @@ def _is_pwt(e: dict) -> bool:
     `Data` 오류 같은 다른 실패는 글자 없음이 아니다(「번역 실패 — 원문」)."""
     if not isinstance(e, dict):
         return False
+    if e.get("vendor") == "tencent" and str(e.get("reason") or "").startswith("글자 없는 사진 — 원본 그대로"):
+        return True                                   # #898 이전 PWT 기록 — 사유에 코드가 안 적혔다(그 문구는 PWT 경로만 썼다)
     return _q().is_no_text(" ".join(str(e.get(k) or "") for k in ("error_code", "error_message", "reason")))
 
 
@@ -261,17 +264,24 @@ def translate_plan(extra: dict, *, retry: bool = False) -> dict:
     return {"send": send, "skip": skip, "no_text": no_text}
 
 
-def plan_line(plan: dict, accepted: int, waiting: int = 0) -> str:
-    """「접수 4장 · 건너뜀 8장(스페이서 1 · 아이콘 1 · 이미 번역 6) · 글자 없음 1장」 — 실제 수만(지어낸 숫자 0)."""
-    sk = [(SKIP_LABEL[k], len(v)) for k, v in plan["skip"].items() if v]
+def plan_line(plan: dict, accepted: int, waiting: int = 0, in_line: Optional[int] = None, cap_full: bool = False) -> str:
+    """「접수 30장 · 건너뜀 2장(스페이서 1 · 아이콘 1) · 건당 상한 n장 · 글자 없음 n장 · 대기 중 n장 (10분 내 처리)」 — 실제 수만.
+    Y11-C2(오너): 상한에 걸린 장은 따로 센다(어느 장이 잘렸는지 보이게) · 「대기 중」은 이 상품이 지금 줄에 선 장(누르자마자 「오늘 0」이라도
+    처리 전인 것이 보이게 — 큐는 바로 돌고, 늦어도 10분 크론이 비운다)."""
+    sk = [(SKIP_LABEL[k], len(v)) for k, v in plan["skip"].items() if v and k != "cap"]
     n_skip = sum(n for _l, n in sk)
     parts = [f"접수 {accepted}장"]
     if waiting:
         parts.append(f"이미 대기 중 {waiting}장")
     if n_skip:
         parts.append(f"건너뜀 {n_skip}장(" + " · ".join(f"{l} {n}" for l, n in sk) + ")")
-    if plan["no_text"]:
-        parts.append(f"글자 없음 {len(plan['no_text'])}장")
+    if plan["skip"].get("cap"):
+        parts.append(f"건당 상한 {len(plan['skip']['cap'])}장")
+    parts.append(f"글자 없음 {len(plan['no_text'])}장")
+    if in_line:
+        # 오늘 상한이 찼으면 10분 안에 돌지 않는다 — 그렇게 말한다(「10분 내」 거짓 금지)
+        parts.append(f"대기 중 {in_line}장 (오늘 상한 도달 — 내일 0시 KST 이후 처리)" if cap_full
+                     else f"대기 중 {in_line}장 (10분 내 처리)")
     return " · ".join(parts)
 
 
@@ -295,10 +305,14 @@ def retry_item(user_id: str, item_id: str, url: str, extra: dict, *, may_resume:
     elif accepted:
         kick()
     s2 = status(item_id)
-    logger.info("[이미지번역·다시] item=%s %s", item_id, plan_line(plan, accepted, waiting))
+    ic = s2.get("item") or {}
+    in_line = int(ic.get("queued") or 0) + int(ic.get("running") or 0)
+    cap_full = int(s2.get("today") or 0) >= int(s2.get("cap") or 0) > 0
+    line = plan_line(plan, accepted, waiting, in_line, cap_full)
+    logger.info("[이미지번역·다시] item=%s %s", item_id, line)
     return {"ok": True, "requeued": accepted, "accepted": accepted, "waiting": waiting, "resumed": resumed,
             "paused": bool(s2.get("paused")) and not resumed, "pause_reason": s2.get("pause_reason") or "",
-            "today": s2.get("today"), "cap": s2.get("cap"), "line": plan_line(plan, accepted, waiting),
+            "today": s2.get("today"), "cap": s2.get("cap"), "line": line, "in_line": in_line,
             "pages": [{"kind": k, "idx": i, "why": w} for k, i, w in plan["send"]],
             "skipped": {k: [{"kind": a, "idx": b} for a, b in v] for k, v in plan["skip"].items() if v},
             "no_text": [{"kind": a, "idx": b} for a, b in plan["no_text"]]}

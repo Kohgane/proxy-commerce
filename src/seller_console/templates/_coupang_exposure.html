@@ -72,7 +72,8 @@
         '<img src="' + esc(src) + '" alt="' + (n + 1) + '번째" referrerpolicy="no-referrer" loading="lazy">' +
         '<figcaption>' + (s.rep ? '<span class="cpx-badge" data-role="cpx-rep-badge">대표</span>' : '<span class="cpx-n">' + (n + 1) + '</span>') +
         (s.edited ? '<span class="cpx-src" data-role="cpx-edited">' + (s.edited === 'auto' ? '자동 편집' : '편집본') + '</span>'
-                  : (s.source === 'translated' ? '<span class="cpx-src">번역본</span>' : '')) + '</figcaption>' +
+                  : (s.source === 'translated' ? '<span class="cpx-src">번역본</span>'
+                     : (s.capped ? '<span class="cpx-src" data-role="cpx-capped">상한 — 번역 안 됨(원본)</span>' : ''))) + '</figcaption>' +
         '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button>' +
         (s.rep ? '' : '<button type="button" class="cpx-act" data-role="cpx-rep" data-idx="' + s.idx + '">이 장을 대표로</button>') +
         (s.translatable ? '<button type="button" class="cpx-act" data-role="cpx-use" data-idx="' + s.idx + '" data-use="' + (s.use ? '0' : '1') + '">' +
@@ -86,6 +87,13 @@
       ' — 원본 사진으로 나가요(등록은 막지 않아요). ' +
       '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' +
       (f.cap ? ' <span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(f.today) + '/' + esc(f.cap) + '장</span>' : '') + '</p>' : '';
+    // Y11-C2: 실패가 없어도 「다시 번역」은 늘 보인다 — 상자 없는 옛 번역본(대표사진 등)을 다시 받으려면 누를 곳이 있어야 한다
+    var st = d.imgko_status;
+    if (!fail && st) {
+      fail = '<p class="cpx-cap" data-role="cpx-imgko-line">이미지 번역 ' +
+        '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' +
+        ' <span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(st.today) + '/' + esc(st.cap) + '장</span></p>';
+    }
     // Y11: 등록에서 빠진 사진(판촉 의심·위험) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     var out = (d.left_out || []).map(function (s) {
       return '<figure class="cpx-tile is-out" data-role="cpx-out-tile" data-idx="' + s.idx + '">' +

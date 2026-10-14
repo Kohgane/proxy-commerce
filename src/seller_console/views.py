@@ -3887,11 +3887,15 @@ def coupang_exposure_data(item: dict) -> dict:
     eff = its.effective_images(ex, originals=originals, item_id=iid)
     order = [i for i, _u in its.rep_first([(p["idx"], p) for p in plan.values() if not p.get("promo_excluded")]
                                           or [(p["idx"], p) for p in plan.values()], originals, ex)]
+    from src.services.image_translate_auto import per_item_cap as _cap
+    _gal_cap = _cap("gallery")
     _edits = {int(e.get("idx", -1)): e.get("edit") for e in (ex.get("images_ko") or [])
               if isinstance(e, dict) and isinstance(e.get("edit"), dict) and e.get("url") == e["edit"].get("url")}
     strip = [{"idx": i, "url": eff[n] if n < len(eff) else plan[i]["url"], "original": plan[i]["original"],
               "source": plan[i]["source"], "translatable": plan[i]["translatable"], "use": plan[i]["use"],
-              "rep": n == 0, "edited": (_edits.get(i) or {}).get("by") or ""} for n, i in enumerate(order)]
+              "rep": n == 0, "edited": (_edits.get(i) or {}).get("by") or "",
+              # Y11-C2(오너 2026-10-14): 건당 상한(갤러리 6)을 넘은 장 — 번역을 보내지 않는다(원본). 편집은 OCR 상자로 된다.
+              "capped": i >= _gal_cap and plan[i]["source"] != "translated" and not _edits.get(i)} for n, i in enumerate(order)]
     # Y11: 등록에서 빠진 갤러리 사진(판촉 의심·위험 제외) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     _risk_x = {int(e.get("idx", -1)) for e in (ex.get("images_ko") or []) if isinstance(e, dict) and e.get("risk_exclude")}
     left_out = [{"idx": i, "original": plan[i]["original"], "url": plan[i]["url"],
@@ -3908,7 +3912,22 @@ def coupang_exposure_data(item: dict) -> dict:
             "rep": rep, "rep_original": strip[0]["original"] if strip else "", "strip": strip[:10], "left_out": left_out[:10], "check": chk,
             "hold": hold, "override": ov if ov and ov.get("url") == rep else None,
             # M5 후속: 이미지 번역이 왜 안 됐나(공급사 원문) — 카드 「나갈 사진」 옆 배지. 없으면 null.
-            "imgko_fail": _imgko_failure(iid, ex)}
+            "imgko_fail": _imgko_failure(iid, ex),
+            # Y11-C2: 실패가 없어도 「다시 번역」 자리 + 오늘 텐센트 호출 수(공급사 미연결이면 null — 누를 곳을 만들지 않는다)
+            "imgko_status": _imgko_status()}
+
+
+def _imgko_status():
+    try:
+        from src.services import image_translate_tencent as _tc
+        if not _tc.is_configured():
+            return None
+        from src.services import image_translate_auto as _ita
+        st = _ita.status()
+        return {"today": st.get("today"), "cap": st.get("cap")}
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[이미지번역] 오늘 호출 수 읽기 실패: %s", exc)
+        return None
 
 
 def _imgko_failure(item_id: str, ex: dict):

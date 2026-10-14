@@ -63,7 +63,8 @@ def test_vrsuk_retry_accepts_main_photo_and_promo_eames_pages_and_skips_only_spa
     assert d["no_text"] == [{"kind": "gallery", "idx": 4}]                      # 텐센트 PictureWithoutText만 「글자 없음」
     queued = {(r["kind"], int(r["idx"])) for r in mem._MEM_Q if r["item_id"] == iid and r["status"] == "queued"}
     assert queued == got and d["accepted"] == len(got) == 30
-    assert d["message"] == "접수 30장 · 건너뜀 2장(스페이서 1 · 아이콘 1) · 글자 없음 1장 · 오늘 텐센트 호출 0/200장"
+    assert d["message"] == ("접수 30장 · 건너뜀 2장(스페이서 1 · 아이콘 1) · 글자 없음 1장 · 대기 중 30장 (10분 내 처리) · "
+                            "오늘 텐센트 호출 0/200장")                     # 누르자마자는 「오늘 0」 — 대기 중인 장이 그 이유
     d2 = _post_retry(iid, "y11c")                                              # 다시 눌러도 두 번 보내지 않는다
     assert d2["accepted"] == 0 and d2["waiting"] == 30 and d2["message"].startswith("접수 0장 · 이미 대기 중 30장")
 
@@ -90,7 +91,7 @@ def test_duplicate_page_is_skipped_and_done_with_boxes_is_not_overwritten(mem):
     p = A.translate_plan(ex, retry=True)
     assert [(k, i) for k, i, _w in p["send"]] == [("gallery", 0)]
     assert p["skip"]["dup"] == [("gallery", 1)] and p["skip"]["done"] == [("gallery", 2)]
-    assert A.plan_line(p, 1) == "접수 1장 · 건너뜀 2장(중복 1 · 이미 번역 1)"
+    assert A.plan_line(p, 1) == "접수 1장 · 건너뜀 2장(중복 1 · 이미 번역 1) · 글자 없음 0장"
 
 
 # ── 3. 「오늘 n/상한」 = 텐센트에 실제로 보낸 수(PictureWithoutText 포함) ─────────────────────────────
@@ -199,3 +200,69 @@ def test_no_text_label_is_picture_without_text_only():
     data = {"idx": 18, "status": "failed", "error_code": "InvalidParameterValue.Data", "error_message": "输入Data无效，请参考Data参数说明。"}
     assert P.verdict(coupon, u)["use"] == "failed" and P.verdict(data, u)["use"] == "failed"     # 「번역 실패 — 원본으로」
     assert "글자 없는 사진" not in P.verdict(coupon, u)["reason"]
+
+
+
+# ── Y11-C2(오너 2026-10-14): 상한 우회 안 함 — 잘린 장이 보이게 · 편집은 OCR 상자로 ───────────────────────────
+
+def test_cap_is_its_own_segment_and_capped_photo_is_labelled_and_editable_by_ocr(mem, monkeypatch):
+    from src.services import image_translate_auto as A
+    from src.services import image_edit as E
+    from src.services import ocr_tencent as O
+    import requests
+    ex = {"images": [f"https://img.alicdn.com/g{i}.jpg" for i in range(8)]}
+    p = A.translate_plan(ex, retry=True)
+    assert [i for k, i, _w in p["send"]] == list(range(6)) and p["skip"]["cap"] == [("gallery", 6), ("gallery", 7)]
+    assert A.plan_line(p, 6, 0, 6) == "접수 6장 · 건당 상한 2장 · 글자 없음 0장 · 대기 중 6장 (10분 내 처리)"
+    # 상한에 걸린 7번 사진 — 「번역하고 글자 상자 받기」를 내밀지 않고, 원본에서 OCR로 상자를 읽는다
+    monkeypatch.setattr(O, "_UNOPEN_AT", [0.0])
+    monkeypatch.setattr(requests, "get", lambda url, **k: type("R", (), {"status_code": 200, "content": b"jpg"})())
+    monkeypatch.setattr(O, "read_boxes", lambda raw: {"ok": True, "boxes": [{"x": 10, "y": 10, "w": 80, "h": 20, "src": "满300减50", "tgt": ""}],
+                                                      "size": [800, 800]})
+    pl = E.plan(ex, "gallery", 6, small=None, fetch=True)
+    assert pl["capped"] and pl["capped_label"] == "상한 — 번역 안 됨(원본)" and not pl["need_translate"]
+    assert pl["url"] == "https://img.alicdn.com/g6.jpg" and len(pl["boxes"]) == 1 and pl["boxes"][0]["cls"] == "promo"
+    # OCR 미개통이어도 번역을 내밀지 않는다(상한 우회 안 함) — 라벨 + 사유
+    monkeypatch.setattr(O, "_UNOPEN_AT", [__import__("time").monotonic()])
+    ex["images_ko"] = []
+    pl2 = E.plan({"images": ex["images"]}, "gallery", 7, small=None, fetch=True)
+    assert pl2["capped"] and not pl2["need_translate"] and pl2["why"].startswith("상한 — 번역 안 됨(원본) · ")
+
+
+def test_old_pwt_label_without_code_still_counts_as_no_text():
+    """#898 이전에 저장된 PictureWithoutText 장은 사유가 「글자 없는 사진 — 원본 그대로」뿐이다(코드 없음) — 그래도 글자 없음."""
+    from src.services import image_translate_auto as A
+    old = {"idx": 4, "status": "skipped", "vendor": "tencent", "reason": "글자 없는 사진 — 원본 그대로"}
+    ocr = {"idx": 1, "status": "skipped", "vendor": "tencent-ocr", "reason": "글자 없는 사진(OCR 판정 — 한자 0) — 원본 그대로"}
+    assert A._is_pwt(old) and not A._is_pwt(ocr)
+
+
+
+def test_waiting_line_says_tomorrow_when_today_cap_is_full(mem, monkeypatch):
+    """반례(오너 2026-10-14): 누르자마자 「오늘 0」 → 「대기 중 n장 (10분 내 처리)」. 단 운영 실측 10-14 07:23 오늘 상한 320/320 —
+    그때 「10분 내」는 거짓이다(큐가 내일 0시 KST까지 멈춘다) → 그렇게 말한다."""
+    from src.services import image_translate_auto as A
+    monkeypatch.setenv("IMAGE_TRANSLATE_DAILY_CAP", "3")
+    for _ in range(3):
+        A._q().take_start(A._day_key(), 10 ** 9)
+    iid = _store("y11c-capfull", {"images": [f"https://img.alicdn.com/c{i}.jpg" for i in range(2)]})
+    d = _post_retry(iid, "y11c-capfull")
+    assert d["message"] == "접수 2장 · 글자 없음 0장 · 대기 중 2장 (오늘 상한 도달 — 내일 0시 KST 이후 처리) · 오늘 텐센트 호출 3/3장"
+
+
+def test_retry_button_shows_even_without_a_failure(mem, monkeypatch):
+    """Y11-C2 캡처에서 잡힘: 운영 VRSUK는 지금 실패 장이 없다 → 「다시 번역」이 실패 배지 옆에만 있어 누를 곳이 없었다.
+    실패가 없어도 「이미지 번역 · 다시 번역 · 오늘 텐센트 호출 n/상한」 줄이 나온다(공급사 미연결이면 안 나옴)."""
+    from src.services import image_translate_tencent as tc
+    from src.order_webhook import app
+    import src.services.coupang_image_check as CIC
+    monkeypatch.setattr(CIC, "start_check", lambda rep: {"state": "unknown", "why": "", "flags": []})
+    iid = _store("y11c-line", {"images": ["https://img.alicdn.com/a.jpg"]})
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y11c-line"
+    monkeypatch.setattr(tc, "is_configured", lambda: False)
+    assert c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()["imgko_status"] is None
+    monkeypatch.setattr(tc, "is_configured", lambda: True)
+    d = c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()
+    assert d["imgko_fail"] is None and d["imgko_status"] == {"today": 0, "cap": 200}
