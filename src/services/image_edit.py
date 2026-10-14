@@ -366,10 +366,15 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
         why = got.get("why") or "글자 상자를 읽지 못했어요"
         if capped:
             return {"ok": False, "why": CAPPED_LABEL + " · " + why, "boxes": [], "size": [0, 0], "capped": True, "version": key}
+        if key != V_TRANSLATED and (key.startswith("edit:") or translated_url(e)):
+            # 편집본·(번역본이 있는) 수집 원본 — 번역을 다시 보낼 일이 아니다. 번역본을 고르면 그 상자를 쓴다.
+            tail = " · 「번역본」을 고르면 번역 결과의 글자 상자를 써요" if translated_url(e) else ""
+            what = "이 편집본" if key.startswith("edit:") else "수집 원본"
+            return {"ok": False, "why": f"{what}의 글자 상자를 읽지 못했어요({why})" + tail, "boxes": [], "size": [0, 0],
+                    "version": key}
         tail = " · 개통 전에는 다시 번역하면 번역 결과의 글자 상자를 써요" if got.get("code") == "ocr_unopened" else \
                " · 다시 번역하면 번역 결과의 글자 상자를 써요"
-        return {"ok": False, "why": why + tail, "boxes": [], "size": [0, 0], "need_translate": key != V_ORIGINAL or not capped,
-                "version": key}
+        return {"ok": False, "why": why + tail, "boxes": [], "size": [0, 0], "need_translate": True, "version": key}
     e = _entry(extra, kind, idx, create=True)
     vb = e.setdefault("vboxes", {}) if isinstance(e.get("vboxes"), dict) else e.setdefault("vboxes", {})
     vb[key] = {"boxes": got["boxes"], "size": got["size"], "img": url, "source": "ocr",

@@ -116,9 +116,11 @@ def test_response_parsing_keeps_every_field_we_promised(tc):
     assert r["request_id"] == "req-1"
     # F33: `line_height`·`lines_count`가 늘었다(SDK `TransDetail`에 실재하는 필드).
     #   벤치 C축의 **참고 수치**로 쓴다 — 점수로는 쓰지 않는다(박스는 원문 문단의 자리다).
+    # Y11-E: 상자 좌표 틀은 원본↔번역본 차이로 확인한다 — 이 가짜 응답은 상자 자리에 아무것도 안 그려 확인 못 함 →
+    #   상자를 비운다(빈 벽에 상자 금지 · 글자·줄 정보는 그대로). 틀이 확인되는 경우는 test_y11e_original_versions.
     assert r["lines"] == [{"source": "爆款 여름 신상", "target": "최고 인기 여름 신상",
-                           "box": {"x": 1, "y": 2, "w": 3, "h": 4},
-                           "line_height": None, "lines_count": None}]
+                           "box": None, "line_height": None, "lines_count": None}]
+    assert r["box_frame"] == "unknown"
     assert isinstance(r["ms"], int)
 
 

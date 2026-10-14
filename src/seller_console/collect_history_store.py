@@ -289,8 +289,9 @@ def guard_originals(item_id: str, extra_json, *, seller_id=None, seller_ids=None
         raise OriginalImageOverwrite("수집 원본 목록(images_original)은 바꾸거나 뺄 수 없어요 — 뒤에 붙이기만 돼요")
     merged = list(frozen) + [u for u in (want if isinstance(want, list) else []) if u not in frozen]
     merged += [u for u in (new.get("images") or []) if isinstance(u, str) and u and u not in merged and not is_derived_image(u)]
-    if merged:
-        new["images_original"] = merged
+    if not merged or merged == want:
+        return extra_json if isinstance(extra_json, str) else _json.dumps(new, ensure_ascii=False)   # 바꿀 것 없음 — 그대로
+    new["images_original"] = merged
     return _json.dumps(new, ensure_ascii=False)
 
 
