@@ -17,27 +17,20 @@ Y11-E 실측 17:36 VRSUK 갤러리 3: 거꾸로 놓인 책등 글자의 상자�
 """
 from __future__ import annotations
 
+import functools
 import io
 import logging
 import os
 import re
-import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
 ENV_CAP = "IMAGE_EDIT_DAILY_CAP"
 DEFAULT_CAP = 200
-TX_GEN_REMOVE = 50
 TX_BASE = 1
-TX_PER_TEXT = 1
 TX_PER_CREDIT = 1000
-#: Y11-L(운영 실측 10-14 13:23 UTC): Cloudinary 글자 오버레이에 「Noto Sans KR」을 주면 `x-cld-error: Unsupported font family
-#   Noto Sans KR`(400) — 파생본이 안 만들어져 「편집본 주소가 돌아오지 않았어요」. 「글자 고치기」·자동 다듬기 렌더가 전부 실패했다.
-#   NanumGothic은 받는다(한글 그림 확인). `IMAGE_EDIT_FONT`로 바꿀 수 있다.
-FONT = os.getenv("IMAGE_EDIT_FONT", "NanumGothic") or "NanumGothic"
 SMALL_SIDE = 256
 CLASS_LABEL = {"promo": "판촉", "brand": "브랜드 로고", "risk": "상표 위험", "text": "일반 글자"}
 #: 지울 영역 여유 — 상자 높이의 10%(사방). 그 밖은 절대 안 건드린다(오너 2026-10-14).
@@ -71,7 +64,8 @@ def today_count() -> int:
 
 
 def cost(n_text: int = 0) -> Dict:
-    tx = TX_GEN_REMOVE + TX_BASE + TX_PER_TEXT * max(0, int(n_text or 0))
+    """Y11-M: 지우기·글자는 우리 쪽에서 그린다 — Cloudinary엔 다 그린 그림을 일반 업로드 1번(변환·gen_remove 없음)."""
+    tx = TX_BASE
     return {"tx": tx, "credits": round(tx / TX_PER_CREDIT, 3)}
 
 
@@ -510,110 +504,308 @@ def _polish_view(e: dict) -> Optional[Dict]:
 
 # ── 적용 ───────────────────────────────────────────────────────────────────────────────────
 
-def _text_color(small, box: Dict, size) -> str:
-    """원래 글자색 — 상자 안에서 상자 가장자리 색(바탕)과 가장 먼 화소들의 가운데 값. 못 재면 짙은 회색."""
-    if small is None or not size[0] or not size[1]:
-        return "333333"
-    sw, sh = small.size
-    x0, y0 = int(box["x"] * sw / size[0]), int(box["y"] * sh / size[1])
-    x1, y1 = max(x0 + 1, int((box["x"] + box["w"]) * sw / size[0])), max(y0 + 1, int((box["y"] + box["h"]) * sh / size[1]))
-    pts = [small.getpixel((x, y)) for y in range(y0, min(y1, sh)) for x in range(x0, min(x1, sw))]
-    if not pts:
-        return "333333"
-    edge = [small.getpixel((x, y)) for x in range(x0, min(x1, sw)) for y in (y0, min(y1, sh) - 1)]
-    bg = tuple(sorted(p[k] for p in edge)[len(edge) // 2] for k in range(3))
-    far = sorted(pts, key=lambda p: -max(abs(p[0] - bg[0]), abs(p[1] - bg[1]), abs(p[2] - bg[2])))[: max(1, len(pts) // 6)]
-    med = tuple(sorted(p[k] for p in far)[len(far) // 2] for k in range(3))
-    return "%02x%02x%02x" % med
-
-
-#: Y11-L 반례(오너): 한국어는 보통 중국어의 1.5배 길이 — 상자 폭 기준으로 줄이고 두 줄까지 허용. 그래도 원래 글자 높이의
-#   이 비율 밑으로 작아지면 「안 들어감」(다듬기는 그 상자를 텐센트 글자로 둔다).
+#: Y11-M(오너 02:12 캡처): 렌더는 **우리 쪽에서 직접** 그린다 — 상자 테두리 띠 색으로 상자를 먼저 메우고(Cloudinary gen_remove 안 씀 —
+#   상자당 과금), 텐센트가 그린 글자의 색·굵기를 재서 같은 모양으로 Noto Sans KR을 앉힌 뒤, 다 그린 그림을 **일반 업로드**한다.
+#   옛 길(변환 주소 조립 + 글자 오버레이)은 지우기 영역이 비거나 글꼴이 거부되면 텐센트 글자 위에 겹쳐 그려 번졌다(21번).
+#: 텐센트 글자(같은 상자)보다 이 비율 밑으로 작아지면 「안 들어감」 — 다듬기는 그 상자를 텐센트 글자로 둔다.
+FIT_KEEP = 0.8
+#: 기준 글자가 없을 때(사람이 넣은 글자) — 상자 높이 기준 옛 규칙
 MIN_FIT_RATIO = 0.45
-_WIDE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u3000-\u9fff\uff00-\uffef]")
+MIN_PX = 11
+#: 테두리 띠가 이 값(밝기 10~90% 폭) 안이면 「한 색 바탕」 — 중앙값으로 메운다. 넘으면 글자 픽셀만 inpaint(그라데이션에 네모 방지).
+FLAT_SPREAD = 8
+_WIDE = re.compile("[ᄀ-ᇿ㄰-㆏가-힯　-鿿＀-￯]")
 
 
 def _units(text: str) -> float:
-    """글자 폭(글자 크기 1 기준) — 한글·한자·전각 1.0, 그 밖 0.58."""
+    """글자 폭(글자 크기 1 기준) — 한글·한자·전각 1.0, 그 밖 0.58. 폰트가 없을 때만 쓴다."""
     return sum(1.0 if _WIDE.match(c) else 0.58 for c in text) or 1.0
 
 
-def _split2(text: str):
-    """두 줄로 — 가운데에 가까운 띄어쓰기에서, 없으면 글자 가운데에서."""
-    t = text.strip()
-    mid = len(t) / 2
-    spaces = [i for i, c in enumerate(t) if c == " "]
-    cut = min(spaces, key=lambda i: abs(i - mid)) if spaces else int(mid)
-    a, b = t[:cut].strip(), t[cut:].strip()
-    return [x for x in (a, b) if x] or [t]
+#: 재는 글꼴은 굵기마다 100px 한 벌 — 폭은 크기에 비례한다. 크기마다 글꼴을 열면 한 장 렌더에 글꼴 20여 벌(~100MB)이
+#   메모리에 남았다(Y11-M 실측 +78MB/96벌 — 인스턴스 합계 가드 420MB 근처라 위험).
+_MEASURE_PX = 100
 
 
-def text_fit(text: str, box: Dict) -> Dict:
-    """`{size, lines, fits}` — 상자 안에 들어갈 글자 크기(px)와 줄(1~2). `fits` = 원래 글자 높이의 MIN_FIT_RATIO 이상."""
-    w, h = max(1, int(box.get("w") or 1)), max(1, int(box.get("h") or 1))
-    ideal = h * 0.8
-    one = min(ideal, w * 0.96 / _units(text))
-    lines2 = _split2(text)
-    two = min(h * 0.8 / 2.2 * 2 / 2, w * 0.96 / max(_units(x) for x in lines2)) if len(lines2) == 2 else 0
-    if two > one:
-        size, lines = two, lines2
-    else:
-        size, lines = one, [text]
-    return {"size": max(10, int(size)), "lines": lines, "fits": size >= max(10, ideal * MIN_FIT_RATIO)}
+@functools.lru_cache(maxsize=2)
+def _measure_font(weight: str):
+    from src.services.image_render_font import load
+    return load(_MEASURE_PX, weight)
 
 
-def _text_layer(text: str, box: Dict, color: str) -> str:
-    """NanumGothic 글자 — 상자 폭 기준 축소 · 두 줄까지(Y11-L). Cloudinary 글자 오버레이 문법(줄바꿈 %0A)."""
-    f = text_fit(text, box)
-    size = f["size"]
-    enc = "%0A".join(quote(x, safe="").replace("%2C", "%252C").replace("%2F", "%252F") for x in f["lines"])
-    font = quote(FONT, safe="")
-    block = int(size * (1.15 * len(f["lines"])))
-    return (f"l_text:{font}_{size}_bold:{enc},co_rgb:{color}/"
-            f"fl_layer_apply,g_north_west,x_{max(0, box['x'])},y_{max(0, box['y'] + max(0, (box['h'] - block) // 2))}")
+def _font(size: int, weight: str):
+    """그릴 글꼴(그 크기 한 벌) — 캐시하지 않는다(그리고 버린다)."""
+    from src.services.image_render_font import load
+    return load(int(size), weight)
 
 
-def build_transform(erase: List[Dict], texts: List[Tuple[Dict, str, str]], scale: float = 1.0) -> str:
-    """`e_gen_remove:region_(…)` + 글자 얹기들 — Cloudinary raw transformation 한 줄. 좌표는 업로드된 사진 크기 기준(`scale`).
-    지울 영역은 상자의 `er`(상자 + 높이 10% 여유) — 그 밖은 영역에 넣지 않는다. 글자는 원래 상자 자리에."""
-    from src.services.image_gen_remove import region_param
-    sc = lambda b: {k: int(round(b[k] * scale)) for k in ("x", "y", "w", "h")}
-    rects = [sc(b.get("er") or b) for b in erase] + [sc(b.get("er") or b) for b, _t, _c in texts]
-    region = region_param([(r["x"], r["y"], r["w"], r["h"]) for r in rects])
-    parts = [f"e_gen_remove:{region}"] if region else []
-    for b, t, c in texts:
-        parts.append(_text_layer(t, sc(b), c))
-    return "/".join(parts)
+def _len(text: str, size: int, weight: str) -> float:
+    f = _measure_font(weight)
+    return f.getlength(text) * size / _MEASURE_PX
 
 
-_LAST_CLD = {"why": ""}
-
-
-def _ready(url: str) -> Tuple[bool, Optional[int]]:
-    """파생본이 준비됐나 — HEAD(본문 안 받음). 420/423이면 짧게 기다린다(D3와 같은 규칙: 3번 · 2초).
-    Y11-L: 거부(400 등)면 Cloudinary 사유 헤더(`x-cld-error`)를 `_LAST_CLD['why']`에 남긴다."""
-    import requests
-    code = None
-    _LAST_CLD["why"] = ""
-    for i in range(3):
-        try:
-            r = requests.head(url, timeout=20, allow_redirects=True)
-            code = r.status_code
-            _LAST_CLD["why"] = str((r.headers or {}).get("x-cld-error") or "")[:160]
-        except Exception:                                       # noqa: BLE001
-            return False, None
-        if code == 200:
-            return True, code
-        if code in (420, 423) and i < 2:
-            time.sleep(2.0)
+def _wrap(text: str, size: int, weight: str, max_w: int, max_lines: int) -> Optional[List[str]]:
+    """띄어쓰기 단위로 줄을 나눈다(낱말이 넘치면 글자 단위). `max_lines` 넘거나 한 글자도 안 들어가면 None."""
+    lines, cur = [], ""
+    for word in str(text).split():
+        trial = f"{cur} {word}".strip()
+        if _len(trial, size, weight) <= max_w:
+            cur = trial
             continue
-        break
-    return False, code
+        if cur:
+            lines.append(cur)
+            cur = ""
+        if _len(word, size, weight) <= max_w:
+            cur = word
+            continue
+        for ch in word:
+            if _len(cur + ch, size, weight) <= max_w:
+                cur += ch
+            elif not cur:
+                return None
+            else:
+                lines.append(cur)
+                cur = ch
+    if cur:
+        lines.append(cur)
+    return lines if lines and len(lines) <= max_lines else None
+
+
+def fit_box(text: str, w: int, h: int, *, weight: str = "bold", max_lines: int = 2, max_px: int = 0) -> Optional[Dict]:
+    """상자(w×h px) 안에 들어가는 가장 큰 `{size, lines, line_h}`(`max_px` 이하) — 실제 글꼴로 잰다. 못 넣으면 None."""
+    text = str(text or "").strip()
+    if not text or w < 4 or h < MIN_PX:
+        return None
+    lo, hi, best = MIN_PX, max(MIN_PX, min(int(h * 0.9), int(max_px) if max_px else 10 ** 6)), None
+    if _measure_font(weight) is None:
+        return None
+    while lo <= hi:                                              # 크기가 클수록 줄·폭이 늘어난다 — 이분 탐색
+        mid = (lo + hi) // 2
+        lines = _wrap(text, mid, weight, int(w * 0.96), max_lines)
+        if lines is not None and int(mid * 1.22) * len(lines) <= h:
+            best, lo = {"size": mid, "lines": lines, "line_h": int(mid * 1.22)}, mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
+def _font_ok() -> bool:
+    try:
+        from src.services.image_render_font import available
+        return bool(available()[0])
+    except Exception:                                           # noqa: BLE001
+        return False
+
+
+def text_fit(text: str, box: Dict, ref: str = "") -> Dict:
+    """`{size, lines, fits, ref_size}` — 이 글자를 상자에 넣을 때의 크기·줄. `ref`(텐센트가 그 상자에 그린 글자)가 있으면
+    **그 글자를 같은 상자에 넣은 크기**가 기준이다: 그 줄 수(최소 2줄)까지 허용, 크기가 기준의 FIT_KEEP 이상이면 들어감."""
+    w, h = max(1, int(box.get("w") or 1)), max(1, int(box.get("h") or 1))
+    text = str(text or "").strip()
+    if not _font_ok():                                           # 폰트가 없으면 어림셈(옛 규칙)
+        ideal = h * 0.8
+        one = min(ideal, w * 0.96 / _units(text))
+        return {"size": max(10, int(one)), "lines": [text], "fits": one >= max(10, ideal * MIN_FIT_RATIO), "ref_size": 0}
+    rf = fit_box(ref, w, h, max_lines=8) if str(ref or "").strip() else None
+    n = max(2, len((rf or {}).get("lines") or []))
+    f = fit_box(text, w, h, max_lines=n)
+    if f is None:
+        return {"size": 0, "lines": [text], "fits": False, "ref_size": (rf or {}).get("size", 0)}
+    need = (rf["size"] * FIT_KEEP) if rf else max(MIN_PX, h * 0.8 * MIN_FIT_RATIO)
+    return {"size": f["size"], "lines": f["lines"], "fits": f["size"] >= min(need, h * 0.8), "ref_size": (rf or {}).get("size", 0)}
+
+
+def _rect_px(b: Dict, k: float, W: int, H: int) -> Tuple[int, int, int, int]:
+    x0, y0 = max(0, int(b["x"] * k)), max(0, int(b["y"] * k))
+    x1, y1 = min(W, int(round((b["x"] + b["w"]) * k))), min(H, int(round((b["y"] + b["h"]) * k)))
+    return x0, y0, max(x0 + 1, x1), max(y0 + 1, y1)
+
+
+def _band(np, img, rect, bw: int):
+    """상자 **바깥** 테두리 띠 화소(N×3)."""
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = rect
+    X0, Y0, X1, Y1 = max(0, x0 - bw), max(0, y0 - bw), min(W, x1 + bw), min(H, y1 + bw)
+    parts = [img[Y0:y0, X0:X1], img[y1:Y1, X0:X1], img[y0:y1, X0:x0], img[y0:y1, x1:X1]]
+    px = [p.reshape(-1, 3) for p in parts if p.size]
+    return np.concatenate(px) if px else img[y0:y1, x0:x1].reshape(-1, 3)
+
+
+def _coons(np, img, rect, bw: int) -> bool:
+    """테두리 네 변(띠 평균)에서 안쪽으로 매끈하게 잇는 채움(쿤스 패치) — 그라데이션 바탕용. 못 하면 False."""
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = rect
+    w, h = x1 - x0, y1 - y0
+    f = img.astype(np.float32)
+    top = f[max(0, y0 - bw):y0, x0:x1].mean(axis=0) if y0 > 0 else None
+    bot = f[y1:min(H, y1 + bw), x0:x1].mean(axis=0) if y1 < H else None
+    lef = f[y0:y1, max(0, x0 - bw):x0].mean(axis=1) if x0 > 0 else None
+    rig = f[y0:y1, x1:min(W, x1 + bw)].mean(axis=1) if x1 < W else None
+    if top is None and bot is None or lef is None and rig is None:
+        return False
+    top, bot = (top if top is not None else bot), (bot if bot is not None else top)
+    lef, rig = (lef if lef is not None else rig), (rig if rig is not None else lef)
+    u = (np.arange(w, dtype=np.float32) + 0.5)[None, :, None] / w
+    v = (np.arange(h, dtype=np.float32) + 0.5)[:, None, None] / h
+    c00, c10, c01, c11 = (top[0] + lef[0]) / 2, (top[-1] + rig[0]) / 2, (bot[0] + lef[-1]) / 2, (bot[-1] + rig[-1]) / 2
+    patch = ((1 - v) * top[None] + v * bot[None] + (1 - u) * lef[:, None] + u * rig[:, None]
+             - ((1 - u) * (1 - v) * c00 + u * (1 - v) * c10 + (1 - u) * v * c01 + u * v * c11))
+    img[y0:y1, x0:x1] = np.clip(patch, 0, 255).astype(np.uint8)
+    return True
+
+
+def erase_local(cv2, np, img, rect) -> str:
+    """상자 글자를 지운다(제자리). `rect` = 상자를 사방으로 조금 넓힌 자리(이웃 상자 쪽은 안 넓힘). 돌려주는 값 = 쓴 방법.
+    지우는 픽셀은 **그 상자 글자 획만**이다 — 넓힌 자리 테두리에 닿는 획(이웃 줄 글자가 삐져 들어온 것)은 남긴다(22번 「전방위」).
+    - `fill`: 바탕이 한 색(흰 바탕 등) — 그 **중앙값으로** 글자 획을 메운다(오너 Y11-M). 표본은 상자 안 글자 아닌 픽셀.
+    - `inpaint`: 무늬·그라데이션 바탕 — 상자를 통째 칠하면 네모가 보인다(VRSUK 21번 실측). 획만 주변으로 메운다.
+    - `fill-box`/`blend`: 획을 못 고르면 상자를 통째 — 한 색이면 중앙값, 아니면 네 변 색을 안쪽으로 매끈하게 잇는다."""
+    x0, y0, x1, y1 = rect
+    bw = max(2, min(12, int((y1 - y0) * 0.15)))
+    from src.services.image_text_render import _glyph_mask
+    mask, _why = _glyph_mask(cv2, np, img, rect, 3)
+    if mask is not None:
+        # 바탕 표본 = 상자 안 **글자 아닌 픽셀**(획 둘레 더 넓게 뺀 것) — 텐센트는 글자 뒤에 옅은 판을 깐다. 상자 밖 색으로
+        #   메우면 그 판 위에 글자 모양 「유령」이 남았다(22번 실측).
+        roi = img[y0:y1, x0:x1]
+        far = cv2.dilate(mask[y0:y1, x0:x1], np.ones((7, 7), np.uint8)) == 0
+        bg = roi[far] if int(far.sum()) >= 30 else _band(np, img, rect, bw)
+        lum = bg.astype(np.int32).sum(axis=1) / 3.0
+        if float(np.percentile(lum, 90) - np.percentile(lum, 10)) <= FLAT_SPREAD:
+            img[mask > 0] = np.median(bg, axis=0).astype(np.uint8)
+            return "fill"
+        img[:] = cv2.inpaint(img, mask, 5, cv2.INPAINT_TELEA)
+        return "inpaint"
+    band = _band(np, img, rect, bw)
+    lum = band.astype(np.int32).sum(axis=1) / 3.0
+    flat = float(np.percentile(lum, 90) - np.percentile(lum, 10)) <= FLAT_SPREAD
+    med = np.median(band, axis=0).astype(np.uint8)
+    if not flat and _coons(np, img, rect, bw):
+        return "blend"
+    img[y0:y1, x0:x1] = med
+    return "fill-box"
+
+
+def _typo(raw: bytes, rect, tgt: str) -> Dict:
+    """텐센트가 그린 글자의 색·굵기·정렬(D3 측정기) — 못 재면 기본(굵게·가운데·먹)."""
+    try:
+        from src.services.image_text_render import sample_typography
+        x0, y0, x1, y1 = rect
+        t = sample_typography(raw, {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}, source=tgt)
+        return {"color": tuple(t.get("color") or (26, 23, 20)), "weight": t.get("weight") or "bold",
+                "align": t.get("align") or "center", "why": t.get("reason") or ""}
+    except Exception as exc:                                    # noqa: BLE001
+        return {"color": (26, 23, 20), "weight": "bold", "align": "center", "why": type(exc).__name__}
+
+
+def _expand(rect, others, W: int, H: int, pad: int):
+    """지울 자리를 사방 `pad`만큼 넓힌다 — 단 **다른 글자 상자 쪽으로는** 그 상자 앞에서 멈춘다(겹친 상자면 그 경계까지 줄인다).
+    넓히는 까닭: 텐센트 글자가 상자 테두리에 붙어 있으면 글자 고르기가 그 획을 「바탕 도형」으로 보고 남겼다(21번 「서 잘」)."""
+    x0, y0, x1, y1 = rect
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    X0, Y0, X1, Y1 = max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad), min(H, y1 + pad)
+    for o in others:
+        ox0, oy0, ox1, oy1 = o
+        if tuple(o) == tuple(rect) or not (ox0 < X1 and ox1 > X0 and oy0 < Y1 and oy1 > Y0):
+            continue
+        if oy1 <= cy and oy1 < y1:                              # 위쪽 이웃(겹쳐도 — 「중단」 상자 위 「EHILÀ」)
+            Y0 = max(Y0, min(oy1, y1 - 1))
+        elif oy0 >= cy and oy0 > y0:
+            Y1 = min(Y1, max(oy0, y0 + 1))
+        elif ox1 <= cx and ox1 < x1:
+            X0 = max(X0, min(ox1, x1 - 1))
+        elif ox0 >= cx and ox0 > x0:
+            X1 = min(X1, max(ox0, x0 + 1))
+    return X0, Y0, max(X0 + 1, X1), max(Y0 + 1, Y1)
+
+
+def _ink(cv2, np, img, rect):
+    """상자 안 텐센트 글자 잉크의 외접 `(w, h, x, y)` — 못 고르면 None."""
+    from src.services.image_text_render import _glyph_mask
+    m, _why = _glyph_mask(cv2, np, img, rect, 0)
+    if m is None:
+        return None
+    ys, xs = np.nonzero(m)
+    if not xs.size:
+        return None
+    return (int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1), int(xs.min()), int(ys.min()))
+
+
+def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict, str]], others: Optional[List[Dict]] = None) -> Dict:
+    """`{ok, bytes, size, how, drawn, skipped, why}` — 바탕 그림 위에서 상자를 지우고 글자를 그린다. 좌표는 상자 공간 × `k`.
+    `others` = 이 사진의 글자 상자 전부(지울 자리를 넓힐 때 이웃 상자를 피한다)."""
+    from src.services.image_text_render import _load_cv2
+    cv2, np, why = _load_cv2()
+    if why:
+        return {"ok": False, "why": why}
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return {"ok": False, "why": "바탕 그림을 열지 못했어요"}
+    H, W = img.shape[:2]
+    near = [_rect_px(o, k, W, H) for o in (others or [])]
+
+    def _area(b):
+        r = _rect_px(b, k, W, H)
+        return r, _expand(r, near, W, H, max(3, int((r[3] - r[1]) * 0.15)))
+
+    typos = []
+    for b, t in texts:
+        r, ext = _area(b)
+        typos.append((b, t, r, ext, _typo(raw, ext, str(b.get("tgt") or "")), _ink(cv2, np, img, ext)))
+    how = []
+    for b in erase:
+        how.append(erase_local(cv2, np, img, _area(b)[1]))
+    for x in typos:
+        how.append(erase_local(cv2, np, img, x[3]))
+    from PIL import Image, ImageDraw
+    pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil)
+    drawn, skipped, sizes = 0, [], []
+    for b, text, rect, _ext, ty, ink in typos:
+        x0, y0, x1, y1 = rect
+        w_key = ty["weight"] if ty["weight"] in ("regular", "bold") else "bold"
+        tgt = str(b.get("tgt") or "")
+        rf = fit_box(tgt, x1 - x0, y1 - y0, weight=w_key, max_lines=8)
+        # 텐센트 글자 크기 = 그 글자를 잉크 외접 안에 넣은 크기 — 새 글자는 그보다 크게 그리지 않는다(위계 유지)
+        tf = fit_box(tgt, ink[0] + 6, int(ink[1] * 1.3) + 6, weight=w_key, max_lines=8) if ink else None
+        cap = int(tf["size"] * 1.1) if tf else 0
+        f = None
+        for n in range(1, max(2, len((rf or {}).get("lines") or [])) + 1):   # 줄은 적게 — 텐센트 크기의 85%가 나오는 가장 적은 줄
+            g = fit_box(text, x1 - x0, y1 - y0, weight=w_key, max_lines=n, max_px=cap)
+            if g and (f is None or g["size"] > f["size"]):
+                f = g
+            if g and cap and g["size"] >= cap * 0.85:
+                break
+        if f is None:
+            skipped.append(text)
+            continue
+        font = _font(f["size"], w_key)
+        sizes.append(f["size"])
+        block = f["line_h"] * len(f["lines"])
+        align = ty["align"]
+        if align == "center" and len(f["lines"]) > 1 and len((rf or {}).get("lines") or []) > 1:
+            align = "left"                                       # 텐센트 글자도 여러 줄(문단) — 문단은 왼쪽 정렬
+        # 자리 = 텐센트 글자가 실제로 있던 곳(잉크 외접) — 상자는 글자보다 클 때가 많다(21번 제목: 상자 아래쪽이 비어 있음)
+        bx0, bx1 = (ink[2], ink[2] + ink[0]) if ink else (x0, x1)
+        cy = (ink[3] + ink[1] // 2) if ink else (y0 + y1) // 2
+        top = min(max(y0, cy - block // 2), max(y0, y1 - block))
+        for i, line in enumerate(f["lines"]):
+            l, _t, r, _b = font.getbbox(line)
+            lw = r - l
+            want = bx0 if align == "left" else (bx1 - lw) if align == "right" else (bx0 + bx1 - lw) // 2
+            cx = min(max(x0, want), max(x0, x1 - lw)) - l
+            draw.text((cx, top + i * f["line_h"] + (f["line_h"] - f["size"]) // 2), line, font=font, fill=ty["color"])
+        drawn += 1
+    buf = io.BytesIO()
+    pil.save(buf, format="JPEG", quality=92)
+    return {"ok": True, "bytes": buf.getvalue(), "size": [W, H], "how": how, "drawn": drawn, "skipped": skipped, "sizes": sizes,
+            "colors": ["%02x%02x%02x" % tuple(x[4]["color"]) for x in typos], "weights": [x[4]["weight"] for x in typos]}
 
 
 def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user", small=None) -> Dict:
     """`ops=[{id, action: erase|text, text?}]` → **새 편집본 하나**(지금 고른 버전 위에). 결과 `{ok, url, credits, erased, error?}`.
-    사람이 상자를 탭해서 적용할 때만 부른다(자동 픽셀 변경 없음 — Y11-E). 저장은 호출부."""
+    사람이 상자를 탭해서 적용할 때(그리고 다듬기)만 부른다(자동 픽셀 변경 없음 — Y11-E). 저장은 호출부.
+    Y11-M: 우리 쪽에서 그린다(`render_local`) → 다 그린 그림을 Cloudinary에 **일반 업로드**(변환 없음)."""
     ok_c, why = configured()
     if not ok_c:
         return {"ok": False, "error": "사진 편집을 쓸 수 없어요 — " + why}
@@ -622,50 +814,35 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
     todo = [o for o in ops or [] if isinstance(o, dict) and o.get("action") in ("erase", "text") and o.get("id") in by_id]
     if not todo:
         return {"ok": False, "error": (p.get("why") or "지울 상자를 탭해서 골라 주세요") if not p["boxes"] else "지울 상자를 탭해서 골라 주세요"}
+    raw = _fetch(p["url"])
+    if not raw:
+        return {"ok": False, "error": "편집할 사진을 받지 못했어요 — 잠시 뒤 다시 해 주세요"}
     from src.db import image_translate_queue_pg as q
-    took, today = q.take_start(_day_key(), daily_cap())          # 한도는 실제로 보낼 때만 센다
+    took, today = q.take_start(_day_key(), daily_cap())          # 한도는 실제로 그릴 때만 센다
     if not took:
         return {"ok": False, "error": f"오늘 사진 편집 한도({daily_cap()}회)를 다 썼어요 — 내일 다시 해 주세요", "today": today}
-    if small is None and any(o["action"] == "text" for o in todo):
-        small, _ = _load_small(p["url"])                    # 글자색 재기(글자 고치기가 있을 때만)
     erase = [by_id[o["id"]] for o in todo if o["action"] == "erase"]
-    texts = [(by_id[o["id"]], str(o.get("text") or "")[:40], _text_color(small, by_id[o["id"]], p["size"]))
-             for o in todo if o["action"] == "text" and str(o.get("text") or "").strip()]
-    W, H = p["size"]
-    RW, RH = (p.get("real") or [0, 0])[:2]
-    if not (RW and RH):
-        RW, RH = W, H                                          # 바탕 크기를 못 쟀으면 상자 공간 = 바탕
-    from src.media.image_pipeline import remote_max_side, upload_remote
-    side = remote_max_side()
-    k = (RW / W) if W else 1.0                                 # 상자 공간 → 바탕 사진(바탕이 더 크면 키운다)
-    scale = k * (min(1.0, side / max(RW, RH)) if (RW and RH and side > 0) else 1.0)
-    tr = build_transform(erase, texts, scale)
-    up = upload_remote(p["url"], folder="edit", eager=[{"raw_transformation": tr}])
-    if not up.get("ok"):
-        return {"ok": False, "error": "편집 요청 실패 — " + (up.get("error") or "사유 불명")}
-    url = ""
-    for x in up.get("eager") or []:
-        if isinstance(x, dict) and (x.get("secure_url") or x.get("url")):
-            url = str(x.get("secure_url") or x.get("url"))
-            break
+    texts = [(by_id[o["id"]], str(o.get("text") or "")[:60]) for o in todo if o["action"] == "text" and str(o.get("text") or "").strip()]
+    W = p["size"][0]
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(raw)) as im0:
+            RW = im0.size[0]
+    except Exception:                                           # noqa: BLE001
+        return {"ok": False, "error": "편집할 사진을 열지 못했어요"}
+    k = (RW / W) if W else 1.0                                 # 상자 공간 → 바탕 사진
+    try:
+        rr = render_local(raw, k, erase, texts, others=p["boxes"])
+    except Exception as exc:                                    # noqa: BLE001
+        logger.warning("[사진 편집] 그리기 실패 %s idx=%s: %s", kind, idx, exc)
+        rr = {"ok": False, "why": type(exc).__name__}
+    if not rr.get("ok"):
+        return {"ok": False, "error": "편집본을 그리지 못했어요 — " + (rr.get("why") or "사유 불명")}
+    from src.media.image_pipeline import upload_bytes
+    up = upload_bytes(rr["bytes"], folder="edit")
+    url = str(up.get("secure_url") or "") if up.get("ok") else ""
     if not url:
-        # Y11-L(오너 2026-10-14): 응답 맨 위 `secure_url`은 **편집 전 원본 업로드**다 — 그걸 쓰면 지우지 않은 사진이 「편집본」으로
-        #   나간다(가짜 성공). 파생본 주소는 그 주소의 `/upload/` 뒤에 변환을 끼워 만든다(Cloudinary 주소 규칙). 만든 주소는
-        #   아래 HEAD로 실제로 열리는지 확인하고, 거부면 Cloudinary 사유를 그대로 말한다. 응답 키 목록은 로그에만.
-        logger.warning("[사진 편집] 업로드 응답에 파생본 주소 없음 — 키=%s eager=%s", ",".join(up.get("keys") or []),
-                       str((up.get("eager") or [None])[0])[:300])
-        base_up = str(up.get("secure_url") or "")
-        if "/image/upload/" in base_up:
-            url = base_up.replace("/image/upload/", "/image/upload/" + tr + "/", 1)
-        else:
-            ev = next((x for x in up.get("eager") or [] if isinstance(x, dict)), {})
-            why = str(ev.get("reason") or ev.get("error") or ev.get("status") or "")[:120]
-            return {"ok": False, "error": "편집본을 만들지 못했어요" + (f" — {why}" if why else " — 업로드 주소를 받지 못했어요"),
-                    "transform": tr[:300]}
-    ready, code = _ready(url)
-    if not ready and code and code not in (420, 423):
-        why = _LAST_CLD["why"] or f"HTTP {code}"                # 예: Unsupported font family …
-        return {"ok": False, "error": f"편집본을 만들지 못했어요 — {why}", "transform": tr[:300]}
+        return {"ok": False, "error": "편집본을 올리지 못했어요 — " + (up.get("error") or "주소를 받지 못했어요")}
     c = cost(len(texts))
     e = _entry(extra, kind, idx, create=True)
     base_key = current_key(e) if e.get("status") or e.get("current") else V_ORIGINAL
@@ -675,18 +852,15 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
     n = max([int(x.get("n") or 0) for x in e["edits"]] + [0]) + 1
     now = datetime.now(timezone.utc).isoformat()
     e["edits"].append({"n": n, "url": url, "base": p["url"], "base_key": base_key, "at": now, "by": by, "ops": todo,
-                       "erased": erased, "credits": c["credits"], "ready": ready, "http_status": code, "transform": tr})
+                       "erased": erased, "credits": c["credits"], "ready": True, "render": "local",
+                       "how": rr.get("how"), "colors": rr.get("colors"), "weights": rr.get("weights"), "skipped": rr.get("skipped")})
     if not e.get("status"):
         e["status"] = "done"
     e.setdefault("vendor", "edit")
-    if ready:
-        select(extra, kind, idx, f"edit:{n}")
-    else:
-        # Cloudinary gen_remove는 비동기 — 파생본이 아직 423이면 지금 버전을 그대로 두고, 다 되면(다음 열기 때 확인) 이 편집본으로 넘어간다
-        e["pending_select"] = f"edit:{n}"
+    select(extra, kind, idx, f"edit:{n}")
     spent = round(sum(float(x.get("credits") or 0) for x in e["edits"]), 3)
-    return {"ok": True, "url": url, "ready": ready, "credits": c["credits"], "spent": spent, "erased": erased,
-            "version": f"edit:{n}", "pending": not ready, "today": today, "cap": daily_cap()}
+    return {"ok": True, "url": url, "ready": True, "credits": c["credits"], "spent": spent, "erased": erased,
+            "version": f"edit:{n}", "pending": False, "today": today, "cap": daily_cap(), "skipped": rr.get("skipped") or []}
 
 
 def _head_ok(url: str) -> bool:

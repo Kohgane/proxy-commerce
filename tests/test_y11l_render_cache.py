@@ -26,56 +26,21 @@ def _ex():
         "boxes": [{"x": 10, "y": 10, "w": 400, "h": 60, "src": "软糯Q弹", "tgt": "부드럽고 쫄깃한 식감"}]}]}
 
 
-def _upload(monkeypatch, resp, heads):
-    from src.media import image_pipeline as IPL
+# ── 1. 렌더: Y11-M부터 우리 쪽에서 그려 일반 업로드 — 변환 주소 조립 경로는 없다(test_y11m_local_render) ─────────────
+
+def test_transform_url_path_is_gone():
     from src.services import image_edit as IE
-    monkeypatch.setattr(IE, "configured", lambda: (True, ""))
-    monkeypatch.setattr(IE, "_load_small", lambda url: (None, (800, 800)))
-    monkeypatch.setattr(IPL, "upload_remote", lambda *a, **k: resp)
-
-    class _R:
-        def __init__(self, code, why=""):
-            self.status_code, self.headers = code, ({"x-cld-error": why} if why else {})
-    import requests
-    seen = []
-    monkeypatch.setattr(requests, "head", lambda url, **k: seen.append(url) or _R(*heads.pop(0)))
-    return seen
+    for gone in ("build_transform", "_text_layer", "_ready", "_LAST_CLD", "FONT"):
+        assert not hasattr(IE, gone), gone
 
 
-# ── 1. 파생본 주소: eager가 비면 업로드 주소에 변환을 끼워 조립 · HEAD 확인 · 거부 사유만 화면에 ─────────────
-
-def test_builds_derived_url_from_upload_when_eager_has_none(monkeypatch):
-    from src.services import image_edit as IE
-    up = {"ok": True, "secure_url": "https://res.cloudinary.com/dz/image/upload/v9/proxy-commerce/edit/abc.jpg",
-          "public_id": "proxy-commerce/edit/abc", "eager": [{"status": "processing"}], "keys": ["api_key", "eager", "secure_url"]}
-    seen = _upload(monkeypatch, up, [(200,)])
-    ex = _ex()
-    r = IE.apply(ex, "gallery", 0, [{"id": "t0", "action": "text", "text": "부드럽고 탄탄한 쿠션감"}], by="polish")
-    assert r["ok"] and r["url"].startswith("https://res.cloudinary.com/dz/image/upload/e_gen_remove:")
-    assert r["url"].endswith("/v9/proxy-commerce/edit/abc.jpg") and "l_text:NanumGothic_" in r["url"]
-    assert r["url"] != up["secure_url"]                                          # 편집 전 업로드 주소를 편집본이라 하지 않는다
-    assert seen == [r["url"]]
-
-
-def test_rejected_derived_shows_cloudinary_reason_not_key_list(monkeypatch):
-    from src.services import image_edit as IE
-    up = {"ok": True, "secure_url": "https://res.cloudinary.com/dz/image/upload/v9/e/abc.jpg", "eager": [],
-          "keys": ["api_key", "asset_folder", "asset_id", "bytes"]}
-    _upload(monkeypatch, up, [(400, "Unsupported font family Noto Sans KR")])
-    r = IE.apply(_ex(), "gallery", 0, [{"id": "t0", "action": "text", "text": "쿠션감"}], by="polish")
-    assert not r["ok"] and r["error"] == "편집본을 만들지 못했어요 — Unsupported font family Noto Sans KR"
-    assert "api_key" not in r["error"] and "응답 키" not in r["error"]
-
-
-# ── 반례: 글자가 상자보다 길면 — 폭 기준 축소 + 두 줄, 그래도 안 되면 텐센트 글자 유지 「길어서 유지」 ────────────
+# ── 반례: 글자가 상자보다 길면 — 폭 기준 축소 + 줄바꿈, 텐센트 글자보다 많이 작아지면 텐센트 글자 유지 「길어서 유지」 ────────
 
 def test_text_fit_two_lines_and_too_long():
     from src.services import image_edit as IE
-    f = IE.text_fit("부드럽고 탄탄한 쿠션감", {"w": 300, "h": 120})
+    f = IE.text_fit("부드럽고 탄탄한 쿠션감", {"w": 300, "h": 120}, ref="부드럽고 쫄깃한 식감")
     assert len(f["lines"]) == 2 and f["fits"]
-    assert not IE.text_fit("아주 아주 긴 다듬은 문장이 상자 하나에 도저히 들어가지 않는 경우입니다", {"w": 120, "h": 30})["fits"]
-    layer = IE._text_layer("부드럽고 탄탄한 쿠션감", {"x": 0, "y": 0, "w": 300, "h": 120}, "333333")
-    assert "%0A" in layer                                                         # 두 줄
+    assert not IE.text_fit("아주 아주 긴 다듬은 문장이 상자 하나에 도저히 들어가지 않는 경우입니다", {"w": 120, "h": 30}, ref="짧은 글")["fits"]
 
 
 def test_polish_keeps_tencent_when_too_long(monkeypatch):

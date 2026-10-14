@@ -186,4 +186,5 @@ def test_the_font_loader_is_not_wired_into_the_pipeline_yet():
     ※ 글자가 아니라 `import`를 잰다(주석에 이름이 보이는 것과 실제 연결은 다르다).
     """
     from tests.test_d3_glossary import _importers_of
-    assert _importers_of("image_render_font", allow={"image_text_render.py"}) == []
+    # Y11-M(오너): 사진 편집기(사람이 누른 편집·다듬음 새 버전)는 우리 쪽에서 그린다 — 번역 경로가 아니라 허용(test_d3_3_render 참고)
+    assert _importers_of("image_render_font", allow={"image_text_render.py", "image_edit.py"}) == []

@@ -512,6 +512,10 @@ def test_it_is_not_wired_into_the_pipeline_yet():
     결과는 벤치 저장소(`kind="d3"`)에만 간다. 막는 것은 **등록·번역 경로**다.
 
     ※ 글자가 아니라 `import`를 잰다 — 독스트링에 이름이 보이는 것은 연결이 아니다.
+
+    Y11-M(오너 2026-10-14 「다듬기 렌더 품질」): **사진 편집기**(`image_edit` — 사람이 누른 「글자 고치기」·「지우기」와
+    번역본 위 「다듬음」 새 버전)는 우리 쪽에서 그린다(Cloudinary 변환 덮어 그림 폐기). 텐센트 번역본은 그대로 남고
+    편집은 새 버전이라 **번역 경로를 갈아끼우는 게 아니다** — 그래서 이 한 곳만 허용. 등록·번역 경로는 여전히 막는다.
     """
     from tests.test_d3_glossary import BENCH_ONLY, _importers_of
-    assert _importers_of("image_text_render", allow=BENCH_ONLY) == []
+    assert _importers_of("image_text_render", allow=set(BENCH_ONLY) | {"image_edit.py"}) == []

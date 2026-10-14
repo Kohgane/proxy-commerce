@@ -220,6 +220,36 @@ def is_configured() -> bool:
     return bool(sid and skey)
 
 
+#: Y11-M(오너): 한자가 남은 상자를 AI가 두 번 못 고치면 **한자 덩어리만** 텍스트 번역(TextTranslate — 월 500만 자 무료)으로
+#   옮겨 끼운다. 이 SDK 패키지엔 그 요청 모델이 없어(이미지 번역만 실림) 공통 클라이언트로 액션 이름을 부른다(ocr_tencent와 같은 방식).
+TEXT_ACTION = "TextTranslate"
+
+
+def translate_text(text: str, source: str = "zh", target: str = "ko", timeout_sec: int = 8) -> dict:
+    """`{ok, text, why}` — 짧은 글 한 토막을 번역. 실패 사유는 공급사 코드(값·키는 안 남긴다)."""
+    text = str(text or "").strip()
+    if not text:
+        return {"ok": False, "text": "", "why": "빈 글"}
+    if not is_configured():
+        return {"ok": False, "text": "", "why": "텐센트 키 없음"}
+    try:
+        from tencentcloud.common import credential
+        from tencentcloud.common.common_client import CommonClient
+        from tencentcloud.common.profile.client_profile import ClientProfile
+        from tencentcloud.common.profile.http_profile import HttpProfile
+        sid, skey = _secret()
+        prof = ClientProfile(httpProfile=HttpProfile(endpoint=endpoint(), reqTimeout=int(timeout_sec)))
+        cli = CommonClient("tmt", "2018-03-21", credential.Credential(sid, skey), region(), profile=prof)
+        resp = cli.call_json(TEXT_ACTION, {"SourceText": text[:1500], "Source": source, "Target": target, "ProjectId": 0})
+        out = str(((resp or {}).get("Response") or {}).get("TargetText") or "").strip()
+        logger.info("[텍스트 번역] %s자 → %s자", len(text), len(out))
+        return {"ok": bool(out), "text": out, "why": "" if out else "빈 응답"}
+    except Exception as exc:                                    # noqa: BLE001
+        code = str(getattr(exc, "code", "") or type(exc).__name__)
+        logger.warning("[텍스트 번역] 실패 %s", code)
+        return {"ok": False, "text": "", "why": code[:80]}
+
+
 def status() -> dict:
     """화면이 「미연결」을 정직하게 그릴 수 있도록 — 왜 못 쓰는지까지."""
     sid, skey = _secret()
