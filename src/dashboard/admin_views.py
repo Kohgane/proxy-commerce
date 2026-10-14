@@ -1701,22 +1701,29 @@ _OCR_PRECHECK_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 
 @admin_panel_bp.route("/diagnostics/ocr-compare", methods=["GET", "POST"])
 def diagnostics_ocr_compare():
-    """Y11-H(오너 2026-10-14): 사전검사 「한자 0」 실측 — 상세 장마다 OCR 4가지(1024·auto / 원본·auto / 1600·zh / 원본·zh) 한자·라틴 수 +
-    Y11-J5 대표 사진 상자 값. 장당 OCR 4회 + 대표 1회(과금). POST가 백그라운드로 돌리고 결과는 app_state에 남는다."""
+    """Y11-H(오너 2026-10-14): 사전검사 「한자 0」 실측 — 장마다 OCR 4가지(1024·auto / 원본·auto / 1600·zh / 원본·zh) 한자·라틴 수 +
+    Y11-J5 대표 사진 상자 값. Y11-K: 입력칸은 상품 ID(앞 8자도)·SKU·상품명 일부·수집 URL 아무거나 → 후보 목록 → 하나 골라 실행.
+    본 해결은 드로어 「쿠팡 노출」 탭의 「OCR 다시 판정(이 상품)」 — 이 화면은 보조."""
     from flask import request as _rq
     from src.services import ocr_compare_diag as D
+    q = (_rq.values.get("q") or "").strip()[:120]
     item = (_rq.values.get("item") or "").strip()[:64]
+    raw_no = (_rq.values.get("no") or "").strip()
     try:
-        idx = [int(x) - 1 for x in re.split(r"[\s,·]+", _rq.values.get("no") or "3,6,7") if x.strip()][:6]
+        idx = [int(x) - 1 for x in re.split(r"[\s,·]+", raw_no) if x.strip()][:6] if raw_no else None
     except ValueError:
-        idx = [2, 5, 6]
-    started = None
+        idx = None
+    started, err = None, ""
     if _rq.method == "POST" and _rq.values.get("do") == "census":
         started = D.start_census()
+        if not started:
+            err = "다른 OCR 판정이 도는 중이에요"
     elif _rq.method == "POST" and item:
-        started = D.start(item, [i for i in idx if i >= 0])
-    return render_template_string(_OCR_COMPARE_TEMPLATE, res=D.last(), cen=D.last_census(), item=item,
-                                  no=",".join(str(i + 1) for i in idx), started=started)
+        r = D.start(item, [i for i in idx if i >= 0] if idx else None)
+        started, err = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("why") or "시작하지 못했어요"))
+    cands = D.resolve(q) if q and not item else []
+    return render_template_string(_OCR_COMPARE_TEMPLATE, res=D.last(), cen=D.last_census(), q=q, item=item,
+                                  no=raw_no, started=started, err=err, cands=cands, searched=bool(q and not item))
 
 
 _OCR_COMPARE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -1725,15 +1732,20 @@ _OCR_COMPARE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 <body class="p-3"><div class="container" style="max-width:860px;overflow-wrap:anywhere;word-break:break-word" data-role="ocr-compare">
 <h5>OCR 사전검사 비교 — 축소·인식 언어별 한자 수</h5>
 <p class="small text-muted">상세 장마다 텐센트 OCR 4회 + 대표 사진 1회(과금). 결과는 저장돼 나중에 다시 열어도 보입니다.</p>
-<form method="post" class="row g-2 small mb-3"><div class="col-7"><input class="form-control form-control-sm" name="item" value="{{ item or res.item or '' }}" placeholder="상품 ID"></div>
-<div class="col-3"><input class="form-control form-control-sm" name="no" value="{{ no }}" placeholder="상세 번호(1부터)"></div>
-<div class="col-2"><button class="btn btn-sm btn-dark w-100" data-role="ocr-compare-run">재기</button></div></form>
-{% if started is sameas true %}<p class="small" data-role="ocr-compare-started">시작했어요 — 30초쯤 뒤 새로고침하세요.</p>
-{% elif started is sameas false %}<p class="small">이미 재는 중이에요.</p>{% endif %}
+<form method="get" class="row g-2 small mb-2"><div class="col-7"><input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="상품 ID(앞 8자도) · SKU · 상품명 일부 · 수집 URL"></div>
+<div class="col-3"><input class="form-control form-control-sm" name="no" value="{{ no }}" placeholder="상세 번호(비우면 「한자 0」 전부)"></div>
+<div class="col-2"><button class="btn btn-sm btn-outline-dark w-100" data-role="ocr-compare-find">찾기</button></div></form>
+{% if searched %}{% if cands %}<div class="list-group small mb-3" data-role="item-cands">{% for c in cands %}
+<form method="post" class="list-group-item d-flex gap-2 align-items-center"><input type="hidden" name="item" value="{{ c.id }}"><input type="hidden" name="no" value="{{ no }}">
+<div class="flex-grow-1"><strong>{{ c.title or '(제목 없음)' }}</strong><br><code>{{ c.id }}</code>{% if c.sku %} · SKU {{ c.sku }}{% endif %} · {{ c.collected_at[:10] }}</div>
+<button class="btn btn-sm btn-dark" data-role="ocr-compare-run">이 상품으로 재기</button></form>{% endfor %}</div>
+{% else %}<p class="text-danger small" data-role="item-none">「{{ q }}」에 맞는 상품이 없어요 — 상품명 일부나 수집 URL로도 찾을 수 있어요.</p>{% endif %}{% endif %}
+{% if err %}<p class="text-danger small" data-role="ocr-compare-error">{{ err }}</p>
+{% elif started is sameas true %}<p class="small" data-role="ocr-compare-started">시작했어요 — 1~2분 뒤 새로고침하세요.</p>{% endif %}
 {% if res.running %}<p class="small" data-role="ocr-compare-running">재는 중… ({{ res.at }})</p>{% endif %}
 {% if res.error %}<p class="text-danger small">{{ res.error }}</p>{% endif %}
 {% for p in res.pages or [] %}<div class="border rounded p-2 mb-2 small" data-role="ocr-compare-page">
-<strong>상세 {{ p.no }}번</strong>{% if p.size %} · {{ p.size[0] }}×{{ p.size[1] }}{% endif %}{% if p.why %} · {{ p.why }}{% endif %}
+<strong>{{ '사진' if p.kind == 'gallery' else '상세' }} {{ p.no }}번</strong>{% if p.verdict %} · 지금 판정 {{ {'han':'한자 나옴','send':'라틴 있어 번역으로','none':'글자 거의 없음','unknown':'못 함'}[p.verdict] }}{% endif %}{% if p.size %} · {{ p.size[0] }}×{{ p.size[1] }}{% endif %}{% if p.why %} · {{ p.why }}{% endif %}
 <table class="table table-sm mb-1"><thead><tr><th>보낸 방식</th><th>한자</th><th>라틴</th><th>읽은 글자</th></tr></thead><tbody>
 {% for v in p.variants or [] %}<tr><td>{{ v.name }}</td><td>{{ v.han if v.ok else '—' }}</td><td>{{ v.latin if v.ok else '—' }}</td><td>{{ v.text if v.ok else v.why }}</td></tr>{% endfor %}
 </tbody></table><a href="{{ p.url }}" target="_blank" rel="noreferrer">{{ p.url[:90] }}</a></div>{% endfor %}
@@ -1756,18 +1768,21 @@ _OCR_COMPARE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 @admin_panel_bp.route("/diagnostics/image-polish", methods=["GET", "POST"])
 def diagnostics_image_polish():
     """Y11-I(오너 2026-10-14): 이 기능 전에 번역된 상품의 번역본을 다듬는다(자동 다듬기와 같은 길 — haiku + 「글자 고치기」 렌더).
-    장마다 haiku 1회(상자 10개씩) + 사진 편집 1회. 결과는 장마다 `polish` 기록 — 편집 화면 「다듬기」 줄."""
+    Y11-K: 입력칸은 상품 ID(앞 8자도)·SKU·상품명 일부·수집 URL → 후보 → 하나 골라 실행. 본 해결은 드로어 「번역 다듬기(이 상품)」."""
     import json as _json
     from flask import request as _rq
     from src.services import image_polish as IP
+    from src.services import ocr_compare_diag as D
+    q = (_rq.values.get("q") or "").strip()[:120]
     item = (_rq.values.get("item") or "").strip()[:64]
     started = IP.start_item(item) if (_rq.method == "POST" and item) else None
-    rows = []
+    cands = D.resolve(q) if q and not item else []
+    rows, line = [], ""
     if item:
         try:
-            from src.services.ocr_compare_diag import _item
-            row, _uid = _item(item)
+            row, _uid = D._item(item)
             ex = _json.loads((row or {}).get("extra_json") or "{}") or {}
+            line = IP.item_line(item, ex)
             for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세")):
                 for e in ex.get(key) or []:
                     pl = e.get("polish") if isinstance(e, dict) else None
@@ -1775,8 +1790,8 @@ def diagnostics_image_polish():
                         rows.append({"name": f"{lab} {int(e.get('idx', -1)) + 1}", "pl": pl})
         except Exception as exc:                                  # noqa: BLE001
             rows = [{"name": "읽기 실패", "pl": {"why": f"{type(exc).__name__}", "rows": []}}]
-    return render_template_string(_IMAGE_POLISH_TEMPLATE, item=item, started=started, rows=rows,
-                                  today=IP.today_count(), cap=IP.daily_cap())
+    return render_template_string(_IMAGE_POLISH_TEMPLATE, q=q, item=item, started=started, rows=rows, line=line,
+                                  cands=cands, searched=bool(q and not item), today=IP.today_count(), cap=IP.daily_cap())
 
 
 _IMAGE_POLISH_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -1785,9 +1800,15 @@ _IMAGE_POLISH_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <body class="p-3"><div class="container" style="max-width:860px;overflow-wrap:anywhere;word-break:break-word" data-role="image-polish">
 <h5>번역 다듬기 — 이미 번역된 상품</h5>
 <p class="small text-muted">오늘 다듬기 {{ today }}/{{ cap }}회. 장마다 AI 1회(상자 10개씩) + 사진 편집 1회. 텐센트 번역본은 버전으로 남아요.</p>
-<form method="post" class="row g-2 small mb-3"><div class="col-9"><input class="form-control form-control-sm" name="item" value="{{ item }}" placeholder="상품 ID"></div>
-<div class="col-3"><button class="btn btn-sm btn-dark w-100" data-role="image-polish-run">다듬기</button></div></form>
-{% if started %}<p class="small" data-role="image-polish-started">{{ ('다듬기 시작 — ' ~ started.n ~ '장. 1~2분 뒤 새로고침하세요.') if started.ok and started.n else started.why }}</p>{% endif %}
+<form method="get" class="row g-2 small mb-2"><div class="col-9"><input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="상품 ID(앞 8자도) · SKU · 상품명 일부 · 수집 URL"></div>
+<div class="col-3"><button class="btn btn-sm btn-outline-dark w-100" data-role="image-polish-find">찾기</button></div></form>
+{% if searched %}{% if cands %}<div class="list-group small mb-3" data-role="item-cands">{% for c in cands %}
+<form method="post" class="list-group-item d-flex gap-2 align-items-center"><input type="hidden" name="item" value="{{ c.id }}">
+<div class="flex-grow-1"><strong>{{ c.title or '(제목 없음)' }}</strong><br><code>{{ c.id }}</code>{% if c.sku %} · SKU {{ c.sku }}{% endif %} · {{ c.collected_at[:10] }}</div>
+<button class="btn btn-sm btn-dark" data-role="image-polish-run">이 상품 다듬기</button></form>{% endfor %}</div>
+{% else %}<p class="text-danger small" data-role="item-none">「{{ q }}」에 맞는 상품이 없어요 — 상품명 일부나 수집 URL로도 찾을 수 있어요.</p>{% endif %}{% endif %}
+{% if started %}<p class="small {{ '' if started.ok else 'text-danger' }}" data-role="image-polish-started">{{ ('다듬기 시작 — ' ~ started.n ~ '장. 1~2분 뒤 새로고침하세요.') if started.ok and started.n else started.why }}</p>{% endif %}
+{% if line %}<p class="small" data-role="image-polish-line"><strong>{{ line }}</strong></p>{% endif %}
 {% for r in rows %}<div class="border rounded p-2 mb-2 small" data-role="image-polish-row"><strong>{{ r.name }}</strong>
  · 바뀐 상자 {{ r.pl.changed or 0 }} · AI {{ r.pl.calls or 0 }}회{% if r.pl.version %} · {{ r.pl.version }}{% endif %}{% if r.pl.why %} · {{ r.pl.why }}{% endif %}
 <ul class="mb-0">{% for b in r.pl.rows or [] %}{% if b.ko != b.tgt or b.why %}<li>{{ b.src }} | 텐센트 「{{ b.tgt }}」 → 「{{ b.ko if b.ko else '(지움)' }}」{% if b.why %} (AI 「{{ b.ai }}」 버림: {{ b.why }}){% endif %}</li>{% endif %}{% endfor %}</ul></div>{% endfor %}

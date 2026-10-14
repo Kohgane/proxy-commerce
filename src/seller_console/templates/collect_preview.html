@@ -24,6 +24,13 @@
       </span>
     </div>
     <div class="op-card-body">
+      {# Y11-K(오너 2026-10-14): 사람이 상품 ID를 찾을 필요가 없게 — 상품번호(SKU) 옆에 전체 ID + 복사. #}
+      <p class="small text-muted mb-2 kgp-id-line" data-role="item-id-line">
+        {% if item_sku %}상품번호(SKU) <strong data-role="item-sku">{{ item_sku }}</strong> · {% endif %}ID
+        <code data-role="item-id">{{ item.id }}</code>
+        <button type="button" class="btn btn-sm btn-ghost py-0 px-2" data-role="item-id-copy"
+                onclick="(function(b){var v=document.querySelector('[data-role=item-id]').textContent.trim();var done=function(){b.textContent='복사됨';setTimeout(function(){b.textContent='복사'},1500)};if(navigator.clipboard){navigator.clipboard.writeText(v).then(done,function(){b.textContent='길게 눌러 복사'})}else{b.textContent='길게 눌러 복사'}})(this)">복사</button>
+      </p>
       <!-- v45 P9: 편집 칩 탭(고가브릿지 토큰) — 필드를 탭별로 분리(한 탭씩 표시). -->
       <div class="kgp-etabs" role="tablist" aria-label="상품 편집 탭">
         <button type="button" class="kgp-etab-chip active" data-etab="basic" onclick="kgpEtab('basic')"><i class="bi bi-tag"></i> 상품명·카테고리</button>

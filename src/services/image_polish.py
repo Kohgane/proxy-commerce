@@ -312,30 +312,65 @@ _RUN = {"busy": False}
 def start_item(item_id: str) -> Dict:
     """이미 번역된 상품 한 개를 다듬는다(관리자 버튼 — 이 기능 전에 번역된 장용). 백그라운드 · 결과는 장마다 `polish` 기록."""
     import threading
-    from src.db import pg as _pg
-    from src.seller_console import collect_history_store as store
+    from src.services.ocr_compare_diag import _item
     if _RUN["busy"]:
         return {"ok": False, "why": "다듬는 중이에요 — 끝나면 다시 눌러 주세요"}
-    uid = ""
-    if _pg.pg_enabled():
-        with _pg.query() as cur:
-            cur.execute("SELECT user_id FROM collect_history WHERE id::text=%s", (item_id,))
-            r = cur.fetchone()
-        uid = r[0] if r else ""
-    row = store.get(item_id, seller_ids={uid}) if uid else None
+    row, uid = _item(item_id)
     if not row:
         return {"ok": False, "why": "상품을 찾지 못했어요"}
     targets = item_targets(json.loads(row.get("extra_json") or "{}") or {})
     if not targets:
         return {"ok": True, "n": 0, "why": "다듬을 번역본이 없어요(상자 없는 번역본·이미 다듬음·다른 버전 선택 제외)"}
 
+    from src.db import image_translate_queue_pg as q
+    _RUN["busy"] = True                                          # 시작 응답 전에 잡아 둔다(연타 두 번 시작 금지)
+    q.state_set(_item_key(item_id), {"running": True, "n": len(targets), "at": datetime.now(timezone.utc).isoformat()})
+
     def _go():
-        _RUN["busy"] = True
+        done, whys = 0, []
         try:
             for kind, idx in targets:
-                polish_job(item_id, uid, kind, idx)
+                r = polish_job(item_id, uid, kind, idx) or {}
+                done += 1
+                if r.get("why") and not r.get("changed"):
+                    whys.append(str(r["why"]))
         finally:
             _RUN["busy"] = False
+            q.state_set(_item_key(item_id), {"running": False, "n": len(targets), "done": done,
+                                             "why": (max(set(whys), key=whys.count) if whys else ""),
+                                             "at": datetime.now(timezone.utc).isoformat()})
 
     threading.Thread(target=_go, daemon=True, name="image-polish").start()
     return {"ok": True, "n": len(targets)}
+
+
+def _item_key(item_id: str) -> str:
+    return f"imgpolish:item:{item_id}"
+
+
+def item_line(item_id: str, extra: dict) -> str:
+    """결과줄 — 「번역 다듬기 n장: 바뀐 상자 n · AI n회 · 버린 결과 n」 + 장별 한 줄 요약(앞 3장)."""
+    from src.db import image_translate_queue_pg as q
+    st = q.state_get(_item_key(item_id)) or {}
+    rows = []
+    for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세")):
+        for e in extra.get(key) or []:
+            pl = e.get("polish") if isinstance(e, dict) else None
+            if isinstance(pl, dict):
+                rows.append((f"{lab} {int(e.get('idx', -1)) + 1}", pl))
+    if st.get("running"):
+        return f"번역 다듬기 중… ({len(rows)}/{st.get('n') or '?'}장)"
+    if not rows:
+        if not st:
+            return ""
+        return "번역 다듬기: 다듬은 사진이 아직 없어요" + (f" — {st['why']}" if st.get("why") else "")
+    changed = sum(int(pl.get("changed") or 0) for _n, pl in rows)
+    calls = sum(int(pl.get("calls") or 0) for _n, pl in rows)
+    dropped = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("why"))
+    whys = sorted({str(pl.get("why")) for _n, pl in rows if pl.get("why")})
+    s = f"번역 다듬기 {len(rows)}장: 바뀐 상자 {changed} · AI {calls}회"
+    if dropped:
+        s += f" · AI 결과 버림 {dropped}(금지어·숫자 등)"
+    if whys:
+        s += " · " + whys[0][:60]
+    return s

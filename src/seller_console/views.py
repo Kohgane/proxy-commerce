@@ -3919,7 +3919,27 @@ def coupang_exposure_data(item: dict) -> dict:
             # M5 후속: 이미지 번역이 왜 안 됐나(공급사 원문) — 카드 「나갈 사진」 옆 배지. 없으면 null.
             "imgko_fail": _imgko_failure(iid, ex),
             # Y11-C2: 실패가 없어도 「다시 번역」 자리 + 오늘 텐센트 호출 수(공급사 미연결이면 null — 누를 곳을 만들지 않는다)
-            "imgko_status": _imgko_status(iid)}
+            "imgko_status": _imgko_status(iid),
+            # Y11-K: 이 상품 버튼(OCR 다시 판정·번역 다듬기) — 과금이라 공유 사용자(오너 서버 자격)만 보인다
+            "diag_ok": _diag_buttons_ok()}
+
+
+def _item_sku(item) -> str:
+    """Y11-K: 드로어 상단 상품번호(SKU) — 등록이 쓰는 것과 같은 규칙(주소에서 뽑음 · 셀러가 적어 둔 값이 이김)."""
+    try:
+        from src.collectors.product_key import vendor_sku
+        ex = json.loads((item or {}).get("extra_json") or "{}") or {}
+        return str(ex.get("sku") or vendor_sku(str((item or {}).get("url") or "")) or "")
+    except Exception:                                            # noqa: BLE001
+        return ""
+
+
+def _diag_buttons_ok() -> bool:
+    try:
+        from . import market_pick as _mp
+        return bool(_mp.session_is_shared())
+    except Exception:                                            # noqa: BLE001
+        return False
 
 
 def _imgko_status(item_id: str = ""):
@@ -4023,6 +4043,61 @@ def collect_image_translate_retry(item_id):
     elif out["resumed"]:
         msg += " · 멈춰 있던 번역 큐를 다시 돌렸어요"
     return jsonify(dict(out, message=msg))
+
+
+def _diag_owned(item_id):
+    """Y11-K: 이 상품 버튼(OCR 다시 판정·번역 다듬기) — 과금 호출이라 공유 사용자(오너 서버 자격)만. `(item, 오류 응답)`."""
+    if not _check_auth():
+        return None, (jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401)
+    item = _get_owned_item(item_id)
+    if not item:
+        return None, (jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404)
+    from . import market_pick as _mp
+    if not _mp.session_is_shared():
+        return None, (jsonify({"ok": False, "error": "이 버튼은 운영자 계정에서만 쓸 수 있어요."}), 403)
+    return item, None
+
+
+@bp.route("/collect/<item_id>/ocr-recheck", methods=["GET", "POST"])
+def collect_ocr_recheck(item_id):
+    """Y11-K(오너 2026-10-14): 「OCR 다시 판정(이 상품)」 — 「한자 0」으로 건너뛴 장을 4방식으로 다시 읽는다(장당 OCR 4회, 상한 20장).
+    POST = 시작(상품을 먼저 찾고, 못 찾으면 시작 안 함) · GET = 결과줄. 데이터는 바꾸지 않는다(「다시 번역」이 새 규칙으로 접수)."""
+    item, err = _diag_owned(item_id)
+    if err:
+        return err
+    from src.services import ocr_compare_diag as D
+    iid = str(item.get("id") or item_id)
+    if request.method == "POST":
+        r = D.start(iid)
+        if not r.get("ok"):
+            return jsonify({"ok": False, "error": r.get("why") or "시작하지 못했어요"}), 409
+        return jsonify({"ok": True, "running": True, "line": "OCR 다시 판정 중… (1~2분)"})
+    res = D.last_item(iid)
+    return jsonify({"ok": True, "running": bool(res.get("running")), "line": D.line(res)})
+
+
+@bp.route("/collect/<item_id>/image-polish", methods=["GET", "POST"])
+def collect_image_polish(item_id):
+    """Y11-K: 「번역 다듬기(이 상품)」 — 이미 번역된 장을 다듬는다(장마다 haiku 1회 + 사진 편집 1회). POST = 시작 · GET = 결과줄."""
+    item, err = _diag_owned(item_id)
+    if err:
+        return err
+    from src.services import image_polish as _ip
+    iid = str(item.get("id") or item_id)
+    if request.method == "POST":
+        r = _ip.start_item(iid)
+        if not r.get("ok"):
+            return jsonify({"ok": False, "error": r.get("why") or "시작하지 못했어요"}), 409
+        if not r.get("n"):
+            return jsonify({"ok": True, "running": False, "line": "번역 다듬기: " + str(r.get("why") or "다듬을 번역본이 없어요")})
+        return jsonify({"ok": True, "running": True, "line": f"번역 다듬기 중… (0/{r['n']}장)"})
+    fresh = _get_owned_item(iid) or item
+    try:
+        ex = json.loads(fresh.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    line = _ip.item_line(iid, ex)
+    return jsonify({"ok": True, "running": line.startswith("번역 다듬기 중"), "line": line})
 
 
 @bp.post("/collect/<item_id>/rep-image")
@@ -10746,6 +10821,7 @@ def collect_preview_by_id(item_id: str):
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, ship_est=ship_est,
         field_src=field_src,
+        item_sku=_item_sku(item),
         page="collect_history",
         item=item,
         extra=extra,
