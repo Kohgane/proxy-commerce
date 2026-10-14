@@ -113,7 +113,12 @@
     // Y11-B: 예전 색 덩어리 검출로 지운 편집본(제품 일부가 지워짐)을 되돌렸으면 한 줄로 알린다
     var rev = (d.edit_reverted || []).length ? '<p class="cpx-cap" data-role="cpx-edit-reverted">예전 자동 검출로 지웠던 사진 ' +
       d.edit_reverted.map(function (r) { return (r.idx + 1) + '번'; }).join(', ') + '을 번역본으로 되돌렸어요(제품이 함께 지워졌어요).</p>' : '';
-    body.innerHTML = rev + fail + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
+    // Y11-K: 이 상품 버튼 — 상품 ID를 몰라도 폰에서 한 탭. 결과는 바로 아래 줄(눌렀다 떠나도 다시 열면 마지막 결과).
+    var diag = d.diag_ok ? '<p class="cpx-cap" data-role="cpx-diag">' +
+      '<button type="button" class="cpx-act" data-role="cpx-ocr-recheck">OCR 다시 판정(이 상품)</button> ' +
+      '<button type="button" class="cpx-act" data-role="cpx-polish">번역 다듬기(이 상품)</button></p>' +
+      '<p class="cpx-cap" data-role="cpx-ocr-line" hidden></p><p class="cpx-cap" data-role="cpx-polish-line" hidden></p>' : '';
+    body.innerHTML = rev + fail + diag + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
       '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>' +
       (out ? '<div class="cpx-slabel" data-role="cpx-out-label">등록에서 빠진 사진 — 판촉 글자를 지우면 다시 들어가요</div><div class="cpx-strip" data-role="cpx-out">' + out + '</div>' : '');
   }
@@ -134,7 +139,30 @@
       }).catch(function () { pollCheck(d, n + 1); });
     }, 3000);
   }
-  function show(d) { render(d); pollCheck(d, 0); }
+  // Y11-K: 결과줄 — GET이 「…중」이면 4초마다 다시 묻는다(최대 3분)
+  var diagTimers = {};
+  function diagLine(kind, n) {
+    var path = kind === 'ocr' ? '/ocr-recheck' : '/image-polish', role = kind === 'ocr' ? 'cpx-ocr-line' : 'cpx-polish-line';
+    if (diagTimers[kind]) { clearTimeout(diagTimers[kind]); diagTimers[kind] = null; }
+    call(base + path).then(function (t) {
+      var el = body.querySelector('[data-role=' + role + ']');
+      if (!el || !t) return;
+      var txt = t.ok ? (t.line || '') : (t.error || '');
+      el.textContent = txt; el.hidden = !txt;
+      if (t.ok && t.running && n < 45) diagTimers[kind] = setTimeout(function () { diagLine(kind, n + 1); }, 4000);
+    });
+  }
+  function diagStart(kind, b) {
+    var path = kind === 'ocr' ? '/ocr-recheck' : '/image-polish', role = kind === 'ocr' ? 'cpx-ocr-line' : 'cpx-polish-line';
+    b.disabled = true;
+    call(base + path, {}).then(function (t) {
+      b.disabled = false;
+      var el = body.querySelector('[data-role=' + role + ']');
+      if (el) { el.textContent = (t && (t.line || t.error)) || '응답이 없어요'; el.hidden = false; }
+      if (t && t.ok && t.running) diagTimers[kind] = setTimeout(function () { diagLine(kind, 1); }, 4000);
+    });
+  }
+  function show(d) { render(d); pollCheck(d, 0); if (d && d.diag_ok) { diagLine('ocr', 0); diagLine('polish', 0); } }
   function load() { body.textContent = '쿠팡 검색 카드로 만드는 중…'; call(base + '/coupang-exposure').then(show).catch(function (e) { body.textContent = '불러오지 못했어요 — 네트워크 오류: ' + ((e && e.message) || e); }); }
   root.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
@@ -160,6 +188,10 @@
         b.insertAdjacentHTML('afterend', ' <span data-role="cpx-imgko-msg">' + esc((t && (t.message || t.error)) || '응답이 없어요') + '</span>');
         b.textContent = '다시 번역'; b.disabled = false;
       });
+    } else if (role === 'cpx-ocr-recheck') {
+      diagStart('ocr', b);
+    } else if (role === 'cpx-polish') {
+      diagStart('polish', b);
     } else if (role === 'cpx-edit') {
       if (window.kgpImageEdit) window.kgpImageEdit.open(itemId, 'gallery', +b.getAttribute('data-idx'), load);   // Y11 — 닫으면 다시 그린다
     } else if (role === 'cpx-override') {

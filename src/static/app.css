@@ -2408,3 +2408,8 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kie-err { color: var(--danger); font-size: var(--caption); }
 .cpx-tile.is-out img { filter: grayscale(1) contrast(.85); }
 .cpx-out-why { font-size: var(--caption); color: var(--text-muted); margin: 2px 0; word-break: keep-all; overflow-wrap: anywhere; }
+
+/* Y11-K: 드로어 상단 상품 ID(36자) — 폰 폭에서 줄 밖으로 안 나가게 */
+.kgp-id-line code { overflow-wrap: anywhere; word-break: break-all; }
+.ch-id-col .ch-id-full { overflow-wrap: anywhere; word-break: break-all; }
+.ch-id-col summary { cursor: pointer; }

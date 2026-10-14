@@ -15,15 +15,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 STATE_KEY = "diag:ocr_compare"
+OCR_SKIP_MARK = "OCR 판정 — 한자 0"
 _HAN = re.compile("[㐀-䶿一-鿿]")
 _LATIN = re.compile("[A-Za-z]")
 _RUNNING = threading.Lock()
@@ -105,12 +107,86 @@ def _item(item_id: str):
             cur.execute("SELECT user_id FROM collect_history WHERE id::text=%s", (item_id,))
             r = cur.fetchone()
         uid = r[0] if r else ""
-    row = store.get(item_id, seller_ids={uid}) if uid else None
+    else:                                                        # 인메모리(개발·테스트)
+        r = next((x for x in store._in_memory if x.get("id") == item_id), None)
+        uid = str((r or {}).get("seller_id") or "")
+    row = store.get(item_id, seller_ids={uid}) if (uid or item_id) else None
     return row, uid
 
 
-def run(item_id: str, detail_idx: List[int]) -> Dict:
-    """실측 한 번 — 결과 dict(저장은 호출자)."""
+def resolve(q: str, limit: int = 20) -> List[Dict]:
+    """Y11-K(오너 2026-10-14): 사람은 상품 ID를 모른다 — 상품 ID(앞 6자 이상도) · SKU(상품번호) · 상품명 일부 · 수집 URL 무엇이든.
+    `[{id, sku, title, collected_at, user_id}]` 최근 수집 순. 읽기만 한다."""
+    q = str(q or "").strip()
+    if len(q) < 2:
+        return []
+    from src.db import pg as _pg
+    from src.collectors.product_key import vendor_sku
+    rows = []
+    if _pg.pg_enabled():
+        like = "%" + q.replace("%", "").replace("_", "\\_") + "%"
+        with _pg.query() as cur:
+            cur.execute("SELECT id::text, user_id, title, url, extra_json->>'title_ko', created_at FROM collect_history "
+                        "WHERE deleted_at IS NULL AND (id::text = %s OR (length(%s) >= 6 AND id::text LIKE %s) "
+                        "OR url ILIKE %s OR title ILIKE %s OR extra_json->>'title_ko' ILIKE %s) "
+                        "ORDER BY created_at DESC LIMIT %s",
+                        (q, q, q.lower() + "%", like, like, like, int(limit)))
+            rows = cur.fetchall()
+    else:
+        from src.seller_console import collect_history_store as store
+        for r in reversed(store._in_memory):
+            iid = str(r.get("id") or "")
+            ex = {}
+            try:
+                ex = json.loads(r.get("extra_json") or "{}") or {}
+            except Exception:                                    # noqa: BLE001
+                pass
+            hay = " ".join(str(x or "") for x in (r.get("url"), r.get("title"), ex.get("title_ko"))).lower()
+            if iid == q or (len(q) >= 6 and iid.startswith(q.lower())) or q.lower() in hay:
+                rows.append((iid, r.get("seller_id"), r.get("title"), r.get("url"), ex.get("title_ko"), r.get("collected_at")))
+        rows = rows[:limit]
+    out = []
+    for iid, uid, title, url, title_ko, at in rows:
+        try:
+            sku = vendor_sku(url or "") or ""
+        except Exception:                                        # noqa: BLE001
+            sku = ""
+        out.append({"id": iid, "user_id": uid or "", "sku": str(sku), "title": str(title_ko or title or "")[:60],
+                    "collected_at": at.isoformat() if hasattr(at, "isoformat") else str(at or "")})
+    return out
+
+
+def item_key(item_id: str) -> str:
+    return f"{STATE_KEY}:{item_id}"
+
+
+#: 이 상품 「OCR 다시 판정」 — 「한자 0」으로 건너뛴 장마다 4방식(장당 OCR 4회). 상한(과금 보호).
+ITEM_PAGE_CAP = int(os.getenv("OCR_RECHECK_ITEM_CAP", "20") or 20)
+
+
+def _skipped_of(ex: dict) -> List[tuple]:
+    out = []
+    for src_key, ko_key, kind in (("images", "images_ko", "gallery"), ("detail_images", "detail_images_ko", "detail")):
+        urls = [u for u in ex.get(src_key) or [] if u]
+        for e in ex.get(ko_key) or []:
+            if isinstance(e, dict) and e.get("status") == "skipped" and OCR_SKIP_MARK in str(e.get("reason") or ""):
+                i = int(e.get("idx", -1))
+                if 0 <= i < len(urls):
+                    out.append((kind, i, urls[i]))
+    return out
+
+
+def verdict(variants: List[Dict]) -> str:
+    """지금 사전검사(원본·zh) 값으로 판정 — han(한자 나옴) · send(라틴 있어 번역으로) · none(글자 거의 없음) · unknown."""
+    from src.services.image_text_precheck import LATIN_MIN
+    v = next((x for x in variants or [] if x.get("name") == "원본·zh"), None)
+    if not v or not v.get("ok"):
+        return "unknown"
+    return "han" if v["han"] else ("send" if v["latin"] >= LATIN_MIN else "none")
+
+
+def run(item_id: str, detail_idx: Optional[List[int]] = None) -> Dict:
+    """실측 한 번 — 결과 dict(저장은 호출자). `detail_idx`가 없으면 이 상품의 「한자 0」 장 전부(상한 ITEM_PAGE_CAP)."""
     from src.services import image_translate_tencent as tc
     from src.services import detail_image_plan as dip
     from src.services import coupang_image_check as C
@@ -121,10 +197,15 @@ def run(item_id: str, detail_idx: List[int]) -> Dict:
         out["error"] = "상품을 찾지 못했어요"
         return out
     ex = json.loads(row.get("extra_json") or "{}") or {}
-    details = [u for u in ex.get("detail_images") or [] if u]
-    for i in detail_idx:
-        url = details[i] if 0 <= i < len(details) else ""
-        page = {"idx": i, "no": i + 1, "url": url}
+    if detail_idx is None:
+        targets = _skipped_of(ex)
+        out["skipped_total"] = len(targets)
+        targets = targets[:ITEM_PAGE_CAP]
+    else:
+        details = [u for u in ex.get("detail_images") or [] if u]
+        targets = [("detail", i, details[i] if 0 <= i < len(details) else "") for i in detail_idx]
+    for kind, i, url in targets:
+        page = {"kind": kind, "idx": i, "no": i + 1, "url": url}
         raw, why = tc.fetch_image(url) if url else (b"", "주소 없음")
         if raw:
             data, info = dip.prepare_for_tencent(raw)
@@ -133,7 +214,12 @@ def run(item_id: str, detail_idx: List[int]) -> Dict:
             page["why"] = "" if data else str(info.get("note") or "")
         else:
             page["why"] = why
+        page["verdict"] = verdict(page.get("variants") or [])
         out["pages"].append(page)
+    cnt = {"han": 0, "send": 0, "none": 0, "unknown": 0}
+    for p in out["pages"]:
+        cnt[p["verdict"]] += 1
+    out["count"] = cnt
     try:
         from src.seller_console.product_builder import build_product
         pd = build_product(row, seller_id=uid)
@@ -147,15 +233,46 @@ def run(item_id: str, detail_idx: List[int]) -> Dict:
     return out
 
 
-def start(item_id: str, detail_idx: List[int]) -> bool:
-    """백그라운드로 한 번 — 이미 도는 중이면 False."""
+def line(res: Dict) -> str:
+    """결과줄 — 「OCR 다시 판정 14장: 한자 나옴 n · 라틴 있어 번역으로 n · 글자 거의 없음 n — 「다시 번역」을 누르면 접수」."""
+    if not res:
+        return ""
+    if res.get("running"):
+        return "OCR 다시 판정 중… (1~2분)"
+    if res.get("error"):
+        return "OCR 다시 판정 실패 — " + str(res["error"])
+    c = res.get("count") or {}
+    n = len(res.get("pages") or [])
+    if not n:
+        return "OCR 다시 판정: 「한자 0」으로 건너뛴 사진이 없어요"
+    tail = f" (이번엔 {n}장만 — 상한)" if int(res.get("skipped_total") or n) > n else ""
+    s = (f"OCR 다시 판정 {n}장{tail}: 한자 나옴 {c.get('han', 0)} · 라틴 있어 번역으로 {c.get('send', 0)} · "
+         f"글자 거의 없음 {c.get('none', 0)}")
+    if c.get("unknown"):
+        whys = [str(p.get("why") or next((v.get("why") for v in p.get("variants") or [] if v.get("why")), "") or "")
+                for p in res.get("pages") or [] if p.get("verdict") == "unknown"]
+        whys = [w for w in whys if w]
+        s += f" · 판정 못 함 {c['unknown']}" + (f"({max(set(whys), key=whys.count)[:40]})" if whys else "")
+    if c.get("han") or c.get("send"):
+        s += " — 「다시 번역」을 누르면 접수돼요"
+    return s
+
+
+def start(item_id: str, detail_idx: Optional[List[int]] = None) -> Dict:
+    """`{ok, why?, item}` — 상품을 **먼저** 찾고(못 찾으면 시작하지 않는다 — Y11-K 순서 버그) 백그라운드로 한 번."""
     from src.db import image_translate_queue_pg as q
+    row, _uid = _item(item_id)
+    if not row:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
     if not _RUNNING.acquire(blocking=False):
-        return False
+        return {"ok": False, "why": "다른 OCR 판정이 도는 중이에요 — 끝나면 다시 눌러 주세요"}
 
     def _go():
+        res = {}
         try:
-            q.state_set(STATE_KEY, {"item": item_id, "running": True, "at": datetime.now(timezone.utc).isoformat()})
+            run_at = {"item": item_id, "running": True, "at": datetime.now(timezone.utc).isoformat()}
+            q.state_set(STATE_KEY, run_at)
+            q.state_set(item_key(item_id), run_at)
             res = run(item_id, detail_idx)
         except Exception as exc:                                 # noqa: BLE001
             logger.exception("[OCR 비교 진단] 실패")
@@ -163,13 +280,18 @@ def start(item_id: str, detail_idx: List[int]) -> bool:
         finally:
             _RUNNING.release()
         q.state_set(STATE_KEY, res)
+        q.state_set(item_key(item_id), res)
 
     threading.Thread(target=_go, daemon=True, name="ocr-compare").start()
-    return True
+    return {"ok": True, "item": item_id}
+
+
+def last_item(item_id: str) -> Dict:
+    from src.db import image_translate_queue_pg as q
+    return q.state_get(item_key(item_id))
 
 
 CENSUS_KEY = "diag:ocr_recheck"
-OCR_SKIP_MARK = "OCR 판정 — 한자 0"
 
 
 def ocr_skipped_pages(limit: int = 300) -> List[tuple]:

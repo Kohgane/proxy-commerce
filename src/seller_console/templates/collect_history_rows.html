@@ -82,6 +82,8 @@
     <span class="badge ch-badge-src">{{ _src.get(it.source, it.source or '-') }}</span>
   </td>
   <td class="text-muted small" data-label="수집 시각">{{ it.collected_at|kst if it.collected_at else "-" }}</td>
+  {# Y11-K: 상품 ID — 앞 8자만 보이고 누르면 전체(접어 두기). 진단·문의 때 사람이 ID를 찾을 필요가 없게 #}
+  <td class="text-muted small ch-id-col" data-label="ID"><details data-role="row-id"><summary><code>{{ (it.id or '')[:8] }}</code></summary><code class="ch-id-full">{{ it.id }}</code></details></td>
   {# v64 STEP7: 상태 = 행당 배지 1개, 의미 토큰만(성공=청록·부분=주황·실패=적·보관=먹muted). 부트스트랩 색 남용 제거. #}
   <td data-label="상태">
     {% if it.status == "archived" %}
