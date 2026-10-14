@@ -171,6 +171,10 @@ def read_boxes(raw: bytes) -> Dict:
     except Exception as exc:                                # noqa: BLE001
         why = _fail_why(exc)
         return {"ok": False, "why": why, "code": "ocr_unopened" if why == UNOPEN_WHY else "ocr_failed", "boxes": [], "size": [W, H]}
+    # Y11-E(오너 2026-10-14): 텐센트는 기울거나 뒤집힌 글자를 **돌려 세운 그림 기준**으로 줄 수 있다(이미지 번역 실측: 180°).
+    #   네 꼭짓점(`Polygon`)이 있으면 그것의 외접 사각형을 쓰고, 없으면 `ItemPolygon`은 그림 각도가 0일 때만 쓴다
+    #   (각도가 있는데 꼭짓점이 없으면 그 상자는 버린다 — 빈 벽에 상자를 그리지 않는다).
+    angle = _angle_of(body)
     boxes = []
     for d in body.get("TextDetections") or []:
         d = d or {}
@@ -179,13 +183,46 @@ def read_boxes(raw: bytes) -> Dict:
             conf = float(d.get("Confidence") or 0)
         except (TypeError, ValueError):
             conf = 0.0
-        p = d.get("ItemPolygon") or {}
-        if not txt or conf < MIN_CONFIDENCE or not p:
+        if not txt or conf < MIN_CONFIDENCE:
             continue
+        rect = _polygon_rect(d.get("Polygon")) or (_item_rect(d.get("ItemPolygon")) if abs(angle) < 1.0 else None)
+        if not rect:
+            continue
+        x, y, w, h = rect
+        boxes.append({"x": int(x * kx), "y": int(y * ky), "w": int(w * kx), "h": int(h * ky),
+                      "src": txt[:120], "tgt": "", "conf": round(conf, 1)})
+    return {"ok": True, "why": "", "boxes": boxes[:40], "size": [W, H], "angle": angle}
+
+
+def _angle_of(body: dict) -> float:
+    """응답 그림 각도 — 이 API는 `Angel`(원문 철자)로 주기도 한다. 없으면 0."""
+    for k in ("Angle", "Angel"):
         try:
-            boxes.append({"x": int(float(p.get("X") or 0) * kx), "y": int(float(p.get("Y") or 0) * ky),
-                          "w": int(float(p.get("Width") or 0) * kx), "h": int(float(p.get("Height") or 0) * ky),
-                          "src": txt[:120], "tgt": "", "conf": round(conf, 1)})
+            v = float(body.get(k))
         except (TypeError, ValueError):
             continue
-    return {"ok": True, "why": "", "boxes": boxes[:40], "size": [W, H]}
+        v = v % 360
+        return v - 360 if v > 180 else v
+    return 0.0
+
+
+def _polygon_rect(pts):
+    """`[{X,Y}×4]` → `(x, y, w, h)` 외접 사각형. 모양이 아니면 None."""
+    try:
+        xs = [float(p.get("X")) for p in pts]
+        ys = [float(p.get("Y")) for p in pts]
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if len(xs) < 3:
+        return None
+    x0, y0 = max(0.0, min(xs)), max(0.0, min(ys))
+    return (x0, y0, max(1.0, max(xs) - x0), max(1.0, max(ys) - y0))
+
+
+def _item_rect(p):
+    if not isinstance(p, dict):
+        return None
+    try:
+        return (float(p.get("X") or 0), float(p.get("Y") or 0), float(p.get("Width") or 0), float(p.get("Height") or 0))
+    except (TypeError, ValueError):
+        return None

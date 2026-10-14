@@ -114,6 +114,18 @@ def _jpeg(w=800, h=800):
     return b.getvalue()
 
 
+def _drawn(w=800, h=800):
+    """번역본 흉내 — 줄 상자 두 칸(620,20 · 620,62, 160×40)에 글자색을 칠한 그림."""
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (w, h), (240, 240, 240))
+    d = ImageDraw.Draw(im)
+    d.rectangle([620, 20, 780, 60], fill=(30, 30, 30))
+    d.rectangle([620, 62, 780, 102], fill=(30, 30, 30))
+    b = io.BytesIO()
+    im.save(b, "JPEG")
+    return b.getvalue()
+
+
 class _Pwt(Exception):
     code = "UnsupportedOperation.PictureWithoutText"
     message = "翻译失败，输入为无文本图片。"
@@ -129,7 +141,7 @@ def _cli(pwt_urls, seen):
             if seen and len(seen) in pwt_urls:
                 raise _Pwt()
             r = _Resp()
-            r.Data = base64.b64encode(_jpeg()).decode()
+            r.Data = base64.b64encode(_drawn()).decode()     # Y11-E: 번역본은 줄 상자 자리에 한국어를 그린다(틀 확인이 이 차이로 잰다)
             r.SourceText, r.TargetText = "88VIP SALE 235 消费券", "88VIP 세일 235 쿠폰"
             r.TransDetails = [_Detail("88VIP SALE", "88VIP 세일", _Box(620, 20, 160, 40)),
                               _Detail("235 RMB 消费券", "235 위안 쿠폰", _Box(620, 62, 160, 40))]

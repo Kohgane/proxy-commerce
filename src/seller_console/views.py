@@ -5059,7 +5059,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
         _sg.begin(f"pv_job:{job_id[:8]}")                            # Z9: 잡 스레드도 10초 스톨 감시
         try:
             t0 = _time.monotonic()
-            _pv_auto_image_edit(job_id, data)                          # Y11: 판촉 상자(제품 밖) 자동 지우기 — 이미지 배열을 만들기 전에
+            _pv_auto_image_edit(job_id, data)                          # Y11-E: 자동 지우기 없음 — 색 덩어리 옛 편집본만 빼기(이미지 배열을 만들기 전에)
             product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
             # Y10: 리스크 게이트 — 카드 「위험 n건」. 결정 안 된 보류·차단이 있으면 AI(상세 초안·반려 자동 수정·Y8)는
@@ -5233,19 +5233,20 @@ def collect_image_edit(item_id: str, kind: str, idx: int):
     if _ie.drop_legacy_edits(ex):
         _image_edit_save(item_id, ex)                            # Y11-B: 색 덩어리 편집본은 열자마자 되돌린다
     if request.method == "GET":
-        had = bool((_ie._entry(ex, kind, idx) or {}).get("boxes"))
+        before = json.dumps(_ie._entry(ex, kind, idx) or {}, sort_keys=True, ensure_ascii=False)
         p = _ie.plan(ex, kind, idx)
-        if not had and (_ie._entry(ex, kind, idx) or {}).get("boxes"):
-            _image_edit_save(item_id, ex)                         # OCR로 새로 읽은 상자 — 다음엔 다시 안 부른다
+        if json.dumps(_ie._entry(ex, kind, idx) or {}, sort_keys=True, ensure_ascii=False) != before:
+            _image_edit_save(item_id, ex)                         # OCR로 새로 읽은 상자 · 틀을 바로잡은 상자 — 다음엔 다시 안 부른다
         return jsonify(dict(p, ok=True, kind=kind, idx=idx, orig=_ie._original(ex, kind, idx)))
     body = request.get_json(force=True, silent=True) or {}
     ops = [o for o in (body.get("ops") or []) if isinstance(o, dict)][:40]
     r = _ie.apply(ex, kind, idx, ops, by="user")
     if not r.get("ok"):
         return jsonify(r), 409
+    p = _ie.plan(ex, kind, idx)                                   # Y11-E: 새 편집본의 상자(그 그림을 OCR) — 저장 전에 읽어 같이 남긴다
     if not _image_edit_save(item_id, ex):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
-    return jsonify(dict(r, plan=_ie.plan(ex, kind, idx)))           # 상자는 저장분 — OCR 다시 안 부름(배지는 사진 한 번 받아 다시 찾음)
+    return jsonify(dict(r, plan=p))
 
 
 @bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/revert")
@@ -5262,7 +5263,26 @@ def collect_image_edit_revert(item_id: str, kind: str, idx: int):
         return jsonify(r), 409
     if not _image_edit_save(item_id, ex):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
-    return jsonify({"ok": True})
+    return jsonify(dict(r, ok=True))
+
+
+@bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/select")
+def collect_image_edit_select(item_id: str, kind: str, idx: int):
+    """Y11-E 버전 고르기 — `{key: original|translated|edit:n}`. 「원본으로」 = `original`(수집 원본을 연다 · 나가는 사진도 원본).
+    수집 원본은 읽기만 한다 — 고르면 번역본·편집본을 안 쓸 뿐, 원본 주소는 그대로다."""
+    if kind not in ("gallery", "detail"):
+        return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from src.services import image_edit as _ie
+    key = str((request.get_json(force=True, silent=True) or {}).get("key") or "")
+    r = _ie.select(ex, kind, idx, key)
+    if not r.get("ok"):
+        return jsonify(r), 409
+    if not _image_edit_save(item_id, ex):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    return jsonify(dict(r, ok=True))
 
 
 @bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/translate")
@@ -5293,8 +5313,8 @@ def collect_image_edit_translate(item_id: str, kind: str, idx: int):
 
 
 def _pv_auto_image_edit(job_id: str, data: dict) -> None:
-    """Y11 자동 1차 — **Y11-B부터 기본 꺼짐**(켜기 `IMAGE_EDIT_AUTO=1`). 켜면 판촉 의심 장의 「판촉 토큰 적중 글자 상자 +
-    믿을 수 있는 제품 영역 밖」만 지운다. 꺼져 있어도 색 덩어리(Y11 첫판)로 만든 편집본은 등록 전에 되돌린다."""
+    """Y11-E(오너 2026-10-14): **자동 픽셀 변경 없음** — 자동 지우기는 없앴다(자동은 번역뿐, 별도 버전).
+    여기서는 Y11 첫판의 색 덩어리(`c#`) 편집본만 등록 전에 버전 목록에서 빼고 그 바탕으로 돌린다."""
     if not data.get("item_id"):
         return
     from src.services import image_edit as _ie
@@ -5302,19 +5322,8 @@ def _pv_auto_image_edit(job_id: str, data: dict) -> None:
     item, ex = _image_edit_item(item_id)
     if item is None:
         return
-    if _ie.drop_legacy_edits(ex):                                # Y11-B: 색 덩어리 편집본은 등록 전에 되돌린다
+    if _ie.drop_legacy_edits(ex):
         _image_edit_save(item_id, ex)
-    if not _ie.auto_enabled() or not _ie.configured()[0]:        # Y11-B: 자동 지우기 기본 꺼짐(IMAGE_EDIT_AUTO=1일 때만)
-        return
-    try:
-        res = _ie.auto_promo(ex)
-    except Exception as exc:                                     # noqa: BLE001
-        logger.warning("[사진 편집·자동] item=%s 실패: %s", item_id, exc)
-        return
-    if any(r.get("url") for r in res):
-        _image_edit_save(item_id, ex)
-    if res:
-        _pv_update(job_id, image_edit=res)
 
 
 @bp.post("/collect/<item_id>/risk-decision")

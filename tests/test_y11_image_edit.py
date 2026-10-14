@@ -45,6 +45,8 @@ def _ex():
         d = json.load(f)
     d.pop("_doc", None)
     d["images_ko"][0].update(boxes=json.loads(json.dumps(BOXES)), box_size=[800, 800])
+    for e in d["images_ko"]:
+        e["box_frame"] = "identity"            # Y11-E: 새 모양 — 번역할 때 원본↔번역본 차이로 좌표 틀을 확인한 상자
     return d
 
 
@@ -66,6 +68,8 @@ def cloud(monkeypatch):
     monkeypatch.setattr(E, "configured", lambda: (True, ""))
     monkeypatch.setattr(E, "_ready", lambda url: (True, 200))
     monkeypatch.setattr(E, "_load_small", lambda url: (_photo(), (800, 800)))
+    # Y11-E: 편집본·원본 버전의 상자는 그 그림을 OCR로 읽는다 — 흉내(같은 배치)
+    monkeypatch.setattr(E, "_ocr_version", lambda url: {"ok": True, "boxes": json.loads(json.dumps(BOXES)), "size": [800, 800]})
     yield calls
     q.reset_for_tests()
 
@@ -107,10 +111,10 @@ def test_promo_photo_default_is_translated_and_only_tapped_box_is_erased(cloud):
     ex = _ex()
     p = E.plan(ex, "gallery", 0, small=_photo())
     assert p["url"].endswith("p0_TENCENT.jpg") and len(p["boxes"]) == 6        # 번역본 위에서 분류
-    assert not any(b["auto"] for b in p["boxes"]) and p["subject"] is None      # 자동 꺼짐 — 미리 고른 것 0 · 제품 영역 안 씀
+    assert not any("auto" in b for b in p["boxes"]) and "subject" not in p     # Y11-E: 자동 지우기·제품 영역 판정 자체가 없다
     cls = {b["src"]: b["cls"] for b in p["boxes"]}
     assert cls["*88VIP SALE 235 RMB 消费券"] == "promo" and cls["-VRSUK Italian brand·卫斯克"] == "brand"
-    assert E.auto_promo(ex) == [] and cloud == []                               # IMAGE_EDIT_AUTO 기본 0
+    assert cloud == []
     r = E.apply(ex, "gallery", 0, [{"id": "t1", "action": "erase"}], small=_photo())
     assert r["ok"] and len(cloud) == 1 and cloud[0]["src"].endswith("p0_TENCENT.jpg")
     tr = cloud[0]["transform"]
@@ -128,46 +132,24 @@ def test_erase_region_is_box_plus_ten_percent_of_height_only():
         assert b["er"] == E.erase_rect({k: b[k] for k in ("x", "y", "w", "h")}, p["size"])
 
 
-def test_auto_stays_off_by_default_even_in_prevalidate(cloud, monkeypatch):
+def test_no_automatic_pixel_change_anywhere_even_with_old_env(cloud, monkeypatch):
+    """Y11-E(오너 2026-10-14): 자동 픽셀 변경 전면 금지 — `IMAGE_EDIT_AUTO` 변수·코드 삭제. 예전 변수를 켜 둬도 사전검증이 아무것도 안 지운다."""
     from src.services import image_edit as E
-    monkeypatch.delenv("IMAGE_EDIT_AUTO", raising=False)
-    assert E.auto_enabled() is False and E.auto_promo(_ex()) == [] and cloud == []
-
-
-def test_auto_when_enabled_needs_trusted_subject_and_never_touches_overlaps(cloud, monkeypatch):
-    """켜도: 판촉 토큰 글자 상자 + 제품 영역을 믿을 수 있을 때 + 지울 영역이 그 밖일 때만."""
-    from src.services import image_edit as E
+    from src.seller_console import collect_history_store as S
+    from src.seller_console import views as V
+    from src.order_webhook import app
+    for gone in ("auto_promo", "auto_enabled", "subject_bbox", "ENV_AUTO"):
+        assert not hasattr(E, gone)
     monkeypatch.setenv("IMAGE_EDIT_AUTO", "1")
-    ex = _ex()
-    res = E.auto_promo(ex, small_loader=lambda u: _photo())
-    assert res[0]["erased_n"] == 4 and cloud[0]["transform"].count("(x_") == 4
-    erased = {b["src"] for b in E.plan(ex, "gallery", 0, small=_photo())["boxes"]
-              if b["id"] in {o["id"] for o in ex["images_ko"][0]["edit"]["ops"]}}
-    assert "-VRSUK Italian brand·卫斯克" not in erased and "·静享意式家" not in erased   # 로고·일반 글자는 손대지 않는다
-
-
-def test_subject_over_seventy_percent_is_unknown_and_auto_does_nothing(cloud, monkeypatch):
-    """실측: 제품 영역 검출이 사진 전체를 잡았다 → 70% 넘으면 「모름」 — 자동 동작 전부 중지."""
-    from src.services import image_edit as E
-    monkeypatch.setenv("IMAGE_EDIT_AUTO", "1")
-    assert E.subject_bbox(_chair_photo(full=True)) is None
-    assert E.subject_bbox(_chair_photo()) is not None
-    ex = _ex()
-    res = E.auto_promo(ex, small_loader=lambda u: _chair_photo(full=True))
-    assert res == [{"kind": "gallery", "idx": 0, "skipped": "제품 영역을 모름 — 자동으로 아무것도 안 지워요(사용자 선택)"}]
-    assert cloud == [] and "edit" not in ex["images_ko"][0]
-
-
-def test_promo_box_overlapping_product_is_left_to_the_user(cloud, monkeypatch):
-    """오너(2026-10-14): 자동 지우기는 지울 영역이 제품 영역 **밖**일 때만 — 겹치면 사용자 선택."""
-    from src.services import image_edit as E
-    monkeypatch.setenv("IMAGE_EDIT_AUTO", "1")
-    ex = _ex()
-    ex["images_ko"][0]["boxes"] = [dict(BOXES[1], x=300, y=300)]               # 쿠폰 글자가 의자 위에
-    res = E.auto_promo(ex, small_loader=lambda u: _photo(coupons=False))
-    assert res == [{"kind": "gallery", "idx": 0, "skipped": "제품과 겹치는 판촉 상자뿐 — 사용자 선택"}] and cloud == []
-    b = E.plan(ex, "gallery", 0, small=_photo(coupons=False))["boxes"][0]
-    assert b["cls"] == "promo" and b["in_subject"] and not b["auto"]
+    iid = S.append(source="extension", url="https://detail.tmall.com/item.htm?id=1", seller_id="y11e-auto", title="x",
+                   price="1", currency="CNY", extra=_ex())
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    with app.test_request_context():
+        from flask import session
+        session["user_id"] = "y11e-auto"
+        V._pv_auto_image_edit("job-x", {"item_id": iid})
+    sv = json.loads(S.get(iid, seller_ids={"y11e-auto"})["extra_json"])
+    assert cloud == [] and not any(E.edits(e) for e in sv["images_ko"])
 
 
 def test_untranslated_photo_asks_to_translate_first_and_ocr_unopened_is_spoken_plainly(monkeypatch):
@@ -270,18 +252,26 @@ def test_fix_text_erases_then_overlays_noto_sans_kr(cloud):
     assert ex["images_ko"][0]["edit"]["by"] == "user"
 
 
-def test_second_edit_rebuilds_from_base_and_revert_restores(cloud):
+def test_second_edit_is_a_new_version_on_top_and_revert_steps_back(cloud):
+    """Y11-E: 편집은 **고른 버전 위에 새 편집본**을 만든다. 「되돌리기」 = 바로 전 버전(편집본 2 → 1 → 번역본 → 원본)."""
     from src.services import image_edit as E
     from src.services import image_translate_store as S
     ex = _ex()
     E.apply(ex, "gallery", 0, [{"id": "t1", "action": "erase"}], small=_photo())
+    first = ex["images_ko"][0]["url"]
     E.apply(ex, "gallery", 0, [{"id": "t2", "action": "erase"}], small=_photo())
-    assert cloud[1]["src"] == cloud[0]["src"]                                  # 편집은 매번 바탕에서(겹쳐 굽지 않는다)
-    assert cloud[1]["transform"].count("(x_") == 2                             # 앞 편집 + 이번 편집
-    assert ex["images_ko"][0]["edit"]["credits"] == 0.102
-    assert E.revert(ex, "gallery", 0)["ok"]
+    assert cloud[0]["src"].endswith("p0_TENCENT.jpg") and cloud[1]["src"] == first          # 편집본 2의 바탕 = 편집본 1
+    assert cloud[1]["transform"].count("(x_") == 1                                            # 이번 상자만
+    keys = [v["key"] for v in E.versions(ex, "gallery", 0)]
+    assert keys == ["original", "translated", "edit:1", "edit:2"] and E.current_key(ex["images_ko"][0]) == "edit:2"
+    assert E.plan(ex, "gallery", 0, small=_photo())["spent"] == 0.102
+    assert E.revert(ex, "gallery", 0)["back"] == "edit:1" and ex["images_ko"][0]["url"] == first
+    assert E.revert(ex, "gallery", 0)["back"] == "translated"
     e = ex["images_ko"][0]
     assert "edit" not in e and e["url"].endswith("p0_TENCENT.jpg") and S.promo_excluded(e)
+    assert E.revert(ex, "gallery", 0)["back"] == "original" and e["use"] is False
+    assert not E.revert(ex, "gallery", 0)["ok"]                                              # 원본에서 더 뒤는 없다
+    assert [v["key"] for v in E.versions(ex, "gallery", 0)] == keys                         # 버전은 사라지지 않는다
 
 
 def test_daily_cap(cloud, monkeypatch):
@@ -349,6 +339,8 @@ def test_old_entry_reads_boxes_once_via_route(cloud, monkeypatch):
     seen = []
     monkeypatch.setattr(requests, "get", lambda url, **k: type("R", (), {"status_code": 200, "content": b"jpg"})())
     monkeypatch.setattr(O, "read_boxes", lambda raw: seen.append(raw) or {"ok": True, "boxes": BOXES[1:3], "size": [800, 800]})
+    from src.services import image_edit as E
+    monkeypatch.setattr(E, "_ocr_version", lambda url: O.read_boxes(b"jpg"))     # 이 테스트는 OCR 호출 횟수를 센다
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = "y11"
@@ -358,8 +350,12 @@ def test_old_entry_reads_boxes_once_via_route(cloud, monkeypatch):
     assert len(seen) == 1 and len(d2["boxes"]) == len(d["boxes"])             # 저장됨 — 다시 안 부른다
     r = c.post(f"/seller/collect/{iid}/image-edit/gallery/0", json={"ops": [{"id": "t0", "action": "erase"}]}).get_json()
     assert r["ok"] and r["credits"] == 0.051 and r["plan"]["edit"]["url"].endswith("edit.jpg")
-    assert len(r["plan"]["boxes"]) == len(d["boxes"]) and len(seen) == 1     # 적용 뒤에도 상자 그대로(캡처에서 잡힌 회귀) · OCR 다시 안 부름
-    assert c.post(f"/seller/collect/{iid}/image-edit/gallery/0/revert", json={}).get_json()["ok"]
+    # Y11-E: 상자는 버전에 붙는다 — 편집본은 그 그림을 한 번 OCR로 읽는다(번역본 상자를 편집본 위에 그대로 그리지 않는다)
+    assert r["plan"]["current"] == "edit:1" and len(seen) == 2
+    d3 = c.get(f"/seller/collect/{iid}/image-edit/gallery/0").get_json()
+    assert len(seen) == 2 and d3["current"] == "edit:1"                        # 저장됨 — 다시 안 부른다
+    rv = c.post(f"/seller/collect/{iid}/image-edit/gallery/0/revert", json={}).get_json()
+    assert rv["ok"] and rv["back"] == "translated"
 
 
 def test_old_picture_without_text_entry_is_not_a_failure_badge(monkeypatch):

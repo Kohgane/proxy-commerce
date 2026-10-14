@@ -453,6 +453,7 @@ def _translate_job(job: dict) -> tuple:
     except Exception:
         extra = {}
     by_idx = {int(e.get("idx", -1)): e for e in (extra.get(ko_key) or []) if isinstance(e, dict)}
+    istore.carry_versions(by_idx.get(idx), entry)               # Y11-E: 다시 번역해도 앞선 번역본·편집본은 버전으로 남는다
     by_idx[idx] = entry
     by_idx.pop(-1, None)
     extra[ko_key] = [by_idx[k] for k in sorted(by_idx)]
