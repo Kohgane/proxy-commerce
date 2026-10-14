@@ -29,6 +29,8 @@ DEFAULT_CAP = 400
 BATCH = 10
 POLISH_BY = "polish"
 POLISH_LABEL = "번역본(다듬음)"
+#: 다듬기 프롬프트 판 — 바뀌면 옛 캐시 답은 지금 검사를 통과할 때만 다시 쓴다(Y11-L).
+PROMPT_VER = "y11l-1"
 _KST = timezone(timedelta(hours=9))
 _GLOSSARY_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploaders", "image_glossary.json")
 #: 다듬기 결과에서 버리는 과장(Y10 금지어 ban_ko에 더해 — 오너 반례 「최고·1위·100%」)
@@ -110,13 +112,88 @@ def _new_trademark(ko: str, before: str) -> str:
     return ""
 
 
-def check(src: str, tgt: str, ko: str) -> str:
+_HAN = re.compile("[㐀-䶿一-鿿]")
+
+#: Y11-L(오너 2026-10-14): 품목에 안 맞는 표현 — VRSUK(라운지체어) 21번 「부드럽고 쫄깃한 식감」(软糯Q弹). 품목을 정해 주고,
+#   그 품목에 쓰면 안 되는 말을 프롬프트에 넣고 결과에서 막는다. `hint` = 대신 쓸 말의 결.
+CATEGORY_RULES = [
+    {"key": "furniture", "label": "가구",
+     "match": r"의자|체어|소파|리클라이너|라운지|스툴|침대|매트리스|테이블|책상|선반|수납장|가구|chair|sofa|recliner|furniture",
+     "ban": ["식감", "맛", "풍미", "쫄깃", "바삭", "고소", "착용감", "핏", "섭취", "복용", "발림"],
+     "hint": "앉는 느낌·쿠션감·탄탄함·지지감·소재·마감"},
+    {"key": "apparel", "label": "의류·잡화",
+     "match": r"티셔츠|셔츠|바지|원피스|자켓|재킷|코트|니트|가방|신발|운동화|모자|의류|dress|shirt|bag|shoes",
+     "ban": ["식감", "맛", "풍미", "쫄깃", "섭취", "복용", "쿠션감", "앉는 느낌"],
+     "hint": "착용감·핏·소재·마감"},
+    {"key": "food", "label": "식품",
+     "match": r"식품|간식|과자|젤리|사탕|초콜릿|커피|원두|음료|라면|소스|견과",
+     "ban": ["착용감", "쿠션감", "앉는 느낌", "핏", "발림"],
+     "hint": "식감·맛·풍미"},
+    {"key": "beauty", "label": "화장품",
+     "match": r"크림|로션|세럼|에센스|화장품|샴푸|클렌징|선크림|마스크팩",
+     "ban": ["식감", "맛", "쫄깃", "착용감", "쿠션감", "앉는 느낌"],
+     "hint": "발림성·흡수감·향"},
+    {"key": "electronics", "label": "전자기기",
+     "match": r"충전기|케이블|이어폰|헤드폰|스피커|모니터|키보드|마우스|보조배터리|전자",
+     "ban": ["식감", "맛", "쫄깃", "착용감", "섭취", "발림"],
+     "hint": "성능·연결·소재·크기"},
+]
+_CODE_KEY = {"FOD": "food", "CLO": "apparel", "BAG": "apparel", "BTY": "beauty", "ELC": "electronics", "DIG": "electronics"}
+
+
+def category_rule(extra: dict) -> Dict:
+    """`{key, label, what, ban, hint}` — 상품명·카테고리 이름 낱말이 먼저, 없으면 정규화 카테고리 코드. 모르면 {}."""
+    ex = extra or {}
+    names = " ".join(str(ex.get(k) or "") for k in ("coupang_category_name", "naver_category_name", "category"))
+    title = str(ex.get("title_ko") or ex.get("title") or "")
+    for hay in (title, names):
+        for r in CATEGORY_RULES:
+            m = re.search(r["match"], hay, re.I)
+            if m:
+                return dict(r, what=m.group(0))
+    key = _CODE_KEY.get(str(ex.get("category_code") or "").upper())
+    r = next((x for x in CATEGORY_RULES if x["key"] == key), None)
+    return dict(r, what=r["label"]) if r else {}
+
+
+def materials(extra: dict, limit: int = 12) -> List[str]:
+    """소재(옵션값 · 참수의 재질/소재 줄) — 다듬기가 상품을 알게(프롬프트 한 줄)."""
+    out: List[str] = []
+    for o in (extra or {}).get("options") or []:
+        if isinstance(o, dict):
+            for v in (o.get("values_ko") or o.get("values") or [])[:6]:
+                if str(v).strip():
+                    out.append(str(v).strip()[:30])
+    for kv in (extra or {}).get("detail_specs") or []:
+        if isinstance(kv, (list, tuple)) and len(kv) == 2 and re.search(r"재질|소재|材质|面料|材料|원단", str(kv[0])):
+            out.append(f"{kv[0]}: {kv[1]}"[:40])
+    return list(dict.fromkeys(out))[:limit]
+
+
+def han_left(text: str) -> bool:
+    """Y11-L: 텐센트 결과에 한자가 남았나 — 번역 안 된 상자(원문 전체를 새로 번역)."""
+    return bool(_HAN.search(text or ""))
+
+
+def _cat_ban(ko: str, rule: Optional[Dict]) -> str:
+    for w in (rule or {}).get("ban") or []:
+        if w in (ko or ""):
+            return w
+    return ""
+
+
+def check(src: str, tgt: str, ko: str, rule: Optional[Dict] = None) -> str:
     """다듬은 상자 하나를 쓸 수 있나 — 버릴 사유(쓸 수 있으면 "")."""
     if ko == "":
         return ""                                                # 빈칸(지움) — 뜻 모를 원문
     b = _bans(ko)
     if b:
         return f"금지어·과장({b[0]})"
+    if han_left(ko):
+        return "한자가 남음"
+    w = _cat_ban(ko, rule)
+    if w:
+        return f"다른 품목 표현({w})"
     before = f"{src} {tgt}"
     for n in _NUM.findall(f"{src}"):
         if n not in ko and n in tgt:
@@ -124,8 +201,7 @@ def check(src: str, tgt: str, ko: str) -> str:
     tm = _new_trademark(ko, before)
     if tm:
         return f"없던 상표 이름({tm})"
-    if len(ko) > max(2 * len(tgt or ""), len(tgt or "") + 12):
-        return "너무 길어 상자에 안 들어감"
+    # 길이는 여기서 안 본다 — 상자 폭·두 줄 기준으로 polish_entry가 잰다(Y11-L 「길어서 유지」)
     return ""
 
 
@@ -134,17 +210,28 @@ _SYSTEM = (
     "자연스러운 한국어로 고친다. 규칙: ① 상품 설명 톤(짧은 명사·설명형), 원문 뜻만 — 없는 내용·과장 추가 금지. "
     "② 브랜드·모델명·규격·숫자·단위는 원문 그대로 둔다. ③ 원문 뜻을 알 수 없거나 깨진 글자면 \"\"(빈칸 — 그 상자는 지운다). "
     "④ 용어집을 반드시 따른다. ⑤ 금지어는 쓰지 않는다. ⑥ 상자 크기에 맞게 기계 번역과 비슷한 길이. "
+    "⑦ 품목에 맞는 말만 — 주어진 「이 상품」 품목에 안 맞는 다른 품목 표현(예: 가구에 식감·맛·착용감)은 그 품목의 말로 바꾼다. "
+    "⑧ 기계 번역(mt)이 비었거나 「redo」가 붙은 상자는 기계 번역이 실패한 것 — 원문(src) 전체를 새로 한국어로 번역한다(한자를 남기지 않는다). "
     "출력은 JSON 하나만: {\"boxes\":[{\"id\":\"t0\",\"ko\":\"...\"}]} — 받은 id 전부."
 )
 
 
 def _prompt(rows: List[Dict], ctx: Dict, terms: List[Dict]) -> str:
-    lines = [f"상품명: {ctx.get('title') or '-'}", f"카테고리: {ctx.get('category') or '-'}",
-             "용어집(원문→한국어): " + ", ".join(f"{'/'.join(_srcs(t))}→{t['ko']}" for t in terms),
-             "금지어: 최고, 1위, 100%, 최저가, 완벽, 유일, 무조건, 보장, 국내 최초, 세계 최초, 할인율·쿠폰 문구",
-             "같은 사진의 상자들(id · 원문 · 기계 번역):"]
+    rule = ctx.get("rule") or {}
+    lines = [f"상품명: {ctx.get('title') or '-'}", f"카테고리: {ctx.get('category') or '-'}"]
+    if rule:
+        lines.append(f"이 상품은 {rule['label']}({rule.get('what') or rule['label']})다 — "
+                     f"{'·'.join(rule['ban'])} 같은 다른 품목 표현 금지. 그런 말이 기계 번역에 있으면 {rule['hint']} 같은 말로 바꿀 것.")
+    if ctx.get("materials"):
+        lines.append("소재·옵션: " + ", ".join(ctx["materials"]))
+    lines += ["용어집(원문→한국어): " + ", ".join(f"{'/'.join(_srcs(t))}→{t['ko']}" for t in terms),
+              "금지어: 최고, 1위, 100%, 최저가, 완벽, 유일, 무조건, 보장, 국내 최초, 세계 최초, 할인율·쿠폰 문구",
+              "같은 사진의 상자들(id · 원문 · 기계 번역 · redo=기계 번역 실패라 원문 전체를 새로 번역):"]
     for r in rows:
-        lines.append(json.dumps({"id": r["id"], "src": r["src"], "mt": r["tgt"]}, ensure_ascii=False))
+        d = {"id": r["id"], "src": r["src"], "mt": "" if r.get("han_left") else r["tgt"]}
+        if r.get("han_left"):
+            d["redo"] = True
+        lines.append(json.dumps(d, ensure_ascii=False))
     return "\n".join(lines)
 
 
@@ -163,7 +250,7 @@ def _parse(text: str) -> Dict[str, str]:
     return out
 
 
-def polish_boxes(boxes: List[Dict], ctx: Dict) -> Dict:
+def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> Dict:
     """상자들 → `{rows:[{id, src, tgt, glossary, ko, from, why}], calls, ai_why}`.
     `from` = polish(AI 다듬음 채택) · glossary(용어집만) · tencent(그대로). AI가 없거나 상한이면 용어집만."""
     from src.ai import llm
@@ -173,16 +260,36 @@ def polish_boxes(boxes: List[Dict], ctx: Dict) -> Dict:
         src, tgt = str(b.get("src") or ""), str(b.get("tgt") or "")
         g = apply_glossary(src, tgt, terms)
         rows.append({"id": b["id"], "src": src, "tgt": tgt, "glossary": g, "ko": g,
-                     "from": "glossary" if g != tgt else "tencent", "why": ""})
-    calls, ai_why = 0, ""
+                     "from": "glossary" if g != tgt else "tencent", "why": "", "han_left": han_left(tgt)})
+    calls, ai_why, cached = 0, "", 0
     if not rows:
-        return {"rows": rows, "calls": 0, "ai_why": ""}
+        return {"rows": rows, "calls": 0, "ai_why": "", "cached": 0}
+    # Y11-L(오너): 상자별 {원문, 텐센트 한국어} → 다듬은 한국어 캐시 — 렌더만 다시 할 때 AI를 다시 부르지 않는다.
+    #   캐시 값도 지금 규칙(품목 금지 표현·한자·금지어…)으로 다시 검사하고, 통과한 것만 쓴다(통과 못 하면 그 상자만 다시 묻는다).
+    #   같은 프롬프트 판(PROMPT_VER)의 답은 버린 것까지 그대로 쓴다(다시 물어도 같은 규칙) — 옛 판 답은 지금 검사를 통과할 때만.
+    for r in rows:
+        hit = (cache or {}).get((r["src"], r["tgt"]))
+        if not isinstance(hit, dict) or not isinstance(hit.get("ai"), str):
+            continue
+        ko = hit["ai"]
+        why = check(r["src"], r["glossary"], ko, ctx.get("rule"))
+        if why and hit.get("pv") != PROMPT_VER:
+            continue                                             # 옛 판 답이 지금 규칙에 걸림 — 이 상자만 다시 묻는다
+        r["ai"], r["cached"] = ko, True
+        cached += 1
+        if why:
+            r["why"] = why
+        elif ko != r["glossary"]:
+            r["ko"], r["from"] = ko, "polish"
+    todo = [r for r in rows if not r.get("cached")]
+    if not todo:
+        return {"rows": rows, "calls": 0, "ai_why": "", "cached": cached}
     if not llm.anthropic_ready():
         ai_why = "AI 다듬기 못 씀(Claude 미연결) — 용어집만 적용"
-        return {"rows": rows, "calls": 0, "ai_why": ai_why}
+        return {"rows": rows, "calls": 0, "ai_why": ai_why, "cached": cached}
     from src.db import image_translate_queue_pg as q
-    for i in range(0, len(rows), BATCH):
-        chunk = rows[i:i + BATCH]
+    for i in range(0, len(todo), BATCH):
+        chunk = todo[i:i + BATCH]
         took, n = q.take_start(_day_key(), daily_cap())
         if not took:
             ai_why = f"오늘 다듬기 상한({daily_cap()}회)을 다 써서 용어집만 적용"
@@ -199,13 +306,13 @@ def polish_boxes(boxes: List[Dict], ctx: Dict) -> Dict:
                 continue
             ko = got[r["id"]]
             r["ai"] = ko
-            why = check(r["src"], r["glossary"], ko)
+            why = check(r["src"], r["glossary"], ko, ctx.get("rule"))
             if why:
                 r["why"] = why                                   # 버림 — 텐센트(용어집) 글자 그대로
                 continue
             if ko != r["glossary"]:
                 r["ko"], r["from"] = ko, "polish"
-    return {"rows": rows, "calls": calls, "ai_why": ai_why}
+    return {"rows": rows, "calls": calls, "ai_why": ai_why, "cached": cached}
 
 
 def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
@@ -227,17 +334,37 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
         return {"ok": False, "why": p.get("why") or "다듬을 글자 상자가 없음"}
     ctx = {"title": str(extra.get("title_ko") or extra.get("title") or "")[:80],
            "category": str(extra.get("coupang_category_name") or extra.get("naver_category_name")
-                           or extra.get("category") or "")[:60]}
-    pr = polish_boxes(boxes, ctx)
-    ops = []
+                           or extra.get("category") or "")[:60],
+           "rule": category_rule(extra), "materials": materials(extra)}
+    prev_pl = e.get("polish") or {}
+    cache = {}
+    for r in prev_pl.get("rows") or []:
+        # AI가 실제로 답한 상자만(ai 비었는데 polish = 「지움」 답 · ai 비었는데 tencent = 답 없음)
+        if isinstance(r, dict) and isinstance(r.get("ai"), str) and (r["ai"] or r.get("from") == "polish"):
+            cache[(str(r.get("src") or ""), str(r.get("tgt") or ""))] = {"ai": r["ai"], "pv": prev_pl.get("pv") or ""}
+    pr = polish_boxes(boxes, ctx, cache=cache)
+    by_id = {b["id"]: b for b in boxes}
+    ops, too_long = [], 0
     for r in pr["rows"]:
         if r["ko"] == r["tgt"]:
             continue
+        if r["ko"] and not IE.text_fit(r["ko"], by_id.get(r["id"]) or {})["fits"]:
+            r["why"] = "길어서 유지(상자에 안 들어감)"               # Y11-L 반례: 두 줄로도 안 들어가면 텐센트 글자 그대로
+            r["ko"], r["from"] = r["tgt"], "tencent"
+            too_long += 1
+            continue
         ops.append({"id": r["id"], "action": "erase"} if r["ko"] == "" else {"id": r["id"], "action": "text", "text": r["ko"]})
-    out = {"ok": True, "changed": len(ops), "rows": pr["rows"], "calls": pr["calls"], "why": pr["ai_why"]}
+    out = {"ok": True, "changed": len(ops), "rows": pr["rows"], "calls": pr["calls"], "why": pr["ai_why"],
+           "cached": int(pr.get("cached") or 0), "too_long": too_long,
+           "han_left": sum(1 for r in pr["rows"] if r.get("han_left"))}
     e = IE._entry(extra, kind, idx, create=True)
+    han_n = sum(1 for r in pr["rows"] if r.get("han_left"))
+    han_fixed = sum(1 for r in pr["rows"] if r.get("han_left") and r["from"] == "polish")
     e["polish"] = {"at": datetime.now(timezone.utc).isoformat(), "calls": pr["calls"], "changed": len(ops),
-                   "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why")} for r in pr["rows"]][:40],
+                   "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why", "han_left", "cached")}
+                            for r in pr["rows"]][:40],
+                   "han_left": han_n, "han_fixed": han_fixed, "rule": (ctx["rule"] or {}).get("key", ""),
+                   "cached": int(pr.get("cached") or 0), "too_long": too_long, "pv": PROMPT_VER,
                    "why": pr["ai_why"]}
     if not ops:
         return out
@@ -368,7 +495,15 @@ def item_line(item_id: str, extra: dict) -> str:
     calls = sum(int(pl.get("calls") or 0) for _n, pl in rows)
     dropped = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("why"))
     whys = sorted({str(pl.get("why")) for _n, pl in rows if pl.get("why")})
-    s = f"번역 다듬기 {len(rows)}장: 바뀐 상자 {changed} · AI {calls}회"
+    cached = sum(int(pl.get("cached") or 0) for _n, pl in rows)
+    too_long = sum(int(pl.get("too_long") or 0) for _n, pl in rows)
+    s = f"번역 다듬기 {len(rows)}장: 바뀐 상자 {changed} · AI {calls}회" + (f"(캐시 {cached}상자)" if cached else "")
+    if too_long:
+        s += f" · 길어서 유지 {too_long}"
+    han_fixed = sum(int(pl.get("han_fixed") or 0) for _n, pl in rows)
+    han_n = sum(int(pl.get("han_left") or 0) for _n, pl in rows)
+    if han_n:
+        s += f" · 한자 잔존 {han_fixed}상자 재번역" + (f"(못 고친 {han_n - han_fixed})" if han_n > han_fixed else "")
     if dropped:
         s += f" · AI 결과 버림 {dropped}(금지어·숫자 등)"
     if whys:

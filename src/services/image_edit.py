@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -33,7 +34,10 @@ TX_GEN_REMOVE = 50
 TX_BASE = 1
 TX_PER_TEXT = 1
 TX_PER_CREDIT = 1000
-FONT = "Noto Sans KR"
+#: Y11-L(운영 실측 10-14 13:23 UTC): Cloudinary 글자 오버레이에 「Noto Sans KR」을 주면 `x-cld-error: Unsupported font family
+#   Noto Sans KR`(400) — 파생본이 안 만들어져 「편집본 주소가 돌아오지 않았어요」. 「글자 고치기」·자동 다듬기 렌더가 전부 실패했다.
+#   NanumGothic은 받는다(한글 그림 확인). `IMAGE_EDIT_FONT`로 바꿀 수 있다.
+FONT = os.getenv("IMAGE_EDIT_FONT", "NanumGothic") or "NanumGothic"
 SMALL_SIDE = 256
 CLASS_LABEL = {"promo": "판촉", "brand": "브랜드 로고", "risk": "상표 위험", "text": "일반 글자"}
 #: 지울 영역 여유 — 상자 높이의 10%(사방). 그 밖은 절대 안 건드린다(오너 2026-10-14).
@@ -523,17 +527,50 @@ def _text_color(small, box: Dict, size) -> str:
     return "%02x%02x%02x" % med
 
 
+#: Y11-L 반례(오너): 한국어는 보통 중국어의 1.5배 길이 — 상자 폭 기준으로 줄이고 두 줄까지 허용. 그래도 원래 글자 높이의
+#   이 비율 밑으로 작아지면 「안 들어감」(다듬기는 그 상자를 텐센트 글자로 둔다).
+MIN_FIT_RATIO = 0.45
+_WIDE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u3000-\u9fff\uff00-\uffef]")
+
+
+def _units(text: str) -> float:
+    """글자 폭(글자 크기 1 기준) — 한글·한자·전각 1.0, 그 밖 0.58."""
+    return sum(1.0 if _WIDE.match(c) else 0.58 for c in text) or 1.0
+
+
+def _split2(text: str):
+    """두 줄로 — 가운데에 가까운 띄어쓰기에서, 없으면 글자 가운데에서."""
+    t = text.strip()
+    mid = len(t) / 2
+    spaces = [i for i, c in enumerate(t) if c == " "]
+    cut = min(spaces, key=lambda i: abs(i - mid)) if spaces else int(mid)
+    a, b = t[:cut].strip(), t[cut:].strip()
+    return [x for x in (a, b) if x] or [t]
+
+
+def text_fit(text: str, box: Dict) -> Dict:
+    """`{size, lines, fits}` — 상자 안에 들어갈 글자 크기(px)와 줄(1~2). `fits` = 원래 글자 높이의 MIN_FIT_RATIO 이상."""
+    w, h = max(1, int(box.get("w") or 1)), max(1, int(box.get("h") or 1))
+    ideal = h * 0.8
+    one = min(ideal, w * 0.96 / _units(text))
+    lines2 = _split2(text)
+    two = min(h * 0.8 / 2.2 * 2 / 2, w * 0.96 / max(_units(x) for x in lines2)) if len(lines2) == 2 else 0
+    if two > one:
+        size, lines = two, lines2
+    else:
+        size, lines = one, [text]
+    return {"size": max(10, int(size)), "lines": lines, "fits": size >= max(10, ideal * MIN_FIT_RATIO)}
+
+
 def _text_layer(text: str, box: Dict, color: str) -> str:
-    """Noto Sans KR 글자 — 상자 높이의 80%에서 시작해 폭에 맞춰 줄인다(최소 10px). Cloudinary 글자 오버레이 문법."""
-    n = max(1, len(text))
-    size = int(box["h"] * 0.8)
-    if n * size * 0.92 > box["w"]:
-        size = int(box["w"] / (n * 0.92))
-    size = max(10, size)
-    enc = quote(text, safe="").replace("%2C", "%252C").replace("%2F", "%252F")
+    """NanumGothic 글자 — 상자 폭 기준 축소 · 두 줄까지(Y11-L). Cloudinary 글자 오버레이 문법(줄바꿈 %0A)."""
+    f = text_fit(text, box)
+    size = f["size"]
+    enc = "%0A".join(quote(x, safe="").replace("%2C", "%252C").replace("%2F", "%252F") for x in f["lines"])
     font = quote(FONT, safe="")
+    block = int(size * (1.15 * len(f["lines"])))
     return (f"l_text:{font}_{size}_bold:{enc},co_rgb:{color}/"
-            f"fl_layer_apply,g_north_west,x_{max(0, box['x'])},y_{max(0, box['y'] + max(0, (box['h'] - size) // 2))}")
+            f"fl_layer_apply,g_north_west,x_{max(0, box['x'])},y_{max(0, box['y'] + max(0, (box['h'] - block) // 2))}")
 
 
 def build_transform(erase: List[Dict], texts: List[Tuple[Dict, str, str]], scale: float = 1.0) -> str:
@@ -549,13 +586,20 @@ def build_transform(erase: List[Dict], texts: List[Tuple[Dict, str, str]], scale
     return "/".join(parts)
 
 
+_LAST_CLD = {"why": ""}
+
+
 def _ready(url: str) -> Tuple[bool, Optional[int]]:
-    """파생본이 준비됐나 — HEAD(본문 안 받음). 420/423이면 짧게 기다린다(D3와 같은 규칙: 3번 · 2초)."""
+    """파생본이 준비됐나 — HEAD(본문 안 받음). 420/423이면 짧게 기다린다(D3와 같은 규칙: 3번 · 2초).
+    Y11-L: 거부(400 등)면 Cloudinary 사유 헤더(`x-cld-error`)를 `_LAST_CLD['why']`에 남긴다."""
     import requests
     code = None
+    _LAST_CLD["why"] = ""
     for i in range(3):
         try:
-            code = requests.head(url, timeout=20, allow_redirects=True).status_code
+            r = requests.head(url, timeout=20, allow_redirects=True)
+            code = r.status_code
+            _LAST_CLD["why"] = str((r.headers or {}).get("x-cld-error") or "")[:160]
         except Exception:                                       # noqa: BLE001
             return False, None
         if code == 200:
@@ -605,8 +649,23 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
             url = str(x.get("secure_url") or x.get("url"))
             break
     if not url:
-        return {"ok": False, "error": "편집본 주소가 돌아오지 않았어요 — 응답 키: " + ", ".join(up.get("keys") or [])}
+        # Y11-L(오너 2026-10-14): 응답 맨 위 `secure_url`은 **편집 전 원본 업로드**다 — 그걸 쓰면 지우지 않은 사진이 「편집본」으로
+        #   나간다(가짜 성공). 파생본 주소는 그 주소의 `/upload/` 뒤에 변환을 끼워 만든다(Cloudinary 주소 규칙). 만든 주소는
+        #   아래 HEAD로 실제로 열리는지 확인하고, 거부면 Cloudinary 사유를 그대로 말한다. 응답 키 목록은 로그에만.
+        logger.warning("[사진 편집] 업로드 응답에 파생본 주소 없음 — 키=%s eager=%s", ",".join(up.get("keys") or []),
+                       str((up.get("eager") or [None])[0])[:300])
+        base_up = str(up.get("secure_url") or "")
+        if "/image/upload/" in base_up:
+            url = base_up.replace("/image/upload/", "/image/upload/" + tr + "/", 1)
+        else:
+            ev = next((x for x in up.get("eager") or [] if isinstance(x, dict)), {})
+            why = str(ev.get("reason") or ev.get("error") or ev.get("status") or "")[:120]
+            return {"ok": False, "error": "편집본을 만들지 못했어요" + (f" — {why}" if why else " — 업로드 주소를 받지 못했어요"),
+                    "transform": tr[:300]}
     ready, code = _ready(url)
+    if not ready and code and code not in (420, 423):
+        why = _LAST_CLD["why"] or f"HTTP {code}"                # 예: Unsupported font family …
+        return {"ok": False, "error": f"편집본을 만들지 못했어요 — {why}", "transform": tr[:300]}
     c = cost(len(texts))
     e = _entry(extra, kind, idx, create=True)
     base_key = current_key(e) if e.get("status") or e.get("current") else V_ORIGINAL
