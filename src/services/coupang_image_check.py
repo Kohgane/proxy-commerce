@@ -87,7 +87,11 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
     if long_side < MIN_LONG_SIDE:
         flags.append({"key": "small", "hold": True, "line": f"반려 예상 — 500px 미만(긴 변 {long_side}px)"})
     geom = _text_geometry(raw, w, h) if text else {}
-    if text and geom.get("minor"):
+    exempt_flag = _text_flag(text, seen, geom.get("all") or {})        # Y11-G: 소품 규칙을 끈 상품(책·포스터)에서 쓸 줄
+    if text and geom.get("prop_only"):
+        # Y11-G(오너): 소품(책등·책 표지·포장) 글자뿐이면 글자가 아니다 — 「텍스트 있음」「소품 글자(작음)」 둘 다 안 띄운다(줄 자체가 없다)
+        pass
+    elif text and geom.get("minor"):
         # Y11-D: 소품(책등 등)의 작고 흐린 글자 — 차단이 아니라 주의. 지우려면 사진 편집(지우면 주소가 바뀌어 바로 다시 잰다).
         flags.append({"key": "text_small", "hold": False,
                       "line": f"소품 글자(작음) — 지우려면 사진 편집(읽은 글자 「{seen}」 · 면적 {geom['area_pct']}%)"})
@@ -104,8 +108,29 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
                       "line": f"정사각 아님({w}×{h}) — 쿠팡 검색 카드엔 가운데를 잘라 보여요"})
     return {"state": "ok", "w": w, "h": h, "square": square, "long_side": long_side,
             "small": long_side < MIN_LONG_SIDE, "white_pct": white_pct, "decode_why": decode_why,
-            "text": text, "seen": seen, "flags": flags, "ocr": "unavailable" if text is None else "ok", "ocr_why": ocr_why,
-            "text_geometry": geom}
+            "text": (False if (text and geom.get("prop_only")) else text), "seen": seen, "flags": flags,
+            "ocr": "unavailable" if text is None else "ok", "ocr_why": ocr_why,
+            "text_geometry": {k: v for k, v in geom.items() if k != "all"},
+            "prop_only": bool(text and geom.get("prop_only")), "prop_n": int(geom.get("prop_n") or 0),
+            "exempt_flag": exempt_flag if (text and geom.get("prop_only")) else None}
+
+
+def _text_flag(text, seen: str, geom: dict) -> Optional[Dict[str, Any]]:
+    """글자 줄 하나 — Y11-D 규칙(작고 흐리면 「소품 글자(작음)」 주의, 아니면 「반려 가능」)."""
+    if not text:
+        return None
+    if geom.get("minor"):
+        return {"key": "text_small", "hold": False,
+                "line": f"소품 글자(작음) — 지우려면 사진 편집(읽은 글자 「{seen}」 · 면적 {geom['area_pct']}%)"}
+    return {"key": "text", "hold": True, "line": f"텍스트 있음 — 반려 가능(읽은 글자 「{seen}」)"}
+
+
+def apply_exempt(res: Dict[str, Any], exempt: bool) -> Dict[str, Any]:
+    """Y11-G 반례 — 상품이 곧 글자(책·포스터·간판·문구)면 소품 규칙을 끈다: 소품으로 지운 글자 줄을 되살린다."""
+    if not exempt or not (res or {}).get("prop_only") or not res.get("exempt_flag"):
+        return res
+    out = dict(res, prop_only=False, text=True, flags=list(res.get("flags") or []) + [res["exempt_flag"]])
+    return out
 
 
 #: Y11-D(오너 2026-10-14) — 「소품 글자(작음)」 기준: 글자 상자 총면적이 사진의 0.5% 미만 **이고** OCR 확신이 낮을 때만.
@@ -167,12 +192,24 @@ def _text_geometry(raw: bytes, w: int, h: int) -> Dict[str, Any]:
     W, H = (got_boxes.get("size") or [w, h])[:2] if got_boxes.get("ok") else (w, h)
     if not boxes or not (W and H):
         return {}
-    area = sum(max(0, b.get("w", 0)) * max(0, b.get("h", 0)) for b in boxes) / float(W * H)
-    confs = [float(b.get("conf")) for b in boxes if b.get("conf") is not None]
-    conf = round(sum(confs) / len(confs), 1) if confs else 100.0
-    word = real_word_hit(" ".join(str(b.get("src") or "") for b in boxes))
-    minor = area < MINOR_AREA and conf < MINOR_CONF and not word
-    return {"area_pct": round(area * 100, 2), "conf": conf, "minor": minor, "word": word, "boxes": len(boxes)}
+    # Y11-G: 상자마다 소품 판정(면적 < 0.5% 그리고 기울기 ≥ 20°·확신 < 70) · 사진이 통째 돌아갔으면(OCR 각도 ±45° 밖) 전부 소품
+    from src.services import prop_text as PT
+    ang = float(got_boxes.get("angle") or 0.0)
+    frame = "rot180" if abs(ang) > 135 else ("rot90a" if abs(ang) > 45 else "")
+    PT.mark(boxes, [W, H], frame=frame)
+    real, prop = PT.split(boxes)
+
+    def _geom(bs):
+        area = sum(max(0, b.get("w", 0)) * max(0, b.get("h", 0)) for b in bs) / float(W * H)
+        confs = [float(b.get("conf")) for b in bs if b.get("conf") is not None]
+        conf = round(sum(confs) / len(confs), 1) if confs else 100.0
+        word = real_word_hit(" ".join(str(b.get("src") or "") for b in bs))
+        return {"area_pct": round(area * 100, 2), "conf": conf, "minor": area < MINOR_AREA and conf < MINOR_CONF and not word,
+                "word": word, "boxes": len(bs)}
+    out = _geom(real) if real else {"area_pct": 0.0, "conf": 100.0, "minor": False, "word": "", "boxes": 0}
+    out.update(prop_n=len(prop), prop_only=not real, prop_text=" ".join(str(b.get("src") or "") for b in prop)[:200],
+               all=_geom(boxes))
+    return out
 
 
 def _bytes_for(url: str) -> tuple:
@@ -324,6 +361,8 @@ def hold(pd: dict, market: str, cached_only: bool = False) -> Optional[Dict[str,
     try:
         # 미리보기는 요청 안에서 재지 않는다(cached_only) — 아직 안 쟀으면 보류 줄은 결과가 오면 그린다.
         res = (cached(rep) or {}) if cached_only else check_url(rep)
+        from src.services import prop_text as _pt
+        res = apply_exempt(res, _pt.exempt(pd, title=str(pd.get("title_ko") or pd.get("title") or "")))   # Y11-G 반례
     except Exception as exc:                                  # noqa: BLE001 — 판정 실패는 보류 사유가 아니다
         logger.warning("[쿠팡 대표 사진] 판정 실패(보류 안 함): %s", exc)
         return None

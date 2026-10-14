@@ -281,7 +281,14 @@ def _orient_lines(sent: bytes, img_b64: str, lines: list, angle=None) -> dict:
         lines[i]["box"] = ({"x": nb["x"], "y": nb["y"], "w": nb["w"], "h": nb["h"]} if nb else None)
     if got.get("frame") not in ("identity",):
         logger.info("[이미지번역] 상자 틀 %s(각도 %s) 점수 %s", got.get("frame"), angle, got.get("scores"))
-    return {"box_frame": got.get("frame") or "unknown", "box_frame_scores": got.get("scores") or {}, "angle_raw": angle}
+    # Y11-G: 소품 글자 표시 — 사진이 통째 돌아간 틀(180°·90°)이면 전부, 아니면 면적 < 0.5%(+ 기울기·확신은 번역 상자엔 없음)
+    from src.services import prop_text as PT
+    size = (got.get("scores") or {}).get("size") or [0, 0]
+    boxed = [lines[i] for i in idx if lines[i].get("box")]
+    for l in boxed:
+        l["prop"] = PT.is_prop(l["box"], size, frame=got.get("frame") or "")
+    return {"box_frame": got.get("frame") or "unknown", "box_frame_scores": got.get("scores") or {}, "angle_raw": angle,
+            "prop_all": bool(boxed) and all(l["prop"] for l in boxed), "prop_n": sum(1 for l in boxed if l["prop"])}
 
 
 def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,

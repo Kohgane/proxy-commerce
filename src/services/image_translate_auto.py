@@ -205,7 +205,7 @@ def queue_line(item_id: str) -> dict:
 
 
 #: Y11-C 건너뛴 사유(사람 말) — 접수·건너뜀 응답과 테스트가 같은 표를 쓴다.
-SKIP_LABEL = {"spacer": "스페이서", "icon": "아이콘", "dup": "중복", "cap": "건당 상한", "done": "이미 번역"}
+SKIP_LABEL = {"spacer": "스페이서", "icon": "아이콘", "dup": "중복", "cap": "건당 상한", "done": "이미 번역", "prop": "소품 글자뿐"}
 
 
 def _is_pwt(e: dict) -> bool:
@@ -229,6 +229,8 @@ def translate_plan(extra: dict, *, retry: bool = False) -> dict:
     반환 `{send:[(kind, idx, why)], skip:{사유: [(kind, idx)]}, no_text:[(kind, idx)]}`.
     """
     from src.services import detail_image_plan as _dip
+    from src.services import prop_text as _pt
+    prop_off = _pt.exempt(extra)                                  # 책·포스터 상품이면 소품 규칙 끔(다시 보낸다)
     send, skip, no_text = [], {k: [] for k in SKIP_LABEL}, []
     for src_key, ko_key, kind in (("images", "images_ko", "gallery"), ("detail_images", "detail_images_ko", "detail")):
         ents = {int(e.get("idx", -1)): e for e in (extra.get(ko_key) or []) if isinstance(e, dict)}
@@ -254,10 +256,14 @@ def translate_plan(extra: dict, *, retry: bool = False) -> dict:
             if _is_pwt(e):
                 no_text.append((kind, i))                        # 텐센트가 「글자 없음」이라 답한 장 — 다시 보내도 같은 답
                 continue
+            if e.get("prop_only") and not prop_off:
+                skip["prop"].append((kind, i))                   # Y11-G: 소품 글자뿐 — 다시 보내도 원본(과금만 남는다)
+                continue
             if e.get("vendor") == "d3" and not d3_enabled():
                 send.append((kind, i, "d3"))                     # Y9: 옛 D3 결과(글자만 지움 · 「그릴 줄 없음」 포함) → 텐센트 본선
             elif st == "done":
-                if isinstance(e.get("boxes"), list) and e.get("box_size"):
+                from src.services.image_translate_store import has_boxes
+                if has_boxes(e):                                 # Y11-F: 상자 있는 번역본은 다시 안 보낸다(빈 상자 목록은 「없음」)
                     skip["done"].append((kind, i))
                 elif retry:
                     send.append((kind, i, "no_boxes"))           # 상자 없는 옛 번역본 — 편집하려면 상자가 있어야 한다
@@ -427,6 +433,10 @@ def _drain(max_pages: int = 10_000) -> int:
     return n
 
 
+def _entry_of(extra: dict, ko_key: str, idx: int) -> dict:
+    return next((e for e in (extra.get(ko_key) or []) if isinstance(e, dict) and int(e.get("idx", -1)) == int(idx)), {})
+
+
 def _translate_job(job: dict) -> tuple:
     """한 장 — `(status, reason)`. 결과는 상품의 `images_ko`/`detail_images_ko`에 장별로 적는다."""
     import json as _json
@@ -444,8 +454,14 @@ def _translate_job(job: dict) -> tuple:
     originals = [u for u in (extra.get(src_key) or []) if u]
     if not (0 <= idx < len(originals)):
         return "skipped", "그 장이 더는 없습니다"
+    # Y11-F: 줄에 선 뒤 다른 길(편집기 「번역하고 글자 상자 받기」 등)이 이미 번역해 상자를 얻었으면 — 보내지도 덮지도 않는다.
+    #   (줄은 접수 시점의 판단이다 — 꺼낼 때 지금 상태를 다시 본다. 실측 18:20 KST 갤러리 3)
+    if istore.has_boxes(_entry_of(extra, ko_key, idx)):
+        return "skipped", istore.PROTECTED_REASON
+    from src.services import prop_text as _pt
     entry = translate_page(originals[idx], idx=idx, kind=kind, item_id=item_id, seller_id=uid,
-                           title=str(extra.get("title_en") or extra.get("title") or row.get("title") or ""))
+                           title=str(extra.get("title_en") or extra.get("title") or row.get("title") or ""),
+                           prop_exempt=_pt.exempt(extra))
     # 저장 직전 다시 읽는다 — 그 사이 다른 장이 적혔을 수 있다(장별 병합).
     row = store.get(item_id, seller_ids={uid}) or {}
     try:
@@ -453,6 +469,8 @@ def _translate_job(job: dict) -> tuple:
     except Exception:
         extra = {}
     by_idx = {int(e.get("idx", -1)): e for e in (extra.get(ko_key) or []) if isinstance(e, dict)}
+    if istore.has_boxes(by_idx.get(idx)):
+        return "skipped", istore.PROTECTED_REASON               # 번역하는 사이 상자 있는 번역본이 생겼다 — 덮지 않는다
     istore.carry_versions(by_idx.get(idx), entry)               # Y11-E: 다시 번역해도 앞선 번역본·편집본은 버전으로 남는다
     by_idx[idx] = entry
     by_idx.pop(-1, None)
@@ -475,15 +493,16 @@ def _translate_job(job: dict) -> tuple:
     return (st if st in ("done", "skipped") else "failed"), why
 
 
-def translate_page(url: str, *, idx: int, kind: str, item_id: str, seller_id: str, title: str = "") -> dict:
+def translate_page(url: str, *, idx: int, kind: str, item_id: str, seller_id: str, title: str = "",
+                   prop_exempt: bool = False) -> dict:
     """한 장 → `images_ko` 한 줄(`build_entry` 모양). Y9: 기본은 **텐센트 본선**(갤러리 「번역」 버튼과 같은 결과물),
     `IMAGE_TRANSLATE_D3=1`일 때만 옛 D3 파이프라인."""
     if not d3_enabled():
-        return translate_page_tencent(url, idx=idx, kind=kind, item_id=item_id, seller_id=seller_id)
+        return translate_page_tencent(url, idx=idx, kind=kind, item_id=item_id, seller_id=seller_id, prop_exempt=prop_exempt)
     return translate_page_d3(url, idx=idx, kind=kind, item_id=item_id, seller_id=seller_id, title=title)
 
 
-def translate_page_tencent(url: str, *, idx: int, kind: str, item_id: str, seller_id: str) -> dict:
+def translate_page_tencent(url: str, *, idx: int, kind: str, item_id: str, seller_id: str, prop_exempt: bool = False) -> dict:
     """Y9(오너 2026-10-13) — 텐센트 `ImageTranslateLLM` 본선. 받기 전에 주소 정리(`//`·알리 webp 꼬리), 보내기 전에 JPEG 정규화
     (webp·gif 첫 프레임 → JPEG · 긴 변 ≤ 4096 · ≤ 4MB — `InvalidParameterValue.Data` 2장의 원인). 글자 없는 사진
     (`PictureWithoutText`)은 실패가 아니라 원본 그대로(`use=True`). 번역 결과 글자에 판촉·스토어 문구가 있으면 `exclude` 사유."""
@@ -535,7 +554,7 @@ def translate_page_tencent(url: str, *, idx: int, kind: str, item_id: str, selle
         return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "tencent", "use": True,
                 "ms": int(res.get("ms") or 0), "at": now_iso, "reason": "글자 없는 사진(PictureWithoutText) — 원본 그대로"}
     label = make_label(run_stamp("auto"), item_id, idx, "TENCENT", folder="seller")
-    entry = istore.build_entry(idx, res, item_id=item_id, seller_id=seller_id, kind=kind, label=label)
+    entry = istore.build_entry(idx, res, item_id=item_id, seller_id=seller_id, kind=kind, label=label, prop_exempt=prop_exempt)
     entry["vendor"] = "tencent"
     if info.get("converted"):
         entry["input_note"] = info.get("note")

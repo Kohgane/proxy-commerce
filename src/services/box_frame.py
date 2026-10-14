@@ -87,6 +87,14 @@ def score(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], frames=FRAMES) -
     return out
 
 
+def _near_90(angle) -> bool:
+    try:
+        a = float(angle) % 360
+    except (TypeError, ValueError):
+        return False
+    return min(abs(a - 90), abs(a - 270)) <= 20
+
+
 def pick(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], angle=None) -> Dict:
     """`{frame, boxes(원본 좌표), scores, why}` — frame: identity|rot180|rot90a|rot90b|unknown.
 
@@ -100,7 +108,10 @@ def pick(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], angle=None) -> Di
         return {"frame": "unknown", "boxes": [], "scores": {}, "why": "원본·번역본을 열지 못해 상자 자리를 확인 못 함"}
     W, H = sc["size"]
     ident = sc.get("identity", 0.0)
-    best = max((f for f in FRAMES if f != "identity"), key=lambda f: sc.get(f, 0.0))
+    # Y11-G 실측(운영 갤러리 80장): 90° 후보는 각도 근거 없이 그림만으로 고르면 틀렸다(OATLY 대표 문구가 「90° 돌린 사진」으로 잡힘).
+    #   90° 틀은 공급사가 각도 ~90°/270°를 줄 때만 후보로 둔다(옛 기록은 각도가 없다 → 그대로·180°만).
+    rot90_ok = _near_90(angle)
+    best = max((f for f in FRAMES if f != "identity" and (f == "rot180" or rot90_ok)), key=lambda f: sc.get(f, 0.0))
     if sc[best] >= MIN_DIFF and sc[best] >= WIN_RATIO * max(ident, 0.5):
         frame = best
     elif ident >= MIN_DIFF:

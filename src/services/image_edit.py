@@ -174,6 +174,9 @@ def select(extra: dict, kind: str, idx: int, key: str) -> Dict:
     v = _version(extra, kind, idx, key)
     if not v or not v.get("url"):
         return {"ok": False, "error": "그 버전이 없어요"}
+    if v.get("ready") is False:
+        # Y11-G(오너 19:16 캡처): 아직 만드는 중인 편집본을 고르면 빈 칸 + 「이미지 바이트 없음」이었다 — 고르지 않는다
+        return {"ok": False, "pending": True, "error": "아직 만드는 중이에요 — 다 되면 칩이 켜져요"}
     e = _entry(extra, kind, idx)
     if e is None:
         if key == V_ORIGINAL:
@@ -191,6 +194,8 @@ def select(extra: dict, kind: str, idx: int, key: str) -> Dict:
         e.update(url=ed["url"], use=True, status="done")
         e["edit"] = dict(ed)                                    # 지금 나가는 편집본(지운 글자 → 판촉·상표 검사에서 뺀다)
     e["current"] = key
+    if key != e.get("pending_select"):
+        e.pop("pending_select", None)                            # 사람이 다른 버전을 골랐다 — 다 돼도 넘어가지 않는다
     return {"ok": True, "current": key}
 
 
@@ -344,6 +349,12 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
     from src.services.image_translate_auto import _is_pwt, per_item_cap
     if key == V_ORIGINAL and e.get("status") in ("failed", "skipped") and _is_pwt(e):
         return {"ok": True, "boxes": [], "size": [0, 0], "source": "translate", "why": NO_TEXT_WHY, "version": key}
+    if key == V_ORIGINAL and e.get("prop_only"):
+        from src.services import prop_text as _pt
+        if not _pt.exempt(extra):
+            # Y11-G: 소품 글자뿐인 사진 — 글자가 아니다. 다시 번역(과금)을 권하지 않는다.
+            return {"ok": True, "boxes": [], "size": [0, 0], "source": "translate", "version": key,
+                    "why": "소품 글자뿐이에요(책등·표지 등) — 원본 그대로 나가요. 지울 글자가 없어요"}
     capped = int(idx) >= per_item_cap(kind) and not translated_url(e)
     if key == V_TRANSLATED and isinstance(e.get("boxes"), list) and e.get("box_size"):
         ok_frame = e.get("box_frame") not in (None, "", "unknown") or _verify_translated(extra, kind, idx, e)
@@ -383,6 +394,20 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
         e["ocr_text"] = " ".join(b["src"] for b in got["boxes"])[:2000]
     return {"ok": True, "boxes": got["boxes"], "size": got["size"], "source": "ocr", "capped": capped,
             "why": "" if got["boxes"] else NO_TEXT_WHY, "version": key}
+
+
+def _version_frame(extra: dict, kind: str, idx: int) -> str:
+    """지금 버전 상자의 사진 회전 틀 — 번역본은 `box_frame`, OCR로 읽은 버전은 그때 OCR 각도(±45° 밖이면 돌아간 사진)."""
+    e = _entry(extra, kind, idx) or {}
+    key = current_key(e)
+    if key == V_TRANSLATED:
+        return str(e.get("box_frame") or "")
+    rec = (e.get("vboxes") or {}).get(key) if isinstance(e.get("vboxes"), dict) else None
+    try:
+        ang = abs(float((rec or {}).get("angle") or 0.0))
+    except (TypeError, ValueError):
+        ang = 0.0
+    return "rot180" if ang > 135 else ("rot90a" if ang > 45 else "")
 
 
 def _cap_of(kind: str) -> int:
@@ -433,23 +458,32 @@ def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, re
         small, real = _load_small(url)                          # 글자색·바탕 크기 — 상자가 있을 때만 받는다
     W, H = (bx.get("size") or [0, 0]) if bx.get("ok") else (0, 0)
     W, H = W or real[0], H or real[1]
-    boxes = []
+    # Y11-G(오너): 소품(책등·책 표지·포장) 글자는 글자가 아니다 — 편집 상자에서 빼고(적용 개수에 안 듦) 「소품 글자 n개 보기」로만 회색 점선.
+    from src.services import prop_text as PT
+    prop_off = PT.exempt(extra)
+    frame = _version_frame(extra, kind, idx)
+    boxes, prop_boxes = [], []
     for i, b in enumerate(bx.get("boxes") or []):
         text = " ".join(x for x in (str(b.get("src") or ""), str(b.get("tgt") or "")) if x)
-        cls = classify(text, extra)
         box = {"x": int(b.get("x") or 0), "y": int(b.get("y") or 0), "w": int(b.get("w") or 0), "h": int(b.get("h") or 0)}
         if box["w"] <= 0 or box["h"] <= 0:
             continue
+        if not prop_off and (b.get("prop") or PT.is_prop(dict(b), [W, H], frame=frame)):
+            prop_boxes.append(dict(box, id=f"p{i}", text=text[:120]))
+            continue
+        cls = classify(text, extra)
         boxes.append(dict(box, id=f"t{i}", er=erase_rect(box, [W, H]), text=text[:120], src=str(b.get("src") or ""),
                           tgt=str(b.get("tgt") or ""), cls=cls, cls_label=CLASS_LABEL[cls]))
     e = _entry(extra, kind, idx) or {}
     cur = current_key(e)
     ed = next((x for x in edits(e) if f"edit:{x['n']}" == cur), None)
     why = bx.get("why") or ("" if boxes else NO_TEXT_WHY)
+    if not boxes and prop_boxes and not bx.get("why"):
+        why = "소품 글자만 있어요(책등·표지 등) — 지울 글자가 없어요"
     capped = bool(bx.get("capped")) or (int(idx) >= _cap_of(kind) and not translated_url(e))
     return {"ok": True, "why": why, "need_translate": bool(bx.get("need_translate")), "source": bx.get("source", ""),
             "capped": capped, "capped_label": CAPPED_LABEL if capped else "",
-            "url": url, "size": [W, H], "real": [int(real[0] or 0), int(real[1] or 0)], "boxes": boxes,
+            "url": url, "size": [W, H], "real": [int(real[0] or 0), int(real[1] or 0)], "boxes": boxes, "prop_boxes": prop_boxes,
             "versions": versions(extra, kind, idx), "current": cur, "edit": ed,
             "cost": cost(0), "today": today_count(), "cap": daily_cap(),
             "spent": round(sum(float(x.get("credits") or 0) for x in edits(e)), 3)}
@@ -571,7 +605,51 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
     if not e.get("status"):
         e["status"] = "done"
     e.setdefault("vendor", "edit")
-    select(extra, kind, idx, f"edit:{n}")
+    if ready:
+        select(extra, kind, idx, f"edit:{n}")
+    else:
+        # Cloudinary gen_remove는 비동기 — 파생본이 아직 423이면 지금 버전을 그대로 두고, 다 되면(다음 열기 때 확인) 이 편집본으로 넘어간다
+        e["pending_select"] = f"edit:{n}"
     spent = round(sum(float(x.get("credits") or 0) for x in e["edits"]), 3)
     return {"ok": True, "url": url, "ready": ready, "credits": c["credits"], "spent": spent, "erased": erased,
-            "version": f"edit:{n}", "today": today, "cap": daily_cap()}
+            "version": f"edit:{n}", "pending": not ready, "today": today, "cap": daily_cap()}
+
+
+def _head_ok(url: str) -> bool:
+    """파생본이 준비됐나 — HEAD 한 번(기다리지 않는다)."""
+    try:
+        import requests
+        return requests.head(url, timeout=8, allow_redirects=True).status_code == 200
+    except Exception:                                           # noqa: BLE001
+        return False
+
+
+def refresh_pending(extra: dict, kind: str, idx: int) -> bool:
+    """만드는 중이던 편집본을 다시 본다 — 다 됐으면 `ready`로 바꾸고(칩이 켜진다), 그걸 기다리던 장이면 그 편집본으로 넘어간다.
+    지금 버전이 만드는 중인 편집본이면(옛 기록) 바탕 버전을 보여 준다. 바꾼 것이 있으면 True."""
+    e = _entry(extra, kind, idx)
+    if not e:
+        return False
+    eds = edits(e)
+    if not any(x.get("ready") is False for x in eds):
+        return False
+    _normalize(e)
+    changed = False
+    for x in e["edits"]:
+        if x.get("ready") is False and _head_ok(x["url"]):
+            x.update(ready=True, http_status=200)
+            changed = True
+    cur = current_key(e)
+    ed = next((x for x in e["edits"] if f"edit:{x['n']}" == cur), None)
+    if ed and ed.get("ready") is False:                          # 지금 나가는 게 아직 없는 그림 — 바탕으로
+        select(extra, kind, idx, ed.get("base_key") or V_ORIGINAL)
+        e["pending_select"] = cur                                 # (select가 지우므로 뒤에 적는다)
+        changed = True
+    want = e.get("pending_select")
+    if want:
+        wv = next((x for x in e["edits"] if f"edit:{x['n']}" == want), None)
+        if wv and wv.get("ready") and current_key(e) == (wv.get("base_key") or V_ORIGINAL):
+            e.pop("pending_select", None)
+            select(extra, kind, idx, want)
+            changed = True
+    return changed

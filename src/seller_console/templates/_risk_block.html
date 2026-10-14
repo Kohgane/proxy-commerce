@@ -3,14 +3,14 @@
    버튼은 data-role="risk-act" data-key data-action — 각 화면이 눌림을 받아 /risk-decision 후 사전검증을 다시 돈다. #}
 <script>
 window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
-  if (!risk || !((risk.hits || []).length || risk.waiting || (risk.skip && risk.skip.reason))) return '';
+  if (!risk || !((risk.hits || []).length || risk.waiting || (risk.skip && risk.skip.reason) || (risk.notes || []).length)) return '';
   var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); };
   var hits = risk.hits || [];
   var open = hits.filter(function (h) { return h.grade !== 'caution' && !(h.decided === 'allow' && h.grade !== 'block'); }).length;
   var h = '<div class="kgp-risk" data-role="risk-block" data-open="' + open + '">';
   var cautionOnly = hits.length && hits.every(function (x) { return x.grade === 'caution'; });
-  h += '<div class="kgp-risk-head"><strong>' + (cautionOnly ? '주의 ' : '위험 ') + hits.length + '건</strong>' +
+  if (hits.length) h += '<div class="kgp-risk-head"><strong>' + (cautionOnly ? '주의 ' : '위험 ') + hits.length + '건</strong>' +
        (open ? ' <span class="kgp-risk-sub">— 고를 때까지 등록을 멈춰요</span>'
         : (cautionOnly ? ' <span class="kgp-risk-sub">— 등록은 그대로 진행돼요</span>' : ' <span class="kgp-risk-sub">— 다 골랐어요</span>')) + '</div>';
   if (risk.skip && risk.skip.reason) {
@@ -34,6 +34,8 @@ window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
     }
     h += '</div>';
   });
+  // Y11-G: 소품(책 표지 등) 글자에만 걸린 상표 — 차단·주의 아님, 참고 한 줄
+  (risk.notes || []).forEach(function (n) { h += '<div class="kgp-risk-why" data-role="risk-note">' + esc(n) + '</div>'; });
   if (risk.waiting) h += '<div class="kgp-risk-wait" data-role="risk-wait">이미지 검사 대기 ' + esc(risk.waiting) + '장 — 사진 속 글자를 다 읽으면 다시 검사해요.</div>';
   if (open && risk.ai_waits) h += '<div class="kgp-risk-why" data-role="risk-ai-wait">AI 자동수정은 위 항목을 고른 뒤에 돌아요.</div>';
   return h + '</div>';

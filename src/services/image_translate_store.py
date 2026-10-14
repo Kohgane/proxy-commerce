@@ -235,16 +235,22 @@ def text_geometry(result: dict) -> dict:
     for l in lines[:40]:
         b = l["box"]
         try:
-            boxes.append({"x": int(float(b.get("x") or 0)), "y": int(float(b.get("y") or 0)),
-                          "w": int(float(b.get("w") or 0)), "h": int(float(b.get("h") or 0)),
-                          "src": str(l.get("source") or "")[:120], "tgt": str(l.get("target") or "")[:120]})
+            bx = {"x": int(float(b.get("x") or 0)), "y": int(float(b.get("y") or 0)),
+                  "w": int(float(b.get("w") or 0)), "h": int(float(b.get("h") or 0)),
+                  "src": str(l.get("source") or "")[:120], "tgt": str(l.get("target") or "")[:120]}
+            if l.get("prop"):
+                bx["prop"] = True                           # Y11-G: 소품 글자 — 편집 화면 기본 숨김 · 위험 검사 「참고」만
+            boxes.append(bx)
         except (TypeError, ValueError):
             continue
     return {"text_area": ratio, "band": band, "box_size": [int(W), int(H)], "boxes": boxes}
 
 
+PROP_ONLY_REASON = "소품 글자뿐(책등·표지·포장 등) — 원본 그대로"
+
+
 def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "",
-                kind: str = "gallery", label: Optional[Dict[str, str]] = None) -> dict:
+                kind: str = "gallery", label: Optional[Dict[str, str]] = None, prop_exempt: bool = False) -> dict:
     """공급사 결과 1장 → `images_ko` 한 줄. **이 모양을 만드는 자리는 여기 하나다.**
 
     `status`: `done`(번역본이 실제로 놓였다) / `failed`(사유 있음) / `skipped`(할 게 없었다)
@@ -265,6 +271,13 @@ def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "
         })
         return entry
 
+    if result.get("prop_all") and not prop_exempt:
+        # Y11-G(오너): 상자가 전부 소품 글자면 번역본을 만들지 않는다 — 수집 원본이 나간다(텐센트 호출은 이미 했다 · 카운터 1).
+        props = [str(l.get("source") or "") for l in (result.get("lines") or []) if l.get("prop")]
+        entry.update({"status": "skipped", "use": True, "reason": PROP_ONLY_REASON, "prop_only": True,
+                      "prop_text": " ".join(props)[:500], "box_frame": str(result.get("box_frame") or ""),
+                      "source_text": str(result.get("source_text") or "")[:2000]})
+        return entry
     target_text = str(result.get("target_text") or "")
     placed = store_translated(item_id, int(idx), result.get("image_b64") or "",
                               seller_id=seller_id, kind=kind, label=label)
@@ -316,6 +329,19 @@ def banned_in(text: str, seller_id: str = "") -> list:
     except Exception as exc:
         logger.warning("[이미지번역] 금칙어 검사 실패(경고 없음으로 계속): %s", exc)
         return []
+
+
+def has_boxes(e: Optional[dict]) -> bool:
+    """Y11-F(오너 2026-10-14) — **「done + 글자 상자 있음」인 장은 어떤 경로로도 다시 보내지 않는다(덮어쓰지 않는다).**
+
+    실측 18:20 KST VRSUK 갤러리 3: 17:26 「다시 번역」이 줄에 넣은 장(그땐 상자 없음, 상한이라 대기)을 17:28 편집기 「번역하고 글자
+    상자 받기」가 따로 번역해 상자를 얻었는데, 배포 뒤 큐가 그 낡은 줄을 꺼내 OCR 사전검사(「한자 0」)로 장을 통째 덮었다.
+    조건은 done **그리고** 상자가 비어 있지 않음 — done이라도 상자가 없는(옛) 번역본은 「다시 번역」이 다시 보낸다(편집에 상자가 필요)."""
+    return bool(isinstance(e, dict) and e.get("status") == "done"
+                and isinstance(e.get("boxes"), list) and len(e["boxes"]) > 0)
+
+
+PROTECTED_REASON = "이미 번역됨 — 글자 상자 있음(덮어쓰지 않음)"
 
 
 def carry_versions(old: Optional[dict], new: dict) -> None:
