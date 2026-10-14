@@ -81,11 +81,15 @@ def test_han_left_box_is_sent_as_redo_and_counted(monkeypatch):
     assert row["han_left"] and row["from"] == "polish" and not P.han_left(row["ko"])
 
 
-def test_output_with_han_is_rejected(monkeypatch):
+def test_output_with_han_is_rejected_then_asked_again(monkeypatch):
+    """Y11-M: 한자가 남은 답은 버리고 그 상자만 한 번 더 묻는다(두 번째도 남으면 텍스트 번역 — test_y11m)."""
     from src.services import image_polish as P
-    _ai(monkeypatch, lambda p: json.dumps({"boxes": [{"id": "t7", "ko": "고탄성 정형면 자研"}]}))
+    from src.services import image_translate_tencent as T
+    seen = _ai(monkeypatch, lambda p: json.dumps({"boxes": [{"id": "t7", "ko": "고탄성 정형면 자研"}]}))
+    monkeypatch.setattr(T, "translate_text", lambda t, **k: {"ok": False, "text": "", "why": "키 없음"})
     row = P.polish_boxes([dict(BOX_22)], _ctx())["rows"][0]
-    assert row["why"] == "한자가 남음" and row["from"] == "tencent"
+    assert len(seen) == 2 and row["tries"] == 2 and row["from"] == "tencent"
+    assert row["why"] == "텍스트 번역 실패(키 없음)"
 
 
 def test_result_line_says_han_retranslated():
@@ -110,23 +114,24 @@ def test_polish_entry_records_han_and_rule(monkeypatch):
     assert pl["han_left"] == 1 and pl["han_fixed"] == 1 and pl["rule"] == "furniture"
 
 
-# ── 렌더 글꼴: Cloudinary가 받는 글꼴 · 실패 사유를 남긴다 ─────────────────────────────────────────
+# ── Y11-M: 렌더는 우리 쪽에서 — 실패 사유를 사람 말로 남긴다 ─────────────────────────────────────────
 
-def test_text_layer_uses_font_cloudinary_accepts():
-    from src.services import image_edit as IE
-    layer = IE._text_layer("부드럽고 탄탄한 쿠션감", {"x": 0, "y": 0, "w": 400, "h": 40}, "333333")
-    assert layer.startswith("l_text:NanumGothic_") and "Noto" not in layer
-
-
-def test_eager_failure_reason_is_kept(monkeypatch):
+def test_upload_failure_reason_is_kept(monkeypatch):
+    from PIL import Image
+    import io
     from src.media import image_pipeline as IPL
     from src.services import image_edit as IE
+    buf = io.BytesIO()
+    Image.new("RGB", (800, 800), (250, 250, 250)).save(buf, "JPEG")
     ex = {"images": ["https://img/g0.jpg"], "images_ko": [{
         "idx": 0, "status": "done", "use": True, "url": "https://res.cloudinary.com/x/t0.jpg", "translated_url": "https://res.cloudinary.com/x/t0.jpg",
         "box_size": [800, 800], "box_frame": "identity", "boxes": [{"x": 10, "y": 10, "w": 300, "h": 40, "src": "软糯", "tgt": "식감"}]}]}
     monkeypatch.setattr(IE, "configured", lambda: (True, ""))
     monkeypatch.setattr(IE, "_load_small", lambda url: (None, (800, 800)))
-    monkeypatch.setattr(IPL, "upload_remote", lambda *a, **k: {"ok": True, "eager": [{"status": "failed", "reason": "Unsupported font family X"}],
-                                                               "keys": ["eager", "public_id"]})
+    monkeypatch.setattr(IE, "_fetch", lambda url: buf.getvalue())
+    monkeypatch.setattr(IPL, "upload_bytes", lambda data, **k: {"ok": False, "error": "업로드 거부(401)"})
     r = IE.apply(ex, "gallery", 0, [{"id": "t0", "action": "text", "text": "쿠션감"}], by="polish")
-    assert not r["ok"] and r["error"] == "편집본을 만들지 못했어요 — Unsupported font family X"
+    assert not r["ok"] and r["error"] == "편집본을 올리지 못했어요 — 업로드 거부(401)"
+    monkeypatch.setattr(IE, "_fetch", lambda url: b"")
+    r = IE.apply(ex, "gallery", 0, [{"id": "t0", "action": "text", "text": "쿠션감"}], by="polish")
+    assert not r["ok"] and "편집할 사진을 받지 못했어요" in r["error"]

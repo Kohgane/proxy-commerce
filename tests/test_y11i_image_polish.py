@@ -127,7 +127,8 @@ def test_polish_entry_makes_polished_version(monkeypatch):
     def _apply(extra, kind, idx, ops, by="user", small=None):
         applied.append((ops, by))
         e = IE._entry(extra, kind, idx)
-        e.setdefault("edits", []).append({"n": 1, "url": "https://res.cloudinary.com/x/p1.jpg", "base_key": "translated", "by": by})
+        e.setdefault("edits", []).append({"n": 1, "url": "https://res.cloudinary.com/x/p1.jpg", "base_key": "translated", "by": by,
+                                          "render": "local"})
         e["url"] = "https://res.cloudinary.com/x/p1.jpg"
         return {"ok": True, "version": "edit:1", "pending": False}
     monkeypatch.setattr(IE, "apply", _apply)

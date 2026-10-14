@@ -385,7 +385,7 @@ def test_the_run_button_sends_the_render_flag():
 def test_the_registration_pipeline_still_does_not_see_the_renderer():
     """★★★ **벤치는 파이프라인이 아니다.** 등록·번역 경로는 이 값을 쳐다보지 않는다."""
     from tests.test_d3_glossary import _importers_of
-    allowed = {"image_translate_bench.py"}          # 벤치만
+    allowed = {"image_translate_bench.py", "image_edit.py"}   # 벤치 + Y11-M 사진 편집기(새 버전 — 번역·등록 경로 아님)
     assert _importers_of("image_text_render", allow=allowed) == []
     # F48-b(오너 2026-09-25): 쿠팡 색상 **속성값** 매핑은 「D3 용어집 재사용」이 지시다.
     #   그건 이미지 렌더를 파이프라인에 잇는 게 아니라 **표 한 장**을 읽는 것이다 — 그래서

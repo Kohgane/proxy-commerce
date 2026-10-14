@@ -153,7 +153,7 @@ def test_polish_line_counts(monkeypatch):
     from src.services import image_polish as IP
     ex = {"detail_images_ko": [{"idx": 12, "polish": {"changed": 2, "calls": 1, "rows": [{"why": ""}, {"why": "금지어·과장(1위)"}]}},
                                {"idx": 16, "polish": {"changed": 1, "calls": 1, "rows": []}}]}
-    assert IP.item_line("x", ex) == "번역 다듬기 2장: 바뀐 상자 3 · AI 2회 · AI 결과 버림 1(금지어·숫자 등)"
+    assert IP.item_line("x", ex) == "번역 다듬기 2장: 바뀐 상자 3 · AI 2회 · AI 결과 버림 1(금지어·과장 1)"   # Y11-M: 사유별
 
 
 # ── 3. 드로어 상단 SKU 옆 전체 ID + 복사 · 목록 ID 열(접기) ──────────────────────────────────────────

@@ -176,10 +176,16 @@ def han_left(text: str) -> bool:
 
 
 def _cat_ban(ko: str, rule: Optional[Dict]) -> str:
+    """품목에 안 맞는 말 — 낱말 앞이 한글이면 다른 낱말의 일부다(「의식감」 ≠ 「식감」, VRSUK 24번 오탐)."""
     for w in (rule or {}).get("ban") or []:
-        if w in (ko or ""):
+        if re.search(r"(?<![가-힣])" + re.escape(w), ko or ""):
             return w
     return ""
+
+
+def _nums(text: str) -> set:
+    """글 속 숫자 집합 — 천 단위 쉼표는 뗀다(3,200 = 3200)."""
+    return {n.replace(",", "") for n in _NUM.findall(text or "")}
 
 
 def check(src: str, tgt: str, ko: str, rule: Optional[Dict] = None) -> str:
@@ -195,9 +201,10 @@ def check(src: str, tgt: str, ko: str, rule: Optional[Dict] = None) -> str:
     if w:
         return f"다른 품목 표현({w})"
     before = f"{src} {tgt}"
-    for n in _NUM.findall(f"{src}"):
-        if n not in ko and n in tgt:
-            return f"숫자 누락({n})"                             # 원문·텐센트 둘 다 있던 숫자를 잃었다
+    # Y11-M(오너): 숫자는 **집합**으로 본다 — 원문·텐센트 둘 다 있던 숫자가 다듬은 글에도 다 있으면 통과(1:0.618 같은 비율 그대로)
+    lost = sorted((_nums(src) & _nums(tgt)) - _nums(ko))
+    if lost:
+        return f"숫자 누락({lost[0]})"
     tm = _new_trademark(ko, before)
     if tm:
         return f"없던 상표 이름({tm})"
@@ -250,9 +257,48 @@ def _parse(text: str) -> Dict[str, str]:
     return out
 
 
+#: Y11-M(오너): 한자 남은 상자는 AI에 두 번까지 — 그래도 한자가 남으면 한자 덩어리만 텐센트 텍스트 번역으로 옮겨 끼운다.
+HAN_AI_TRIES = 2
+_HAN_RUN = re.compile("[㐀-䶿一-鿿]+")
+
+
+def splice_han(tgt: str) -> Dict:
+    """`{ok, text, why}` — 텐센트 한국어 속 한자 덩어리만 텍스트 번역해 그 자리에 끼운다(나머지 글자는 그대로)."""
+    from src.services.image_translate_tencent import translate_text
+    out = tgt
+    for run in dict.fromkeys(_HAN_RUN.findall(tgt or "")):
+        r = translate_text(run)
+        if not r.get("ok") or han_left(r["text"]):
+            return {"ok": False, "text": "", "why": "텍스트 번역 실패(" + (r.get("why") or "한자 남음") + ")"}
+        out = out.replace(run, r["text"])
+    return {"ok": True, "text": re.sub(r"\s{2,}", " ", out).strip(), "why": ""}
+
+
+def _ask(rows: List[Dict], ctx: Dict, terms: List[Dict]) -> Dict:
+    """AI 한 번(상자 BATCH개) — `{got, error}`. 상한이면 `{capped: True}`."""
+    from src.ai import llm
+    from src.db import image_translate_queue_pg as q
+    took, _n = q.take_start(_day_key(), daily_cap())
+    if not took:
+        return {"capped": True}
+    res = llm.complete(_prompt([dict(r, tgt=r["glossary"]) for r in rows], ctx, terms), system=_SYSTEM, size="small",
+                       max_tokens=1200, purpose="image_polish", timeout=30.0, json_mode=True, providers=["anthropic"])
+    return {"got": _parse(res.get("text") or ""), "error": str(res.get("error") or "빈 응답")[:60]}
+
+
+def _take(r: Dict, ko: str, ctx: Dict) -> None:
+    """AI 답 하나를 상자에 — 검사 통과면 채택, 아니면 사유만 남긴다(텐센트 글자 그대로)."""
+    r["ai"] = ko
+    r["tries"] = int(r.get("tries") or 0) + 1
+    why = check(r["src"], r["glossary"], ko, ctx.get("rule"))
+    r["why"] = why
+    if not why and ko != r["glossary"]:
+        r["ko"], r["from"] = ko, "polish"
+
+
 def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> Dict:
     """상자들 → `{rows:[{id, src, tgt, glossary, ko, from, why}], calls, ai_why}`.
-    `from` = polish(AI 다듬음 채택) · glossary(용어집만) · tencent(그대로). AI가 없거나 상한이면 용어집만."""
+    `from` = polish(AI 다듬음 채택) · tmt(한자만 텍스트 번역) · glossary(용어집만) · tencent(그대로). AI가 없거나 상한이면 용어집만."""
     from src.ai import llm
     terms = glossary()
     rows = []
@@ -271,48 +317,89 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
         hit = (cache or {}).get((r["src"], r["tgt"]))
         if not isinstance(hit, dict) or not isinstance(hit.get("ai"), str):
             continue
-        ko = hit["ai"]
-        why = check(r["src"], r["glossary"], ko, ctx.get("rule"))
-        if why and hit.get("pv") != PROMPT_VER:
+        if check(r["src"], r["glossary"], hit["ai"], ctx.get("rule")) and hit.get("pv") != PROMPT_VER:
             continue                                             # 옛 판 답이 지금 규칙에 걸림 — 이 상자만 다시 묻는다
-        r["ai"], r["cached"] = ko, True
+        r["tries"] = max(0, int(hit.get("tries") or 1) - 1)
+        _take(r, hit["ai"], ctx)
+        r["cached"] = True
+        if hit.get("tmt"):
+            r["tmt"] = hit["tmt"]
         cached += 1
-        if why:
-            r["why"] = why
-        elif ko != r["glossary"]:
-            r["ko"], r["from"] = ko, "polish"
     todo = [r for r in rows if not r.get("cached")]
-    if not todo:
-        return {"rows": rows, "calls": 0, "ai_why": "", "cached": cached}
-    if not llm.anthropic_ready():
+    ready = llm.anthropic_ready()
+    if todo and not ready:
         ai_why = "AI 다듬기 못 씀(Claude 미연결) — 용어집만 적용"
-        return {"rows": rows, "calls": 0, "ai_why": ai_why, "cached": cached}
-    from src.db import image_translate_queue_pg as q
-    for i in range(0, len(todo), BATCH):
+    for i in range(0, len(todo) if ready else 0, BATCH):
         chunk = todo[i:i + BATCH]
-        took, n = q.take_start(_day_key(), daily_cap())
-        if not took:
+        a = _ask(chunk, ctx, terms)
+        if a.get("capped"):
             ai_why = f"오늘 다듬기 상한({daily_cap()}회)을 다 써서 용어집만 적용"
             break
         calls += 1
-        res = llm.complete(_prompt([dict(r, tgt=r["glossary"]) for r in chunk], ctx, terms), system=_SYSTEM, size="small",
-                           max_tokens=1200, purpose="image_polish", timeout=30.0, json_mode=True, providers=["anthropic"])
-        got = _parse(res.get("text") or "")
-        if not got:
-            ai_why = f"AI 응답을 읽지 못함({str(res.get('error') or '빈 응답')[:60]}) — 용어집만 적용"
+        if not a["got"]:
+            ai_why = f"AI 응답을 읽지 못함({a['error']}) — 용어집만 적용"
             continue
         for r in chunk:
-            if r["id"] not in got:
-                continue
-            ko = got[r["id"]]
-            r["ai"] = ko
-            why = check(r["src"], r["glossary"], ko, ctx.get("rule"))
-            if why:
-                r["why"] = why                                   # 버림 — 텐센트(용어집) 글자 그대로
-                continue
-            if ko != r["glossary"]:
-                r["ko"], r["from"] = ko, "polish"
+            if r["id"] in a["got"]:
+                _take(r, a["got"][r["id"]], ctx)
+    # Y11-M: 한자 남은 상자 — AI 두 번째(그 상자만) → 그래도 남으면 한자만 텍스트 번역해 끼운다.
+    redo = [r for r in rows if r.get("han_left") and r["from"] != "polish" and int(r.get("tries") or 0) < HAN_AI_TRIES]
+    if redo and ready and not ai_why:
+        a = _ask(redo, ctx, terms)
+        if a.get("capped"):
+            ai_why = f"오늘 다듬기 상한({daily_cap()}회)을 다 써서 용어집만 적용"
+        else:
+            calls += 1
+            for r in redo:
+                if r["id"] in a.get("got") or {}:
+                    _take(r, a["got"][r["id"]], ctx)
+    for r in rows:
+        if not r.get("han_left") or r["from"] == "polish" or int(r.get("tries") or 0) < HAN_AI_TRIES:
+            continue
+        sp = {"ok": True, "text": r["tmt"], "why": ""} if r.get("tmt") else splice_han(r["glossary"])
+        if not sp["ok"]:
+            r["why"] = sp["why"]
+            continue
+        r["tmt"] = sp["text"]
+        why = check(r["src"], r["glossary"], sp["text"], ctx.get("rule"))
+        if why:
+            r["why"] = "텍스트 번역도 " + why
+            continue
+        r["ko"], r["from"], r["why"] = sp["text"], "tmt", ""
     return {"rows": rows, "calls": calls, "ai_why": ai_why, "cached": cached}
+
+
+def old_render(e: Optional[dict]) -> bool:
+    """Y11-M: 이 장의 다듬음 버전이 옛 렌더(Cloudinary 변환 주소 — 지운 자리 위에 겹쳐 그려 번짐, 21번)로 만들어졌고,
+    그 위에 사람이 만든 편집이 없나. 그런 장만 다시 그린다(사람 편집·새 렌더 다듬음은 그대로)."""
+    from src.services import image_edit as IE
+    eds = IE.edits(e or {})
+    old = [x for x in eds if x.get("by") == POLISH_BY and x.get("render") != "local"]
+    if not old:
+        return False
+    keys = {f"edit:{x['n']}" for x in old}
+    if any(x.get("by") != POLISH_BY and x.get("base_key") in keys for x in eds):
+        return False
+    return IE.current_key(e) in keys | {IE.V_TRANSLATED}
+
+
+def drop_old_polish(extra: dict, kind: str, idx: int) -> int:
+    """옛 렌더 다듬음 버전을 목록에서 빼고 번역본으로 돌린다(기계가 만든 버전만 — 사람 편집·원본·번역본은 그대로). 뺀 수."""
+    from src.services import image_edit as IE
+    e = IE._entry(extra, kind, idx)
+    if not e or not old_render(e):
+        return 0
+    IE._normalize(e)
+    gone = [x for x in e["edits"] if x.get("by") == POLISH_BY and x.get("render") != "local"]
+    keys = {f"edit:{x['n']}" for x in gone}
+    e["edits"] = [x for x in e["edits"] if f"edit:{x['n']}" not in keys]
+    for k in keys:
+        (e.get("vboxes") or {}).pop(k, None)
+    if e.get("pending_select") in keys:
+        e.pop("pending_select", None)
+    IE.select(extra, kind, idx, IE.V_TRANSLATED)
+    e.setdefault("polish_rerender", []).append({"at": datetime.now(timezone.utc).isoformat(), "dropped": sorted(keys)})
+    return len(gone)
 
 
 def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
@@ -321,13 +408,16 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     if not enabled():
         return {"ok": False, "why": "다듬기 꺼짐"}
     e = IE._entry(extra, kind, idx) or {}
+    ok_c, _w = IE.configured()
+    if not ok_c:
+        return {"ok": False, "why": "사진 편집을 쓸 수 없어 다듬은 버전을 못 만듦"}
+    if old_render(e):
+        drop_old_polish(extra, kind, idx)                        # 옛 렌더(변환 주소·겹쳐 그림)로 만든 다듬음 — 새로 그린다
+        e = IE._entry(extra, kind, idx) or {}
     if IE.current_key(e) != IE.V_TRANSLATED:
         return {"ok": False, "why": "번역본이 지금 버전이 아님(사람이 고른 버전은 건드리지 않음)"}
     if any(x.get("by") == POLISH_BY for x in IE.edits(e)):
         return {"ok": False, "why": "이미 다듬음"}
-    ok_c, _w = IE.configured()
-    if not ok_c:
-        return {"ok": False, "why": "사진 편집을 쓸 수 없어 다듬은 버전을 못 만듦"}
     p = IE.plan(extra, kind, idx)
     boxes = [b for b in p.get("boxes") or [] if b.get("tgt") or b.get("src")]
     if not boxes:
@@ -341,15 +431,17 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     for r in prev_pl.get("rows") or []:
         # AI가 실제로 답한 상자만(ai 비었는데 polish = 「지움」 답 · ai 비었는데 tencent = 답 없음)
         if isinstance(r, dict) and isinstance(r.get("ai"), str) and (r["ai"] or r.get("from") == "polish"):
-            cache[(str(r.get("src") or ""), str(r.get("tgt") or ""))] = {"ai": r["ai"], "pv": prev_pl.get("pv") or ""}
+            cache[(str(r.get("src") or ""), str(r.get("tgt") or ""))] = {"ai": r["ai"], "pv": prev_pl.get("pv") or "",
+                                                                     "tries": r.get("tries") or 1, "tmt": r.get("tmt") or ""}
     pr = polish_boxes(boxes, ctx, cache=cache)
     by_id = {b["id"]: b for b in boxes}
     ops, too_long = [], 0
     for r in pr["rows"]:
         if r["ko"] == r["tgt"]:
             continue
-        if r["ko"] and not IE.text_fit(r["ko"], by_id.get(r["id"]) or {})["fits"]:
-            r["why"] = "길어서 유지(상자에 안 들어감)"               # Y11-L 반례: 두 줄로도 안 들어가면 텐센트 글자 그대로
+        # Y11-M: 기준 = 텐센트가 같은 상자에 그린 글자(같은 줄 수·크기의 FIT_KEEP 이상이면 들어감)
+        if r["ko"] and not IE.text_fit(r["ko"], by_id.get(r["id"]) or {}, ref=r["tgt"])["fits"]:
+            r["why"] = "길어서 유지(상자에 안 들어감)"               # Y11-L 반례: 줄여도 안 들어가면 텐센트 글자 그대로
             r["ko"], r["from"] = r["tgt"], "tencent"
             too_long += 1
             continue
@@ -359,9 +451,10 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
            "han_left": sum(1 for r in pr["rows"] if r.get("han_left"))}
     e = IE._entry(extra, kind, idx, create=True)
     han_n = sum(1 for r in pr["rows"] if r.get("han_left"))
-    han_fixed = sum(1 for r in pr["rows"] if r.get("han_left") and r["from"] == "polish")
+    han_fixed = sum(1 for r in pr["rows"] if r.get("han_left") and r["from"] in ("polish", "tmt"))
     e["polish"] = {"at": datetime.now(timezone.utc).isoformat(), "calls": pr["calls"], "changed": len(ops),
-                   "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why", "han_left", "cached")}
+                   "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why", "han_left", "cached",
+                                                       "tries", "tmt")}
                             for r in pr["rows"]][:40],
                    "han_left": han_n, "han_fixed": han_fixed, "rule": (ctx["rule"] or {}).get("key", ""),
                    "cached": int(pr.get("cached") or 0), "too_long": too_long, "pv": PROMPT_VER,
@@ -419,7 +512,7 @@ def polish_job(item_id: str, uid: str, kind: str, idx: int) -> Dict:
 
 
 def item_targets(extra: dict) -> List[Tuple[str, int]]:
-    """다듬을 장 — 번역본(상자 있음)이 지금 버전이고 아직 안 다듬은 장."""
+    """다듬을 장 — 번역본(상자 있음)이 지금 버전이고 아직 안 다듬은 장 + 옛 렌더로 다듬은 장(Y11-M 다시 그림)."""
     from src.services import image_edit as IE
     from src.services import image_translate_store as istore
     out = []
@@ -427,7 +520,7 @@ def item_targets(extra: dict) -> List[Tuple[str, int]]:
         for e in extra.get(key) or []:
             if not isinstance(e, dict) or e.get("status") != "done" or not istore.has_boxes(e):
                 continue
-            if IE.current_key(e) != IE.V_TRANSLATED or any(x.get("by") == POLISH_BY for x in IE.edits(e)):
+            if not old_render(e) and (IE.current_key(e) != IE.V_TRANSLATED or any(x.get("by") == POLISH_BY for x in IE.edits(e))):
                 continue
             out.append((kind, int(e.get("idx", -1))))
     return out
@@ -486,14 +579,20 @@ def item_line(item_id: str, extra: dict) -> str:
             if isinstance(pl, dict):
                 rows.append((f"{lab} {int(e.get('idx', -1)) + 1}", pl))
     if st.get("running"):
-        return f"번역 다듬기 중… ({len(rows)}/{st.get('n') or '?'}장)"
+        # Y11-M: 이번 실행분만 센다 — 예전에 다듬은 장(13:23 상세 28번 등)까지 세면 「24/23장」이 됐다
+        since = str(st.get("at") or "")
+        done = sum(1 for _n, pl in rows if str(pl.get("at") or "") >= since) if since else 0
+        return f"번역 다듬기 중… ({min(done, int(st.get('n') or 0) or done)}/{st.get('n') or '?'}장)"
     if not rows:
         if not st:
             return ""
         return "번역 다듬기: 다듬은 사진이 아직 없어요" + (f" — {st['why']}" if st.get("why") else "")
     changed = sum(int(pl.get("changed") or 0) for _n, pl in rows)
     calls = sum(int(pl.get("calls") or 0) for _n, pl in rows)
-    dropped = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("why"))
+    # 「길어서 유지」는 따로 센다 — 버림(검사 탈락)과 섞으면 같은 상자를 두 번 센다(Y11-M: 18 = 길어서 16 + 금지어 1 + 품목 1)
+    drop_why = [str(r.get("why")) for _n, pl in rows for r in pl.get("rows") or []
+                if r.get("why") and not str(r.get("why")).startswith("길어서")]
+    dropped = len(drop_why)
     whys = sorted({str(pl.get("why")) for _n, pl in rows if pl.get("why")})
     cached = sum(int(pl.get("cached") or 0) for _n, pl in rows)
     too_long = sum(int(pl.get("too_long") or 0) for _n, pl in rows)
@@ -501,11 +600,17 @@ def item_line(item_id: str, extra: dict) -> str:
     if too_long:
         s += f" · 길어서 유지 {too_long}"
     han_fixed = sum(int(pl.get("han_fixed") or 0) for _n, pl in rows)
+    tmt = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("from") == "tmt")
     han_n = sum(int(pl.get("han_left") or 0) for _n, pl in rows)
     if han_n:
-        s += f" · 한자 잔존 {han_fixed}상자 재번역" + (f"(못 고친 {han_n - han_fixed})" if han_n > han_fixed else "")
+        s += (f" · 한자 잔존 {han_fixed}상자 재번역" + (f"(텍스트 번역 {tmt})" if tmt else "")
+              + (f"(못 고친 {han_n - han_fixed})" if han_n > han_fixed else ""))
     if dropped:
-        s += f" · AI 결과 버림 {dropped}(금지어·숫자 등)"
+        kinds: Dict[str, int] = {}
+        for w in drop_why:
+            k = w.split("(")[0]
+            kinds[k] = kinds.get(k, 0) + 1
+        s += f" · AI 결과 버림 {dropped}(" + "·".join(f"{k} {n}" for k, n in sorted(kinds.items(), key=lambda x: -x[1])) + ")"
     if whys:
         s += " · " + whys[0][:60]
     return s

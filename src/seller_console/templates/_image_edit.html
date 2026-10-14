@@ -106,9 +106,8 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
                                     '<button type="button" class="kie-btn" data-role="kie-revert">되돌리기</button>' : '') + '</div>';
     }
     if ((p.boxes || []).length) {
-      var nTxt = ids.filter(function (k) { return st.choice[k].action === 'text'; }).length;   // 글자 고치기 1곳 = 글자 얹기 1번 더
-      var cr = Math.round((+((p.cost || {}).credits) || 0) * 1000 + nTxt) / 1000;
-      h += '<p class="kie-cost" data-role="kie-cost">이 사진 편집 비용 ' + esc(cr) + '크레딧(적용 한 번) · 오늘 ' + esc(p.today) + '/' + esc(p.cap) + '회' + spent + '</p>';
+      // Y11-M: 지우기·글자는 우리 쪽에서 그린다 — 다 그린 사진을 한 번 올리는 비용만(지우기 요금 없음)
+      h += '<p class="kie-cost" data-role="kie-cost">이 사진 편집 비용 ' + esc((p.cost || {}).credits || 0) + '크레딧(적용 한 번 · 지우기 요금 없음) · 오늘 ' + esc(p.today) + '/' + esc(p.cap) + '회' + spent + '</p>';
     }
     if (p.need_translate) h += '<p class="kie-cost">번역 1장 요금이 들어요 — 번역 결과의 글자 상자로 편집해요.</p>';
     if (p.capped) h += '<p class="kie-note" data-role="kie-capped">' + esc(p.capped_label) + ' — 건당 상한을 넘은 사진이라 번역은 보내지 않아요. 글자 상자는 원본에서 읽었어요.</p>';

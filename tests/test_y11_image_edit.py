@@ -50,24 +50,71 @@ def _ex():
     return d
 
 
+def _full_photo(side=800):
+    """바탕 사진(JPEG 바이트) — `_photo` 배치 + 상자마다 글자 같은 획 3개(바탕과 대비). 편집은 이 바이트 위에 그린다."""
+    from PIL import Image, ImageDraw
+    k = side / 800
+    im = Image.new("RGB", (side, side), (245, 243, 240))
+    d = ImageDraw.Draw(im)
+    sc = lambda *v: [int(x * k) for x in v]
+    d.rectangle(sc(200, 180, 600, 640), fill=(120, 80, 50))
+    d.rectangle(sc(620, 20, 780, 110), fill=(230, 40, 40))
+    d.rectangle(sc(620, 130, 780, 210), fill=(240, 120, 20))
+    d.rectangle(sc(0, 690, 800, 800), fill=(200, 30, 30))
+    d.rectangle(sc(20, 20, 320, 60), fill=(30, 30, 30))
+    for b in BOXES:
+        for i in range(3):
+            x = b["x"] + 8 + i * (b["w"] - 16) // 3
+            d.rectangle(sc(x, b["y"] + b["h"] * 0.3, x + (b["w"] - 16) // 5, b["y"] + b["h"] * 0.7), fill=(250, 250, 250))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=95)
+    return buf.getvalue()
+
+
+def _changed(a: bytes, b: bytes, thr: int = 60):
+    """두 그림에서 크게 바뀐 픽셀들의 외접 사각형(JPEG 잡음 제외) — 없으면 None."""
+    from PIL import Image, ImageChops
+    A, B = (Image.open(io.BytesIO(x)).convert("L") for x in (a, b))
+    return ImageChops.difference(A, B).point(lambda v: 255 if v > thr else 0).getbbox()
+
+
+def _inside(bbox, box, k=1.0, margin=12):
+    x0, y0, x1, y1 = bbox
+    return (x0 >= box["x"] * k - margin and y0 >= box["y"] * k - margin
+            and x1 <= (box["x"] + box["w"]) * k + margin and y1 <= (box["y"] + box["h"]) * k + margin)
+
+
+class _Calls(list):
+    """올린 편집본 기록 — `side`(바탕 긴 변)를 테스트가 바꿀 수 있다."""
+    side = None
+
+
 @pytest.fixture
 def cloud(monkeypatch):
-    """Cloudinary 원격 업로드 흉내 — 받은 변환 문자열을 그대로 적어 두고 eager 주소를 돌려준다."""
+    """Y11-M: 편집은 우리 쪽에서 그려 **일반 업로드**한다 — 바탕 받기·업로드를 흉내 내고, 받은 바탕·올린 그림을 적어 둔다."""
     from src.db import image_translate_queue_pg as q
     from src.media import image_pipeline as IP
     from src.services import image_edit as E
     q.reset_for_tests()
-    calls = []
+    calls, got, last = _Calls(), {}, {"url": ""}
+    calls.side = {"v": 800}
 
-    def fake_upload(src, **kw):
-        tr = (kw.get("eager") or [{}])[0].get("raw_transformation", "")
-        calls.append({"src": src, "transform": tr, "folder": kw.get("folder")})
-        return {"ok": True, "secure_url": f"https://res.cloudinary.com/x/edit/{len(calls)}.jpg", "public_id": "e",
-                "eager": [{"secure_url": f"https://res.cloudinary.com/x/image/upload/{len(calls)}/edit.jpg"}], "keys": ["eager"]}
-    monkeypatch.setattr(IP, "upload_remote", fake_upload)
+    def fake_fetch(url):
+        if url not in got:
+            got[url] = _full_photo(calls.side["v"])
+        last["url"] = url
+        return got[url]
+
+    def fake_upload(data, **kw):
+        url = f"https://res.cloudinary.com/x/image/upload/v{len(calls) + 1}/edit.jpg"
+        calls.append({"src": last["url"], "before": got[last["url"]], "bytes": data, "folder": kw.get("folder")})
+        got[url] = data                                                       # 다음 편집의 바탕 = 이 편집본
+        return {"ok": True, "secure_url": url, "public_id": "e"}
+    monkeypatch.setattr(E, "_fetch", fake_fetch)
+    monkeypatch.setattr(IP, "upload_bytes", fake_upload)
+    monkeypatch.setattr(IP, "upload_remote", lambda *a, **k: pytest.fail("Y11-M: 변환 업로드(gen_remove)는 쓰지 않는다"))
     monkeypatch.setattr(E, "configured", lambda: (True, ""))
-    monkeypatch.setattr(E, "_ready", lambda url: (True, 200))
-    monkeypatch.setattr(E, "_load_small", lambda url: (_photo(), (800, 800)))
+    monkeypatch.setattr(E, "_load_small", lambda url: (_photo(), (calls.side["v"], calls.side["v"])))
     # Y11-E: 편집본·원본 버전의 상자는 그 그림을 OCR로 읽는다 — 흉내(같은 배치)
     monkeypatch.setattr(E, "_ocr_version", lambda url: {"ok": True, "boxes": json.loads(json.dumps(BOXES)), "size": [800, 800]})
     yield calls
@@ -117,9 +164,10 @@ def test_promo_photo_default_is_translated_and_only_tapped_box_is_erased(cloud):
     assert cloud == []
     r = E.apply(ex, "gallery", 0, [{"id": "t1", "action": "erase"}], small=_photo())
     assert r["ok"] and len(cloud) == 1 and cloud[0]["src"].endswith("p0_TENCENT.jpg")
-    tr = cloud[0]["transform"]
-    assert tr == "e_gen_remove:region_((x_611;y_11;w_178;h_108))"               # 그 상자 하나 + 여유(높이 90의 10% = 9, 사방)
+    ch = _changed(cloud[0]["before"], cloud[0]["bytes"])
+    assert ch and _inside(ch, BOXES[1])                                       # 그 상자 글자만 지워졌다(밖은 그대로)
     assert ex["images_ko"][0]["edit"]["ops"] == [{"id": "t1", "action": "erase"}]
+    assert ex["images_ko"][0]["edit"]["render"] == "local"
 
 
 def test_erase_region_is_box_plus_ten_percent_of_height_only():
@@ -233,10 +281,11 @@ def test_boxes_in_sent_space_are_scaled_to_a_bigger_base(cloud, monkeypatch):
     from src.media import image_pipeline as IP
     from src.services import image_edit as E
     monkeypatch.setattr(IP, "remote_max_side", lambda: 10000)
-    monkeypatch.setattr(E, "_load_small", lambda url: (_photo(), (1600, 1600)))
+    cloud.side["v"] = 1600
     ex = _ex()
     r = E.apply(ex, "gallery", 0, [{"id": "t3", "action": "erase"}])
-    assert r["ok"] and cloud[0]["transform"] == "e_gen_remove:region_((x_32;y_1392;w_736;h_96))"
+    ch = _changed(cloud[0]["before"], cloud[0]["bytes"])
+    assert r["ok"] and ch and _inside(ch, BOXES[3], k=2.0) and ch[2] > 400   # 상자 공간(800) → 바탕(1600) 두 배로
 
 
 # ── 4·5. 글자 고치기 · 되돌리기 ───────────────────────────────────────────────────────────────
@@ -245,12 +294,11 @@ def test_fix_text_erases_then_overlays_noto_sans_kr(cloud):
     from src.services import image_edit as E
     ex = _ex()
     r = E.apply(ex, "gallery", 0, [{"id": "t5", "action": "text", "text": "이탈리아 감성 홈"}], small=_photo())
-    assert r["ok"] and r["credits"] == 0.052                                   # gen_remove 50 + 기본 1 + 글자 1
-    tr = cloud[0]["transform"]
-    assert tr.startswith("e_gen_remove:region_((x_16;y_746;w_308;h_48))/")             # 상자 + 높이 10% 여유
-    # Y11-L: 운영 Cloudinary가 「Noto Sans KR」을 400(Unsupported font family)으로 거부 — NanumGothic(한글 그림 확인)
-    assert "l_text:NanumGothic_" in tr and "co_rgb:" in tr and "fl_layer_apply,g_north_west,x_20,y_" in tr
-    assert ex["images_ko"][0]["edit"]["by"] == "user"
+    assert r["ok"] and r["credits"] == 0.001                                   # Y11-M: 일반 업로드 한 번(gen_remove 없음)
+    ch = _changed(cloud[0]["before"], cloud[0]["bytes"])
+    assert ch and _inside(ch, BOXES[5])                                       # 지우고 그린 곳 = 그 상자 안
+    ed = ex["images_ko"][0]["edit"]
+    assert ed["by"] == "user" and ed["render"] == "local" and ed["how"] and len(ed["colors"][0]) == 6
 
 
 def test_second_edit_is_a_new_version_on_top_and_revert_steps_back(cloud):
@@ -262,10 +310,10 @@ def test_second_edit_is_a_new_version_on_top_and_revert_steps_back(cloud):
     first = ex["images_ko"][0]["url"]
     E.apply(ex, "gallery", 0, [{"id": "t2", "action": "erase"}], small=_photo())
     assert cloud[0]["src"].endswith("p0_TENCENT.jpg") and cloud[1]["src"] == first          # 편집본 2의 바탕 = 편집본 1
-    assert cloud[1]["transform"].count("(x_") == 1                                            # 이번 상자만
+    assert _inside(_changed(cloud[1]["before"], cloud[1]["bytes"]), BOXES[2])                  # 이번 상자만
     keys = [v["key"] for v in E.versions(ex, "gallery", 0)]
     assert keys == ["original", "translated", "edit:1", "edit:2"] and E.current_key(ex["images_ko"][0]) == "edit:2"
-    assert E.plan(ex, "gallery", 0, small=_photo())["spent"] == 0.102
+    assert E.plan(ex, "gallery", 0, small=_photo())["spent"] == 0.002
     assert E.revert(ex, "gallery", 0)["back"] == "edit:1" and ex["images_ko"][0]["url"] == first
     assert E.revert(ex, "gallery", 0)["back"] == "translated"
     e = ex["images_ko"][0]
@@ -350,7 +398,7 @@ def test_old_entry_reads_boxes_once_via_route(cloud, monkeypatch):
     d2 = c.get(f"/seller/collect/{iid}/image-edit/gallery/0").get_json()
     assert len(seen) == 1 and len(d2["boxes"]) == len(d["boxes"])             # 저장됨 — 다시 안 부른다
     r = c.post(f"/seller/collect/{iid}/image-edit/gallery/0", json={"ops": [{"id": "t0", "action": "erase"}]}).get_json()
-    assert r["ok"] and r["credits"] == 0.051 and r["plan"]["edit"]["url"].endswith("edit.jpg")
+    assert r["ok"] and r["credits"] == 0.001 and r["plan"]["edit"]["url"].endswith("edit.jpg")
     # Y11-E: 상자는 버전에 붙는다 — 편집본은 그 그림을 한 번 OCR로 읽는다(번역본 상자를 편집본 위에 그대로 그리지 않는다)
     assert r["plan"]["current"] == "edit:1" and len(seen) == 2
     d3 = c.get(f"/seller/collect/{iid}/image-edit/gallery/0").get_json()

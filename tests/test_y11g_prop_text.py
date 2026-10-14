@@ -140,8 +140,12 @@ def cloud(monkeypatch):
     from src.media import image_pipeline as IP
     from src.services import image_edit as E
     q.reset_for_tests()
-    monkeypatch.setattr(IP, "upload_remote", lambda src, **kw: {"ok": True, "eager": [
-        {"secure_url": "https://res.cloudinary.com/x/image/upload/e_gen_remove:region_((x_1;y_1;w_2;h_2))/v2/edit.jpg"}]})
+    from PIL import Image
+    import io
+    buf = io.BytesIO()
+    Image.new("RGB", (800, 800), (250, 250, 250)).save(buf, "JPEG")
+    monkeypatch.setattr(E, "_fetch", lambda url: buf.getvalue())
+    monkeypatch.setattr(IP, "upload_bytes", lambda data, **kw: {"ok": True, "secure_url": "https://res.cloudinary.com/x/image/upload/v2/edit.jpg"})
     monkeypatch.setattr(E, "configured", lambda: (True, ""))
     monkeypatch.setattr(E, "_load_small", lambda url: (None, (800, 800)))
     yield
@@ -155,23 +159,15 @@ def _ex1():
                            "boxes": [{"x": 10, "y": 10, "w": 400, "h": 80, "src": "满300减50", "tgt": "300 이상 50 할인"}]}]}
 
 
-def test_edit_still_generating_is_not_selected_and_turns_on_when_ready(cloud, monkeypatch):
-    """오너 19:16: 「편집본 2」 칩 → 빈 칸 + 깨진 그림 + 「이미지 바이트 없음」. 원인: Cloudinary gen_remove는 비동기 —
-    파생본이 423(만드는 중)인 채로 저장하고 그 버전을 바로 골랐다. 이제 만드는 중이면 고르지 않고 전 버전을 보이고, 다 되면 켠다."""
+def test_local_render_is_ready_at_once_and_selected(cloud, monkeypatch):
+    """오너 19:16: 「편집본 2」 칩 → 빈 칸 + 깨진 그림 + 「이미지 바이트 없음」(Cloudinary gen_remove 비동기 423).
+    Y11-M: 이제 우리 쪽에서 다 그린 그림을 올린다 — 올린 그 순간 있는 그림이라 바로 골라진다(만드는 중 없음)."""
     from src.services import image_edit as E
-    monkeypatch.setattr(E, "_ready", lambda url: (False, 423))
     ex = _ex1()
     r = E.apply(ex, "gallery", 0, [{"id": "t0", "action": "erase"}], small=None)
-    assert r["ok"] and r["pending"] and E.current_key(ex["images_ko"][0]) == "translated"   # 전 버전이 그대로 나간다
-    v = {x["key"]: x for x in E.versions(ex, "gallery", 0)}
-    assert v["edit:1"]["ready"] is False
-    s = E.select(ex, "gallery", 0, "edit:1")
-    assert not s["ok"] and s["pending"] and "만드는 중" in s["error"]
-    monkeypatch.setattr(E, "_head_ok", lambda url: False)
-    assert not E.refresh_pending(ex, "gallery", 0) and E.current_key(ex["images_ko"][0]) == "translated"
-    monkeypatch.setattr(E, "_head_ok", lambda url: True)                    # 다 됐다(200)
-    assert E.refresh_pending(ex, "gallery", 0)
-    assert E.current_key(ex["images_ko"][0]) == "edit:1" and E.versions(ex, "gallery", 0)[-1]["ready"] is True
+    assert r["ok"] and not r["pending"] and E.current_key(ex["images_ko"][0]) == "edit:1"
+    assert E.versions(ex, "gallery", 0)[-1]["ready"] is True
+    assert not E.refresh_pending(ex, "gallery", 0)                          # 기다릴 것 없음
 
 
 def test_old_record_whose_current_edit_is_not_ready_shows_previous_version(cloud, monkeypatch):
