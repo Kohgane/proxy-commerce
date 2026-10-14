@@ -200,12 +200,17 @@ def queue_line(item_id: str) -> dict:
     st = status(item_id)
     ic = st.get("item") or {}
     today, cap = int(st.get("today") or 0), int(st.get("cap") or 0)
+    from src.services import image_polish as _ip                 # Y11-I: 다듬기(haiku) 하루 카운터 — 텐센트 호출 옆에
     return {"today": today, "cap": cap, "in_line": int(ic.get("queued") or 0) + int(ic.get("running") or 0),
-            "cap_full": cap > 0 and today >= cap}
+            "cap_full": cap > 0 and today >= cap, "polish_today": _ip.today_count(), "polish_cap": _ip.daily_cap()}
 
 
 #: Y11-C 건너뛴 사유(사람 말) — 접수·건너뜀 응답과 테스트가 같은 표를 쓴다.
-SKIP_LABEL = {"spacer": "스페이서", "icon": "아이콘", "dup": "중복", "cap": "건당 상한", "done": "이미 번역", "prop": "소품 글자뿐"}
+SKIP_LABEL = {"spacer": "스페이서", "icon": "아이콘", "dup": "중복", "cap": "건당 상한", "done": "이미 번역", "prop": "소품 글자뿐",
+              "upside": "거꾸로 번역"}
+#: Y11-H(오너 2026-10-14): 텐센트가 사진을 180°로 오인해 한국어를 거꾸로 그린 장 — 원본으로 두고 「글자 고치기」로 고친다.
+#   ImageTranslateLLM 요청에는 회전 각도를 정하는 칸이 없다(SDK 요청 모델: Data·Target·Url·Mode뿐) — 다시 보내도 같은 결과(과금만).
+UPSIDE_REASON = "거꾸로 번역(텐센트가 사진을 180°로 오인) — 원본 그대로 · 머리글은 「글자 고치기」로"
 
 
 def _is_pwt(e: dict) -> bool:
@@ -256,6 +261,9 @@ def translate_plan(extra: dict, *, retry: bool = False) -> dict:
             if _is_pwt(e):
                 no_text.append((kind, i))                        # 텐센트가 「글자 없음」이라 답한 장 — 다시 보내도 같은 답
                 continue
+            if e.get("upside_down"):
+                skip["upside"].append((kind, i))                 # Y11-H: 다시 보내도 또 거꾸로 — 「글자 고치기」로
+                continue
             if e.get("prop_only") and not prop_off:
                 skip["prop"].append((kind, i))                   # Y11-G: 소품 글자뿐 — 다시 보내도 원본(과금만 남는다)
                 continue
@@ -282,7 +290,7 @@ def plan_line(plan: dict, accepted: int, waiting: int = 0, in_line: Optional[int
     """「접수 30장 · 건너뜀 2장(스페이서 1 · 아이콘 1) · 건당 상한 n장 · 글자 없음 n장 · 대기 중 n장 (10분 내 처리)」 — 실제 수만.
     Y11-C2(오너): 상한에 걸린 장은 따로 센다(어느 장이 잘렸는지 보이게) · 「대기 중」은 이 상품이 지금 줄에 선 장(누르자마자 「오늘 0」이라도
     처리 전인 것이 보이게 — 큐는 바로 돌고, 늦어도 10분 크론이 비운다)."""
-    sk = [(SKIP_LABEL[k], len(v)) for k, v in plan["skip"].items() if v and k != "cap"]
+    sk = [(SKIP_LABEL[k], len(v)) for k, v in plan["skip"].items() if v and k not in ("cap", "upside")]
     n_skip = sum(n for _l, n in sk)
     parts = [f"접수 {accepted}장"]
     if waiting:
@@ -292,6 +300,8 @@ def plan_line(plan: dict, accepted: int, waiting: int = 0, in_line: Optional[int
     if plan["skip"].get("cap"):
         parts.append(f"건당 상한 {len(plan['skip']['cap'])}장")
     parts.append(f"글자 없음 {len(plan['no_text'])}장")
+    if plan["skip"].get("upside"):
+        parts.append(f"거꾸로 번역 {len(plan['skip']['upside'])}장 — 글자 고치기로")
     if in_line:
         # 오늘 상한이 찼으면 10분 안에 돌지 않는다 — 그렇게 말한다(「10분 내」 거짓 금지)
         parts.append(f"대기 중 {in_line}장 (오늘 상한 도달 — 내일 0시 KST 이후 처리)" if cap_full
@@ -458,6 +468,8 @@ def _translate_job(job: dict) -> tuple:
     #   (줄은 접수 시점의 판단이다 — 꺼낼 때 지금 상태를 다시 본다. 실측 18:20 KST 갤러리 3)
     if istore.has_boxes(_entry_of(extra, ko_key, idx)):
         return "skipped", istore.PROTECTED_REASON
+    if _entry_of(extra, ko_key, idx).get("upside_down"):
+        return "skipped", UPSIDE_REASON                          # Y11-H: 또 보내도 거꾸로 — 과금만 남는다
     from src.services import prop_text as _pt
     entry = translate_page(originals[idx], idx=idx, kind=kind, item_id=item_id, seller_id=uid,
                            title=str(extra.get("title_en") or extra.get("title") or row.get("title") or ""),
@@ -482,6 +494,10 @@ def _translate_job(job: dict) -> tuple:
         pass
     st = entry.get("status")
     why = str(entry.get("error_message") or entry.get("reason") or "")
+    if st == "done" and istore.has_boxes(entry):
+        # Y11-I: 번역 직후 자동 다듬기 — 새 버전(번역본(다듬음))만 만든다. 텐센트 번역본은 버전으로 남는다. 실패해도 번역은 그대로.
+        from src.services import image_polish as _ip
+        _ip.polish_job(item_id, uid, kind, idx)
     if st not in ("done", "skipped") and _q().is_no_text(why):
         # Y4: 글자 없는 사진 = **성공(원본 유지)**. 실패로 세면 차단기가 멀쩡한 큐를 멈춘다(실측 20장 중 14장이 이것).
         return "skipped", f"글자 없는 사진 — 원본 그대로({why[:60]})"

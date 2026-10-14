@@ -17,6 +17,7 @@ import base64
 import io
 import logging
 import os
+import threading
 import time
 from typing import Dict
 
@@ -85,6 +86,18 @@ RAW_MAX_SIDE = 10000
 RAW_MAX_B64 = 7 * 1024 * 1024
 
 
+#: Y11-H: `read(max_side=AS_IS)` — JPEG·PNG가 공급사 한도(긴 변 10,000 · base64 7MB) 안이면 **풀지도 줄이지도 않고 그대로**.
+AS_IS = -1
+#: 한도 밖이라 풀어야 할 때의 긴 변 — 3000×3000 RGB ≈ 27MB(Render 512MB 안).
+AS_IS_FALLBACK_SIDE = 3000
+
+
+def _fits_as_is(raw: bytes) -> bool:
+    from src.collectors.image_norm import image_head
+    fmt, w, h = image_head(raw)[:3]
+    return fmt in ("JPEG", "PNG") and bool(w and h) and max(w, h) <= RAW_MAX_SIDE and len(raw) * 4 / 3 <= RAW_MAX_B64
+
+
 def shrink(raw: bytes, max_side: int = MAX_SIDE) -> bytes:
     """긴 변 `max_side`px JPEG로 — 보내는 바이트·디코딩 메모리를 줄인다. 못 열면 예외.
 
@@ -92,6 +105,10 @@ def shrink(raw: bytes, max_side: int = MAX_SIDE) -> bytes:
     안 먹어 원본 화소 그대로 풀고 RGB 사본까지 한 벌 더. 이제 `image_norm.open_small`(줄이기 먼저 · 한 장씩)이고,
     서버가 풀면 안 되는 큰 PNG는 **풀지 않고 원본 바이트를 그대로** 보낸다(공급사가 PNG를 받는다 · 한도 안일 때만)."""
     from src.collectors.image_norm import open_small
+    if max_side == AS_IS:
+        if _fits_as_is(raw):
+            return bytes(raw)
+        max_side = AS_IS_FALLBACK_SIDE                       # 한도 밖(webp·초대형) — 그래도 1024보다 훨씬 크게
     im, _fmt, w, h, why = open_small(raw, max_side)
     if im is None:
         if w and h and max(w, h) <= RAW_MAX_SIDE and len(raw) * 4 / 3 <= RAW_MAX_B64:
@@ -110,6 +127,10 @@ def _unavailable(why: str) -> Dict:
     return {"ok": False, "code": CODE_UNAVAILABLE, "why": why, "lines": [], "text": ""}
 
 
+#: 이번 호출의 인식 언어(`LanguageType`) — 스레드마다. 기본 auto(아무 글자 · 대표 사진 판정), 한자 사전검사는 zh(중영 혼합).
+_LANG = threading.local()
+
+
 def _call(b64: str) -> dict:
     """공급사 호출 한 번 — 응답 `Response` 본문(dict). 테스트는 이 함수를 바꿔 끼운다."""
     from tencentcloud.common import credential
@@ -120,12 +141,13 @@ def _call(b64: str) -> dict:
     sid, skey = _secret()
     prof = ClientProfile(httpProfile=HttpProfile(endpoint=endpoint(), reqTimeout=timeout_sec()))
     client = CommonClient(SERVICE, VERSION, credential.Credential(sid, skey), region(), profile=prof)
-    resp = client.call_json(ACTION, {"ImageBase64": b64, "LanguageType": "auto"})
+    resp = client.call_json(ACTION, {"ImageBase64": b64, "LanguageType": getattr(_LANG, "value", None) or "auto"})
     return (resp or {}).get("Response") or {}
 
 
-def read(raw: bytes) -> Dict:
-    """이미지 바이트 → `{ok, lines: [(글자, 확신)], text, code, why}`. 확신 50 미만 조각은 뺀다."""
+def read(raw: bytes, *, max_side: int = 0, lang: str = "") -> Dict:
+    """이미지 바이트 → `{ok, lines: [(글자, 확신)], text, code, why}`. 확신 50 미만 조각은 뺀다.
+    `max_side`(보낼 긴 변, 기본 MAX_SIDE · `AS_IS`=한도 안이면 원본 그대로) · `lang`(LanguageType, 기본 auto)."""
     if not raw:
         return _unavailable("이미지 바이트 없음")
     if not is_configured():
@@ -133,10 +155,11 @@ def read(raw: bytes) -> Dict:
     if unopened():
         return _unavailable(UNOPEN_WHY)
     try:
-        small = shrink(raw)
+        small = shrink(raw, max_side or MAX_SIDE)
     except Exception as exc:                                # noqa: BLE001 — 깨진 바이트
         return _unavailable(f"이미지를 열지 못했어요({type(exc).__name__})")
     t0 = time.monotonic()
+    _LANG.value = lang or ""
     try:
         body = _call(base64.b64encode(small).decode("ascii"))
     except Exception as exc:                                # noqa: BLE001 — 키·네트워크·공급사 오류 전부 「확인 못 함」

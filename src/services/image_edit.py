@@ -151,7 +151,8 @@ def versions(extra: dict, kind: str, idx: int) -> List[Dict]:
     if tu:
         out.append({"key": V_TRANSLATED, "label": V_LABEL[V_TRANSLATED], "url": tu, "at": e.get("at") or ""})
     for x in edits(e):
-        out.append({"key": f"edit:{x['n']}", "label": f"편집본 {x['n']}", "url": x["url"], "at": x.get("at") or "",
+        lab = "번역본(다듬음)" if x.get("by") == "polish" else f"편집본 {x['n']}"     # Y11-I: 자동 다듬기 버전
+        out.append({"key": f"edit:{x['n']}", "label": lab, "url": x["url"], "at": x.get("at") or "",
                     "by": x.get("by") or "", "base_key": x.get("base_key") or V_ORIGINAL, "ready": x.get("ready")})
     return out
 
@@ -362,7 +363,7 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
         if ok_frame and img == url:
             return {"ok": True, "boxes": e["boxes"], "size": e["box_size"], "source": e.get("boxes_source") or "translate",
                     "why": "" if e["boxes"] else NO_TEXT_WHY, "version": key, "frame": e.get("box_frame")}
-    if key == V_ORIGINAL and not capped and not translated_url(e):
+    if key == V_ORIGINAL and not capped and not translated_url(e) and not e.get("upside_down"):
         # 번역이 먼저(Y11-B) — 번역 전 장은 「번역해서 글자 상자 받기」. (상한을 넘은 장·번역본이 있는데 원본을 고른 장은 OCR)
         return {"ok": False, "boxes": [], "size": [0, 0], "need_translate": True, "version": key,
                 "why": "아직 이 사진을 번역하지 않았어요 — 번역하면 글자 상자를 받아요(번역이 먼저예요)"}
@@ -377,7 +378,7 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
         why = got.get("why") or "글자 상자를 읽지 못했어요"
         if capped:
             return {"ok": False, "why": CAPPED_LABEL + " · " + why, "boxes": [], "size": [0, 0], "capped": True, "version": key}
-        if key != V_TRANSLATED and (key.startswith("edit:") or translated_url(e)):
+        if key != V_TRANSLATED and (key.startswith("edit:") or translated_url(e) or e.get("upside_down")):
             # 편집본·(번역본이 있는) 수집 원본 — 번역을 다시 보낼 일이 아니다. 번역본을 고르면 그 상자를 쓴다.
             tail = " · 「번역본」을 고르면 번역 결과의 글자 상자를 써요" if translated_url(e) else ""
             what = "이 편집본" if key.startswith("edit:") else "수집 원본"
@@ -481,12 +482,26 @@ def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, re
     if not boxes and prop_boxes and not bx.get("why"):
         why = "소품 글자만 있어요(책등·표지 등) — 지울 글자가 없어요"
     capped = bool(bx.get("capped")) or (int(idx) >= _cap_of(kind) and not translated_url(e))
+    # Y11-H: 거꾸로 번역돼 원본으로 둔 장 — 「글자 고치기」 대상(머리글 상자를 탭해 한국어를 넣는다)
+    fix_note = ("텐센트가 이 사진을 거꾸로 번역해 원본이 나가요 — 머리글 상자를 탭해 「글자 고치기」로 한국어를 넣어 주세요"
+                if (e.get("upside_down") and cur == V_ORIGINAL) else "")
     return {"ok": True, "why": why, "need_translate": bool(bx.get("need_translate")), "source": bx.get("source", ""),
+            "fix_text": bool(fix_note), "fix_note": fix_note,
+            "polish": _polish_view(e),
             "capped": capped, "capped_label": CAPPED_LABEL if capped else "",
             "url": url, "size": [W, H], "real": [int(real[0] or 0), int(real[1] or 0)], "boxes": boxes, "prop_boxes": prop_boxes,
             "versions": versions(extra, kind, idx), "current": cur, "edit": ed,
             "cost": cost(0), "today": today_count(), "cap": daily_cap(),
             "spent": round(sum(float(x.get("credits") or 0) for x in edits(e)), 3)}
+
+
+def _polish_view(e: dict) -> Optional[Dict]:
+    """Y11-I 다듬기 기록 — 바뀐 상자·버린 상자만(그대로인 상자는 안 보인다)."""
+    pl = e.get("polish") if isinstance(e.get("polish"), dict) else None
+    if not pl:
+        return None
+    rows = [r for r in pl.get("rows") or [] if isinstance(r, dict) and (r.get("ko") != r.get("tgt") or r.get("why"))]
+    return {"rows": rows[:20], "why": str(pl.get("why") or ""), "changed": int(pl.get("changed") or 0)}
 
 
 # ── 적용 ───────────────────────────────────────────────────────────────────────────────────

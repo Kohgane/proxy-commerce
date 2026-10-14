@@ -3889,13 +3889,16 @@ def coupang_exposure_data(item: dict) -> dict:
                                           or [(p["idx"], p) for p in plan.values()], originals, ex)]
     from src.services.image_translate_auto import per_item_cap as _cap
     _gal_cap = _cap("gallery")
+    _upside = {int(e.get("idx", -1)): True for e in (ex.get("images_ko") or []) if isinstance(e, dict) and e.get("upside_down")}
     _edits = {int(e.get("idx", -1)): e.get("edit") for e in (ex.get("images_ko") or [])
               if isinstance(e, dict) and isinstance(e.get("edit"), dict) and e.get("url") == e["edit"].get("url")}
     strip = [{"idx": i, "url": eff[n] if n < len(eff) else plan[i]["url"], "original": plan[i]["original"],
               "source": plan[i]["source"], "translatable": plan[i]["translatable"], "use": plan[i]["use"],
               "rep": n == 0, "edited": (_edits.get(i) or {}).get("by") or "",
               # Y11-C2(오너 2026-10-14): 건당 상한(갤러리 6)을 넘은 장 — 번역을 보내지 않는다(원본). 편집은 OCR 상자로 된다.
-              "capped": i >= _gal_cap and plan[i]["source"] != "translated" and not _edits.get(i)} for n, i in enumerate(order)]
+              "capped": i >= _gal_cap and plan[i]["source"] != "translated" and not _edits.get(i),
+              # Y11-H: 텐센트가 거꾸로 번역해 원본으로 둔 장 — 「글자 고치기」 대상
+              "fix_text": bool(_upside.get(i)) and plan[i]["source"] != "translated" and not _edits.get(i)} for n, i in enumerate(order)]
     # Y11: 등록에서 빠진 갤러리 사진(판촉 의심·위험 제외) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     _risk_x = {int(e.get("idx", -1)) for e in (ex.get("images_ko") or []) if isinstance(e, dict) and e.get("risk_exclude")}
     left_out = [{"idx": i, "original": plan[i]["original"], "url": plan[i]["url"],
@@ -4008,6 +4011,11 @@ def collect_image_translate_retry(item_id):
                           may_resume=_mp.session_is_shared())
     # Y11-C: 실제 접수 수만 말한다(예전 「26장을 다시 넣었어요」는 큐의 옛 실패 줄 수였다 — 실제 접수 4장)
     msg = f"{out['line']} · 오늘 텐센트 호출 {out['today']}/{out['cap']}장"
+    try:
+        from src.services import image_polish as _ip               # Y11-I: 다듬기(haiku) 하루 카운터
+        msg += f" · 다듬기 {_ip.today_count()}/{_ip.daily_cap()}회"
+    except Exception:                                            # noqa: BLE001
+        pass
     if not out["accepted"] and not out.get("waiting"):
         msg = "다시 보낼 장이 없어요 — " + msg
     if out["paused"]:
@@ -5370,6 +5378,7 @@ def collect_risk_decision(item_id: str):
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(), **upd):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
     return jsonify({"ok": True, "action": action, "risk": _rg.card(_rg.scan(ex, pending_images=_risk_pending_images(item_id))),
+                    "image_line": _rg.strip_image_line(ex, r.get("hit")) if action == "strip" else "",
                     # 데스크톱 편집 칸을 뺀 값으로(안 그러면 다음 「저장」이 옛 상품명을 다시 쓴다)
                     "fields": {k: ex.get(k) for k in ("title_ko", "description_ko", "keywords") if action == "strip" and k in ex}})
 

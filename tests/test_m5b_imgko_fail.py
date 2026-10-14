@@ -79,7 +79,7 @@ def test_item_failure_reads_page_failure_then_breaker_then_cap(monkeypatch):
     monkeypatch.setattr(A, "daily_cap", lambda: 1)
     q.take_start(A._day_key(), 10 ** 9)
     assert A.item_failure("i2", {}) == {}
-    assert A.queue_line("i2") == {"today": 1, "cap": 1, "in_line": 1, "cap_full": True}
+    assert A.queue_line("i2") == {"today": 1, "cap": 1, "in_line": 1, "cap_full": True, "polish_today": 0, "polish_cap": 400}
 
 
 def _client(**sess):

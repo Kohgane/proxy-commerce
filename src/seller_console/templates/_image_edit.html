@@ -71,6 +71,14 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
         (on ? ' aria-pressed="true"' : ' aria-pressed="false"') + ((st.confirm || wait) ? ' disabled' : '') + '>' +
         esc(v.label) + (wait ? ' · 만드는 중…' : '') + '</button>';
     }).join('') + '</div>';
+    if (p.fix_note) h += '<p class="kie-confirm" data-role="kie-fixnote">' + esc(p.fix_note) + '</p>';   // Y11-H: 거꾸로 번역 → 글자 고치기
+    // Y11-I: 자동 다듬기 — 바뀐 상자만 「텐센트 → 다듬음」 한 줄씩(버린 결과는 사유)
+    if (p.polish && (p.polish.rows || []).length) {
+      h += '<div class="kie-confirm" data-role="kie-polish"><b>다듬기</b>' + (p.polish.why ? ' — ' + esc(p.polish.why) : '') + '<ul class="mb-0 ps-3">' +
+        p.polish.rows.map(function (r) {
+          return '<li data-role="kie-polish-row">' + esc(r.tgt || '(빈칸)') + ' → ' + (r.ko === '' ? '<i>지움</i>' : esc(r.ko)) +
+            (r.why ? ' <span class="kgp-risk-sub">(AI 「' + esc(r.ai) + '」 버림: ' + esc(r.why) + ')</span>' : '') + '</li>'; }).join('') + '</ul></div>';
+    }
     h += '<div class="kie-stage" data-role="kie-stage"><img src="' + esc(showUrl) + '" alt="편집할 사진" referrerpolicy="no-referrer">' + overlay + '</div>';
     if ((p.boxes || []).length) {
       h += '<p class="kie-legend"><span class="kie-k is-promo"></span>판촉 <span class="kie-k is-brand"></span>브랜드 로고 <span class="kie-k is-risk"></span>상표 위험 <span class="kie-k is-text"></span>일반 글자' +
