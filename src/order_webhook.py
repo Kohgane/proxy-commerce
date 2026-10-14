@@ -190,6 +190,7 @@ _AUTO_BLUEPRINT_CANDIDATE_MODULES = (
     "src.bookmarklet.routes",
     # Phase 149: AI 상품등록 자동화
     "src.ai_listing.routes",
+    "src.proxy_buy.routes",
 )
 
 
@@ -1364,6 +1365,8 @@ CORS(app, resources={
     # 북마클릿/크롬확장 수집 — 임의 쇼핑몰 페이지에서 크로스오리진 POST가 들어온다.
     # Bearer 토큰 인증(쿠키 미사용)이라 origins '*' 안전. 미설정 시 브라우저가
     # preflight를 막아 'Failed to fetch'로 수집이 실패하므로 명시적으로 허용한다.
+    # F-PROXY-1: 해외 구매자 공개 견적(Shopify 페이지에서 호출). 쿠키 미사용·읽기성 → origins '*' 안전.
+    r'/proxy/*': {'origins': '*', 'methods': ['POST', 'OPTIONS'], 'allow_headers': ['Content-Type']},
     r'/api/v1/collect/*': {
         # v72 STEP1: 북마클릿 세션 폴백 — 자격(쿠키) 동반 크로스오리진. supports_credentials면 flask_cors가
         #   요청 Origin을 반영(리터럴 '*' 아님)하고 Access-Control-Allow-Credentials: true를 붙인다. 세션 인증은
