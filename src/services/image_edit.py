@@ -522,16 +522,52 @@ def _units(text: str) -> float:
     return sum(1.0 if _WIDE.match(c) else 0.58 for c in text) or 1.0
 
 
-@functools.lru_cache(maxsize=96)
+#: 재는 글꼴은 굵기마다 100px 한 벌 — 폭은 크기에 비례한다. 크기마다 글꼴을 열면 한 장 렌더에 글꼴 20여 벌(~100MB)이
+#   메모리에 남았다(Y11-M 실측 +78MB/96벌 — 인스턴스 합계 가드 420MB 근처라 위험).
+_MEASURE_PX = 100
+
+
+@functools.lru_cache(maxsize=2)
+def _measure_font(weight: str):
+    from src.services.image_render_font import load
+    return load(_MEASURE_PX, weight)
+
+
 def _font(size: int, weight: str):
+    """그릴 글꼴(그 크기 한 벌) — 캐시하지 않는다(그리고 버린다)."""
     from src.services.image_render_font import load
     return load(int(size), weight)
 
 
-def _wrap(text: str, font, max_w: int, max_lines: int) -> Optional[List[str]]:
-    """띄어쓰기 단위로 줄을 나눈다(낱말이 넘치면 글자 단위). `max_lines` 넘으면 None."""
-    from src.services.image_text_render import _wrap as _w
-    lines = _w(text, font, max_w)
+def _len(text: str, size: int, weight: str) -> float:
+    f = _measure_font(weight)
+    return f.getlength(text) * size / _MEASURE_PX
+
+
+def _wrap(text: str, size: int, weight: str, max_w: int, max_lines: int) -> Optional[List[str]]:
+    """띄어쓰기 단위로 줄을 나눈다(낱말이 넘치면 글자 단위). `max_lines` 넘거나 한 글자도 안 들어가면 None."""
+    lines, cur = [], ""
+    for word in str(text).split():
+        trial = f"{cur} {word}".strip()
+        if _len(trial, size, weight) <= max_w:
+            cur = trial
+            continue
+        if cur:
+            lines.append(cur)
+            cur = ""
+        if _len(word, size, weight) <= max_w:
+            cur = word
+            continue
+        for ch in word:
+            if _len(cur + ch, size, weight) <= max_w:
+                cur += ch
+            elif not cur:
+                return None
+            else:
+                lines.append(cur)
+                cur = ch
+    if cur:
+        lines.append(cur)
     return lines if lines and len(lines) <= max_lines else None
 
 
@@ -541,12 +577,11 @@ def fit_box(text: str, w: int, h: int, *, weight: str = "bold", max_lines: int =
     if not text or w < 4 or h < MIN_PX:
         return None
     lo, hi, best = MIN_PX, max(MIN_PX, min(int(h * 0.9), int(max_px) if max_px else 10 ** 6)), None
+    if _measure_font(weight) is None:
+        return None
     while lo <= hi:                                              # 크기가 클수록 줄·폭이 늘어난다 — 이분 탐색
         mid = (lo + hi) // 2
-        f = _font(mid, weight)
-        if f is None:
-            return None
-        lines = _wrap(text, f, int(w * 0.96), max_lines)
+        lines = _wrap(text, mid, weight, int(w * 0.96), max_lines)
         if lines is not None and int(mid * 1.22) * len(lines) <= h:
             best, lo = {"size": mid, "lines": lines, "line_h": int(mid * 1.22)}, mid + 1
         else:
