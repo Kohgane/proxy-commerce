@@ -349,6 +349,12 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
     from src.services.image_translate_auto import _is_pwt, per_item_cap
     if key == V_ORIGINAL and e.get("status") in ("failed", "skipped") and _is_pwt(e):
         return {"ok": True, "boxes": [], "size": [0, 0], "source": "translate", "why": NO_TEXT_WHY, "version": key}
+    if key == V_ORIGINAL and e.get("prop_only"):
+        from src.services import prop_text as _pt
+        if not _pt.exempt(extra):
+            # Y11-G: 소품 글자뿐인 사진 — 글자가 아니다. 다시 번역(과금)을 권하지 않는다.
+            return {"ok": True, "boxes": [], "size": [0, 0], "source": "translate", "version": key,
+                    "why": "소품 글자뿐이에요(책등·표지 등) — 원본 그대로 나가요. 지울 글자가 없어요"}
     capped = int(idx) >= per_item_cap(kind) and not translated_url(e)
     if key == V_TRANSLATED and isinstance(e.get("boxes"), list) and e.get("box_size"):
         ok_frame = e.get("box_frame") not in (None, "", "unknown") or _verify_translated(extra, kind, idx, e)

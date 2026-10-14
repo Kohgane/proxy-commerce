@@ -189,3 +189,13 @@ def test_old_record_whose_current_edit_is_not_ready_shows_previous_version(cloud
     monkeypatch.setattr(E, "_head_ok", lambda url: True)
     E.refresh_pending(ex, "gallery", 0)
     assert E.current_key(e) == "edit:2"
+
+
+def test_prop_only_photo_editor_does_not_offer_paid_retranslation():
+    """캡처에서 잡힘 — 소품 글자뿐으로 원본이 된 장(VRSUK 갤러리 4)을 열면 「번역하고 글자 상자 받기」(1장 요금)를 권했다."""
+    from src.services import image_edit as E
+    ex = {"images": ["a", "b", "c", "https://img.alicdn.com/g3.jpg"], "title_ko": "가죽 리클라이너",
+          "images_ko": [{"idx": 3, "kind": "gallery", "status": "skipped", "vendor": "tencent", "use": True, "prop_only": True,
+                         "reason": "소품 글자뿐(책등·표지·포장 등) — 원본 그대로", "box_frame": "rot180"}]}
+    p = E.plan(ex, "gallery", 3, small=None, fetch=True)
+    assert not p["need_translate"] and p["boxes"] == [] and "소품 글자뿐" in p["why"]
