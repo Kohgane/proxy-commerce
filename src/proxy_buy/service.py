@@ -1,7 +1,7 @@
 """견적 서비스 — URL 허용목록 검사 → 가져오기 → 파싱 → 환율 → 견적.
 
 SSRF 방지: 허용 도메인(무신사)만 서버가 가져온다. 임의 URL은 거부.
-국제배송비는 env PROXY_INTL_SHIP_TABLE_JSON(국가별 [[최대kg, USD], ...])에서만 읽는다.
+국제배송비는 env PROXY_INTL_SHIP_TABLE_KRW_JSON(국가별 원화 표)에서만 읽는다.
 표가 없거나 무게를 모르면 total을 만들지 않고 pending_shipping으로 정직하게 돌려준다(추정 금지).
 """
 from __future__ import annotations
@@ -35,17 +35,22 @@ def host_parser(url: str):
     return ALLOWED_HOSTS.get((u.hostname or "").lower())
 
 
-def lookup_intl_ship(country: str, weight_kg: Optional[float]) -> Optional[float]:
-    raw = os.getenv("PROXY_INTL_SHIP_TABLE_JSON", "")
+def lookup_intl_ship(country: str, weight_kg: Optional[float], fx: float):
+    """국제배송비(USD)와 DDP 여부. env PROXY_INTL_SHIP_TABLE_KRW_JSON (원화 표 → 실시간 환율로 환산).
+
+    형식: {"US": {"carrier": "YunExpress", "ddp": true, "tiers": [[0.5, 14900], [1, 18000]]}}
+    표가 없거나 무게를 모르거나 구간 밖이면 None (추정 금지).
+    """
+    raw = os.getenv("PROXY_INTL_SHIP_TABLE_KRW_JSON", "")
     if not raw or weight_kg is None:
         return None
     try:
-        tiers = json.loads(raw).get((country or "").upper())
-        for max_kg, usd in sorted(tiers or [], key=lambda t: t[0]):
+        cfg = json.loads(raw).get((country or "").upper()) or {}
+        for max_kg, krw in sorted(cfg.get("tiers") or [], key=lambda t: t[0]):
             if weight_kg <= max_kg:
-                return float(usd)
+                return {"usd": float(krw) / fx, "ddp": bool(cfg.get("ddp")), "carrier": cfg.get("carrier", "")}
     except (ValueError, TypeError, AttributeError):
-        logger.warning("PROXY_INTL_SHIP_TABLE_JSON 파싱 실패")
+        logger.warning("PROXY_INTL_SHIP_TABLE_KRW_JSON 파싱 실패")
     return None
 
 
@@ -79,13 +84,13 @@ def make_quote(url: str, country: str = "US", weight_kg: Optional[float] = None,
     if fx is None:
         return {"ok": False, "status": "manual_review",
                 "message": "Live exchange rate unavailable. We will quote it by hand."}
-    ship = lookup_intl_ship(country, weight_kg)
+    ship = lookup_intl_ship(country, weight_kg, fx)
     base = {"title": item["title"], "price_krw": item["price_krw"], "country": country.upper()}
     if ship is None:
         return {"ok": True, "status": "pending_shipping", **base,
                 "message": "International shipping is confirmed by weight; we will email the final total."}
-    q = build_quote(item["price_krw"], item["kr_ship_krw"], ship, fx,
-                    title=item["title"], duty_rate=duty_rate)
+    q = build_quote(item["price_krw"], item["kr_ship_krw"], ship["usd"], fx,
+                    title=item["title"], duty_rate=None if ship["ddp"] else duty_rate)
     if q.blocked:
         return {"ok": False, "status": "prohibited", **base,
                 "message": "This item falls in a category we cannot ship."}
@@ -93,4 +98,5 @@ def make_quote(url: str, country: str = "US", weight_kg: Optional[float] = None,
         return {"ok": False, "status": "over_cap", **base,
                 "message": f"First orders are capped at ${FIRST_ORDER_CAP_USD}."}
     return {"ok": True, "status": "quoted", **base, "total_usd": str(q.total_usd),
-            "lines": q.lines(), "valid_hours": 48}
+            "lines": q.lines() + (["Import duty/tax: included (delivered duty paid)"] if ship["ddp"] else []),
+            "ddp": ship["ddp"], "valid_hours": 48}
