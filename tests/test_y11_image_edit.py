@@ -248,7 +248,8 @@ def test_fix_text_erases_then_overlays_noto_sans_kr(cloud):
     assert r["ok"] and r["credits"] == 0.052                                   # gen_remove 50 + 기본 1 + 글자 1
     tr = cloud[0]["transform"]
     assert tr.startswith("e_gen_remove:region_((x_16;y_746;w_308;h_48))/")             # 상자 + 높이 10% 여유
-    assert "l_text:Noto%20Sans%20KR_" in tr and "co_rgb:" in tr and "fl_layer_apply,g_north_west,x_20,y_" in tr
+    # Y11-L: 운영 Cloudinary가 「Noto Sans KR」을 400(Unsupported font family)으로 거부 — NanumGothic(한글 그림 확인)
+    assert "l_text:NanumGothic_" in tr and "co_rgb:" in tr and "fl_layer_apply,g_north_west,x_20,y_" in tr
     assert ex["images_ko"][0]["edit"]["by"] == "user"
 
 

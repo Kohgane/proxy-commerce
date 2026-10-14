@@ -33,7 +33,10 @@ TX_GEN_REMOVE = 50
 TX_BASE = 1
 TX_PER_TEXT = 1
 TX_PER_CREDIT = 1000
-FONT = "Noto Sans KR"
+#: Y11-L(운영 실측 10-14 13:23 UTC): Cloudinary 글자 오버레이에 「Noto Sans KR」을 주면 `x-cld-error: Unsupported font family
+#   Noto Sans KR`(400) — 파생본이 안 만들어져 「편집본 주소가 돌아오지 않았어요」. 「글자 고치기」·자동 다듬기 렌더가 전부 실패했다.
+#   NanumGothic은 받는다(한글 그림 확인). `IMAGE_EDIT_FONT`로 바꿀 수 있다.
+FONT = os.getenv("IMAGE_EDIT_FONT", "NanumGothic") or "NanumGothic"
 SMALL_SIDE = 256
 CLASS_LABEL = {"promo": "판촉", "brand": "브랜드 로고", "risk": "상표 위험", "text": "일반 글자"}
 #: 지울 영역 여유 — 상자 높이의 10%(사방). 그 밖은 절대 안 건드린다(오너 2026-10-14).
@@ -605,7 +608,11 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
             url = str(x.get("secure_url") or x.get("url"))
             break
     if not url:
-        return {"ok": False, "error": "편집본 주소가 돌아오지 않았어요 — 응답 키: " + ", ".join(up.get("keys") or [])}
+        # Y11-L: 파생본 실패 사유를 남긴다(예: 지원 안 하는 글꼴) — 응답 키 목록만으론 원인을 못 봤다
+        ev = next((x for x in up.get("eager") or [] if isinstance(x, dict)), {})
+        why = str(ev.get("reason") or ev.get("error") or ev.get("status") or "")[:120]
+        return {"ok": False, "error": "편집본을 만들지 못했어요" + (f" — {why}" if why else " — 응답 키: " + ", ".join(up.get("keys") or [])),
+                "transform": tr[:300]}
     ready, code = _ready(url)
     c = cost(len(texts))
     e = _entry(extra, kind, idx, create=True)
