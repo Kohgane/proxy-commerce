@@ -151,6 +151,8 @@ def _images(extra: dict, *, props: Optional[list] = None):
                 if pt:
                     for frag in sorted({x for x in re.split(r"\s{2,}|\n", pt) if x.strip()} | {pt}, key=len, reverse=True):
                         t = t.replace(frag, " ")
+                for frag in sorted(_risk_erased(e), key=len, reverse=True):       # Y11-J6: 「빼고 등록」으로 지운 상자 글자
+                    t = t.replace(frag, " ")
                 if t.strip():
                     out.append((kind, int(e["idx"]), nm, t))
     return out
@@ -325,8 +327,9 @@ def _strip(text: str, names, case=False) -> str:
     return re.sub(r"[ \t]{2,}", " ", s).strip()
 
 
-def strip_extra(extra: dict, h: dict) -> dict:
-    """「빼고 등록」 — 그 낱말을 상품명·검색어·옵션·본문·참수에서 지우고, 걸린 사진은 등록에서 뺀다(사유: 위험 라벨)."""
+def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False) -> dict:
+    """「빼고 등록」 — 그 낱말을 상품명·검색어·옵션·본문·참수에서 지우고, 걸린 사진은 등록에서 뺀다(사유: 위험 라벨).
+    `erase_pixels`(사람이 누른 「빼고 등록」만) — 사진째 빼는 대신 그 낱말 상자만 지운 편집본(Y11-J6). 자동 적용은 픽셀을 안 바꾼다."""
     ex = extra
     names, case = h.get("names") or [], bool(h.get("case"))
     for k in ("title_ko", "coupang_name", "title", "description", "description_ko"):
@@ -351,11 +354,86 @@ def strip_extra(extra: dict, h: dict) -> dict:
     if isinstance(ex.get("detail_auto"), dict) and ex["detail_auto"].get("text"):
         ex["detail_auto"]["text"] = _strip(ex["detail_auto"]["text"], names, case)
     want = {(i["kind"], int(i["idx"])) for i in h.get("images") or []}
+    label = f"위험 — {h['cat']}({', '.join(h['found'][:2])})"
     for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
         for e in ex.get(key) or []:
             if isinstance(e, dict) and (kind, int(e.get("idx", -1))) in want:
-                e["risk_exclude"] = f"위험 — {h['cat']}({', '.join(h['found'][:2])})"
+                # Y11-J6(오너 2026-10-14): 사진째 빼지 않고 **그 낱말이 든 글자 상자만 지운다**(빈칸 렌더 = 새 편집본).
+                #   오너가 「빼고 등록」을 누른 것이 곧 사람 지시다(자동 픽셀 변경 아님 — Y11-E). 상자를 못 찾거나 편집을 못 쓰면
+                #   예전처럼 사진째 뺀다(사유에 왜 못 지웠는지).
+                if not erase_pixels:
+                    e["risk_exclude"] = label
+                    continue
+                er = _erase_hit(ex, kind, int(e.get("idx", -1)), names, case)
+                if er.get("ok"):
+                    e.pop("risk_exclude", None)
+                    e["risk_erase"] = {"edit": er["n"], "erased": er["erased"], "label": label,
+                                       "at": datetime.now(timezone.utc).isoformat(), "pending": bool(er.get("pending"))}
+                else:
+                    e["risk_exclude"] = f"{label} — 사진째 뺌({er.get('why') or '상자를 지우지 못함'})"
     return ex
+
+
+def strip_image_line(ex: dict, h: Optional[dict]) -> str:
+    """「빼고 등록」 사진 결과 한 줄 — 「사진 2장: 글자 상자만 지움 1(만드는 중 1) · 사진째 뺌 1(그 낱말이 든 글자 상자를 못 찾음)」."""
+    want = {(i["kind"], int(i["idx"])) for i in (h or {}).get("images") or []}
+    if not want:
+        return ""
+    erased = pending = 0
+    dropped = []
+    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
+        for e in ex.get(key) or []:
+            if not (isinstance(e, dict) and (kind, int(e.get("idx", -1))) in want):
+                continue
+            if e.get("risk_erase"):
+                erased += 1
+                pending += bool(e["risk_erase"].get("pending"))
+            elif e.get("risk_exclude"):
+                m = re.search(r"사진째 뺌\((.+)\)$", str(e["risk_exclude"]))
+                dropped.append(m.group(1) if m else "")
+    parts = []
+    if erased:
+        parts.append(f"글자 상자만 지움 {erased}" + (f"(만드는 중 {pending})" if pending else ""))
+    if dropped:
+        why = next((d for d in dropped if d), "")
+        parts.append(f"사진째 뺌 {len(dropped)}" + (f"({why})" if why else ""))
+    return f"사진 {len(want)}장: " + " · ".join(parts) if parts else ""
+
+
+def _erase_hit(ex: dict, kind: str, idx: int, names, case: bool) -> dict:
+    """그 장에서 낱말이 든 글자 상자(원문·번역문)만 지운 편집본 — `{ok, n, erased, pending}` 또는 `{ok: False, why}`."""
+    from src.services import image_edit as IE
+    ok_c, why_c = IE.configured()
+    if not ok_c:
+        logger.info("[위험 게이트] 상자 지우기 불가 — %s", why_c)          # 설정 이름은 로그에만(화면엔 일반 문구)
+        return {"ok": False, "why": "지금은 사진 편집을 쓸 수 없음"}
+    try:
+        p = IE.plan(ex, kind, idx)
+    except Exception as exc:                                     # noqa: BLE001
+        return {"ok": False, "why": f"글자 상자를 읽지 못함({type(exc).__name__})"}
+    ids = [b["id"] for b in p.get("boxes") or [] if _find(f"{b.get('src') or ''} {b.get('tgt') or ''}", names, case)]
+    if not ids:
+        return {"ok": False, "why": "그 낱말이 든 글자 상자를 못 찾음" + (f" — {p['why']}" if p.get("why") else "")}
+    try:
+        res = IE.apply(ex, kind, idx, [{"id": i, "action": "erase"} for i in ids], by="risk")
+    except Exception as exc:                                     # noqa: BLE001
+        return {"ok": False, "why": f"지우기 실패({type(exc).__name__})"}
+    if not res.get("ok"):
+        return {"ok": False, "why": str(res.get("error") or "지우기 실패")[:80]}
+    return {"ok": True, "n": int(str(res.get("version") or "edit:0").split(":")[-1]), "erased": res.get("erased") or [],
+            "pending": bool(res.get("pending"))}
+
+
+def _risk_erased(e: dict) -> list:
+    """「빼고 등록」으로 지운 글자 — 그 편집본이 지금 나가는(또는 만드는 중인) 버전일 때만. 되돌렸으면 다시 센다."""
+    re_ = e.get("risk_erase") if isinstance(e.get("risk_erase"), dict) else None
+    if not re_:
+        return []
+    from src.services import image_edit as IE
+    key = f"edit:{re_.get('edit')}"
+    if IE.current_key(e) == key or e.get("pending_select") == key:
+        return [str(x) for x in re_.get("erased") or [] if str(x).strip()]
+    return []
 
 
 def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = "") -> dict:
@@ -378,7 +456,7 @@ def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = ""
     if action not in ("strip", "allow"):
         return {"ok": False, "error": "알 수 없는 선택이에요."}
     if action == "strip":
-        strip_extra(ex, h)
+        strip_extra(ex, h, erase_pixels=True)
     dec = ex.setdefault("risk_decisions", {})
     dec[key] = {"action": action, "at": now, "by": by, "found": h["found"][:6], "label": h["label"], "cat": h["cat"],
                 "names": list(h.get("names") or []), "case": bool(h.get("case"))}

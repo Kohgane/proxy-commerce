@@ -21,6 +21,29 @@ import re
 logger = logging.getLogger(__name__)
 
 _HAN = re.compile("[㐀-䶿一-鿿]")
+_LATIN = re.compile("[A-Za-z]")
+#: Y11-H(오너 2026-10-14 VRSUK 상세 3·6·7): 한자 문장이 크게 있는데 「한자 0」 — 읽은 글자는 라틴만(「Disponibile Subito…」).
+#   ① 사전검사는 **줄이지 않는다** — 상세 사진은 790×5000처럼 세로로 길어, 긴 변 1024(Z10-B 공통 축소)면 가로가 162px로
+#   한자 획이 뭉개진다. 텐센트 번역에 보내는 바로 그 바이트(긴 변 ≤4096 · ≤4MB)를 그대로 OCR에 보낸다(풀지도 않음 — 메모리 0).
+#   `IMAGE_OCR_PRECHECK_SIDE=1600` 같은 숫자를 주면 그 긴 변으로 줄인다(1600 미만은 받지 않음).
+#   인식 언어 zh(중영 혼합 — auto는 라틴이 많은 사진을 라틴으로 읽을 수 있다).
+#   ② 그래도 「한자 0」인데 라틴 글자가 있으면 **건너뛰지 않는다**(모름 → 번역으로) — PictureWithoutText 1건 값이 중국어
+#   배너가 그대로 나가는 것보다 싸다. 「한자 0 그리고 라틴도 거의 없음」일 때만 건너뛴다.
+PRECHECK_MIN_SIDE = 1600
+
+
+def precheck_side() -> int:
+    from src.services.ocr_tencent import AS_IS
+    try:
+        v = int(os.getenv("IMAGE_OCR_PRECHECK_SIDE", "") or 0)
+    except ValueError:
+        v = 0
+    return max(v, PRECHECK_MIN_SIDE) if v > 0 else AS_IS
+
+
+
+PRECHECK_LANG = os.getenv("IMAGE_OCR_PRECHECK_LANG", "zh") or "zh"
+LATIN_MIN = int(os.getenv("IMAGE_OCR_PRECHECK_LATIN_MIN", "6") or 6)
 _LAST = {"why": ""}
 
 
@@ -44,10 +67,10 @@ def last_unavailable() -> str:
     return _LAST["why"]
 
 
-def _read(raw: bytes):
+def _read(raw: bytes, **kw):
     """`(조각 목록 | None, 사유)` — None이면 판정 못 함(ocr_unavailable)."""
     from src.services import ocr_tencent
-    res = ocr_tencent.read(raw)
+    res = ocr_tencent.read(raw, **kw)
     if not res.get("ok"):
         _LAST["why"] = res.get("why") or ""
         return None, res.get("why") or ""
@@ -58,11 +81,15 @@ def han_text(raw: bytes) -> tuple:
     """`(판정, 읽은 글자 앞 40자)` — 판정은 True/False/None."""
     if not enabled() or not raw:
         return None, ""
-    parts, _why = _read(raw)
+    parts, _why = _read(raw, max_side=precheck_side(), lang=PRECHECK_LANG)
     if parts is None:
         return None, ""
     txt = "".join(parts)
-    return bool(_HAN.search(txt)), txt[:40]
+    if _HAN.search(txt):
+        return True, txt[:40]
+    if len(_LATIN.findall(txt)) >= LATIN_MIN:
+        return None, txt[:40]                       # Y11-H: 라틴 글자가 있다 — 한자를 놓쳤을 수 있어 「모름」(번역으로 보냄)
+    return False, txt[:40]
 
 
 def has_han(raw: bytes):

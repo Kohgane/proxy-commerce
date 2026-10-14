@@ -666,6 +666,7 @@
     if (role === 'risk-act') {
       window.kgpRiskAct(itemId, b).then(function (t) {
         if (!t.ok) { b.insertAdjacentHTML('afterend', '<div class="m5-note">' + esc(t.error || '저장하지 못했어요') + '</div>'); return; }
+        if (t.image_line && window.pcToast) window.pcToast(t.image_line, 'info');   // Y11-J6: 상자만 지움 · 사진째 뺌(왜)
         pvRisk = t.risk || pvRisk; refreshFromStore = true; resetGo(); runCheck(pvOrder.slice(), false);
       });
       return;

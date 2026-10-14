@@ -1699,6 +1699,60 @@ _OCR_PRECHECK_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
 
 
+@admin_panel_bp.route("/diagnostics/ocr-compare", methods=["GET", "POST"])
+def diagnostics_ocr_compare():
+    """Y11-H(오너 2026-10-14): 사전검사 「한자 0」 실측 — 상세 장마다 OCR 4가지(1024·auto / 원본·auto / 1600·zh / 원본·zh) 한자·라틴 수 +
+    Y11-J5 대표 사진 상자 값. 장당 OCR 4회 + 대표 1회(과금). POST가 백그라운드로 돌리고 결과는 app_state에 남는다."""
+    from flask import request as _rq
+    from src.services import ocr_compare_diag as D
+    item = (_rq.values.get("item") or "").strip()[:64]
+    try:
+        idx = [int(x) - 1 for x in re.split(r"[\s,·]+", _rq.values.get("no") or "3,6,7") if x.strip()][:6]
+    except ValueError:
+        idx = [2, 5, 6]
+    started = None
+    if _rq.method == "POST" and _rq.values.get("do") == "census":
+        started = D.start_census()
+    elif _rq.method == "POST" and item:
+        started = D.start(item, [i for i in idx if i >= 0])
+    return render_template_string(_OCR_COMPARE_TEMPLATE, res=D.last(), cen=D.last_census(), item=item,
+                                  no=",".join(str(i + 1) for i in idx), started=started)
+
+
+_OCR_COMPARE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>OCR 사전검사 비교</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:860px;overflow-wrap:anywhere;word-break:break-word" data-role="ocr-compare">
+<h5>OCR 사전검사 비교 — 축소·인식 언어별 한자 수</h5>
+<p class="small text-muted">상세 장마다 텐센트 OCR 4회 + 대표 사진 1회(과금). 결과는 저장돼 나중에 다시 열어도 보입니다.</p>
+<form method="post" class="row g-2 small mb-3"><div class="col-7"><input class="form-control form-control-sm" name="item" value="{{ item or res.item or '' }}" placeholder="상품 ID"></div>
+<div class="col-3"><input class="form-control form-control-sm" name="no" value="{{ no }}" placeholder="상세 번호(1부터)"></div>
+<div class="col-2"><button class="btn btn-sm btn-dark w-100" data-role="ocr-compare-run">재기</button></div></form>
+{% if started is sameas true %}<p class="small" data-role="ocr-compare-started">시작했어요 — 30초쯤 뒤 새로고침하세요.</p>
+{% elif started is sameas false %}<p class="small">이미 재는 중이에요.</p>{% endif %}
+{% if res.running %}<p class="small" data-role="ocr-compare-running">재는 중… ({{ res.at }})</p>{% endif %}
+{% if res.error %}<p class="text-danger small">{{ res.error }}</p>{% endif %}
+{% for p in res.pages or [] %}<div class="border rounded p-2 mb-2 small" data-role="ocr-compare-page">
+<strong>상세 {{ p.no }}번</strong>{% if p.size %} · {{ p.size[0] }}×{{ p.size[1] }}{% endif %}{% if p.why %} · {{ p.why }}{% endif %}
+<table class="table table-sm mb-1"><thead><tr><th>보낸 방식</th><th>한자</th><th>라틴</th><th>읽은 글자</th></tr></thead><tbody>
+{% for v in p.variants or [] %}<tr><td>{{ v.name }}</td><td>{{ v.han if v.ok else '—' }}</td><td>{{ v.latin if v.ok else '—' }}</td><td>{{ v.text if v.ok else v.why }}</td></tr>{% endfor %}
+</tbody></table><a href="{{ p.url }}" target="_blank" rel="noreferrer">{{ p.url[:90] }}</a></div>{% endfor %}
+{% if res.rep %}<div class="border rounded p-2 mb-2 small" data-role="ocr-compare-rep"><strong>대표 사진 상자</strong>
+{% if res.rep.ok %} · 각도 {{ res.rep.angle }} · 틀 {{ res.rep.frame }} · {{ res.rep.size[0] }}×{{ res.rep.size[1] }}
+· 소품 아닌 상자 면적 {{ res.rep.real_area_pct }}% · 평균 확신 {{ res.rep.real_conf_avg }} · 「소품 글자(작음)」 줄 {{ '뜸' if res.rep.minor else '안 뜸' }}
+<div class="text-muted">{{ res.rep.minor_rule }}</div>
+<table class="table table-sm mb-0"><thead><tr><th>글자</th><th>확신</th><th>기울기</th><th>면적%</th><th>소품</th><th>안 걸린 조건</th></tr></thead><tbody>
+{% for b in res.rep.boxes %}<tr><td>{{ b.src }}</td><td>{{ b.conf }}</td><td>{{ b.tilt }}</td><td>{{ b.area_pct }}</td><td>{{ '예' if b.prop else '아니오' }}</td><td>{{ b.miss|join(' · ') }}</td></tr>{% endfor %}
+</tbody></table>{% else %} · {{ res.rep.why }}{% endif %}</div>{% endif %}
+<h6 class="mt-3">운영 전수 재판정 — 「OCR 판정 — 한자 0」으로 건너뛴 사진</h6>
+<form method="post" class="mb-2"><input type="hidden" name="do" value="census"><button class="btn btn-sm btn-outline-dark" data-role="ocr-recheck-run">전수 다시 판정(장당 OCR 1회)</button></form>
+{% if cen.running %}<p class="small">재는 중… ({{ cen.at }})</p>{% endif %}{% if cen.error %}<p class="text-danger small">{{ cen.error }}</p>{% endif %}
+{% if cen.count %}<p class="small" data-role="ocr-recheck-count"><strong>{{ cen.count.total }}장 중 한자 나옴 {{ cen.count.han }} · 라틴 있어 번역으로 {{ cen.count.send }} · 여전히 글자 거의 없음 {{ cen.count.none }} · 판정 못 함 {{ cen.count.unknown }} · 못 받음 {{ cen.count.fetch_fail }}</strong>
+— 한자 나옴·번역으로 장은 「다시 번역」을 누르면 접수됩니다.</p>
+<ul class="small">{% for h in cen.hits[:40] %}<li>{{ h.item[:8] }} {{ '갤러리' if h.kind == 'gallery' else '상세' }} {{ h.no }}번 · {{ '한자' if h.how == 'han' else '라틴' }} 「{{ h.seen }}」</li>{% endfor %}</ul>{% endif %}
+<a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.get("/diagnostics/flip-check")
 def diagnostics_flip_check():
     """M5 후속(오너 2026-10-07): 「사진 좌우반전 의심」 — 그 상품의 원본(온바운드 보관본 item_imgs, 없으면 수집 images)과
@@ -3640,7 +3694,7 @@ _DIAGNOSTICS_TEMPLATE = """
       <div class="card-body small" style="word-break:break-word">
         <strong>{{ image_budget_line }}</strong>
         <div class="text-muted mt-1">pro/lite 같은 사진 비교: <a href="/admin/diagnostics/image-mode-compare">사진 5장 비교(유료 $0.30)</a> ·
-          OCR 사전판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a></div>
+          OCR 사전판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a> · <a href="/admin/diagnostics/ocr-compare">축소·언어별 비교 · 전수 재판정</a></div>
         <div class="mt-2" data-role="tencent-recent"><strong>텐센트 최근 {{ tencent_recent|length }}회</strong>
           {% if tencent_recent %}<table class="table table-sm mb-1"><thead><tr><th>시각(UTC)</th><th>결과</th><th>코드</th><th>메시지</th><th>ms</th></tr></thead><tbody>
           {% for r in tencent_recent %}<tr><td>{{ r.at }}</td><td>{{ '성공' if r.ok else (r.kind or '실패') }}</td><td><code>{{ r.code or r['class'] }}</code></td><td>{{ r.message }}</td><td>{{ r.ms }}</td></tr>{% endfor %}

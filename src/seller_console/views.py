@@ -5373,6 +5373,7 @@ def collect_risk_decision(item_id: str):
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(), **upd):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
     return jsonify({"ok": True, "action": action, "risk": _rg.card(_rg.scan(ex, pending_images=_risk_pending_images(item_id))),
+                    "image_line": _rg.strip_image_line(ex, r.get("hit")) if action == "strip" else "",
                     # 데스크톱 편집 칸을 뺀 값으로(안 그러면 다음 「저장」이 옛 상품명을 다시 쓴다)
                     "fields": {k: ex.get(k) for k in ("title_ko", "description_ko", "keywords") if action == "strip" and k in ex}})
 

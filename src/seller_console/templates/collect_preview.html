@@ -2460,6 +2460,7 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix, a
     if (f.title_ko != null && document.getElementById('editTitle')) document.getElementById('editTitle').value = f.title_ko;
     if (f.description_ko != null && document.getElementById('editDescription')) document.getElementById('editDescription').value = f.description_ko;
     if (f.keywords != null && document.getElementById('editKeywords')) document.getElementById('editKeywords').value = f.keywords.join(', ');
+    if (t.image_line) pcToast(t.image_line, 'info');           // Y11-J6: 사진은 그 낱말 상자만 지웠는지 · 사진째 뺐는지(왜)
     window._kgpRisk = t.risk || window._kgpRisk;
     window._kgpRefreshFromStore = true; runPrevalidate();
   }));
