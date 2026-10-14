@@ -87,6 +87,7 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       h += '<p class="kie-cost" data-role="kie-cost">이 사진 편집 비용 ' + esc(cr) + '크레딧(적용 한 번) · 오늘 ' + esc(p.today) + '/' + esc(p.cap) + '회' + spent + '</p>';
     }
     if (p.need_translate) h += '<p class="kie-cost">번역 1장 요금이 들어요 — 번역 결과의 글자 상자로 편집해요.</p>';
+    if (p.capped) h += '<p class="kie-note" data-role="kie-capped">' + esc(p.capped_label) + ' — 건당 상한을 넘은 사진이라 번역은 보내지 않아요. 글자 상자는 원본에서 읽었어요.</p>';
     if (ed) h += '<p class="kie-note" data-role="kie-edited">' + (ed.by === 'auto' ? '자동으로 판촉 상자를 지웠어요' : '편집본이 나가요') + (ed.ready === false ? ' — 아직 만드는 중이라 잠시 뒤 보여요' : '') + '</p>';
     body.innerHTML = h;
   }
