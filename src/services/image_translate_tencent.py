@@ -295,6 +295,37 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
             return out
         out["request_bytes"] = len(data)
 
+    # Y11-B(오너 2026-10-14): **모든** 입력이 Y9 정규화를 지난다(webp·gif → JPEG · 긴 변 ≤ 4096 · ≤ 4MB).
+    #   실측: 갤러리 「번역」 작업(`image_translate_job`)은 주소를 그대로 받아 보내 대표사진 picasso.jpg가
+    #   `InvalidParameterValue.Data`로 거절됐다 — 정규화는 상세 큐 경로에만 있었다. 이제 공급사 앞 한 곳에서 한다.
+    #   이미 한도 안의 JPEG·PNG는 그대로(다시 굽지 않음). 줄 상자 좌표는 **보낸 그림** 기준 → `sent_size`.
+    try:
+        from src.services.detail_image_plan import prepare_for_tencent
+        norm, info = prepare_for_tencent(data)
+    except Exception as exc:                                   # noqa: BLE001
+        norm, info = None, {"note": f"정규화 실패({type(exc).__name__})"}
+    if norm is None and str(info.get("fmt") or "") in ("WEBP", "GIF"):
+        # 공급사가 받지 않는 형식인데 바꾸지도 못했다 — 보내 봐야 `InvalidParameterValue.Data`다(보내지 않는다).
+        out.update({"error_class": "ConvertFailed", "error_code": "",
+                    "error_message": f"텐센트 입력으로 바꾸지 못했어요 — {info.get('note') or '사유 불명'}",
+                    "hint": "사진 형식·크기를 확인하세요."})
+        out["ms"] = int((time.perf_counter() - t0) * 1000)
+        return out
+    if norm is None:
+        norm = data                                            # 풀지 못한 JPEG·PNG·형식 미상 — 예전처럼 그대로(공급사가 판정)
+    if norm is not data:
+        out["converted"] = str(info.get("note") or "")
+    data = norm
+    out["request_bytes"] = len(data)
+    if info.get("w") and info.get("h"):
+        try:
+            from PIL import Image
+            import io as _io
+            with Image.open(_io.BytesIO(data)) as _im:      # 헤더만 — 상자 좌표 공간(보낸 그림 크기)
+                out["sent_size"] = [int(_im.size[0]), int(_im.size[1])]
+        except Exception:                                    # noqa: BLE001
+            pass
+
     try:
         from tencentcloud.tmt.v20180321 import models
         req = models.ImageTranslateLLMRequest()

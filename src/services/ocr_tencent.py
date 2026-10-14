@@ -47,6 +47,28 @@ def is_configured() -> bool:
     return _ok()
 
 
+# Y11-B(오너 2026-10-14 실측): `FailedOperation.UnOpenError` = 텐센트 계정에 **OCR(文字识别) 서비스가 미개통**.
+#   키·네트워크는 멀쩡하다(이미지 번역은 같은 키로 된다) — 고칠 곳은 텐센트 콘솔이다. 사람 말로 그렇게 말하고,
+#   개통 전에는 매 장 다시 부르지 않는다(UNOPEN_HOLD_SEC 동안 「미개통」으로 기억 — 헛호출·로그 소음 0).
+UNOPEN_CODE = "FailedOperation.UnOpenError"
+UNOPEN_WHY = "글자 상자 읽기(OCR) 서비스가 텐센트 계정에 아직 개통되지 않았어요 — 텐센트 콘솔 「文字识别(OCR)」에서 개통이 필요해요"
+UNOPEN_HOLD_SEC = 3600
+_UNOPEN_AT = [0.0]
+
+
+def unopened() -> bool:
+    """최근 한 시간 안에 「미개통」 답을 받았나 — 그동안은 부르지 않는다."""
+    return bool(_UNOPEN_AT[0]) and time.monotonic() - _UNOPEN_AT[0] < UNOPEN_HOLD_SEC
+
+
+def _fail_why(exc) -> str:
+    code = getattr(exc, "code", "") or type(exc).__name__
+    if str(code) == UNOPEN_CODE:
+        _UNOPEN_AT[0] = time.monotonic()
+        return UNOPEN_WHY
+    return f"텐센트 OCR 실패({code})"
+
+
 #: 공급사가 그대로 받는 원본 한도 — 긴 변(문서: 20~10,000px) · base64 7MB.
 RAW_MAX_SIDE = 10000
 RAW_MAX_B64 = 7 * 1024 * 1024
@@ -97,6 +119,8 @@ def read(raw: bytes) -> Dict:
         return _unavailable("이미지 바이트 없음")
     if not is_configured():
         return _unavailable("텐센트 키 미설정")
+    if unopened():
+        return _unavailable(UNOPEN_WHY)
     try:
         small = shrink(raw)
     except Exception as exc:                                # noqa: BLE001 — 깨진 바이트
@@ -108,7 +132,7 @@ def read(raw: bytes) -> Dict:
         code = getattr(exc, "code", "") or type(exc).__name__
         msg = str(getattr(exc, "message", "") or exc)[:80]
         logger.warning("[텐센트 OCR] 호출 실패 %s: %s (%dms)", code, msg, int((time.monotonic() - t0) * 1000))
-        return _unavailable(f"텐센트 OCR 실패({code})")
+        return _unavailable(_fail_why(exc))
     lines = []
     for d in body.get("TextDetections") or []:
         txt = str((d or {}).get("DetectedText") or "").strip()
@@ -130,6 +154,8 @@ def read_boxes(raw: bytes) -> Dict:
         return {"ok": False, "why": "이미지 바이트 없음", "boxes": [], "size": [0, 0]}
     if not is_configured():
         return {"ok": False, "why": "텐센트 키 미설정", "boxes": [], "size": [0, 0]}
+    if unopened():
+        return {"ok": False, "why": UNOPEN_WHY, "code": "ocr_unopened", "boxes": [], "size": [0, 0]}
     try:
         from PIL import Image
         with Image.open(io.BytesIO(raw)) as im0:
@@ -143,8 +169,8 @@ def read_boxes(raw: bytes) -> Dict:
     try:
         body = _call(base64.b64encode(small).decode("ascii"))
     except Exception as exc:                                # noqa: BLE001
-        code = getattr(exc, "code", "") or type(exc).__name__
-        return {"ok": False, "why": f"텐센트 OCR 실패({code})", "boxes": [], "size": [W, H]}
+        why = _fail_why(exc)
+        return {"ok": False, "why": why, "code": "ocr_unopened" if why == UNOPEN_WHY else "ocr_failed", "boxes": [], "size": [W, H]}
     boxes = []
     for d in body.get("TextDetections") or []:
         d = d or {}

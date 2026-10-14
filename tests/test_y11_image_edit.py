@@ -1,4 +1,5 @@
-"""Y11(오너 2026-10-14) — 사진 편집: 글자 상자·판촉 배지를 탭해서 지우기·고치기 · 자동 1차(판촉 + 제품 영역 밖만).
+"""Y11 · Y11-B(오너 2026-10-14) — 사진 편집: 글자 상자를 탭해서 지우기·고치기. Y11-B: 색 덩어리 검출 폐기 · 번역 우선 ·
+탭한 상자만 · 자동 지우기 기본 꺼짐 · 지울 영역 = 상자 + 높이 10% · OCR 미개통 사람 말 · 갤러리 번역 입력 정규화.
 
 재현: VRSUK 4ebaf1b8 대표사진(운영 저장값 `tests/fixtures/y10_4ebaf1b8_extra.json` images_ko[0] — 원문·번역문 글자).
 ⚠️ 그 장의 **글자 상자 좌표는 저장된 적이 없다**(이번부터 저장) — 여기 상자·사진은 오너 실측 07:04 배치(우상단 쿠폰 2 ·
@@ -69,65 +70,191 @@ def cloud(monkeypatch):
     q.reset_for_tests()
 
 
-# ── 8. VRSUK: 판촉 상자 4개 자동 지움 → 「프로모션 의심」 해소 → 등록에 포함 ────────────────────────
+# ── Y11-B(오너 2026-10-14 실측): 색 덩어리 폐기 · 번역 우선 · 탭한 상자만 · 자동 꺼짐 · 지울 영역 여유 10% ──────────
 
-def test_plan_classifies_boxes_and_subject():
+def _chair_photo(full=False):
+    """오너 실측 VRSUK 대표사진 모양 — 오일 왁스 가죽(주황·갈색 고채도) 의자. `full`이면 의자가 사진을 꽉 채운다."""
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (800, 800), (245, 243, 240))
+    d = ImageDraw.Draw(im)
+    if full:
+        d.rectangle([0, 0, 800, 800], fill=(196, 92, 34))
+    else:
+        d.rectangle([240, 300, 652, 520], fill=(196, 92, 34))      # 등받이(주황 가죽)
+        d.rectangle([120, 520, 757, 720], fill=(176, 80, 30))      # 좌판
+    small = im.copy()
+    small.thumbnail((256, 256))
+    return small
+
+
+def test_color_blob_detector_is_gone_and_leather_chair_is_not_a_badge(cloud):
+    """실측 14:49: 색 덩어리 검출기가 의자 등받이·좌판(주황 가죽)을 「판촉 배지」로 잡아 지웠다 → 검출기 자체를 없앤다."""
+    from src.services import image_edit as E
+    assert not hasattr(E, "color_badges")
+    ex = _ex()
+    ex["images_ko"][1].update(boxes=[], box_size=[800, 800])               # 실측: 그 장의 글자 상자 0개
+    p = E.plan(ex, "gallery", 1, small=_chair_photo())
+    assert p["boxes"] == [] and p["why"] == E.NO_TEXT_WHY == "이 사진에서 글자를 못 찾았어요 — 지울 것이 없어요"
+    r = E.apply(ex, "gallery", 1, [{"id": "c0", "action": "erase"}, {"id": "c1", "action": "erase"}], small=_chair_photo())
+    assert not r["ok"] and cloud == []                                       # 옛 c# 상자는 받지 않는다 · 한도도 안 센다
+    from src.services.image_edit import today_count
+    assert today_count() == 0
+
+
+def test_promo_photo_default_is_translated_and_only_tapped_box_is_erased(cloud):
+    """판촉 글자 사진 → 기본은 번역본 그대로(아무것도 안 골라 둠) · 사용자가 탭한 상자 하나만 지운다."""
     from src.services import image_edit as E
     ex = _ex()
     p = E.plan(ex, "gallery", 0, small=_photo())
-    cls = {b["src"]: (b["cls"], b["auto"]) for b in p["boxes"] if b["id"].startswith("t")}
-    assert cls["-VRSUK Italian brand·卫斯克"] == ("brand", False)              # 로고 — 남김
-    assert cls["*88VIP SALE 235 RMB 消费券"] == ("promo", True)
-    assert cls["天猫国际加补券 320 RMB 大额加补券"] == ("promo", True)
-    assert cls["1元抵88元+赠品|新客立减200元"] == ("promo", True)
-    assert cls["国庆狂欢 OFF a 55%"] == ("promo", True)
-    assert cls["·静享意式家"] == ("text", False)                                # 일반 글자 — 사용자 선택
-    s = p["subject"]
-    assert 190 <= s["x"] <= 210 and 170 <= s["y"] <= 190 and 590 <= s["x"] + s["w"] <= 615   # 의자 상자
-    assert not [b for b in p["boxes"] if b["id"].startswith("c")]               # 쿠폰 색 배지는 글자 상자와 같은 자리 — 하나만
-
-
-def test_vrsuk_auto_erases_four_promo_boxes_and_photo_goes_back_in(cloud):
-    from src.services import image_edit as E
-    from src.services import image_translate_store as S
-    ex = _ex()
-    before = S.effective_images(ex, kind="gallery")
-    assert S.promo_excluded(ex["images_ko"][0]) and len(before) == 4               # 1번 사진은 「프로모션 의심」으로 빠져 있었다
-    res = E.auto_promo(ex)
-    assert res == [{"kind": "gallery", "idx": 0, "url": "https://res.cloudinary.com/x/image/upload/1/edit.jpg",
-                    "erased_n": 4, "credits": 0.051, "error": ""}]
+    assert p["url"].endswith("p0_TENCENT.jpg") and len(p["boxes"]) == 6        # 번역본 위에서 분류
+    assert not any(b["auto"] for b in p["boxes"]) and p["subject"] is None      # 자동 꺼짐 — 미리 고른 것 0 · 제품 영역 안 씀
+    cls = {b["src"]: b["cls"] for b in p["boxes"]}
+    assert cls["*88VIP SALE 235 RMB 消费券"] == "promo" and cls["-VRSUK Italian brand·卫斯克"] == "brand"
+    assert E.auto_promo(ex) == [] and cloud == []                               # IMAGE_EDIT_AUTO 기본 0
+    r = E.apply(ex, "gallery", 0, [{"id": "t1", "action": "erase"}], small=_photo())
+    assert r["ok"] and len(cloud) == 1 and cloud[0]["src"].endswith("p0_TENCENT.jpg")
     tr = cloud[0]["transform"]
-    assert tr.startswith("e_gen_remove:region_(") and tr.count("(x_") == 4 and "l_text" not in tr
-    assert cloud[0]["src"] == "https://res.cloudinary.com/x/p0_TENCENT.jpg"    # 지금 나가는 번역본을 바탕으로(원본 보존)
-    e = ex["images_ko"][0]
-    assert e["edit"]["by"] == "auto" and e["url"].endswith("/1/edit.jpg") and e["edit"]["prev_url"].endswith("p0_TENCENT.jpg")
-    assert S.promo_of(e) == [] and not S.promo_excluded(e)                     # 「프로모션 의심」 해소
-    after = S.effective_images(ex, kind="gallery")
-    assert len(after) == 5 and after[0].endswith("/1/edit.jpg")                # 편집본이 등록에 들어간다(나갈 사진)
+    assert tr == "e_gen_remove:region_((x_611;y_11;w_178;h_108))"               # 그 상자 하나 + 여유(높이 90의 10% = 9, 사방)
+    assert ex["images_ko"][0]["edit"]["ops"] == [{"id": "t1", "action": "erase"}]
 
 
-def test_photo_without_text_boxes_is_unchanged(cloud):
+def test_erase_region_is_box_plus_ten_percent_of_height_only():
     from src.services import image_edit as E
+    assert E.erase_rect({"x": 20, "y": 700, "w": 360, "h": 40}, [800, 800]) == {"x": 16, "y": 696, "w": 368, "h": 48}
+    assert E.erase_rect({"x": 0, "y": 0, "w": 50, "h": 100}, [800, 800]) == {"x": 0, "y": 0, "w": 60, "h": 110}
+    assert E.erase_rect({"x": 760, "y": 780, "w": 40, "h": 20}, [800, 800]) == {"x": 758, "y": 778, "w": 42, "h": 22}
+    p = E.plan(_ex(), "gallery", 0, small=_photo())
+    for b in p["boxes"]:                                                       # 화면이 빨갛게 보여 줄 영역 = 실제로 보내는 영역
+        assert b["er"] == E.erase_rect({k: b[k] for k in ("x", "y", "w", "h")}, p["size"])
+
+
+def test_auto_stays_off_by_default_even_in_prevalidate(cloud, monkeypatch):
+    from src.services import image_edit as E
+    monkeypatch.delenv("IMAGE_EDIT_AUTO", raising=False)
+    assert E.auto_enabled() is False and E.auto_promo(_ex()) == [] and cloud == []
+
+
+def test_auto_when_enabled_needs_trusted_subject_and_never_touches_overlaps(cloud, monkeypatch):
+    """켜도: 판촉 토큰 글자 상자 + 제품 영역을 믿을 수 있을 때 + 지울 영역이 그 밖일 때만."""
+    from src.services import image_edit as E
+    monkeypatch.setenv("IMAGE_EDIT_AUTO", "1")
     ex = _ex()
+    res = E.auto_promo(ex, small_loader=lambda u: _photo())
+    assert res[0]["erased_n"] == 4 and cloud[0]["transform"].count("(x_") == 4
+    erased = {b["src"] for b in E.plan(ex, "gallery", 0, small=_photo())["boxes"]
+              if b["id"] in {o["id"] for o in ex["images_ko"][0]["edit"]["ops"]}}
+    assert "-VRSUK Italian brand·卫斯克" not in erased and "·静享意式家" not in erased   # 로고·일반 글자는 손대지 않는다
+
+
+def test_subject_over_seventy_percent_is_unknown_and_auto_does_nothing(cloud, monkeypatch):
+    """실측: 제품 영역 검출이 사진 전체를 잡았다 → 70% 넘으면 「모름」 — 자동 동작 전부 중지."""
+    from src.services import image_edit as E
+    monkeypatch.setenv("IMAGE_EDIT_AUTO", "1")
+    assert E.subject_bbox(_chair_photo(full=True)) is None
+    assert E.subject_bbox(_chair_photo()) is not None
+    ex = _ex()
+    res = E.auto_promo(ex, small_loader=lambda u: _chair_photo(full=True))
+    assert res == [{"kind": "gallery", "idx": 0, "skipped": "제품 영역을 모름 — 자동으로 아무것도 안 지워요(사용자 선택)"}]
+    assert cloud == [] and "edit" not in ex["images_ko"][0]
+
+
+def test_promo_box_overlapping_product_is_left_to_the_user(cloud, monkeypatch):
+    """오너(2026-10-14): 자동 지우기는 지울 영역이 제품 영역 **밖**일 때만 — 겹치면 사용자 선택."""
+    from src.services import image_edit as E
+    monkeypatch.setenv("IMAGE_EDIT_AUTO", "1")
+    ex = _ex()
+    ex["images_ko"][0]["boxes"] = [dict(BOXES[1], x=300, y=300)]               # 쿠폰 글자가 의자 위에
+    res = E.auto_promo(ex, small_loader=lambda u: _photo(coupons=False))
+    assert res == [{"kind": "gallery", "idx": 0, "skipped": "제품과 겹치는 판촉 상자뿐 — 사용자 선택"}] and cloud == []
+    b = E.plan(ex, "gallery", 0, small=_photo(coupons=False))["boxes"][0]
+    assert b["cls"] == "promo" and b["in_subject"] and not b["auto"]
+
+
+def test_untranslated_photo_asks_to_translate_first_and_ocr_unopened_is_spoken_plainly(monkeypatch):
+    """순서: 번역이 먼저 — 번역 전 장은 「번역하고 글자 상자 받기」. OCR 미개통(UnOpenError)은 사람 말로, 한 시간 동안 다시 안 부름."""
+    from src.services import image_edit as E
+    from src.services import ocr_tencent as O
+    ex = _ex()
+    ex["images_ko"] = [e for e in ex["images_ko"] if e["idx"] != 1]
+    p = E.plan(ex, "gallery", 1, small=_photo())
+    assert p["need_translate"] and p["boxes"] == [] and "번역이 먼저" in p["why"]
     for e in ex["images_ko"]:
         e.pop("boxes", None)
         e.pop("box_size", None)
-    ex["images_ko"] = [e for e in ex["images_ko"] if e["idx"] != 0]             # 판촉 글자 없는 장들만
-    snap = json.dumps(ex, sort_keys=True)
-    assert E.auto_promo(ex) == [] and cloud == []
-    assert json.dumps(ex, sort_keys=True) == snap
+
+    class _Unopen(Exception):
+        code = "FailedOperation.UnOpenError"
+        message = "服务未开通"
+    calls = []
+    monkeypatch.setattr(O, "is_configured", lambda: True)
+    monkeypatch.setattr(O, "_call", lambda b64: calls.append(1) or (_ for _ in ()).throw(_Unopen()))
+    monkeypatch.setattr(O, "_UNOPEN_AT", [0.0])
+    import requests
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), (255, 255, 255)).save(buf, "JPEG")
+    monkeypatch.setattr(requests, "get", lambda url, **k: type("R", (), {"status_code": 200, "content": buf.getvalue()})())
+    p = E.plan(ex, "gallery", 0, small=_photo())                              # 번역은 됐지만 상자 없는 옛 장 → OCR → 미개통
+    assert p["need_translate"] and p["boxes"] == []
+    assert "OCR) 서비스가 텐센트 계정에 아직 개통되지 않았어요" in p["why"] and "文字识别" in p["why"]
+    assert len(calls) == 1 and O.unopened()
+    E.plan(ex, "gallery", 2, small=_photo())
+    assert len(calls) == 1                                                     # 미개통이면 다시 부르지 않는다
+    assert O.read(buf.getvalue())["why"] == O.UNOPEN_WHY and len(calls) == 1
 
 
-def test_promo_box_overlapping_product_is_left_to_the_user(cloud):
-    """오너(2026-10-14): 자동 지우기는 상자가 제품 영역 **밖**일 때만 — 겹치면 사용자 선택."""
-    from src.services import image_edit as E
+def test_translate_route_queues_this_photo_only(monkeypatch):
+    from src.seller_console import collect_history_store as S
+    from src.services import image_translate_job as job
+    from src.services import image_translate_tencent as tc
+    from src.order_webhook import app
     ex = _ex()
-    ex["images_ko"][0]["boxes"] = [dict(BOXES[1], x=300, y=300)]               # 쿠폰 글자가 의자 위에(색 배지 없는 사진)
-    res = E.auto_promo(ex, small_loader=lambda u: _photo(coupons=False))
-    assert res == [{"kind": "gallery", "idx": 0, "skipped": "제품과 겹치는 판촉 상자뿐 — 사용자 선택"}] and cloud == []
-    p = E.plan(ex, "gallery", 0, small=_photo(coupons=False))
-    b = next(b for b in p["boxes"] if b["id"] == "t0")
-    assert b["cls"] == "promo" and b["in_subject"] and not b["auto"]
+    iid = S.append(source="extension", url="https://detail.tmall.com/item.htm?id=1", seller_id="y11b", title="x",
+                   price="1", currency="CNY", extra=ex)
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    seen = []
+    monkeypatch.setattr(tc, "is_configured", lambda: True)
+    monkeypatch.setattr(job, "accept", lambda item_id, sid, idx, seller_ids=None: seen.append((item_id, list(idx))) or {"ok": True})
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y11b"
+    r = c.post(f"/seller/collect/{iid}/image-edit/gallery/3/translate", json={})
+    assert r.status_code == 202 and r.get_json()["queued"] and seen == [(iid, [3])]
+
+
+def test_legacy_color_blob_edit_is_reverted_on_open(cloud):
+    """운영 실측(VRSUK 사진 2): c0~c2(의자 등받이·좌판)를 지운 편집본이 「나갈 사진」이 돼 있었다 → 열면 번역본으로 되돌린다."""
+    from src.seller_console import collect_history_store as S
+    from src.order_webhook import app
+    ex = _ex()
+    e = ex["images_ko"][1]
+    base = e["url"]
+    e.update(url="https://res.cloudinary.com/x/image/upload/e_gen_remove:region_((x_240;y_735;w_412;h_195))/v1/edit.jpg",
+             edit={"base": base, "prev_url": base, "prev_use": True, "prev_status": "done", "by": "user", "credits": 0.051,
+                   "ops": [{"id": "c0", "action": "erase"}, {"id": "c1", "action": "erase"}], "history": []})
+    iid = S.append(source="extension", url="https://detail.tmall.com/item.htm?id=1", seller_id="y11c", title="x",
+                   price="1", currency="CNY", extra=ex)
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y11c"
+    d = c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()
+    assert d.get("edit_reverted") == [{"kind": "gallery", "idx": 1}]
+    sv = json.loads(S.get(iid, seller_ids={"y11c"})["extra_json"])
+    e1 = next(x for x in sv["images_ko"] if x["idx"] == 1)
+    assert e1["url"] == base and "edit" not in e1 and sv["image_edit_reverted"][0]["idx"] == 1
+    assert "edit_reverted" not in c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()   # 한 번만
+
+
+def test_boxes_in_sent_space_are_scaled_to_a_bigger_base(cloud, monkeypatch):
+    """상자는 공급사에 보낸 그림(긴 변 ≤ 4096) 기준 — 바탕이 더 크면 그 비율로 키워 보낸다(빗나가 제품을 지우지 않게)."""
+    from src.media import image_pipeline as IP
+    from src.services import image_edit as E
+    monkeypatch.setattr(IP, "remote_max_side", lambda: 10000)
+    monkeypatch.setattr(E, "_load_small", lambda url: (_photo(), (1600, 1600)))
+    ex = _ex()
+    r = E.apply(ex, "gallery", 0, [{"id": "t3", "action": "erase"}])
+    assert r["ok"] and cloud[0]["transform"] == "e_gen_remove:region_((x_32;y_1392;w_736;h_96))"
 
 
 # ── 4·5. 글자 고치기 · 되돌리기 ───────────────────────────────────────────────────────────────
@@ -138,7 +265,7 @@ def test_fix_text_erases_then_overlays_noto_sans_kr(cloud):
     r = E.apply(ex, "gallery", 0, [{"id": "t5", "action": "text", "text": "이탈리아 감성 홈"}], small=_photo())
     assert r["ok"] and r["credits"] == 0.052                                   # gen_remove 50 + 기본 1 + 글자 1
     tr = cloud[0]["transform"]
-    assert tr.startswith("e_gen_remove:region_((x_20;y_750;w_300;h_40))/")
+    assert tr.startswith("e_gen_remove:region_((x_16;y_746;w_308;h_48))/")             # 상자 + 높이 10% 여유
     assert "l_text:Noto%20Sans%20KR_" in tr and "co_rgb:" in tr and "fl_layer_apply,g_north_west,x_20,y_" in tr
     assert ex["images_ko"][0]["edit"]["by"] == "user"
 
@@ -235,16 +362,6 @@ def test_old_entry_reads_boxes_once_via_route(cloud, monkeypatch):
     assert c.post(f"/seller/collect/{iid}/image-edit/gallery/0/revert", json={}).get_json()["ok"]
 
 
-def test_color_badge_outside_product_is_auto_erased_even_without_text(cloud):
-    """글자를 못 읽은 쿠폰 스티커(색 덩어리)도 제품 밖이면 판촉 배지로 자동 지운다."""
-    from src.services import image_edit as E
-    ex = _ex()
-    ex["images_ko"][0]["boxes"] = [BOXES[0]]                                   # 로고 글자만 읽힘
-    p = E.plan(ex, "gallery", 0, small=_photo())
-    badges = [b for b in p["boxes"] if b["id"].startswith("c")]
-    assert len(badges) == 2 and all(b["cls_label"] == "판촉 배지" and b["auto"] for b in badges)
-
-
 def test_old_picture_without_text_entry_is_not_a_failure_badge(monkeypatch):
     """캡처에서 잡힘 — 예전에 「실패」로 저장된 글자 없는 사진(PictureWithoutText)이 카드에 빨간 「이미지 번역 실패」로 떴다."""
     from src.services import image_translate_auto as A
@@ -254,3 +371,75 @@ def test_old_picture_without_text_entry_is_not_a_failure_badge(monkeypatch):
     assert A.item_failure("x", ex) == {}
     ex["images_ko"].append({"idx": 5, "status": "failed", "error_code": "FailedOperation.Timeout", "error_message": "timeout"})
     assert A.item_failure("x", ex)["failed"] == 1
+
+
+def test_gallery_job_input_goes_through_y9_normalization(monkeypatch):
+    """실측 14:49: 갤러리 「번역」 작업(`image_translate_job` → `translate_image(url=…)`)이 대표사진 picasso.jpg를 그대로 보내
+    `InvalidParameterValue.Data`. 정규화(webp·gif → JPEG · 긴 변 ≤ 4096 · ≤ 4MB)는 상세 큐 경로에만 있었다 → 공급사 앞 한 곳으로.
+    ⚠️ 그 picasso.jpg 바이트는 여기서 못 받는다(alicdn 차단) — Y9에서 확인된 원인 두 가지(이름은 .jpg인데 내용은 webp · 너무 큼)로 재현."""
+    import base64
+    from unittest.mock import patch
+    from PIL import Image
+    from src.services import image_translate_tencent as tc
+    sent = []
+
+    class _Resp:
+        Data = "aW1n"
+        Source, Target, SourceText, TargetText = "zh", "ko", "满300减50", "300 이상 50 할인"
+        TransDetails, RequestId, Angle = [], "req-1", 0
+
+    class _Cli:
+        def ImageTranslateLLM(self, req):
+            sent.append(base64.b64decode(req._serialize()["Data"]))
+            return _Resp()
+
+    def webp_bytes():
+        b = io.BytesIO()
+        Image.new("RGB", (800, 800), (200, 90, 40)).save(b, "WEBP")
+        return b.getvalue()
+
+    def big_jpeg():
+        b = io.BytesIO()
+        Image.new("RGB", (5000, 1000), (255, 255, 255)).save(b, "JPEG", quality=70)
+        return b.getvalue()
+
+    monkeypatch.setenv("TENCENT_SECRET_ID", "id")
+    monkeypatch.setenv("TENCENT_SECRET_KEY", "key")
+    monkeypatch.setattr(tc, "MIN_INTERVAL_SEC", 0.0)
+    pic = "https://gw.alicdn.com/imgextra/O1CN01wRKL8oChG0I2vHAO_!!2210826600484-0-picasso.jpg"
+    for raw, want in ((webp_bytes(), (800, 800)), (big_jpeg(), (4096, 819))):
+        with patch.object(tc, "_client", lambda *_a, **_k: _Cli()), patch.object(tc, "fetch_image", lambda u: (raw, "")):
+            out = tc.translate_image(url=pic)
+        assert out["ok"] and sent[-1][:2] == b"\xff\xd8" and out["converted"]
+        with Image.open(io.BytesIO(sent[-1])) as im:
+            assert im.format == "JPEG" and im.size == want and out["sent_size"] == list(want)
+    ok_jpeg = io.BytesIO()
+    Image.new("RGB", (750, 1000), (255, 255, 255)).save(ok_jpeg, "JPEG")
+    with patch.object(tc, "_client", lambda *_a, **_k: _Cli()), patch.object(tc, "fetch_image", lambda u: (ok_jpeg.getvalue(), "")):
+        out = tc.translate_image(url=pic)
+    assert sent[-1] == ok_jpeg.getvalue() and "converted" not in out                # 이미 한도 안 JPEG는 다시 굽지 않는다
+    from src.services import image_translate_job as job                       # 갤러리 「번역」 작업 그대로 돌린다
+    store = {"extra": {"images": [pic]}}
+    monkeypatch.setattr(job, "_load", lambda item_id, ids: ({"id": item_id}, store["extra"]))
+    monkeypatch.setattr(job, "_save", lambda item_id, ids, extra: store.update(extra=extra) or True)
+    from src.services import image_translate_store as istore
+    monkeypatch.setattr(istore, "record_usage", lambda *a, **k: None)
+    with patch.object(tc, "_client", lambda *_a, **_k: _Cli()), patch.object(tc, "fetch_image", lambda u: (webp_bytes(), "")):
+        job._run("vrsuk", "u", [0], {"u"})
+    assert sent[-1][:2] == b"\xff\xd8" and store["extra"]["images_ko"][0]["status"] == "done"
+
+
+def test_photo_without_text_route_has_no_boxes_and_nothing_to_erase(cloud):
+    """글자 없는 사진(번역 결과 PictureWithoutText) → 상자 0 · 지울 것 없음 · 번역 다시 하라고도 안 함 · 보내도 거절."""
+    from src.seller_console import collect_history_store as S
+    from src.order_webhook import app
+    iid = S.append(source="extension", url="https://detail.tmall.com/item.htm?id=1", seller_id="y11d", title="x",
+                   price="1", currency="CNY", extra=_ex())
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y11d"
+    d = c.get(f"/seller/collect/{iid}/image-edit/gallery/4").get_json()
+    assert d["ok"] and d["boxes"] == [] and d["why"] == "이 사진에서 글자를 못 찾았어요 — 지울 것이 없어요" and not d["need_translate"]
+    r = c.post(f"/seller/collect/{iid}/image-edit/gallery/4", json={"ops": [{"id": "t0", "action": "erase"}]})
+    assert r.status_code == 409 and "글자를 못 찾았어요" in r.get_json()["error"] and cloud == []

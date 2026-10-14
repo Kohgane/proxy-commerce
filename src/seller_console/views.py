@@ -3951,8 +3951,14 @@ def collect_coupang_exposure(item_id):
     item = _get_owned_item(item_id)
     if not item:
         return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    reverted = _image_edit_drop_legacy(item_id, item)            # Y11-B: 색 덩어리로 지운 편집본 → 번역본·원본으로
+    if reverted:
+        item = _get_owned_item(item_id) or item
     try:
-        return jsonify(coupang_exposure_data(item))
+        d = coupang_exposure_data(item)
+        if reverted:
+            d["edit_reverted"] = reverted
+        return jsonify(d)
     except Exception as exc:                                     # noqa: BLE001
         # M5 후속(실사용 1호): 「불러오지 못했어요」만 나왔다 — 500 HTML이라 화면이 사유를 못 읽었다. 예외명·메시지를 그대로.
         logger.warning("[쿠팡 노출] item=%s 미리보기 실패: %s", item_id, exc)
@@ -5178,6 +5184,21 @@ def _image_edit_save(item_id: str, ex: dict) -> bool:
     return bool(collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
 
 
+def _image_edit_drop_legacy(item_id: str, item: dict) -> list:
+    """Y11-B(오너 2026-10-14 실측): Y11 첫판의 색 덩어리 검출이 의자 등받이·좌판을 「판촉 배지」로 잡아 지웠다.
+    그 상자(`c#`)로 만든 편집본은 되돌린다(번역본·원본으로) — 되돌린 장 `[{kind, idx}]`. 실패해도 화면은 그린다."""
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+        from src.services import image_edit as _ie
+        out = _ie.drop_legacy_edits(ex)
+        if out and not _image_edit_save(item_id, ex):
+            return []
+        return [{"kind": r["kind"], "idx": r["idx"]} for r in out]
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[사진 편집] 색 덩어리 편집 되돌리기 실패 item=%s: %s", item_id, exc)
+        return []
+
+
 @bp.route("/collect/<item_id>/image-edit/<kind>/<int:idx>", methods=["GET", "POST"])
 def collect_image_edit(item_id: str, kind: str, idx: int):
     """Y11 사진 편집 — GET: 상자 목록(판촉·로고·일반·상표 위험 · 제품 영역 · 비용) · POST `{ops:[{id, action: erase|text, text?}]}`: 편집본.
@@ -5189,6 +5210,8 @@ def collect_image_edit(item_id: str, kind: str, idx: int):
     if item is None:
         return ex
     from src.services import image_edit as _ie
+    if _ie.drop_legacy_edits(ex):
+        _image_edit_save(item_id, ex)                            # Y11-B: 색 덩어리 편집본은 열자마자 되돌린다
     if request.method == "GET":
         had = bool((_ie._entry(ex, kind, idx) or {}).get("boxes"))
         p = _ie.plan(ex, kind, idx)
@@ -5222,17 +5245,46 @@ def collect_image_edit_revert(item_id: str, kind: str, idx: int):
     return jsonify({"ok": True})
 
 
+@bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/translate")
+def collect_image_edit_translate(item_id: str, kind: str, idx: int):
+    """Y11-B 「번역하고 글자 상자 받기」 — 순서는 번역이 먼저다. 이 한 장만 텐센트 이미지 번역에 다시 보내고(요청 밖에서),
+    번역 결과의 줄 상자(`TransDetails[].BoundingBox`)로 편집한다. OCR이 미개통이어도 이 길은 된다. 번역 1장 요금이 든다."""
+    if kind not in ("gallery", "detail"):
+        return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from src.services import image_translate_tencent as tc
+    if not tc.is_configured():
+        return jsonify({"ok": False, "error": "이미지 번역이 연결돼 있지 않아요."}), 503
+    if kind == "gallery":
+        from src.services import image_translate_job as job
+        out = job.accept(item_id, _seller_id(), [idx], seller_ids=_seller_identities())
+        if not out.get("ok"):
+            return jsonify(out), 409 if out.get("already_running") else 400
+        return jsonify({"ok": True, "queued": True, "message": "번역하는 중이에요 — 끝나면 글자 상자가 보여요"}), 202
+    from src.services import image_translate_auto as _ita
+    q = _ita._q()
+    n = q.requeue_pages(item_id, [("detail", idx)]) or q.enqueue(_seller_id(), item_id, [("detail", idx)])
+    if not n:
+        return jsonify({"ok": False, "error": "이미 번역 줄에 있어요 — 잠시 뒤 다시 열어 주세요."}), 409
+    _ita.kick()
+    return jsonify({"ok": True, "queued": True, "message": "번역하는 중이에요 — 끝나면 글자 상자가 보여요"}), 202
+
+
 def _pv_auto_image_edit(job_id: str, data: dict) -> None:
-    """Y11 자동 1차 — 사전검증 전에 판촉 의심 갤러리 장의 「판촉 + 제품 영역 밖」 상자를 지운 편집본을 만들어 둔다
-    (사용자는 결과만 확인·되돌리기 — 3클릭 유지). 끄기: `IMAGE_EDIT_AUTO=0`. 실패는 카드에 사유만(사전검증은 그대로)."""
-    if not data.get("item_id") or os.getenv("IMAGE_EDIT_AUTO", "1") == "0":
+    """Y11 자동 1차 — **Y11-B부터 기본 꺼짐**(켜기 `IMAGE_EDIT_AUTO=1`). 켜면 판촉 의심 장의 「판촉 토큰 적중 글자 상자 +
+    믿을 수 있는 제품 영역 밖」만 지운다. 꺼져 있어도 색 덩어리(Y11 첫판)로 만든 편집본은 등록 전에 되돌린다."""
+    if not data.get("item_id"):
         return
     from src.services import image_edit as _ie
-    if not _ie.configured()[0]:
-        return
     item_id = str(data["item_id"])
     item, ex = _image_edit_item(item_id)
     if item is None:
+        return
+    if _ie.drop_legacy_edits(ex):                                # Y11-B: 색 덩어리 편집본은 등록 전에 되돌린다
+        _image_edit_save(item_id, ex)
+    if not _ie.auto_enabled() or not _ie.configured()[0]:        # Y11-B: 자동 지우기 기본 꺼짐(IMAGE_EDIT_AUTO=1일 때만)
         return
     try:
         res = _ie.auto_promo(ex)

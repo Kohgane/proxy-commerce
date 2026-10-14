@@ -1,6 +1,7 @@
-{# Y11(오너 2026-10-14) — 사진 편집: 글자 상자·판촉 배지를 탭해서 지우기·고치기. 「쿠팡 노출」 줄(폰 M5·편집 화면 공용)에서 연다.
-   상자 테두리 오버레이 → 탭 → 바닥 시트 「지우기」「글자 고치기」「그대로」 · 「판촉 전부 지우기」 · 적용 → 「미리보기 / 되돌리기」.
-   지우기·글자 고치기는 Cloudinary(원본을 직접 받아 감) — 서버 메모리 0. 원본은 그대로 남는다. #}
+{# Y11(오너 2026-10-14) — 사진 편집: 글자 상자를 탭해서 지우기·고치기. 「쿠팡 노출」 줄(폰 M5·편집 화면 공용)에서 연다.
+   Y11-B(같은 날 실측 뒤): 상자는 **번역 결과의 글자 상자만**(색 덩어리 검출 없음) · 기본값 「번역된 대로 두기」(미리 골라 두지 않음) ·
+   적용 전 지울 영역(상자 + 높이 10% 여유)을 빨갛게 보여 주고 한 번 더 묻는다 · 상자가 없으면 「번역하고 글자 상자 받기」.
+   지우기·글자 고치기는 Cloudinary(원본을 직접 받아 감) — 서버 메모리 0. 원본·번역본은 그대로 남는다. #}
 <div class="kie" data-role="kie" hidden>
   <div class="kie-panel" role="dialog" aria-modal="true" aria-labelledby="kieTitle">
     <div class="kie-head">
@@ -12,9 +13,9 @@
   <div class="kie-sheet" data-role="kie-sheet" hidden>
     <div class="kie-sheet-title" data-role="kie-sheet-title"></div>
     <div class="kie-sheet-acts">
-      <button type="button" class="kie-btn is-main" data-act="erase">지우기</button>
+      <button type="button" class="kie-btn is-main" data-act="keep">번역된 대로 두기</button>
+      <button type="button" class="kie-btn" data-act="erase">지우기</button>
       <button type="button" class="kie-btn" data-act="text">글자 고치기</button>
-      <button type="button" class="kie-btn" data-act="keep">그대로</button>
     </div>
     <div class="kie-text" data-role="kie-text" hidden>
       <label class="kie-label" for="kieText">같은 자리에 넣을 한국어</label>
@@ -28,7 +29,7 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
   var root = document.querySelector('[data-role=kie]');
   if (!root) return null;
   var body = root.querySelector('[data-role=kie-body]'), sheet = root.querySelector('[data-role=kie-sheet]');
-  var st = null;          // {itemId, kind, idx, plan, choice:{id:{action,text}}, done, cur}
+  var st = null;          // {itemId, kind, idx, plan, choice:{id:{action,text}}, done, cur, confirm, polls}
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
   function base() { return '/seller/collect/' + encodeURIComponent(st.itemId) + '/image-edit/' + st.kind + '/' + st.idx; }
   function call(url, payload) {
@@ -37,35 +38,56 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; } }); });
   }
   function chosen() { return Object.keys(st.choice).filter(function (k) { return st.choice[k].action !== 'keep'; }); }
+  function pct(v, all) { return (v / (all || 1) * 100); }
+  function rectStyle(r, W, H) { return 'left:' + pct(r.x, W) + '%;top:' + pct(r.y, H) + '%;width:' + pct(r.w, W) + '%;height:' + pct(r.h, H) + '%'; }
   function render() {
     var p = st.plan, W = (p.size || [0, 0])[0] || 1, H = (p.size || [0, 0])[1] || 1;
     var ed = p.edit && p.edit.url ? p.edit : null;
     var showUrl = st.preview === 'orig' ? (p.url || '') : (ed ? ed.url : p.url);
-    var boxes = (p.boxes || []).map(function (b) {
-      var c = st.choice[b.id] || {action: 'keep'};
-      var done = ed && (ed.ops || []).some(function (o) { return o.id === b.id && o.action === c.action && (o.text || '') === (c.text || ''); });
-      return '<button type="button" class="kie-box is-' + esc(b.cls) + (c.action !== 'keep' ? ' do-' + c.action : '') + (done ? ' is-done' : '') +
-        '" data-role="kie-box" data-id="' + esc(b.id) +
-        '" style="left:' + (b.x / W * 100) + '%;top:' + (b.y / H * 100) + '%;width:' + (b.w / W * 100) + '%;height:' + (b.h / H * 100) + '%"' +
-        ' aria-label="' + esc(b.cls_label + ' ' + (b.text || '')) + '"></button>';
-    }).join('');
-    var subj = p.subject ? '<div class="kie-subj" style="left:' + (p.subject.x / W * 100) + '%;top:' + (p.subject.y / H * 100) + '%;width:' + (p.subject.w / W * 100) + '%;height:' + (p.subject.h / H * 100) + '%" aria-hidden="true"></div>' : '';
-    var n = chosen().length, nPromo = (p.boxes || []).filter(function (b) { return b.cls === 'promo'; }).length;
+    var ids = chosen();
+    var overlay = '';
+    if (st.preview !== 'orig') {
+      overlay = (p.boxes || []).map(function (b) {
+        var c = st.choice[b.id] || {action: 'keep'};
+        var done = ed && (ed.ops || []).some(function (o) { return o.id === b.id && o.action === c.action && (o.text || '') === (c.text || ''); });
+        return '<button type="button" class="kie-box is-' + esc(b.cls) + (c.action !== 'keep' ? ' do-' + c.action : '') + (done ? ' is-done' : '') +
+          '" data-role="kie-box" data-id="' + esc(b.id) + '" style="' + rectStyle(b, W, H) + '"' + (st.confirm ? ' disabled' : '') +
+          ' aria-label="' + esc(b.cls_label + ' ' + (b.text || '')) + '"></button>';
+      }).join('');
+      if (st.confirm) {   // 적용 전 확인 — 실제로 보낼 지울 영역(상자 + 높이 10% 여유)만 빨갛게
+        overlay += (p.boxes || []).filter(function (b) { return ids.indexOf(b.id) >= 0; }).map(function (b) {
+          return '<div class="kie-er" data-role="kie-er" style="' + rectStyle(b.er || b, W, H) + '" aria-hidden="true"></div>';
+        }).join('');
+      }
+      if (p.subject) overlay += '<div class="kie-subj" style="' + rectStyle(p.subject, W, H) + '" aria-hidden="true"></div>';
+    }
     var spent = ed ? ' · 이 사진에 쓴 비용 ' + esc(ed.credits || p.spent || 0) + '크레딧' : '';
-    var h = '<div class="kie-stage" data-role="kie-stage"><img src="' + esc(showUrl) + '" alt="편집할 사진" referrerpolicy="no-referrer">' +
-      (st.preview === 'orig' ? '' : subj + boxes) + '</div>';
-    h += '<p class="kie-legend"><span class="kie-k is-promo"></span>판촉 <span class="kie-k is-brand"></span>브랜드 로고 <span class="kie-k is-risk"></span>상표 위험 <span class="kie-k is-text"></span>일반 글자' +
-      (p.subject ? ' · 점선 = 제품 영역(자동 지우기는 이 밖만)' : '') + '</p>';
-    if (!(p.boxes || []).length) h += '<p class="kie-note" data-role="kie-empty">' + esc(p.why || '고칠 글자 상자가 없어요 — 이 사진은 그대로 나가요.') + '</p>';
-    h += '<div class="kie-acts">' +
-      (nPromo ? '<button type="button" class="kie-btn" data-role="kie-promo-all">판촉 전부 지우기(' + nPromo + ')</button>' : '') +
-      '<button type="button" class="kie-btn is-main" data-role="kie-apply"' + (n ? '' : ' disabled') + '>적용(' + n + '곳)</button>' +
-      (ed ? '<button type="button" class="kie-btn" data-role="kie-preview">' + (st.preview === 'orig' ? '편집본 보기' : '편집 전 보기') + '</button>' +
-            '<button type="button" class="kie-btn" data-role="kie-revert">되돌리기</button>' : '') + '</div>';
-    var nTxt = chosen().filter(function (k) { return st.choice[k].action === 'text'; }).length;   // 글자 고치기 1곳 = 글자 얹기 1번 더
-    var cr = Math.round((+((p.cost || {}).credits) || 0) * 1000 + nTxt) / 1000;
-    h += '<p class="kie-cost" data-role="kie-cost">이 사진 편집 비용 ' + esc(cr) + '크레딧(적용 한 번) · 오늘 ' + esc(p.today) + '/' + esc(p.cap) + '회' + spent + '</p>';
-    if (ed) h += '<p class="kie-note" data-role="kie-edited">' + (ed.by === 'auto' ? '자동으로 판촉 상자를 지웠어요(제품과 겹친 상자는 그대로)' : '편집본이 나가요') + (ed.ready === false ? ' — 아직 만드는 중이라 잠시 뒤 보여요' : '') + '</p>';
+    var h = '<div class="kie-stage" data-role="kie-stage"><img src="' + esc(showUrl) + '" alt="편집할 사진" referrerpolicy="no-referrer">' + overlay + '</div>';
+    if ((p.boxes || []).length) {
+      h += '<p class="kie-legend"><span class="kie-k is-promo"></span>판촉 <span class="kie-k is-brand"></span>브랜드 로고 <span class="kie-k is-risk"></span>상표 위험 <span class="kie-k is-text"></span>일반 글자' +
+        ' · 글자 상자를 탭해서 고르세요(기본은 번역된 대로)' + (p.subject ? ' · 점선 = 제품 영역' : '') + '</p>';
+    } else {
+      h += '<p class="kie-note" data-role="kie-empty">' + esc(p.why || '이 사진에서 글자를 못 찾았어요 — 지울 것이 없어요') + '</p>';
+    }
+    if (st.confirm) {
+      h += '<p class="kie-confirm" data-role="kie-confirm">빨간 부분만 지워요 — 글자 상자와 둘레 여유(상자 높이의 10%)뿐이에요. 그 밖은 그대로예요.</p>' +
+        '<div class="kie-acts"><button type="button" class="kie-btn is-danger" data-role="kie-go">이대로 지우기(' + ids.length + '곳)</button>' +
+        '<button type="button" class="kie-btn" data-role="kie-cancel">취소</button></div>';
+    } else {
+      h += '<div class="kie-acts">' +
+        '<button type="button" class="kie-btn is-main" data-role="kie-apply"' + (ids.length ? '' : ' disabled') + '>적용(' + ids.length + '곳)</button>' +   // 상자 0개면 비활성
+        (p.need_translate ? '<button type="button" class="kie-btn is-main" data-role="kie-translate"' + (st.polls ? ' disabled' : '') + '>' +
+                            (st.polls ? '번역하는 중…' : '번역하고 글자 상자 받기') + '</button>' : '') +
+        (ed ? '<button type="button" class="kie-btn" data-role="kie-preview">' + (st.preview === 'orig' ? '편집본 보기' : '편집 전 보기') + '</button>' +
+              '<button type="button" class="kie-btn" data-role="kie-revert">되돌리기</button>' : '') + '</div>';
+    }
+    if ((p.boxes || []).length) {
+      var nTxt = ids.filter(function (k) { return st.choice[k].action === 'text'; }).length;   // 글자 고치기 1곳 = 글자 얹기 1번 더
+      var cr = Math.round((+((p.cost || {}).credits) || 0) * 1000 + nTxt) / 1000;
+      h += '<p class="kie-cost" data-role="kie-cost">이 사진 편집 비용 ' + esc(cr) + '크레딧(적용 한 번) · 오늘 ' + esc(p.today) + '/' + esc(p.cap) + '회' + spent + '</p>';
+    }
+    if (p.need_translate) h += '<p class="kie-cost">번역 1장 요금이 들어요 — 번역 결과의 글자 상자로 편집해요.</p>';
+    if (ed) h += '<p class="kie-note" data-role="kie-edited">' + (ed.by === 'auto' ? '자동으로 판촉 상자를 지웠어요' : '편집본이 나가요') + (ed.ready === false ? ' — 아직 만드는 중이라 잠시 뒤 보여요' : '') + '</p>';
     body.innerHTML = h;
   }
   function openSheet(id) {
@@ -77,24 +99,37 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
     sheet.querySelector('[data-role=kie-text-input]').value = (st.choice[id] && st.choice[id].text) || b.tgt || '';
     sheet.hidden = false;
   }
-  function load() {
-    body.textContent = '글자 상자를 찾는 중…';
-    call(base()).then(function (p) {
-      if (!p || !p.ok) { body.textContent = '불러오지 못했어요 — ' + ((p && (p.error || p.why)) || '사유를 받지 못했어요'); return; }
-      st.plan = p; st.choice = {};
+  function load(quiet) {
+    if (!quiet) body.textContent = '글자 상자를 찾는 중…';
+    return call(base()).then(function (p) {
+      if (!p || !p.ok) { body.textContent = '불러오지 못했어요 — ' + ((p && (p.error || p.why)) || '사유를 받지 못했어요'); return p; }
+      st.plan = p; st.choice = {}; st.confirm = false;
       var prev = (p.edit && p.edit.ops) || null;
-      (p.boxes || []).forEach(function (b) {
+      (p.boxes || []).forEach(function (b) {      // 기본은 「번역된 대로 두기」 — 이미 편집한 상자만 그 선택을 다시 보여 준다
         var o = prev ? prev.filter(function (x) { return x.id === b.id; })[0] : null;
-        st.choice[b.id] = o ? {action: o.action, text: o.text || ''} : {action: (b.cls === 'promo' && !prev) ? 'erase' : 'keep'};   // 판촉은 기본 「지우기」
+        st.choice[b.id] = o ? {action: o.action, text: o.text || ''} : {action: 'keep'};
       });
       render();
+      return p;
     });
+  }
+  function poll() {          // 「번역하고 글자 상자 받기」 뒤 — 4초마다, 최대 2분
+    if (!st || !st.polls) return;
+    if (st.polls > 30) { st.polls = 0; render(); return; }
+    st.polls += 1;
+    setTimeout(function () {
+      if (!st || !st.polls || root.hidden) return;
+      load(true).then(function (p) {
+        if (p && p.ok && !p.need_translate) { st.polls = 0; st.changed = true; render(); return; }
+        if (st) { render(); poll(); }
+      });
+    }, 4000);
   }
   root.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
     if (!b || !st) return;
     var role = b.getAttribute('data-role'), act = b.getAttribute('data-act');
-    if (role === 'kie-close') { root.hidden = true; sheet.hidden = true; if (st.changed && st.done) st.done(); return; }
+    if (role === 'kie-close') { root.hidden = true; sheet.hidden = true; st.polls = 0; if (st.changed && st.done) st.done(); return; }
     if (role === 'kie-box') { openSheet(b.getAttribute('data-id')); return; }
     if (act === 'erase' || act === 'keep') { st.choice[st.cur] = {action: act}; sheet.hidden = true; render(); return; }
     if (act === 'text') { sheet.querySelector('[data-role=kie-text]').hidden = false; sheet.querySelector('[data-role=kie-text-input]').focus(); return; }
@@ -103,14 +138,23 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       st.choice[st.cur] = t ? {action: 'text', text: t} : {action: 'erase'};
       sheet.hidden = true; render(); return;
     }
-    if (role === 'kie-promo-all') { (st.plan.boxes || []).forEach(function (x) { if (x.cls === 'promo') st.choice[x.id] = {action: 'erase'}; }); render(); return; }
     if (role === 'kie-preview') { st.preview = st.preview === 'orig' ? '' : 'orig'; render(); return; }
-    if (role === 'kie-apply') {
+    if (role === 'kie-apply') { st.confirm = true; st.preview = ''; render(); return; }       // 한 번 더 — 지울 영역부터 보여 준다
+    if (role === 'kie-cancel') { st.confirm = false; render(); return; }
+    if (role === 'kie-go') {
       var ops = chosen().map(function (id) { return {id: id, action: st.choice[id].action, text: st.choice[id].text || ''}; });
-      b.disabled = true; b.textContent = '적용하는 중…';
+      b.disabled = true; b.textContent = '지우는 중…';
       call(base(), {ops: ops}).then(function (r) {
-        if (!r || !r.ok) { b.disabled = false; b.textContent = '적용'; body.insertAdjacentHTML('beforeend', '<p class="kie-err" data-role="kie-err">' + esc((r && r.error) || '적용하지 못했어요') + '</p>'); return; }
-        st.changed = true; st.preview = ''; st.plan = r.plan || st.plan; render();
+        if (!r || !r.ok) { st.confirm = false; render(); body.insertAdjacentHTML('beforeend', '<p class="kie-err" data-role="kie-err">' + esc((r && r.error) || '적용하지 못했어요') + '</p>'); return; }
+        st.changed = true; st.preview = ''; st.confirm = false; st.plan = r.plan || st.plan; render();
+      });
+      return;
+    }
+    if (role === 'kie-translate') {
+      b.disabled = true; b.textContent = '번역 보내는 중…';
+      call(base() + '/translate', {}).then(function (r) {
+        if (!r || !r.ok) { render(); body.insertAdjacentHTML('beforeend', '<p class="kie-err" data-role="kie-err">' + esc((r && r.error) || '번역을 보내지 못했어요') + '</p>'); return; }
+        st.polls = 1; render(); poll();
       });
       return;
     }
@@ -121,7 +165,7 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
   });
   return {
     open: function (itemId, kind, idx, done) {
-      st = {itemId: itemId, kind: kind || 'gallery', idx: +idx, plan: null, choice: {}, done: done, preview: '', changed: false};
+      st = {itemId: itemId, kind: kind || 'gallery', idx: +idx, plan: null, choice: {}, done: done, preview: '', changed: false, confirm: false, polls: 0};
       root.hidden = false; sheet.hidden = true; load();
     }
   };

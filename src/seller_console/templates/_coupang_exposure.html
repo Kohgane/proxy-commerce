@@ -94,7 +94,10 @@
         '<p class="cpx-out-why">' + esc(s.reason) + '</p>' +
         '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button></figure>';
     }).join('');
-    body.innerHTML = fail + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
+    // Y11-B: 예전 색 덩어리 검출로 지운 편집본(제품 일부가 지워짐)을 되돌렸으면 한 줄로 알린다
+    var rev = (d.edit_reverted || []).length ? '<p class="cpx-cap" data-role="cpx-edit-reverted">예전 자동 검출로 지웠던 사진 ' +
+      d.edit_reverted.map(function (r) { return (r.idx + 1) + '번'; }).join(', ') + '을 번역본으로 되돌렸어요(제품이 함께 지워졌어요).</p>' : '';
+    body.innerHTML = rev + fail + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
       '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>' +
       (out ? '<div class="cpx-slabel" data-role="cpx-out-label">등록에서 빠진 사진 — 판촉 글자를 지우면 다시 들어가요</div><div class="cpx-strip" data-role="cpx-out">' + out + '</div>' : '');
   }
