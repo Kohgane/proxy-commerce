@@ -4100,6 +4100,22 @@ def collect_image_polish(item_id):
     return jsonify({"ok": True, "running": line.startswith("번역 다듬기 중"), "line": line})
 
 
+@bp.get("/collect/<item_id>/detail-plan")
+def collect_detail_plan(item_id):
+    """Y11-L: 상세 사진 판정표 다시 읽기 — 상세 타일에서 사진 편집을 닫은 뒤 표를 새로 그린다(편집본·제외 해제 반영)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from src.services import image_translate_store as _its
+    return jsonify({"ok": True, "plan": _its.effective_plan(ex, kind="detail", item_id=str(item.get("id") or item_id))})
+
+
 @bp.post("/collect/<item_id>/rep-image")
 def collect_rep_image(item_id):
     """Y7: 「이 장을 대표로」 — 원본 주소로 적는다(`rep_image`). 원본 배열·번역본 idx·CDN 표는 건드리지 않는다."""

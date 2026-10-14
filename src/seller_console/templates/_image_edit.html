@@ -208,6 +208,8 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
   return {
     open: function (itemId, kind, idx, done) {
       st = {itemId: itemId, kind: kind || 'gallery', idx: +idx, plan: null, choice: {}, done: done, changed: false, confirm: false, polls: 0, showProp: false};
+      // Y11-L: 편집기는 「쿠팡 노출」 탭 안에 그려져 있다 — 다른 탭(상세페이지 타일)에서 열면 부모가 숨어 안 보였다. 처음 열 때 body로 옮긴다.
+      if (root.parentNode !== document.body) document.body.appendChild(root);
       root.hidden = false; sheet.hidden = true;
       load().then(function (p) { if (p && p.ok && (p.versions || []).some(function (v) { return v.ready === false; })) waitReady(0); });
     }

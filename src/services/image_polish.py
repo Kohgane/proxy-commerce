@@ -29,6 +29,8 @@ DEFAULT_CAP = 400
 BATCH = 10
 POLISH_BY = "polish"
 POLISH_LABEL = "번역본(다듬음)"
+#: 다듬기 프롬프트 판 — 바뀌면 옛 캐시 답은 지금 검사를 통과할 때만 다시 쓴다(Y11-L).
+PROMPT_VER = "y11l-1"
 _KST = timezone(timedelta(hours=9))
 _GLOSSARY_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploaders", "image_glossary.json")
 #: 다듬기 결과에서 버리는 과장(Y10 금지어 ban_ko에 더해 — 오너 반례 「최고·1위·100%」)
@@ -199,8 +201,7 @@ def check(src: str, tgt: str, ko: str, rule: Optional[Dict] = None) -> str:
     tm = _new_trademark(ko, before)
     if tm:
         return f"없던 상표 이름({tm})"
-    if len(ko) > max(2 * len(tgt or ""), len(tgt or "") + 12):
-        return "너무 길어 상자에 안 들어감"
+    # 길이는 여기서 안 본다 — 상자 폭·두 줄 기준으로 polish_entry가 잰다(Y11-L 「길어서 유지」)
     return ""
 
 
@@ -249,7 +250,7 @@ def _parse(text: str) -> Dict[str, str]:
     return out
 
 
-def polish_boxes(boxes: List[Dict], ctx: Dict) -> Dict:
+def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> Dict:
     """상자들 → `{rows:[{id, src, tgt, glossary, ko, from, why}], calls, ai_why}`.
     `from` = polish(AI 다듬음 채택) · glossary(용어집만) · tencent(그대로). AI가 없거나 상한이면 용어집만."""
     from src.ai import llm
@@ -260,15 +261,35 @@ def polish_boxes(boxes: List[Dict], ctx: Dict) -> Dict:
         g = apply_glossary(src, tgt, terms)
         rows.append({"id": b["id"], "src": src, "tgt": tgt, "glossary": g, "ko": g,
                      "from": "glossary" if g != tgt else "tencent", "why": "", "han_left": han_left(tgt)})
-    calls, ai_why = 0, ""
+    calls, ai_why, cached = 0, "", 0
     if not rows:
-        return {"rows": rows, "calls": 0, "ai_why": ""}
+        return {"rows": rows, "calls": 0, "ai_why": "", "cached": 0}
+    # Y11-L(오너): 상자별 {원문, 텐센트 한국어} → 다듬은 한국어 캐시 — 렌더만 다시 할 때 AI를 다시 부르지 않는다.
+    #   캐시 값도 지금 규칙(품목 금지 표현·한자·금지어…)으로 다시 검사하고, 통과한 것만 쓴다(통과 못 하면 그 상자만 다시 묻는다).
+    #   같은 프롬프트 판(PROMPT_VER)의 답은 버린 것까지 그대로 쓴다(다시 물어도 같은 규칙) — 옛 판 답은 지금 검사를 통과할 때만.
+    for r in rows:
+        hit = (cache or {}).get((r["src"], r["tgt"]))
+        if not isinstance(hit, dict) or not isinstance(hit.get("ai"), str):
+            continue
+        ko = hit["ai"]
+        why = check(r["src"], r["glossary"], ko, ctx.get("rule"))
+        if why and hit.get("pv") != PROMPT_VER:
+            continue                                             # 옛 판 답이 지금 규칙에 걸림 — 이 상자만 다시 묻는다
+        r["ai"], r["cached"] = ko, True
+        cached += 1
+        if why:
+            r["why"] = why
+        elif ko != r["glossary"]:
+            r["ko"], r["from"] = ko, "polish"
+    todo = [r for r in rows if not r.get("cached")]
+    if not todo:
+        return {"rows": rows, "calls": 0, "ai_why": "", "cached": cached}
     if not llm.anthropic_ready():
         ai_why = "AI 다듬기 못 씀(Claude 미연결) — 용어집만 적용"
-        return {"rows": rows, "calls": 0, "ai_why": ai_why}
+        return {"rows": rows, "calls": 0, "ai_why": ai_why, "cached": cached}
     from src.db import image_translate_queue_pg as q
-    for i in range(0, len(rows), BATCH):
-        chunk = rows[i:i + BATCH]
+    for i in range(0, len(todo), BATCH):
+        chunk = todo[i:i + BATCH]
         took, n = q.take_start(_day_key(), daily_cap())
         if not took:
             ai_why = f"오늘 다듬기 상한({daily_cap()}회)을 다 써서 용어집만 적용"
@@ -291,7 +312,7 @@ def polish_boxes(boxes: List[Dict], ctx: Dict) -> Dict:
                 continue
             if ko != r["glossary"]:
                 r["ko"], r["from"] = ko, "polish"
-    return {"rows": rows, "calls": calls, "ai_why": ai_why}
+    return {"rows": rows, "calls": calls, "ai_why": ai_why, "cached": cached}
 
 
 def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
@@ -315,21 +336,35 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
            "category": str(extra.get("coupang_category_name") or extra.get("naver_category_name")
                            or extra.get("category") or "")[:60],
            "rule": category_rule(extra), "materials": materials(extra)}
-    pr = polish_boxes(boxes, ctx)
-    ops = []
+    prev_pl = e.get("polish") or {}
+    cache = {}
+    for r in prev_pl.get("rows") or []:
+        # AI가 실제로 답한 상자만(ai 비었는데 polish = 「지움」 답 · ai 비었는데 tencent = 답 없음)
+        if isinstance(r, dict) and isinstance(r.get("ai"), str) and (r["ai"] or r.get("from") == "polish"):
+            cache[(str(r.get("src") or ""), str(r.get("tgt") or ""))] = {"ai": r["ai"], "pv": prev_pl.get("pv") or ""}
+    pr = polish_boxes(boxes, ctx, cache=cache)
+    by_id = {b["id"]: b for b in boxes}
+    ops, too_long = [], 0
     for r in pr["rows"]:
         if r["ko"] == r["tgt"]:
             continue
+        if r["ko"] and not IE.text_fit(r["ko"], by_id.get(r["id"]) or {})["fits"]:
+            r["why"] = "길어서 유지(상자에 안 들어감)"               # Y11-L 반례: 두 줄로도 안 들어가면 텐센트 글자 그대로
+            r["ko"], r["from"] = r["tgt"], "tencent"
+            too_long += 1
+            continue
         ops.append({"id": r["id"], "action": "erase"} if r["ko"] == "" else {"id": r["id"], "action": "text", "text": r["ko"]})
     out = {"ok": True, "changed": len(ops), "rows": pr["rows"], "calls": pr["calls"], "why": pr["ai_why"],
+           "cached": int(pr.get("cached") or 0), "too_long": too_long,
            "han_left": sum(1 for r in pr["rows"] if r.get("han_left"))}
     e = IE._entry(extra, kind, idx, create=True)
     han_n = sum(1 for r in pr["rows"] if r.get("han_left"))
     han_fixed = sum(1 for r in pr["rows"] if r.get("han_left") and r["from"] == "polish")
     e["polish"] = {"at": datetime.now(timezone.utc).isoformat(), "calls": pr["calls"], "changed": len(ops),
-                   "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why", "han_left")}
+                   "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why", "han_left", "cached")}
                             for r in pr["rows"]][:40],
                    "han_left": han_n, "han_fixed": han_fixed, "rule": (ctx["rule"] or {}).get("key", ""),
+                   "cached": int(pr.get("cached") or 0), "too_long": too_long, "pv": PROMPT_VER,
                    "why": pr["ai_why"]}
     if not ops:
         return out
@@ -460,7 +495,11 @@ def item_line(item_id: str, extra: dict) -> str:
     calls = sum(int(pl.get("calls") or 0) for _n, pl in rows)
     dropped = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("why"))
     whys = sorted({str(pl.get("why")) for _n, pl in rows if pl.get("why")})
-    s = f"번역 다듬기 {len(rows)}장: 바뀐 상자 {changed} · AI {calls}회"
+    cached = sum(int(pl.get("cached") or 0) for _n, pl in rows)
+    too_long = sum(int(pl.get("too_long") or 0) for _n, pl in rows)
+    s = f"번역 다듬기 {len(rows)}장: 바뀐 상자 {changed} · AI {calls}회" + (f"(캐시 {cached}상자)" if cached else "")
+    if too_long:
+        s += f" · 길어서 유지 {too_long}"
     han_fixed = sum(int(pl.get("han_fixed") or 0) for _n, pl in rows)
     han_n = sum(int(pl.get("han_left") or 0) for _n, pl in rows)
     if han_n:

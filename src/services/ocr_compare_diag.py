@@ -205,6 +205,7 @@ def run(item_id: str, detail_idx: Optional[List[int]] = None) -> Dict:
         details = [u for u in ex.get("detail_images") or [] if u]
         targets = [("detail", i, details[i] if 0 <= i < len(details) else "") for i in detail_idx]
     for kind, i, url in targets:
+        url = dip.fix_url(url) if url else url                 # Y11-L: 「//img…」 같은 주소(번역 경로는 고쳐서 받는다 — 진단도 같게)
         page = {"kind": kind, "idx": i, "no": i + 1, "url": url}
         raw, why = tc.fetch_image(url) if url else (b"", "주소 없음")
         if raw:
@@ -326,7 +327,7 @@ def census(limit: int = 300) -> Dict:
     by_item: Dict[str, Dict[str, int]] = {}
     hits = []
     for iid, kind, i, url in pages:
-        raw, _why = tc.fetch_image(url)
+        raw, _why = tc.fetch_image(dip.fix_url(url))
         data = dip.prepare_for_tencent(raw)[0] if raw else None
         if not data:
             cnt["fetch_fail"] += 1

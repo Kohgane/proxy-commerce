@@ -2413,3 +2413,6 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kgp-id-line code { overflow-wrap: anywhere; word-break: break-all; }
 .ch-id-col .ch-id-full { overflow-wrap: anywhere; word-break: break-all; }
 .ch-id-col summary { cursor: pointer; }
+/* Y11-L: 상세 타일 「사진 편집」 — 갤러리 타일과 같은 진입 */
+.kgp-dcell-edit { margin: 0 var(--space-1) var(--space-1); min-height: 32px; }
+.kgp-dcell-img[role=button] { cursor: pointer; }
