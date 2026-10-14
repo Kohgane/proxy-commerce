@@ -166,19 +166,26 @@ def test_1_stored_d3_results_are_requeued_for_tencent(monkeypatch):
     n = A.enqueue_after_enrich("u", "4ebaf1b8", "https://detail.tmall.com/item.htm?id=1", ex)
     jobs = [(r["kind"], r["idx"]) for r in q._MEM_Q if r["item_id"] == "4ebaf1b8"]
     detail = sorted(i + 1 for k, i in jobs if k == "detail")
-    # 텐센트로 다시 가는 상세 = 6장: 옛 D3 번역본(글자만 지움) 8·17·21·24 + 실패 1(내려받기)·19(입력 무효)
-    #   안 보냄: 아이콘·스페이서(2·28) · 판촉·스토어 배너로 읽힌 장(5·7·10·11·12·18) · 「그릴 줄 없음」 14장(글자 없는 사진 — 다시 보내도 같은 답)
-    assert detail == [1, 8, 17, 19, 21, 24]
-    assert n == 6 + 5
+    # Y11-C(오너 2026-10-14): 판촉·스토어 배너로 읽힌 장(5·7·10·11·12·18)과 옛 D3 「그릴 줄 없음」도 **보낸다**(번역 → 상자 → 편집 대상,
+    #   등록 제외는 편집 뒤 Y10 결정). 빼는 건 아이콘·스페이서(2·28)·중복뿐 — 그래서 상세 26장.
+    assert detail == [i for i in range(1, 29) if i not in (2, 28)]
+    assert {5, 7, 10, 11, 12, 18} <= set(detail)
+    assert n == len(detail) + 5
     q.reset_for_tests()
 
 
-def test_3_old_d3_no_text_record_is_original_not_failure():
-    """옛 D3 기록 「그릴 줄이 없습니다(원본 그대로)」는 실패가 아니다 — 글자 없는 사진, 원본으로 쓴다(카드·등록 모두)."""
+def test_3_old_d3_no_draw_record_is_a_translation_failure_not_no_text():
+    """Y11-C(오너 2026-10-14): 「글자 없는 사진」은 텐센트 PictureWithoutText일 때만. 옛 D3 「그릴 줄이 없습니다」는 글자가 있어도
+    났다(VRSUK 상세 4번 쿠폰 — 다시 보내니 상자 34개) → 「번역 실패 — 원본으로」(등록은 원본 사진으로, 막지 않음)."""
     from src.services import detail_image_plan as P
-    rows = {r["no"]: r for r in P.table(_ex())}
-    assert rows[3]["use"] == "original" and rows[3]["reason"] == "글자 없는 사진 — 원본 그대로"
-    assert [r["no"] for r in rows.values() if r["use"] == "failed"] == [1, 19]     # 진짜 실패만
+    ex = _ex()
+    rows = {r["no"]: r for r in P.table(ex)}
+    assert rows[3]["use"] == "failed" and "그릴 줄이 없습니다" in rows[3]["reason"] and "글자 없는 사진" not in rows[3]["reason"]
+    pwt = {"idx": 2, "status": "failed", "error_code": "UnsupportedOperation.PictureWithoutText", "error_message": "翻译失败，输入为无文本图片。"}
+    assert P.verdict(pwt, "https://img.alicdn.com/x.jpg") == {"use": "original", "reason": "글자 없는 사진 — 원본 그대로",
+                                                               "section": P.verdict(pwt, "https://img.alicdn.com/x.jpg")["section"]}
+    ocr = {"status": "skipped", "reason": "글자 없는 사진(OCR 판정 — 한자 0) — 원본 그대로 · 읽은 글자 「VRSUK」"}
+    assert P.verdict(ocr, "https://img.alicdn.com/x.jpg")["reason"].startswith("중국어 글자 없음(OCR 판정")   # 옛 문구도 바로잡아 보여 준다
 
 
 def test_4_include_anyway_queues_that_detail_page(monkeypatch):
@@ -202,7 +209,7 @@ def test_4_include_anyway_queues_that_detail_page(monkeypatch):
     d = c.post(f"/seller/collect/{iid}/image-promo", json={"kind": "detail", "idx": 4, "include": True}).get_json()
     assert d["ok"] and d["queued"] >= 1
     sent = sorted(i + 1 for r in q._MEM_Q if r["item_id"] == iid for i in [r["idx"]] if r["kind"] == "detail")
-    assert 5 in sent and not ({7, 10, 11, 12, 18} & set(sent))                    # 켠 5번만 — 다른 배너는 여전히 안 보냄
+    assert 5 in sent                                                            # 켠 5번이 번역 줄에 있다(Y11-C부터 다른 배너도 번역은 보낸다)
     q.reset_for_tests()
 
 

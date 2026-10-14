@@ -114,6 +114,15 @@ def entry_text(e: dict) -> str:
         return t
 
 
+def honest_skip_reason(e: dict) -> str:
+    """건너뛴 장의 사유 — 「글자 없는 사진」은 PictureWithoutText일 때만(Y11-C). 예전 OCR 「한자 0」 기록은 저장된 문구가
+    「글자 없는 사진(OCR 판정 …)」이라 보여 줄 때 바로잡는다(글자는 있었다 — 중국어가 아니었을 뿐)."""
+    r = str((e or {}).get("reason") or "")
+    if r.startswith("글자 없는 사진(OCR 판정"):
+        return "중국어 글자 없음" + r[len("글자 없는 사진"):]
+    return r or "원본 그대로"
+
+
 def verdict(e: dict, orig_url: str) -> Dict[str, str]:
     """한 장 — `{use: translated|original|excluded|pending|failed, reason, section}`. 「그래도 넣기」면 제외를 무른다."""
     e = e or {}
@@ -127,10 +136,10 @@ def verdict(e: dict, orig_url: str) -> Dict[str, str]:
     if st == "done" and e.get("url") and e.get("use", True):
         return {"use": "translated", "reason": "한국어 번역" + (" · 그래도 넣기" if why else ""), "section": sec}
     if st == "skipped":
-        return {"use": "original", "reason": str(e.get("reason") or "글자 없는 사진 — 원본 그대로"), "section": sec}
-    # 옛 D3 기록: 실패로 적혔지만 사유가 「그릴 줄 없음(글자 없는 사진)」 — 실패가 아니라 원본 그대로 쓰는 장(Y9 ③)
+        return {"use": "original", "reason": honest_skip_reason(e), "section": sec}
+    # Y11-C(오너 2026-10-14): 「글자 없는 사진」은 텐센트 PictureWithoutText일 때만 — 옛 D3 「그릴 줄 없음」·Data 오류는 「번역 실패」로
     from src.db.image_translate_queue_pg import is_no_text
-    if st in ("failed", "error") and is_no_text(str(e.get("error_message") or e.get("reason") or "")):
+    if st in ("failed", "error") and is_no_text(" ".join(str(e.get(k) or "") for k in ("error_code", "error_message", "reason"))):
         return {"use": "original", "reason": "글자 없는 사진 — 원본 그대로", "section": sec}
     if st in ("queued", "running", ""):
         return {"use": "pending" if st else "original", "reason": "번역 대기" if st else "아직 번역 안 함 — 원본", "section": sec}

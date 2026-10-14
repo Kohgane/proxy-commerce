@@ -34,6 +34,7 @@ def auto(monkeypatch):
 
     def _tc(url="", **k):
         calls["tc"] += 1
+        tc._count_call()            # Y11-C: 「오늘 n」은 진짜 `translate_image`가 공급사에 보낼 때 센다 — 가짜도 보낸 셈이니 같이 센다
         if url in calls["fail_urls"]:
             return {"ok": False, "vendor": "tencent", "error_class": "TencentCloudSDKException",
                     "error_message": "FailedOperation.RequestTimeout", "ms": 5}

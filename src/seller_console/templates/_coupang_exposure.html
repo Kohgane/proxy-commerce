@@ -85,7 +85,7 @@
       '<span class="pc-badge pc-badge-danger">이미지 번역 실패: ' + esc(f.raw || f.label) + '</span> ' + esc(f.label) +
       ' — 원본 사진으로 나가요(등록은 막지 않아요). ' +
       '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' +
-      (f.cap ? ' <span data-role="cpx-imgko-cap">오늘 ' + esc(f.today) + '/' + esc(f.cap) + '장 사용</span>' : '') + '</p>' : '';
+      (f.cap ? ' <span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(f.today) + '/' + esc(f.cap) + '장</span>' : '') + '</p>' : '';
     // Y11: 등록에서 빠진 사진(판촉 의심·위험) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     var out = (d.left_out || []).map(function (s) {
       return '<figure class="cpx-tile is-out" data-role="cpx-out-tile" data-idx="' + s.idx + '">' +
@@ -138,6 +138,8 @@
     } else if (role === 'cpx-imgko-retry') {
       b.disabled = true; b.textContent = '다시 넣는 중…';
       call(base + '/image-translate/retry', {}).then(function (t) {
+        var capEl = body.querySelector('[data-role=cpx-imgko-cap]');
+        if (capEl && t && t.message) capEl.remove();          // Y11-C: 응답 줄이 「오늘 텐센트 호출 n/상한」을 이미 말한다(두 번 쓰지 않는다)
         b.insertAdjacentHTML('afterend', ' <span data-role="cpx-imgko-msg">' + esc((t && (t.message || t.error)) || '응답이 없어요') + '</span>');
         b.textContent = '다시 번역'; b.disabled = false;
       });

@@ -326,6 +326,7 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
         except Exception:                                    # noqa: BLE001
             pass
 
+    called = [False]
     try:
         from tencentcloud.tmt.v20180321 import models
         req = models.ImageTranslateLLMRequest()
@@ -362,6 +363,7 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                 out["ms"] = int((time.perf_counter() - t0) * 1000)
                 return out
             _wait_turn()
+            called[0] = True                                  # Y11-C: 공급사에 실제로 보냈다(성공·글자 없음·거절 모두 1회)
             try:
                 resp = cli.ImageTranslateLLM(req)
             except Exception as first:
@@ -420,9 +422,22 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
         })
         logger.warning("[이미지번역] 실패 %s code=%s", type(exc).__name__, code or "-")
 
+    if called[0]:
+        out["today"] = _count_call()
     out["ms"] = int((time.perf_counter() - t0) * 1000)
     _remember(out)
     return out
+
+
+def _count_call():
+    """Y11-C(오너 2026-10-14): 「오늘 n/상한」 = 텐센트에 **실제로 보낸** 수. `PictureWithoutText`도 과금이라 1회로 센다.
+    큐·갤러리 「번역」·편집기 「번역하고 글자 상자 받기」·관리자 진단이 모두 이 한 곳을 지난다. 못 세면 None(번역은 그대로)."""
+    try:
+        from src.services import image_translate_auto as _ita
+        return _ita._q().take_start(_ita._day_key(), 10 ** 9)[1]
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[이미지번역] 오늘 호출 수 기록 실패: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------

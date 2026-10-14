@@ -48,6 +48,12 @@ def test_no_text_result_is_skipped_not_failed(mem_queue, monkeypatch):
     monkeypatch.setattr(A, "translate_page", lambda *a, **k: {"idx": 0, "kind": "gallery", "status": "failed",
                                                               "error_message": "그릴 줄이 없습니다(원본 그대로)"})
     st, why = A._translate_job({"item_id": iid, "kind": "gallery", "idx": 0, "user_id": "u-y4"})
+    # 큐는 멈추지 않는다(Y4) — 다만 Y11-C(오너 2026-10-14): 옛 D3 「그릴 줄 없음」을 「글자 없는 사진」이라 부르지 않는다(PWT만)
+    assert st == "skipped" and "원본 그대로" in why and "글자 없는 사진" not in why
+    monkeypatch.setattr(A, "translate_page", lambda *a, **k: {"idx": 0, "kind": "gallery", "status": "failed",
+                                                              "error_code": "UnsupportedOperation.PictureWithoutText",
+                                                              "error_message": "翻译失败，输入为无文本图片。"})
+    st, why = A._translate_job({"item_id": iid, "kind": "gallery", "idx": 0, "user_id": "u-y4"})
     assert st == "skipped" and why.startswith("글자 없는 사진 — 원본 그대로")
 
 
