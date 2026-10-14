@@ -3889,13 +3889,16 @@ def coupang_exposure_data(item: dict) -> dict:
                                           or [(p["idx"], p) for p in plan.values()], originals, ex)]
     from src.services.image_translate_auto import per_item_cap as _cap
     _gal_cap = _cap("gallery")
+    _upside = {int(e.get("idx", -1)): True for e in (ex.get("images_ko") or []) if isinstance(e, dict) and e.get("upside_down")}
     _edits = {int(e.get("idx", -1)): e.get("edit") for e in (ex.get("images_ko") or [])
               if isinstance(e, dict) and isinstance(e.get("edit"), dict) and e.get("url") == e["edit"].get("url")}
     strip = [{"idx": i, "url": eff[n] if n < len(eff) else plan[i]["url"], "original": plan[i]["original"],
               "source": plan[i]["source"], "translatable": plan[i]["translatable"], "use": plan[i]["use"],
               "rep": n == 0, "edited": (_edits.get(i) or {}).get("by") or "",
               # Y11-C2(오너 2026-10-14): 건당 상한(갤러리 6)을 넘은 장 — 번역을 보내지 않는다(원본). 편집은 OCR 상자로 된다.
-              "capped": i >= _gal_cap and plan[i]["source"] != "translated" and not _edits.get(i)} for n, i in enumerate(order)]
+              "capped": i >= _gal_cap and plan[i]["source"] != "translated" and not _edits.get(i),
+              # Y11-H: 텐센트가 거꾸로 번역해 원본으로 둔 장 — 「글자 고치기」 대상
+              "fix_text": bool(_upside.get(i)) and plan[i]["source"] != "translated" and not _edits.get(i)} for n, i in enumerate(order)]
     # Y11: 등록에서 빠진 갤러리 사진(판촉 의심·위험 제외) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     _risk_x = {int(e.get("idx", -1)) for e in (ex.get("images_ko") or []) if isinstance(e, dict) and e.get("risk_exclude")}
     left_out = [{"idx": i, "original": plan[i]["original"], "url": plan[i]["url"],

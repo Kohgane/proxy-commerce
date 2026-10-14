@@ -362,7 +362,7 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
         if ok_frame and img == url:
             return {"ok": True, "boxes": e["boxes"], "size": e["box_size"], "source": e.get("boxes_source") or "translate",
                     "why": "" if e["boxes"] else NO_TEXT_WHY, "version": key, "frame": e.get("box_frame")}
-    if key == V_ORIGINAL and not capped and not translated_url(e):
+    if key == V_ORIGINAL and not capped and not translated_url(e) and not e.get("upside_down"):
         # 번역이 먼저(Y11-B) — 번역 전 장은 「번역해서 글자 상자 받기」. (상한을 넘은 장·번역본이 있는데 원본을 고른 장은 OCR)
         return {"ok": False, "boxes": [], "size": [0, 0], "need_translate": True, "version": key,
                 "why": "아직 이 사진을 번역하지 않았어요 — 번역하면 글자 상자를 받아요(번역이 먼저예요)"}
@@ -377,7 +377,7 @@ def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
         why = got.get("why") or "글자 상자를 읽지 못했어요"
         if capped:
             return {"ok": False, "why": CAPPED_LABEL + " · " + why, "boxes": [], "size": [0, 0], "capped": True, "version": key}
-        if key != V_TRANSLATED and (key.startswith("edit:") or translated_url(e)):
+        if key != V_TRANSLATED and (key.startswith("edit:") or translated_url(e) or e.get("upside_down")):
             # 편집본·(번역본이 있는) 수집 원본 — 번역을 다시 보낼 일이 아니다. 번역본을 고르면 그 상자를 쓴다.
             tail = " · 「번역본」을 고르면 번역 결과의 글자 상자를 써요" if translated_url(e) else ""
             what = "이 편집본" if key.startswith("edit:") else "수집 원본"
@@ -481,7 +481,11 @@ def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, re
     if not boxes and prop_boxes and not bx.get("why"):
         why = "소품 글자만 있어요(책등·표지 등) — 지울 글자가 없어요"
     capped = bool(bx.get("capped")) or (int(idx) >= _cap_of(kind) and not translated_url(e))
+    # Y11-H: 거꾸로 번역돼 원본으로 둔 장 — 「글자 고치기」 대상(머리글 상자를 탭해 한국어를 넣는다)
+    fix_note = ("텐센트가 이 사진을 거꾸로 번역해 원본이 나가요 — 머리글 상자를 탭해 「글자 고치기」로 한국어를 넣어 주세요"
+                if (e.get("upside_down") and cur == V_ORIGINAL) else "")
     return {"ok": True, "why": why, "need_translate": bool(bx.get("need_translate")), "source": bx.get("source", ""),
+            "fix_text": bool(fix_note), "fix_note": fix_note,
             "capped": capped, "capped_label": CAPPED_LABEL if capped else "",
             "url": url, "size": [W, H], "real": [int(real[0] or 0), int(real[1] or 0)], "boxes": boxes, "prop_boxes": prop_boxes,
             "versions": versions(extra, kind, idx), "current": cur, "edit": ed,

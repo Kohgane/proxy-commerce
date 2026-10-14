@@ -76,7 +76,8 @@
         '<figcaption>' + (s.rep ? '<span class="cpx-badge" data-role="cpx-rep-badge">대표</span>' : '<span class="cpx-n">' + (n + 1) + '</span>') +
         (s.edited ? '<span class="cpx-src" data-role="cpx-edited">' + (s.edited === 'auto' ? '자동 편집' : '편집본') + '</span>'
                   : (s.source === 'translated' ? '<span class="cpx-src">번역본</span>'
-                     : (s.capped ? '<span class="cpx-src" data-role="cpx-capped">상한 — 번역 안 됨(원본)</span>' : ''))) + '</figcaption>' +
+                     : (s.capped ? '<span class="cpx-src" data-role="cpx-capped">상한 — 번역 안 됨(원본)</span>'
+                     : (s.fix_text ? '<span class="cpx-src" data-role="cpx-fixtext">거꾸로 번역 — 글자 고치기</span>' : '')))) + '</figcaption>' +
         '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button>' +
         (s.rep ? '' : '<button type="button" class="cpx-act" data-role="cpx-rep" data-idx="' + s.idx + '">이 장을 대표로</button>') +
         (s.translatable ? '<button type="button" class="cpx-act" data-role="cpx-use" data-idx="' + s.idx + '" data-use="' + (s.use ? '0' : '1') + '">' +

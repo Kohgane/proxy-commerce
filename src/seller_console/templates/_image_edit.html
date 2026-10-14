@@ -71,6 +71,7 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
         (on ? ' aria-pressed="true"' : ' aria-pressed="false"') + ((st.confirm || wait) ? ' disabled' : '') + '>' +
         esc(v.label) + (wait ? ' · 만드는 중…' : '') + '</button>';
     }).join('') + '</div>';
+    if (p.fix_note) h += '<p class="kie-confirm" data-role="kie-fixnote">' + esc(p.fix_note) + '</p>';   // Y11-H: 거꾸로 번역 → 글자 고치기
     h += '<div class="kie-stage" data-role="kie-stage"><img src="' + esc(showUrl) + '" alt="편집할 사진" referrerpolicy="no-referrer">' + overlay + '</div>';
     if ((p.boxes || []).length) {
       h += '<p class="kie-legend"><span class="kie-k is-promo"></span>판촉 <span class="kie-k is-brand"></span>브랜드 로고 <span class="kie-k is-risk"></span>상표 위험 <span class="kie-k is-text"></span>일반 글자' +

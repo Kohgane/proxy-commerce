@@ -99,9 +99,13 @@ def accept(item_id: str, seller_id: str, indices, *, seller_ids=None) -> dict:
         if not (0 <= i < len(images)):
             skipped.append({"idx": i, "reason": "그런 장이 없습니다"})
             continue
-        if istore.has_boxes(next((e for e in (extra.get("images_ko") or [])
-                                  if isinstance(e, dict) and int(e.get("idx", -1)) == i), None)):
+        cur = next((e for e in (extra.get("images_ko") or []) if isinstance(e, dict) and int(e.get("idx", -1)) == i), None)
+        if istore.has_boxes(cur):
             skipped.append({"idx": i, "reason": istore.PROTECTED_REASON})   # Y11-F: 상자 있는 번역본은 다시 안 보낸다
+            continue
+        if (cur or {}).get("upside_down"):
+            from src.services.image_translate_auto import UPSIDE_REASON
+            skipped.append({"idx": i, "reason": UPSIDE_REASON})             # Y11-H: 또 보내도 거꾸로(과금만)
             continue
         queued.append(i)
         entries.append({"idx": i, "status": "queued", "at": _now(),
