@@ -79,6 +79,11 @@ def draft_url(product_data: Dict[str, Any]) -> str:
     """
     d = product_data if isinstance(product_data, dict) else {}
     cands = [str(d.get(k) or "").strip() for k in DRAFT_URL_KEYS]
+    try:                                       # Y11-D: 광고 클릭 링크(click.simba)는 정규 주소로 — 등록·「주소 후보」가 같은 값
+        from src.collectors.product_key import canonical_source_url
+        cands = [canonical_source_url(c) for c in cands]
+    except Exception:                          # noqa: BLE001
+        pass
     cands = [c for c in cands if c]
     if not cands:
         return ""
@@ -346,8 +351,9 @@ def payload_diagnosis(product_data: Dict[str, Any],
     built = build_dispatch_payload(product_data, item)
 
     cands = []
+    from src.collectors.product_key import canonical_source_url
     for key in DRAFT_URL_KEYS:
-        val = str((product_data or {}).get(key) or "").strip()
+        val = canonical_source_url(str((product_data or {}).get(key) or "").strip())
         if val:
             cands.append({"source": f"페이로드 · {key}", "url": val,
                           "sku": vendor_sku(val), "used": False})
@@ -355,6 +361,17 @@ def payload_diagnosis(product_data: Dict[str, Any],
     if row_url:
         cands.append({"source": "수집 이력 행 · url 컬럼(「원본 보기」가 여는 값)",
                       "url": row_url, "sku": vendor_sku(row_url), "used": False})
+    # Y11-D: 광고 클릭 링크에서 바꾼 행이면 원래 링크도 보여 준다(쓰지 않음 — 과금 클릭)
+    _raw = str((product_data or {}).get("raw_url") or (item or {}).get("raw_url") or "").strip()
+    if not _raw and item:
+        try:
+            import json as _json
+            _raw = str((_json.loads((item or {}).get("extra_json") or "{}") or {}).get("raw_url") or "").strip()
+        except Exception:                      # noqa: BLE001
+            _raw = ""
+    if _raw:
+        cands.append({"source": "수집 이력 행 · raw_url(원래 광고 클릭 링크 — 쓰지 않음)", "url": _raw[:200],
+                      "sku": "", "used": False})
     # extra_json의 나머지 이름들도 **보여 준다** — 「왜 이건 안 쓰나」가 화면에서 풀린다.
     for key in ("share_raw", "share_tk", "site_item_id", "short_name"):
         val = str((product_data or {}).get(key) or "").strip()
@@ -400,6 +417,13 @@ def render_detail_blocks_html(detail_blocks: Any, market: str) -> str:
         blocks = detail_blocks.get("common")
     if not isinstance(blocks, list):
         return ""
+    out = _render_block_list(blocks)
+    if not out and blocks is not detail_blocks.get("common") and isinstance(detail_blocks.get("common"), list):
+        out = _render_block_list(detail_blocks.get("common"))   # Y11-D: 마켓 칸이 빈 블록뿐이면 공통으로(빈 <img> 0)
+    return out
+
+
+def _render_block_list(blocks: list) -> str:
     parts: List[str] = []
     for b in blocks:
         if not isinstance(b, dict):

@@ -106,7 +106,7 @@ def _product_key(url: str):
 
 def append(*, source: str, url: str, title: str, image: str = "", price: str = "",
            currency: str = "", status: str = "ok", preview_url: str = "",
-           extra: dict = None, seller_id: str = "", return_durable: bool = False):
+           extra: dict = None, seller_id: str = "", return_durable: bool = False, raw_url: str = ""):
     """수집 1건 추가(트랜잭션 커밋 후에만 성공=durable). product_key 유니크로 중복 방지."""
     pkey = _product_key(url)
     domain = urlparse(url).netloc
@@ -116,14 +116,14 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
         if pkey:
             cur.execute(
                 """INSERT INTO collect_history
-                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
                    ON CONFLICT (user_id, product_key)
                      WHERE product_key IS NOT NULL AND product_key <> '' AND deleted_at IS NULL
                    DO NOTHING
                    RETURNING id""",
                 (seller_id, pkey, source, domain, url, title, image, str(price or ""),
-                 currency, status, preview_url, extra_json))
+                 currency, status, preview_url, extra_json, raw_url or ""))
             row = cur.fetchone()
             if row:
                 item_id = str(row[0])
@@ -135,11 +135,11 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
         else:
             cur.execute(
                 """INSERT INTO collect_history
-                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json)
-                   VALUES (%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url)
+                   VALUES (%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
                 (seller_id, source, domain, url, title, image, str(price or ""),
-                 currency, status, preview_url, extra_json))
+                 currency, status, preview_url, extra_json, raw_url or ""))
             item_id = str(cur.fetchone()[0])
         if item_id and not preview_url:
             cur.execute("UPDATE collect_history SET preview_url=%s WHERE id=%s AND preview_url=''",

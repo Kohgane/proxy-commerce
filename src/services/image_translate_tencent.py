@@ -279,6 +279,15 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                     "error_message": "공급사 미연결", "hint": "TENCENT_SECRET_ID/KEY 미설정"})
         out["ms"] = int((time.perf_counter() - t0) * 1000)
         return out
+    # Y11-D(오너 10-14): 하루 상한은 **보내기 전에** 본다 — 넘었으면 공급사에 안 보내고(과금 0) 세지도 않는다.
+    #   실측: 편집기 「번역하고 글자 상자 받기」·갤러리 「번역」 작업이 상한을 안 보고 보내 320 → 321 → 322가 됐다(진짜 호출이라 과금됐다).
+    cap_full = _cap_full()
+    if cap_full:
+        out.update({"error_class": "DailyCapReached", "error_code": "",
+                    "error_message": f"오늘 이미지 번역 상한({cap_full[1]}장)에 닿았어요 — 내일 0시(KST) 이후 다시 보내요",
+                    "hint": ""})
+        out["ms"] = int((time.perf_counter() - t0) * 1000)
+        return out
     if not (url or data):
         out.update({"error_class": "ValueError", "error_code": "",
                     "error_message": "이미지가 없습니다(url 또는 data 필요)", "hint": ""})
@@ -427,6 +436,17 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
     out["ms"] = int((time.perf_counter() - t0) * 1000)
     _remember(out)
     return out
+
+
+def _cap_full():
+    """오늘 텐센트 호출이 하루 상한 이상이면 `(today, cap)` · 아니면 None. 못 읽으면 None(번역을 막지 않는다 — 큐가 한 번 더 본다)."""
+    try:
+        from src.services import image_translate_auto as _ita
+        cap = _ita.daily_cap()
+        today = int(_ita._q().day_count(_ita._day_key()) or 0)
+        return (today, cap) if cap > 0 and today >= cap else None
+    except Exception:                                            # noqa: BLE001
+        return None
 
 
 def _count_call():

@@ -171,7 +171,7 @@ def item_failure(item_id: str, extra: dict) -> dict:
     failed = []
     for key in ("images_ko", "detail_images_ko"):
         for e in (extra.get(key) or []):
-            if isinstance(e, dict) and e.get("status") == "failed" and not _q().is_no_text(
+            if isinstance(e, dict) and e.get("status") == "failed" and e.get("error_class") != "DailyCapReached" and not _q().is_no_text(
                     " ".join(str(e.get(k) or "") for k in ("error_code", "error_message", "reason"))):
                 failed.append(e)                                 # Y11: 옛 「글자 없는 사진」(PictureWithoutText) 장은 실패 아님
     try:
@@ -190,10 +190,18 @@ def item_failure(item_id: str, extra: dict) -> dict:
         return dict(base, code=code, label=tc.FAILURE_LABELS[code], raw=raw)
     if queued and st.get("paused"):
         return dict(base, code="breaker_open", label=tc.FAILURE_LABELS["breaker_open"], raw=str(st.get("pause_reason") or ""))
-    if queued and st.get("waiting_cap"):
-        return dict(base, code="cap_reached", label=tc.FAILURE_LABELS["cap_reached"],
-                    raw=f"오늘 {st.get('today')}/{st.get('cap')}장 — {ENV_CAP}")
+    # Y11-D(오너 10-14 17:27 캡처): 오늘 상한은 **실패가 아니다** — 빨간 「이미지 번역 실패: 오늘 321/320장 — IMAGE_TRANSLATE_DAILY_CAP」
+    #   (환경변수 이름까지 사용자에게 노출)이 떴다. 상한은 대기 줄(`queue_line`)이 「대기 중 n장 (오늘 상한 도달 — 내일 0시 KST 이후 처리)」로 말한다.
     return {}
+
+
+def queue_line(item_id: str) -> dict:
+    """「쿠팡 노출」 이미지 번역 줄 재료 — `{today, cap, in_line, cap_full}`. 상한·대기는 여기서만 말한다(실패 배지 아님)."""
+    st = status(item_id)
+    ic = st.get("item") or {}
+    today, cap = int(st.get("today") or 0), int(st.get("cap") or 0)
+    return {"today": today, "cap": cap, "in_line": int(ic.get("queued") or 0) + int(ic.get("running") or 0),
+            "cap_full": cap > 0 and today >= cap}
 
 
 #: Y11-C 건너뛴 사유(사람 말) — 접수·건너뜀 응답과 테스트가 같은 표를 쓴다.

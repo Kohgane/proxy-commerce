@@ -80,6 +80,13 @@ def accept(item_id: str, seller_id: str, indices, *, seller_ids=None) -> dict:
     if not images:
         return {"ok": False, "error": "이 상품엔 이미지가 없습니다."}
 
+    from src.services.image_translate_tencent import _cap_full
+    full = _cap_full()
+    if full:
+        # Y11-D: 하루 상한이 찼으면 받지 않는다(보내면 과금 · 예전엔 이 길이 상한을 안 봐서 320 → 322)
+        return {"ok": False, "cap_full": True,
+                "error": f"오늘 이미지 번역 상한({full[1]}장)에 닿았어요 — 내일 0시(KST) 이후 다시 눌러 주세요."}
+
     if is_running(item_id):
         # 돌고 있는데 또 받으면 같은 장을 두 번 보내고 **두 번 청구된다.**
         return {"ok": False, "error": "이미 번역 중입니다. 끝나면 다시 눌러 주세요.",

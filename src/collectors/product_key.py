@@ -130,6 +130,44 @@ def is_valid_vendor_sku(sku: str) -> bool:
     return bool(_VENDOR_SKU_RE.match(str(sku or "").strip()))
 
 
+_SIMBA_SKU_RE = re.compile(r"(?i)sku_?id=(\d+)")
+
+
+def canonical_source_url(url: str) -> str:
+    """Y11-D(오너 2026-10-14) — 광고 클릭 링크를 상품 정규 주소로.
+
+    실측: VRSUK 수집 이력 url = `https://click.simba.taobao.com/cc_im?…&id=748639898871&…`(3.2KB, 직통차 광고 클릭).
+    「원본 보기」가 이걸 열면 **매번 타오바오 직통차 과금 클릭**이 되고, 리다이렉트는 언제 깨질지 모른다.
+    → `click.simba.taobao.com`이면 `id`(쿼리)·`skuId`(인코딩된 `e` 안에 `skuId%3D…`로도 온다)를 뽑아
+    `https://item.taobao.com/item.htm?id={id}&skuId={skuId}`. 상품번호를 못 뽑으면 **그대로**(지어내지 않는다).
+    그 밖의 주소는 그대로 돌려준다."""
+    raw = str(url or "").strip()
+    if not raw:
+        return raw
+    try:
+        u = urlparse(raw)
+    except Exception:
+        return raw
+    host = _host(u.netloc)
+    if not (host == "click.simba.taobao.com" or host.endswith(".simba.taobao.com")):
+        return raw
+    gid = _query_id(u.query or "", ("id",))
+    if not gid or not str(gid).isdigit():
+        return raw
+    from urllib.parse import unquote
+    text, sku = raw, ""
+    for _ in range(3):                                   # 두세 번 인코딩된 꼬리까지
+        m = _SIMBA_SKU_RE.search(text)
+        if m:
+            sku = m.group(1)
+            break
+        nxt = unquote(text)
+        if nxt == text:
+            break
+        text = nxt
+    return f"https://item.taobao.com/item.htm?id={gid}" + (f"&skuId={sku}" if sku else "")
+
+
 def normalize_product_key(url: str) -> str:
     """URL → 상품 고유키. 같은 상품이면 같은 키(쿼리 트래킹 무시)."""
     if not url or not isinstance(url, str):

@@ -265,4 +265,49 @@ def test_retry_button_shows_even_without_a_failure(mem, monkeypatch):
     assert c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()["imgko_status"] is None
     monkeypatch.setattr(tc, "is_configured", lambda: True)
     d = c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()
-    assert d["imgko_fail"] is None and d["imgko_status"] == {"today": 0, "cap": 200}
+    assert d["imgko_fail"] is None and d["imgko_status"] == {"today": 0, "cap": 200, "in_line": 0, "cap_full": False}
+
+
+
+# ── Y11-D 1. 상한은 보내기 전에 본다 · 거부는 0 · 상한은 실패 배지가 아니다 ───────────────────────────────
+
+def test_cap_is_checked_before_sending_and_refusals_count_zero(mem, monkeypatch):
+    """실측 10-14 17:26~17:28 KST: 편집기·갤러리 「번역」 작업이 하루 상한(320)을 안 보고 텐센트에 보내 320 → 321 → 322(과금된 호출)."""
+    from src.services import image_translate_auto as A
+    from src.services import image_translate_tencent as tc
+    from src.services import image_translate_job as job
+    monkeypatch.setenv("TENCENT_SECRET_ID", "id")
+    monkeypatch.setenv("TENCENT_SECRET_KEY", "key")
+    monkeypatch.setenv("IMAGE_TRANSLATE_DAILY_CAP", "2")
+    monkeypatch.setattr(tc, "MIN_INTERVAL_SEC", 0.0)
+    seen = []
+    with patch.object(tc, "_client", lambda *_a, **_k: _cli(set(), seen)), patch.object(tc, "fetch_image", lambda u: (_jpeg(), "")):
+        assert tc.translate_image(url="https://img.alicdn.com/1.jpg")["ok"]
+        assert tc.translate_image(url="https://img.alicdn.com/2.jpg")["ok"]
+        r = tc.translate_image(url="https://img.alicdn.com/3.jpg")              # 상한 2 — 세 번째는 보내지 않는다
+    assert r["error_class"] == "DailyCapReached" and "내일 0시" in r["error_message"]
+    assert len(seen) == 2 and A.status()["today"] == 2                          # 거부는 0회(과금 0 · 카운터 그대로)
+    iid = _store("y11d-cap", {"images": ["https://img.alicdn.com/a.jpg"]})
+    out = job.accept(iid, "y11d-cap", [0], seller_ids={"y11d-cap"})
+    assert not out["ok"] and out["cap_full"] and "내일 0시" in out["error"]      # 갤러리 「번역」·편집기 「번역하고 글자 상자 받기」도 막힌다
+    assert len(seen) == 2
+
+
+def test_cap_shows_as_waiting_line_not_red_failure_and_no_env_name(mem, monkeypatch):
+    from src.services import image_translate_auto as A
+    from src.services import image_translate_tencent as tc
+    from src.order_webhook import app
+    import src.services.coupang_image_check as CIC
+    monkeypatch.setattr(CIC, "start_check", lambda rep: {"state": "unknown", "why": "", "flags": []})
+    monkeypatch.setattr(tc, "is_configured", lambda: True)
+    monkeypatch.setenv("IMAGE_TRANSLATE_DAILY_CAP", "1")
+    A._q().take_start(A._day_key(), 10 ** 9)
+    iid = _store("y11d-line", {"images": ["https://img.alicdn.com/a.jpg", "https://img.alicdn.com/b.jpg"]})
+    _post_retry(iid, "y11d-line")
+    c = __import__("src.order_webhook", fromlist=["app"]).app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y11d-line"
+    d = c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()
+    assert d["imgko_fail"] is None
+    assert d["imgko_status"] == {"today": 1, "cap": 1, "in_line": 2, "cap_full": True}
+    assert "IMAGE_TRANSLATE_DAILY_CAP" not in json.dumps(d, ensure_ascii=False)
