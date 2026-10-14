@@ -2377,8 +2377,12 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kie-box.is-risk { border-color: var(--danger); }
 .kie-box.do-erase { background: color-mix(in srgb, var(--orange) 28%, transparent); border-style: solid; }
 .kie-box.do-text { background: color-mix(in srgb, var(--teal) 22%, transparent); }
-.kie-box.is-done { background: transparent; border-style: dashed; }   /* 이미 편집본에 들어간 상자 — 결과가 보이게 테두리만 */
-.kie-subj { position: absolute; border: 2px dashed color-mix(in srgb, var(--ink) 45%, transparent); pointer-events: none; }
+/* Y11-E: 버전 고르기(수집 원본 / 번역본 / 편집본 n) — 지금 나가는 버전만 먹 배경 */
+.kie-vers { display: flex; gap: var(--space-1); overflow-x: auto; margin-bottom: var(--space-2); }
+.kie-ver { flex: 0 0 auto; min-height: 44px; padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: var(--caption); white-space: nowrap; }
+.kie-ver.is-on { background: var(--ink); border-color: var(--ink); color: var(--cream); }
+.kie-ver:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .kie-legend, .kie-cost, .kie-note { font-size: var(--caption); color: var(--text-muted); margin: var(--space-1) 0; }
 .kie-k { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--text-muted); border-radius: 2px; margin: 0 2px 0 var(--space-1); vertical-align: -1px; }
 .kie-k.is-promo { border-color: var(--orange); } .kie-k.is-brand { border-color: var(--teal); } .kie-k.is-risk { border-color: var(--danger); }

@@ -283,6 +283,14 @@ def build_entry(idx: int, result: dict, *, item_id: str = "", seller_id: str = "
         "dense": n_lines >= DENSE_TEXT_LINES,
     })
     entry.update(text_geometry(result))            # T3: 배너 판정 기준을 잡을 실측(이번부터 적는다)
+    # Y11-E(오너 2026-10-14): 번역본은 **따로 남는 버전**이다 — 편집이 `url`을 바꿔도 번역본 주소는 여기 그대로.
+    #   상자는 이 번역본에 붙는다(`boxes_img`) · 좌표 틀은 원본↔번역본 차이로 확인한 값(`box_frame`).
+    if placed.get("url"):
+        entry["translated_url"] = placed["url"]
+        if entry.get("boxes") is not None:
+            entry["boxes_img"] = placed["url"]
+    if result.get("box_frame"):
+        entry["box_frame"] = str(result["box_frame"])
     _ph = promo_of(entry)
     if _ph:
         entry["promo"] = _ph
@@ -310,6 +318,27 @@ def banned_in(text: str, seller_id: str = "") -> list:
         return []
 
 
+def carry_versions(old: Optional[dict], new: dict) -> None:
+    """Y11-E: 다시 번역해도 **앞서 만든 편집본은 버전 목록에 남는다**(예전엔 장째 바뀌어 조용히 사라졌다).
+    원본·편집본의 상자 기록(`vboxes`)도 그림이 그대로라 같이 옮긴다. 새 번역본이 지금 버전이 된다."""
+    if not isinstance(old, dict) or not isinstance(new, dict) or old is new:
+        return
+    try:
+        from src.services.image_edit import edits as _edits
+        eds = _edits(old)
+    except Exception:                                           # noqa: BLE001
+        eds = []
+    if eds and "edits" not in new:
+        new["edits"] = eds
+    if not new.get("translated_url"):
+        from src.services.image_edit import translated_url as _tu
+        if _tu(old):
+            new["translated_url"] = _tu(old)                    # 이번 번역이 실패해도 앞선 번역본은 고를 수 있다
+    vb = {k: v for k, v in (old.get("vboxes") or {}).items() if k != "translated"} if isinstance(old.get("vboxes"), dict) else {}
+    if vb and "vboxes" not in new:
+        new["vboxes"] = vb
+
+
 def merge_images_ko(extra: dict, entries: list) -> list:
     """기존 `images_ko`에 새 결과를 **장 번호 기준으로** 덮어쓴다(나머지는 보존).
 
@@ -318,6 +347,7 @@ def merge_images_ko(extra: dict, entries: list) -> list:
     cur = extra.get("images_ko") if isinstance(extra, dict) else None
     by_idx = {int(e.get("idx", -1)): e for e in (cur or []) if isinstance(e, dict)}
     for e in entries or []:
+        carry_versions(by_idx.get(int(e.get("idx", -1))), e)
         by_idx[int(e.get("idx", -1))] = e
     by_idx.pop(-1, None)
     return [by_idx[k] for k in sorted(by_idx)]

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -96,6 +97,13 @@ def append(
         except Exception as exc:              # 식별자 계산 실패가 수집을 막지 않는다
             logger.warning("[수집] SKU 확정 실패(수집은 계속): %s", exc)
             extra.setdefault("vendor_sku", "")
+    # Y11-E: 수집 원본 자리에 만든 그림(번역본·편집본)이 오면 예외 · 처음 수집한 원본 목록을 얼려 둔다(`images_original`)
+    for _k in ("images", "detail_images"):
+        _bad = [u for u in (extra.get(_k) or []) if isinstance(u, str) and is_derived_image(u)]
+        if _bad:
+            raise OriginalImageOverwrite(f"수집 원본({_k})에 만든 그림 주소를 넣으려 했어요: {_bad[0][:120]}")
+    if extra.get("images") and not isinstance(extra.get("images_original"), list):
+        extra["images_original"] = [u for u in extra["images"] if isinstance(u, str) and u]
     _b = _pg_backend()
     if _b:
         return _b.append(source=source, url=url, title=title, image=image, price=price,
@@ -234,9 +242,65 @@ def find_by_product_key(url: str, *, seller_id: Optional[str] = None,
     return dict(matches[0])
 
 
+class OriginalImageOverwrite(ValueError):
+    """Y11-E: 수집 원본 사진 주소를 덮어쓰려 했다 — 번역본·편집본은 버전(`images_ko`)에만 산다."""
+
+
+#: 우리가 만든 그림(번역본·편집본·D3 렌더·내부 번역본 주소) — 수집 원본 자리에 들어가면 안 된다.
+#   (`copy-…_ORIGINAL`은 원본의 사본이라 여기 들지 않는다 · 사람이 올린 사진(`/manual/`)도 원본이다)
+_DERIVED_RE = re.compile(r"/proxy-commerce/edit/|e_gen_remove|/sel-[^/]*_p\d+_(?!ORIGINAL)[A-Z][A-Z0-9_]*\.|"
+                         r"/seller/collect/image-ko/")
+
+
+def is_derived_image(url: str) -> bool:
+    return bool(_DERIVED_RE.search(str(url or "")))
+
+
+def guard_originals(item_id: str, extra_json, *, seller_id=None, seller_ids=None) -> str:
+    """Y11-E(오너 2026-10-14) — 수집 원본은 **어떤 코드도 덮어쓰지 않는다**.
+
+    ① 수집 원본 자리(`images`·`detail_images`)에 우리가 만든 그림(번역본·편집본) 주소가 들어가면 예외.
+    ② `images_original`(처음 수집한 원본 목록 — 처음 갱신 때 지금 행에서 얼려 둔다)은 **늘어나기만** 한다:
+       있던 장을 바꾸거나 빼려 하면 예외. 다시 수집으로 새로 생긴 원본은 뒤에 붙는다.
+    반환: 저장할 `extra_json` 문자열(얼린 목록을 채운 것)."""
+    import json as _json
+    try:
+        new = _json.loads(extra_json) if isinstance(extra_json, str) else dict(extra_json or {})
+    except Exception:                                           # 깨진 JSON은 예전처럼 그대로(여기서 막을 일이 아니다)
+        return extra_json if isinstance(extra_json, str) else _json.dumps(extra_json, ensure_ascii=False)
+    if not isinstance(new, dict):
+        return extra_json
+    for key in ("images", "detail_images"):
+        bad = [u for u in (new.get(key) or []) if isinstance(u, str) and is_derived_image(u)]
+        if bad:
+            raise OriginalImageOverwrite(f"수집 원본({key})에 만든 그림 주소를 넣으려 했어요: {bad[0][:120]}")
+    old = {}
+    try:
+        row = get(item_id, seller_id=seller_id, seller_ids=seller_ids) if (seller_id is not None or seller_ids is not None) \
+            else get(item_id)
+        old = _json.loads((row or {}).get("extra_json") or "{}") or {}
+    except Exception:                                           # noqa: BLE001 — 못 읽으면 ①만 지킨다
+        old = {}
+    frozen = old.get("images_original")
+    if not isinstance(frozen, list):
+        frozen = [u for u in (old.get("images") or []) if isinstance(u, str) and u and not is_derived_image(u)]
+    want = new.get("images_original")
+    if isinstance(want, list) and want[:len(frozen)] != frozen:
+        raise OriginalImageOverwrite("수집 원본 목록(images_original)은 바꾸거나 뺄 수 없어요 — 뒤에 붙이기만 돼요")
+    merged = list(frozen) + [u for u in (want if isinstance(want, list) else []) if u not in frozen]
+    merged += [u for u in (new.get("images") or []) if isinstance(u, str) and u and u not in merged and not is_derived_image(u)]
+    if merged:
+        new["images_original"] = merged
+    return _json.dumps(new, ensure_ascii=False)
+
+
 def update(item_id: str, *, seller_id: Optional[str] = None,
            seller_ids: Optional[set] = None, **fields) -> bool:
-    """수집 이력 단건 필드 갱신. 허용: title, image_url, price, currency, status, extra_json."""
+    """수집 이력 단건 필드 갱신. 허용: title, image_url, price, currency, status, extra_json.
+
+    Y11-E: `extra_json`을 바꾸면 **수집 원본 불변**을 먼저 검사한다(`guard_originals` — 어기면 `OriginalImageOverwrite`)."""
+    if fields.get("extra_json") is not None:
+        fields["extra_json"] = guard_originals(item_id, fields["extra_json"], seller_id=seller_id, seller_ids=seller_ids)
     _b = _pg_backend()
     if _b:
         return _b.update(item_id, seller_id=seller_id, seller_ids=seller_ids, **fields)

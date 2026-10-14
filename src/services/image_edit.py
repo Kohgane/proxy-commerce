@@ -1,17 +1,18 @@
-"""Y11(오너 2026-10-14) — 사진 편집: 글자 상자를 탭해서 지우기·고치기. Y11-B(같은 날 실측 뒤 고침) 규칙이 우선한다.
+"""Y11(오너 2026-10-14) — 사진 편집: 글자 상자를 탭해서 지우기·고치기. Y11-B·Y11-E 규칙이 우선한다.
 
 Y11-B 실측 14:49 VRSUK: 색 덩어리 검출기가 의자 등받이·좌판을 「판촉 배지」로 잡았고 지우기가 적용돼 **제품 일부가 지워졌다**.
-제품 영역 검출은 사진 전체를 잡았고, 텐센트 OCR은 `FailedOperation.UnOpenError`(OCR 서비스 미개통)라 글자 상자가 0개였다.
+Y11-E 실측 17:36 VRSUK 갤러리 3: 거꾸로 놓인 책등 글자의 상자가 **180° 돌린 자리(빈 벽)**에 떠서 그 벽을 지웠다
+(텐센트가 돌려 세운 그림 기준 좌표를 줬다 — `box_frame`). 원본은 그대로였다(수집 원본 사본·픽셀 비교로 확인).
 
-- 상자 = **글자 상자만**: 텐센트 이미지 번역 결과의 줄 상자(`images_ko[].boxes`, `TransDetails[].BoundingBox`) ·
-  없으면 텐센트 OCR(개통돼 있을 때만). 색 덩어리 검출은 **없앴다**. 상자가 0개면 「이 사진에서 글자를 못 찾았어요」 — 지울 것 없음.
-- 순서: 이미지 번역(배지 글자도 한국어로) → 번역본 위에서 상자 분류(판촉/브랜드 로고/상표 위험/일반 글자) → 사용자가 고른다.
-  기본값은 「번역된 대로 두기」. 지우기는 **사용자가 탭한 상자만**(미리 골라 두지 않는다).
+- **버전**(Y11-E): 사진마다 「수집 원본 / 번역본 / 편집본 n」. 수집 원본(`extra.images[idx]`)은 어떤 코드도 덮어쓰지 않는다.
+  번역본 주소는 `translated_url`에 따로 남고, 편집은 **고른 버전 위에** 새 편집본을 하나 더 만든다(`edits[]`).
+  「원본으로」 = 수집 원본을 연다(나가는 사진도 원본) · 「되돌리기」 = 바로 전 버전(그 편집본을 만든 바탕).
+- **상자는 버전에 붙는다**: 번역본 상자 = 번역 결과의 줄 상자(좌표 틀 확인 끝난 것) · 원본·편집본 상자 = 그 그림을 OCR로 읽은 것.
+  상자 기록에는 잰 그림 주소(`img`)가 있고, 그림이 바뀌면 그 상자는 쓰지 않는다(빈 벽에 상자 금지).
+- **자동 픽셀 변경 없음**(Y11-E): 자동 지우기·`IMAGE_EDIT_AUTO`는 없앴다. 자동은 번역(별도 버전)뿐 —
+  지우기·고치기는 사람이 상자를 탭해서 적용할 때만.
 - 지울 영역 = 글자 상자 + 상자 높이의 10% 여유(사방) — 그 밖은 건드리지 않는다. 화면이 적용 전에 그 영역을 빨갛게 보여 주고 한 번 더 묻는다.
 - 지우기 = Cloudinary `gen_remove`(영역 지정) · 글자 고치기 = 같은 자리 지운 뒤 Noto Sans KR 글자(상자에 맞춰 크기 · 원래 글자색).
-  원본 주소를 Cloudinary가 직접 받아 간다(서버 메모리 0). 편집본은 `images_ko[].url`만 바꾸고 원본·번역본은 그대로(되돌리기).
-- 자동 지우기: **기본 꺼짐**(`IMAGE_EDIT_AUTO`=0). 켜도 「판촉 토큰 적중 글자 상자 + 제품 영역을 믿을 수 있음 + 지울 영역이
-  제품 영역 밖」일 때만. 제품 영역이 사진의 70%를 넘게 잡히면 「모름」 — 자동 동작 전부 멈춘다.
 - 비용: 편집 한 번 = (50 + 1 + 글자 수) 변환 / 1,000 = 약 0.051 크레딧. 하루 상한 `IMAGE_EDIT_DAILY_CAP`(기본 200회).
 """
 from __future__ import annotations
@@ -37,17 +38,12 @@ SMALL_SIDE = 256
 CLASS_LABEL = {"promo": "판촉", "brand": "브랜드 로고", "risk": "상표 위험", "text": "일반 글자"}
 #: 지울 영역 여유 — 상자 높이의 10%(사방). 그 밖은 절대 안 건드린다(오너 2026-10-14).
 PAD_RATIO = 0.10
-#: 제품 영역이 사진의 이 비율을 넘으면 「모름」(배경을 못 잡은 것) — 자동 동작 전부 중지.
-SUBJECT_MAX_RATIO = 0.70
-ENV_AUTO = "IMAGE_EDIT_AUTO"
 NO_TEXT_WHY = "이 사진에서 글자를 못 찾았어요 — 지울 것이 없어요"
 #: Y11-C2: 건당 상한을 넘어 번역을 보내지 않은 장(원본) — 편집은 OCR 상자로
 CAPPED_LABEL = "상한 — 번역 안 됨(원본)"
-
-
-def auto_enabled() -> bool:
-    """자동 지우기 — 기본 꺼짐(Y11-B). `IMAGE_EDIT_AUTO=1`일 때만."""
-    return os.getenv(ENV_AUTO, "0").strip() == "1"
+#: Y11-E 버전 이름
+V_ORIGINAL, V_TRANSLATED = "original", "translated"
+V_LABEL = {V_ORIGINAL: "수집 원본", V_TRANSLATED: "번역본"}
 
 
 def daily_cap() -> int:
@@ -80,7 +76,7 @@ def configured() -> Tuple[bool, str]:
     return _c()
 
 
-# ── 상자 ───────────────────────────────────────────────────────────────────────────────────
+# ── 장 · 버전 ───────────────────────────────────────────────────────────────────────────────
 
 def _entry(extra: dict, kind: str, idx: int, create: bool = False) -> Optional[dict]:
     key = "images_ko" if kind == "gallery" else "detail_images_ko"
@@ -96,20 +92,129 @@ def _entry(extra: dict, kind: str, idx: int, create: bool = False) -> Optional[d
 
 
 def _original(extra: dict, kind: str, idx: int) -> str:
+    """수집 원본 — `extra.images`(상세면 `detail_images`)의 그 장. **읽기만 한다**(Y11-E: 원본 불변)."""
     src = [u for u in (extra.get("images" if kind == "gallery" else "detail_images") or []) if u]
     return src[idx] if 0 <= idx < len(src) else ""
 
 
-def base_url(extra: dict, kind: str, idx: int) -> str:
-    """편집할 바탕 — 이미 편집했으면 그 바탕 그대로(편집은 매번 바탕에서 다시 — 겹쳐 굽지 않는다), 아니면 지금 나가는 장
-    (번역본을 쓰면 번역본 · 아니면 원본)."""
-    e = _entry(extra, kind, idx) or {}
-    ed = e.get("edit") if isinstance(e.get("edit"), dict) else {}
-    if ed.get("base"):
-        return str(ed["base"])
-    if e.get("use") and e.get("status") == "done" and e.get("url"):
+def _is_edit_url(u: str) -> bool:
+    return "/proxy-commerce/edit/" in str(u or "") or "e_gen_remove" in str(u or "")
+
+
+def translated_url(e: Optional[dict]) -> str:
+    """번역본 주소 — 새 장은 `translated_url`, 옛 장은 편집 전 주소(`edit.prev_url`)나 지금 주소에서."""
+    e = e or {}
+    if e.get("translated_url"):
+        return str(e["translated_url"])
+    ed = e.get("edit") if isinstance(e.get("edit"), dict) else None
+    if ed:
+        pu = str(ed.get("prev_url") or "")
+        return pu if ed.get("prev_status") == "done" and pu and not _is_edit_url(pu) else ""
+    if e.get("status") == "done" and e.get("url") and not _is_edit_url(e["url"]):
         return str(e["url"])
-    return _original(extra, kind, idx)
+    return ""
+
+
+def edits(e: Optional[dict]) -> List[Dict]:
+    """편집본 목록 `[{n, url, base, base_key, at, by, ops, erased, credits, ready, transform}]` — 옛 장(`edit` 하나)은 1개로."""
+    e = e or {}
+    if isinstance(e.get("edits"), list):
+        return [x for x in e["edits"] if isinstance(x, dict)]
+    ed = e.get("edit") if isinstance(e.get("edit"), dict) else None
+    url = (ed or {}).get("url") or (e.get("url") if ed and _is_edit_url(e.get("url")) else "")
+    if not ed or not url:
+        return []
+    tu = translated_url(e)
+    return [{"n": 1, "url": url, "base": ed.get("base") or "",
+             "base_key": V_TRANSLATED if tu and ed.get("base") == tu else V_ORIGINAL,
+             "at": ed.get("at") or "", "by": ed.get("by") or "", "ops": list(ed.get("ops") or []),
+             "erased": list(ed.get("erased") or []), "credits": ed.get("credits") or 0,
+             "ready": ed.get("ready"), "transform": ed.get("transform") or ""}]
+
+
+def current_key(e: Optional[dict]) -> str:
+    """지금 고른(= 나가는) 버전 — 늘 `use`·`url`에서 읽는다(번역본 켜기·끄기 토글이 `use`만 바꿔도 맞게)."""
+    e = e or {}
+    if not e.get("use") or e.get("status") != "done" or not e.get("url"):
+        return V_ORIGINAL
+    for x in edits(e):
+        if x["url"] == e["url"]:
+            return f"edit:{x['n']}"
+    return V_TRANSLATED if translated_url(e) else V_ORIGINAL
+
+
+def versions(extra: dict, kind: str, idx: int) -> List[Dict]:
+    """`[{key, label, url, at?, by?}]` — 수집 원본 · 번역본(있으면) · 편집본 n."""
+    e = _entry(extra, kind, idx) or {}
+    out = [{"key": V_ORIGINAL, "label": V_LABEL[V_ORIGINAL], "url": _original(extra, kind, idx)}]
+    tu = translated_url(e)
+    if tu:
+        out.append({"key": V_TRANSLATED, "label": V_LABEL[V_TRANSLATED], "url": tu, "at": e.get("at") or ""})
+    for x in edits(e):
+        out.append({"key": f"edit:{x['n']}", "label": f"편집본 {x['n']}", "url": x["url"], "at": x.get("at") or "",
+                    "by": x.get("by") or "", "base_key": x.get("base_key") or V_ORIGINAL, "ready": x.get("ready")})
+    return out
+
+
+def _version(extra: dict, kind: str, idx: int, key: str) -> Optional[Dict]:
+    return next((v for v in versions(extra, kind, idx) if v["key"] == key), None)
+
+
+def _normalize(e: dict) -> None:
+    """옛 모양(`edit` 하나) → 버전 모양으로 적어 둔다(번역본 주소·편집본 목록·지금 버전)."""
+    tu, eds, cur = translated_url(e), edits(e), current_key(e)
+    if tu:
+        e["translated_url"] = tu
+    e["edits"] = eds
+    e["current"] = cur
+
+
+def select(extra: dict, kind: str, idx: int, key: str) -> Dict:
+    """그 버전을 고른다(= 나가는 사진). 수집 원본은 **읽기만** — 원본을 고르면 번역본·편집본을 안 쓸 뿐이다."""
+    v = _version(extra, kind, idx, key)
+    if not v or not v.get("url"):
+        return {"ok": False, "error": "그 버전이 없어요"}
+    e = _entry(extra, kind, idx)
+    if e is None:
+        if key == V_ORIGINAL:
+            return {"ok": True, "current": key}                # 손댄 적 없는 장 — 원래 원본
+        return {"ok": False, "error": "그 버전이 없어요"}
+    _normalize(e)
+    if key == V_ORIGINAL:
+        e["use"] = False
+        e.pop("edit", None)
+    elif key == V_TRANSLATED:
+        e.update(url=v["url"], use=True, status="done")
+        e.pop("edit", None)
+    else:
+        ed = next(x for x in e["edits"] if f"edit:{x['n']}" == key)
+        e.update(url=ed["url"], use=True, status="done")
+        e["edit"] = dict(ed)                                    # 지금 나가는 편집본(지운 글자 → 판촉·상표 검사에서 뺀다)
+    e["current"] = key
+    return {"ok": True, "current": key}
+
+
+def revert(extra: dict, kind: str, idx: int) -> Dict:
+    """「되돌리기」 = 바로 전 버전 — 편집본이면 그것을 만든 바탕, 번역본이면 수집 원본."""
+    e = _entry(extra, kind, idx)
+    cur = current_key(e)
+    if cur.startswith("edit:"):
+        ed = next((x for x in edits(e) if f"edit:{x['n']}" == cur), {})
+        back = ed.get("base_key") or V_ORIGINAL
+        if not _version(extra, kind, idx, back):
+            back = V_ORIGINAL
+    elif cur == V_TRANSLATED:
+        back = V_ORIGINAL
+    else:
+        return {"ok": False, "error": "더 되돌릴 버전이 없어요 — 지금이 수집 원본이에요"}
+    r = select(extra, kind, idx, back)
+    return dict(r, back=back)
+
+
+def base_url(extra: dict, kind: str, idx: int) -> str:
+    """편집할 바탕 = 지금 고른 버전의 그림."""
+    v = _version(extra, kind, idx, current_key(_entry(extra, kind, idx)))
+    return (v or {}).get("url") or _original(extra, kind, idx)
 
 
 def _load_small(url: str):
@@ -130,52 +235,6 @@ def _load_small(url: str):
     except Exception as exc:                                    # noqa: BLE001
         logger.info("[사진 편집] 미리보기 못 받음 %s: %s", url[:80], type(exc).__name__)
         return None, (0, 0)
-
-
-def _components(mask, w: int, h: int, min_px: int) -> List[Tuple[int, int, int, int, int]]:
-    """4-이웃 연결 성분 → `[(x0, y0, x1, y1, 화소수)]`."""
-    seen = bytearray(w * h)
-    out = []
-    for start in range(w * h):
-        if not mask[start] or seen[start]:
-            continue
-        stack = [start]
-        seen[start] = 1
-        x0 = y0 = 10 ** 9
-        x1 = y1 = n = 0
-        while stack:
-            p = stack.pop()
-            y, x = divmod(p, w)
-            n += 1
-            x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x), max(y1, y)
-            for q in ((p - 1) if x > 0 else -1, (p + 1) if x < w - 1 else -1, (p - w) if y > 0 else -1, (p + w) if y < h - 1 else -1):
-                if q >= 0 and mask[q] and not seen[q]:
-                    seen[q] = 1
-                    stack.append(q)
-        if n >= min_px:
-            out.append((x0, y0, x1, y1, n))
-    return out
-
-
-def subject_bbox(small) -> Optional[Dict]:
-    """대표 피사체 상자(작은 그림 좌표) — 가장자리 색(배경)과 다른 화소의 가장 큰 덩어리.
-    못 잡으면 None(→ 자동 지우기 안 함). 상자가 사진의 70%를 넘으면 배경을 못 잡은 것 — None(「모름」, Y11-B 실측)."""
-    if small is None:
-        return None
-    w, h = small.size
-    px = list(small.getdata())
-    border = [px[i] for i in range(w)] + [px[(h - 1) * w + i] for i in range(w)] + \
-             [px[j * w] for j in range(h)] + [px[j * w + w - 1] for j in range(h)]
-    bg = tuple(sorted(c[k] for c in border)[len(border) // 2] for k in range(3))
-    mask = bytearray(1 if max(abs(p[0] - bg[0]), abs(p[1] - bg[1]), abs(p[2] - bg[2])) > 40 else 0 for p in px)
-    comps = _components(mask, w, h, max(8, (w * h) // 400))
-    if not comps:
-        return None
-    x0, y0, x1, y1, n = max(comps, key=lambda c: c[4])
-    bw, bh = x1 - x0 + 1, y1 - y0 + 1
-    if n < w * h * 0.02 or bw * bh > w * h * SUBJECT_MAX_RATIO:
-        return None                                           # 너무 작음 · 사진 대부분(배경을 못 잡음) — 모름
-    return {"x": x0, "y": y0, "w": bw, "h": bh, "space": [w, h]}
 
 
 def _brand_names(extra: dict) -> List[str]:
@@ -209,12 +268,6 @@ def classify(text: str, extra: dict) -> str:
     return "text"
 
 
-def _overlaps(a: Dict, b: Optional[Dict]) -> bool:
-    if not b:
-        return True                                           # 제품 영역을 모르면 「겹친다」로(자동으로 안 지운다)
-    return not (a["x"] + a["w"] <= b["x"] or b["x"] + b["w"] <= a["x"] or a["y"] + a["h"] <= b["y"] or b["y"] + b["h"] <= a["y"])
-
-
 def erase_rect(box: Dict, size) -> Dict:
     """지울 영역 = 글자 상자 + 상자 높이의 10% 여유(사방), 사진 밖은 자른다. **이 밖은 절대 안 건드린다.**"""
     W, H = (size or [0, 0])[:2]
@@ -228,60 +281,103 @@ def erase_rect(box: Dict, size) -> Dict:
     return {"x": x0, "y": y0, "w": max(1, x1 - x0), "h": max(1, y1 - y0)}
 
 
-def _translated(e: dict) -> bool:
-    """번역을 거친 장인가(편집본 포함) — 상자를 번역 결과에서 받는 것이 먼저다(Y11-B 순서)."""
-    if not e:
+
+# ── 상자(버전마다) ─────────────────────────────────────────────────────────────────────────
+
+def _fetch(url: str) -> bytes:
+    """그림 바이트 — 우리 번역본 주소(내부)도 읽는다. 못 받으면 b""."""
+    try:
+        from src.services.coupang_image_check import _bytes_for
+        raw, _why = _bytes_for(url)
+        return raw or b""
+    except Exception:                                           # noqa: BLE001
+        return b""
+
+
+def _verify_translated(extra: dict, kind: str, idx: int, e: dict) -> bool:
+    """옛 번역본 상자(좌표 틀을 확인한 적 없는 것) — 수집 원본↔번역본 차이로 틀을 확인해 고친다. 확인 못 하면 상자를 버린다."""
+    from src.services import box_frame as BF
+    tu = translated_url(e)
+    orig, trans = _fetch(_original(extra, kind, idx)), _fetch(tu) if tu else b""
+    got = BF.pick(orig, trans, e.get("boxes") or []) if (orig and trans) else {"frame": "unknown", "boxes": [], "scores": {}}
+    if got["frame"] == "unknown":
+        logger.info("[사진 편집] 옛 번역본 상자 틀 확인 못 함 → 버림(빈 벽 상자 방지) idx=%s %s", idx, got.get("scores"))
+        e["box_frame"] = "unknown"
+        e["boxes_dropped"] = {"n": len(e.get("boxes") or []), "at": datetime.now(timezone.utc).isoformat(),
+                              "why": got.get("why") or "원본·번역본을 받지 못해 상자 자리를 확인 못 함"}
+        e.pop("boxes", None)
+        e.pop("box_size", None)
         return False
-    if isinstance(e.get("edit"), dict):
-        return True
-    return e.get("status") == "done" and bool(e.get("url"))
+    if got["frame"] != "identity":
+        logger.info("[사진 편집] 옛 번역본 상자 틀 %s 로 바로잡음 idx=%s %s", got["frame"], idx, got.get("scores"))
+        e["boxes"] = [{k: b[k] for k in b if k != "i"} for b in got["boxes"]]
+    e["box_frame"], e["boxes_img"] = got["frame"], tu
+    return True
 
 
-def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
-    """그 장의 글자 상자 — `{ok, boxes, size, source, why, need_translate}`.
-
-    순서(Y11-B): ① 이미지 번역 결과의 줄 상자(저장분) ② 번역은 됐는데 상자가 없는 옛 장 → 텐센트 OCR(개통돼 있을 때만, 한 번 읽어 저장)
-    ③ 아직 번역 전이거나 OCR을 못 쓰면 「번역해서 글자 상자 받기」(`need_translate`). 글자 없는 사진은 상자 0개(정상)."""
-    e = _entry(extra, kind, idx) or {}
-    if isinstance(e.get("boxes"), list) and e.get("box_size"):
-        return {"ok": True, "boxes": e["boxes"], "size": e["box_size"], "source": e.get("boxes_source") or "translate",
-                "why": "" if e["boxes"] else NO_TEXT_WHY}
-    from src.services.image_translate_auto import _is_pwt, per_item_cap
-    if e.get("status") in ("failed", "skipped") and _is_pwt(e):   # Y11-C: 「글자 없음」은 텐센트 PictureWithoutText만
-        return {"ok": True, "boxes": [], "size": [0, 0], "source": "translate", "why": NO_TEXT_WHY}
-    # Y11-C2(오너 2026-10-14): 건당 상한(갤러리 6 · 상세 30)을 넘은 장은 번역을 보내지 않는다(우회 안 함) — 원본에서 OCR로 상자를 읽어 편집
-    capped = int(idx) >= per_item_cap(kind) and not _translated(e)
-    if not _translated(e) and not capped:
-        return {"ok": False, "boxes": [], "size": [0, 0], "need_translate": True,
-                "why": "아직 이 사진을 번역하지 않았어요 — 번역하면 글자 상자를 받아요(번역이 먼저예요)"}
-    url = base_url(extra, kind, idx)
-    if not url:
-        return {"ok": False, "why": "사진 주소가 없어요", "boxes": [], "size": [0, 0], "capped": capped}
+def _ocr_version(url: str) -> Dict:
+    """그 그림을 OCR로 읽은 상자 `{ok, boxes, size, why, code}` — 기록 모양으로."""
     from src.services import ocr_tencent as O
     if O.unopened():
-        return {"ok": False, "boxes": [], "size": [0, 0], "need_translate": not capped, "capped": capped,
-                "why": (CAPPED_LABEL + " · " + O.UNOPEN_WHY) if capped else
-                       (O.UNOPEN_WHY + " · 개통 전에는 다시 번역하면 번역 결과의 글자 상자를 써요")}
+        return {"ok": False, "why": O.UNOPEN_WHY, "code": "ocr_unopened", "boxes": [], "size": [0, 0]}
     try:
         import requests
         r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         raw = r.content if r.status_code == 200 else b""
     except Exception as exc:                                    # noqa: BLE001
         return {"ok": False, "why": f"사진을 받지 못했어요({type(exc).__name__})", "boxes": [], "size": [0, 0]}
+    if not raw:
+        raw = _fetch(url)
     got = O.read_boxes(raw)
     del raw
+    return got
+
+
+def ensure_boxes(extra: dict, kind: str, idx: int) -> Dict:
+    """**지금 고른 버전**의 글자 상자 — `{ok, boxes, size, source, why, need_translate, capped, version}`.
+
+    번역본: 번역 결과의 줄 상자(틀 확인된 것만 · 옛 것은 확인 → 못 하면 버리고 OCR). 수집 원본·편집본: 그 그림을 OCR로(한 번 읽어 저장).
+    상자 기록의 `img`가 지금 그림과 다르면 쓰지 않는다 — 그림이 바뀌면 상자도 다시."""
+    e = _entry(extra, kind, idx) or {}
+    key = current_key(e)
+    url = base_url(extra, kind, idx)
+    from src.services.image_translate_auto import _is_pwt, per_item_cap
+    if key == V_ORIGINAL and e.get("status") in ("failed", "skipped") and _is_pwt(e):
+        return {"ok": True, "boxes": [], "size": [0, 0], "source": "translate", "why": NO_TEXT_WHY, "version": key}
+    capped = int(idx) >= per_item_cap(kind) and not translated_url(e)
+    if key == V_TRANSLATED and isinstance(e.get("boxes"), list) and e.get("box_size"):
+        ok_frame = e.get("box_frame") not in (None, "", "unknown") or _verify_translated(extra, kind, idx, e)
+        img = e.get("boxes_img") or translated_url(e)
+        if ok_frame and img == url:
+            return {"ok": True, "boxes": e["boxes"], "size": e["box_size"], "source": e.get("boxes_source") or "translate",
+                    "why": "" if e["boxes"] else NO_TEXT_WHY, "version": key, "frame": e.get("box_frame")}
+    if key == V_ORIGINAL and not capped and not translated_url(e):
+        # 번역이 먼저(Y11-B) — 번역 전 장은 「번역해서 글자 상자 받기」. (상한을 넘은 장·번역본이 있는데 원본을 고른 장은 OCR)
+        return {"ok": False, "boxes": [], "size": [0, 0], "need_translate": True, "version": key,
+                "why": "아직 이 사진을 번역하지 않았어요 — 번역하면 글자 상자를 받아요(번역이 먼저예요)"}
+    rec = (e.get("vboxes") or {}).get(key) if isinstance(e.get("vboxes"), dict) else None
+    if isinstance(rec, dict) and rec.get("img") == url and isinstance(rec.get("boxes"), list):
+        return {"ok": True, "boxes": rec["boxes"], "size": rec.get("size") or [0, 0], "source": "ocr", "capped": capped,
+                "why": "" if rec["boxes"] else NO_TEXT_WHY, "version": key}
+    if not url:
+        return {"ok": False, "why": "사진 주소가 없어요", "boxes": [], "size": [0, 0], "capped": capped, "version": key}
+    got = _ocr_version(url)
     if not got.get("ok"):
         why = got.get("why") or "글자 상자를 읽지 못했어요"
         if capped:
-            return {"ok": False, "why": CAPPED_LABEL + " · " + why, "boxes": [], "size": [0, 0], "capped": True}
-        return {"ok": False, "why": why + " · 다시 번역하면 번역 결과의 글자 상자를 써요", "boxes": [], "size": [0, 0],
-                "need_translate": True}
+            return {"ok": False, "why": CAPPED_LABEL + " · " + why, "boxes": [], "size": [0, 0], "capped": True, "version": key}
+        tail = " · 개통 전에는 다시 번역하면 번역 결과의 글자 상자를 써요" if got.get("code") == "ocr_unopened" else \
+               " · 다시 번역하면 번역 결과의 글자 상자를 써요"
+        return {"ok": False, "why": why + tail, "boxes": [], "size": [0, 0], "need_translate": key != V_ORIGINAL or not capped,
+                "version": key}
     e = _entry(extra, kind, idx, create=True)
-    e.update(boxes=got["boxes"], box_size=got["size"], boxes_source="ocr", boxes_at=datetime.now(timezone.utc).isoformat())
+    vb = e.setdefault("vboxes", {}) if isinstance(e.get("vboxes"), dict) else e.setdefault("vboxes", {})
+    vb[key] = {"boxes": got["boxes"], "size": got["size"], "img": url, "source": "ocr",
+               "at": datetime.now(timezone.utc).isoformat(), "angle": got.get("angle", 0)}
     if not e.get("source_text"):
         e["ocr_text"] = " ".join(b["src"] for b in got["boxes"])[:2000]
     return {"ok": True, "boxes": got["boxes"], "size": got["size"], "source": "ocr", "capped": capped,
-            "why": "" if got["boxes"] else NO_TEXT_WHY}
+            "why": "" if got["boxes"] else NO_TEXT_WHY, "version": key}
 
 
 def _cap_of(kind: str) -> int:
@@ -295,14 +391,23 @@ def legacy_ops(ed: Optional[dict]) -> bool:
 
 
 def drop_legacy_edits(extra: dict) -> List[Dict]:
-    """색 덩어리 검출로 만든 편집본을 **되돌린다**(번역본·원본으로). 되돌린 장 `[{kind, idx, at}]` — 기록도 남긴다."""
+    """색 덩어리 검출로 만든 편집본을 **버전 목록에서 빼고** 그 바탕으로 돌린다. 되돌린 장 `[{kind, idx, at}]` — 기록도 남긴다."""
     out = []
     for kind, key in (("gallery", "images_ko"), ("detail", "detail_images_ko")):
         for e in list(extra.get(key) or []):
-            if isinstance(e, dict) and isinstance(e.get("edit"), dict) and legacy_ops(e["edit"]):
-                idx = int(e.get("idx", -1))
-                if revert(extra, kind, idx).get("ok"):
-                    out.append({"kind": kind, "idx": idx, "at": datetime.now(timezone.utc).isoformat()})
+            if not isinstance(e, dict):
+                continue
+            bad = [x for x in edits(e) if legacy_ops(x)]
+            if not bad:
+                continue
+            idx = int(e.get("idx", -1))
+            cur = current_key(e)
+            _normalize(e)
+            back = bad[0].get("base_key") or V_ORIGINAL
+            e["edits"] = [x for x in e["edits"] if not legacy_ops(x)]
+            if cur in {f"edit:{x['n']}" for x in bad}:
+                select(extra, kind, idx, back if _version(extra, kind, idx, back) else V_ORIGINAL)
+            out.append({"kind": kind, "idx": idx, "at": datetime.now(timezone.utc).isoformat()})
     if out:
         extra.setdefault("image_edit_reverted", []).extend(out)
         logger.info("[사진 편집] 색 덩어리 편집 되돌림 %s장", len(out))
@@ -310,11 +415,11 @@ def drop_legacy_edits(extra: dict) -> List[Dict]:
 
 
 def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, real=None) -> Dict:
-    """화면·자동 공용 — `{url, size, real, boxes:[{id,x,y,w,h,er,text,cls,cls_label,auto,in_subject}], subject, why,
-    need_translate, edit, cost, today, cap}`. 좌표는 상자 공간(`size` = 공급사에 보낸 그림) 기준, `er` = 지울 영역(여유 포함)."""
+    """화면 공용 — `{url, size, real, boxes:[{id,x,y,w,h,er,text,cls,cls_label}], why, need_translate, edit, versions,
+    current, cost, today, cap}`. 좌표는 상자 공간(`size` = 그 버전 그림) 기준, `er` = 지울 영역(여유 포함)."""
     url = base_url(extra, kind, idx)
     e0 = _entry(extra, kind, idx) or {}
-    if fetch or (isinstance(e0.get("boxes"), list) and e0.get("box_size")):
+    if fetch or (isinstance(e0.get("boxes"), list) and e0.get("box_size")) or e0.get("vboxes"):
         bx = ensure_boxes(extra, kind, idx)                     # 저장된 상자는 OCR 없이 그대로
     else:
         bx = {"ok": False, "boxes": [], "size": [0, 0]}
@@ -323,12 +428,6 @@ def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, re
         small, real = _load_small(url)                          # 글자색·바탕 크기 — 상자가 있을 때만 받는다
     W, H = (bx.get("size") or [0, 0]) if bx.get("ok") else (0, 0)
     W, H = W or real[0], H or real[1]
-    subj = None
-    if small is not None and W and H and auto_enabled():
-        sb = subject_bbox(small)                              # 자동 판정에만 쓴다(기본 꺼짐) — 화면 점선도 그때만
-        if sb:
-            kx, ky = W / sb["space"][0], H / sb["space"][1]
-            subj = {"x": int(sb["x"] * kx), "y": int(sb["y"] * ky), "w": int(sb["w"] * kx), "h": int(sb["h"] * ky)}
     boxes = []
     for i, b in enumerate(bx.get("boxes") or []):
         text = " ".join(x for x in (str(b.get("src") or ""), str(b.get("tgt") or "")) if x)
@@ -336,20 +435,19 @@ def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, re
         box = {"x": int(b.get("x") or 0), "y": int(b.get("y") or 0), "w": int(b.get("w") or 0), "h": int(b.get("h") or 0)}
         if box["w"] <= 0 or box["h"] <= 0:
             continue
-        er = erase_rect(box, [W, H])
-        inside = _overlaps(er, subj)
-        boxes.append(dict(box, id=f"t{i}", er=er, text=text[:120], src=str(b.get("src") or ""), tgt=str(b.get("tgt") or ""),
-                          cls=cls, cls_label=CLASS_LABEL[cls], in_subject=inside,
-                          auto=bool(auto_enabled() and subj and cls == "promo" and not inside)))
+        boxes.append(dict(box, id=f"t{i}", er=erase_rect(box, [W, H]), text=text[:120], src=str(b.get("src") or ""),
+                          tgt=str(b.get("tgt") or ""), cls=cls, cls_label=CLASS_LABEL[cls]))
     e = _entry(extra, kind, idx) or {}
-    ed = e.get("edit") if isinstance(e.get("edit"), dict) else None
+    cur = current_key(e)
+    ed = next((x for x in edits(e) if f"edit:{x['n']}" == cur), None)
     why = bx.get("why") or ("" if boxes else NO_TEXT_WHY)
-    capped = bool(bx.get("capped")) or (int(idx) >= _cap_of(kind) and not _translated(_entry(extra, kind, idx) or {}))
+    capped = bool(bx.get("capped")) or (int(idx) >= _cap_of(kind) and not translated_url(e))
     return {"ok": True, "why": why, "need_translate": bool(bx.get("need_translate")), "source": bx.get("source", ""),
             "capped": capped, "capped_label": CAPPED_LABEL if capped else "",
             "url": url, "size": [W, H], "real": [int(real[0] or 0), int(real[1] or 0)], "boxes": boxes,
-            "subject": subj, "auto": auto_enabled(), "edit": ed, "cost": cost(0), "today": today_count(), "cap": daily_cap(),
-            "spent": round(sum(float(x.get("credits") or 0) for x in (ed or {}).get("history") or []), 3) if ed else 0.0}
+            "versions": versions(extra, kind, idx), "current": cur, "edit": ed,
+            "cost": cost(0), "today": today_count(), "cap": daily_cap(),
+            "spent": round(sum(float(x.get("credits") or 0) for x in edits(e)), 3)}
 
 
 # ── 적용 ───────────────────────────────────────────────────────────────────────────────────
@@ -416,35 +514,32 @@ def _ready(url: str) -> Tuple[bool, Optional[int]]:
 
 
 def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user", small=None) -> Dict:
-    """`ops=[{id, action: erase|text, text?}]` → 편집본. 바탕에서 **지금까지의 편집 + 이번 편집**을 한 번에 다시 굽는다.
-    결과 `{ok, url, credits, erased, error?}`. 저장은 호출부(이 dict를 바꿨으니 extra_json을 저장)."""
+    """`ops=[{id, action: erase|text, text?}]` → **새 편집본 하나**(지금 고른 버전 위에). 결과 `{ok, url, credits, erased, error?}`.
+    사람이 상자를 탭해서 적용할 때만 부른다(자동 픽셀 변경 없음 — Y11-E). 저장은 호출부."""
     ok_c, why = configured()
     if not ok_c:
         return {"ok": False, "error": "사진 편집을 쓸 수 없어요 — " + why}
     p = plan(extra, kind, idx, small=small)
-    by_id = {b["id"]: b for b in p["boxes"]}               # 글자 상자(t#)만 — 색 덩어리(c#)는 없다(Y11-B)
-    e = _entry(extra, kind, idx, create=True)
-    prev = e.get("edit") if isinstance(e.get("edit"), dict) else {}
-    keep = [o for o in (prev.get("ops") or []) if o.get("id") not in {x.get("id") for x in ops}]
-    all_ops = [o for o in keep + list(ops) if o.get("action") in ("erase", "text") and o.get("id") in by_id]
-    if not all_ops:
+    by_id = {b["id"]: b for b in p["boxes"]}               # 지금 버전의 글자 상자(t#)만
+    todo = [o for o in ops or [] if isinstance(o, dict) and o.get("action") in ("erase", "text") and o.get("id") in by_id]
+    if not todo:
         return {"ok": False, "error": (p.get("why") or "지울 상자를 탭해서 골라 주세요") if not p["boxes"] else "지울 상자를 탭해서 골라 주세요"}
     from src.db import image_translate_queue_pg as q
     took, today = q.take_start(_day_key(), daily_cap())          # 한도는 실제로 보낼 때만 센다
     if not took:
         return {"ok": False, "error": f"오늘 사진 편집 한도({daily_cap()}회)를 다 썼어요 — 내일 다시 해 주세요", "today": today}
-    if small is None and any(o["action"] == "text" for o in all_ops):
+    if small is None and any(o["action"] == "text" for o in todo):
         small, _ = _load_small(p["url"])                    # 글자색 재기(글자 고치기가 있을 때만)
-    erase = [by_id[o["id"]] for o in all_ops if o["action"] == "erase"]
+    erase = [by_id[o["id"]] for o in todo if o["action"] == "erase"]
     texts = [(by_id[o["id"]], str(o.get("text") or "")[:40], _text_color(small, by_id[o["id"]], p["size"]))
-             for o in all_ops if o["action"] == "text" and str(o.get("text") or "").strip()]
+             for o in todo if o["action"] == "text" and str(o.get("text") or "").strip()]
     W, H = p["size"]
     RW, RH = (p.get("real") or [0, 0])[:2]
     if not (RW and RH):
         RW, RH = W, H                                          # 바탕 크기를 못 쟀으면 상자 공간 = 바탕
     from src.media.image_pipeline import remote_max_side, upload_remote
     side = remote_max_side()
-    k = (RW / W) if W else 1.0                                 # 상자 공간(보낸 그림) → 바탕 사진(원본이 더 크면 키운다)
+    k = (RW / W) if W else 1.0                                 # 상자 공간 → 바탕 사진(바탕이 더 크면 키운다)
     scale = k * (min(1.0, side / max(RW, RH)) if (RW and RH and side > 0) else 1.0)
     tr = build_transform(erase, texts, scale)
     up = upload_remote(p["url"], folder="edit", eager=[{"raw_transformation": tr}])
@@ -459,67 +554,19 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
         return {"ok": False, "error": "편집본 주소가 돌아오지 않았어요 — 응답 키: " + ", ".join(up.get("keys") or [])}
     ready, code = _ready(url)
     c = cost(len(texts))
+    e = _entry(extra, kind, idx, create=True)
+    base_key = current_key(e) if e.get("status") or e.get("current") else V_ORIGINAL
+    _normalize(e)
+    prev = next((x for x in e["edits"] if f"edit:{x['n']}" == base_key), None)
+    erased = list((prev or {}).get("erased") or []) + [x for b in erase + [t[0] for t in texts] for x in (b.get("src"), b.get("tgt")) if x]
+    n = max([int(x.get("n") or 0) for x in e["edits"]] + [0]) + 1
     now = datetime.now(timezone.utc).isoformat()
-    if not prev:
-        prev = {"base": p["url"], "prev_url": e.get("url") or "", "prev_use": e.get("use"), "prev_status": e.get("status"),
-                "created": not bool(e.get("status")), "history": []}
-    erased = [x for b in erase + [t[0] for t in texts] for x in (b.get("src"), b.get("tgt")) if x]
-    prev.update(url=url, by=by, at=now, ops=all_ops, erased=erased, transform=tr,
-                ready=ready, http_status=code, credits=round(sum(float(h.get("credits") or 0) for h in prev.get("history") or []) + c["credits"], 3))
-    prev.setdefault("history", []).append({"at": now, "by": by, "credits": c["credits"], "ops": len(all_ops)})
-    e["edit"] = prev
-    e.update(url=url, use=True, status="done")
+    e["edits"].append({"n": n, "url": url, "base": p["url"], "base_key": base_key, "at": now, "by": by, "ops": todo,
+                       "erased": erased, "credits": c["credits"], "ready": ready, "http_status": code, "transform": tr})
+    if not e.get("status"):
+        e["status"] = "done"
     e.setdefault("vendor", "edit")
-    return {"ok": True, "url": url, "ready": ready, "credits": c["credits"], "spent": prev["credits"], "erased": erased,
-            "today": today, "cap": daily_cap()}
-
-
-def revert(extra: dict, kind: str, idx: int) -> Dict:
-    e = _entry(extra, kind, idx)
-    ed = (e or {}).get("edit") if isinstance((e or {}).get("edit"), dict) else None
-    if not ed:
-        return {"ok": False, "error": "되돌릴 편집이 없어요"}
-    if ed.get("created"):
-        key = "images_ko" if kind == "gallery" else "detail_images_ko"
-        extra[key] = [x for x in extra.get(key) or [] if x is not e]
-    else:
-        e["url"], e["use"] = ed.get("prev_url") or "", ed.get("prev_use")
-        if ed.get("prev_status"):
-            e["status"] = ed["prev_status"]
-        e.pop("edit", None)
-    return {"ok": True}
-
-
-def auto_promo(extra: dict, *, kinds=("gallery",), max_images: int = 3, small_loader=None) -> List[Dict]:
-    """자동 1차 — **기본 꺼짐**(`IMAGE_EDIT_AUTO`=1일 때만, Y11-B). 켜도 「판촉 토큰 적중 글자 상자」이면서 지울 영역이
-    **믿을 수 있는 제품 영역 밖**일 때만 지운다. 제품 영역을 모르면(못 잡음 · 사진의 70% 초과) 그 장은 아무것도 안 한다.
-    결과 `[{kind, idx, url, erased_n, credits} | {kind, idx, skipped: 사유}]`."""
-    if not auto_enabled():
-        return []
-    from src.services.image_translate_store import promo_of
-    out = []
-    for kind in kinds:
-        key = "images_ko" if kind == "gallery" else "detail_images_ko"
-        for e in list(extra.get(key) or []):
-            if len(out) >= max_images:
-                return out
-            if not isinstance(e, dict) or e.get("edit") or e.get("promo_include") or not promo_of(e):
-                continue
-            idx = int(e.get("idx", -1))
-            small = small_loader(base_url(extra, kind, idx)) if small_loader else None
-            p = plan(extra, kind, idx, small=small)
-            if not p["boxes"]:
-                out.append({"kind": kind, "idx": idx, "skipped": p.get("why") or NO_TEXT_WHY})
-                continue
-            if not p.get("subject"):
-                out.append({"kind": kind, "idx": idx, "skipped": "제품 영역을 모름 — 자동으로 아무것도 안 지워요(사용자 선택)"})
-                continue
-            auto = [b for b in p["boxes"] if b["auto"]]
-            if not auto:
-                out.append({"kind": kind, "idx": idx, "skipped": "제품과 겹치는 판촉 상자뿐 — 사용자 선택" if any(
-                    b["cls"] == "promo" for b in p["boxes"]) else "판촉 글자 상자 없음"})
-                continue
-            r = apply(extra, kind, idx, [{"id": b["id"], "action": "erase"} for b in auto], by="auto", small=small)
-            out.append({"kind": kind, "idx": idx, "url": r.get("url", ""), "erased_n": len(auto), "credits": r.get("credits", 0),
-                        "error": r.get("error", "")} if r.get("ok") else {"kind": kind, "idx": idx, "skipped": r.get("error")})
-    return out
+    select(extra, kind, idx, f"edit:{n}")
+    spent = round(sum(float(x.get("credits") or 0) for x in e["edits"]), 3)
+    return {"ok": True, "url": url, "ready": ready, "credits": c["credits"], "spent": spent, "erased": erased,
+            "version": f"edit:{n}", "today": today, "cap": daily_cap()}

@@ -254,6 +254,36 @@ def _client(timeout_sec: int):
     return tmt_client.TmtClient(credential.Credential(sid, skey), region(), prof)
 
 
+def _orient_lines(sent: bytes, img_b64: str, lines: list, angle=None) -> dict:
+    """Y11-E(오너 2026-10-14): 줄 상자를 **원본 그림 좌표**로 바로잡는다(제자리에서 `lines[].box`를 바꾼다).
+
+    실측: 거꾸로 놓인 책등 글자 사진(VRSUK 갤러리 3)에서 상자가 180° 돌린 그림 기준으로 와, 빈 벽에 그려졌다.
+    각도 숫자만 믿지 않고 원본↔번역본 차이로 틀을 고른다(`box_frame.pick`). 확인 못 하면 상자를 비운다(글자는 남김).
+    반환 `{box_frame, box_frame_scores, angle_raw}` · 상자가 없으면 `{}`."""
+    idx = [i for i, l in enumerate(lines or []) if isinstance(l.get("box"), dict)]
+    if not idx or not img_b64 or not sent:
+        return {}
+    try:
+        from src.services import box_frame as BF
+        boxes = []
+        for i in idx:
+            b = lines[i]["box"]
+            boxes.append({"x": int(float(b.get("x") or 0)), "y": int(float(b.get("y") or 0)),
+                          "w": int(float(b.get("w") or 0)), "h": int(float(b.get("h") or 0)), "i": i})
+        boxes = [b for b in boxes if b["w"] > 0 and b["h"] > 0]
+        got = BF.pick(sent, base64.b64decode(img_b64), boxes, angle=angle)
+    except Exception as exc:                                     # noqa: BLE001 — 확인 실패면 상자를 쓰지 않는다
+        logger.warning("[이미지번역] 상자 틀 확인 실패: %s", exc)
+        got = {"frame": "unknown", "boxes": [], "scores": {}}
+    fixed = {b["i"]: b for b in got.get("boxes") or []}
+    for i in idx:
+        nb = fixed.get(i)
+        lines[i]["box"] = ({"x": nb["x"], "y": nb["y"], "w": nb["w"], "h": nb["h"]} if nb else None)
+    if got.get("frame") not in ("identity",):
+        logger.info("[이미지번역] 상자 틀 %s(각도 %s) 점수 %s", got.get("frame"), angle, got.get("scores"))
+    return {"box_frame": got.get("frame") or "unknown", "box_frame_scores": got.get("scores") or {}, "angle_raw": angle}
+
+
 def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                     timeout_sec: Optional[int] = None) -> dict:
     """이미지 1장 → 한국어가 박힌 이미지.
@@ -404,6 +434,9 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                 "lines_count": getattr(d, "LinesCount", None),
             })
         img_b64 = getattr(resp, "Data", "") or ""
+        frame = _orient_lines(data, img_b64, lines, getattr(resp, "Angle", None))
+        if frame:
+            out.update(frame)
         out.update({
             "ok": bool(img_b64),
             "image_b64": img_b64,
