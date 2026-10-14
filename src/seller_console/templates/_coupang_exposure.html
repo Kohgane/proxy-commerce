@@ -99,7 +99,8 @@
         (st.cap_full ? '오늘 상한 도달 — 내일 0시 KST 이후 처리' : '10분 내 처리') + ')</span>' : '';
       fail = '<p class="cpx-cap" data-role="cpx-imgko-line">이미지 번역 ' +
         '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' + wait +
-        ' <span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(st.today) + '/' + esc(st.cap) + '장</span></p>';
+        ' <span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(st.today) + '/' + esc(st.cap) + '장' +
+        (st.polish_cap ? ' · 다듬기 ' + esc(st.polish_today) + '/' + esc(st.polish_cap) + '회' : '') + '</span></p>';
     }
     // Y11: 등록에서 빠진 사진(판촉 의심·위험) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     var out = (d.left_out || []).map(function (s) {

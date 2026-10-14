@@ -151,7 +151,8 @@ def versions(extra: dict, kind: str, idx: int) -> List[Dict]:
     if tu:
         out.append({"key": V_TRANSLATED, "label": V_LABEL[V_TRANSLATED], "url": tu, "at": e.get("at") or ""})
     for x in edits(e):
-        out.append({"key": f"edit:{x['n']}", "label": f"편집본 {x['n']}", "url": x["url"], "at": x.get("at") or "",
+        lab = "번역본(다듬음)" if x.get("by") == "polish" else f"편집본 {x['n']}"     # Y11-I: 자동 다듬기 버전
+        out.append({"key": f"edit:{x['n']}", "label": lab, "url": x["url"], "at": x.get("at") or "",
                     "by": x.get("by") or "", "base_key": x.get("base_key") or V_ORIGINAL, "ready": x.get("ready")})
     return out
 
@@ -486,11 +487,21 @@ def plan(extra: dict, kind: str, idx: int, *, small=None, fetch: bool = True, re
                 if (e.get("upside_down") and cur == V_ORIGINAL) else "")
     return {"ok": True, "why": why, "need_translate": bool(bx.get("need_translate")), "source": bx.get("source", ""),
             "fix_text": bool(fix_note), "fix_note": fix_note,
+            "polish": _polish_view(e),
             "capped": capped, "capped_label": CAPPED_LABEL if capped else "",
             "url": url, "size": [W, H], "real": [int(real[0] or 0), int(real[1] or 0)], "boxes": boxes, "prop_boxes": prop_boxes,
             "versions": versions(extra, kind, idx), "current": cur, "edit": ed,
             "cost": cost(0), "today": today_count(), "cap": daily_cap(),
             "spent": round(sum(float(x.get("credits") or 0) for x in edits(e)), 3)}
+
+
+def _polish_view(e: dict) -> Optional[Dict]:
+    """Y11-I 다듬기 기록 — 바뀐 상자·버린 상자만(그대로인 상자는 안 보인다)."""
+    pl = e.get("polish") if isinstance(e.get("polish"), dict) else None
+    if not pl:
+        return None
+    rows = [r for r in pl.get("rows") or [] if isinstance(r, dict) and (r.get("ko") != r.get("tgt") or r.get("why"))]
+    return {"rows": rows[:20], "why": str(pl.get("why") or ""), "changed": int(pl.get("changed") or 0)}
 
 
 # ── 적용 ───────────────────────────────────────────────────────────────────────────────────

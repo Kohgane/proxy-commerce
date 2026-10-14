@@ -200,8 +200,9 @@ def queue_line(item_id: str) -> dict:
     st = status(item_id)
     ic = st.get("item") or {}
     today, cap = int(st.get("today") or 0), int(st.get("cap") or 0)
+    from src.services import image_polish as _ip                 # Y11-I: 다듬기(haiku) 하루 카운터 — 텐센트 호출 옆에
     return {"today": today, "cap": cap, "in_line": int(ic.get("queued") or 0) + int(ic.get("running") or 0),
-            "cap_full": cap > 0 and today >= cap}
+            "cap_full": cap > 0 and today >= cap, "polish_today": _ip.today_count(), "polish_cap": _ip.daily_cap()}
 
 
 #: Y11-C 건너뛴 사유(사람 말) — 접수·건너뜀 응답과 테스트가 같은 표를 쓴다.
@@ -493,6 +494,10 @@ def _translate_job(job: dict) -> tuple:
         pass
     st = entry.get("status")
     why = str(entry.get("error_message") or entry.get("reason") or "")
+    if st == "done" and istore.has_boxes(entry):
+        # Y11-I: 번역 직후 자동 다듬기 — 새 버전(번역본(다듬음))만 만든다. 텐센트 번역본은 버전으로 남는다. 실패해도 번역은 그대로.
+        from src.services import image_polish as _ip
+        _ip.polish_job(item_id, uid, kind, idx)
     if st not in ("done", "skipped") and _q().is_no_text(why):
         # Y4: 글자 없는 사진 = **성공(원본 유지)**. 실패로 세면 차단기가 멀쩡한 큐를 멈춘다(실측 20장 중 14장이 이것).
         return "skipped", f"글자 없는 사진 — 원본 그대로({why[:60]})"

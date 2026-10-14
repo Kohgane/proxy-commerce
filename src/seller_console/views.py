@@ -4011,6 +4011,11 @@ def collect_image_translate_retry(item_id):
                           may_resume=_mp.session_is_shared())
     # Y11-C: 실제 접수 수만 말한다(예전 「26장을 다시 넣었어요」는 큐의 옛 실패 줄 수였다 — 실제 접수 4장)
     msg = f"{out['line']} · 오늘 텐센트 호출 {out['today']}/{out['cap']}장"
+    try:
+        from src.services import image_polish as _ip               # Y11-I: 다듬기(haiku) 하루 카운터
+        msg += f" · 다듬기 {_ip.today_count()}/{_ip.daily_cap()}회"
+    except Exception:                                            # noqa: BLE001
+        pass
     if not out["accepted"] and not out.get("waiting"):
         msg = "다시 보낼 장이 없어요 — " + msg
     if out["paused"]:

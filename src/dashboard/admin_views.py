@@ -1753,6 +1753,47 @@ _OCR_COMPARE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 <a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
 
 
+@admin_panel_bp.route("/diagnostics/image-polish", methods=["GET", "POST"])
+def diagnostics_image_polish():
+    """Y11-I(오너 2026-10-14): 이 기능 전에 번역된 상품의 번역본을 다듬는다(자동 다듬기와 같은 길 — haiku + 「글자 고치기」 렌더).
+    장마다 haiku 1회(상자 10개씩) + 사진 편집 1회. 결과는 장마다 `polish` 기록 — 편집 화면 「다듬기」 줄."""
+    import json as _json
+    from flask import request as _rq
+    from src.services import image_polish as IP
+    item = (_rq.values.get("item") or "").strip()[:64]
+    started = IP.start_item(item) if (_rq.method == "POST" and item) else None
+    rows = []
+    if item:
+        try:
+            from src.services.ocr_compare_diag import _item
+            row, _uid = _item(item)
+            ex = _json.loads((row or {}).get("extra_json") or "{}") or {}
+            for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세")):
+                for e in ex.get(key) or []:
+                    pl = e.get("polish") if isinstance(e, dict) else None
+                    if isinstance(pl, dict):
+                        rows.append({"name": f"{lab} {int(e.get('idx', -1)) + 1}", "pl": pl})
+        except Exception as exc:                                  # noqa: BLE001
+            rows = [{"name": "읽기 실패", "pl": {"why": f"{type(exc).__name__}", "rows": []}}]
+    return render_template_string(_IMAGE_POLISH_TEMPLATE, item=item, started=started, rows=rows,
+                                  today=IP.today_count(), cap=IP.daily_cap())
+
+
+_IMAGE_POLISH_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>번역 다듬기</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:860px;overflow-wrap:anywhere;word-break:break-word" data-role="image-polish">
+<h5>번역 다듬기 — 이미 번역된 상품</h5>
+<p class="small text-muted">오늘 다듬기 {{ today }}/{{ cap }}회. 장마다 AI 1회(상자 10개씩) + 사진 편집 1회. 텐센트 번역본은 버전으로 남아요.</p>
+<form method="post" class="row g-2 small mb-3"><div class="col-9"><input class="form-control form-control-sm" name="item" value="{{ item }}" placeholder="상품 ID"></div>
+<div class="col-3"><button class="btn btn-sm btn-dark w-100" data-role="image-polish-run">다듬기</button></div></form>
+{% if started %}<p class="small" data-role="image-polish-started">{{ ('다듬기 시작 — ' ~ started.n ~ '장. 1~2분 뒤 새로고침하세요.') if started.ok and started.n else started.why }}</p>{% endif %}
+{% for r in rows %}<div class="border rounded p-2 mb-2 small" data-role="image-polish-row"><strong>{{ r.name }}</strong>
+ · 바뀐 상자 {{ r.pl.changed or 0 }} · AI {{ r.pl.calls or 0 }}회{% if r.pl.version %} · {{ r.pl.version }}{% endif %}{% if r.pl.why %} · {{ r.pl.why }}{% endif %}
+<ul class="mb-0">{% for b in r.pl.rows or [] %}{% if b.ko != b.tgt or b.why %}<li>{{ b.src }} | 텐센트 「{{ b.tgt }}」 → 「{{ b.ko if b.ko else '(지움)' }}」{% if b.why %} (AI 「{{ b.ai }}」 버림: {{ b.why }}){% endif %}</li>{% endif %}{% endfor %}</ul></div>{% endfor %}
+<a href="/admin/diagnostics#image-budget">← 진단으로</a></div></body></html>"""
+
+
 @admin_panel_bp.get("/diagnostics/flip-check")
 def diagnostics_flip_check():
     """M5 후속(오너 2026-10-07): 「사진 좌우반전 의심」 — 그 상품의 원본(온바운드 보관본 item_imgs, 없으면 수집 images)과
@@ -3694,7 +3735,7 @@ _DIAGNOSTICS_TEMPLATE = """
       <div class="card-body small" style="word-break:break-word">
         <strong>{{ image_budget_line }}</strong>
         <div class="text-muted mt-1">pro/lite 같은 사진 비교: <a href="/admin/diagnostics/image-mode-compare">사진 5장 비교(유료 $0.30)</a> ·
-          OCR 사전판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a> · <a href="/admin/diagnostics/ocr-compare">축소·언어별 비교 · 전수 재판정</a></div>
+          OCR 사전판정 정확도: <a href="/admin/diagnostics/ocr-precheck">운영 라벨로 재기</a> · <a href="/admin/diagnostics/ocr-compare">축소·언어별 비교 · 전수 재판정</a> · <a href="/admin/diagnostics/image-polish">번역 다듬기</a></div>
         <div class="mt-2" data-role="tencent-recent"><strong>텐센트 최근 {{ tencent_recent|length }}회</strong>
           {% if tencent_recent %}<table class="table table-sm mb-1"><thead><tr><th>시각(UTC)</th><th>결과</th><th>코드</th><th>메시지</th><th>ms</th></tr></thead><tbody>
           {% for r in tencent_recent %}<tr><td>{{ r.at }}</td><td>{{ '성공' if r.ok else (r.kind or '실패') }}</td><td><code>{{ r.code or r['class'] }}</code></td><td>{{ r.message }}</td><td>{{ r.ms }}</td></tr>{% endfor %}
