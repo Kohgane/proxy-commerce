@@ -64,7 +64,7 @@ def test_vrsuk_retry_accepts_main_photo_and_promo_eames_pages_and_skips_only_spa
     queued = {(r["kind"], int(r["idx"])) for r in mem._MEM_Q if r["item_id"] == iid and r["status"] == "queued"}
     assert queued == got and d["accepted"] == len(got) == 30
     assert d["message"] == ("접수 30장 · 건너뜀 2장(스페이서 1 · 아이콘 1) · 글자 없음 1장 · 대기 중 30장 (10분 내 처리) · "
-                            "오늘 텐센트 호출 0/200장")                     # 누르자마자는 「오늘 0」 — 대기 중인 장이 그 이유
+                            "오늘 텐센트 호출 0/200장 · 다듬기 0/400회")                     # 누르자마자는 「오늘 0」 — 대기 중인 장이 그 이유
     d2 = _post_retry(iid, "y11c")                                              # 다시 눌러도 두 번 보내지 않는다
     assert d2["accepted"] == 0 and d2["waiting"] == 30 and d2["message"].startswith("접수 0장 · 이미 대기 중 30장")
 
@@ -259,7 +259,7 @@ def test_waiting_line_says_tomorrow_when_today_cap_is_full(mem, monkeypatch):
         A._q().take_start(A._day_key(), 10 ** 9)
     iid = _store("y11c-capfull", {"images": [f"https://img.alicdn.com/c{i}.jpg" for i in range(2)]})
     d = _post_retry(iid, "y11c-capfull")
-    assert d["message"] == "접수 2장 · 글자 없음 0장 · 대기 중 2장 (오늘 상한 도달 — 내일 0시 KST 이후 처리) · 오늘 텐센트 호출 3/3장"
+    assert d["message"] == "접수 2장 · 글자 없음 0장 · 대기 중 2장 (오늘 상한 도달 — 내일 0시 KST 이후 처리) · 오늘 텐센트 호출 3/3장 · 다듬기 0/400회"
 
 
 def test_retry_button_shows_even_without_a_failure(mem, monkeypatch):
@@ -277,7 +277,7 @@ def test_retry_button_shows_even_without_a_failure(mem, monkeypatch):
     assert c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()["imgko_status"] is None
     monkeypatch.setattr(tc, "is_configured", lambda: True)
     d = c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()
-    assert d["imgko_fail"] is None and d["imgko_status"] == {"today": 0, "cap": 200, "in_line": 0, "cap_full": False}
+    assert d["imgko_fail"] is None and d["imgko_status"] == {"today": 0, "cap": 200, "in_line": 0, "cap_full": False, "polish_today": 0, "polish_cap": 400}
 
 
 
@@ -321,5 +321,5 @@ def test_cap_shows_as_waiting_line_not_red_failure_and_no_env_name(mem, monkeypa
         s["user_id"] = "y11d-line"
     d = c.get(f"/seller/collect/{iid}/coupang-exposure").get_json()
     assert d["imgko_fail"] is None
-    assert d["imgko_status"] == {"today": 1, "cap": 1, "in_line": 2, "cap_full": True}
+    assert d["imgko_status"] == {"today": 1, "cap": 1, "in_line": 2, "cap_full": True, "polish_today": 0, "polish_cap": 400}
     assert "IMAGE_TRANSLATE_DAILY_CAP" not in json.dumps(d, ensure_ascii=False)
