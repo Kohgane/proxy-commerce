@@ -222,34 +222,46 @@ def test_admin_table_ranks_coupang_leaves_and_flags_unmapped(cat, monkeypatch):
 
 # ── #915 그리기 워커 경합(같은 PR에서 발견) ───────────────────────────────────────────────────────
 
-def test_render_worker_first_calls_never_start_two_workers():
-    """`_ensure`가 잠금 밖에서 start하면 그 사이 다른 호출이 워커를 하나 더 만들었다(고치기 전 150라운드 중 48라운드 동시 2장)."""
-    import importlib
+def test_render_worker_first_calls_never_start_two_workers(monkeypatch):
+    """`_ensure`가 잠금 밖에서 start하면 그 사이 다른 호출이 워커를 하나 더 만들었다(고치기 전 150라운드 중 48라운드 동시 2장).
+    라운드마다 새 큐·상태로 「첫 호출 8건 동시」를 만든다 — 워커는 시작할 때 받은 큐만 먹으니 앞 라운드 워커가 끼어들지 않는다."""
+    import queue
     import threading
     import time
-    import src.utils.render_worker as RW0
+    from src.utils import render_worker as RW
     bad = 0
-    try:
-        for _ in range(20):
-            RW = importlib.reload(RW0)
-            live, peak, lk, go = [0], [0], threading.Lock(), threading.Event()
+    for _ in range(20):
+        monkeypatch.setattr(RW, "_Q", queue.Queue())
+        monkeypatch.setattr(RW, "_STATE", {"thread": None, "busy": 0, "last_end": 0.0, "done": 0})
+        live, peak, lk, go = [0], [0], threading.Lock(), threading.Event()
 
-            def job():
-                with lk:
-                    live[0] += 1
-                    peak[0] = max(peak[0], live[0])
-                time.sleep(0.002)
-                with lk:
-                    live[0] -= 1
+        def job():
+            with lk:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.002)
+            with lk:
+                live[0] -= 1
 
-            def caller():
-                go.wait()
-                RW.run(job, _name="race")
-            ths = [threading.Thread(target=caller) for _ in range(8)]
-            [t.start() for t in ths]
-            go.set()
-            [t.join(5) for t in ths]
-            bad += peak[0] > 1
-    finally:
-        importlib.reload(RW0)
+        def caller():
+            go.wait()
+            RW.run(job, _name="race")
+        ths = [threading.Thread(target=caller) for _ in range(8)]
+        [t.start() for t in ths]
+        go.set()
+        [t.join(5) for t in ths]
+        bad += peak[0] > 1
     assert bad == 0
+
+
+def test_old_worker_does_not_clear_the_new_workers_slot(monkeypatch):
+    """옛 워커가 60초 대기 끝에 나가면서 지금 워커 자리를 비우면 다음 호출이 워커를 하나 더 만든다 — 자기 자리일 때만 비운다."""
+    import queue
+    import threading
+    from src.utils import render_worker as RW
+    q_old, st = queue.Queue(), {"thread": "someone-else", "busy": 0, "last_end": 0.0, "done": 0}
+    monkeypatch.setattr(RW.queue.Queue, "get", lambda self, timeout=None: (_ for _ in ()).throw(queue.Empty()))
+    t = threading.Thread(target=RW._loop, args=(q_old, st))
+    t.start()
+    t.join(5)
+    assert not t.is_alive() and st["thread"] == "someone-else"
