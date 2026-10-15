@@ -183,10 +183,7 @@ def test_call_records_provider(monkeypatch, state):
 def test_prevalidate_sends_slider_margin_and_server_applies():
     pv = (TPL / "collect_preview.html").read_text(encoding="utf-8")
     i = pv.index("fetch('/seller/collect/prevalidate'")
-    assert "target_margin_pct: _kgpMarginPct()" in pv[i:i + 600]
-    src = (ROOT / "src" / "seller_console" / "views.py").read_text(encoding="utf-8")
-    j = src.index("def _pv_prepare(")
-    assert 'product_data["target_margin_pct"] = float(data["target_margin_pct"])' in src[j:j + 1500]
+    assert "target_margin_pct: _kgpMarginPct()" in pv[i:i + 600]      # 서버 적용은 아래 기능 계약(`_pv_prepare`)이 잰다
 
 
 def test_pv_prepare_applies_margin():

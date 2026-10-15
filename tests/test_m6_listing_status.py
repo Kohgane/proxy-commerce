@@ -84,7 +84,8 @@ def test_naver_status_and_seller_center(monkeypatch):
         "originProduct": {"statusType": "UNADMISSION"}, "smartstoreChannelProduct": {"channelProductNo": 777}})
     row = MS.query(MS.records(_extra())[2])
     assert (row["state"], row["label"], row["status_raw"]) == ("pending", "승인대기", "UNADMISSION")
-    assert row["manage_url"] == "https://sell.smartstore.naver.com/" and row["link"] == ""
+    # Y11-R(오너 2026-10-16): 네이버는 채널 번호가 있으면 판매 전이어도 「상품 페이지 열기」를 늘 단다
+    assert row["manage_url"] == "https://sell.smartstore.naver.com/" and row["link"].endswith("/products/777")
     MS.reset_cache()
     monkeypatch.setattr(SS, "_api_request", lambda self, m, p, data=None: {"originProduct": {"statusType": "SALE"},
                                                                           "smartstoreChannelProduct": {"channelProductNo": 777}})
