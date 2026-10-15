@@ -630,7 +630,10 @@ class CoupangUploader(BaseUploader):
         plain = re.sub(r'<[^>]+>', '\n', text)
         lines = [ln for ln in (x.strip() for x in plain.split('\n')) if ln]
         imgs = it0.get('images') or []
+        _sp = [CoupangUploader._as_int(it.get('salePrice')) or 0 for it in items]
+        _sp = [x for x in _sp if x > 0]
         return {'category': str(p.get('displayCategoryCode') or ''), 'items': len(items),
+                'sale_price': min(_sp) if _sp else 0, 'name': str(p.get('sellerProductName') or ''),   # Y11-S: 실제 판매가·이름
                 'images': len(imgs), 'image_types': sorted({str((i or {}).get('imageType') or '') for i in imgs if isinstance(i, dict)}),
                 'detail_lines': len(lines), 'detail_chars': len(plain.strip()), 'detail_images': detail_imgs,
                 'detail_head': (lines[0][:40] if lines else ''),

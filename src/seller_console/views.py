@@ -3387,14 +3387,23 @@ def collect_market_status(item_id):
 
     def _price(rec, row):
         _sync(row)
-        if str(row.get("market") or "").startswith("smartstore"):
-            try:
-                row["price_line"] = _price_line_for(item, row["market"])  # Y7-J: 판매가가 어디서 왔나 한 줄
-            except Exception as exc:                                     # noqa: BLE001 — 한 줄 재료라 팝업을 막지 않는다
-                row["price_line"] = f"판매가 구성을 내지 못했어요 — {type(exc).__name__}: {str(exc)[:120]}"
+        # Y11-S(오너 2026-10-16 07:46): 「지금 다시 내면」 줄(지금 마진으로 다시 계산)을 팝업에서 뺐다 — 마진 25%·3,013,210원이
+        #   보낸 값처럼 읽혔다. 팝업은 등록 기록의 **실제 전송값**만(`registered_price` — 없으면 「등록 당시 값 기록 없음」).
     # 2단 = 마켓별 **병렬** + 12초 상한(넘은 마켓만 「상태 확인 실패」) — 60초 캐시는 그대로
     rows = MS.query_many(recs, extra_fn=_price)
     ms = int((_time.monotonic() - t0) * 1000)
+    # Y11-S(오너 2026-10-16 07:46): 지금 네이버 상품명에 중괄호가 남아 있으면 **한 번** 이름만 고친다(백그라운드 · 기록이 있으면 다시 안 부름)
+    try:
+        from src.services import naver_name_fix as _nnf
+        _by_rec = {(r["market"], str(r["product_id"])): r for r in recs}
+        for _row in rows:
+            _rec = _by_rec.get((str(_row.get("market") or ""), str(_row.get("product_id") or "")))
+            if (_rec and str(_row.get("market") or "").startswith("smartstore") and _nnf.has_brace(_row.get("live_name"))
+                    and not _rec.get("name_fix")):
+                _row["name_fix_line"] = "상품명에 중괄호가 남아 있어 지금 고쳐 보내는 중(이름만)"
+                _kick_naver_name_fix(item_id, _row["market"])
+    except Exception as exc:                                     # noqa: BLE001 — 상태 팝업을 막지 않는다
+        logger.warning("[네이버 상품명] 자동 고침 시작 실패: %s", exc)
     logger.info("[마켓 상태] item=%s 마켓 %d곳 병렬 %dms 캐시 %d 실패 %d", str(item_id)[:8], len(rows), ms,
                 sum(1 for r in rows if r.get("cached")), sum(1 for r in rows if r.get("error")))
     if any(MS.remember(extra, r) for r in rows if not r.get("cached")):
@@ -3403,12 +3412,45 @@ def collect_market_status(item_id):
     return jsonify({"ok": True, "phase": "status", "rows": rows, "elapsed_ms": ms})
 
 
-def _price_line_for(item: dict, market: str) -> str:
-    """Y7-J(오너 2026-10-10) — 이 마켓 판매가의 구성 한 줄. M8-8: 등록과 **같은 함수**(`upload_dispatcher.price_parts_for`)."""
-    from .product_builder import build_product as _build_product
-    from .upload_dispatcher import build_dispatch_payload as _build_payload, price_parts_for
-    pd = _build_payload(_build_product(item, edits={}, seller_id=_seller_id()), item)
-    return price_parts_for(pd, market)["line"]
+def _kick_naver_name_fix(item_id, market: str) -> None:
+    """Y11-S — 네이버 상품명 고침을 백그라운드로(요청 문맥 복사 · 결과는 등록 기록 `name_fix`)."""
+    import contextvars as _cv
+    import threading as _th
+    from src.services import naver_name_fix as _nnf
+    from . import collect_history_store as _chs
+    ids = _seller_identities()
+
+    def _run():
+        it = _chs.get(str(item_id), seller_ids=ids)
+        if it:
+            _nnf.fix_name(it, market, save=lambda e: _chs.update(str(item_id), seller_ids=ids,
+                                                                 extra_json=json.dumps(e, ensure_ascii=False)))
+    _th.Thread(target=_cv.copy_context().run, args=(_run,), daemon=True).start()
+
+
+@bp.post("/collect/<item_id>/naver-name-fix")
+def collect_naver_name_fix(item_id):
+    """Y11-S(오너 2026-10-16 07:46) — 「상품명 다시 보내기」: 네이버 등록본의 상품명에서 중괄호 묶음만 정리해 이름만 수정.
+    응답에 전·후 이름과 네이버 응답 원문. 지금 이름에 중괄호가 없으면 보내지 않는다(그대로)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    market = str(data.get("market") or "").strip()
+    if not market.startswith("smartstore"):
+        return jsonify({"ok": False, "error": "네이버(스마트스토어) 등록 기록에서만 상품명을 고칠 수 있어요."}), 400
+    forbidden = _account_codes_forbidden([market])
+    if forbidden:
+        return forbidden
+    from src.services import naver_name_fix as _nnf
+    from . import collect_history_store as _chs
+    ids = _seller_identities()
+    out = _nnf.fix_name(item, market, save=lambda e: _chs.update(str(item_id), seller_ids=ids,
+                                                                extra_json=json.dumps(e, ensure_ascii=False)))
+    return jsonify({"ok": out["ok"], "result": out, "line": _nnf.line({"name_fix": out}),
+                    **({"error": out["error"]} if not out["ok"] else {})})
 
 
 @bp.post("/collect/<item_id>/upload-record/remove")
@@ -11055,13 +11097,23 @@ def collect_preview_by_id(item_id: str):
     except Exception as exc:
         logger.warning("[마진 계산기] 배송비 엔진 실패: %s", exc)
         ship_est = {}
-    # Y6-C A3: 원제목 표시에도 상표 게이트 — Desede 같은 레플리카·IP 상표는 「확인 필요」로 가려 보여 준다
+    # Y11-S(오너 2026-10-16 07:46): 원제목은 **원문 그대로** — 예전(Y6-C A3)엔 상표 게이트가 원문 가운데 「확인 필요」를 끼워 넣어
+    #   「VRSUK{商务系列}简约「확인 필요」躺椅…」(伊姆斯·Eames 자리)가 됐다. 걸린 상표 이름은 옆 배지로 따로(`gated_names`).
+    _ex_t = extra if isinstance(extra, dict) else {}
+    orig_title_shown = str(_ex_t.get("title_en") or _ex_t.get("title") or item.get("title") or "")
+    # Y11-S: 편집 칸(한국어 제목)도 나가는 값과 같은 규칙 — 중괄호 묶음 정리(번역 제목만 · 수집 원문은 손대지 않는다).
+    #   저장된 값은 셀러가 「저장」할 때만 바뀐다.
     try:
-        from src.collectors.ko_polish import mask_marks as _mm
-        _ex_t = extra if isinstance(extra, dict) else {}
-        orig_title_shown = _mm(str(_ex_t.get("title_en") or _ex_t.get("title") or item.get("title") or ""))
-    except Exception:
-        orig_title_shown = ""
+        from src.collectors.ko_polish import unbrace_title as _ub
+        if isinstance(extra, dict) and isinstance(extra.get("title_ko"), str) and "{" in extra["title_ko"]:
+            extra = dict(extra, title_ko=_ub(extra["title_ko"]))
+    except Exception:                                            # noqa: BLE001 — 칸 하나
+        pass
+    try:
+        from src.collectors.ko_polish import gated_names as _gn
+        orig_title_marks = _gn(orig_title_shown)
+    except Exception:                                            # noqa: BLE001 — 배지 한 줄
+        orig_title_marks = []
     # Y7-G: 사전검증이 만든 상세 자동 초안으로 나가는 중이면(셀러 상세가 마켓 규칙에 다 걸러짐) 「확인(바꾸기)」 자리에서 그 초안을 보여 준다
     try:
         from .upload_dispatcher import detail_auto_note as _dan
@@ -11087,7 +11139,7 @@ def collect_preview_by_id(item_id: str):
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
         market_records=_market_records(extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
-        opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, ship_est=ship_est,
+        opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
         field_src=field_src,
         item_sku=_item_sku(item),
         page="collect_history",

@@ -104,6 +104,8 @@ def test_deepl_usage_reads_header_and_caches(monkeypatch):
 # ── 상세 번역 체인: DeepL 먼저 · 제공자·과금 기록 ───────────────────────────────────────────────────
 
 def test_prefer_reorders_chain_without_adding_missing(monkeypatch):
+    monkeypatch.setenv("ADAPTER_DRY_RUN", "0")                 # 다른 테스트가 남긴 dry-run이면 체인을 안 탄다
+    monkeypatch.setenv("TRANSLATE_REQUEST_BUDGET_SEC", "8")
     from src.seller_console.ai.translator import AITranslator
     tr = AITranslator()
     monkeypatch.setattr(tr, "_provider_chain", lambda src_lang=None: ["papago", "deepl", "openai"])

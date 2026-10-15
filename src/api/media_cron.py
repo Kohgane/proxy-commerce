@@ -135,4 +135,5 @@ def _drain_coupang_detail() -> dict:
                                        extra_json=json.dumps(ex, ensure_ascii=False))
     out = cdr.drain(get_item, save_for)
     logger.info("[쿠팡 상세 갱신 크론] %s", {k: out[k] for k in ("picked", "sent", "ok", "left")})
+    cdr.record_last(out)                       # Y11-S: 마지막 회전 결과(보고용 — 줄마다 응답 원문·이미지 판정·번역 제공자)
     return {"ok": True, **{k: out[k] for k in ("picked", "sent", "ok", "left")}}

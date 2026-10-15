@@ -71,6 +71,8 @@ def test_editor_shows_masked_original_title():
     h = c.get(f"/seller/collect/preview/{iid}").get_data(as_text=True)
     line = [ln for ln in h.splitlines() if "const _ORIG_TITLE_SHOWN" in ln][0]
     shown = json.loads(line.split("=", 1)[1].strip().rstrip(";"))
-    assert shown == "意式现代设计师沙发椅 「확인 필요」 旋转单人椅" and "Desede" not in line
+    # Y11-S(오너 2026-10-16 07:46): 원문은 **그대로** — 마커를 원문 가운데 끼우지 않는다. 걸린 상표는 옆 배지로.
+    assert shown == SRC and "「확인 필요」" not in line
+    assert 'data-role="orig-title-marks"' in h and "상표 확인 필요: Desede" in h
     seg = h[h.index("function restoreOrigTitle()"):h.index("function initEditor()")]
-    assert "_ORIG_TITLE_SHOWN" in seg and "_EXTRA.title" not in seg                # 되돌리기도 가린 글로만
+    assert "_ORIG_TITLE_SHOWN" in seg and "_EXTRA.title" not in seg

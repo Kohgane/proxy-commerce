@@ -163,7 +163,7 @@ def test_chain_echo_is_not_success(monkeypatch):
     import src.uploaders.detail_translate as dt
 
     class T:
-        def translate_product(self, src):
+        def translate_product(self, src, prefer=None):
             return {"provider": "stub", "description_ko": src["description"]}
 
     monkeypatch.setattr("src.seller_console.ai.translator.AITranslator", T)

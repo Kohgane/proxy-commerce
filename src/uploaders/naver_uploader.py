@@ -385,6 +385,12 @@ class NaverSmartStoreUploader(BaseUploader):
             channel_no = str(result.get('smartstoreChannelProductNo') or '')
             out = {'success': True, 'product_id': product_id, 'origin_product_no': product_id,
                    'channel_product_no': channel_no, 'url': self.product_url(channel_no), 'sku': product.get('sku', '')}
+            # Y11-S(오너 2026-10-16 07:46): 등록 기록엔 **실제로 나간** 판매가·상품명을 남긴다 — 팝업이 지금 마진으로 다시 계산해
+            #   「마진 25%·3,013,210원」을 보였다(실제 전송은 4,784,940원 옵션가 맞춤).
+            _op = (payload or {}).get('originProduct') or {}
+            _how = (opt2.get('base_how') if probe and probe.get('second_ok') else opt.get('base_how')) if opt else ''
+            out['sent'] = {'sale_price': int(_op.get('salePrice') or 0), 'price_how': str(_how or ''),
+                           'name': str(_op.get('name') or '')}
             if probe:
                 out['base_probe'] = probe
             return out
@@ -411,19 +417,16 @@ class NaverSmartStoreUploader(BaseUploader):
         ch = str(channel_no or '').strip()
         return f'https://smartstore.naver.com/{self.store_slug()}/products/{ch}' if ch else ''
 
-    def update_detail_content(self, origin_no: str, detail_html: str) -> dict:
-        """Y7-J — 등록된 상품의 **상세 본문만** 바꾼다: `GET origin-products/{no}` → `detailContent`만 갈아 끼움 →
-        `PUT origin-products/{no}`(조회한 몸통 그대로 — 다른 칸은 손대지 않는다).
+    def _modify_origin(self, origin_no: str, mutate) -> dict:
+        """`GET origin-products/{no}` → `mutate(originProduct)`가 돌려준 칸만 바꿔 → `PUT origin-products/{no}`(조회한 몸통 그대로).
 
-        문서: 원상품 수정의 `detailContent`는 생략하면 기존값 유지 — 다른 칸을 빼면 어떻게 되는지는 문서에서 확인하지
-        못했다 → 조회한 값을 그대로 되돌려 보낸다. 판매 상태가 수정에 허용된 값(SALE·SUSPENSION)이 아니면 보내지 않는다.
-        반환 `{success, error, status_type, raw}`.
+        문서: 원상품 수정은 생략한 칸의 처리를 확인하지 못했다 → 조회한 값을 그대로 되돌려 보낸다. 판매 상태가 수정에 허용된 값
+        (SALE·SUSPENSION)이 아니면 보내지 않는다. `mutate`가 None을 돌려주면 바꿀 게 없다(보내지 않음 — `unchanged`).
+        반환 `{success, error, status_type, raw, before}`.
         """
         no = str(origin_no or '').strip()
         if not no:
             return {'success': False, 'error': '원상품번호가 없어요 — 등록 기록을 확인해 주세요'}
-        if not str(detail_html or '').strip():
-            return {'success': False, 'error': '보낼 상세 본문이 비어 있어요'}
         cur = self._api_request('GET', f'/v2/products/origin-products/{no}')
         if not isinstance(cur, dict) or 'error' in cur:
             return {'success': False, 'error': f"상품 조회 실패 — {(cur or {}).get('error') if isinstance(cur, dict) else cur}"}
@@ -431,19 +434,45 @@ class NaverSmartStoreUploader(BaseUploader):
         if not isinstance(op, dict):
             return {'success': False, 'error': f'조회 응답에 originProduct 없음: {str(cur)[:200]}'}
         st = str(op.get('statusType') or '')
+        change = mutate(op)
+        if change is None:
+            return {'success': True, 'unchanged': True, 'status_type': st, 'before': op}
         if st not in ('SALE', 'SUSPENSION'):
-            return {'success': False, 'status_type': st,
+            return {'success': False, 'status_type': st, 'before': op,
                     'error': f'판매 상태가 「{st or "미상"}」라 수정 요청을 보내지 않았어요(수정은 판매중·판매중지일 때만 — 문서)'}
         body = {k: v for k, v in cur.items() if k in ('originProduct', 'smartstoreChannelProduct', 'windowChannelProduct')}
-        body['originProduct'] = {**op, 'detailContent': detail_html}
+        body['originProduct'] = {**op, **change}
         res = self._api_request('PUT', f'/v2/products/origin-products/{no}', data=body)
         if not isinstance(res, dict) or 'error' in res:
             from src.uploaders import naver_invalid as _ni
             inv = _ni.rows(res.get('body') or '', '') if isinstance(res, dict) and res.get('http_status') == 400 else []
             err = (' · '.join(r['line'] for r in inv) if inv
                    else str((res or {}).get('error') if isinstance(res, dict) else res))
-            return {'success': False, 'status_type': st, 'error': f'네이버가 수정을 거부했어요 — {err}'[:600]}
-        return {'success': True, 'status_type': st, 'raw': res}
+            return {'success': False, 'status_type': st, 'before': op, 'error': f'네이버가 수정을 거부했어요 — {err}'[:600],
+                    'raw': (res or {}).get('body') if isinstance(res, dict) else str(res)}
+        return {'success': True, 'status_type': st, 'raw': res, 'before': op}
+
+    def update_detail_content(self, origin_no: str, detail_html: str) -> dict:
+        """Y7-J — 등록된 상품의 **상세 본문만** 바꾼다(`_modify_origin` — 다른 칸은 조회한 값 그대로)."""
+        if not str(detail_html or '').strip():
+            return {'success': False, 'error': '보낼 상세 본문이 비어 있어요'}
+        out = self._modify_origin(origin_no, lambda op: {'detailContent': detail_html})
+        out.pop('before', None)
+        return out
+
+    def update_name(self, origin_no: str, transform) -> dict:
+        """Y11-S(오너 2026-10-16 07:46) — 등록된 상품의 **상품명만** 바꾼다. `transform(지금 이름)` → 새 이름(같으면 보내지 않음).
+        반환에 `before_name`·`after_name`·네이버 응답 원문(`raw`)."""
+        box = {}
+
+        def _mut(op):
+            before = str(op.get('name') or '')
+            after = str(transform(before) or '').strip()[:100]
+            box.update(before_name=before, after_name=after)
+            return None if (not after or after == before) else {'name': after}
+        out = self._modify_origin(origin_no, _mut)
+        out.pop('before', None)
+        return {**out, **box}
 
     def update_product(self, product_id: str, updates: dict) -> dict:
         """Naver SmartStore 상품 정보를 업데이트한다."""
@@ -554,7 +583,8 @@ class NaverSmartStoreUploader(BaseUploader):
         if not collected:
             return {}
         title = collected.get('title_ko') or collected.get('title_original', '')
-        title = '[해외직구] ' + title
+        from src.collectors.ko_polish import unbrace_title as _ub   # Y11-S: 중괄호 묶음(공통 규칙)
+        title = '[해외직구] ' + _ub(title)
         sell_price = collected.get('sell_price_krw', 0) or 0
         # 10원 단위로 올림
         price = int(math.ceil(sell_price / 10) * 10)

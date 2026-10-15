@@ -237,6 +237,15 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
         pd["description"] = market_description(_src)
     except Exception as exc:
         logger.warning("[등록] 상세 정리 실패(빌더 값 그대로): %s", exc)
+    # Y11-S(오너 2026-10-16 07:46): 공통 상품명 — 중괄호 묶음(「VRSUK{비즈니스 시리즈}」)을 전 마켓 같은 규칙으로(쿠팡명 Y11-D와 같은 판단).
+    #   저장된 번역 제목은 그대로 — 나가는 값만.
+    try:
+        from src.collectors.ko_polish import unbrace_title as _ub
+        for _k in ("title_ko", "title"):
+            if isinstance(pd.get(_k), str) and ("{" in pd[_k] or "}" in pd[_k] or "｛" in pd[_k]):
+                pd[_k] = _ub(pd[_k])
+    except Exception as exc:
+        logger.warning("[등록] 상품명 중괄호 정리 실패(빌더 값 그대로): %s", exc)
     # U1(오너 2026-10-02): 검색어 — 옛 번역 제목을 낱말로 자른 값이 남아 16401838524에 「미야케·아키라의」가 실렸다.
     try:
         from src.collectors import ko_polish as _kp
@@ -621,6 +630,8 @@ class DispatchResult:
                     "channel_product_no": r.channel_product_no,
                     "split_products": list(r.split_products or []),
                     "sent": dict(r.sent or {}),
+                    # Y11-S: M8-8에서 채운 판매가 재료가 응답에서 빠져 등록 기록엔 늘 {}였다(팝업이 지금 마진으로 다시 계산한 원인)
+                    "price": dict(r.price or {}),
                     "error_code": r.error_code,
                     "hint": r.hint,
                     "details": list(r.details or []),
@@ -2323,6 +2334,7 @@ class UploadDispatcher:
                 channel_product_no=ch_no,
                 details=details,
                 split_products=[{k: x.get(k) for k in ("product_id", "channel_product_no", "url", "suffix")} for x in split],
+                sent=dict((upload_resp or {}).get("sent") or {}) if isinstance(upload_resp, dict) else {},   # Y11-S: 실제 판매가·상품명
             )
         except ImportError:
             _pending_queue.append({"market": "smartstore", "data": product_data})

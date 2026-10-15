@@ -77,6 +77,8 @@ def records(extra: dict) -> List[Dict]:
                     "at": str(u.get("at") or ""), "account": acct,
                     "external_url": url, "review": rv,
                     "price": u.get("price") if isinstance(u.get("price"), dict) else {},   # M8-8: 등록 때 판매가 재료
+                    "sent": u.get("sent") if isinstance(u.get("sent"), dict) else {},      # Y11-S: 실제로 나간 판매가·이름
+                    "name_fix": u.get("name_fix") if isinstance(u.get("name_fix"), dict) else {},   # Y11-S: 상품명 고침 결과
                     "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait"),
                     "state_label": str(rv.get("label") or "등록됨")})
     out.sort(key=lambda r: (_ORDER.get(r["market"], 99), r["at"]))
@@ -153,6 +155,7 @@ def _naver(rec: dict) -> dict:
         out["error"] = str((res or {}).get("error") if isinstance(res, dict) else res)[:300]
         return out
     raw = str(((res.get("originProduct") or {}).get("statusType")) or "").strip()
+    out["live_name"] = str(((res.get("originProduct") or {}).get("name")) or "")   # Y11-S: 지금 네이버에 올라간 상품명
     state, label = NAVER_STATES.get(raw, ("unknown", raw or "확인 못 함"))
     out.update(state=state, label=label, status_raw=raw)
     ch = ch or str(((res.get("smartstoreChannelProduct") or {}).get("channelProductNo")) or "").strip()
@@ -207,7 +210,7 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
                dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」
                registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
-               registered_price=_price_line(rec),
+               registered_price=_price_line(rec), name_fix_line=_name_fix_line(rec),
                tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
     with _LOCK:
         _CACHE[key] = (now, row)
@@ -218,12 +221,48 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
 STATUS_TIMEOUT_SEC = 12.0
 
 
+def _name_fix_line(rec: dict) -> str:
+    try:
+        from src.services.naver_name_fix import line
+        return line(rec)
+    except Exception:                                            # noqa: BLE001 — 한 줄 재료
+        return ""
+
+
+NO_RECORD_LINE = "등록 당시 값 기록 없음"
+_HOW_LABEL = {"option": "옵션가 맞춤", "calc": "계산값", "min": "가장 싼 옵션가"}
+
+
 def _price_line(rec: dict) -> str:
-    """등록 때 판매가 구성 줄 — M8-8 축소(오너 2026-10-10): 「→ 10원 올림 n원」에서 끝. #882 배포 직후 저장된 기록엔
-    「 · 마진 n%는 실수령…」 꼬리가 붙어 있을 수 있어 화면에서 뗀다(저장값은 그대로)."""
-    line = str((rec.get("price") or {}).get("line") or "")
+    """등록 때 판매가 한 줄 — Y11-S(오너 2026-10-16 07:46): **실제로 보낸 값**(`uploaded[].sent.sale_price`)이 기준.
+
+    팝업이 지금 마진(기본 25%)으로 다시 계산해 「3,013,210원」을 보였다 — 네이버엔 4,784,940원(옵션가 맞춤)이 나갔다.
+    계산 재료(`price`)가 있으면 그 값 기준으로 붙이고, 보낸 값과 다르면 무엇이 바꿨는지 말한다. 둘 다 없으면 「등록 당시 값 기록 없음」.
+    M8-8 축소: 계산 줄은 「→ 10원 올림 n원」에서 끝(예전 꼬리 「 · 마진 n%는 실수령…」은 화면에서 뗀다).
+    """
+    price = rec.get("price") or {}
+    sent = rec.get("sent") or {}
+    line = str(price.get("line") or "")
     i = line.find(" · 마진 ")
-    return line[:i] if i >= 0 else line
+    line = line[:i] if i >= 0 else line
+    try:
+        sp = int(sent.get("sale_price") or 0)
+    except (TypeError, ValueError):
+        sp = 0
+    if not sp:
+        return line or NO_RECORD_LINE
+    how = _HOW_LABEL.get(str(sent.get("price_how") or ""), "")
+    out = f"보낸 판매가 {sp:,}원" + (f"({how})" if how else "")
+    try:
+        calc = int(price.get("sell_krw") or 0)
+    except (TypeError, ValueError):
+        calc = 0
+    if calc and calc != sp:
+        m = price.get("margin_pct")
+        out += f" · 계산값 {calc:,}원" + (f"(마진 {m}%)" if m not in (None, "") else "") + "에서 바뀜"
+    elif line:
+        out += " · " + line
+    return out
 
 
 def db_row(rec: dict) -> dict:
@@ -250,6 +289,7 @@ def db_row(rec: dict) -> dict:
             "link": str(rv.get("link") or "") if m.startswith("coupang") else str(rec.get("external_url") or ""),
             "manage_url": manage, "manage_label": mlabel, "pending": True,
             "registered_price": _price_line(rec),
+            "name_fix_line": _name_fix_line(rec),
             "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait")}
 
 

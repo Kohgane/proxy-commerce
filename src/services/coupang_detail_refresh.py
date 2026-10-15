@@ -110,6 +110,22 @@ def _queue_drop(item_id: str, market: str) -> None:
                                       if not (r.get("item_id") == item_id and r.get("market") == market)]})
 
 
+LAST_KEY = "coupang_detail_refresh:last"
+
+
+def record_last(out: dict) -> None:
+    """Y11-S — 마지막 드레인 결과를 운영 DB에(로그를 못 볼 때 보고용). 줄은 원문을 잘라서 — 글 내용·키는 없다."""
+    try:
+        from src.db import image_translate_queue_pg as st
+        keep = ("market", "sid", "sent", "ok", "state", "error", "market_status", "body", "detail_images",
+                "translate_line", "detail_image", "waiting", "dropped", "reason", "tries", "at")
+        rows = [{k: (str(r.get(k))[:1500] if isinstance(r.get(k), str) else r.get(k)) for k in keep if k in r}
+                for r in (out.get("rows") or [])][:10]
+        st.state_set(LAST_KEY, {"at": _now(), **{k: out.get(k) for k in ("picked", "sent", "ok", "left")}, "rows": rows})
+    except Exception as exc:                                      # noqa: BLE001 — 기록 실패는 로그만
+        logger.warning("[쿠팡 상세 갱신] 마지막 결과 기록 실패: %s", exc)
+
+
 def queue_rows() -> List[dict]:
     from src.db import image_translate_queue_pg as st
     return list((st.state_get(QUEUE_KEY) or {}).get("rows") or [])

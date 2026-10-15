@@ -169,7 +169,8 @@ class ElevenStUploader(BaseUploader):
         if not collected:
             return {}
         title = collected.get("title_ko") or collected.get("title_original", "")
-        title = "[해외직구] " + title
+        from src.collectors.ko_polish import unbrace_title as _ub   # Y11-S: 중괄호 묶음(공통 규칙)
+        title = "[해외직구] " + _ub(title)
         if len(title) > 100:
             title = title[:100]
         category_code = collected.get("category_code", "GEN")
