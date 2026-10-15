@@ -72,6 +72,8 @@ def is_junk(text: str) -> bool:
 def desc_is_junk(pd: Dict) -> bool:
     """상품 데이터의 상세설명(편집본·번역본) 중 실려 나갈 값이 UI 쓰레기인가 — 둘 중 비지 않은 것 전부가 쓰레기여야 참."""
     vals = [str(pd.get(k) or "").strip() for k in ("description", "description_ko")]
+    if not any(vals) and str(pd.get("_desc_src") or "").strip():      # Y11-P: 나갈 글자 정리 뒤엔 정리 전 값으로 판정
+        vals = [str(pd["_desc_src"]).strip()]
     vals = [v for v in vals if v]
     return bool(vals) and all(is_junk(v) for v in vals)
 

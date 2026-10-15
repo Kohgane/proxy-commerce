@@ -42,6 +42,25 @@ def _default_translate(text: str) -> dict:
     return translate_text(text, source="zh", target="ko", timeout_sec=8)
 
 
+RECENT_KEY = "detail_translate:recent"
+
+
+def _record_call(chars: int, lines: int, r: dict, ms: int) -> None:
+    """Y11P-2(오너 2026-10-15) — 텐센트 TextTranslate 실호출 기록 40줄(운영 DB `detail_translate:recent`) — 로그를 못 볼 때
+    호출 수·응답 코드·실패 사유 보고용. 글 내용·키는 안 남긴다. 실패해도 일은 계속."""
+    try:
+        from datetime import datetime, timezone
+        from src.db import image_translate_queue_pg as st
+        cur = st.state_get(RECENT_KEY) or {}
+        row = {"at": datetime.now(timezone.utc).isoformat(), "chars": chars, "lines": lines, "ok": bool(r.get("ok")),
+               "why": str(r.get("why") or "")[:80], "ms": ms}
+        st.state_set(RECENT_KEY, {"rows": list(cur.get("rows") or [])[-39:] + [row],
+                                  "total": int(cur.get("total") or 0) + 1,
+                                  "failed": int(cur.get("failed") or 0) + (0 if row["ok"] else 1)})
+    except Exception as exc:                                      # noqa: BLE001
+        logger.debug("[상세 번역] 기록 실패: %s", exc)
+
+
 def _cached_call(chunk: str, fn: Callable[[str], dict]) -> dict:
     key = hashlib.sha1(chunk.encode("utf-8")).hexdigest()
     with _LOCK:
@@ -53,12 +72,15 @@ def _cached_call(chunk: str, fn: Callable[[str], dict]) -> dict:
         with _LOCK:
             if key in _CACHE:
                 return _CACHE[key]
+        import time as _t
+        t0 = _t.monotonic()
         try:
             r = fn(chunk) or {}
         except Exception as exc:               # noqa: BLE001 — 번역 실패는 원문 유지(뒤에서 한자 줄을 뺀다)
             r = {"ok": False, "text": "", "why": type(exc).__name__}
         r = {"ok": bool(r.get("ok") and str(r.get("text") or "").strip()), "text": str(r.get("text") or ""),
              "why": str(r.get("why") or "")}
+        _record_call(len(chunk), chunk.count("\n") + 1, r, int((_t.monotonic() - t0) * 1000))
         if r["ok"]:                            # 실패는 굳히지 않는다 — 다음 등록에서 다시 묻는다
             with _LOCK:
                 _CACHE[key] = r

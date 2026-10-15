@@ -257,3 +257,21 @@ def test_prevalidation_result_carries_split_field():
     d = DispatchResult(product_url="", results=[UploadResult(market="smartstore", success=True, message="ok",
                                                               split_products=[{"channel_product_no": "1"}])]).to_dict()
     assert d["results"][0]["split_products"] == [{"channel_product_no": "1"}]
+
+
+def test_tencent_text_calls_recorded_without_text(monkeypatch):
+    """Y11P-2 — 실호출마다 운영 DB 한 줄(글자 수·줄 수·성공·사유·ms) · 글 내용은 안 남긴다 · 캐시 적중은 안 센다."""
+    from src.uploaders import detail_translate as dt
+    import src.db.image_translate_queue_pg as st
+    box = {}
+    monkeypatch.setattr(st, "state_get", lambda k: box.get(k))
+    monkeypatch.setattr(st, "state_set", lambda k, v: box.__setitem__(k, v))
+    dt._CACHE.clear()
+    dt.translate_leftover("金属\n实木", translate_fn=lambda t: {"ok": True, "text": "금속\n원목", "why": ""})
+    dt.translate_leftover("金属\n实木", translate_fn=lambda t: {"ok": True, "text": "금속\n원목", "why": ""})
+    dt.translate_leftover("布艺", translate_fn=lambda t: {"ok": False, "text": "", "why": "FailedOperation.NoFreeAmount"})
+    rec = box[dt.RECENT_KEY]
+    assert rec["total"] == 2 and rec["failed"] == 1
+    assert rec["rows"][0] == {**rec["rows"][0], "chars": 5, "lines": 2, "ok": True}
+    assert rec["rows"][1]["why"] == "FailedOperation.NoFreeAmount"
+    assert "金属" not in str(rec) and "금속" not in str(rec)

@@ -157,7 +157,7 @@ def outbound_mark_labels(pd: Dict[str, Any]) -> List[str]:
     """Y7-J — 이 상품의 **나갈 글자**(상세·자동 초안·옵션 값·브랜드)에서 지운 상표 라벨 → 카드 「상표 표현 제거: 미야케」."""
     from src.collectors import ko_polish as _kp
     pd = pd or {}
-    texts = [str(pd.get(k) or "") for k in ("description", "description_ko", "description_html", "brand")]
+    texts = [str(pd.get(k) or "") for k in ("description", "_desc_src", "description_ko", "description_html", "brand")]
     a = pd.get("detail_auto")
     if isinstance(a, dict):
         texts.append(str(a.get("text") or ""))
@@ -211,6 +211,8 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
     상세: 한국어만·가게 줄 뺌(`market_description`). 검색어: 지금 상품명에 있는 낱말만(`clean_tags`). 저장값은 그대로.
     """
     pd = dict(pd or {})
+    # Y11-P: 카드 사유 줄(상표 표현 제거·가게 UI 글자)은 **정리 전** 글자를 본다 — 정리 뒤엔 그 줄이 이미 빠져 있다
+    pd.setdefault("_desc_src", str(pd.get("description") or ""))
     try:
         _src = _market_desc_source(pd)
         # Y11-P(오너 2026-10-15): 타오바오 페이지 탭 라벨·남의 구매평·문답 블록을 빼고, 그래도 남은 한자 줄은 **등록 직전에**
@@ -1013,7 +1015,13 @@ def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
         out += naver_payload_holds(pd, iid)
     op = naver_option_plan(pd)
     from src.uploaders import naver_options as _no
-    if op.get("mode") == "hold" and op.get("reason_code") == _no.REASON_NAME_LEN:
+    _sp = [int(float(k.get("sell_price_krw") or 0)) for k in (pd.get("_naver_priced_skus") or [])]
+    if _sp and max(_sp) > NAVER_PRICE_MAX:
+        # 문서 상한(판매가·옵션가 ≤ 999,999,990) — 기준가를 옮기거나 나눠도 그 옵션은 못 보낸다
+        out.append({"short": "옵션가 범위", "fix": "price", "code": "naver_required_optionPrice",
+                    "line": f"네이버 판매가·옵션가는 {NAVER_PRICE_MAX:,}원까지예요 — 넘는 옵션 "
+                            f"{sum(1 for x in _sp if x > NAVER_PRICE_MAX)}개(가격 탭에서 확인)"})
+    elif op.get("mode") == "hold" and op.get("reason_code") == _no.REASON_NAME_LEN:
         # Y11-P: 실측 400 「optionName1 25자 초과」 — 등록 전에 막는다(AI 자동수정이 축약 → 다시 검증)
         out.append({"short": f"옵션값 {_no.OPTION_NAME_MAX}자 초과", "fix": "option_short", "code": _no.REASON_NAME_LEN,
                     "line": op["why"], "long_names": list(op.get("long_names") or [])})
@@ -1043,7 +1051,11 @@ def naver_option_plan(pd: Dict[str, Any]) -> Dict[str, Any]:
         from src.uploaders.naver_options import plan as _plan
         from src.channel_sync.coupang_uploader import with_sku_prices as _wsp
         with _rss.span("option_build", skus=len(pd.get("skus") or [])):
-            op = _plan(_wsp(pd, market="smartstore"))
+            skus = [k for k in (pd.get("skus") or []) if isinstance(k, dict)]
+            # 등록 경로처럼 SKU별 판매가가 이미 실렸으면 그대로, 아니면 등록과 같은 식으로 낸다
+            priced = pd if skus and all(k.get("sell_price_krw") for k in skus) else _wsp(pd, market="smartstore")
+            pd["_naver_priced_skus"] = list(priced.get("skus") or [])
+            op = _plan(priced)
     except Exception as exc:                                     # noqa: BLE001 — 계획 실패는 등록이 같은 함수로 다시 잰다
         logger.warning("[사전검증] 네이버 옵션 계획 실패: %s", exc)
         op = {}
