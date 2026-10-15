@@ -122,7 +122,7 @@ def _suffix(names: List[str], others: List[str]) -> str:
         t = set(_re.findall(r"[가-힣A-Za-z0-9]+", n))
         toks = t if toks is None else toks & t
     rest = set(_re.findall(r"[가-힣A-Za-z0-9]+", " ".join(others)))
-    pick = sorted((t for t in (toks or set()) if t not in rest and len(t) >= 2), key=len, reverse=True)
+    pick = sorted((t for t in (toks or set()) if t not in rest and len(t) >= 2), key=lambda t: (-len(t), t))
     return pick[0] if pick else ""
 
 
@@ -263,7 +263,8 @@ def plan(product: Dict, *, stock_default: int = 999) -> Dict:
         return {**out, "mode": "hold", "reason_code": REASON_SPLIT, "split": plan_rows,
                 "why": (f"보류: 옵션 가격 폭이 커서({lo:,}~{hi:,}원) 네이버 한 상품에 못 담아요(옵션가는 판매가의 ±50%) — "
                         f"가격대별 {len(groups)}개 상품으로 나눠 등록할까요? "
-                        + " · ".join(f"{suffix_label(r['suffix'])} {len(r['names'])}개 {r['min']:,}~{r['max']:,}원" for r in plan_rows))}
+                        + " · ".join(f"{suffix_label(r['suffix'])} {len(r['names'])}개 "
+                                     + (f"{r['min']:,}원" if r['min'] == r['max'] else f"{r['min']:,}~{r['max']:,}원") for r in plan_rows))}
     base = pb["base"]
     combos, total = [], 0
     for k, names, sp in rows:
