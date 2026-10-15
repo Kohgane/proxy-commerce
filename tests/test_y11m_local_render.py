@@ -57,21 +57,29 @@ def test_d21_title_is_erased_and_redrawn_in_tencent_colour_neighbours_untouched(
 
 
 def test_d22_erasing_one_box_does_not_eat_the_next_line_or_logo():
-    """반례(실측): 지울 자리를 넓히다 이웃 줄 「전방위 1」 윗획·「EHILÀ」 아랫단을 먹었다 — 이웃 상자 쪽으론 안 넓히고, 테두리에 닿는 획은 남긴다."""
+    """반례(실측): 지울 자리를 넓히다 이웃 줄 「전방위 1」 윗획·「EHILÀ」 아랫단을 먹었다.
+    Y11-N: 붙은 줄(TM 360° / 전방위 1 / 자기 순환…)은 묶어서 지우고 다시 그린다 — 「전방위 1」은 사라지지 않고 다시 그려진다.
+    큰 로고(EHILÀ, 원문 그대로)는 묶지도 건드리지도 않는다."""
     from src.services import image_edit as IE
     B = BOXES["21"]
     raw = _img(22)
     r = IE.render_local(raw, 1.0, [], [(B[12], "TM 360° Sveglio"), (B[6], "끊김 없음")], others=B)
-    assert r["ok"]
-    assert _diff(raw, r["bytes"], B[13]) < 0.005                      # 「전방위 1」
+    assert r["ok"] and r["merged"] >= 2
     assert _diff(raw, r["bytes"], B[1]) < 0.005                       # 「EHILÀ」
+    assert _ink_ratio(r["bytes"], B[13]) > 0.6 * _ink_ratio(raw, B[13])   # 「전방위 1」 다시 그려짐(지워져 사라지지 않음)
+
+
+def _ink_ratio(raw: bytes, box, thr=120):
+    from PIL import Image
+    im = Image.open(io.BytesIO(raw)).convert("L").crop((box["x"], box["y"], box["x"] + box["w"], box["y"] + box["h"]))
+    return sum(1 for v in im.getdata() if v < thr) / float(im.size[0] * im.size[1])
 
 
 def test_d22_han_box_redrawn_without_han():
     from src.services import image_edit as IE
     B = BOXES["21"]
     r = IE.render_local(_img(22), 1.0, [B[0]], [(B[7], "중력+ 고탄성 정형면 자체 개발 「힐딩 체감 시스템」")], others=B)
-    assert r["ok"] and r["drawn"] == 1 and r["how"][0] == "fill"      # 흰 바탕 — 상자 안 글자 아닌 픽셀 중앙값으로 메움
+    assert r["ok"] and r["drawn"] == 1 and r["how"][0] in ("fill", "fill-ghost")   # 흰 바탕 — 획(또는 판·유령째) 바탕색으로
     assert r["sizes"][0] >= 60                                         # 텐센트 글자(약 80px)와 같은 급
 
 
@@ -191,7 +199,8 @@ def test_old_render_polish_is_redrawn_once_with_cache(monkeypatch):
         applied.append(ops)
         e = IE._entry(extra, kind, idx)
         IE._normalize(e)
-        e["edits"].append({"n": 2, "url": "https://res.cloudinary.com/x/new.jpg", "base_key": "translated", "by": by, "render": "local"})
+        e["edits"].append({"n": 2, "url": "https://res.cloudinary.com/x/new.jpg", "base_key": "translated", "by": by, "render": "local",
+                           "render_v": IE.RENDER_V})
         IE.select(extra, kind, idx, "edit:2")
         return {"ok": True, "version": "edit:2"}
     monkeypatch.setattr(IE, "apply", _apply)

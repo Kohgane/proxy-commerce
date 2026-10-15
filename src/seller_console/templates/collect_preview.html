@@ -1235,14 +1235,16 @@ function kgpDetailPlanRender(g) {
   }).join('') + '</div>';
   g.innerHTML = h;
 }
+// 판정표를 서버에서 다시 읽어 상세 타일을 그린다 — 편집기를 닫을 때 · 다듬기가 끝났을 때(Y11-N)
+window.kgpDetailPlanRefresh = async function () {
+  try {
+    const d = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/detail-plan', {credentials: 'same-origin'})).json();
+    if (d.ok) { KGP_DETAIL_PLAN = d.plan || KGP_DETAIL_PLAN; renderDetailGallery(); }
+  } catch (e) { /* 표는 다음 열 때 다시 그린다 */ }
+};
 function kgpDetailEdit(idx) {
   if (!window.kgpImageEdit) return;
-  window.kgpImageEdit.open(_ITEM_ID, 'detail', idx, async function () {     // 닫으면 판정표를 다시 읽어 그린다
-    try {
-      const d = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/detail-plan', {credentials: 'same-origin'})).json();
-      if (d.ok) { KGP_DETAIL_PLAN = d.plan || KGP_DETAIL_PLAN; renderDetailGallery(); }
-    } catch (e) { /* 표는 다음 열 때 다시 그린다 */ }
-  });
+  window.kgpImageEdit.open(_ITEM_ID, 'detail', idx, window.kgpDetailPlanRefresh);   // 닫으면 판정표를 다시 읽어 그린다
 }
 async function kgpDetailInclude(idx, on) {
   try {
