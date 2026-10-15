@@ -10,7 +10,8 @@
     optionCombinations: [{optionName1, optionName2, stockQuantity, price, sellerManagerCode, usable}],
     useStockManagement: true,
   }
-  · price = **판매가 대비 옵션 추가금**(정수, 0 이상으로 맞춘다 — 판매가를 가장 싼 조합으로 둔다).
+  · price = **판매가 대비 옵션 추가금**(정수). Y11-P: 범위는 판매가의 ±50%(1만 원 이상 — 실측 400) — 가장 싼 조합이
+    범위를 못 맞추면 판매가 기준을 옵션 판매가 중 범위를 맞추는 값으로 옮긴다(추가금이 음수일 수 있다 · `pick_base`).
   · stockQuantity ≤ 99,999,999.
   · 조합형 그룹은 문서상 최대 3개 — 오너 스펙은 **2축까지**.
   · 단독형(optionSimple)과 조합형은 같이 못 쓴다 — 우리는 조합형만 쓴다.
@@ -40,6 +41,89 @@ REASON_DUPLICATE = "option_duplicate"
 REASON_PRICE = "option_price"
 #: Y7-I(오너 2026-10-09 23:25 KST 400 「중복된 옵션이 있습니다. (옵션명 : 색상)」) — 그룹 이름 중복·빈 이름.
 REASON_GROUP_DUP = "naver_option_dup"
+#: Y11-P(오너 2026-10-15 19:01 VRSUK 400 원문) — 옵션값 길이·옵션가 범위·가격대 분할 제안.
+REASON_NAME_LEN = "naver_option_name_len"
+REASON_PRICE_RANGE = "naver_option_price_range"
+REASON_SPLIT = "naver_option_split"
+
+#: 옵션값(optionName1~3) 글자 상한 — 실측(VRSUK 400 「optionCombinations[13..15].optionName1 25자 초과」, 28·29·30자 거부).
+#: 공식 문서(Context7 `/websites/apicenter_commerce_naver`)엔 숫자가 없다.
+OPTION_NAME_MAX = 25
+#: 상품명 상한 — 판매자센터 안내 100자(문서엔 숫자 없음 · 미실측).
+TITLE_MAX = 100
+
+
+def price_range(sale_price: int):
+    """옵션가(판매가 대비 추가금) 허용 범위 `(최저, 최고)` 원.
+
+    실측: 판매가 3,592,100원 → 400 「price 범위 -1,796,050 ~ 1,796,050」 = 판매가의 ±50%(1만 원 이상 구간).
+    1만 원 미만 구간은 판매자센터 안내값(2천 원 미만 0~+100% · 2천~1만 원 -50%~+100%) — **미실측**.
+    """
+    sp = int(sale_price or 0)
+    if sp < 2000:
+        lo, hi = 0.0, 1.0
+    elif sp < 10000:
+        lo, hi = -0.5, 1.0
+    else:
+        lo, hi = -0.5, 0.5
+    return int(math.ceil(sp * lo)), int(math.floor(sp * hi))
+
+
+def _fits(base: int, prices: List[int]) -> bool:
+    lo, hi = price_range(base)
+    return all(lo <= p - base <= hi for p in prices)
+
+
+def pick_base(prices: List[int]) -> Dict:
+    """판매가(기준가) — 옵션 판매가(각 옵션의 마진이 담긴 값)는 그대로 두고 **모든 추가금이 범위 안**에 들게.
+
+    순서: ① 가장 싼 옵션가(예전 동작 · 추가금 0 이상) ② 옵션 판매가 중 범위를 맞추는 가장 싼 값(추가금 0원 옵션이 하나 남는다 —
+    0원 옵션 필수 여부는 문서에 없어 안전한 쪽) ③ 계산값(최고가÷1.5 올림, 10원 단위). 다 안 되면 `{base: 0}`.
+    """
+    ps = sorted({int(p) for p in prices if int(p) > 0})
+    if not ps:
+        return {"base": 0, "how": ""}
+    if _fits(ps[0], ps):
+        return {"base": ps[0], "how": "min"}
+    for p in ps:
+        if _fits(p, ps):
+            return {"base": p, "how": "option"}
+    for frac in (0.5, 1.0):
+        b = _ceil10(ps[-1] / (1.0 + frac))
+        if _fits(b, ps):
+            return {"base": b, "how": "calc"}
+    return {"base": 0, "how": ""}
+
+
+def split_groups(prices: List[int]) -> List[List[int]]:
+    """한 상품에 못 담는 가격 폭 → 싼 쪽부터 묶음마다 `pick_base`가 되는 만큼 담는다(인덱스 묶음)."""
+    order = sorted(range(len(prices)), key=lambda i: prices[i])
+    groups: List[List[int]] = []
+    cur: List[int] = []
+    for i in order:
+        if cur and not pick_base([prices[j] for j in cur + [i]])["base"]:
+            groups.append(cur)
+            cur = []
+        cur.append(i)
+    if cur:
+        groups.append(cur)
+    return groups
+
+
+def suffix_label(suffix: str) -> str:
+    return f"「…({suffix})」" if suffix else "「상품명 그대로」"
+
+
+def _suffix(names: List[str], others: List[str]) -> str:
+    """분할 상품 이름 꼬리 — 그 묶음 옵션 이름에 다 있고 다른 묶음엔 없는 낱말(「(풀가죽)」), 없으면 가격대."""
+    import re as _re
+    toks = None
+    for n in names:
+        t = set(_re.findall(r"[가-힣A-Za-z0-9]+", n))
+        toks = t if toks is None else toks & t
+    rest = set(_re.findall(r"[가-힣A-Za-z0-9]+", " ".join(others)))
+    pick = sorted((t for t in (toks or set()) if t not in rest and len(t) >= 2), key=len, reverse=True)
+    return pick[0] if pick else ""
 
 
 def combo_limit() -> int:
@@ -146,6 +230,12 @@ def plan(product: Dict, *, stock_default: int = 999) -> Dict:
     if no_price:
         return {**out, "mode": "hold", "reason_code": REASON_PRICE,
                 "why": f"보류: 판매가를 내지 못한 옵션 {len(no_price)}개({no_price[0]}) — 한 가격으로 대신 올리지 않아요"}
+    long_names = [n for _k, names, _sp in rows for n in names if len(n) > OPTION_NAME_MAX]
+    if long_names:
+        long_names = list(dict.fromkeys(long_names))
+        return {**out, "mode": "hold", "reason_code": REASON_NAME_LEN, "long_names": long_names,
+                "why": (f"보류: 네이버 옵션값은 {OPTION_NAME_MAX}자까지예요 — 넘는 값 {len(long_names)}개"
+                        f"(「{long_names[0]}」 {len(long_names[0])}자). 옵션 탭에서 줄이거나 AI 축약을 기다려 주세요")}
     seen, dup = set(), []
     for _k, names, _sp in rows:
         key = tuple(names)
@@ -156,7 +246,25 @@ def plan(product: Dict, *, stock_default: int = 999) -> Dict:
         return {**out, "mode": "hold", "reason_code": REASON_DUPLICATE,
                 "why": f"보류: 한국어로 옮기니 같은 옵션이 겹쳐요({dup[0]}) — 옵션 탭에서 이름을 나눠 주세요"}
 
-    base = min(_ceil10(sp) for _k, _n, sp in rows)
+    prices = [_ceil10(sp) for _k, _n, sp in rows]
+    pb = pick_base(prices)
+    if not pb["base"]:
+        groups = split_groups(prices)
+        lo, hi = min(prices), max(prices)
+        plan_rows = []
+        for gi, g in enumerate(groups):
+            gnames = [" / ".join(rows[i][1]) for i in g]
+            others = [" / ".join(rows[j][1]) for j in range(len(rows)) if j not in g]
+            gp = [prices[i] for i in g]
+            # 꼬리: 그 묶음만의 낱말 → 없으면 가장 싼 묶음은 상품명 그대로(""), 나머지는 「구성 n」(지어낸 말 대신 순번)
+            plan_rows.append({"skus": [str(rows[i][0].get("sku_id") or rows[i][0].get("skuId") or rows[i][0].get("id") or i) for i in g],
+                              "names": gnames, "base": pick_base(gp)["base"], "min": min(gp), "max": max(gp),
+                              "suffix": _suffix(gnames, others) or ("" if gi == 0 else f"구성 {gi + 1}")})
+        return {**out, "mode": "hold", "reason_code": REASON_SPLIT, "split": plan_rows,
+                "why": (f"보류: 옵션 가격 폭이 커서({lo:,}~{hi:,}원) 네이버 한 상품에 못 담아요(옵션가는 판매가의 ±50%) — "
+                        f"가격대별 {len(groups)}개 상품으로 나눠 등록할까요? "
+                        + " · ".join(f"{suffix_label(r['suffix'])} {len(r['names'])}개 {r['min']:,}~{r['max']:,}원" for r in plan_rows))}
+    base = pb["base"]
     combos, total = [], 0
     for k, names, sp in rows:
         st = k.get("stock")
@@ -179,4 +287,57 @@ def plan(product: Dict, *, stock_default: int = 999) -> Dict:
         "optionCombinations": combos,
         "useStockManagement": True,
     }
-    return {**out, "mode": "combo", "option_info": info, "sale_price": base, "stock": total}
+    return {**out, "mode": "combo", "option_info": info, "sale_price": base, "stock": total,
+            "base_how": pb["how"], "base_min": min(prices), "price_range": price_range(base)}
+
+
+def base_note(op: Dict) -> str:
+    """판매가 기준을 옮겼으면 카드 한 줄(보류 아님) — 옵션마다 판매가(마진)는 그대로."""
+    if (op or {}).get("mode") != "combo" or op.get("base_how") in ("", "min", None):
+        return ""
+    lo, hi = op.get("price_range") or (0, 0)
+    return (f"네이버 판매가 기준 {int(op['sale_price']):,}원으로 맞췄어요(가장 싼 옵션 {int(op.get('base_min') or 0):,}원) — "
+            f"옵션가 범위 {lo:,}~{hi:,}원(판매가 ±50%) 안 · 옵션마다 판매가는 그대로")
+
+
+# ── Y11-P 분할 등록(오너 확인 뒤에만) ─────────────────────────────────────────────────────────────
+
+def split_sig(groups: List[Dict]) -> str:
+    """분할 묶음의 서명 — 오너가 확인한 그 묶음과 지금 계산이 같은지(환율·원가가 바뀌면 다시 묻는다)."""
+    return "|".join(",".join(sorted(str(s) for s in (g.get("skus") or []))) for g in groups or [])
+
+
+def split_approved(product: Dict, op: Dict) -> bool:
+    """`plan`이 분할 보류를 냈고, 저장된 오너 확인(`naver_split_ok`)이 지금 묶음과 같은가."""
+    ok = (product or {}).get("naver_split_ok")
+    return bool(isinstance(ok, dict) and (op or {}).get("reason_code") == REASON_SPLIT
+                and ok.get("sig") and ok.get("sig") == split_sig(op.get("split") or []))
+
+
+def split_products(product: Dict, op: Dict) -> List[Dict]:
+    """확인된 분할 → 묶음마다 상품 사본(SKU는 그 묶음만 · 상품명 끝에 「(꼬리)」 · 옵션 값 목록도 그 묶음만)."""
+    out: List[Dict] = []
+    skus = _skus(product or {})
+    by_id = {str(k.get("sku_id") or k.get("skuId") or k.get("id") or i): k for i, k in enumerate(skus)}
+    for g in (op or {}).get("split") or []:
+        sub_skus = [by_id[s] for s in g.get("skus") or [] if s in by_id]
+        if not sub_skus:
+            continue
+        used = {str(x) for k in sub_skus for x in (k.get("spec") or [])}
+        opts = []
+        for o in (product.get("options") or []):
+            if not isinstance(o, dict):
+                opts.append(o)
+                continue
+            vals = o.get("values") or []
+            keep = [i for i, v in enumerate(vals) if str(v.get("name") if isinstance(v, dict) else v) in used]
+            o2 = dict(o, values=[vals[i] for i in keep])
+            if isinstance(o.get("values_ko"), list) and o["values_ko"]:
+                o2["values_ko"] = [o["values_ko"][i] for i in keep if i < len(o["values_ko"])]
+            opts.append(o2)
+        suffix = str(g.get("suffix") or "").strip()
+        title = str(product.get("title_ko") or product.get("title") or "").strip()
+        new_title = f"{title} ({suffix})" if suffix else title
+        out.append({**product, "skus": sub_skus, "options": opts, "title": new_title, "title_ko": new_title,
+                    "naver_split_part": {"suffix": suffix, "skus": list(g.get("skus") or [])}})
+    return out

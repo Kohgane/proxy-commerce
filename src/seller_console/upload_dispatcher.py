@@ -113,6 +113,9 @@ def market_description(desc: str) -> str:
     from src.collectors import ko_polish as _kp
     from src.seller_console.ai.translator import _BILINGUAL_DIVIDER
     s = str(desc or "").split(_BILINGUAL_DIVIDER)[0]
+    # Y11-P: 페이지 탭 라벨(用户评价·参数信息…)·남의 구매평·문답 블록은 번역돼 있어도 우리 상세가 아니다
+    from src.uploaders.detail_ui_junk import strip_page_ui as _strip_page_ui
+    s = _strip_page_ui(s)["text"]
     # Y7-N(오너 2026-10-10): 본문 전체가 가게 UI 글자(가게 이름·평점·호평률·발송·만족도)면 **비어 있음** — 남은 한두 줄이
     #   셀러 글로 읽혀 상세 자동 초안을 막았다(BLACKHOLES 번역본 「침묵 방랑자 / 평균 2일 이내 발송」).
     from src.uploaders.detail_ui_junk import is_junk as _ui_junk
@@ -209,7 +212,23 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
     """
     pd = dict(pd or {})
     try:
-        pd["description"] = market_description(_market_desc_source(pd))
+        _src = _market_desc_source(pd)
+        # Y11-P(오너 2026-10-15): 타오바오 페이지 탭 라벨·남의 구매평·문답 블록을 빼고, 그래도 남은 한자 줄은 **등록 직전에**
+        #   텐센트 텍스트 번역으로 옮긴다(예전엔 한자 줄을 통째로 버렸다 — 규격표까지). 병기본의 원문(구분선 아래)은 옮기지 않는다.
+        try:
+            from src.seller_console.ai.translator import _BILINGUAL_DIVIDER
+            from src.uploaders import detail_translate as _dt
+            _o = _dt.outbound(str(_src or "").split(_BILINGUAL_DIVIDER)[0])
+            _src = _o["text"]
+            if _o["translated"] or _o["failed"]:
+                pd["detail_auto_translated"] = _o["translated"]
+                pd["detail_translate_failed"] = _o["failed"]
+                pd["detail_translate_why"] = _o["why"]
+            if _o["page_ui_removed"]:
+                pd["detail_page_ui_removed"] = _o["page_ui_removed"]
+        except Exception as exc:                                     # noqa: BLE001 — 번역 실패는 한자 줄 빼기(예전 동작)
+            logger.warning("[등록] 상세 남은 원문 번역 실패(한자 줄은 뺌): %s", exc)
+        pd["description"] = market_description(_src)
     except Exception as exc:
         logger.warning("[등록] 상세 정리 실패(빌더 값 그대로): %s", exc)
     # U1(오너 2026-10-02): 검색어 — 옛 번역 제목을 낱말로 자른 값이 남아 16401838524에 「미야케·아키라의」가 실렸다.
@@ -556,6 +575,8 @@ class UploadResult:
     action_label: str = ""                     # Y7-F — 그 버튼의 글자(「상세페이지 꾸미기 →」 등). 비면 화면이 주소로 고른다
     channel_product_no: Optional[str] = None   # Y7-J — 네이버 채널 상품번호(구매자 주소·상태 조회). 원상품번호는 external_product_id
     price: Dict[str, Any] = field(default_factory=dict)   # M8-8 — 이 등록의 판매가 재료(`price_snapshot`)
+    # Y11-P — 네이버 가격대별 분할 등록이면 만든 상품 전부 `[{product_id, channel_product_no, url, suffix}]`(첫 줄 = 위 번호)
+    split_products: List[Dict[str, Any]] = field(default_factory=list)
 
 
 #: Y7-F — 다시 눌러 볼 만한 실패(통신·일시 오류)만. 400 입력값 거부·전송 전 보류는 다시 해도 같은 답 — 「재시도」를 보이지 않는다.
@@ -591,6 +612,7 @@ class DispatchResult:
                     "external_product_id": r.external_product_id,
                     "external_url": r.external_url,
                     "channel_product_no": r.channel_product_no,
+                    "split_products": list(r.split_products or []),
                     "error_code": r.error_code,
                     "hint": r.hint,
                     "details": list(r.details or []),
@@ -636,6 +658,9 @@ class PrevalidationResult:
     cautions: List[str] = field(default_factory=list)
     # Y8 f — 쿠팡 메타에 없는 옵션 축 이름 `[{orig, label, candidate, choices}]`(「메타 속성 고르기」 재료). AI 자동수정이 하나를 고른다.
     name_picks: List[Dict[str, Any]] = field(default_factory=list)
+    # Y11-P — 네이버 옵션 가격 폭이 커서 한 상품에 못 담을 때 가격대별 분할 제안 `[{skus, names, base, min, max, suffix}]`.
+    #   화면은 「나눠서 등록할까요?」 한 줄 + 오너 확인 버튼(누르기 전엔 나누지 않는다).
+    naver_split: List[Dict[str, Any]] = field(default_factory=list)
 
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
@@ -986,19 +1011,44 @@ def naver_required_holds(pd: Dict[str, Any]) -> List[Dict[str, str]]:
                     "action_url": r["action_url"], "action_label": r["action_label"]})
     with _rss.span("notice"):                                                # 고시·필수 칸(등록과 같은 조립)
         out += naver_payload_holds(pd, iid)
+    op = naver_option_plan(pd)
+    from src.uploaders import naver_options as _no
+    if op.get("mode") == "hold" and op.get("reason_code") == _no.REASON_NAME_LEN:
+        # Y11-P: 실측 400 「optionName1 25자 초과」 — 등록 전에 막는다(AI 자동수정이 축약 → 다시 검증)
+        out.append({"short": f"옵션값 {_no.OPTION_NAME_MAX}자 초과", "fix": "option_short", "code": _no.REASON_NAME_LEN,
+                    "line": op["why"], "long_names": list(op.get("long_names") or [])})
+    elif op.get("mode") == "hold" and op.get("reason_code") == _no.REASON_SPLIT and not _no.split_approved(pd, op):
+        # Y11-P: 판매가를 어디에 둬도 옵션가가 ±50% 밖 — 가격대별로 나눠 등록할지 **오너가 한 줄로 고른다**
+        out.append({"short": "옵션 가격 폭", "fix": "naver_split", "code": _no.REASON_SPLIT,
+                    "line": op["why"], "split": list(op.get("split") or [])})
+    elif op.get("mode") == "combo":
+        lo, hi = op.get("price_range") or _no.price_range(int(op.get("sale_price") or 0))
+        bad = [c for c in (op.get("option_info") or {}).get("optionCombinations") or []
+               if not (lo <= int(c.get("price") or 0) <= hi)]
+        if bad or int(op.get("sale_price") or 0) > NAVER_PRICE_MAX:
+            out.append({"short": "옵션가 범위", "fix": "price", "code": "naver_required_optionPrice",
+                        "line": f"네이버 옵션가는 판매가 {int(op.get('sale_price') or 0):,}원 기준 {lo:,} ~ {hi:,}원이에요 — "
+                                f"범위를 넘는 조합 {len(bad)}개(가격 탭에서 확인)"})
+    return out
+
+
+def naver_option_plan(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """Y11-P — 사전검증이 **등록과 같은 재료**로 잰 네이버 조합형 계획. 예전엔 SKU별 판매가(`sell_price_krw`) 없이 재서
+    계획이 「판매가 못 냄」 보류로 빠지고 옵션가·옵션값 검사를 건너뛰었다(VRSUK: 사전검증 통과 → 등록 400).
+    결과는 `pd["_naver_option_plan"]`에 둔다(같은 사전검증 안 카드 줄이 다시 계산하지 않게)."""
+    if isinstance(pd.get("_naver_option_plan"), dict):
+        return pd["_naver_option_plan"]
+    from src.utils import rss as _rss
     try:
         from src.uploaders.naver_options import plan as _plan
+        from src.channel_sync.coupang_uploader import with_sku_prices as _wsp
         with _rss.span("option_build", skus=len(pd.get("skus") or [])):
-            op = _plan(pd)
-    except Exception:
+            op = _plan(_wsp(pd, market="smartstore"))
+    except Exception as exc:                                     # noqa: BLE001 — 계획 실패는 등록이 같은 함수로 다시 잰다
+        logger.warning("[사전검증] 네이버 옵션 계획 실패: %s", exc)
         op = {}
-    if op.get("mode") == "combo":
-        over = [c for c in (op.get("option_info") or {}).get("optionCombinations") or []
-                if int(c.get("price") or 0) > NAVER_PRICE_MAX or int(c.get("price") or 0) < 0]
-        if over or int(op.get("sale_price") or 0) > NAVER_PRICE_MAX:
-            out.append({"short": "옵션가 범위", "fix": "price", "code": "naver_required_optionPrice",
-                        "line": f"네이버 옵션가는 0 ~ {NAVER_PRICE_MAX:,}원이에요 — 범위를 넘는 조합 {len(over)}개(가격 탭에서 확인)"})
-    return out
+    pd["_naver_option_plan"] = op
+    return op
 
 
 def readiness_message(holds: List[Dict[str, str]]) -> str:
@@ -1026,6 +1076,10 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("전압·플러그를 확인하거나 「그래도 등록」")
     if any(h["fix"] == "lead_time" for h in holds):
         fixes.append("선주문을 확인하고 「선주문 그래도 등록」")
+    if any(h["fix"] == "option_short" for h in holds):
+        fixes.append("AI 축약을 기다리거나 옵션 탭에서 25자 안으로 줄인")              # Y11-P
+    if any(h["fix"] == "naver_split" for h in holds):
+        fixes.append("「가격대별로 나눠 등록」을 누른")                                 # Y11-P
     if any(h["fix"] == "detail_blank" for h in holds):
         fixes.append("「상세페이지 꾸미기」에서 상세 설명이나 상세 이미지를 채운")     # Y7-F
     if any(h["fix"] in ("risk", "risk_block") for h in holds):
@@ -1146,6 +1200,11 @@ class UploadDispatcher:
             PrevalidationResult 목록 (마켓당 1개)
         """
         results = []
+        # Y11-P: 마켓에 나갈 글자는 등록 빌더와 같은 함수로(이미 지난 재료면 그대로 — 같은 값이 나온다)
+        try:
+            product_data = apply_outbound_text(product_data)
+        except Exception as exc:                                     # noqa: BLE001
+            logger.warning("[사전검증] 나갈 글자 정리 실패(원래 값): %s", exc)
         for market in markets:
             base, ctx = _for_market(market)
             if base != market and market not in ACCOUNT_MARKET_CODES:
@@ -1178,6 +1237,35 @@ class UploadDispatcher:
                     r.details = list(r.details or []) + [_un]
             except Exception as exc:                             # noqa: BLE001 — 안내 한 줄이라 검증을 막지 않는다
                 logger.warning("[사전검증] 상세 UI 글자 안내 줄 실패: %s", exc)
+            # Y11-P: 네이버 판매가 기준을 옵션가 범위(±50%)에 맞춰 옮겼으면 한 줄 · 상품명 100자 넘으면 「주의」(뒤를 잘라 보낸다)
+            if base == "smartstore":
+                try:
+                    from src.uploaders import naver_options as _nopt
+                    _op = product_data.get("_naver_option_plan") or {}
+                    _bn = _nopt.base_note(_op)
+                    if _nopt.split_approved(product_data, _op):
+                        _bn = (f"가격대별 {len(_op.get('split') or [])}개 상품으로 나눠 등록해요(오너 확인) — "
+                               + " · ".join(f"{_nopt.suffix_label(g.get('suffix') or '')} 옵션 {len(g.get('names') or [])}개"
+                                            for g in _op.get("split") or []))
+                    if _bn and _bn not in (r.details or []):
+                        r.details = list(r.details or []) + [_bn]
+                    _tt = str(product_data.get("title_ko") or product_data.get("title") or "").strip()
+                    if len(_tt) > _nopt.TITLE_MAX:
+                        _tc = (f"상품명 {len(_tt)}자 — 네이버는 {_nopt.TITLE_MAX}자까지라 뒤를 잘라 보내요"
+                               f"(「…{_tt[_nopt.TITLE_MAX - 8:_nopt.TITLE_MAX]}」까지)")
+                        if _tc not in (r.cautions or []):
+                            r.cautions = list(r.cautions or []) + [_tc]
+                except Exception as exc:                         # noqa: BLE001
+                    logger.warning("[사전검증] 네이버 판매가 기준 줄 실패: %s", exc)
+            # Y11-P: 상세에 남은 원문 줄을 등록 직전 번역으로 옮겼으면 「원문 n칸 자동 번역」(보류 아님) — 한국어 마켓만
+            try:
+                if base in _KO_OPTION_MARKETS:
+                    from src.uploaders.detail_translate import note as _tr_note
+                    _tn = _tr_note(product_data)
+                    if _tn and _tn not in (r.details or []):
+                        r.details = list(r.details or []) + [_tn]
+            except Exception as exc:                             # noqa: BLE001
+                logger.warning("[사전검증] 상세 자동 번역 줄 실패: %s", exc)
             # Y7-J(오너 2026-10-10): 나갈 글자(상세·초안·옵션 값·브랜드)에서 상표를 지웠으면 카드에 한 줄(보류 아님)
             try:
                 _mk = mark_note(product_data)
@@ -1587,6 +1675,7 @@ class UploadDispatcher:
                 fixes=list(dict.fromkeys(h.get("fix", "") for h in holds if h.get("fix"))),
                 action_url=_url,
                 action_label=next((h.get("action_label") for h in holds if h.get("action_url") == _url and h.get("action_label")), ""),
+                naver_split=next((list(h.get("split") or []) for h in holds if h.get("split")), []),
             )
 
         # 이미지 URL 접근성 (첫 번째 이미지만 HEAD 체크, 타임아웃 3초)
@@ -2165,13 +2254,25 @@ class UploadDispatcher:
                 ext_id = str(upload_resp.get("product_id") or upload_resp.get("id") or "").strip() or None
                 ext_url = str(upload_resp.get("url") or "").strip() or None
                 ch_no = str(upload_resp.get("channel_product_no") or "").strip() or None
+            split = [dict(x) for x in ((upload_resp or {}).get("split_products") or [])] if isinstance(upload_resp, dict) else []
+            split_failed = list((upload_resp or {}).get("split_failed") or []) if isinstance(upload_resp, dict) else []
+            msg = "스마트스토어 업로드 성공"
+            details: List[str] = []
+            if split:
+                # Y11-P: 오너 화면엔 채널 번호만(원상품번호는 기록용)
+                msg = f"스마트스토어 업로드 성공 — 가격대별 {len(split)}개 상품"
+                from src.uploaders.naver_options import suffix_label as _sl
+                details = [f"{_sl(x.get('suffix') or '')} 채널 {x.get('channel_product_no') or '번호 확인 중'}" for x in split]
+                details += [f"{_sl(x.get('suffix') or '')} 못 만들었어요 — {str(x.get('error') or '')[:160]}" for x in split_failed]
             return UploadResult(
                 market="smartstore",
                 success=True,
-                message="스마트스토어 업로드 성공",
+                message=msg,
                 external_product_id=ext_id,
                 external_url=ext_url,
                 channel_product_no=ch_no,
+                details=details,
+                split_products=[{k: x.get(k) for k in ("product_id", "channel_product_no", "url", "suffix")} for x in split],
             )
         except ImportError:
             _pending_queue.append({"market": "smartstore", "data": product_data})

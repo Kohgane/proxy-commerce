@@ -1372,6 +1372,55 @@ _NAVER_ORDERS_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="
 <a href="/admin/diagnostics#workers-status">← 진단으로</a></div></body></html>"""
 
 
+@admin_panel_bp.get("/diagnostics/naver-recent")
+def diagnostics_naver_recent():
+    """Y11-P(오너 2026-10-15) — 스토어별 **최근 N일 등록 상품**(상태 무관). 등록 400(옵션값 25자·옵션가 범위) 뒤 네이버에
+    반쪽 상품이 남았는지 대조. `q`(상품명 일부)로 거른다. 오너 화면 규칙대로 **채널 상품번호만** 보인다."""
+    from datetime import datetime, timedelta, timezone
+    from flask import request as _rq
+    try:
+        days = max(1, min(7, int(_rq.args.get("days") or 2)))
+    except ValueError:
+        days = 2
+    q = (_rq.args.get("q") or "").strip().lower()
+    kst = timezone(timedelta(hours=9))
+    to_d = datetime.now(kst).date()
+    from_d = to_d - timedelta(days=days - 1)
+    stores = []
+    try:
+        from src.seller_console.smartstore_routing import STORES, store_label
+    except Exception:
+        STORES, store_label = ("chezgoga", "gocosmos"), (lambda s: s)
+    for st in STORES:
+        res = {"ok": False, "rows": [], "error": ""}
+        try:
+            from src.uploaders.naver_uploader import NaverSmartStoreUploader
+            res = NaverSmartStoreUploader(account=st).recent_products(from_d.isoformat(), to_d.isoformat())
+        except Exception as exc:
+            res = {"ok": False, "rows": [], "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        rows = [r for r in res.get("rows") or [] if not q or q in str(r.get("name") or "").lower()]
+        stores.append({"store": st, "label": store_label(st), "ok": res.get("ok"), "error": res.get("error") or "",
+                       "rows": rows, "all": len(res.get("rows") or [])})
+    if (_rq.args.get("format") or "") == "json":
+        return jsonify({"days": days, "from": from_d.isoformat(), "to": to_d.isoformat(), "q": q, "stores": stores})
+    return render_template_string(_NAVER_RECENT_TEMPLATE, stores=stores, days=days, q=q,
+                                  from_d=from_d.isoformat(), to_d=to_d.isoformat())
+
+
+_NAVER_RECENT_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>네이버 최근 등록</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="p-3"><div class="container" style="max-width:960px" data-role="naver-recent">
+<h5>스마트스토어 최근 등록 {{ from_d }} ~ {{ to_d }}{% if q %} · 「{{ q }}」{% endif %}</h5>
+<p class="small text-muted">등록일 기준 · 상태 무관. 등록이 400으로 거부된 상품이 여기 보이면 네이버에 반쪽 상품이 남은 것입니다(지우기는 판매자센터에서).</p>
+{% for s in stores %}<h6 class="mt-3">{{ s.label }}</h6>
+{% if not s.ok %}<div class="alert alert-danger small" style="word-break:break-word">조회 실패 — <code>{{ s.error }}</code></div>
+{% else %}<p class="small" data-role="naver-recent-count">기간 등록 {{ s.all }}건 · 일치 <strong>{{ s.rows|length }}건</strong>{% if s.error %} · {{ s.error }}{% endif %}</p>
+{% for r in s.rows %}<div class="border-bottom py-1 small" data-role="naver-recent-row"><strong style="word-break:break-word">{{ r.name }}</strong>
+<div class="text-muted">채널 {{ r.channel_no }} · {{ r.status }} · {{ r.reg }}</div></div>{% endfor %}{% endif %}{% endfor %}
+<a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
+
+
 def _page_url(uid: str, item_id: str, kind: str, idx: int) -> str:
     import json as _json
     from src.seller_console import collect_history_store as store

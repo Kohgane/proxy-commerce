@@ -54,9 +54,32 @@ def upload(product_data: Dict[str, Any]) -> Dict[str, Any]:
     # Y7: SKU마다 그 SKU 원가로 **스마트스토어** 판매가를 낸다(쿠팡과 같은 식 하나, 수수료만 마켓별) —
     #   조합형 옵션의 조합별 추가금이 여기서 나온다. SKU가 없으면 입력 그대로(단일 등록 불변).
     from .coupang_uploader import with_sku_prices
-    return run_upload(
-        up,
-        with_sku_prices(product_data, market="smartstore"),
-        required_envs=[],
-        market_label=MARKET_LABEL,
-    )
+    priced = with_sku_prices(product_data, market="smartstore")
+    # Y11-P(오너 2026-10-15): 옵션 가격 폭이 커서 한 상품에 못 담고(판매가 ±50%), **오너가 나누기를 확인한** 묶음이면
+    #   묶음마다 따로 등록한다(상품명 끝 「(꼬리)」). 확인 전·묶음이 바뀌었으면 나누지 않는다(업로더가 보류로 돌려준다).
+    from src.uploaders import naver_options as _no
+    op = _no.plan(priced)
+    if op.get("mode") == "hold" and _no.split_approved(priced, op):
+        return _upload_split(up, priced, op)
+    return run_upload(up, priced, required_envs=[], market_label=MARKET_LABEL)
+
+
+def _upload_split(up, priced: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
+    """확인된 분할 묶음을 차례로 등록. 하나라도 만들어졌으면 성공(만든 번호 전부 + 못 만든 묶음 사유),
+    하나도 못 만들었으면 첫 실패를 그대로 올린다(가짜 성공 0)."""
+    from ._channel_bridge import ChannelUploadError
+    from src.uploaders import naver_options as _no
+    made, failed = [], []
+    for part in _no.split_products(priced, op):
+        suffix = (part.get("naver_split_part") or {}).get("suffix") or ""
+        try:
+            r = run_upload(up, part, required_envs=[], market_label=MARKET_LABEL)
+            made.append({**r, "suffix": suffix, "title": part.get("title")})
+        except ChannelUploadError as exc:
+            failed.append({"suffix": suffix, "error": str(exc), "exc": exc})
+    if not made:
+        raise failed[0]["exc"] if failed else ChannelUploadError(f"{MARKET_LABEL} 분할 등록: 나눌 묶음이 없어요")
+    out = dict(made[0])
+    out["split_products"] = [{k: v for k, v in m.items()} for m in made]
+    out["split_failed"] = [{"suffix": f["suffix"], "error": f["error"]} for f in failed]
+    return out

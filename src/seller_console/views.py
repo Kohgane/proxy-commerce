@@ -3136,6 +3136,14 @@ def _persist_upload_status(item_id, result_dict) -> None:
                 else:
                     uploaded[same] = {**uploaded[same], **{k: v for k, v in rec.items() if v}}
                 changed = True
+                # Y11-P: 네이버 가격대별 분할 등록 — 첫 상품 말고 나머지도 각자 기록(번호가 다르니 쌓인다)
+                for sp in (r.get("split_products") or [])[1:]:
+                    pid = str(sp.get("product_id") or "")
+                    if pid and not any(u.get("market") == rec["market"] and str(u.get("product_id") or "") == pid
+                                       for u in uploaded):
+                        uploaded.append({**rec, "product_id": pid, "external_url": sp.get("url") or "",
+                                         "channel_product_no": str(sp.get("channel_product_no") or ""),
+                                         "split_suffix": sp.get("suffix") or ""})
         if not changed:
             return
         extra["uploaded"] = uploaded
@@ -3826,6 +3834,45 @@ def collect_ship_ratio_override(item_id):
     return jsonify({"ok": ok, "override": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+@bp.post("/collect/<item_id>/naver-split-ok")
+def collect_naver_split_ok(item_id):
+    """Y11-P(오너 2026-10-15): 네이버 옵션 가격 폭 보류 — 「가격대별로 나눠 등록」을 **오너가 확인**한다(누르기 전엔 나누지 않는다).
+
+    지금 계산한 분할 묶음의 서명을 남긴다 — 환율·원가가 바뀌어 묶음이 달라지면 다시 묻는다. `{"cancel": true}`면 확인을 지운다.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from . import collect_history_store as _chs
+    if data.get("cancel"):
+        ex.pop("naver_split_ok", None)
+        ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+        return jsonify({"ok": ok, "cancelled": True}), (200 if ok else 502)
+    from .product_builder import build_product
+    from src.channel_sync.coupang_uploader import with_sku_prices
+    from src.uploaders import naver_options as _no
+    from . import market_credentials as mc
+    with mc.seller_market_env(_seller_id(), ["smartstore"]):
+        op = _no.plan(with_sku_prices(build_product(item, seller_id=_seller_id()), market="smartstore"))
+    if op.get("reason_code") != _no.REASON_SPLIT:
+        return jsonify({"ok": False, "error": "지금 계산으로는 나눌 필요가 없어요 — 다시 사전검증해 주세요."}), 409
+    rec = {"at": datetime.now(timezone.utc).isoformat(), "by": str(session.get("email") or _seller_id()),
+           "sig": _no.split_sig(op.get("split") or []),
+           "groups": [{"suffix": g.get("suffix"), "skus": g.get("skus"), "min": g.get("min"), "max": g.get("max")}
+                      for g in op.get("split") or []]}
+    ex["naver_split_ok"] = rec
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    logger.warning("[네이버 분할] 오너 확인 — item=%s by=%s 묶음 %d", item_id, rec["by"], len(rec["groups"]))
+    return jsonify({"ok": ok, "split": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
 @bp.post("/collect/<item_id>/lead-time-override")
 def collect_lead_time_override(item_id):
     """Y7-O: 선주문(옵션 값 발송 소요 꼬리) 보류를 **그래도 등록**으로 푼다 — 자동 등록 체인은 풀지 않는다(오너 방침).
@@ -4494,7 +4541,8 @@ def _pv_prepare(data: dict, product_data: dict):
             if _lts:
                 product_data["option_lead_time"] = _lts
             for _k in ("ship_ratio_override", "ship_mode", "ship_input", "option_translate_diag", "rep_image_override", "option_split", "options_src",
-                       "voltage_split", "voltage_override", "naver_category_id", "lead_time_override", "option_leadtime"):
+                       "voltage_split", "voltage_override", "naver_category_id", "lead_time_override", "option_leadtime",
+                       "naver_split_ok"):
                 if _sx.get(_k):
                     product_data[_k] = _sx[_k]
             # Y8: 저장된 AI 수정(옵션 값·카테고리·상품명·원산지·쿠팡 필수옵션) — 화면이 들고 있는 값보다 저장본이 정본
@@ -4628,6 +4676,8 @@ def _pv_dict(r, rc=None) -> dict:
         "rep_pending": bool(getattr(r, "rep_pending", False)),
         # Y7-M — 「주의」 칩(보류 아님 · 등록 버튼 막지 않음)
         "cautions": list(getattr(r, "cautions", None) or []),
+        # Y11-P — 네이버 가격대별 분할 제안(오너 확인 한 줄 · 누르기 전엔 나누지 않는다)
+        "naver_split": list(getattr(r, "naver_split", None) or []),
     }
     if r.error_code == "meta_unavailable":
         # Z9 — 쿠팡 메타를 못 받았다: 화면은 「검증 못 함 — 다시 시도」(통과도 막힘도 아님)
@@ -5217,6 +5267,14 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
             t0 = _time.monotonic()
             _pv_auto_image_edit(job_id, data)                          # Y11-E: 자동 지우기 없음 — 색 덩어리 옛 편집본만 빼기(이미지 배열을 만들기 전에)
             product_data, rc = _pv_prepare(data, dict(data.get("product") or {}))
+            # Y11-P(오너 2026-10-15): 마켓에 나갈 글자(상세 — 탭 라벨·남의 글 빼기 + 남은 한자 번역)는 등록과 **같은 함수**로 먼저.
+            #   예전엔 쿠팡 사전검증이 화면이 보낸 원문 상세를 그대로 재서 「원문 남은 칸」으로 멈췄다(등록 빌더는 한자 줄을 뺐다).
+            try:
+                from .upload_dispatcher import apply_outbound_text as _aot
+                with _rss.span("outbound_text"):
+                    product_data = _aot(product_data)
+            except Exception as exc:                                  # noqa: BLE001 — 정리 실패는 원래 값으로 잰다
+                logger.warning("[사전검증] 나갈 글자 정리 실패(원래 값): %s", exc)
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})
             # Y10: 리스크 게이트 — 카드 「위험 n건」. 결정 안 된 보류·차단이 있으면 AI(상세 초안·반려 자동 수정·Y8)는
             #   **유저가 고른 뒤에** 돈다(오너: 게이트가 먼저, AI는 「빼고 등록」 뒤에만 상품명·본문을 다시 쓴다).
