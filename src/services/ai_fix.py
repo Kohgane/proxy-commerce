@@ -5,6 +5,7 @@
 
 고칠 수 있는 것(종류 = `kind`):
   a `option_value`   옵션 값 미해석 — 값마다 한국어(발송 소요 꼬리는 떼고 · 원문 숫자·영문 보존) → `option_value_overrides`
+  a' `option_short`    Y11-P 네이버 옵션값 25자 초과 — 한국어 값을 25자 안으로 줄임(겹침 없이 · 지금 값의 숫자·영문 보존) → 같은 칸
   b `naver_category` 네이버 카테고리 후보 중 **하나만**(후보 밖 ID는 버림) + 한 줄 이유 → `naver_category_id`
   c (상품명)         표시광고·금지어·원문 남은 상품명 — `reject_autofix`(#886)가 고친다(이 모듈은 카드 줄·되돌리기만 합친다).
                      그 답에도 같은 가드(IP·상표·원문에 없는 영문 이름)를 건다 — `reject_autofix._changes`
@@ -31,7 +32,7 @@ MAX_ROUNDS = 2
 MAX_CALLS = 6
 RETRY_AFTER = timedelta(hours=24)          # 검사에 떨어진 항목은 하루 동안 다시 묻지 않는다(같은 돈을 또 쓰지 않게)
 
-KIND_LABEL = {"option_value": "옵션값", "naver_category": "카테고리", "coupang_category": "쿠팡 카테고리", "title": "상품명", "detail": "상세",
+KIND_LABEL = {"option_value": "옵션값", "option_short": "옵션값 축약", "naver_category": "카테고리", "coupang_category": "쿠팡 카테고리", "title": "상품명", "detail": "상세",
               "notice": "고시정보", "coupang_attr": "쿠팡 필수옵션", "coupang_axis": "쿠팡 옵션 속성"}
 _KANA = re.compile(r"[぀-ヿ]")
 _HAN = re.compile(r"[㐀-鿿豈-﫿]")
@@ -145,6 +146,13 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
         vals = [v for v in unresolved_option_values(pd) if not _skip(ex, "option_value:" + v)]
         if vals:
             tasks.append({"kind": "option_value", "markets": sorted(set(mk)), "values": vals[:30]})
+    # a' 옵션 값 축약(네이버 25자) — 지금 한국어 값이 상한을 넘는 것만(원문 열쇠로 덮어쓴다)
+    mk = [m for m in _held(results, fix="option_short") if _is_ko(m)]
+    if mk:
+        rows = [r for r in long_option_values(pd) if not _skip(ex, "option_short:" + r["src"])]
+        if rows:
+            tasks.append({"kind": "option_short", "markets": sorted(set(mk)), "rows": rows[:30],
+                          "siblings": all_option_values(pd)[:60]})
     # b 네이버 카테고리
     mk = _held(results, fix="naver_category")
     if mk and not _skip(ex, "naver_category"):
@@ -192,6 +200,24 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
     if picks:
         tasks.append({"kind": "coupang_axis", "markets": sorted(set(mk)), "picks": picks[:4]})
     return tasks
+
+
+def long_option_values(pd: dict, cap: int = 0) -> List[dict]:
+    """한국어 옵션 값이 네이버 상한(25자)을 넘는 것 `[{src, ko}]` — 등록과 같은 해석 사슬(`option_ko.options_view`)."""
+    from src.collectors import option_ko as K
+    from src.uploaders.naver_options import OPTION_NAME_MAX
+    cap = cap or OPTION_NAME_MAX
+    out = []
+    for a in K.options_view(pd):
+        for v in a["values"]:
+            if v["ko"] and len(v["ko"]) > cap and all(x["src"] != v["src"] for x in out):
+                out.append({"src": v["src"], "ko": v["ko"]})
+    return out
+
+
+def all_option_values(pd: dict) -> List[str]:
+    from src.collectors import option_ko as K
+    return [v["ko"] or v["src"] for a in K.options_view(pd) for v in a["values"]]
 
 
 def _rep_images(pd: dict) -> List[str]:
@@ -278,6 +304,16 @@ def _prompt(task: dict, pd: dict) -> Tuple[str, str]:
                 "판촉어(신상·인기·특가) 금지.\n"
                 "값:\n" + "\n".join(f"- {v}" for v in task["values"])
                 + '\n\n답 형식: {"values": {"원문 값": "한국어 값", ...}}', "small")
+    if k == "option_short":
+        from src.uploaders.naver_options import OPTION_NAME_MAX as _cap
+        # 재료 = 용어집·번역 사슬(`resolve_option_value`)이 이미 옮긴 한국어 값 — 원문을 다시 옮기지 않고 줄이기만
+        return (_context(pd) + f"\n\n네이버 스마트스토어 옵션 값은 {_cap}자까지예요. 아래 한국어 옵션 값을 **{_cap}자 이하**로 줄이세요.\n"
+                "규칙: 색 이름·소재 등급(풀가죽/반가죽·아닐린/세미아닐린·오일왁스 등)·구성(발받침 포함 등)처럼 옵션끼리 **구별되는 말은 남기고**, "
+                "겹치는 수식어·띄어쓰기·「/」 앞뒤 공백을 줄이세요. 지금 값에 있는 숫자·영문은 그대로. 새 정보·판촉어 금지. "
+                "아래 「다른 옵션 값」과 **같아지면 안 돼요**(서로 다른 옵션은 다른 값).\n"
+                "줄일 값:\n" + "\n".join(f"- {r['ko']}" for r in task["rows"])
+                + "\n다른 옵션 값:\n" + "\n".join(f"- {x}" for x in task.get("siblings") or [])
+                + '\n\n답 형식: {"values": {"지금 값": "줄인 값", ...}}', "small")
     if k == "naver_category":
         cands = "\n".join(f"- {c['id']}: {c.get('name')}" for c in task["candidates"])
         photo = "첨부한 대표 사진과 " if task.get("images") else ""
@@ -346,6 +382,28 @@ def _apply(task: dict, ans: dict, pd: dict, ex: dict, meta: dict) -> List[str]:
             before = ov.get(v, "")
             ov[v] = ko
             _mark(ex, key, k, f"{_olt.display(core)} → {ko}", before, ko, "", meta)
+            done.append(key)
+        if done:
+            ex["option_value_overrides"] = ov
+            pd["option_value_overrides"] = dict(ov)
+    elif k == "option_short":
+        from src.uploaders.naver_options import OPTION_NAME_MAX as _cap
+        got = ans.get("values") if isinstance(ans.get("values"), dict) else {}
+        ov = dict(ex.get("option_value_overrides") or {}) if isinstance(ex.get("option_value_overrides"), dict) else {}
+        taken = {str(x).strip() for x in (task.get("siblings") or [])} - {r["ko"] for r in task["rows"]}
+        for r in task["rows"]:
+            key = "option_short:" + r["src"]
+            short = str(got.get(r["ko"]) or "").strip()
+            why = guard(short) or (f"{_cap}자 초과" if len(short) > _cap else "") \
+                or ("다른 옵션 값과 같아짐" if short in taken else "") \
+                or ("지금 값의 숫자·영문 빠짐(" + ", ".join(lost_tokens(r["ko"], short)) + ")" if lost_tokens(r["ko"], short) else "")
+            if why:
+                _tried(ex, key, why)
+                continue
+            taken.add(short)
+            before = ov.get(r["src"], "")
+            ov[r["src"]] = short
+            _mark(ex, key, k, f"{r['ko']} → {short}", before, short, f"{len(r['ko'])}자 → {len(short)}자", meta)
             done.append(key)
         if done:
             ex["option_value_overrides"] = ov
@@ -461,7 +519,7 @@ def overlay(pd: dict, ex: dict) -> dict:
     attrs = [a for a in (pd.get("coupang_attributes") or []) if isinstance(a, dict)]
     for key, f in fx.items():
         after, before = f.get("after"), f.get("before")
-        if key.startswith("option_value:"):
+        if key.startswith(("option_value:", "option_short:")):
             v = key.split(":", 1)[1]
             if ov.get(v) in (None, "", before, after):
                 ov[v] = after
@@ -488,7 +546,7 @@ def overlay(pd: dict, ex: dict) -> dict:
     # 되돌린 항목 — 화면이 아직 AI 값을 들고 있으면(되돌린 뒤 새로고침 전) 원래 값으로
     for key, r in rev.items():
         after, before = r.get("after"), r.get("before") or ""
-        if key.startswith("option_value:"):
+        if key.startswith(("option_value:", "option_short:")):
             v = key.split(":", 1)[1]
             if ov.get(v) == after:
                 if before:
@@ -545,7 +603,10 @@ def summary(ex: dict) -> Dict[str, Any]:
         cnt[it["kind_label"]] = cnt.get(it["kind_label"], 0) + 1
     order = list(dict.fromkeys(KIND_LABEL.values()))
     keys = sorted(cnt, key=lambda k: order.index(k) if k in order else len(order))
-    return {"line": "AI가 고쳤어요 — " + " · ".join(f"{k} {cnt[k]}개" for k in keys), "items": items}
+    # Y11-P: 「옵션값 3개 축약」(오너 문구) — 축약은 말 순서가 다르다
+    fmt = {"옵션값 축약": lambda n: f"옵션값 {n}개 축약"}
+    return {"line": "AI가 고쳤어요 — " + " · ".join(fmt.get(k, lambda n, k=k: f"{k} {n}개")(cnt[k]) for k in keys),
+            "items": items}
 
 
 def revert(ex: dict, key: str) -> bool:
@@ -574,7 +635,7 @@ def revert(ex: dict, key: str) -> bool:
     if not f:
         return False
     before = f.get("before")
-    if key.startswith("option_value:"):
+    if key.startswith(("option_value:", "option_short:")):
         ov = dict(ex.get("option_value_overrides") or {})
         v = key.split(":", 1)[1]
         if before:

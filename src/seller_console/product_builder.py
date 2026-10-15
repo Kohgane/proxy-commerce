@@ -83,6 +83,8 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "rep_image_override": ex.get("rep_image_override") or None,
         # Y7-B: 오너가 지정한 네이버 리프 카테고리(없으면 정본 사전 매칭 — 못 정하면 보류)
         "naver_category_id": str(ex.get("naver_category_id") or ""),
+        # Y11-P: 네이버 가격대별 분할 등록 — 오너가 확인한 묶음(서명이 지금 계산과 같을 때만 나눈다)
+        "naver_split_ok": ex.get("naver_split_ok") if isinstance(ex.get("naver_split_ok"), dict) else None,
         "item_id": str(it.get("id") or ""),
         # Y8: 축 분해 전 원본 옵션(五孔 같은 차단 어휘는 분해 뒤 값엔 없다) · 분해 기록
         "options_src": ex.get("options_src") if isinstance(ex.get("options_src"), list) else [],

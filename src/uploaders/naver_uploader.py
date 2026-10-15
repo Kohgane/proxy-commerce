@@ -451,6 +451,27 @@ class NaverSmartStoreUploader(BaseUploader):
         except (TypeError, ValueError):
             return None
 
+    def recent_products(self, from_date: str, to_date: str, size: int = 100) -> dict:
+        """Y11-P — 등록일(PROD_REG_DAY)이 그 기간인 상품 `{ok, rows:[{channel_no, name, status, reg}], error}`.
+
+        등록 400 뒤 「반쪽 상품」이 남았는지 대조용(`POST /v1/products/search` · Context7 문서 본문 칸 그대로).
+        응답 칸(`contents[].channelProducts[]`)이 없으면 빈 목록 + 원문 앞부분(지어내지 않음). 상태 필터는 걸지 않는다.
+        """
+        body = {'searchKeywordType': 'CHANNEL_PRODUCT_NO', 'page': 1, 'size': int(size),
+                'periodType': 'PROD_REG_DAY', 'fromDate': from_date, 'toDate': to_date}
+        res = self._api_request('POST', '/v1/products/search', data=body)
+        if not isinstance(res, dict) or 'error' in res:
+            return {'ok': False, 'rows': [], 'error': str((res or {}).get('error') if isinstance(res, dict) else res)[:300]}
+        rows = []
+        for c in res.get('contents') or []:
+            for ch in (c or {}).get('channelProducts') or []:
+                rows.append({'channel_no': str(ch.get('channelProductNo') or ''), 'name': str(ch.get('name') or ''),
+                             'status': str(ch.get('statusType') or ''), 'reg': str(ch.get('regDate') or '')})
+        out = {'ok': True, 'rows': rows, 'total': res.get('totalElements'), 'error': ''}
+        if not rows and 'contents' not in res:
+            out['error'] = f'응답에 contents 없음: {str(res)[:200]}'
+        return out
+
     def delete_product(self, product_id: str) -> bool:
         """Naver SmartStore 상품을 삭제한다."""
         try:

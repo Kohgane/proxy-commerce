@@ -72,6 +72,8 @@ def is_junk(text: str) -> bool:
 def desc_is_junk(pd: Dict) -> bool:
     """상품 데이터의 상세설명(편집본·번역본) 중 실려 나갈 값이 UI 쓰레기인가 — 둘 중 비지 않은 것 전부가 쓰레기여야 참."""
     vals = [str(pd.get(k) or "").strip() for k in ("description", "description_ko")]
+    if not any(vals) and str(pd.get("_desc_src") or "").strip():      # Y11-P: 나갈 글자 정리 뒤엔 정리 전 값으로 판정
+        vals = [str(pd["_desc_src"]).strip()]
     vals = [v for v in vals if v]
     return bool(vals) and all(is_junk(v) for v in vals)
 
@@ -82,3 +84,56 @@ def note(pd: Dict) -> str:
     if not (pd.get("desc_ui_dropped") or desc_is_junk(pd)):
         return ""
     return f"상세설명: 화면 읽기 → {REASON}(가게 이름·평점·발송·만족도) — 상세 자동 초안으로 채웁니다"
+
+
+# ── Y11-P(오너 2026-10-15) — 페이지 탭 라벨 · 남의 글 블록(구매평·문답) ─────────────────────────────────
+_COUNT_TAIL = r"\s*(?:[·・:：]?\s*[\d,.万+]+|[(（]\s*[\d,.万+]+\s*[)）])?\s*$"
+
+
+@lru_cache(maxsize=1)
+def _label_re():
+    labs = sorted((str(x) for x in (table().get("tab_labels") or []) if str(x).strip()), key=len, reverse=True)
+    if not labs:
+        return None
+    return re.compile(r"^\s*(?:" + "|".join(re.escape(x) for x in labs) + ")" + _COUNT_TAIL)
+
+
+def is_tab_label(line: str) -> bool:
+    """줄 전체가 페이지 탭 라벨(「用户评价」「用户评价·35」「累计评论(1200)」)인가."""
+    rx = _label_re()
+    return bool(rx and rx.match(str(line or "").strip()))
+
+
+def strip_page_ui(text: str) -> Dict:
+    """`{text, labels, blocks, removed}` — 탭 라벨 줄과 남의 글 블록(구매평·문답)을 뺀 본문.
+
+    블록은 `blocks[].start` 줄에서 `end` 줄까지(끝 줄 포함). `max_block_lines` 안에 끝이 없으면 start 줄만 뺀다.
+    본문 줄 순서는 그대로 — 줄 하나도 고쳐 쓰지 않는다(빼기만).
+    """
+    t = table()
+    lines = str(text or "").replace("\r", "").split("\n")
+    rules = [(re.compile(b["start"]), re.compile(b["end"])) for b in (t.get("blocks") or [])
+             if isinstance(b, dict) and b.get("start") and b.get("end")]
+    cap = int(t.get("max_block_lines") or 80)
+    out: List[str] = []
+    labels = blocks = removed = 0
+    i = 0
+    while i < len(lines):
+        s = lines[i].strip()
+        hit = next(((st, en) for st, en in rules if s and st.match(s)), None)
+        if hit:
+            end = next((j for j in range(i + 1, min(len(lines), i + 1 + cap)) if hit[1].match(lines[j].strip())), None)
+            if end is not None:
+                removed += end - i + 1
+                blocks += 1
+                i = end + 1
+                continue
+        if s and is_tab_label(s):
+            labels += 1
+            removed += 1
+            i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    body = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    return {"text": body, "labels": labels, "blocks": blocks, "removed": removed}
