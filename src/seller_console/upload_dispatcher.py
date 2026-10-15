@@ -226,6 +226,9 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
                 pd["detail_auto_translated"] = _o["translated"]
                 pd["detail_translate_failed"] = _o["failed"]
                 pd["detail_translate_why"] = _o["why"]
+                # Y11P-2: 60초 뒤 재시도 대기 줄 수 · 못 옮긴 규격 줄(있으면 쿠팡 보류 + 「다시 번역」)
+                pd["detail_translate_retry_pending"] = _o.get("retry_pending") or 0
+                pd["detail_translate_spec_failed"] = list(_o.get("spec_failed") or [])
             if _o["page_ui_removed"]:
                 pd["detail_page_ui_removed"] = _o["page_ui_removed"]
         except Exception as exc:                                     # noqa: BLE001 — 번역 실패는 한자 줄 빼기(예전 동작)
@@ -1269,11 +1272,29 @@ class UploadDispatcher:
                             r.cautions = list(r.cautions or []) + [_tc]
                 except Exception as exc:                         # noqa: BLE001
                     logger.warning("[사전검증] 네이버 판매가 기준 줄 실패: %s", exc)
+            # Y11P-2(오너 결정 2026-10-15): 못 옮긴 줄에 규격 키가 있으면 쿠팡은 빼지 않고 보류 + 「다시 번역」
+            try:
+                if base == "coupang":
+                    from src.uploaders.detail_translate import spec_hold_line as _shl, SPEC_HOLD_CODE as _SHC
+                    _sh = _shl(product_data)
+                    if _sh:
+                        if r.ok:
+                            r = PrevalidationResult(market=market, ok=False, hold=True, error_code=_SHC,
+                                                    message="사전검증 — 보류: 상세 규격 번역 실패 → 「다시 번역」 후",
+                                                    details=[_sh], fixes=["retranslate"], cautions=list(r.cautions or []),
+                                                    category=dict(r.category or {}))
+                        else:
+                            r.details = list(r.details or []) + [_sh]
+                            r.fixes = list(dict.fromkeys(list(r.fixes or []) + ["retranslate"]))
+                            r.hold = True
+            except Exception as exc:                             # noqa: BLE001
+                logger.warning("[사전검증] 규격 번역 보류 판정 실패: %s", exc)
             # Y11-P: 상세에 남은 원문 줄을 등록 직전 번역으로 옮겼으면 「원문 n칸 자동 번역」(보류 아님) — 한국어 마켓만
             try:
                 if base in _KO_OPTION_MARKETS:
-                    from src.uploaders.detail_translate import note as _tr_note
-                    _tn = _tr_note(product_data)
+                    from src.uploaders.detail_translate import note as _tr_note, spec_hold_line as _shl2
+                    # 쿠팡이 규격 줄로 보류됐으면 「빼고 보내요」 줄은 틀린 말 — 보류 문구 하나만
+                    _tn = "" if (base == "coupang" and _shl2(product_data)) else _tr_note(product_data)
                     if _tn and _tn not in (r.details or []):
                         r.details = list(r.details or []) + [_tn]
             except Exception as exc:                             # noqa: BLE001
@@ -2191,6 +2212,15 @@ class UploadDispatcher:
 
     def _upload_coupang(self, product_data: Dict[str, Any]) -> UploadResult:
         """쿠팡 업로드 (Phase 71/109 모듈 재사용)."""
+        # Y11P-2: 못 옮긴 규격 줄은 빼고 보내지 않는다(사전검증과 같은 판정) — 「다시 번역」 뒤 다시 등록
+        try:
+            from src.uploaders.detail_translate import spec_hold_line as _shl, SPEC_HOLD_CODE as _SHC
+            _sh = _shl(product_data)
+        except Exception:                                            # noqa: BLE001
+            _sh, _SHC = "", ""
+        if _sh:
+            return UploadResult(market="coupang", success=False, message=_sh, error_code=_SHC, details=[_sh],
+                                hint="편집 화면이나 사전검증 카드의 「다시 번역」을 눌러 주세요.")
         try:
             # graceful import: 모듈 존재 시 실제 업로드
             from src.channel_sync import coupang_uploader  # type: ignore
@@ -2270,6 +2300,10 @@ class UploadDispatcher:
             split_failed = list((upload_resp or {}).get("split_failed") or []) if isinstance(upload_resp, dict) else []
             msg = "스마트스토어 업로드 성공"
             details: List[str] = []
+            _bp = (upload_resp or {}).get("base_probe") if isinstance(upload_resp, dict) else None
+            if isinstance(_bp, dict):
+                from src.uploaders.naver_options import probe_line as _pl
+                details.append(_pl(_bp))
             if split:
                 # Y11-P: 오너 화면엔 채널 번호만(원상품번호는 기록용)
                 msg = f"스마트스토어 업로드 성공 — 가격대별 {len(split)}개 상품"

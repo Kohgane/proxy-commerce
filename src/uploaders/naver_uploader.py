@@ -343,6 +343,30 @@ class NaverSmartStoreUploader(BaseUploader):
                         'action_url': _ncat.picker_url(str(product.get('item_id') or ''))}
             path = '/v2/products'
             result = self._api_request('POST', path, data=payload)
+            probe = None
+            if opt.get('base_alt') and 'error' in result and result.get('http_status') == 400:
+                # Y11P-1(오너 승인 2026-10-15): 최소 허용값(calc)을 네이버가 옵션가로 거부하면 **같은 흐름에서** 옵션 판매가로 다시.
+                from src.uploaders import naver_options as _nopt
+                body = str(result.get('body') or result.get('error') or '')
+                probe = {'first': int(opt['sale_price']), 'first_how': opt.get('base_how'), 'first_error': body[:600],
+                         'alt': int(opt['base_alt']), 'related': _nopt.price_related_400(body)}
+                if probe['related']:
+                    opt2 = _option_plan(product, stock_default=self.STOCK_QUANTITY, base_override=int(opt['base_alt']),
+                                        base_override_how=opt.get('base_alt_how') or 'option')
+                    if opt2.get('mode') == 'combo':
+                        product = {**product, '_option_plan': opt2}
+                        payload = self._build_product_payload(product)
+                        result = self._api_request('POST', path, data=payload)
+                        probe['retried'] = True
+                        probe['second_ok'] = 'error' not in result
+                        if not probe['second_ok']:
+                            probe['second_error'] = str(result.get('body') or result.get('error') or '')[:600]
+                _nopt.record_probe(probe, sku=str(product.get('sku') or ''))
+            elif opt.get('base_alt') and 'error' not in result:
+                from src.uploaders import naver_options as _nopt
+                probe = {'first': int(opt['sale_price']), 'first_how': opt.get('base_how'), 'first_ok': True,
+                         'alt': int(opt['base_alt'])}
+                _nopt.record_probe(probe, sku=str(product.get('sku') or ''))
             if 'error' in result:
                 # Y7-B: 400 + `invalidInputs` — 다시 해도 같은 답이다. 「잠시 뒤 다시 시도」 대신 필드별 조치로.
                 from src.uploaders import naver_invalid as _ni
@@ -359,8 +383,11 @@ class NaverSmartStoreUploader(BaseUploader):
             # M6: 구매자 화면 주소는 **채널 상품번호**다(원상품번호와 다른 번호 — 식별자 오용 지뢰). 없으면 비운다.
             #   Y7-J: 두 번호를 **둘 다** 돌려준다 — 원상품번호(수정 PUT)·채널 상품번호(구매자 주소·상태 조회).
             channel_no = str(result.get('smartstoreChannelProductNo') or '')
-            return {'success': True, 'product_id': product_id, 'origin_product_no': product_id,
-                    'channel_product_no': channel_no, 'url': self.product_url(channel_no), 'sku': product.get('sku', '')}
+            out = {'success': True, 'product_id': product_id, 'origin_product_no': product_id,
+                   'channel_product_no': channel_no, 'url': self.product_url(channel_no), 'sku': product.get('sku', '')}
+            if probe:
+                out['base_probe'] = probe
+            return out
         except Exception as exc:
             logger.error('upload_product failed for sku=%s: %s', product.get('sku', ''), exc)
             return {'success': False, 'error': str(exc), 'sku': product.get('sku', '')}

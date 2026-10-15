@@ -2420,6 +2420,7 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix, a
           ${(r.hold && (r.fixes || []).indexOf('translate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-translate-recheck">번역하고 다시 검증</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-ship-override">그래도 등록</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('naver_split') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-naver-split">가격대별로 나눠 등록</button>' : ''}
+          ${(r.hold && (r.fixes || []).indexOf('retranslate') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-retranslate">다시 번역</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('rep_image') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-rep-override">대표 사진 그래도 등록</button>' : ''}
           ${(r.hold && (r.fixes || []).indexOf('lead_time') >= 0) ? '<button type="button" class="btn btn-sm btn-ghost mt-2" data-role="pv-leadtime-override">선주문 그래도 등록</button>' : ''}
           ${r.hint ? `<div class="text-warning small mt-1"><i class="bi bi-lightbulb"></i> ${r.hint}</div>` : ''}
@@ -2474,6 +2475,15 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix, a
       if (!t.ok) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(t.error || '기록하지 못했어요', 'warning'); return; }
       runPrevalidate();
     } catch (e) { b.disabled = false; b.textContent = '그래도 등록'; pcToast(kgpFriendlyError(e), 'error'); }
+  }));
+  // Y11P-2: 상세 규격 줄 번역 실패(쿠팡 보류) — 지금 다시 번역 → 다시 검증
+  el.querySelectorAll('[data-role="pv-retranslate"]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '번역하는 중…';
+    try {
+      const t = await (await fetch('/seller/collect/' + encodeURIComponent(_ITEM_ID) + '/detail-retranslate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+      if (!t.ok) { b.disabled = false; b.textContent = '다시 번역'; pcToast(t.error || '번역하지 못했어요', 'warning'); return; }
+      runPrevalidate();
+    } catch (e) { b.disabled = false; b.textContent = '다시 번역'; pcToast(kgpFriendlyError(e), 'error'); }
   }));
   // Y11-P: 네이버 가격대별 분할 — 오너 확인(묶음 기록) → 다시 검증. 누르기 전엔 나누지 않는다.
   el.querySelectorAll('[data-role="pv-naver-split"]').forEach(b => b.addEventListener('click', async () => {

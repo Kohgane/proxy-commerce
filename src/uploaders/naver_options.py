@@ -74,25 +74,113 @@ def _fits(base: int, prices: List[int]) -> bool:
     return all(lo <= p - base <= hi for p in prices)
 
 
-def pick_base(prices: List[int]) -> Dict:
-    """판매가(기준가) — 옵션 판매가(각 옵션의 마진이 담긴 값)는 그대로 두고 **모든 추가금이 범위 안**에 들게.
+#: Y11P-1(오너 승인 2026-10-15) — 기준가 규칙 실측 결과(운영 DB `app_state`). `{"rule": "calc"|"option", "at", "evidence"}`.
+#:   비어 있으면 등록이 **최소 허용값(calc)을 먼저 보내고**, 네이버가 옵션가로 거부하면 같은 흐름에서 옵션 판매가(option)로 다시 보낸다
+#:   (`naver_uploader.upload_product`). 통과한 쪽을 여기 고정한다.
+BASE_RULE_KEY = "naver_base_rule"
+BASE_PROBE_KEY = "naver_base_probe:recent"
 
-    순서: ① 가장 싼 옵션가(예전 동작 · 추가금 0 이상) ② 옵션 판매가 중 범위를 맞추는 가장 싼 값(추가금 0원 옵션이 하나 남는다 —
-    0원 옵션 필수 여부는 문서에 없어 안전한 쪽) ③ 계산값(최고가÷1.5 올림, 10원 단위). 다 안 되면 `{base: 0}`.
-    """
-    ps = sorted({int(p) for p in prices if int(p) > 0})
-    if not ps:
-        return {"base": 0, "how": ""}
-    if _fits(ps[0], ps):
-        return {"base": ps[0], "how": "min"}
-    for p in ps:
-        if _fits(p, ps):
-            return {"base": p, "how": "option"}
+
+def base_rule() -> str:
+    try:
+        from src.db import image_translate_queue_pg as st
+        r = str((st.state_get(BASE_RULE_KEY) or {}).get("rule") or "")
+        return r if r in ("calc", "option") else ""
+    except Exception:                                             # noqa: BLE001 — 못 읽으면 실측 흐름(calc 먼저 → option)
+        return ""
+
+
+def price_related_400(body: str) -> bool:
+    """네이버 400이 옵션가·판매가·옵션 조합 때문인가(그때만 기준가를 바꿔 다시 보낸다 — 카테고리 등 다른 이유면 바꿔도 같은 답)."""
+    b = str(body or "")
+    low = b.lower()
+    try:
+        from src.uploaders import naver_invalid as _ni
+        names = [str(i.get("name") or "").lower() for i in _ni.parse(b)]
+    except Exception:                                             # noqa: BLE001
+        names = []
+    if names:
+        return any(("option" in n) or ("price" in n) for n in names)
+    return ("optioncombination" in low) or ("price" in low) or ("옵션" in b)
+
+
+def record_probe(probe: Dict, sku: str = "") -> Dict:
+    """실측 한 번을 기록하고(최근 20줄), 결론이 나면 규칙을 고정한다 — calc 통과 → calc · calc 거부(옵션가)+option 통과 → option.
+    원문(거부 응답)은 600자까지. 실패해도 등록은 그대로."""
+    from datetime import datetime, timezone
+    row = dict(probe or {}, sku=sku, at=datetime.now(timezone.utc).isoformat())
+    rule = ""
+    if probe.get("first_ok"):
+        rule = "calc" if probe.get("first_how") == "calc" else ""
+    elif probe.get("related") and probe.get("retried") and probe.get("second_ok"):
+        rule = "option"
+    row["rule_set"] = rule
+    try:
+        from src.db import image_translate_queue_pg as st
+        cur = st.state_get(BASE_PROBE_KEY) or {}
+        st.state_set(BASE_PROBE_KEY, {"rows": list(cur.get("rows") or [])[-19:] + [row]})
+        if rule and not base_rule():
+            st.state_set(BASE_RULE_KEY, {"rule": rule, "at": row["at"], "evidence": {
+                k: row.get(k) for k in ("sku", "first", "first_how", "first_error", "alt", "second_ok")}})
+    except Exception as exc:                                      # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).warning("[네이버 기준가 실측] 기록 실패: %s", exc)
+    return row
+
+
+def probe_line(p: Dict) -> str:
+    """등록 결과 카드 한 줄 — 어느 기준가가 통과했나(거부 원문 앞부분 포함)."""
+    p = p or {}
+    if p.get("first_ok"):
+        return f"네이버 판매가 기준 {int(p['first']):,}원(최소 허용값)으로 등록됐어요 — 앞으로 이 규칙으로 보내요"
+    raw = str(p.get("first_error") or "")
+    try:
+        from src.uploaders import naver_invalid as _ni
+        items = _ni.parse(raw)
+    except Exception:                                             # noqa: BLE001
+        items = []
+    err = (" · ".join(f"{i['name'].split('.')[-1]}: {i['message']}" for i in items) if items else raw)[:200]
+    if p.get("retried") and p.get("second_ok"):
+        return (f"네이버가 판매가 기준 {int(p['first']):,}원(최소 허용값)을 거부해서 {int(p['alt']):,}원(옵션 판매가)으로 다시 보내 등록됐어요"
+                f" — 앞으로 이 규칙으로 보내요 · 거부 원문: {err}")
+    return f"네이버 판매가 기준 {int(p.get('first') or 0):,}원 거부 — 원문: {err}"
+
+
+def _calc_base(ps: List[int]) -> int:
+    """모든 추가금이 범위 안에 드는 **가장 낮은** 기준가(최고가÷1.5 올림 · 10원 단위). 0원 옵션은 없을 수 있다."""
     for frac in (0.5, 1.0):
         b = _ceil10(ps[-1] / (1.0 + frac))
         if _fits(b, ps):
-            return {"base": b, "how": "calc"}
-    return {"base": 0, "how": ""}
+            return b
+    return 0
+
+
+def pick_base(prices: List[int], rule: str = None) -> Dict:
+    """판매가(기준가) `{base, how, alt, alt_how}` — 옵션 판매가(각 옵션의 마진이 담긴 값)는 그대로, **모든 추가금이 범위 안**.
+
+    ① 가장 싼 옵션가가 범위를 맞추면 그것(예전 동작 · 추가금 0 이상, alt 없음).
+    ② 아니면 두 후보 — calc = 최소 허용값(검색 노출가가 가장 낮다 · 0원 옵션 없을 수 있음), option = 범위를 맞추는 옵션 판매가 중
+       가장 싼 값(0원 옵션 하나 남음). 규칙(`base_rule()`, Y11P-1 실측)이 정해졌으면 그쪽만, 비었으면 calc 먼저·option 대체(alt).
+    다 안 되면 `{base: 0}`(분할 제안).
+    """
+    ps = sorted({int(p) for p in prices if int(p) > 0})
+    out = {"base": 0, "how": "", "alt": 0, "alt_how": ""}
+    if not ps:
+        return out
+    if _fits(ps[0], ps):
+        return dict(out, base=ps[0], how="min")
+    opt = next((p for p in ps if _fits(p, ps)), 0)
+    calc = _calc_base(ps)
+    rule = base_rule() if rule is None else rule
+    if rule == "option" and opt:
+        return dict(out, base=opt, how="option")
+    if rule == "calc" and calc:
+        return dict(out, base=calc, how="calc")
+    if calc:
+        return dict(out, base=calc, how="calc", **({"alt": opt, "alt_how": "option"} if opt and opt != calc else {}))
+    if opt:
+        return dict(out, base=opt, how="option")
+    return out
 
 
 def split_groups(prices: List[int]) -> List[List[int]]:
@@ -194,7 +282,7 @@ def limit_hold(product: Dict) -> str:
     return ""
 
 
-def plan(product: Dict, *, stock_default: int = 999) -> Dict:
+def plan(product: Dict, *, stock_default: int = 999, base_override: int = 0, base_override_how: str = "") -> Dict:
     """`{mode, option_info, sale_price, stock, reason_code, why}`.
 
     mode: `single`(SKU 0~1개 — 예전 몸통 그대로) · `combo`(옵션 싣기) · `hold`(보내지 않음).
@@ -248,6 +336,8 @@ def plan(product: Dict, *, stock_default: int = 999) -> Dict:
 
     prices = [_ceil10(sp) for _k, _n, sp in rows]
     pb = pick_base(prices)
+    if base_override and _fits(int(base_override), prices):             # Y11P-1: 네이버가 calc를 거부 → 같은 흐름에서 option으로
+        pb = {"base": int(base_override), "how": base_override_how or "option", "alt": 0, "alt_how": ""}
     if not pb["base"]:
         groups = split_groups(prices)
         lo, hi = min(prices), max(prices)
@@ -289,7 +379,8 @@ def plan(product: Dict, *, stock_default: int = 999) -> Dict:
         "useStockManagement": True,
     }
     return {**out, "mode": "combo", "option_info": info, "sale_price": base, "stock": total,
-            "base_how": pb["how"], "base_min": min(prices), "price_range": price_range(base)}
+            "base_how": pb["how"], "base_min": min(prices), "price_range": price_range(base),
+            "base_alt": pb.get("alt") or 0, "base_alt_how": pb.get("alt_how") or ""}
 
 
 def base_note(op: Dict) -> str:
@@ -297,7 +388,12 @@ def base_note(op: Dict) -> str:
     if (op or {}).get("mode") != "combo" or op.get("base_how") in ("", "min", None):
         return ""
     lo, hi = op.get("price_range") or (0, 0)
-    return (f"네이버 판매가 기준 {int(op['sale_price']):,}원으로 맞췄어요(가장 싼 옵션 {int(op.get('base_min') or 0):,}원) — "
+    sp, mn = int(op["sale_price"]), int(op.get("base_min") or 0)
+    if op.get("base_alt"):
+        return (f"네이버 판매가 기준 {sp:,}원(최소 허용값)으로 먼저 보내요(가장 싼 옵션 {mn:,}원) — 네이버가 거부하면 "
+                f"{int(op['base_alt']):,}원으로 바로 다시 보내요 · 옵션마다 판매가는 그대로")
+    how = "최소 허용값" if op.get("base_how") == "calc" else "옵션 판매가"
+    return (f"네이버 판매가 기준 {sp:,}원({how})으로 맞췄어요(가장 싼 옵션 {mn:,}원) — "
             f"옵션가 범위 {lo:,}~{hi:,}원(판매가 ±50%) 안 · 옵션마다 판매가는 그대로")
 
 

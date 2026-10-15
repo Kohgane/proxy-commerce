@@ -3873,6 +3873,27 @@ def collect_naver_split_ok(item_id):
     return jsonify({"ok": ok, "split": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+@bp.post("/collect/<item_id>/detail-retranslate")
+def collect_detail_retranslate(item_id):
+    """Y11P-2(오너 2026-10-15): 상세 규격 줄 번역 실패로 쿠팡 보류 → 「다시 번역」 — 60초 기다림 없이 지금 다시 묻는다(텐센트).
+    성공하면 프로세스 캐시에 남아 바로 다음 사전검증·등록이 그 번역을 쓴다. 수집 원본은 그대로."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    from .product_builder import build_product
+    from .upload_dispatcher import _market_desc_source
+    from .ai.translator import _BILINGUAL_DIVIDER
+    from src.uploaders import detail_translate as _dt
+    pd = build_product(item, seller_id=_seller_id())
+    o = _dt.outbound(str(_market_desc_source(pd) or "").split(_BILINGUAL_DIVIDER)[0], force=True)
+    ok = not o["failed"]
+    logger.info("[상세 번역] 다시 번역 item=%s 옮김 %s · 실패 %s(%s)", item_id, o["translated"], o["failed"], o["why"])
+    return jsonify({"ok": ok, "translated": o["translated"], "failed": o["failed"], "spec_failed": len(o["spec_failed"]),
+                    "error": "" if ok else f"아직 번역하지 못했어요({o['why'] or '번역 실패'}) — 잠시 뒤 다시 눌러 주세요."}), 200
+
+
 @bp.post("/collect/<item_id>/lead-time-override")
 def collect_lead_time_override(item_id):
     """Y7-O: 선주문(옵션 값 발송 소요 꼬리) 보류를 **그래도 등록**으로 푼다 — 자동 등록 체인은 풀지 않는다(오너 방침).

@@ -147,21 +147,106 @@ def test_vrsuk_name_len_hold_options_14_15_16():
     assert "25자" in op["why"]
 
 
-def test_vrsuk_after_shortening_base_moves_into_range():
-    from src.uploaders import naver_options as no
-    ov = {VRO["skus"][13]["spec"][0]: "미스트블루 반가죽 세미아닐린/발받침",
+@pytest.fixture
+def state(monkeypatch):
+    """운영 DB `app_state` 대역(기준가 규칙·실측 기록·번역 호출 기록)."""
+    import src.db.image_translate_queue_pg as st
+    box = {}
+    monkeypatch.setattr(st, "state_get", lambda k: dict(box.get(k) or {}))
+    monkeypatch.setattr(st, "state_set", lambda k, v: box.__setitem__(k, dict(v)))
+    return box
+
+
+_SHORT = {VRO["skus"][13]["spec"][0]: "미스트블루 반가죽 세미아닐린/발받침",
           VRO["skus"][14]["spec"][0]: "블랙 풀가죽 아닐린/발받침 소가죽",
           VRO["skus"][15]["spec"][0]: "베이지 풀가죽 아닐린/발받침 소가죽"}
-    op = no.plan(_vr_product(option_value_overrides=ov))
+
+
+def test_vrsuk_after_shortening_base_moves_into_range(state):
+    """Y11P-1(오너 승인): 규칙이 비어 있으면 최소 허용값 3,874,130 먼저 · 대체 4,485,110(옵션 판매가)."""
+    from src.uploaders import naver_options as no
+    op = no.plan(_vr_product(option_value_overrides=_SHORT))
     assert op["mode"] == "combo"
-    assert op["sale_price"] == 4485110 and op["base_how"] == "option"      # 가장 싼 3,592,100으론 5,811,190이 범위 밖
+    assert (op["sale_price"], op["base_how"]) == (3874130, "calc")             # 최고 5,811,190 ÷ 1.5 올림
+    assert (op["base_alt"], op["base_alt_how"]) == (4485110, "option")
     lo, hi = no.price_range(op["sale_price"])
     prices = [c["price"] for c in op["option_info"]["optionCombinations"]]
-    assert all(lo <= p <= hi for p in prices) and min(prices) < 0 and 0 in prices
-    # 옵션마다 판매가(마진) 그대로 = 기준가 + 추가금
-    assert sorted({op["sale_price"] + p for p in prices}) == sorted(set(SELL.values()))
-    assert "4,485,110원" in no.base_note(op) and "±50%" in no.base_note(op)
+    assert all(lo <= p <= hi for p in prices) and 0 not in prices               # 0원 옵션 없음 — 그래서 실측
+    assert sorted({op["sale_price"] + p for p in prices}) == sorted(set(SELL.values()))   # 옵션마다 판매가 그대로
+    assert "3,874,130원(최소 허용값)으로 먼저" in no.base_note(op) and "4,485,110원으로 바로 다시" in no.base_note(op)
     assert all(len(c["optionName1"]) <= 25 for c in op["option_info"]["optionCombinations"])
+    # 규칙이 정해지면 그쪽만(대체 없음)
+    state[no.BASE_RULE_KEY] = {"rule": "option"}
+    op2 = no.plan(_vr_product(option_value_overrides=_SHORT))
+    assert (op2["sale_price"], op2["base_alt"]) == (4485110, 0) and 0 in [c["price"] for c in op2["option_info"]["optionCombinations"]]
+    state[no.BASE_RULE_KEY] = {"rule": "calc"}
+    assert no.plan(_vr_product(option_value_overrides=_SHORT))["sale_price"] == 3874130
+
+
+class _FakeNaver:
+    """등록 몸통만 잰다 — 첫 POST에 줄 응답을 고른다."""
+    STOCK_QUANTITY = 999
+
+    def __init__(self, first):
+        self.first, self.sent = first, []
+
+    def post(self, payload):
+        self.sent.append(payload)
+        if len(self.sent) == 1 and self.first:
+            return self.first
+        return {"originProductNo": 9001, "smartstoreChannelProductNo": 8001}
+
+
+def _run_upload(monkeypatch, first):
+    from src.uploaders import naver_uploader as NU
+    up = NU.NaverSmartStoreUploader.__new__(NU.NaverSmartStoreUploader)
+    up.account, up.image_upload_enabled = "chezgoga", False
+    fake = _FakeNaver(first)
+    monkeypatch.setattr(up, "_api_request", lambda m, path, data=None: fake.post(data), raising=False)
+    monkeypatch.setattr(up, "_build_product_payload",
+                        lambda p: {"salePrice": p["_option_plan"]["sale_price"]}, raising=False)
+    import src.uploaders.naver_detail as ND
+    monkeypatch.setattr(ND, "judge", lambda html, u, sku="": {"ok": True, "html": "<p>본문</p>"})
+    import src.uploaders.naver_categories as NC
+    monkeypatch.setattr(NC, "pick", lambda p: ("50003682", "manual"))
+    monkeypatch.setattr(NC, "hold", lambda *a, **k: None)
+    monkeypatch.setattr(up, "find_template_leaks", lambda payload: [], raising=False)
+    monkeypatch.setattr(up, "_access_token", lambda: "t", raising=False)
+    prod = dict(_vr_product(option_value_overrides=_SHORT), sku="VR", item_id="4ebaf1b8", description_html="<p>본문</p>")
+    return up.upload_product(prod), fake
+
+
+_400 = json.dumps({"code": "BAD_REQUEST", "message": "Invalid", "invalidInputs": [
+    {"name": "originProduct.detailAttribute.optionInfo.optionCombinations", "type": "NotValid",
+     "message": "옵션가가 0원인 옵션이 1개 이상 있어야 합니다."}]}, ensure_ascii=False)
+
+
+def test_naver_calc_rejected_retries_option_in_same_flow_and_fixes_rule(monkeypatch, state):
+    from src.uploaders import naver_options as no
+    out, fake = _run_upload(monkeypatch, {"error": "HTTP 400", "http_status": 400, "body": _400})
+    assert [p["salePrice"] for p in fake.sent] == [3874130, 4485110]
+    assert out["success"] and out["channel_product_no"] == "8001"
+    pb = out["base_probe"]
+    assert pb["retried"] and pb["second_ok"] and "0원인 옵션" in pb["first_error"]
+    assert state[no.BASE_RULE_KEY]["rule"] == "option"                          # 통과한 쪽으로 고정
+    assert "거부해서 4,485,110원(옵션 판매가)으로 다시 보내 등록" in no.probe_line(pb)
+    assert "0원인 옵션" in no.probe_line(pb)                                     # 거부 원문 앞부분
+
+
+def test_naver_calc_accepted_fixes_calc(monkeypatch, state):
+    from src.uploaders import naver_options as no
+    out, fake = _run_upload(monkeypatch, None)
+    assert [p["salePrice"] for p in fake.sent] == [3874130]
+    assert out["base_probe"]["first_ok"] and state[no.BASE_RULE_KEY]["rule"] == "calc"
+    assert "3,874,130원(최소 허용값)으로 등록" in no.probe_line(out["base_probe"])
+
+
+def test_naver_unrelated_400_no_retry_no_rule(monkeypatch, state):
+    from src.uploaders import naver_options as no
+    body = json.dumps({"invalidInputs": [{"name": "originProduct.leafCategoryId", "type": "NotValid", "message": "x"}]})
+    out, fake = _run_upload(monkeypatch, {"error": "HTTP 400", "http_status": 400, "body": body})
+    assert len(fake.sent) == 1 and not out["success"]                          # 카테고리 거부는 기준가를 바꿔도 같은 답
+    assert no.BASE_RULE_KEY not in state and state[no.BASE_PROBE_KEY]["rows"][-1]["related"] is False
 
 
 def test_split_proposal_and_owner_confirm():
@@ -275,3 +360,117 @@ def test_tencent_text_calls_recorded_without_text(monkeypatch):
     assert rec["rows"][0] == {**rec["rows"][0], "chars": 5, "lines": 2, "ok": True}
     assert rec["rows"][1]["why"] == "FailedOperation.NoFreeAmount"
     assert "金属" not in str(rec) and "금속" not in str(rec)
+
+
+# ── Y11P-2 번역 실패: 60초 뒤 1회 재시도 · 규격 줄은 쿠팡 보류 + 「다시 번역」 ─────────────────────────────
+
+class _Flaky:
+    """처음 n번 실패(텐센트 응답 코드) 뒤 성공 — 호출 수를 센다."""
+
+    def __init__(self, fails):
+        self.fails, self.calls = fails, 0
+
+    def __call__(self, text):
+        self.calls += 1
+        if self.calls <= self.fails:
+            return {"ok": False, "text": "", "why": "FailedOperation.ServiceIsolate"}
+        return {"ok": True, "text": "\n".join(f"옮긴 줄 {i}" for i, _ in enumerate(text.split("\n"))), "why": ""}
+
+
+@pytest.fixture
+def tr(monkeypatch, state):
+    from src.uploaders import detail_translate as dt
+    monkeypatch.setattr("src.services.image_translate_tencent.is_configured", lambda: True)
+    monkeypatch.setenv("DETAIL_TRANSLATE_RETRY_SEC", "1")
+    dt._CACHE.clear()
+    dt._FAIL.clear()
+    return dt
+
+
+def _wait(cond, sec=4.0):
+    import time
+    end = time.monotonic() + sec
+    while time.monotonic() < end and not cond():
+        time.sleep(0.05)
+    return cond()
+
+
+def test_failed_chunk_retries_once_after_delay_then_cache(tr, monkeypatch):
+    f = _Flaky(1)
+    monkeypatch.setattr(tr, "_default_translate", f)
+    r = tr.translate_leftover("설명\n这款很好看\n非常舒服")
+    assert r["failed"] == 2 and r["retry_pending"] == 2 and r["spec_failed"] == [] and f.calls == 1
+    r2 = tr.translate_leftover("설명\n这款很好看\n非常舒服")              # 기다리는 동안은 다시 안 묻는다
+    assert f.calls == 1 and r2["retry_pending"] == 2
+    assert _wait(lambda: f.calls == 2)                                      # 재시도 1회
+    assert _wait(lambda: not tr._FAIL)
+    r3 = tr.translate_leftover("설명\n这款很好看\n非常舒服")
+    assert r3["translated"] == 2 and r3["failed"] == 0 and f.calls == 2      # 캐시
+
+
+def test_retry_also_fails_then_final_and_drop_note(tr, monkeypatch):
+    f = _Flaky(5)
+    monkeypatch.setattr(tr, "_default_translate", f)
+    tr.translate_leftover("这款很好看")
+    assert _wait(lambda: f.calls == 2) and _wait(lambda: (tr._FAIL.get(next(iter(tr._FAIL), "")) or {}).get("state") == "final")
+    r = tr.translate_leftover("这款很好看")
+    assert r["failed"] == 1 and r["retry_pending"] == 0 and f.calls == 2       # final — 10분 동안 다시 안 묻는다
+    assert tr.note({"detail_translate_failed": 1, "detail_translate_why": r["why"]}) == \
+        "원문 1칸은 번역하지 못해 뺐어요(FailedOperation.ServiceIsolate)"
+    assert "60초 뒤 한 번 더" in tr.note({"detail_translate_failed": 1, "detail_translate_retry_pending": 1})
+
+
+def test_spec_lines_failed_hold_coupang_not_drop(tr, monkeypatch):
+    from src.seller_console.upload_dispatcher import apply_outbound_text, UploadDispatcher, PrevalidationResult
+    f = _Flaky(99)
+    monkeypatch.setattr(tr, "_default_translate", f)
+    pd = apply_outbound_text({"title": "VRSUK", "description": VR["description"], "description_ko": ""})
+    spec = pd["detail_translate_spec_failed"]
+    assert spec and any("材质" in x for x in spec) and pd["detail_translate_retry_pending"] > 0
+    line = tr.spec_hold_line(pd)
+    assert line.startswith("보류: 상세 규격") and "「다시 번역」" in line and "60초 뒤" in line
+    # 쿠팡 등록: 빼고 보내지 않는다(전송 0)
+    res = UploadDispatcher()._upload_coupang(pd)
+    assert not res.success and res.error_code == tr.SPEC_HOLD_CODE
+    # 사전검증: 쿠팡 통과 → 보류 + 「다시 번역」 · 네이버는 그대로(그 줄만 뺌)
+    monkeypatch.setattr(UploadDispatcher, "_prevalidate_market",
+                        lambda self, p, m: PrevalidationResult(market=m, ok=True, message="사전검증 통과"))
+    rs = UploadDispatcher().prevalidate(dict(pd), ["coupang", "smartstore"])
+    cp = next(r for r in rs if r.market == "coupang")
+    assert cp.hold and cp.error_code == tr.SPEC_HOLD_CODE and "retranslate" in cp.fixes
+    assert next(r for r in rs if r.market == "smartstore").ok
+
+
+def test_non_spec_failure_drops_and_passes(tr, monkeypatch):
+    from src.seller_console.upload_dispatcher import apply_outbound_text
+    from src.collectors.ko_polish import has_foreign
+    monkeypatch.setattr(tr, "_default_translate", _Flaky(99))
+    pd = apply_outbound_text({"title": "X", "description": "좋은 의자\n这款很好看", "description_ko": ""})
+    assert pd["detail_translate_spec_failed"] == [] and tr.spec_hold_line(pd) == ""
+    assert not has_foreign(pd["description"]) and "좋은 의자" in pd["description"]
+
+
+def test_retranslate_now_ignores_wait(tr, monkeypatch):
+    f = _Flaky(1)
+    monkeypatch.setattr(tr, "_default_translate", f)
+    tr.translate_leftover("材质\n实木")
+    assert f.calls == 1
+    o = tr.outbound("材质\n实木", force=True)                                  # 「다시 번역」 — 60초 안 기다림
+    assert f.calls == 2 and o["failed"] == 0 and o["translated"] == 2
+
+
+def test_retranslate_route(tr, monkeypatch):
+    from src.order_webhook import app
+    from src.seller_console import collect_history_store as S
+    f = _Flaky(1)
+    monkeypatch.setattr(tr, "_default_translate", f)
+    iid = S.append(source="extension", url="https://detail.tmall.com/item.htm?id=9", seller_id="y11p-rt", title="의자",
+                   price="10", currency="CNY", extra={"title": "椅子", "description": "材质\n实木", "description_ko": ""})
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s.update(user_id="y11p-rt", user_email="y11p-rt@example.com", user_role="seller")
+    r1 = c.post(f"/seller/collect/{iid}/detail-retranslate", json={}).get_json()
+    assert r1["ok"] is False and r1["spec_failed"] == 1 and "다시 눌러" in r1["error"]
+    r2 = c.post(f"/seller/collect/{iid}/detail-retranslate", json={}).get_json()
+    assert r2["ok"] is True and r2["translated"] == 2 and f.calls == 2
