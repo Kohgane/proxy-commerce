@@ -58,9 +58,61 @@ def _foreign_line(line: str) -> bool:
     return bool(s) and has_foreign(s) and not _HANGUL.search(s)
 
 
-def _default_translate(text: str) -> dict:
+#: Y11-R(운영 실측 2026-10-16): 텐센트 intl 엔드포인트가 51칸 전부 `InvalidParameterValue — 不支持的语种：zh_to_ko`.
+#:   줄 문제가 아니라 **언어쌍 미지원**이었다(이분 탐색은 호출만 늘렸다). 이 응답을 보면 10분 동안 텐센트를 건너뛰고
+#:   기존 번역 체인(papago·deepl·azure·anthropic·openai — 상품 번역과 같은 것)으로 옮긴다.
+PAIR_DOWN_SEC = 600
+_PAIR_DOWN = {"at": 0.0, "message": ""}
+
+
+def unsupported_pair(r: dict) -> bool:
+    """텐센트가 언어쌍을 안 받는다는 응답인가(줄 내용과 무관 — 쪼개 봐야 같은 답)."""
+    m = str((r or {}).get("message") or "") + " " + str((r or {}).get("why") or "")
+    return ("不支持的语种" in m) or ("UnsupportedLanguage" in m) or ("language" in m.lower() and "support" in m.lower())
+
+
+def _tencent(text: str) -> dict:
     from src.services.image_translate_tencent import translate_text
     return translate_text(text, source="zh", target="ko", timeout_sec=8, max_chars=CHUNK_MAX)
+
+
+def _chain(text: str) -> dict:
+    """상품 번역과 같은 체인으로 상세 줄 묶음을 옮긴다 — `{ok, text, why, provider, attempts}`(원문을 돌려주면 실패)."""
+    from src.seller_console.ai.translator import AITranslator
+    res = AITranslator().translate_product({"title": "", "description": text}) or {}
+    prov = str(res.get("provider") or "")
+    out = str(res.get("description_ko") or "")
+    ok = bool(out.strip()) and not res.get("error") and prov not in ("stub", "none") and not prov.endswith("-fallback") \
+        and out.strip() != str(text or "").strip() and bool(_HANGUL.search(out))
+    why = "" if ok else (str(res.get("translate_error") or res.get("error") or "")[:120] or "번역 체인 결과 없음")
+    return {"ok": ok, "text": out if ok else "", "why": why, "provider": prov,
+            "attempts": len(res.get("attempts") or []) or 1}
+
+
+def _default_translate(text: str) -> dict:
+    """텐센트 → (언어쌍 미지원·실패면) 번역 체인. 결과에 `provider`·`tencent`(텐센트 응답 요약)를 남긴다."""
+    import time as _t
+    tc = None
+    if _t.monotonic() - _PAIR_DOWN["at"] >= PAIR_DOWN_SEC or not _PAIR_DOWN["at"]:
+        try:
+            tc = _tencent(text) or {}
+        except Exception as exc:                                  # noqa: BLE001
+            tc = {"ok": False, "why": type(exc).__name__}
+        if tc.get("ok") and str(tc.get("text") or "").strip():
+            return dict(tc, provider="tencent")
+        if unsupported_pair(tc):
+            _PAIR_DOWN.update(at=_t.monotonic(), message=str(tc.get("message") or tc.get("why") or "")[:120])
+            logger.warning("[상세 번역] 텐센트 언어쌍 미지원(%s) — %s초 동안 번역 체인으로", _PAIR_DOWN["message"], PAIR_DOWN_SEC)
+    try:
+        r = _chain(text)
+    except Exception as exc:                                      # noqa: BLE001 — 체인도 실패면 텐센트 사유를 남긴다
+        r = {"ok": False, "text": "", "why": f"번역 체인 {type(exc).__name__}", "provider": "chain"}
+    tsum = ({"tencent": {"why": str(tc.get("why") or "")[:60], "message": str(tc.get("message") or "")[:120]}}
+            if tc is not None else {"tencent": {"skipped": "언어쌍 미지원 — 건너뜀"}})
+    if not r["ok"] and tc is not None and not unsupported_pair(tc):
+        # 체인도 못 옮겼다 — 텐센트 사유(쓰로틀·네트워크)가 더 정확하다
+        return dict(tc, ok=False, provider="tencent", **tsum)
+    return dict(r, **tsum)
 
 
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u2028\u2029\ufeff]")
@@ -111,11 +163,12 @@ def _call(chunk: str, fn: Callable[[str], dict]) -> dict:
     except Exception as exc:                   # noqa: BLE001 — 번역 실패는 원문 유지
         r = {"ok": False, "text": "", "why": type(exc).__name__}
     r = {"ok": bool(r.get("ok") and str(r.get("text") or "").strip()), "text": str(r.get("text") or ""),
-         "why": str(r.get("why") or ""), "message": str(r.get("message") or ""), "attempts": r.get("attempts") or 1}
-    extra = None
-    if "InvalidParameter" in r["why"]:
+         "why": str(r.get("why") or ""), "message": str(r.get("message") or ""), "attempts": r.get("attempts") or 1,
+         "provider": str(r.get("provider") or ""), "tencent": r.get("tencent") or None}
+    extra = {k: r[k] for k in ("provider", "tencent") if r.get(k)} or None
+    if "InvalidParameter" in r["why"] and not unsupported_pair(r):
         # Y11-Q: 어느 줄·왜(빈 줄·제어문자·길이) — 묶음이면 줄마다, 한 줄이면 그 줄
-        extra = {"lines_diag": [line_diag(x) for x in chunk.split("\n")][:8]}
+        extra = dict(extra or {}, lines_diag=[line_diag(x) for x in chunk.split("\n")][:8])
         logger.warning("[상세 번역] InvalidParameterValue — %s · 줄 %s", r["message"][:160], extra["lines_diag"])
     _record_call(len(chunk), chunk.count("\n") + 1, r, int((_t.monotonic() - t0) * 1000), extra)
     return r
@@ -207,7 +260,8 @@ def _translate_group(lines: List[str], g: List[int], fn, force: bool, depth: int
     """묶음 하나 → `[(줄 번호 묶음, 결과)]`. InvalidParameterValue면 반으로 나눠 다시(최대 4단 · 나쁜 줄만 실패로 남긴다)."""
     chunk = "\n".join(clean_line(lines[i]) for i in g)
     r = _cached_call(chunk, fn, force=force)
-    bad_param = not r["ok"] and "InvalidParameter" in str(r.get("why") or "")
+    # Y11-R: 언어쌍 미지원은 줄 탓이 아니다 — 쪼개도 같은 답이라 나누지 않는다
+    bad_param = not r["ok"] and "InvalidParameter" in str(r.get("why") or "") and not unsupported_pair(r)
     # 떨어진 줄을 한 묶음으로 보냈으니 돌아온 줄 수가 다르면 번호로 못 끼운다 — 그때도 반으로 나눠 다시
     mismatch = r["ok"] and len(str(r.get("text") or "").split("\n")) != len(g)
     if (bad_param or mismatch) and len(g) > 1 and depth < 4:

@@ -135,6 +135,7 @@ def _coupang(rec: dict) -> dict:
     st = up.review_status(sid)
     st["manage_url"] = COUPANG_WING_MODIFY.format(sid=sid)
     st["manage_label"] = "Wing에서 열기"
+    st["live_line"] = live_line(st.get("live"))
     return st
 
 
@@ -156,9 +157,22 @@ def _naver(rec: dict) -> dict:
     out.update(state=state, label=label, status_raw=raw)
     ch = ch or str(((res.get("smartstoreChannelProduct") or {}).get("channelProductNo")) or "").strip()
     out["channel_product_no"] = ch
-    if ch and state == "approved":
+    # Y11-R(오너 2026-10-16): 네이버 배지 = 「상품 페이지 열기」 + 판매자센터 상태 — 채널 번호가 있으면 늘 연다
+    #   (판매중이 아니면 네이버가 「판매 중지」 화면을 보인다 — 그 자체가 상태 확인이다)
+    if ch:
         out["link"] = up.product_url(ch)
     return out
+
+
+def live_line(live) -> str:
+    """Y11-R — 쿠팡에 **지금 올라가 있는** 내용 한 줄(조회 원문의 상세·이미지·옵션 개수). 없으면 빈 줄."""
+    if not isinstance(live, dict) or not live:
+        return ""
+    bits = [f"상세 글 {int(live.get('detail_lines') or 0)}줄", f"상세 이미지 {int(live.get('detail_images') or 0)}장",
+            f"옵션 {int(live.get('items') or 0)}개", f"대표·추가 이미지 {int(live.get('images') or 0)}장"]
+    if live.get("category"):
+        bits.append(f"카테고리 {live['category']}")
+    return "지금 쿠팡에 올라간 내용: " + " · ".join(bits)
 
 
 def _unsupported(rec: dict) -> dict:

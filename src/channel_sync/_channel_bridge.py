@@ -82,6 +82,10 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "category_code": str(pd.get("category_code") or pd.get("category") or "GEN").strip() or "GEN",
         "description_html": str(pd.get("description_html") or pd.get("description") or "").strip(),
         "images": pd.get("images") if isinstance(pd.get("images"), list) else [],
+        # Y11-R(오너 결정 2026-10-16) — 번역·다듬은 상세 이미지(나갈 배열 — `_outbound_images`·`real_detail_images`를 지난 것).
+        #   쿠팡 상세에 이미지 블록으로 싣는다. 떨어지면 이미지 번역 작업이 쿠팡엔 안 나간다(첫 등록 실측: 28장 0장 전송).
+        "detail_images": [u for u in (pd.get("detail_images") or []) if isinstance(u, str) and u.strip()]
+                         if isinstance(pd.get("detail_images"), list) else [],
         "brand": str(pd.get("brand") or "").strip(),
         "weight_kg": pd.get("weight_kg"),
         "options": options if isinstance(options, (dict, list)) else {},

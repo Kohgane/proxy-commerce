@@ -487,6 +487,7 @@ class CoupangUploader(BaseUploader):
             'price': price,
             'original_price': collected.get('price_krw', price),
             'images': images,
+            'detail_images': [u for u in (collected.get('detail_images') or []) if isinstance(u, str) and u],   # Y11-R
             'category_id': category_id,
             'brand': collected.get('brand', ''),
             'origin': collected.get('origin') or collected.get('brand_country', ''),   # 제조국(고시정보 실값)
@@ -616,16 +617,20 @@ class CoupangUploader(BaseUploader):
         p = payload or {}
         items = [it for it in (p.get('items') or []) if isinstance(it, dict)]
         it0 = items[0] if items else {}
-        text = ''
+        text, detail_imgs = '', 0
         for c in it0.get('contents') or []:
             for d in (c or {}).get('contentDetails') or []:
+                if str((d or {}).get('detailType') or '').upper() == 'IMAGE':
+                    detail_imgs += 1                       # Y11-R: 상세 이미지 블록은 줄이 아니라 장으로 센다
+                    continue
                 text += str((d or {}).get('content') or '') + '\n'
+        detail_imgs += len(re.findall(r'<img\b', text, re.I))
         plain = re.sub(r'<[^>]+>', '\n', text)
         lines = [ln for ln in (x.strip() for x in plain.split('\n')) if ln]
         imgs = it0.get('images') or []
         return {'category': str(p.get('displayCategoryCode') or ''), 'items': len(items),
                 'images': len(imgs), 'image_types': sorted({str((i or {}).get('imageType') or '') for i in imgs if isinstance(i, dict)}),
-                'detail_lines': len(lines), 'detail_chars': len(plain.strip()),
+                'detail_lines': len(lines), 'detail_chars': len(plain.strip()), 'detail_images': detail_imgs,
                 'detail_head': (lines[0][:40] if lines else ''),
                 'foreign': [list(x)[:1] for x in CoupangUploader.foreign_fields(p)][:4]}
 
@@ -1254,16 +1259,47 @@ class CoupangUploader(BaseUploader):
                 if missing else None)
         return notices, hold
 
+    #: Y11-R — 상세 이미지 블록의 contentsType(쿠팡 문서 값: IMAGE·IMAGE_NO_SPACE·TEXT·IMAGE_TEXT·HTML). 첫 실전송 전이라
+    #:   쿠팡이 거부하면 env `COUPANG_DETAIL_IMAGE_CONTENTS_TYPE`로 바꾸고, `COUPANG_DETAIL_IMAGES=0`이면 예전처럼 글만.
+    DETAIL_IMAGE_MAX = 40
+
+    @staticmethod
+    def detail_image_urls(product: dict) -> list:
+        """쿠팡 상세에 실을 이미지 — `//`는 https로, 가게 아이콘·추적 픽셀 빼고, http(s)만, 순서 유지·중복 제거."""
+        out = []
+        for u in (product or {}).get('detail_images') or []:
+            u = str(u or '').strip()
+            if u.startswith('//'):
+                u = 'https:' + u
+            if u.startswith(('http://', 'https://')) and u not in out:
+                out.append(u)
+        try:
+            from src.collectors.collect_status import real_detail_images
+            out = real_detail_images(out)
+        except Exception:
+            pass
+        return out[:CoupangUploader.DETAIL_IMAGE_MAX]
+
     def _build_contents(self, product: dict) -> list:
-        """옵션 상세컨텐츠(contents). 비우면 쿠팡이 거부 → 상세설명 HTML/텍스트로 채운다."""
+        """옵션 상세컨텐츠(contents). 비우면 쿠팡이 거부 → 상세설명 HTML/텍스트로 채운다.
+
+        Y11-R(오너 결정 2026-10-16): **번역·다듬은 상세 이미지를 이미지 블록으로 먼저**, 텍스트(규격 줄)는 그 아래.
+        예전엔 TEXT 하나 고정(5,691건 검증 형태)이라 상세 이미지가 쿠팡엔 한 장도 안 나갔다 — 그 5,691건은 다시 보내지 않는다.
+        """
         body = (product.get('description_html') or '').strip()
         if not body:
             body = product.get('title', '') or '상품 상세페이지를 참조해 주세요.'
-        # 정본: contentsType/detailType 모두 TEXT 고정(5,691건 검증 형태).
-        return [{
+        text_block = {
             'contentsType': 'TEXT',
             'contentDetails': [{'content': body, 'detailType': 'TEXT'}],
-        }]
+        }
+        imgs = self.detail_image_urls(product) if os.getenv('COUPANG_DETAIL_IMAGES', '1').strip() != '0' else []
+        if not imgs:
+            return [text_block]
+        ctype = os.getenv('COUPANG_DETAIL_IMAGE_CONTENTS_TYPE', 'IMAGE').strip() or 'IMAGE'
+        return [{'contentsType': ctype,
+                 'contentDetails': [{'content': u, 'detailType': 'IMAGE'} for u in imgs]},
+                text_block]
 
     # ── attributes(필수 구매 옵션) 정본 — 오너 SSH 실측 `build_opt.py::attr_safe`(5,691건 통과) ──────
     #   카나리 9차 거부: "필수 구매 옵션 (미입력시 등록/노출 제한) 존재하지 않습니다."

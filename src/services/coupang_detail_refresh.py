@@ -55,12 +55,45 @@ def target(item: dict, up, seller_id: str = "") -> Dict:
     from src.channel_sync.coupang_uploader import prepared_input
     from src.channel_sync._channel_bridge import to_collected
     pd = build_dispatch_payload(build_product(item, edits={}, seller_id=seller_id), item)
+    skipped = _effective_detail_images(item, pd)
     failed = int(pd.get("detail_translate_failed") or 0)
     prepared = up.prepare_product(to_collected(prepared_input(pd)))
     contents = up._build_contents(prepared)
+    n_img = sum(len(c.get("contentDetails") or []) for c in contents
+                if any(str(d.get("detailType") or "").upper() == "IMAGE" for d in c.get("contentDetails") or []))
     return {"ready": failed == 0, "contents": contents, "hash": _hash(contents),
             "translated": int(pd.get("detail_auto_translated") or 0), "failed": failed,
-            "why": str(pd.get("detail_translate_why") or "")}
+            "why": str(pd.get("detail_translate_why") or ""), "detail_images": n_img,
+            "detail_images_skipped": skipped}
+
+
+def _effective_detail_images(item: dict, pd: dict) -> int:
+    """Y11-R — 등록과 같은 규칙으로 **나갈 상세 이미지**(번역본 사용 반영 · 갤러리와 겹치는 장 제외)를 `pd`에 싣는다.
+
+    세션이 없는 크론에서도 돈다(`_outbound_images`는 로그인 세션으로 상품을 다시 읽는다). 아직 우리 서버 주소인 장은
+    먼저 CDN으로 올려 보고(`_ensure_outward` — 등록과 같은 단계), 그래도 우리 주소면 **빼고** 그 장 수를 돌려준다
+    (쿠팡이 못 가져가는 주소를 실으면 깨진 그림이 된다 — 가짜 이미지 0).
+    """
+    try:
+        from src.services import image_translate_store as _its
+        from src.services.image_reachability import is_internal
+        try:
+            from src.seller_console.views import _ensure_outward
+            item = _ensure_outward(item)
+        except Exception as exc:                                  # noqa: BLE001 — CDN이 없으면 아래에서 그 장을 뺀다
+            logger.info("[쿠팡 상세 갱신] 외부 주소 올리기 건너뜀: %s", exc)
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+        iid = str(item.get("id") or "")
+        gal = _its.effective_images(ex, item_id=iid, originals=pd.get("images") or []) or list(pd.get("images") or [])
+        det = _its.effective_images(ex, kind="detail", item_id=iid,
+                                    originals=pd.get("detail_images") or []) or list(pd.get("detail_images") or [])
+        _g, det = _its.drop_cross_duplicates(gal, det)
+        keep = [u for u in det if not is_internal(str(u or ""))]
+        pd["detail_images"] = keep
+        return len(det) - len(keep)
+    except Exception as exc:                                      # noqa: BLE001 — 실패하면 빌더 값 그대로
+        logger.warning("[쿠팡 상세 갱신] 상세 이미지 계산 실패(빌더 값 그대로): %s", exc)
+        return 0
 
 
 def _queue_put(entry: dict) -> None:
@@ -80,6 +113,28 @@ def _queue_drop(item_id: str, market: str) -> None:
 def queue_rows() -> List[dict]:
     from src.db import image_translate_queue_pg as st
     return list((st.state_get(QUEUE_KEY) or {}).get("rows") or [])
+
+
+def sync_line(extra: dict, market: str, item_id: str = "", rows: Optional[List[dict]] = None) -> str:
+    """Y11-R — 마켓 상태 팝업·드로어 맨 위 한 줄: 이 쿠팡 등록본의 **상세 갱신**이 어디까지 왔나(큐·마지막 전송)."""
+    if not str(market or "").startswith("coupang"):
+        return ""
+    try:
+        rows = queue_rows() if rows is None else rows
+    except Exception:                                             # noqa: BLE001 — 한 줄 재료라 팝업을 막지 않는다
+        rows = []
+    q = next((r for r in rows if r.get("market") == market and (not item_id or r.get("item_id") == item_id)), None)
+    if q:
+        tail = f" · {int(q.get('tries') or 0)}번 시도" if q.get("tries") else ""
+        return f"상세 갱신 대기 — {q.get('reason') or '대기'}{tail}"
+    s = ((extra or {}).get("coupang_detail_sync") or {}).get(market) or {}
+    if s.get("ok") and s.get("state") != "same":
+        return "새 상세를 쿠팡에 보냈어요(다시 심사)"
+    if s.get("ok"):
+        return "상세 최신 — 보낼 것 없음"
+    if s.get("error"):
+        return f"상세 갱신 실패 — {str(s['error'])[:120]}"
+    return ""
 
 
 def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]] = None,
