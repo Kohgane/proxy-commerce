@@ -31,6 +31,27 @@
         <button type="button" class="btn btn-sm btn-ghost py-0 px-2" data-role="item-id-copy"
                 onclick="(function(b){var v=document.querySelector('[data-role=item-id]').textContent.trim();var done=function(){b.textContent='복사됨';setTimeout(function(){b.textContent='복사'},1500)};if(navigator.clipboard){navigator.clipboard.writeText(v).then(done,function(){b.textContent='길게 눌러 복사'})}else{b.textContent='길게 눌러 복사'}})(this)">복사</button>
       </p>
+      {# Y11-R(오너 2026-10-16): 「검토 상태 보기」 **상시 위치** = 드로어 맨 위(등록 결과 팝업이 아니라). 열 때 마켓별 상태를 한 번 묻는다.
+         M8(오너 2026-10-10): 「쿠팡 등록본」 → **「마켓 등록본」** — 등록 기록 전 마켓(네이버 셰고가·고코스모스 포함). 줄을 누르면 상태 팝업.
+         U2·U1b: 관리자면 쿠팡 등록본을 **지금 규칙으로 다시 만든 상품명·검색어**와 비교해 고친 칸만 보내는 버튼(쿠팡 기록이 있을 때).
+         쿠팡 수정은 「승인필요」라 판매중 상품도 다시 심사를 받는다(화면에 적음). #}
+      {% set _cp_up = [] %}
+      {% for r in (market_records or []) %}{% if (r.market or '').startswith('coupang') %}{% set _ = _cp_up.append(r) %}{% endif %}{% endfor %}
+      {% if market_records %}
+      <div class="kgp-inset mb-3" data-role="cp-live">
+        <div class="small fw-semibold mb-1" data-role="ml-title">마켓 등록본 <span class="text-muted fw-normal">· 줄을 누르면 그 마켓의 검토 상태와 지금 올라간 내용</span></div>
+        {% set ml_records = market_records %}{% set ml_item = item.id %}{% set ml_auto = true %}
+        {% include "_market_listings.html" %}
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          <button type="button" class="btn btn-sm btn-ghost" id="cpReviewBtn" data-role="cp-review-btn"><i class="bi bi-hourglass-split"></i> 검토 상태 보기</button>
+          {% if is_admin and _cp_up %}
+          <button type="button" class="btn btn-sm btn-ghost" id="cpLiveCheck" data-role="cp-live-check"><i class="bi bi-search"></i> 등록본 점검</button>
+          <button type="button" class="btn btn-sm btn-cta" id="cpLiveSend" data-role="cp-live-send" hidden><i class="bi bi-send"></i> 고친 칸 쿠팡에 보내기</button>
+          {% endif %}
+        </div>
+        <div id="cpLiveOut" class="small mt-2" aria-live="polite"></div>
+      </div>
+      {% endif %}
       <!-- v45 P9: 편집 칩 탭(고가브릿지 토큰) — 필드를 탭별로 분리(한 탭씩 표시). -->
       <div class="kgp-etabs" role="tablist" aria-label="상품 편집 탭">
         <button type="button" class="kgp-etab-chip active" data-etab="basic" onclick="kgpEtab('basic')"><i class="bi bi-tag"></i> 상품명·카테고리</button>
@@ -493,26 +514,6 @@
         <p class="text-muted small mb-2">편집을 마쳤다면 마켓을 골라 한 번에 등록하세요. 연결된 마켓·목표 마진율은 등록 창에서 선택합니다.</p>
         <button type="button" class="btn btn-success" onclick="openUploadModal()"><i class="bi bi-box-arrow-up-right"></i> 등록할 마켓 고르기</button>
         <div class="form-text mt-2">저장은 아래 <b>변경사항 저장</b>으로 언제든 가능해요. 등록 결과는 저장된 마켓별로 목록에 <b>등록됨</b> 뱃지로 남습니다.</div>
-        {# M8(오너 2026-10-10): 「쿠팡 등록본」 → **「마켓 등록본」** — 등록 기록 전 마켓(네이버 셰고가·고코스모스 포함). 줄을 누르면 상태 팝업.
-           U2·U1b: 관리자면 쿠팡 등록본을 **지금 규칙으로 다시 만든 상품명·검색어**와 비교해 고친 칸만 보내는 버튼(쿠팡 기록이 있을 때).
-           쿠팡 수정은 「승인필요」라 판매중 상품도 다시 심사를 받는다(화면에 적음). #}
-        {% set _cp_up = [] %}
-        {% for r in (market_records or []) %}{% if (r.market or '').startswith('coupang') %}{% set _ = _cp_up.append(r) %}{% endif %}{% endfor %}
-        {% if market_records %}
-        <div class="kgp-inset mt-3" data-role="cp-live">
-          <div class="small fw-semibold mb-1" data-role="ml-title">마켓 등록본</div>
-          {% set ml_records = market_records %}{% set ml_item = item.id %}
-          {% include "_market_listings.html" %}
-          <div class="d-flex flex-wrap gap-2 mt-2">
-            <button type="button" class="btn btn-sm btn-ghost" id="cpReviewBtn" data-role="cp-review-btn"><i class="bi bi-hourglass-split"></i> 검토 상태 보기</button>
-            {% if is_admin and _cp_up %}
-            <button type="button" class="btn btn-sm btn-ghost" id="cpLiveCheck" data-role="cp-live-check"><i class="bi bi-search"></i> 등록본 점검</button>
-            <button type="button" class="btn btn-sm btn-cta" id="cpLiveSend" data-role="cp-live-send" hidden><i class="bi bi-send"></i> 고친 칸 쿠팡에 보내기</button>
-            {% endif %}
-          </div>
-          <div id="cpLiveOut" class="small mt-2" aria-live="polite"></div>
-        </div>
-        {% endif %}
       </div>
     </div>
 
@@ -2213,6 +2214,11 @@ function getSelectedMarkets() {
 //   (비동기는 폰 카드만). 이제 폰 카드와 같은 잡 — 즉시 202 + job_id, 3초마다 묻고 마켓별로 도착하는 대로 그린다
 //   (마켓당 12초 · 전체 60초). 늦게 온 결과(대표 사진 글자 판정 등)도 잡이 그 줄을 갈아 끼우면 다음 폴링에 바뀐다.
 let _pvPollNo = 0;
+function _kgpMarginPct() {
+  const el = document.getElementById('uploadMarginPct');
+  if (!el) return null;
+  return parseInt(el.value) || parseInt(el.dataset.default) || 25;
+}
 async function runPrevalidate() {
   const markets = getSelectedMarkets();
   if (markets.length === 0) {
@@ -2229,7 +2235,9 @@ async function runPrevalidate() {
     const resp = await fetch('/seller/collect/prevalidate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
+      // Y11-R: 사전검증도 등록과 **같은 마진**으로 판매가를 잰다(예전엔 서버 기본 25% → 카드 3,226,440 · 등록은 슬라이더 값)
       body: JSON.stringify({product: buildProductData(), markets, item_id: _ITEM_ID,
+                            target_margin_pct: _kgpMarginPct(),
                             refresh_from_store: !!window._kgpRefreshFromStore}),
     });
     window._kgpRefreshFromStore = false;

@@ -3,17 +3,53 @@
    네이버는 채널 상품번호만 보인다(원상품번호는 로그·DB 내부용).
    입력: ml_records(listing_status.records) · ml_item(상품 id). 데스크톱·폰 같은 조각. #}
 {% if ml_records %}
-<div class="ml-list" data-role="ml-list">
+<div class="ml-list" data-role="ml-list"{% if ml_auto %} data-auto-status="{{ ml_item }}"{% endif %}>
   {% for r in ml_records %}
   {% set rv = r.review or {} %}
   <button type="button" class="ml-row" data-role="ml-row" data-market="{{ r.market }}" data-market-status="{{ r.market }}" data-item="{{ ml_item }}">
     <span class="ml-name">{{ r.label }}</span>
     <code class="ml-no" data-role="ml-no">{{ r.shown_no or '번호 없음' }}</code>
     <span class="ml-state ml-tone-{{ r.tone }}" data-role="ml-state">{{ rv.label or '상태 보기' }}</span>
+    <span class="ml-sub" data-role="ml-sub" hidden></span>
   </button>
   {% if rv.comment %}<div class="ml-reason">반려 사유: {{ rv.comment }}</div>{% endif %}
   {% endfor %}
 </div>
+{% endif %}
+{# Y11-R(오너 2026-10-16): 드로어 맨 위 — 열 때 마켓별 지금 상태를 **한 번** 묻는다(병렬·12초 상한·60초 캐시는 서버).
+   못 물어보면 그 줄에 「상태 확인 실패」(지어내지 않는다). 줄을 누르면 같은 팝업(검토 상태·지금 올라간 내용). #}
+{% if ml_records and ml_auto %}
+<script>
+(function () {
+  var box = document.querySelector('[data-auto-status="{{ ml_item }}"]');
+  if (!box || box.dataset.loaded) return;
+  box.dataset.loaded = '1';
+  var TONES = ['ok', 'bad', 'fail', 'wait'];
+  box.querySelectorAll('[data-role=ml-state]').forEach(function (el) { el.textContent = (el.textContent || '') + ' · 확인 중…'; });
+  fetch('/seller/collect/' + encodeURIComponent(box.dataset.autoStatus) + '/market-status', {credentials: 'same-origin'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var rows = (d && d.rows) || [];
+      box.querySelectorAll('[data-role=ml-row]').forEach(function (btn) {
+        var no = (btn.querySelector('[data-role=ml-no]') || {}).textContent || '';
+        var r = rows.filter(function (x) { return x.market === btn.dataset.market &&
+          (!x.product_id || no.indexOf(x.channel_product_no || x.product_id) >= 0 || no.indexOf(x.product_id) >= 0); })[0]
+          || rows.filter(function (x) { return x.market === btn.dataset.market; })[0];
+        var st = btn.querySelector('[data-role=ml-state]');
+        if (!r) { st.textContent = st.textContent.replace(' · 확인 중…', ''); return; }
+        st.textContent = r.label || '확인 못 함';
+        TONES.forEach(function (t) { st.classList.remove('ml-tone-' + t); });
+        st.classList.add('ml-tone-' + (TONES.indexOf(r.tone) >= 0 ? r.tone : 'fail'));
+        var sub = btn.querySelector('[data-role=ml-sub]');
+        var line = r.error ? ('상태 확인 실패 — ' + r.error) : (r.detail_sync_line || r.live_line || '');
+        if (sub && line) { sub.textContent = line; sub.hidden = false; }
+      });
+    })
+    .catch(function () {
+      box.querySelectorAll('[data-role=ml-state]').forEach(function (el) { el.textContent = el.textContent.replace(' · 확인 중…', ' · 확인 못 함'); });
+    });
+})();
+</script>
 {% endif %}
 <style>
   .ml-list { display: grid; gap: 6px; }
@@ -27,5 +63,6 @@
   .ml-tone-ok { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
   .ml-tone-bad { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
   .ml-tone-fail { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange-strong, var(--orange)); }
+  .ml-sub { flex-basis: 100%; font-size: .8rem; color: var(--text-muted); overflow-wrap: anywhere; }
   .ml-reason { font-size: .85rem; color: var(--danger); padding: 0 10px 4px; overflow-wrap: anywhere; }
 </style>

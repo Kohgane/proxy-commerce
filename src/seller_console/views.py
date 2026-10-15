@@ -3368,11 +3368,25 @@ def collect_market_status(item_id):
     import time as _time
     t0 = _time.monotonic()
     # M8(오너 2026-10-10 22:13 폰): 1단 = **DB만**(마켓에 묻지 않음 — 번호·링크·「본문 다시 보내기」가 바로 뜬다)
+    # Y11-R: 쿠팡 줄엔 상세 갱신 큐 상태 한 줄(번역 대기·승인 후 자동 갱신) — 큐는 한 번만 읽는다
+    try:
+        from src.services import coupang_detail_refresh as _cdr
+        _q_rows = _cdr.queue_rows() if any(r["market"].startswith("coupang") for r in recs) else []
+    except Exception:                                            # noqa: BLE001
+        _cdr, _q_rows = None, []
+
+    def _sync(row):
+        if _cdr is not None and str(row.get("market") or "").startswith("coupang"):
+            row["detail_sync_line"] = _cdr.sync_line(extra, row["market"], str(item_id), _q_rows)
+
     if str(request.args.get("phase") or "") == "db":
         rows = [MS.db_row(r) for r in recs]
+        for _r in rows:
+            _sync(_r)
         return jsonify({"ok": True, "phase": "db", "rows": rows, "elapsed_ms": int((_time.monotonic() - t0) * 1000)})
 
     def _price(rec, row):
+        _sync(row)
         if str(row.get("market") or "").startswith("smartstore"):
             try:
                 row["price_line"] = _price_line_for(item, row["market"])  # Y7-J: 판매가가 어디서 왔나 한 줄
@@ -4575,6 +4589,13 @@ def _pv_prepare(data: dict, product_data: dict):
     #   예전엔 사전검증 「통과」 뒤 등록에서야 「상세 1번째 — 우리 서버 주소」로 막혔다(R2와 같은 교훈).
     product_data, _wp, _rc = _outbound_images(dict(product_data), data.get("item_id"))
     product_data.setdefault("seller_id", _seller_id())
+    # Y11-R(운영 실측 VRSUK): 등록은 화면 슬라이더 마진, 사전검증은 서버 기본 25% → 네이버 카드 3,226,440 vs 실제 전송 4,118,850.
+    #   사전검증도 화면이 보낸 마진으로(등록 `collect_upload`와 같은 자리 · 같은 변환).
+    if data.get("target_margin_pct") is not None:
+        try:
+            product_data["target_margin_pct"] = float(data["target_margin_pct"])
+        except (TypeError, ValueError):
+            pass
     if data.get("item_id"):
         # Z5: 「그래도 등록」은 저장된 기록이 정본 — 화면이 렌더 때 받은 상품엔 없을 수 있다(누른 직후 재검증)
         #   Z 후속2·Y7: 옵션 번역 실패 사유·대표 사진 「그래도 등록」도 같은 자리(저장된 기록이 정본)
