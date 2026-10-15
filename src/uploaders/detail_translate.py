@@ -76,17 +76,35 @@ def _tencent(text: str) -> dict:
     return translate_text(text, source="zh", target="ko", timeout_sec=8, max_chars=CHUNK_MAX)
 
 
+#: Y11-R 보강(오너 2026-10-16): 상세 남은 줄은 **DeepL 무료 몫(월 50만 자) 먼저** — Papago(NCP)는 글자당 과금이라 뒤로.
+#:   나머지 순서는 상품 번역 체인 그대로(키 없는 단은 체인에 없다).
+CHAIN_PREFER = ("deepl",)
+
+
+def billing_of(provider: str) -> str:
+    """제공자 → 과금 한 줄(보고용). DeepL은 키 종류로 가른다(`:fx` = Free 월 50만 자, 넘으면 456 — 과금 없음)."""
+    p = str(provider or "").replace("-fallback", "")
+    if p == "deepl":
+        from src.utils.env import env_str
+        return "무료(DeepL Free 월 50만 자)" if env_str("DEEPL_API_KEY").endswith(":fx") else "유료(DeepL Pro 글자당)"
+    return {"tencent": "텐센트 TMT(월 무료 한도 뒤 과금 — 콘솔 확인)", "papago": "유료(NCP Papago 글자당)",
+            "azure": "Azure 요금제 따름(F0 무료 월 200만 자)", "mymemory": "무료(키 없음·일 한도)",
+            "anthropic": "유료(Anthropic 토큰)", "openai": "유료(OpenAI 토큰)"}.get(p, "")
+
+
 def _chain(text: str) -> dict:
-    """상품 번역과 같은 체인으로 상세 줄 묶음을 옮긴다 — `{ok, text, why, provider, attempts}`(원문을 돌려주면 실패)."""
+    """상품 번역과 같은 체인으로 상세 줄 묶음을 옮긴다 — `{ok, text, why, provider, attempts, chain}`(원문을 돌려주면 실패)."""
     from src.seller_console.ai.translator import AITranslator
-    res = AITranslator().translate_product({"title": "", "description": text}) or {}
+    res = AITranslator().translate_product({"title": "", "description": text}, prefer=list(CHAIN_PREFER)) or {}
     prov = str(res.get("provider") or "")
     out = str(res.get("description_ko") or "")
     ok = bool(out.strip()) and not res.get("error") and prov not in ("stub", "none") and not prov.endswith("-fallback") \
         and out.strip() != str(text or "").strip() and bool(_HANGUL.search(out))
     why = "" if ok else (str(res.get("translate_error") or res.get("error") or "")[:120] or "번역 체인 결과 없음")
+    tried = [f"{a.get('provider')}:{'ok' if a.get('ok') else (str(a.get('error') or '실패')[:60])}"
+             for a in (res.get("attempts") or []) if isinstance(a, dict)]
     return {"ok": ok, "text": out if ok else "", "why": why, "provider": prov,
-            "attempts": len(res.get("attempts") or []) or 1}
+            "attempts": len(res.get("attempts") or []) or 1, "tried": tried[:6]}
 
 
 def _default_translate(text: str) -> dict:
@@ -164,8 +182,19 @@ def _call(chunk: str, fn: Callable[[str], dict]) -> dict:
         r = {"ok": False, "text": "", "why": type(exc).__name__}
     r = {"ok": bool(r.get("ok") and str(r.get("text") or "").strip()), "text": str(r.get("text") or ""),
          "why": str(r.get("why") or ""), "message": str(r.get("message") or ""), "attempts": r.get("attempts") or 1,
-         "provider": str(r.get("provider") or ""), "tencent": r.get("tencent") or None}
-    extra = {k: r[k] for k in ("provider", "tencent") if r.get(k)} or None
+         "provider": str(r.get("provider") or ""), "tencent": r.get("tencent") or None, "tried": r.get("tried") or None}
+    extra = {k: r[k] for k in ("provider", "tencent", "tried") if r.get(k)} or None
+    if r.get("provider") and r["ok"]:
+        # Y11-R 보강: 어느 제공자가 몇 자를 옮겼고 과금이 어떤지(보고용 — 글 내용은 안 남긴다)
+        extra = dict(extra or {}, billing=billing_of(r["provider"]))
+        if str(r["provider"]).startswith("deepl"):
+            try:
+                from src.seller_console.ai.translator import deepl_usage
+                u = deepl_usage()
+                if u:
+                    extra["deepl_usage"] = u
+            except Exception:                                     # noqa: BLE001
+                pass
     if "InvalidParameter" in r["why"] and not unsupported_pair(r):
         # Y11-Q: 어느 줄·왜(빈 줄·제어문자·길이) — 묶음이면 줄마다, 한 줄이면 그 줄
         extra = dict(extra or {}, lines_diag=[line_diag(x) for x in chunk.split("\n")][:8])
@@ -275,7 +304,8 @@ def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] 
     retry_pending = 60초 뒤 재시도를 기다리는 줄 수 · spec_failed = 못 옮긴 규격 줄(원문, 앞 8줄). `force` = 「다시 번역」(기다림 무시)."""
     lines = str(text or "").replace("\r", "").split("\n")
     groups = _chunks(lines)
-    res = {"text": str(text or ""), "translated": 0, "failed": 0, "why": "", "retry_pending": 0, "spec_failed": []}
+    res = {"text": str(text or ""), "translated": 0, "failed": 0, "why": "", "retry_pending": 0, "spec_failed": [],
+           "providers": {}}
     if not groups:
         return res
     if translate_fn is None:
@@ -294,6 +324,8 @@ def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] 
                 res["retry_pending"] += len(g)
             res["spec_failed"] += [lines[i].strip() for i in g if is_spec_line(lines[i])]
             continue
+        _pv = str(r.get("provider") or "") or "?"
+        res["providers"][_pv] = res["providers"].get(_pv, 0) + len(g)      # Y11-R 보강: 줄 수를 제공자별로
         got = [x.strip() for x in r["text"].split("\n")]
         if len(got) == len(g):
             for i, t in zip(g, got):
@@ -321,7 +353,8 @@ def outbound(text: str, translate_fn: Optional[Callable[[str], dict]] = None, fo
     st = strip_page_ui(text)
     tr = translate_leftover(st["text"], translate_fn, force=force)
     return {"text": tr["text"], "page_ui_removed": st["removed"], "translated": tr["translated"],
-            "failed": tr["failed"], "why": tr["why"], "retry_pending": tr["retry_pending"], "spec_failed": tr["spec_failed"]}
+            "failed": tr["failed"], "why": tr["why"], "retry_pending": tr["retry_pending"], "spec_failed": tr["spec_failed"],
+            "providers": tr.get("providers") or {}}
 
 
 SPEC_HOLD_CODE = "detail_spec_untranslated"

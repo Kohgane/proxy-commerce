@@ -350,6 +350,35 @@ def _papago_exhaust_today() -> None:
         pass
 
 
+_DEEPL_USAGE = {"at": 0.0, "v": None}
+
+
+def deepl_usage(max_age: float = 600.0):
+    """Y11-R 보강 — DeepL 이번 달 사용량 `{count, limit, free}`(10분 캐시). 키가 없거나 못 물으면 None(지어내지 않는다).
+    `free` = Free 키(`:fx`) — 월 50만 자 무료, 넘으면 456(과금 없음). Pro 키는 글자당 과금."""
+    import time as _t
+    from src.utils.env import env_str
+    key = env_str("DEEPL_API_KEY")
+    if not key:
+        return None
+    if _DEEPL_USAGE["v"] is not None and _t.monotonic() - _DEEPL_USAGE["at"] < max_age:
+        return _DEEPL_USAGE["v"]
+    try:
+        import requests as _req
+        url = "https://api-free.deepl.com/v2/usage" if key.endswith(":fx") else "https://api.deepl.com/v2/usage"
+        r = _req.get(url, headers={"Authorization": f"DeepL-Auth-Key {key}"}, timeout=5)
+        if r.status_code != 200:
+            v = {"error": f"HTTP {r.status_code}", "free": key.endswith(":fx")}
+        else:
+            j = r.json() or {}
+            v = {"count": int(j.get("character_count") or 0), "limit": int(j.get("character_limit") or 0),
+                 "free": key.endswith(":fx")}
+    except Exception as exc:                                     # noqa: BLE001 — 사용량은 보고용 한 줄
+        v = {"error": type(exc).__name__, "free": key.endswith(":fx")}
+    _DEEPL_USAGE.update(at=_t.monotonic(), v=v)
+    return v
+
+
 class PapagoDailyLimit(RuntimeError):
     """우리 쪽 Papago 일 상한 도달 — 체인이 다음 단으로 내려간다(실패 아님, 건너뜀)."""
 
@@ -751,7 +780,7 @@ class AITranslator:
         left = self._budget_left()
         return max(1.0, min(float(default), left)) if left < 1e8 else float(default)
 
-    def translate_product(self, source: dict, *, style: str = "") -> dict:
+    def translate_product(self, source: dict, *, style: str = "", prefer=None) -> dict:
         """상품 메타데이터를 한국어로 번역하고 마켓별 카피 생성 — **프로바이더 체인**(순차 폴백).
 
         반환: {title_ko, description_ko, copy_*, provider, attempts:[{provider,ok,error}], (translate_error)}
@@ -782,6 +811,11 @@ class AITranslator:
         #   ja는 papago/deepl 선행, mymemory 후순위(저품질 로마자화 방지). 감지·체인을 결과에 기록(진단).
         _src = _route_src_lang((title or "") + " " + (description or ""))
         chain = self._provider_chain(src_lang=_src)
+        # Y11-R 보강(오너 2026-10-16): 부르는 쪽이 **앞에 세울 단**을 고른다(상세 남은 줄 = DeepL 무료 몫 먼저).
+        #   키가 없어 체인에 없는 단은 끼워 넣지 않는다 — 순서만 바꾼다.
+        if prefer:
+            _pf = [n for n in prefer if n in chain]
+            chain = _pf + [n for n in chain if n not in _pf]
         # D3-4 ④ — 문체 지시가 있으면 **따를 수 있는 단**으로 좁힌다(없으면 그대로 + 정직 표기).
         style = str(style or "").strip()
         style_applied = False
@@ -1314,12 +1348,13 @@ class AITranslator:
                 if api_key.endswith(":fx")
                 else "https://api.deepl.com/v2/translate"
             )
+            # Y11-R 보강(DeepL 공지): 2026-01-15부터 본문·쿼리 `auth_key` 인증은 403 — **헤더**(`DeepL-Auth-Key`)만 받는다.
             params = {
-                "auth_key": api_key,
                 "text": [title, description],
                 "target_lang": "KO",
             }
-            resp = _req.post(base_url, data=params, timeout=self._clamp_timeout(10))
+            resp = _req.post(base_url, data=params, headers={"Authorization": f"DeepL-Auth-Key {api_key}"},
+                             timeout=self._clamp_timeout(10))
             resp.raise_for_status()
             translations = resp.json().get("translations", [])
             title_ko = translations[0]["text"] if len(translations) > 0 else title

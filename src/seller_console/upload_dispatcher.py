@@ -229,6 +229,7 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
                 # Y11P-2: 60초 뒤 재시도 대기 줄 수 · 못 옮긴 규격 줄(있으면 쿠팡 보류 + 「다시 번역」)
                 pd["detail_translate_retry_pending"] = _o.get("retry_pending") or 0
                 pd["detail_translate_spec_failed"] = list(_o.get("spec_failed") or [])
+                pd["detail_translate_providers"] = dict(_o.get("providers") or {})     # Y11-R 보강: 줄 수 by 제공자
             if _o["page_ui_removed"]:
                 pd["detail_page_ui_removed"] = _o["page_ui_removed"]
         except Exception as exc:                                     # noqa: BLE001 — 번역 실패는 한자 줄 빼기(예전 동작)

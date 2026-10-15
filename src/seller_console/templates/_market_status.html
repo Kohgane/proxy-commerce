@@ -38,6 +38,9 @@
   .mst-dup-remove { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--orange);
                     border-radius: 999px; background: transparent; color: var(--orange-strong, var(--orange)); white-space: nowrap; }
   .mst-ok { color: var(--success); }
+  .mst-out { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--teal); background: var(--bg); overflow-wrap: anywhere; }
+  .mst-raw { margin: 4px 0 0; padding: 6px 8px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+             font-size: .75rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
   .mst-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--teal); text-decoration: none; white-space: nowrap; }
 </style>
 <script>
@@ -90,12 +93,68 @@
       links += '<button type="button" class="mst-dup-remove" data-role="mst-dup-remove" data-single="1" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '">기록 빼기(다시 등록용)</button>';
     if (String(r.market || '').indexOf('smartstore') === 0 && r.product_id)
       links += '<button type="button" class="mst-resend" data-role="mst-resend" data-market="' + esc(r.market) + '">본문 다시 보내기</button>';
+    // Y11-R 보강(오너 2026-10-16): 쿠팡 등록본 — 크론을 기다리지 않고 그 자리에서 상세 갱신 1건(두 번 눌러야 보냄 — 쿠팡 재심사)
+    if (String(r.market || '').indexOf('coupang') === 0 && r.product_id)
+      links += '<button type="button" class="mst-resend" data-role="mst-refresh-now" data-market="' + esc(r.market) + '">지금 갱신</button>';
     if (links) h += '<div class="mst-links">' + links + '</div>';
     if (String(r.market || '').indexOf('smartstore') === 0)
       h += '<div class="mst-meta" data-role="mst-resend-out" hidden></div>';
+    if (String(r.market || '').indexOf('coupang') === 0)
+      h += '<div class="mst-out" data-role="mst-refresh-out" hidden></div>';
     return h + '</div>';
   }
   var curItem = '';
+  var IMG_STATE = {accepted: '받음', rejected: '거부 — 글만 다시 보냈고, 이후엔 글만 보내요', unclear: '거부(이미지 탓 아님 — 글만으로도 같은 답)',
+                   other_error: '상세와 무관한 거부'};
+  function refreshLines(r) {
+    var b = [];
+    if (r.sent) b.push('<div class="' + (r.ok ? 'mst-ok' : 'mst-err') + '" data-role="mst-refresh-verdict">' +
+      (r.ok ? '쿠팡에 새 상세를 보냈어요(다시 심사)' : '쿠팡이 받지 않았어요') + (r.market_status ? ' · HTTP ' + esc(r.market_status) : '') + '</div>');
+    else b.push('<div class="mst-err" data-role="mst-refresh-verdict">보내지 않았어요 — ' + esc(r.error || '사유 미상') + '</div>');
+    if (r.sent && r.error) b.push('<div class="mst-meta">' + esc(r.error) + '</div>');
+    if (r.detail_images != null) b.push('<div class="mst-meta">상세 이미지 ' + esc(r.detail_images) + '장 · 규격 글 아래</div>');
+    if (r.translate_line) b.push('<div class="mst-meta" data-role="mst-refresh-translate">' + esc(r.translate_line) + '</div>');
+    var di = r.detail_image;
+    if (di) {
+      b.push('<div class="mst-meta" data-role="mst-refresh-image">이미지 블록: ' + esc(IMG_STATE[di.state] || di.state) + '</div>');
+      if (di.raw) b.push('<pre class="mst-raw" data-role="mst-refresh-raw">' + esc(di.raw) + '</pre>');
+      if (di.retry_raw) b.push('<div class="mst-meta">글만 다시 보낸 응답</div><pre class="mst-raw" data-role="mst-refresh-retry-raw">' + esc(di.retry_raw) + '</pre>');
+    } else if (r.body) b.push('<pre class="mst-raw" data-role="mst-refresh-raw">' + esc(r.body) + '</pre>');
+    if (r.sync_line) b.push('<div class="mst-meta">' + esc(r.sync_line) + '</div>');
+    return b.join('');
+  }
+  function refreshNow(btn) {
+    if (btn.getAttribute('data-armed') !== '1') {
+      btn.setAttribute('data-armed', '1');
+      btn.textContent = '한 번 더 누르면 보내요 — 쿠팡이 다시 심사해요';
+      return;
+    }
+    var rowEl = btn.closest('[data-role=mst-row]');
+    var out = rowEl && rowEl.querySelector('[data-role=mst-refresh-out]');
+    var market = btn.getAttribute('data-market');
+    btn.disabled = true; btn.removeAttribute('data-armed'); btn.textContent = '갱신 중…';
+    if (out) { out.hidden = false; out.innerHTML = '<div class="mst-meta">상세를 다시 만들고(번역 포함) 쿠팡에 보내는 중… 30초쯤 걸려요</div>'; }
+    var url = '/seller/collect/' + encodeURIComponent(curItem) + '/coupang-detail-refresh';
+    function done(html) { btn.disabled = false; btn.textContent = '지금 갱신'; if (out) out.innerHTML = html; }
+    function fail(msg) { done('<div class="mst-err">' + esc(msg) + '</div>'); }
+    fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({market: market})})
+      .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; } }); })
+      .then(function (d) {
+        if (!d || !d.ok || !d.job) return fail('시작하지 못했어요 — ' + ((d && d.error) || '사유 미상'));
+        var n = 0;
+        (function poll() {
+          if (++n > 45) return fail('90초 안에 끝나지 않았어요 — 잠시 뒤 팝업을 다시 열면 결과 줄이 보여요');
+          setTimeout(function () {
+            fetch(url + '?job=' + encodeURIComponent(d.job), {credentials: 'same-origin'}).then(function (r) { return r.json(); })
+              .then(function (p) {
+                if (!p || !p.ok) return fail((p && p.error) || '결과를 받지 못했어요');
+                if (p.state !== 'done') return poll();
+                done(refreshLines(p.row || {}));
+              }).catch(function () { poll(); });
+          }, 2000);
+        })();
+      }).catch(function (e) { fail('네트워크 오류 — ' + ((e && e.message) || e)); });
+  }
   function resend(btn) {
     var rowEl = btn.closest('[data-role=mst-row]');
     var out = rowEl && rowEl.querySelector('[data-role=mst-resend-out]');
@@ -193,6 +252,8 @@
       if (body.querySelector('[data-role=mst-row]')) loadStatus(seq); else load();
       return;
     }
+    var rn = ev.target.closest && ev.target.closest('[data-role=mst-refresh-now]');
+    if (rn) { ev.preventDefault(); refreshNow(rn); return; }
     var rs = ev.target.closest && ev.target.closest('[data-role=mst-resend]');
     if (rs) { ev.preventDefault(); resend(rs); return; }
     var dr = ev.target.closest && ev.target.closest('[data-role=mst-dup-remove]');

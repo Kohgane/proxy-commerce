@@ -56,11 +56,11 @@ def _deepl_translate(text: str, source_lang: str, target_lang: str) -> str:
         response = requests.post(
             api_url,
             data={
-                'auth_key': api_key,
                 'text': text,
                 'source_lang': source_lang.upper(),
                 'target_lang': target_lang.upper(),
             },
+            headers={'Authorization': f'DeepL-Auth-Key {api_key}'},   # 본문 auth_key는 2026-01-15부터 403
             timeout=10,
         )
         response.raise_for_status()

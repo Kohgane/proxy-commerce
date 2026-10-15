@@ -44,7 +44,8 @@ def _deepl(texts: List[str]) -> List[str]:
     if not key:
         raise RuntimeError("키 없음(DEEPL_API_KEY)")
     url = "https://api-free.deepl.com/v2/translate" if key.endswith(":fx") else "https://api.deepl.com/v2/translate"
-    r = requests.post(url, data={"auth_key": key, "text": texts, "source_lang": "KO", "target_lang": "JA"}, timeout=15)
+    r = requests.post(url, data={"text": texts, "source_lang": "KO", "target_lang": "JA"},
+                      headers={"Authorization": f"DeepL-Auth-Key {key}"}, timeout=15)   # 본문 auth_key는 403(2026-01-15~)
     r.raise_for_status()
     tr = r.json().get("translations") or []
     if len(tr) != len(texts):

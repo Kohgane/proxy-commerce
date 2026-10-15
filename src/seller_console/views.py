@@ -3914,6 +3914,71 @@ def _kick_coupang_detail_refresh(item_id: str) -> bool:
         return False
 
 
+@bp.post("/collect/<item_id>/coupang-detail-refresh")
+def collect_coupang_detail_refresh_now(item_id):
+    """Y11-R 보강(오너 2026-10-16 모바일): 상태 팝업 쿠팡 줄 「지금 갱신」 — 크론 없이 **그 자리에서** 상세 갱신 1건.
+
+    등록과 같은 빌더로 상세(이미지 블록 + 규격 글)를 만들고, 번역이 되면 쿠팡 상품 수정 API로 보낸다. 결과 줄
+    (`sent·ok·state·error·market_status·body` + 이미지 블록 판정·번역 제공자/과금)을 그대로 돌려준다 — 팝업이 원문을 보인다.
+    번역이 아직이면 보내지 않고 큐에 남긴다(지어낸 성공 0). 수정은 쿠팡 「승인필요」 — 판매중 상품도 다시 심사.
+    """
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    market = str(data.get("market") or "").strip()
+    if not market.startswith("coupang"):
+        return jsonify({"ok": False, "error": "쿠팡 등록본만 갱신할 수 있어요."}), 400
+    forbidden = _account_codes_forbidden([market])
+    if forbidden:
+        return forbidden
+    from src.services import coupang_detail_refresh as _cdr
+    from . import collect_history_store as _chs
+    if not any(u["market"] == market for u in _cdr.coupang_uploads(json.loads(item.get("extra_json") or "{}") or {})):
+        return jsonify({"ok": False, "error": "이 마켓에 쿠팡 등록 기록(상품번호)이 없어요."}), 404
+    import contextvars as _cv
+    import threading as _th
+    import uuid as _uuid
+    ids, sid_ = _seller_identities(), _seller_id()
+    job = _uuid.uuid4().hex[:12]
+    _CDR_NOW[job] = {"state": "running", "item": str(item_id), "market": market, "seller": sid_}
+
+    def _run():
+        # 번역(체인)·쿠팡 조회·수정(이미지 블록 거부면 글만 한 번 더)까지 20~30초 — 요청을 붙잡지 않고 팝업이 묻는다
+        try:
+            rows = _cdr.refresh_item(item, seller_id=sid_, markets=[market], save=lambda e: _chs.update(
+                str(item_id), seller_ids=ids, extra_json=json.dumps(e, ensure_ascii=False)))
+            r = rows[0] if rows else {"error": "보낼 등록본이 없어요"}
+            try:
+                r["sync_line"] = _cdr.sync_line(json.loads((_chs.get(str(item_id), seller_ids=ids) or {})
+                                                           .get("extra_json") or "{}") or {}, market, str(item_id))
+            except Exception:                                    # noqa: BLE001 — 한 줄 재료
+                pass
+            _CDR_NOW[job].update(state="done", row=r)
+        except Exception as exc:                                 # noqa: BLE001 — 원문 그대로
+            _CDR_NOW[job].update(state="done", row={"error": f"{type(exc).__name__}: {str(exc)[:300]}"})
+    _th.Thread(target=_cv.copy_context().run, args=(_run,), daemon=True).start()
+    while len(_CDR_NOW) > 50:                                    # 오래된 잡은 버린다(한 워커 메모리)
+        _CDR_NOW.pop(next(iter(_CDR_NOW)))
+    return jsonify({"ok": True, "job": job, "state": "running"}), 202
+
+
+#: Y11-R 보강 — 「지금 갱신」 잡(한 워커 · 결과는 등록 기록 `coupang_detail_sync`에도 남는다)
+_CDR_NOW: dict = {}
+
+
+@bp.get("/collect/<item_id>/coupang-detail-refresh")
+def collect_coupang_detail_refresh_poll(item_id):
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    j = _CDR_NOW.get(str(request.args.get("job") or ""))
+    if not j or j.get("item") != str(item_id) or j.get("seller") != _seller_id():
+        return jsonify({"ok": False, "error": "갱신 작업을 찾지 못했어요(서버가 다시 시작됐을 수 있어요) — 다시 눌러 주세요."}), 404
+    return jsonify({"ok": True, "state": j["state"], "row": j.get("row")})
+
+
 @bp.post("/collect/<item_id>/detail-retranslate")
 def collect_detail_retranslate(item_id):
     """Y11P-2(오너 2026-10-15): 상세 규격 줄 번역 실패로 쿠팡 보류 → 「다시 번역」 — 60초 기다림 없이 지금 다시 묻는다(텐센트).

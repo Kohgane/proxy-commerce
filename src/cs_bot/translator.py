@@ -103,15 +103,14 @@ def _call_deepl_translate(text: str, source_lang: str, target_lang: str) -> tupl
     if not key:
         return "", Decimal("0"), 0
     endpoint = "https://api-free.deepl.com/v2/translate" if key.endswith(":fx") else "https://api.deepl.com/v2/translate"
-    payload = {
-        "auth_key": key,
+    payload = {                       # 인증은 헤더(본문 auth_key는 2026-01-15부터 403)
         "text": text,
         "source_lang": _LANG_MAP.get(source_lang, "").upper(),
         "target_lang": _LANG_MAP.get(target_lang, "KO"),
     }
     if not payload["source_lang"]:
         payload.pop("source_lang")
-    resp = requests.post(endpoint, data=payload, timeout=8)
+    resp = requests.post(endpoint, data=payload, headers={"Authorization": f"DeepL-Auth-Key {key}"}, timeout=8)
     if not resp.ok:
         return "", Decimal("0"), 0
     data = resp.json()
