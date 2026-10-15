@@ -135,16 +135,49 @@ def _client(seller):
     return c
 
 
-def test_prevalidate_refused_when_instance_is_full(monkeypatch):
+def test_prevalidate_full_instance_waits_and_retries_once(monkeypatch):
+    """Y11-O(오너 2026-10-15): 503 「잠시 후 다시 눌러」 대신 — 잡을 받고(202) 30초 뒤 한 번 더 스스로 잰다. 그래도 차 있으면
+    마켓 줄 「검증 못 함 — 메모리 여유가 없어요(… 30초 뒤 다시 재도 같았어요)」."""
     import src.seller_console.views as V
     from src.utils import rss
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: object())
-    monkeypatch.setattr(rss, "instance_mb", lambda: 433)
-    r = _client("z10c-pv").post("/seller/collect/prevalidate",
-                                json={"product": {"title": "x", "price": 1}, "markets": ["elevenst"]})
+    monkeypatch.setattr(V, "_PV_MEM_RETRY_SEC", 0.05)
+    seen = []
+    monkeypatch.setattr(rss, "instance_mb", lambda: seen.append(1) or 433)
+    c = _client("z10c-pv")
+    r = c.post("/seller/collect/prevalidate", json={"product": {"title": "x", "price": 1}, "markets": ["elevenst"]})
     d = r.get_json()
-    assert r.status_code == 503 and d["busy_memory"] is True
-    assert d["error"] == "메모리 여유 없음 — 잠시 후 다시 눌러 주세요" and d["memory_mb"] == 433 and d["limit_mb"] == 420
+    assert r.status_code == 202 and d["job_id"]
+    for _ in range(200):
+        d2 = c.get(d["poll"]).get_json()
+        if d2.get("state") == "done":
+            break
+        time.sleep(0.05)
+    row = d2["results"][0]
+    assert row["transport"] == "memory" and "30초 뒤 다시 재도 같았어요" in row["message"] + " ".join(row.get("details") or [])
+    mw = V._pv_store().state_get(V._PV_JOB_KEY + d["job_id"])["mem_wait"]
+    assert mw["retry"] is True and mw["first_mb"] == 433 and mw["second_mb"] == 433 and mw["limit_mb"] == 420
+
+
+def test_prevalidate_memory_frees_within_retry_then_runs(monkeypatch):
+    """첫 잼엔 433MB, 30초 뒤엔 300MB — 스스로 다시 시작한다(오너가 다시 누르지 않아도)."""
+    import src.seller_console.views as V
+    from src.utils import rss
+    ran = []
+    monkeypatch.setattr(V, "_pv_job_body", lambda job_id, data, markets, dispatcher: ran.append(job_id) or V._pv_update(job_id, state="done"))
+    monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: object())
+    monkeypatch.setattr(V, "_PV_MEM_RETRY_SEC", 0.05)
+    vals = iter([433] + [300] * 50)
+    monkeypatch.setattr(rss, "instance_mb", lambda: next(vals))
+    c = _client("z10c-pv2")
+    d = c.post("/seller/collect/prevalidate", json={"product": {"title": "x", "price": 1}, "markets": ["elevenst"]}).get_json()
+    for _ in range(200):
+        if ran:
+            break
+        time.sleep(0.05)
+    assert ran == [d["job_id"]]
+    mw = V._pv_store().state_get(V._PV_JOB_KEY + d["job_id"])["mem_wait"]
+    assert mw["retry"] is True and mw["first_mb"] == 433 and mw["second_mb"] == 300
 
 
 def test_queued_prevalidate_does_not_start_if_memory_filled_while_waiting(monkeypatch):
@@ -170,6 +203,7 @@ def test_queued_prevalidate_does_not_start_if_memory_filled_while_waiting(monkey
     assert started.wait(5)
     j2 = c.post("/seller/collect/prevalidate", json={"product": {"title": "b"}, "markets": ["elevenst"]}).get_json()
     monkeypatch.setattr(rss, "instance_mb", lambda: 440)                         # 기다리는 사이 다른 일로 찼다
+    monkeypatch.setattr(V, "_PV_MEM_RETRY_SEC", 0.05)                            # Y11-O: 30초 뒤 한 번 더(테스트는 짧게)
     gate.set()
     for _ in range(100):
         d2 = c.get(j2["poll"]).get_json()
@@ -178,7 +212,7 @@ def test_queued_prevalidate_does_not_start_if_memory_filled_while_waiting(monkey
         time.sleep(0.05)
     row = d2["results"][0]
     assert d2["state"] == "done" and row["transport"] == "memory" and row["ok"] is False and row["hold"] is False
-    assert "메모리 여유 없음" in row["message"] and "440MB" in row["message"]
+    assert "메모리 여유가 없어요" in row["message"] and "440MB" in row["message"] and "30초 뒤 다시 재도" in row["message"]
     assert c.get(j1["poll"]).get_json()["state"] == "done"
     assert V._pv_semaphore().acquire(timeout=2)                                 # 자리를 돌려줬다
     V._pv_semaphore().release()

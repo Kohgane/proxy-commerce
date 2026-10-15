@@ -83,6 +83,38 @@ def _watermark_word(text: str) -> str:
         return ""
 
 
+_WORD = re.compile(r"[0-9A-Za-z가-힣]+")
+
+
+def _norm_words(text: str) -> str:
+    return " ".join(w.lower() for w in _WORD.findall(str(text or "")))
+
+
+def echo_texts(extra: Optional[dict]) -> List[str]:
+    """Y11-O — 같은 상품의 **통째 소품 사진**(거꾸로·옆으로 돌린 틀 · 소품 글자뿐)에서 읽힌 글자(정규화).
+
+    VRSUK 상세 25의 「Zaha Hadid」 상자(사진의 0.21%)는 OCR이 기울기·확신을 주지 않아 소품 표시가 안 됐다 — 같은 책
+    (「IS THAT YUO」「Zaha Hadid」)이 사진 3·상세 9에 통째 소품으로 찍혀 있었다."""
+    out = []
+    for key in ("images_ko", "detail_images_ko"):
+        for e in (extra or {}).get(key) or []:
+            if isinstance(e, dict) and (e.get("prop_only") or str(e.get("box_frame") or "") in ROTATED_FRAMES):
+                t = _norm_words(" ".join(str(e.get(k) or "") for k in ("prop_text", "source_text", "ocr_text")))
+                if t:
+                    out.append(t)
+    return out
+
+
+def echoes(box: Dict, size, known: List[str]) -> bool:
+    """작은 상자(면적 < 0.5%)의 글자가 같은 상품의 통째 소품 사진 글자에 그대로 있으면 — 같은 소품(책등·책 표지)."""
+    W, H = (size or [0, 0])[:2]
+    words = _norm_words(box.get("src") or "")
+    if not (W and H and known and len(words) >= 4) or _watermark_word(str(box.get("src") or "")):
+        return False
+    area = max(0, int(box.get("w") or 0)) * max(0, int(box.get("h") or 0)) / float(W * H)
+    return area < MAX_AREA and any(words in k for k in known)
+
+
 def mark(boxes: List[Dict], size, *, frame: str = "", off: bool = False) -> List[Dict]:
     """상자마다 `prop` 표시(제자리) — `off`(카테고리 반례)면 전부 False."""
     for b in boxes or []:

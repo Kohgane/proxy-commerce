@@ -173,10 +173,10 @@ def search(q: str, limit: int = 30) -> List[Dict[str, str]]:
 #   카테고리별 속성·표준형 옵션, 카탈로그 조회뿐). 그래서 **쿠팡 카테고리 예측**(`categorization/predict`)이 돌려준
 #   리프 이름을 네이버 리프 이름과 맞춰 본다. 확신(점수·2등과의 차이)이 모자라면 후보 3개를 보여 주고 1탭으로 고르게,
 #   오너가 고른 결과는 상품명 낱말 → 리프로 기억한다(같은 류 다음 상품은 자동).
-SUGGEST_KEY = "naver_cat_suggest:v2"     # Y7-E: 판정 규칙이 바뀌어 예전(v1) 기억은 쓰지 않는다
+SUGGEST_KEY = "naver_cat_suggest:v3"     # Y11-O: 고정 매핑표·1단계 갈림 후보 유지 — 예전(v2) 기억은 쓰지 않는다
 LEARN_KEY = "naver_cat_learn:"
 REASON_CANDIDATES = "category_candidates"
-SOURCE_LABEL = {"manual": "지정", "learned": "자동(내가 고른 기록)", "pattern": "자동(상품명 사전)",
+SOURCE_LABEL = {"map": "자동(고정 매핑표)", "ai": "자동(AI가 고름)", "manual": "지정", "learned": "자동(내가 고른 기록)", "pattern": "자동(상품명 사전)",
                 "coupang": "자동(쿠팡 예측)"}
 
 
@@ -441,6 +441,32 @@ def _coupang_paths_ready() -> bool:
         return False
 
 
+_FIXED: dict = {"mtime": None, "map": {}}
+
+
+def fixed_map() -> Dict[str, dict]:
+    """Y11-O 쿠팡 리프 → 네이버 리프 고정 매핑표(`naver_category_map.json`) — 키 = 쿠팡 displayCategoryCode."""
+    import json
+    from pathlib import Path
+    f = Path(__file__).with_name("naver_category_map.json")
+    try:
+        mt = f.stat().st_mtime
+        if _FIXED["mtime"] != mt:
+            _FIXED.update(mtime=mt, map=json.loads(f.read_text(encoding="utf-8")).get("map") or {})
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("[네이버 카테고리] 고정 매핑표 읽기 실패: %s", exc)
+    return _FIXED["map"]
+
+
+def fixed_for(coupang_id: str, coupang_path: str = "") -> Optional[dict]:
+    """쿠팡 예측(ID, 없으면 전체 경로) → 매핑표 한 줄 또는 None."""
+    m = fixed_map()
+    row = m.get(str(coupang_id or "").strip())
+    if row is None and coupang_path:
+        row = next((r for r in m.values() if r.get("coupang") == str(coupang_path).strip()), None)
+    return row
+
+
 def compute_suggestion(p: dict, *, remember: bool = False) -> dict:
     """기억(캐시)을 보지 않고 지금 계산 — 관리자 표(운영 상품명 일괄)는 이걸로, 사전검증·등록은 `suggest`."""
     name, _desc = _predict_input(p or {})
@@ -457,6 +483,19 @@ def compute_suggestion(p: dict, *, remember: bool = False) -> dict:
            "estimated": bool(g.get("name")) and not g.get("path")}
     if not g.get("name"):
         return out
+    fx = fixed_for(g.get("id", ""), g.get("path", ""))
+    leaves = (tree() or {}).get("leaves") or {}
+    if fx and str(fx.get("naver")) in leaves:
+        # Y11-O(오너): 고정 매핑표에 있는 쿠팡 리프면 점수 비교 없이 바로 채운다(같이 보여 줄 다른 후보 = alt)
+        nid = str(fx["naver"])
+        out.update(id=nid, name=leaves[nid], score=1.0, mapped=True, why="",
+                   alts=[{"id": str(a), "name": leaves[str(a)]} for a in fx.get("alt") or [] if str(a) in leaves])
+        if remember:
+            _suggest_cache_put(name, out)
+        logger.info("[네이버 카테고리] 쿠팡 「%s」 → 고정 매핑표 %s", cp, leaves[nid])
+        return out
+    if fx:
+        logger.warning("[네이버 카테고리] 고정 매핑표의 네이버 ID %s가 트리에 리프로 없음 — 점수 비교로", fx.get("naver"))
     top = [c for c in rank(cp, name, limit=3) if c["score"] >= 0.25]   # 거의 안 닮은 후보는 보이지 않는다
     if not top:
         out["why"] = f"쿠팡 예측 「{cp}」와 닮은 네이버 카테고리가 없어요"
@@ -469,10 +508,12 @@ def compute_suggestion(p: dict, *, remember: bool = False) -> dict:
         out.update(id=top[0]["id"], name=top[0]["name"], score=top[0]["score"])
     else:
         if len(top) >= 2 and len({c["name"].split(">")[0] for c in top}) == len(top):
-            # Y7-E: 후보가 전부 다른 1단계 — 갈래부터 갈린다(식품·출산육아·스포츠가 나란히). 고르라고 내밀지 않는다.
+            # Y7-E: 후보가 전부 다른 1단계 — 갈래부터 갈린다. Y11-O(오너): 실패로 두지 않고 후보를 남겨 AI(상품명·사진)가 하나 고른다
+            #   (사전검증 AI 자동수정 「카테고리」 — 고른 것 + 다른 후보 2개를 같이 보인다).
+            out["candidates"] = top
+            out["split"] = True
             out["why"] = (f"쿠팡 예측 「{cp}」로는 네이버 1단계부터 갈려요("
-                          + " · ".join(c["name"].split(">")[0] for c in top) + ") — 카테고리를 다시 지정하세요")
-            out["candidates_dropped"] = top
+                          + " · ".join(c["name"].split(">")[0] for c in top) + ") — AI가 상품명·사진으로 하나 골라요")
             if remember:
                 _suggest_cache_put(name, out)
             return out
@@ -558,6 +599,11 @@ def pick(product: dict) -> Tuple[str, str]:
     p = product or {}
     manual = str(p.get("naver_category_id") or "").strip()
     if manual:
+        # Y11-O: 고정 매핑표·AI가 적어 둔 값이면(오너가 고른 게 아니면) 출처를 그대로 — 카드가 「지정」이 아니라 「자동」으로
+        fx = p.get("naver_category_auto") if isinstance(p.get("naver_category_auto"), dict) else (
+            ((p.get("ai_fixes") or {}).get("naver_category") or {}) if isinstance(p.get("ai_fixes"), dict) else {})
+        if fx and str(fx.get("after") or "") == manual:
+            return manual, ("map" if fx.get("provider") == "map" else "ai")
         return manual, "manual"
     title = p.get("title_ko") or p.get("title") or ""
     hit = learned(scope_for(p), title)
@@ -566,8 +612,12 @@ def pick(product: dict) -> Tuple[str, str]:
     hit = SS.match_category(p.get("title") or p.get("title_ko") or "")
     if hit:
         return hit, "pattern"
+    if p.get("naver_category_no_auto"):
+        return "", ""                         # Y11-O: 오너가 자동 카테고리를 「되돌리기」 했다 — 다시 자동으로 채우지 않는다
     s = suggest(p)
-    return (s["id"], "coupang") if s.get("id") else ("", "")
+    if not s.get("id"):
+        return "", ""
+    return s["id"], ("map" if s.get("mapped") else "coupang")
 
 
 def describe(product: dict) -> dict:
@@ -581,9 +631,10 @@ def describe(product: dict) -> dict:
         s = suggest(p)
         out.update(candidates=[{"id": c["id"], "name": c["name"]} for c in s.get("candidates") or []],
                    why=s.get("why", ""), coupang=s.get("coupang", ""), estimated=bool(s.get("estimated")))
-    elif src == "coupang":
+    elif src in ("coupang", "map", "ai"):
         s = suggest(p)
         out["coupang"] = s.get("coupang", "")
+        out["alts"] = list(s.get("alts") or [])
         out["name"] = out["name"] or s.get("name", "")
         out["estimated"] = bool(s.get("estimated"))
     return out

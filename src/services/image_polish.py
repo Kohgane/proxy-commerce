@@ -286,7 +286,10 @@ def _ask(rows: List[Dict], ctx: Dict, terms: List[Dict]) -> Dict:
         return {"capped": True}
     res = llm.complete(_prompt([dict(r, tgt=r["glossary"]) for r in rows], ctx, terms), system=_SYSTEM, size="small",
                        max_tokens=1200, purpose="image_polish", timeout=30.0, json_mode=True, providers=["anthropic"])
-    return {"got": _parse(res.get("text") or ""), "error": str(res.get("error") or "빈 응답")[:60]}
+    txt = res.get("text") or ""
+    why = res.get("error") or (("읽을 수 없는 답(JSON 아님" + (f", stop={res.get('stop_reason')}" if res.get("stop_reason") else "")
+                                 + ")") if txt else "빈 응답")
+    return {"got": _parse(txt), "error": str(why)[:60], "retried_empty": bool(res.get("retried_empty"))}
 
 
 def _take(r: Dict, ko: str, ctx: Dict) -> None:
@@ -348,8 +351,16 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
             break
         calls += 1
         if not a["got"]:
-            ai_why = f"AI 응답을 읽지 못함({a['error']}) — 용어집만 적용"
-            continue
+            # Y11-O(오너): 빈 응답·읽을 수 없는 답이면 그 묶음을 한 번 더 묻는다(같은 공급자 빈 응답 재시도는 llm이 이미 1회)
+            logger.info("[다듬기] AI 답을 못 읽음(%s) — 그 묶음 %d상자 한 번 더", a["error"], len(chunk))
+            a = _ask(chunk, ctx, terms)
+            if a.get("capped"):
+                ai_why = f"오늘 다듬기 상한({daily_cap()}회)을 다 써서 용어집만 적용"
+                break
+            calls += 1
+            if not a["got"]:
+                ai_why = f"AI 응답을 읽지 못함({a['error']}, 다시 물어도 같음) — 용어집만 적용"
+                continue
         for r in chunk:
             if r["id"] in a["got"]:
                 _take(r, a["got"][r["id"]], ctx)

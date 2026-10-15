@@ -4538,7 +4538,10 @@ def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
     """Y10 — 사전검증·등록 공용: 기억된 「빼고 등록」 자동 적용(저장) · 몸통에 저장된 결정 반영 · 검사 결과."""
     from src.services import risk_gate as _rg
     try:
-        if _rg.auto_apply(extra, by=_seller_id()):
+        _healed = _rg.heal_prop_excludes(extra)
+        if _healed:
+            logger.info("[리스크] 소품뿐인 사진 제외 풀기 item=%s: %s", item_id, ", ".join(_healed))
+        if _rg.auto_apply(extra, by=_seller_id()) or _healed:
             from . import collect_history_store as _chs
             _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
     except Exception as exc:                                     # noqa: BLE001
@@ -4865,6 +4868,12 @@ def _pv_ai_fix(job_id: str, product_data: dict, data: dict, results: list, dispa
         except Exception:
             return {}
     ex = _load()
+    try:                                     # Y11-O: 고정 매핑표로 정한 네이버 카테고리 → 「AI가 고쳤어요 — 카테고리」 줄(AI 호출 없음)
+        if _af.record_fixed_category(product_data, ex, results):
+            from . import collect_history_store as _chs0
+            _chs0.update(iid, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
+    except Exception as exc:                                         # noqa: BLE001
+        logger.warning("[AI 자동수정] 고정 매핑표 기록 실패 item=%s: %s", iid[:8], exc)
     enabled = os.getenv("PREVALIDATE_AI_FIX", "1") != "0" and _llm.any_ready()
     if not enabled or not _af.plan(product_data, ex, results):
         sm = _af.summary(ex)
@@ -4947,13 +4956,8 @@ def _pv_start_job(data: dict, markets: list, dispatcher):
     import contextvars as _cv
     import threading as _th
     import uuid as _uuid
-    # Z10-C(오너 2026-10-13 20:09 OOM): 인스턴스 메모리 합계가 상한(420MB) 이상이면 새 사전검증을 시작하지 않는다
-    from src.utils import rss as _rss
-    _ok_mem, _cur_mb, _lim_mb = _rss.start_ok()
-    if not _ok_mem:
-        logger.warning("[PV] 시작 거부 — 인스턴스 메모리 %dMB ≥ %dMB", _cur_mb, _lim_mb)
-        return jsonify({"ok": False, "error": _rss.BUSY_MESSAGE, "busy_memory": True,
-                        "memory_mb": _cur_mb, "limit_mb": _lim_mb}), 503
+    # Z10-C 문지기(인스턴스 합계 420MB)는 잡 안에서 본다 — Y11-O(오너 2026-10-15): 503 「잠시 후 다시 눌러」 대신
+    #   사진 그리기가 끝나고 5초 뒤에 재고, 그래도 차 있으면 30초 뒤 한 번 더 스스로 시도한다(`_pv_wait_memory`).
     job_id = _uuid.uuid4().hex
     now = datetime.now(timezone.utc)
     _pv_store().state_set(_PV_JOB_KEY + job_id, {
@@ -5094,6 +5098,46 @@ def _pv_semaphore():
 
 
 _PV_QUEUE_WAIT_SEC = float(os.getenv("PREVALIDATE_QUEUE_WAIT_SEC", "90") or 90)
+_PV_RENDER_WAIT_SEC = float(os.getenv("PREVALIDATE_RENDER_WAIT_SEC", "120") or 120)
+_PV_MEM_RETRY_SEC = float(os.getenv("PREVALIDATE_MEM_RETRY_SEC", "30") or 30)
+
+
+def _pv_wait_memory(job_id: str, markets: list) -> tuple:
+    """Y11-O(오너 2026-10-15) — 사전검증 시작 전 메모리 문지기. `(시작해도 되나, 인스턴스 MB, 상한 MB)`.
+
+    1) 사진 그리기 워커가 그리는 중(또는 끝난 지 5초 안)이면 끝나고 5초 뒤까지 기다린다(화면: 「사진 그리기가 끝나면 자동으로 시작해요」).
+    2) 그다음 인스턴스 합계를 잰다(「지금 RSS」가 아니라 「그리기 끝나고 5초 뒤 RSS」). 상한 이상이면 gc·malloc_trim 후
+       30초 기다려 **한 번 더** 잰다(화면: 「메모리 여유가 생기면 30초 뒤 자동으로 다시 시도해요」). 그래도 차 있으면 False.
+    기다린 값은 잡 기록 `mem_wait`와 운영 DB `rss:recent`에 남긴다."""
+    import gc as _gc
+    import time as _time
+    from src.utils import render_worker as _rw
+    from src.utils import rss as _rss
+    info = {"render_wait_sec": 0.0, "render_timeout": False, "first_mb": None, "retry": False, "second_mb": None}
+    if _rw.busy():
+        _pv_update(job_id, queued=True, queue_note="사진 그리기가 끝나면 자동으로 시작해요(메모리 보호)")
+        _rss.log("pv_wait_render", markets=",".join(markets))
+        info["render_wait_sec"], info["render_timeout"] = _rw.wait_idle(_PV_RENDER_WAIT_SEC)
+    ok, cur, lim = _rss.start_ok()
+    info["first_mb"], info["limit_mb"] = cur, lim
+    if not ok:
+        info["retry"] = True
+        _pv_update(job_id, queued=True,
+                   queue_note=f"메모리 여유가 생기면 {int(_PV_MEM_RETRY_SEC)}초 뒤 자동으로 다시 시도해요(지금 {cur}MB · 상한 {lim}MB)")
+        _rss.log("pv_mem_retry_wait", instance_mb=cur, limit_mb=lim)
+        _gc.collect()
+        _rw.trim()
+        _time.sleep(_PV_MEM_RETRY_SEC)
+        if _rw.busy():
+            info["render_wait_sec"] += _rw.wait_idle(_PV_RENDER_WAIT_SEC)[0]
+        ok, cur, lim = _rss.start_ok()
+        info["second_mb"] = cur
+    if info["render_wait_sec"] or info["retry"]:
+        # 기다린 시간은 이 잡의 60초 마감에 넣지 않는다
+        _pv_update(job_id, queued=False, queue_note="", started_ts=_time.time(),
+                   started_at=datetime.now(timezone.utc).isoformat(), mem_wait=info)
+        _rw.record("pv_start", job=job_id[:8], ok=ok, **info)
+    return ok, cur, lim
 
 
 def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
@@ -5116,12 +5160,14 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
             # 기다린 시간은 이 잡의 60초 마감에 넣지 않는다
             _pv_update(job_id, queued=False, queue_note="", started_ts=_time.time(),
                        started_at=datetime.now(timezone.utc).isoformat())
-        # Z10-C: 줄을 서 있던 사이 메모리가 찼으면 시작하지 않는다(그 마켓들은 「검증 못 함 — 메모리 여유 없음」)
-        _ok_mem, _cur_mb, _lim_mb = _rss.start_ok()
+        # Z10-C 문지기 + Y11-O: 사진 그리기 중이면 끝나고 5초 뒤까지 기다렸다 재고, 차 있으면 30초 뒤 한 번 더(스스로).
+        _ok_mem, _cur_mb, _lim_mb = _pv_wait_memory(job_id, markets)
         if not _ok_mem:
             _rss.log("pv_refused_memory", instance_mb=_cur_mb, limit_mb=_lim_mb)
-            _pv_update(job_id, state="done", queued=False, results={
-                m: _pv_transport_fail(m, "memory", f"검증 못 함 — {_rss.BUSY_MESSAGE}(인스턴스 {_cur_mb}MB)") for m in markets})
+            _pv_update(job_id, state="done", queued=False, queue_note="", results={
+                m: _pv_transport_fail(m, "memory", f"검증 못 함 — 메모리 여유가 없어요(인스턴스 {_cur_mb}MB · 상한 {_lim_mb}MB, "
+                                                   "30초 뒤 다시 재도 같았어요) — 사진 번역·다듬기가 끝난 뒤 다시 눌러 주세요")
+                for m in markets})
             sem.release()                                                # 잡은 시작하지 않았다 — 자리를 바로 돌려준다
             return
         from src.db import pg as _pg
@@ -5141,6 +5187,9 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
                     _pv_update(job_id, rss={"start_mb": r0, "end_mb": r1, "delta_mb": r1 - r0, "peak_mb": _w["peak"],
                                             "peak_at_ms": _w["peak_at"], "hwm_mb": p1,
                                             "instance_base_mb": _w.get("inst_base"), "instance_peak_mb": _w.get("inst_peak")})
+                from src.utils import render_worker as _rw                    # Y11-O: 로그를 못 볼 때 보고용(운영 DB rss:recent)
+                _rw.record("pv_job", job=job_id[:8], markets=",".join(markets), base_mb=_w.get("base"), peak_mb=_w["peak"],
+                           inst_base_mb=_w.get("inst_base"), inst_peak_mb=_w.get("inst_peak"), over=bool(_w.get("over")))
         finally:
             sem.release()
     finally:
@@ -5469,7 +5518,10 @@ def collect_risk_decision(item_id: str):
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(), **upd):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
     return jsonify({"ok": True, "action": action, "risk": _rg.card(_rg.scan(ex, pending_images=_risk_pending_images(item_id))),
-                    "image_line": _rg.strip_image_line(ex, r.get("hit")) if action == "strip" else "",
+                    # Y11-O: 뺄 글자·사진이 없으면(소품뿐인 사진 등) 「변경 없음」 — 아무것도 안 뺐다고 정직하게
+                    "image_line": ((_rg.strip_image_line(ex, r.get("hit")) if r.get("changed", True)
+                                    else "변경 없음 — 뺄 글자나 사진이 없어요") if action == "strip" else ""),
+                    "changed": bool(r.get("changed", True)),
                     # 데스크톱 편집 칸을 뺀 값으로(안 그러면 다음 「저장」이 옛 상품명을 다시 쓴다)
                     "fields": {k: ex.get(k) for k in ("title_ko", "description_ko", "keywords") if action == "strip" and k in ex}})
 
