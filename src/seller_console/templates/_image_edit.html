@@ -189,6 +189,7 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       call(base(), {ops: ops}).then(function (r) {
         if (!r || !r.ok) { st.confirm = false; render(); body.insertAdjacentHTML('beforeend', '<p class="kie-err" data-role="kie-err">' + esc((r && r.error) || '적용하지 못했어요') + '</p>'); return; }
         st.changed = true; st.confirm = false; st.plan = r.plan || st.plan; render();
+        if (r.warn) body.insertAdjacentHTML('beforeend', '<p class="kie-note" data-role="kie-warn">' + esc(r.warn) + '</p>');   // Y11-N2: 사진 위 큰 글자
         if (r.pending) waitReady(0);
       });
       return;

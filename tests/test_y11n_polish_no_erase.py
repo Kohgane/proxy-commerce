@@ -38,7 +38,7 @@ def _ai(monkeypatch, reply=lambda p: json.dumps({"boxes": []})):
     return seen
 
 
-def _coupon_entry(i="3"):
+def _coupon_entry(i="3", exclude="판촉·스토어 문구(88VIP, 消费券, 优惠券, 加补券)"):
     """운영 그대로 — AI 「빈칸」 답을 지우기로 적용한 옛 다듬음 버전이 지금 버전."""
     d = D4[i]
     rows = [{"id": f"t{k}", "src": b["src"], "tgt": b["tgt"], "ai": d["ai"][f"t{k}"], "ko": b["tgt"],
@@ -51,6 +51,8 @@ def _coupon_entry(i="3"):
          "edits": [{"n": 1, "url": "https://res.cloudinary.com/x/edit/old.jpg", "base_key": "translated", "by": "polish", "ready": True,
                     "render": "local", "render_v": 2, "ops": erase}],
          "polish": {"rows": rows, "pv": "y11l-1", "at": "2026-10-15T00:28:00+00:00"}}
+    if exclude:
+        e["exclude"] = exclude                                                   # 운영 그대로 — 판촉·스토어 문구로 등록 제외
     return {"title_ko": "VRSUK 리클라이너 오일 왁스 가죽", "detail_images": [f"https://img/d{k}.jpg" for k in range(28)],
             "detail_images_ko": [e]}
 
@@ -80,7 +82,7 @@ def test_polish_never_erases_blank_answer_is_a_suggestion(monkeypatch):
 
 def test_old_erased_coupon_is_restored_from_translated_with_cache(monkeypatch):
     """쿠폰(상세 4): 옛 다듬음이 16상자를 지웠다 → 다시 누르면 그 버전을 빼고 번역본에서 다시 — 지우기 0.
-    AI는 옛 판 「빈칸」 답 중 **한자 없는 외국어 상자만** 다시 묻는다(Y11-N 결정 ⑨) — 「88VIP专属消费券」 같은 중국어는 캐시 그대로(제안)."""
+    Y11N-1: 쿠폰은 **등록 제외**(판촉) — 옛 프롬프트 답도 캐시 그대로, AI 0회(안 나가는 그림에 돈 안 씀)."""
     from src.services import image_edit as IE
     from src.services import image_polish as P
     ex = _coupon_entry()
@@ -95,12 +97,33 @@ def test_old_erased_coupon_is_restored_from_translated_with_cache(monkeypatch):
     monkeypatch.setattr(IE, "apply", _apply)
     r = P.polish_entry(ex, "detail", 3)
     e = ex["detail_images_ko"][0]
-    asked = [json.loads(line)["src"] for line in seen[0].splitlines() if line.startswith("{")]
-    assert len(seen) == 1 and asked == ["*88VIP SALE", "Sale fory", "stare a casa in due  l'appuntamento"]
+    assert seen == [] and r["calls"] == 0 and e["polish"]["outbound"] is False and e["polish"]["reask_old"] == 0
     assert not any(o["action"] == "erase" for o in applied[0])
-    assert r["suggest_erase"] == 13
+    assert r["suggest_erase"] == 16
     assert [v["key"] for v in IE.versions(ex, "detail", 3)] == ["original", "translated"]   # 지운 버전은 빠지고 번역본(텐센트)
     assert IE.current_key(e) == "translated" and e["polish_rerender"][0]["dropped"] == ["edit:1"]
+
+
+def test_outbound_photo_reasks_old_prompt_answers_and_line_says_so(monkeypatch):
+    """Y11N-1: 등록에 나가는 장은 옛 프롬프트 답(6번 「모든 한 대는 편안한 의자」 같은 직역)을 새 프롬프트로 다시 묻는다."""
+    from src.services import image_edit as IE
+    from src.services import image_polish as P
+    ex = _coupon_entry("5", exclude="")
+    seen = _ai(monkeypatch, lambda p: json.dumps({"boxes": [{"id": "t1", "ko": "의자 하나하나가 편안함 그 자체"}]}))
+    monkeypatch.setattr(IE, "configured", lambda: (True, ""))
+    applied = []
+    monkeypatch.setattr(IE, "apply", lambda extra, kind, idx, ops, by="user", small=None: applied.append(ops) or {"ok": True, "version": "edit:2"})
+    r = P.polish_entry(ex, "detail", 5)
+    pl = ex["detail_images_ko"][0]["polish"]
+    assert len(seen) == 1 and pl["outbound"] is True and pl["reask_old"] == 4 and r["cached"] == 0
+    assert {"id": "t1", "action": "text", "text": "의자 하나하나가 편안함 그 자체"} in applied[0]
+    assert "재질문 4상자(옛 프롬프트)" in P.item_line("x", ex)
+    # 같은 판에서 답한 상자(t1)는 캐시 — 다시 안 묻는다(답 없던 상자만 다시)
+    seen.clear()
+    ex["detail_images_ko"][0].update(current="translated", edits=[])
+    P.polish_entry(ex, "detail", 5)
+    asked = [json.loads(line)["id"] for line in seen[0].splitlines() if line.startswith("{")]
+    assert "t1" not in asked and ex["detail_images_ko"][0]["polish"]["reask_old"] == 0
 
 
 def test_glossary_row_with_old_blank_answer_uses_glossary_without_ai(monkeypatch):
@@ -186,3 +209,22 @@ def test_detail_plan_and_payload_point_at_current_polish_version():
     plan = S.effective_plan(ex, kind="detail")
     assert plan[0]["translated_url"] == url and plan[0]["url"] == url
     assert S.effective_images(ex, kind="detail") == [url]
+
+
+# ── Y11-N2(오너 3번 메모): 사진 위 큰 글자는 통째 메움 안 함 — 경고 + 되돌리기 ─────────────────────────────
+
+def test_photo_box_skips_whole_fill_and_warns(monkeypatch):
+    import cv2
+    import numpy as np
+    from src.services import image_edit as IE
+    rng = np.random.default_rng(7)
+    img = rng.integers(40, 220, (200, 400, 3), dtype=np.uint8)               # 사진 성분(무늬·에지 많음)
+    img = cv2.GaussianBlur(img, (3, 3), 0)
+    cv2.putText(img, "TOP1", (40, 150), cv2.FONT_HERSHEY_SIMPLEX, 4, (10, 10, 10), 14)
+    before = img.copy()
+    counts = iter([1000, 400])
+    monkeypatch.setattr(IE, "_ink_px", lambda *a: next(counts))
+    how = IE.erase_local(cv2, np, img, (20, 20, 380, 180), strict=True)
+    assert "사진 위" in how and not how.startswith(("fill-box", "inpaint-box"))
+    assert float(np.abs(img.astype(int) - before.astype(int)).mean()) < 30      # 상자 통째로 뭉개지 않았다
+    assert IE.PHOTO_WARN.startswith("이 상자는 사진 위라 지우기 품질 보장 못 함")
