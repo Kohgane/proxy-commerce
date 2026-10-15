@@ -3125,6 +3125,7 @@ def _persist_upload_status(item_id, result_dict) -> None:
                                 if r["market"].startswith(("coupang:", "smartstore:")) else ""),
                     "at": now,
                     "price": r.get("price") or {},           # M8-8: 이 등록의 판매가 재료(마진·환율·수수료·줄)
+                    "sent": r.get("sent") or {},             # Y11-Q: 실제로 나간 몸통 요약(상세 줄·이미지·옵션·카테고리)
                 }
                 # Y7-K(오너 2026-10-10): 같은 마켓이라도 **상품번호가 다르면 쌓는다** — 예전엔 마켓당 1건으로 덮어써
                 #   13742149801이 13741121333 기록을 지웠다(마켓엔 두 상품이 있는데 우리 기록엔 하나). 같은 번호면 갱신.
@@ -3336,7 +3337,7 @@ def collect_review_status(item_id):
     for u in extra.get("uploaded") or []:
         if isinstance(u, dict) and u.get("market") in by:
             r = by[u["market"]]
-            u["review"] = {k: r.get(k) for k in ("state", "label", "comment", "link", "product_id", "checked_at")}
+            u["review"] = {k: r.get(k) for k in ("state", "label", "comment", "link", "product_id", "checked_at", "live")}
             u["product_id"] = u.get("product_id") or r.get("sid")
     from .collect_history_store import update as _update
     _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
@@ -3871,6 +3872,55 @@ def collect_naver_split_ok(item_id):
     ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
     logger.warning("[네이버 분할] 오너 확인 — item=%s by=%s 묶음 %d", item_id, rec["by"], len(rec["groups"]))
     return jsonify({"ok": ok, "split": rec, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
+def _kick_coupang_detail_refresh(item_id: str) -> bool:
+    """Y11-Q(오너 2026-10-16) — 상세 번역이 성공했고 이 상품이 이미 쿠팡에 등록돼 있으면 등록본 상세를 수정 API로 갱신
+    (백그라운드 · 같은 상세는 다시 안 보냄 · 막히면 「승인 후 자동 갱신」 큐). 시작했으면 True."""
+    try:
+        item = _get_owned_item(str(item_id))
+        if not item:
+            return False
+        from src.services import coupang_detail_refresh as _cdr
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+        if not _cdr.coupang_uploads(ex):
+            return False
+        import contextvars as _cv
+        import threading as _th
+        sid_, ids = _seller_id(), _seller_identities()
+        from . import collect_history_store as _chs
+
+        def _run():
+            _cdr.refresh_item(item, seller_id=sid_, save=lambda e: _chs.update(
+                str(item_id), seller_ids=ids, extra_json=json.dumps(e, ensure_ascii=False)))
+        _th.Thread(target=_cv.copy_context().run, args=(_run,), daemon=True).start()
+        return True
+    except Exception as exc:                                         # noqa: BLE001 — 갱신 시작 실패가 검증을 막지 않는다
+        logger.warning("[쿠팡 상세 갱신] 시작 실패 item=%s: %s", str(item_id)[:8], exc)
+        return False
+
+
+@bp.post("/collect/<item_id>/detail-retranslate")
+def collect_detail_retranslate(item_id):
+    """Y11P-2(오너 2026-10-15): 상세 규격 줄 번역 실패로 쿠팡 보류 → 「다시 번역」 — 60초 기다림 없이 지금 다시 묻는다(텐센트).
+    성공하면 프로세스 캐시에 남아 바로 다음 사전검증·등록이 그 번역을 쓴다. 수집 원본은 그대로."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    from .product_builder import build_product
+    from .upload_dispatcher import _market_desc_source
+    from .ai.translator import _BILINGUAL_DIVIDER
+    from src.uploaders import detail_translate as _dt
+    pd = build_product(item, seller_id=_seller_id())
+    o = _dt.outbound(str(_market_desc_source(pd) or "").split(_BILINGUAL_DIVIDER)[0], force=True)
+    ok = not o["failed"]
+    logger.info("[상세 번역] 다시 번역 item=%s 옮김 %s · 실패 %s(%s)", item_id, o["translated"], o["failed"], o["why"])
+    if ok and o["translated"]:
+        _kick_coupang_detail_refresh(item_id)                         # Y11-Q: 이미 쿠팡에 나간 상세도 갱신
+    return jsonify({"ok": ok, "translated": o["translated"], "failed": o["failed"], "spec_failed": len(o["spec_failed"]),
+                    "error": "" if ok else f"아직 번역하지 못했어요({o['why'] or '번역 실패'}) — 잠시 뒤 다시 눌러 주세요."}), 200
 
 
 @bp.post("/collect/<item_id>/lead-time-override")
@@ -5273,6 +5323,11 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 from .upload_dispatcher import apply_outbound_text as _aot
                 with _rss.span("outbound_text"):
                     product_data = _aot(product_data)
+                # Y11-Q: 상세에 옮길 원문이 있었고 이미 쿠팡에 등록된 상품이면 등록본 상세도 갱신(백그라운드 · 같은 상세는 1회) —
+                #   번역이 아직 실패면 보내지 않고 「번역 대기」 큐(크론이 번역된 뒤 보낸다)
+                if (data.get("item_id") and (int(product_data.get("detail_auto_translated") or 0)
+                                             or int(product_data.get("detail_translate_failed") or 0))):
+                    _kick_coupang_detail_refresh(str(data["item_id"]))
             except Exception as exc:                                  # noqa: BLE001 — 정리 실패는 원래 값으로 잰다
                 logger.warning("[사전검증] 나갈 글자 정리 실패(원래 값): %s", exc)
             _pv_update(job_id, stages={"prepare": int((_time.monotonic() - t0) * 1000)})

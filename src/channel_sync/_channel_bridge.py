@@ -173,4 +173,8 @@ def run_upload(
     # Y7-J: 네이버는 번호가 둘 — 원상품번호(product_id)와 채널 상품번호(구매자 주소·상태 조회). 있는 마켓만 싣는다
     if str(resp.get("channel_product_no") or "").strip():
         out["channel_product_no"] = str(resp["channel_product_no"]).strip()
+    if isinstance(resp.get("sent"), dict):                       # Y11-Q: 실제로 나간 몸통 요약(등록 기록)
+        out["sent"] = resp["sent"]
+    if isinstance(resp.get("base_probe"), dict):                 # Y11P-1: 네이버 기준가 실측(최소 허용값 → 옵션 판매가)
+        out["base_probe"] = resp["base_probe"]
     return out

@@ -9,6 +9,9 @@
   - 붙어 있는 줄끼리 1,400자 안으로 묶어 한 번에 보낸다(텐센트 SourceText 상한 1,500자 — `translate_text`가 자른다).
     돌아온 줄 수가 같으면 줄마다 바꾸고, 다르면 그 묶음을 돌아온 글 그대로 넣는다(줄을 지어내지 않는다).
   - 번역이 실패한 묶음은 원문 그대로 둔다 → 뒤의 `market_description`이 한자 줄을 뺀다(예전 동작 — 마켓에 중국어 0).
+  - Y11P-2(오너 결정 2026-10-15): 실패한 묶음은 **60초 뒤 1회 자동 재시도**(백그라운드 · 성공하면 캐시 → 다음 검증·등록이 씀).
+    그래도 실패면 지금처럼 뺀다. 단 실패한 줄에 **규격 키**(材质·尺寸·重量·产地·型号… `detail_ui_junk.json` `spec_keys`)가 있으면
+    빼지 않고 쿠팡 보류 + 「다시 번역」(`retry_now`) — 규격이 빠지면 상품 정보가 깨진다.
   - 같은 글은 프로세스 안에서 한 번만 묻는다(사전검증 마켓 병렬·등록에서 같은 본문을 여러 번 지난다).
   - 수집 원본은 덮어쓰지 않는다 — 나가는 몸통에만 쓴다.
 """
@@ -23,12 +26,30 @@ from typing import Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-CHUNK_MAX = 1400
+CHUNK_MAX = 2000                  # Y11-Q: 줄바꿈으로 이어 2,000자 묶음(떨어진 줄도 한 묶음 — 51줄이면 1~3회)
 _HANGUL = re.compile(r"[가-힣]")
 _CACHE: "OrderedDict[str, dict]" = OrderedDict()
 _CACHE_MAX = 256
 _LOCK = threading.Lock()
 _KEY_LOCKS: Dict[str, threading.Lock] = {}
+#: 실패한 묶음 `{key: {"at", "state": "pending"|"final", "why"}}` — pending = 60초 뒤 재시도 예약됨, final = 재시도도 실패.
+_FAIL: Dict[str, dict] = {}
+FINAL_FORGET_SEC = 600            # 재시도까지 실패한 묶음도 10분 뒤엔 다음 검증·등록에서 다시 묻는다
+
+
+def retry_sec() -> float:
+    import os
+    try:
+        return max(1.0, float(os.getenv("DETAIL_TRANSLATE_RETRY_SEC") or 60))
+    except ValueError:
+        return 60.0
+
+
+def is_spec_line(line: str) -> bool:
+    """규격 줄인가 — 키(材质·尺寸·重量·产地·型号…)가 들어 있으면(「材质: 实木」·「框架材质」 둘 다)."""
+    from src.uploaders.detail_ui_junk import table
+    s = str(line or "")
+    return any(k in s for k in (table().get("spec_keys") or []))
 
 
 def _foreign_line(line: str) -> bool:
@@ -39,13 +60,29 @@ def _foreign_line(line: str) -> bool:
 
 def _default_translate(text: str) -> dict:
     from src.services.image_translate_tencent import translate_text
-    return translate_text(text, source="zh", target="ko", timeout_sec=8)
+    return translate_text(text, source="zh", target="ko", timeout_sec=8, max_chars=CHUNK_MAX)
+
+
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u2028\u2029\ufeff]")
+
+
+def clean_line(line: str) -> str:
+    """보내기 전 정리 — 제어문자·폭 없는 문자 빼고 앞뒤 공백. (빈 줄은 애초에 묶음에 안 들어간다.)"""
+    return _CTRL.sub("", str(line or "")).strip()
+
+
+def line_diag(line: str) -> dict:
+    """InvalidParameterValue 부검용 — 그 줄이 왜 이상한지(빈 줄·제어문자·길이·한자 비율). 글은 앞 40자만."""
+    raw = str(line or "")
+    han = len(re.findall(r"[\u4e00-\u9fff]", raw))
+    return {"text": raw[:40], "len": len(raw), "empty": not raw.strip(), "ctrl": bool(_CTRL.search(raw)),
+            "han": han, "other": len(raw.strip()) - han}
 
 
 RECENT_KEY = "detail_translate:recent"
 
 
-def _record_call(chars: int, lines: int, r: dict, ms: int) -> None:
+def _record_call(chars: int, lines: int, r: dict, ms: int, extra: dict = None) -> None:
     """Y11P-2(오너 2026-10-15) — 텐센트 TextTranslate 실호출 기록 40줄(운영 DB `detail_translate:recent`) — 로그를 못 볼 때
     호출 수·응답 코드·실패 사유 보고용. 글 내용·키는 안 남긴다. 실패해도 일은 계속."""
     try:
@@ -53,7 +90,8 @@ def _record_call(chars: int, lines: int, r: dict, ms: int) -> None:
         from src.db import image_translate_queue_pg as st
         cur = st.state_get(RECENT_KEY) or {}
         row = {"at": datetime.now(timezone.utc).isoformat(), "chars": chars, "lines": lines, "ok": bool(r.get("ok")),
-               "why": str(r.get("why") or "")[:80], "ms": ms}
+               "why": str(r.get("why") or "")[:80], "ms": ms, "attempts": int(r.get("attempts") or 1),
+               **({"message": str(r.get("message") or "")[:200]} if r.get("message") else {}), **(extra or {})}
         st.state_set(RECENT_KEY, {"rows": list(cur.get("rows") or [])[-39:] + [row],
                                   "total": int(cur.get("total") or 0) + 1,
                                   "failed": int(cur.get("failed") or 0) + (0 if row["ok"] else 1)})
@@ -61,62 +99,129 @@ def _record_call(chars: int, lines: int, r: dict, ms: int) -> None:
         logger.debug("[상세 번역] 기록 실패: %s", exc)
 
 
-def _cached_call(chunk: str, fn: Callable[[str], dict]) -> dict:
-    key = hashlib.sha1(chunk.encode("utf-8")).hexdigest()
+def _key(chunk: str) -> str:
+    return hashlib.sha1(chunk.encode("utf-8")).hexdigest()
+
+
+def _call(chunk: str, fn: Callable[[str], dict]) -> dict:
+    import time as _t
+    t0 = _t.monotonic()
+    try:
+        r = fn(chunk) or {}
+    except Exception as exc:                   # noqa: BLE001 — 번역 실패는 원문 유지
+        r = {"ok": False, "text": "", "why": type(exc).__name__}
+    r = {"ok": bool(r.get("ok") and str(r.get("text") or "").strip()), "text": str(r.get("text") or ""),
+         "why": str(r.get("why") or ""), "message": str(r.get("message") or ""), "attempts": r.get("attempts") or 1}
+    extra = None
+    if "InvalidParameter" in r["why"]:
+        # Y11-Q: 어느 줄·왜(빈 줄·제어문자·길이) — 묶음이면 줄마다, 한 줄이면 그 줄
+        extra = {"lines_diag": [line_diag(x) for x in chunk.split("\n")][:8]}
+        logger.warning("[상세 번역] InvalidParameterValue — %s · 줄 %s", r["message"][:160], extra["lines_diag"])
+    _record_call(len(chunk), chunk.count("\n") + 1, r, int((_t.monotonic() - t0) * 1000), extra)
+    return r
+
+
+def _remember(key: str, r: dict) -> None:
+    with _LOCK:
+        _CACHE[key] = r
+        while len(_CACHE) > _CACHE_MAX:
+            _CACHE.popitem(last=False)
+        _FAIL.pop(key, None)
+
+
+def _retry_later(chunk: str, fn: Callable[[str], dict]) -> None:
+    """60초 뒤 1회 — 성공이면 캐시(다음 검증·등록이 쓴다), 실패면 final(그 줄은 뺀다)."""
+    key = _key(chunk)
+    r = _call(chunk, fn)
+    if r["ok"]:
+        _remember(key, r)
+        logger.info("[상세 번역] 60초 뒤 재시도 성공 — %s자", len(chunk))
+    else:
+        import time as _t
+        with _LOCK:
+            _FAIL[key] = {"at": _t.monotonic(), "state": "final", "why": r["why"]}
+        logger.info("[상세 번역] 60초 뒤 재시도도 실패(%s) — 그 줄은 뺀다", r["why"])
+
+
+def _cached_call(chunk: str, fn: Callable[[str], dict], force: bool = False) -> dict:
+    """캐시 → 실패 기록(pending이면 다시 안 묻고 기다림 · final 10분 지나면 다시) → 실호출. `retry`: pending|final|""."""
+    import time as _t
+    key = _key(chunk)
     with _LOCK:
         if key in _CACHE:
             _CACHE.move_to_end(key)
-            return _CACHE[key]
+            return dict(_CACHE[key], retry="")
+        f = _FAIL.get(key)
+        if f and not force:
+            if f["state"] == "pending" or _t.monotonic() - f["at"] < FINAL_FORGET_SEC:
+                return {"ok": False, "text": "", "why": f["why"], "retry": f["state"]}
+            _FAIL.pop(key, None)
         kl = _KEY_LOCKS.setdefault(key, threading.Lock())
     with kl:                                   # 같은 묶음을 동시에 묻는 스레드는 한 번만 부른다
         with _LOCK:
             if key in _CACHE:
-                return _CACHE[key]
-        import time as _t
-        t0 = _t.monotonic()
-        try:
-            r = fn(chunk) or {}
-        except Exception as exc:               # noqa: BLE001 — 번역 실패는 원문 유지(뒤에서 한자 줄을 뺀다)
-            r = {"ok": False, "text": "", "why": type(exc).__name__}
-        r = {"ok": bool(r.get("ok") and str(r.get("text") or "").strip()), "text": str(r.get("text") or ""),
-             "why": str(r.get("why") or "")}
-        _record_call(len(chunk), chunk.count("\n") + 1, r, int((_t.monotonic() - t0) * 1000))
-        if r["ok"]:                            # 실패는 굳히지 않는다 — 다음 등록에서 다시 묻는다
+                return dict(_CACHE[key], retry="")
+            f = _FAIL.get(key)
+            if f and not force:
+                return {"ok": False, "text": "", "why": f["why"], "retry": f["state"]}
+        r = _call(chunk, fn)
+        retry = ""
+        if r["ok"]:
+            _remember(key, r)
+        elif force:
             with _LOCK:
-                _CACHE[key] = r
-                while len(_CACHE) > _CACHE_MAX:
-                    _CACHE.popitem(last=False)
+                _FAIL[key] = {"at": _t.monotonic(), "state": "final", "why": r["why"]}
+            retry = "final"
+        else:
+            with _LOCK:
+                _FAIL[key] = {"at": _t.monotonic(), "state": "pending", "why": r["why"]}
+            tm = threading.Timer(retry_sec(), _retry_later, args=(chunk, fn))
+            tm.daemon = True
+            tm.start()
+            retry = "pending"
         with _LOCK:
             _KEY_LOCKS.pop(key, None)
-        return r
+        return dict(r, retry=retry)
 
 
 def _chunks(lines: List[str]) -> List[List[int]]:
-    """옮길 줄 번호를 붙어 있는 덩어리(1,400자 안)로."""
+    """옮길 줄 번호를 2,000자 묶음으로 — 떨어진 줄도 순서대로 한 묶음(돌아온 줄을 번호로 다시 끼운다)."""
     out: List[List[int]] = []
     cur: List[int] = []
     size = 0
-    prev = -2
     for i, ln in enumerate(lines):
-        if not _foreign_line(ln):
+        if not _foreign_line(ln) or not clean_line(ln):
             continue
-        n = len(ln.strip()) + 1
-        if cur and (i != prev + 1 or size + n > CHUNK_MAX):
+        n = len(clean_line(ln)) + 1
+        if cur and size + n > CHUNK_MAX:
             out.append(cur)
             cur, size = [], 0
         cur.append(i)
         size += n
-        prev = i
     if cur:
         out.append(cur)
     return out
 
 
-def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] = None) -> Dict:
-    """`{text, translated, failed, why}` — translated/failed = 옮긴/못 옮긴 **줄(칸) 수**."""
+def _translate_group(lines: List[str], g: List[int], fn, force: bool, depth: int = 0) -> List[tuple]:
+    """묶음 하나 → `[(줄 번호 묶음, 결과)]`. InvalidParameterValue면 반으로 나눠 다시(최대 4단 · 나쁜 줄만 실패로 남긴다)."""
+    chunk = "\n".join(clean_line(lines[i]) for i in g)
+    r = _cached_call(chunk, fn, force=force)
+    bad_param = not r["ok"] and "InvalidParameter" in str(r.get("why") or "")
+    # 떨어진 줄을 한 묶음으로 보냈으니 돌아온 줄 수가 다르면 번호로 못 끼운다 — 그때도 반으로 나눠 다시
+    mismatch = r["ok"] and len(str(r.get("text") or "").split("\n")) != len(g)
+    if (bad_param or mismatch) and len(g) > 1 and depth < 4:
+        mid = len(g) // 2
+        return _translate_group(lines, g[:mid], fn, force, depth + 1) + _translate_group(lines, g[mid:], fn, force, depth + 1)
+    return [(g, r)]
+
+
+def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] = None, force: bool = False) -> Dict:
+    """`{text, translated, failed, why, retry_pending, spec_failed}` — translated/failed = 옮긴/못 옮긴 **줄(칸) 수**.
+    retry_pending = 60초 뒤 재시도를 기다리는 줄 수 · spec_failed = 못 옮긴 규격 줄(원문, 앞 8줄). `force` = 「다시 번역」(기다림 무시)."""
     lines = str(text or "").replace("\r", "").split("\n")
     groups = _chunks(lines)
-    res = {"text": str(text or ""), "translated": 0, "failed": 0, "why": ""}
+    res = {"text": str(text or ""), "translated": 0, "failed": 0, "why": "", "retry_pending": 0, "spec_failed": []}
     if not groups:
         return res
     if translate_fn is None:
@@ -126,12 +231,14 @@ def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] 
             return res
     fn = translate_fn or _default_translate
     repl: Dict[int, List[str]] = {}
-    for g in groups:
-        chunk = "\n".join(lines[i].strip() for i in g)
-        r = _cached_call(chunk, fn)
+    done = [x for g0 in groups for x in _translate_group(lines, g0, fn, force)]
+    for g, r in done:
         if not r["ok"]:
             res["failed"] += len(g)
             res["why"] = res["why"] or r["why"] or "번역 실패"
+            if r.get("retry") == "pending":
+                res["retry_pending"] += len(g)
+            res["spec_failed"] += [lines[i].strip() for i in g if is_spec_line(lines[i])]
             continue
         got = [x.strip() for x in r["text"].split("\n")]
         if len(got) == len(g):
@@ -146,19 +253,35 @@ def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] 
     for i, ln in enumerate(lines):
         out.extend(repl[i] if i in repl else [ln])
     res["text"] = "\n".join(out)
+    res["spec_failed"] = res["spec_failed"][:8]
     if res["failed"]:
         logger.info("[상세 번역] 남은 한자 %s칸 번역 · %s칸 실패(%s) — 실패 줄은 마켓 전송에서 뺀다",
                     res["translated"], res["failed"], res["why"])
     return res
 
 
-def outbound(text: str, translate_fn: Optional[Callable[[str], dict]] = None) -> Dict:
-    """나갈 상세 = 탭 라벨·남의 글 블록 빼기 → 남은 한자 줄 번역. `{text, page_ui_removed, translated, failed, why}`."""
+def outbound(text: str, translate_fn: Optional[Callable[[str], dict]] = None, force: bool = False) -> Dict:
+    """나갈 상세 = 탭 라벨·남의 글 블록 빼기 → 남은 한자 줄 번역.
+    `{text, page_ui_removed, translated, failed, why, retry_pending, spec_failed}`."""
     from src.uploaders.detail_ui_junk import strip_page_ui
     st = strip_page_ui(text)
-    tr = translate_leftover(st["text"], translate_fn)
+    tr = translate_leftover(st["text"], translate_fn, force=force)
     return {"text": tr["text"], "page_ui_removed": st["removed"], "translated": tr["translated"],
-            "failed": tr["failed"], "why": tr["why"]}
+            "failed": tr["failed"], "why": tr["why"], "retry_pending": tr["retry_pending"], "spec_failed": tr["spec_failed"]}
+
+
+SPEC_HOLD_CODE = "detail_spec_untranslated"
+
+
+def spec_hold_line(pd: Dict) -> str:
+    """쿠팡 보류 문구 — 못 옮긴 규격 줄이 있으면(빼면 상품 정보가 깨진다). 없으면 ''."""
+    spec = list((pd or {}).get("detail_translate_spec_failed") or [])
+    if not spec:
+        return ""
+    head = " · ".join(f"「{x[:14]}」" for x in spec[:3])
+    wait = " — 60초 뒤 한 번 더 번역해요" if int((pd or {}).get("detail_translate_retry_pending") or 0) else ""
+    return (f"보류: 상세 규격 {len(spec)}줄을 번역하지 못했어요({head}){wait}. 규격은 빼면 상품 정보가 깨져서 "
+            f"그대로 보내지 않아요 — 「다시 번역」을 눌러 주세요({(pd or {}).get('detail_translate_why') or '번역 실패'})")
 
 
 def note(pd: Dict) -> str:
@@ -169,5 +292,10 @@ def note(pd: Dict) -> str:
         return ""
     line = f"원문 {n}칸 자동 번역 — 상세 설명(텐센트 번역)" if n else ""
     if f:
-        line = (line + " · " if line else "") + f"원문 {f}칸은 번역하지 못해 뺐어요({pd.get('detail_translate_why') or '번역 실패'})"
+        why = pd.get('detail_translate_why') or '번역 실패'
+        if int(pd.get("detail_translate_retry_pending") or 0):
+            tail = f"원문 {f}칸 번역 실패({why}) — 60초 뒤 한 번 더 번역해요(그 전에 등록하면 그 칸은 빼고 보내요)"
+        else:
+            tail = f"원문 {f}칸은 번역하지 못해 뺐어요({why})"
+        line = (line + " · " if line else "") + tail
     return line

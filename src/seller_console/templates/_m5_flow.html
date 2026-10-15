@@ -520,6 +520,9 @@
     // Z5: 배송비 비율 보류 옆에 「그래도 등록」 하나 — 누르면 사유를 기록하고 다시 검증한다.
     h += (r.hold && (r.fixes || []).indexOf('ship_ratio') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-ship-override" data-override="ship-ratio-override" data-label="그래도 등록">그래도 등록</button></div>' : '') +
+         // Y11P-2: 상세 규격 줄 번역 실패 — 쿠팡 보류. 지금 다시 번역(텐센트) → 다시 검증
+         (r.hold && (r.fixes || []).indexOf('retranslate') >= 0
+           ? '<div><button type="button" class="m5-fix" data-role="m5-retranslate" data-override="detail-retranslate" data-label="다시 번역">다시 번역</button></div>' : '') +
          // Y11-P: 네이버 옵션 가격 폭(판매가 ±50% 밖) — 나누기 전에 오너 확인 한 번(누르면 묶음을 기록하고 다시 검증)
          (r.hold && (r.fixes || []).indexOf('naver_split') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-naver-split" data-override="naver-split-ok" data-label="가격대별로 나눠 등록">가격대별로 나눠 등록</button></div>' : '') +
