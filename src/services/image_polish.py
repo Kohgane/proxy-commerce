@@ -262,8 +262,6 @@ def _parse(text: str) -> Dict[str, str]:
 
 #: Y11-M(오너): 한자 남은 상자는 AI에 두 번까지 — 그래도 한자가 남으면 한자 덩어리만 텐센트 텍스트 번역으로 옮겨 끼운다.
 HAN_AI_TRIES = 2
-#: Y11-N: 라틴 문자 낱말(3자 이상) — 옛 판에서 「빈칸」이던 외국어 상자를 새 규칙(⑨ 외국어도 번역)으로 다시 묻는 기준
-_LATIN_WORD = re.compile(r"[A-Za-zÀ-ÿ]{3,}")
 _HAN_RUN = re.compile("[㐀-䶿一-鿿]+")
 
 
@@ -322,14 +320,16 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
         hit = (cache or {}).get((r["src"], r["tgt"]))
         if not isinstance(hit, dict) or not isinstance(hit.get("ai"), str):
             continue
-        if check(r["src"], r["glossary"], hit["ai"], ctx.get("rule")) and hit.get("pv") != PROMPT_VER:
-            continue                                             # 옛 판 답이 지금 규칙에 걸림 — 이 상자만 다시 묻는다
-        if hit["ai"] == "" and hit.get("pv") != PROMPT_VER and r["glossary"] != r["tgt"]:
+        old = hit.get("pv") != PROMPT_VER
+        if old and hit["ai"] == "" and r["glossary"] != r["tgt"]:
             r["cached"] = True                                   # 용어집이 고친 상자(AUTOPULENTE→셀프 클리닝) — 옛 「빈칸」 답 대신 용어집, AI 안 부름
             cached += 1
             continue
-        if hit["ai"] == "" and hit.get("pv") != PROMPT_VER and _LATIN_WORD.search(r["src"]) and not han_left(r["src"]):
-            continue                                             # Y11-N 결정: 외국어는 번역 — 옛 판 「빈칸」 답(이탈리아어·영어)만 다시 묻는다
+        if old and ctx.get("outbound", True):
+            # Y11N-1(오너 결정): 옛 프롬프트 답은 **등록에 나가는 사진만** 다시 묻는다(직역·외국어 「빈칸」 등 옛 판 답을 새 규칙으로).
+            #   제외된 사진(수상 배너·쿠폰 등)은 캐시 그대로 — 안 나가는 그림에 돈 쓸 이유 없다.
+            r["reask_old"] = True
+            continue
         r["tries"] = max(0, int(hit.get("tries") or 1) - 1)
         _take(r, hit["ai"], ctx)
         r["cached"] = True
@@ -378,6 +378,22 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
             continue
         r["ko"], r["from"], r["why"] = sp["text"], "tmt", ""
     return {"rows": rows, "calls": calls, "ai_why": ai_why, "cached": cached}
+
+
+def outbound(extra: dict, kind: str, idx: int) -> bool:
+    """이 장이 등록에 나가나 — 상세는 판정표의 등록 순서(`outbound_pos`), 갤러리는 판촉·상표로 뺀 장이 아니면. 모르면 나간다고 본다."""
+    try:
+        from src.services import image_translate_store as S
+        for p in S.effective_plan(extra, kind=kind):
+            if int(p.get("idx", -1)) != int(idx):
+                continue
+            if kind == "detail":
+                return int(p.get("outbound_pos") or 0) > 0
+            e = next((x for x in extra.get("images_ko") or [] if isinstance(x, dict) and int(x.get("idx", -1)) == int(idx)), {})
+            return not (p.get("promo_excluded") or e.get("risk_exclude"))
+    except Exception as exc:                                     # noqa: BLE001
+        logger.info("[다듬기] 등록 여부 판정 실패(나간다고 봄): %s", exc)
+    return True
 
 
 def _redo_polish(x: dict) -> bool:
@@ -440,7 +456,8 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     boxes = [b for b in p.get("boxes") or [] if b.get("tgt") or b.get("src")]
     if not boxes:
         return {"ok": False, "why": p.get("why") or "다듬을 글자 상자가 없음"}
-    ctx = {"title": str(extra.get("title_ko") or extra.get("title") or "")[:80],
+    ctx = {"outbound": outbound(extra, kind, idx),
+           "title": str(extra.get("title_ko") or extra.get("title") or "")[:80],
            "category": str(extra.get("coupang_category_name") or extra.get("naver_category_name")
                            or extra.get("category") or "")[:60],
            "rule": category_rule(extra), "materials": materials(extra)}
@@ -478,10 +495,11 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     han_fixed = sum(1 for r in pr["rows"] if r.get("han_left") and r["from"] in ("polish", "tmt"))
     e["polish"] = {"at": datetime.now(timezone.utc).isoformat(), "calls": pr["calls"], "changed": len(ops),
                    "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why", "han_left", "cached",
-                                                       "tries", "tmt", "suggest_erase")}
+                                                       "tries", "tmt", "suggest_erase", "reask_old")}
                             for r in pr["rows"]][:40],
                    "han_left": han_n, "han_fixed": han_fixed, "rule": (ctx["rule"] or {}).get("key", ""),
                    "cached": int(pr.get("cached") or 0), "too_long": too_long, "suggest_erase": suggest, "pv": PROMPT_VER,
+                   "outbound": bool(ctx["outbound"]), "reask_old": sum(1 for r in pr["rows"] if r.get("reask_old")),
                    "why": pr["ai_why"]}
     if not ops:
         return out
@@ -623,6 +641,9 @@ def item_line(item_id: str, extra: dict) -> str:
     s = f"번역 다듬기 {len(rows)}장: 바뀐 상자 {changed} · AI {calls}회" + (f"(캐시 {cached}상자)" if cached else "")
     if too_long:
         s += f" · 길어서 유지 {too_long}"
+    reask = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("reask_old"))
+    if reask:
+        s += f" · 재질문 {reask}상자(옛 프롬프트)"
     sug = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("suggest_erase"))
     if sug:
         s += f" · AI 지우기 제안 {sug}(편집기에서 탭해야 지움)"

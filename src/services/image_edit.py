@@ -640,6 +640,23 @@ RESIDUAL_MAX = 0.15
 GHOST_DIFF = 28
 
 
+#: Y11-N2(오너 3번 메모): 상자 안 **사진 성분** — 글자 아닌 픽셀의 밝기 표준편차 · 에지 밀도. 넘으면 잔여 잉크 폴백(통째 메움)을 하지 않는다
+PHOTO_STD = 22.0
+PHOTO_EDGE = 0.05
+PHOTO_WARN = "이 상자는 사진 위라 지우기 품질 보장 못 함 — 마음에 안 들면 되돌리기"
+
+
+def _photo_like(cv2, np, img, rect, mask) -> bool:
+    """상자 안이 사진(사람·상품·배경 무늬)인가 — 글자 획(넓혀서)을 뺀 픽셀로 잰다. 6번 「톱1」 상자(사람 위) 실측."""
+    x0, y0, x1, y1 = rect
+    gray = cv2.cvtColor(img[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY)
+    keep = np.ones(gray.shape, bool) if mask is None else cv2.dilate(mask[y0:y1, x0:x1], np.ones((9, 9), np.uint8)) == 0
+    if int(keep.sum()) < 50:
+        return False
+    edges = cv2.Canny(gray, 60, 160) > 0
+    return float(gray[keep].std()) > PHOTO_STD or float(edges[keep].mean()) > PHOTO_EDGE
+
+
 def _ink_px(cv2, np, img, rect) -> int:
     from src.services.image_text_render import _glyph_mask
     m, _w = _glyph_mask(cv2, np, img, rect, 0)
@@ -675,6 +692,7 @@ def erase_local(cv2, np, img, rect, *, strict: bool = False) -> str:
     if mask is None:
         return _fill_box(cv2, np, img, rect, bw)
     before = _ink_px(cv2, np, img, rect) if strict else 0
+    photo = _photo_like(cv2, np, img, rect, mask) if strict else False
     # 바탕 표본 = 상자 안 **글자 아닌 픽셀**(획 둘레 더 넓게 뺀 것) — 텐센트는 글자 뒤에 옅은 판을 깐다. 상자 밖 색으로
     #   메우면 그 판 위에 글자 모양 「유령」이 남았다(22번 실측).
     roi = img[y0:y1, x0:x1]
@@ -698,6 +716,10 @@ def erase_local(cv2, np, img, rect, *, strict: bool = False) -> str:
     if strict and before:
         left = _ink_px(cv2, np, img, rect)
         if left > before * RESIDUAL_MAX:
+            if photo:
+                # 사진 위 큰 글자 — 통째로 메우면 사람·상품까지 뭉갠다(6번 실측). 메우지 않고 경고(되돌리기로 돌아갈 수 있다).
+                logger.info("[사진 편집] 지운 뒤 잉크 %s/%s — 사진 위라 통째 메움 안 함", left, before)
+                return how + f"(사진 위·잔여 {round(100.0 * left / before)}%)"
             logger.info("[사진 편집] 지운 뒤 잉크 %s/%s(%.0f%%) — 상자 통째로 바탕", left, before, 100.0 * left / before)
             return _fill_box(cv2, np, img, rect, bw) + f"(잔여 {round(100.0 * left / before)}%)"
     return how
@@ -904,7 +926,7 @@ def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict
     buf = io.BytesIO()
     pil.save(buf, format="JPEG", quality=92)
     return {"ok": True, "bytes": buf.getvalue(), "size": [W, H], "how": how, "drawn": drawn, "skipped": skipped, "sizes": sizes,
-            "merged": merged, "tilted": tilted_skip,
+            "merged": merged, "tilted": tilted_skip, "warn": PHOTO_WARN if any("사진 위" in h for h in how) else "",
             "colors": ["%02x%02x%02x" % tuple(x[4]["color"]) for x in typos], "weights": [x[4]["weight"] for x in typos]}
 
 
@@ -964,14 +986,15 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
     e["edits"].append({"n": n, "url": url, "base": p["url"], "base_key": base_key, "at": now, "by": by, "ops": todo,
                        "erased": erased, "credits": c["credits"], "ready": True, "render": "local", "render_v": RENDER_V,
                        "how": rr.get("how"), "colors": rr.get("colors"), "weights": rr.get("weights"), "skipped": rr.get("skipped"),
-                       "tilted": rr.get("tilted")})
+                       "tilted": rr.get("tilted"), "warn": rr.get("warn") or ""})
     if not e.get("status"):
         e["status"] = "done"
     e.setdefault("vendor", "edit")
     select(extra, kind, idx, f"edit:{n}")
     spent = round(sum(float(x.get("credits") or 0) for x in e["edits"]), 3)
     return {"ok": True, "url": url, "ready": True, "credits": c["credits"], "spent": spent, "erased": erased,
-            "version": f"edit:{n}", "pending": False, "today": today, "cap": daily_cap(), "skipped": rr.get("skipped") or []}
+            "version": f"edit:{n}", "pending": False, "today": today, "cap": daily_cap(), "skipped": rr.get("skipped") or [],
+            "warn": rr.get("warn") or ""}
 
 
 def _head_ok(url: str) -> bool:
