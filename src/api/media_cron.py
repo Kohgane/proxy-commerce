@@ -111,3 +111,28 @@ def _drain() -> dict:
                 len(queued), len(picked), stored_rows)
     return {"ok": True, "picked": len(picked), "stored_rows": stored_rows,
             "left": max(0, len(queued) - len(picked))}
+
+
+@media_cron_bp.post("/coupang-detail-refresh")
+def drain_coupang_detail_refresh():
+    """Y11-Q — 「승인 후 자동 갱신」·「번역 대기」 쿠팡 상세 갱신 큐를 비운다(백그라운드 · 동시 1개). 헤더 `X-Cron-Secret`."""
+    if not _authorized():
+        return jsonify({"ok": False, "error": "cron 인증 실패"}), 403
+    from src.utils import bg_job
+    started, state = bg_job.start("coupang-detail-refresh", _drain_coupang_detail)
+    return bg_job.accepted("coupang-detail-refresh", started, state)
+
+
+def _drain_coupang_detail() -> dict:
+    from src.services import coupang_detail_refresh as cdr
+    from src.seller_console import collect_history_store as store
+
+    def get_item(item_id, seller_id):
+        return store.get(item_id, seller_ids={seller_id} if seller_id else None)
+
+    def save_for(item_id, seller_id):
+        return lambda ex: store.update(item_id, seller_ids={seller_id} if seller_id else None,
+                                       extra_json=json.dumps(ex, ensure_ascii=False))
+    out = cdr.drain(get_item, save_for)
+    logger.info("[쿠팡 상세 갱신 크론] %s", {k: out[k] for k in ("picked", "sent", "ok", "left")})
+    return {"ok": True, **{k: out[k] for k in ("picked", "sent", "ok", "left")}}

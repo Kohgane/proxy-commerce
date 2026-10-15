@@ -409,6 +409,7 @@ class CoupangUploader(BaseUploader):
                     logger.warning('승인요청 실패(등록은 됨) sid=%s: %s', product_id, approval.get('error'))
             url = f'https://www.coupang.com/vp/products/{product_id}' if product_id else ''
             return {'success': True, 'product_id': product_id, 'url': url, 'sku': product.get('sku', ''),
+                    'sent': self.sent_summary(payload),
                     'approval_requested': bool(approval and approval.get('success')),
                     'approval_error': (None if (approval or {}).get('success') else (approval or {}).get('error'))}
         except Exception as exc:
@@ -602,10 +603,31 @@ class CoupangUploader(BaseUploader):
             except Exception as exc:
                 logger.warning('[검토 상태] 반려 사유 조회 실패 sid=%s: %s', sid, exc)
         out['name'] = str(data.get('sellerProductName') or '')
+        out['live'] = self.sent_summary(data)            # Y11-Q: 쿠팡에 지금 올라가 있는 상세 줄·이미지·옵션·카테고리
         items = data.get('items') or []
         out['search_tags'] = list((items[0] or {}).get('searchTags') or []) if items else []
         out['foreign'] = [list(x) for x in self.foreign_fields(data)]
         return out
+
+    @staticmethod
+    def sent_summary(payload: dict) -> dict:
+        """Y11-Q(오너 2026-10-16) — 실제로 나간 몸통 요약(등록 기록에 남김): 상세 줄 수·글자 수·이미지 수·옵션 수·카테고리.
+        쿠팡 원본 조회(`get_product`) 응답에도 같은 함수를 쓴다 — 보낸 것과 쿠팡에 올라간 것을 같은 잣대로 잰다."""
+        p = payload or {}
+        items = [it for it in (p.get('items') or []) if isinstance(it, dict)]
+        it0 = items[0] if items else {}
+        text = ''
+        for c in it0.get('contents') or []:
+            for d in (c or {}).get('contentDetails') or []:
+                text += str((d or {}).get('content') or '') + '\n'
+        plain = re.sub(r'<[^>]+>', '\n', text)
+        lines = [ln for ln in (x.strip() for x in plain.split('\n')) if ln]
+        imgs = it0.get('images') or []
+        return {'category': str(p.get('displayCategoryCode') or ''), 'items': len(items),
+                'images': len(imgs), 'image_types': sorted({str((i or {}).get('imageType') or '') for i in imgs if isinstance(i, dict)}),
+                'detail_lines': len(lines), 'detail_chars': len(plain.strip()),
+                'detail_head': (lines[0][:40] if lines else ''),
+                'foreign': [list(x)[:1] for x in CoupangUploader.foreign_fields(p)][:4]}
 
     def live_fix_plan(self, data: dict, *, name: str = '', search_tags=None, brand=None) -> dict:
         """U1b — 쿠팡 원본(`data`)을 **고칠 칸만** 바꾼 수정 몸통 + 바뀌는 것 목록. 아무것도 안 바뀌면 `changes` 빈 목록.

@@ -582,6 +582,7 @@ class UploadResult:
     price: Dict[str, Any] = field(default_factory=dict)   # M8-8 — 이 등록의 판매가 재료(`price_snapshot`)
     # Y11-P — 네이버 가격대별 분할 등록이면 만든 상품 전부 `[{product_id, channel_product_no, url, suffix}]`(첫 줄 = 위 번호)
     split_products: List[Dict[str, Any]] = field(default_factory=list)
+    sent: Dict[str, Any] = field(default_factory=dict)     # Y11-Q — 실제로 나간 몸통 요약(상세 줄·이미지·옵션·카테고리)
 
 
 #: Y7-F — 다시 눌러 볼 만한 실패(통신·일시 오류)만. 400 입력값 거부·전송 전 보류는 다시 해도 같은 답 — 「재시도」를 보이지 않는다.
@@ -618,6 +619,7 @@ class DispatchResult:
                     "external_url": r.external_url,
                     "channel_product_no": r.channel_product_no,
                     "split_products": list(r.split_products or []),
+                    "sent": dict(r.sent or {}),
                     "error_code": r.error_code,
                     "hint": r.hint,
                     "details": list(r.details or []),
@@ -2236,6 +2238,7 @@ class UploadDispatcher:
                 message="쿠팡 업로드 성공",
                 external_product_id=ext_id,
                 external_url=ext_url,
+                sent=dict((upload_resp or {}).get("sent") or {}) if isinstance(upload_resp, dict) else {},
             )
         except ImportError:
             # 모듈 없음 → 큐에 적재

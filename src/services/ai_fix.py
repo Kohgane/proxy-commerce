@@ -149,6 +149,7 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
     # a' 옵션 값 축약(네이버 25자) — 지금 한국어 값이 상한을 넘는 것만(원문 열쇠로 덮어쓴다)
     mk = [m for m in _held(results, fix="option_short") if _is_ko(m)]
     if mk:
+        drop_stale_short(ex, pd)
         rows = [r for r in long_option_values(pd) if not _skip(ex, "option_short:" + r["src"])]
         if rows:
             tasks.append({"kind": "option_short", "markets": sorted(set(mk)), "rows": rows[:30],
@@ -203,16 +204,67 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
 
 
 def long_option_values(pd: dict, cap: int = 0) -> List[dict]:
-    """한국어 옵션 값이 네이버 상한(25자)을 넘는 것 `[{src, ko}]` — 등록과 같은 해석 사슬(`option_ko.options_view`)."""
+    """한국어 옵션 값이 네이버 상한(25자)을 넘는 것 `[{src, ko}]` — **SKU 원문 스펙 조각**을 열쇠로(네이버 계획이 찾는 그 열쇠).
+
+    Y11-Q(오너 2026-10-16 00:38): 예전엔 화면 옵션 목록에서 열쇠를 뽑아 **한국어 값**이 열쇠로 저장됐다 — 네이버 계획은
+    SKU 원문(「雾蓝色半皮【…】」)으로 덮어쓰기를 찾으니 못 찾아 축약이 적용되지 않았고, 재검증해도 25자 초과 그대로였다.
+    """
     from src.collectors import option_ko as K
-    from src.uploaders.naver_options import OPTION_NAME_MAX
+    from src.uploaders.naver_options import OPTION_NAME_MAX, _skus
     cap = cap or OPTION_NAME_MAX
-    out = []
-    for a in K.options_view(pd):
-        for v in a["values"]:
-            if v["ko"] and len(v["ko"]) > cap and all(x["src"] != v["src"] for x in out):
-                out.append({"src": v["src"], "ko": v["ko"]})
+    out: List[dict] = []
+    for k in _skus(pd):
+        for s_ in (k.get("spec") or []):
+            src = str(s_ or "").strip()
+            ko = (K.spec_ko(pd, [src]) or [""])[0]
+            if src and ko and len(ko) > cap and all(x["src"] != src for x in out):
+                out.append({"src": src, "ko": ko})
     return out
+
+
+_SHORT_KEEP = ("풀가죽", "반가죽", "발받침", "오토만", "스툴", "세트")
+
+
+def _words(s: str) -> List[str]:
+    return [w for w in re.split(r"[\s/·,()\[\]+]+", str(s or "")) if w]
+
+
+def short_guard(ko: str, short: str) -> str:
+    """Y11-Q 축약 품질 — 통과면 "", 아니면 버리는 이유.
+
+    ① 단어 중간 절단 금지: 줄인 값의 낱말마다 원래 값의 낱말(또는 붙어 있던 낱말 몇 개를 이은 것) — 「천연소」(천연+소가죽의 「소」) 버림.
+    ② 지킬 말: 색상(원래 값 첫 낱말)·가죽 등급(풀가죽/반가죽)·발받침·오토만 등은 원래 값에 있으면 줄인 값에도 있어야 한다.
+    """
+    ow = _words(ko)
+    joined = {"".join(ow[i:j]) for i in range(len(ow)) for j in range(i + 1, min(len(ow), i + 4) + 1)}
+    cut = [w for w in _words(short) if w not in joined]
+    if cut:
+        return f"단어 중간 절단({', '.join(cut[:3])})"
+    flat = re.sub(r"\s+", "", short)
+    lost = [k for k in _SHORT_KEEP if k in ko and k not in flat]
+    if ow and ow[0] not in flat:
+        lost.insert(0, f"색상 「{ow[0]}」")
+    if lost:
+        return f"지킬 말 빠짐({', '.join(lost[:3])})"
+    return ""
+
+
+def drop_stale_short(ex: dict, pd: dict) -> List[str]:
+    """열쇠가 SKU 원문 스펙이 아닌 옛 축약(Y11-P 첫 등록 — 한국어 값 열쇠)을 지운다 — AI가 만든 값만, 수집 원본은 그대로."""
+    raws = {str(x).strip() for k in (pd.get("skus") or []) if isinstance(k, dict) for x in (k.get("spec") or [])}
+    fx = fixes_of(ex)
+    stale = [k for k in list(fx) if k.startswith("option_short:") and k.split(":", 1)[1] not in raws]
+    if not stale:
+        return []
+    ov = dict(ex.get("option_value_overrides") or {}) if isinstance(ex.get("option_value_overrides"), dict) else {}
+    for k in stale:
+        src = k.split(":", 1)[1]
+        if ov.get(src) == fx[k].get("after"):
+            ov.pop(src, None)
+        fx.pop(k, None)
+    ex["option_value_overrides"] = ov
+    pd["option_value_overrides"] = dict(ov)
+    return stale
 
 
 def all_option_values(pd: dict) -> List[str]:
@@ -308,8 +360,10 @@ def _prompt(task: dict, pd: dict) -> Tuple[str, str]:
         from src.uploaders.naver_options import OPTION_NAME_MAX as _cap
         # 재료 = 용어집·번역 사슬(`resolve_option_value`)이 이미 옮긴 한국어 값 — 원문을 다시 옮기지 않고 줄이기만
         return (_context(pd) + f"\n\n네이버 스마트스토어 옵션 값은 {_cap}자까지예요. 아래 한국어 옵션 값을 **{_cap}자 이하**로 줄이세요.\n"
-                "규칙: 색 이름·소재 등급(풀가죽/반가죽·아닐린/세미아닐린·오일왁스 등)·구성(발받침 포함 등)처럼 옵션끼리 **구별되는 말은 남기고**, "
-                "겹치는 수식어·띄어쓰기·「/」 앞뒤 공백을 줄이세요. 지금 값에 있는 숫자·영문은 그대로. 새 정보·판촉어 금지. "
+                "규칙: **색상·가죽 등급(풀가죽/반가죽)·발받침 여부는 반드시 남기고**, 소재 수식어(천연·소가죽·가죽·포함 등)처럼 "
+                "옵션끼리 같은 말부터 **낱말째** 빼세요. 낱말을 중간에서 자르지 마세요(「천연 소가죽」→「천연소」 금지). "
+                "예: 「블랙 풀가죽 아닐린 가죽 / 발받침 포함 천연 소가죽」 → 「블랙 풀가죽 아닐린 발받침」. "
+                "지금 값에 있는 숫자·영문은 그대로. 새 정보·판촉어 금지. "
                 "아래 「다른 옵션 값」과 **같아지면 안 돼요**(서로 다른 옵션은 다른 값).\n"
                 "줄일 값:\n" + "\n".join(f"- {r['ko']}" for r in task["rows"])
                 + "\n다른 옵션 값:\n" + "\n".join(f"- {x}" for x in task.get("siblings") or [])
@@ -395,7 +449,7 @@ def _apply(task: dict, ans: dict, pd: dict, ex: dict, meta: dict) -> List[str]:
             key = "option_short:" + r["src"]
             short = str(got.get(r["ko"]) or "").strip()
             why = guard(short) or (f"{_cap}자 초과" if len(short) > _cap else "") \
-                or ("다른 옵션 값과 같아짐" if short in taken else "") \
+                or ("다른 옵션 값과 같아짐" if short in taken else "") or short_guard(r["ko"], short) \
                 or ("지금 값의 숫자·영문 빠짐(" + ", ".join(lost_tokens(r["ko"], short)) + ")" if lost_tokens(r["ko"], short) else "")
             if why:
                 _tried(ex, key, why)

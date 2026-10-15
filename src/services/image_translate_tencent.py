@@ -225,29 +225,62 @@ def is_configured() -> bool:
 TEXT_ACTION = "TextTranslate"
 
 
-def translate_text(text: str, source: str = "zh", target: str = "ko", timeout_sec: int = 8) -> dict:
-    """`{ok, text, why}` — 짧은 글 한 토막을 번역. 실패 사유는 공급사 코드(값·키는 안 남긴다)."""
+#: Y11-Q(오너 2026-10-16): TextTranslate 기본 QPS 5 — 실측 10-15 15:38~15:39 UTC 102회 호출이 1초 안 4~13회 몰려
+#:   RequestLimitExceeded 28/40. 프로세스 전체에서 호출 간격 ≥ 0.2초(초당 5회), 넘침(RequestLimitExceeded)은 지수 백오프 3회.
+TEXT_QPS = 5
+TEXT_MAX_CHARS = 2000
+_TEXT_LOCK = threading.Lock()
+_TEXT_LAST = [0.0]
+
+
+def _text_slot() -> None:
+    """초당 5회 — 마지막 호출에서 0.2초가 지나기 전이면 기다린다(스레드 사이에 공유)."""
+    gap = 1.0 / TEXT_QPS
+    with _TEXT_LOCK:
+        now = time.monotonic()
+        wait = _TEXT_LAST[0] + gap - now
+        if wait > 0:
+            time.sleep(wait)
+        _TEXT_LAST[0] = time.monotonic()
+
+
+def translate_text(text: str, source: str = "zh", target: str = "ko", timeout_sec: int = 8,
+                   max_chars: int = 1500, retries: int = 3) -> dict:
+    """`{ok, text, why, code, message, attempts}` — 짧은 글 한 토막을 번역. `why` = 공급사 코드(값·키는 안 남긴다),
+    `message` = 공급사 설명 원문 앞 200자(InvalidParameterValue가 왜인지 보이게). RequestLimitExceeded는 0.5·1·2초 백오프."""
     text = str(text or "").strip()
     if not text:
-        return {"ok": False, "text": "", "why": "빈 글"}
+        return {"ok": False, "text": "", "why": "빈 글", "code": "", "message": "", "attempts": 0}
     if not is_configured():
-        return {"ok": False, "text": "", "why": "텐센트 키 없음"}
-    try:
-        from tencentcloud.common import credential
-        from tencentcloud.common.common_client import CommonClient
-        from tencentcloud.common.profile.client_profile import ClientProfile
-        from tencentcloud.common.profile.http_profile import HttpProfile
-        sid, skey = _secret()
-        prof = ClientProfile(httpProfile=HttpProfile(endpoint=endpoint(), reqTimeout=int(timeout_sec)))
-        cli = CommonClient("tmt", "2018-03-21", credential.Credential(sid, skey), region(), profile=prof)
-        resp = cli.call_json(TEXT_ACTION, {"SourceText": text[:1500], "Source": source, "Target": target, "ProjectId": 0})
-        out = str(((resp or {}).get("Response") or {}).get("TargetText") or "").strip()
-        logger.info("[텍스트 번역] %s자 → %s자", len(text), len(out))
-        return {"ok": bool(out), "text": out, "why": "" if out else "빈 응답"}
-    except Exception as exc:                                    # noqa: BLE001
-        code = str(getattr(exc, "code", "") or type(exc).__name__)
-        logger.warning("[텍스트 번역] 실패 %s", code)
-        return {"ok": False, "text": "", "why": code[:80]}
+        return {"ok": False, "text": "", "why": "텐센트 키 없음", "code": "", "message": "", "attempts": 0}
+    attempts, last = 0, {}
+    for i in range(int(retries) + 1):
+        attempts += 1
+        _text_slot()
+        try:
+            from tencentcloud.common import credential
+            from tencentcloud.common.common_client import CommonClient
+            from tencentcloud.common.profile.client_profile import ClientProfile
+            from tencentcloud.common.profile.http_profile import HttpProfile
+            sid, skey = _secret()
+            prof = ClientProfile(httpProfile=HttpProfile(endpoint=endpoint(), reqTimeout=int(timeout_sec)))
+            cli = CommonClient("tmt", "2018-03-21", credential.Credential(sid, skey), region(), profile=prof)
+            resp = cli.call_json(TEXT_ACTION, {"SourceText": text[:int(max_chars)], "Source": source, "Target": target,
+                                               "ProjectId": 0})
+            out = str(((resp or {}).get("Response") or {}).get("TargetText") or "").strip()
+            logger.info("[텍스트 번역] %s자 → %s자 (시도 %s)", len(text), len(out), attempts)
+            return {"ok": bool(out), "text": out, "why": "" if out else "빈 응답", "code": "", "message": "",
+                    "attempts": attempts}
+        except Exception as exc:                                    # noqa: BLE001
+            code = str(getattr(exc, "code", "") or type(exc).__name__)
+            msg = str(getattr(exc, "message", "") or "")[:200]
+            last = {"ok": False, "text": "", "why": code[:80], "code": code[:80], "message": msg, "attempts": attempts}
+            logger.warning("[텍스트 번역] 실패 %s — %s (시도 %s, %s자)", code, msg, attempts, len(text))
+            if "RequestLimitExceeded" in code and i < int(retries):
+                time.sleep(0.5 * (2 ** i))
+                continue
+            return last
+    return last
 
 
 def status() -> dict:

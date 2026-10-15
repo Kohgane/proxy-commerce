@@ -65,13 +65,17 @@ def test_translate_leftover_counts_lines_and_keeps_korean():
     r = dt.translate_leftover("소파 설명\n金属\n框架材质\n83cm\n实木", translate_fn=_fake_tr(calls))
     assert r["translated"] == 3 and r["failed"] == 0
     assert r["text"].split("\n") == ["소파 설명", "번역:金属", "번역:框架材质", "83cm", "번역:实木"]
-    assert len(calls) == 2                                          # 붙은 줄끼리 한 묶음(83cm에서 끊김)
+    assert len(calls) == 1                                          # Y11-Q: 떨어진 줄도 2,000자 한 묶음(호출 1회)
+    assert calls[0] == "金属\n框架材质\n实木"
 
 
 def test_translate_mismatch_inserts_block_and_failure_keeps_original():
     from src.uploaders import detail_translate as dt
-    r = dt.translate_leftover("甲\n乙\n丙", translate_fn=lambda t: {"ok": True, "text": "가 나 다", "why": ""})
-    assert r["text"] == "가 나 다" and r["translated"] == 3
+    sent = []
+    r = dt.translate_leftover("甲\n乙\n丙", translate_fn=lambda t: (sent.append(t) or
+                                                                    {"ok": True, "text": "가 나 다" if "\n" in t else "옮김", "why": ""}))
+    # Y11-Q: 돌아온 줄 수가 다르면 반으로 나눠 다시(번호로 끼울 수 있을 때까지) — 줄을 옮겨 붙이지 않는다
+    assert r["text"] == "옮김\n옮김\n옮김" and r["translated"] == 3 and sent[0] == "甲\n乙\n丙"
     r2 = dt.translate_leftover("丁\n戊", translate_fn=lambda t: {"ok": False, "text": "", "why": "LimitExceeded"})
     assert r2["failed"] == 2 and r2["translated"] == 0 and r2["text"] == "丁\n戊" and r2["why"] == "LimitExceeded"
 

@@ -26,7 +26,7 @@ from typing import Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-CHUNK_MAX = 1400
+CHUNK_MAX = 2000                  # Y11-Q: 줄바꿈으로 이어 2,000자 묶음(떨어진 줄도 한 묶음 — 51줄이면 1~3회)
 _HANGUL = re.compile(r"[가-힣]")
 _CACHE: "OrderedDict[str, dict]" = OrderedDict()
 _CACHE_MAX = 256
@@ -60,13 +60,29 @@ def _foreign_line(line: str) -> bool:
 
 def _default_translate(text: str) -> dict:
     from src.services.image_translate_tencent import translate_text
-    return translate_text(text, source="zh", target="ko", timeout_sec=8)
+    return translate_text(text, source="zh", target="ko", timeout_sec=8, max_chars=CHUNK_MAX)
+
+
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u2028\u2029\ufeff]")
+
+
+def clean_line(line: str) -> str:
+    """보내기 전 정리 — 제어문자·폭 없는 문자 빼고 앞뒤 공백. (빈 줄은 애초에 묶음에 안 들어간다.)"""
+    return _CTRL.sub("", str(line or "")).strip()
+
+
+def line_diag(line: str) -> dict:
+    """InvalidParameterValue 부검용 — 그 줄이 왜 이상한지(빈 줄·제어문자·길이·한자 비율). 글은 앞 40자만."""
+    raw = str(line or "")
+    han = len(re.findall(r"[\u4e00-\u9fff]", raw))
+    return {"text": raw[:40], "len": len(raw), "empty": not raw.strip(), "ctrl": bool(_CTRL.search(raw)),
+            "han": han, "other": len(raw.strip()) - han}
 
 
 RECENT_KEY = "detail_translate:recent"
 
 
-def _record_call(chars: int, lines: int, r: dict, ms: int) -> None:
+def _record_call(chars: int, lines: int, r: dict, ms: int, extra: dict = None) -> None:
     """Y11P-2(오너 2026-10-15) — 텐센트 TextTranslate 실호출 기록 40줄(운영 DB `detail_translate:recent`) — 로그를 못 볼 때
     호출 수·응답 코드·실패 사유 보고용. 글 내용·키는 안 남긴다. 실패해도 일은 계속."""
     try:
@@ -74,7 +90,8 @@ def _record_call(chars: int, lines: int, r: dict, ms: int) -> None:
         from src.db import image_translate_queue_pg as st
         cur = st.state_get(RECENT_KEY) or {}
         row = {"at": datetime.now(timezone.utc).isoformat(), "chars": chars, "lines": lines, "ok": bool(r.get("ok")),
-               "why": str(r.get("why") or "")[:80], "ms": ms}
+               "why": str(r.get("why") or "")[:80], "ms": ms, "attempts": int(r.get("attempts") or 1),
+               **({"message": str(r.get("message") or "")[:200]} if r.get("message") else {}), **(extra or {})}
         st.state_set(RECENT_KEY, {"rows": list(cur.get("rows") or [])[-39:] + [row],
                                   "total": int(cur.get("total") or 0) + 1,
                                   "failed": int(cur.get("failed") or 0) + (0 if row["ok"] else 1)})
@@ -94,8 +111,13 @@ def _call(chunk: str, fn: Callable[[str], dict]) -> dict:
     except Exception as exc:                   # noqa: BLE001 — 번역 실패는 원문 유지
         r = {"ok": False, "text": "", "why": type(exc).__name__}
     r = {"ok": bool(r.get("ok") and str(r.get("text") or "").strip()), "text": str(r.get("text") or ""),
-         "why": str(r.get("why") or "")}
-    _record_call(len(chunk), chunk.count("\n") + 1, r, int((_t.monotonic() - t0) * 1000))
+         "why": str(r.get("why") or ""), "message": str(r.get("message") or ""), "attempts": r.get("attempts") or 1}
+    extra = None
+    if "InvalidParameter" in r["why"]:
+        # Y11-Q: 어느 줄·왜(빈 줄·제어문자·길이) — 묶음이면 줄마다, 한 줄이면 그 줄
+        extra = {"lines_diag": [line_diag(x) for x in chunk.split("\n")][:8]}
+        logger.warning("[상세 번역] InvalidParameterValue — %s · 줄 %s", r["message"][:160], extra["lines_diag"])
+    _record_call(len(chunk), chunk.count("\n") + 1, r, int((_t.monotonic() - t0) * 1000), extra)
     return r
 
 
@@ -163,24 +185,35 @@ def _cached_call(chunk: str, fn: Callable[[str], dict], force: bool = False) -> 
 
 
 def _chunks(lines: List[str]) -> List[List[int]]:
-    """옮길 줄 번호를 붙어 있는 덩어리(1,400자 안)로."""
+    """옮길 줄 번호를 2,000자 묶음으로 — 떨어진 줄도 순서대로 한 묶음(돌아온 줄을 번호로 다시 끼운다)."""
     out: List[List[int]] = []
     cur: List[int] = []
     size = 0
-    prev = -2
     for i, ln in enumerate(lines):
-        if not _foreign_line(ln):
+        if not _foreign_line(ln) or not clean_line(ln):
             continue
-        n = len(ln.strip()) + 1
-        if cur and (i != prev + 1 or size + n > CHUNK_MAX):
+        n = len(clean_line(ln)) + 1
+        if cur and size + n > CHUNK_MAX:
             out.append(cur)
             cur, size = [], 0
         cur.append(i)
         size += n
-        prev = i
     if cur:
         out.append(cur)
     return out
+
+
+def _translate_group(lines: List[str], g: List[int], fn, force: bool, depth: int = 0) -> List[tuple]:
+    """묶음 하나 → `[(줄 번호 묶음, 결과)]`. InvalidParameterValue면 반으로 나눠 다시(최대 4단 · 나쁜 줄만 실패로 남긴다)."""
+    chunk = "\n".join(clean_line(lines[i]) for i in g)
+    r = _cached_call(chunk, fn, force=force)
+    bad_param = not r["ok"] and "InvalidParameter" in str(r.get("why") or "")
+    # 떨어진 줄을 한 묶음으로 보냈으니 돌아온 줄 수가 다르면 번호로 못 끼운다 — 그때도 반으로 나눠 다시
+    mismatch = r["ok"] and len(str(r.get("text") or "").split("\n")) != len(g)
+    if (bad_param or mismatch) and len(g) > 1 and depth < 4:
+        mid = len(g) // 2
+        return _translate_group(lines, g[:mid], fn, force, depth + 1) + _translate_group(lines, g[mid:], fn, force, depth + 1)
+    return [(g, r)]
 
 
 def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] = None, force: bool = False) -> Dict:
@@ -198,9 +231,8 @@ def translate_leftover(text: str, translate_fn: Optional[Callable[[str], dict]] 
             return res
     fn = translate_fn or _default_translate
     repl: Dict[int, List[str]] = {}
-    for g in groups:
-        chunk = "\n".join(lines[i].strip() for i in g)
-        r = _cached_call(chunk, fn, force=force)
+    done = [x for g0 in groups for x in _translate_group(lines, g0, fn, force)]
+    for g, r in done:
         if not r["ok"]:
             res["failed"] += len(g)
             res["why"] = res["why"] or r["why"] or "번역 실패"
