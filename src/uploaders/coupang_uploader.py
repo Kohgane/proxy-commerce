@@ -38,7 +38,7 @@ def tag_meta_absent(line: str, cat: str, src: str, pwhy: str = '') -> str:
     """Z9 — 「메타 속성에 없어」 줄에 **어느 카테고리를 · 어디서 받아** 쟀는지 단다(같은 데이터가 다시 확인에 통과한 근거)."""
     if '메타 속성에 없어' not in str(line or '') or not cat:
         return line
-    how = '쿠팡 예측' if src == 'predict' else (f'저장된 값 — 예측 못 받음: {pwhy[:80]}' if src == 'saved' else src or '출처 모름')
+    how = '쿠팡 예측' if src == 'predict' else '상품명 규칙(쿠팡 예측 바로잡음)' if src == 'rule' else (f'저장된 값 — 예측 못 받음: {pwhy[:80]}' if src == 'saved' else src or '출처 모름')
     return f'{line} (쿠팡 카테고리 {cat} · {how})'
 
 
@@ -504,6 +504,7 @@ class CoupangUploader(BaseUploader):
             '_names_ko': collected.get('_names_ko') or {},
             'option_name_overrides': collected.get('option_name_overrides') or {},
             'coupang_option_names': collected.get('coupang_option_names') or {},          # Y7-I
+            'coupang_category_no_override': bool(collected.get('coupang_category_no_override')),   # Y11O-1 되돌림
             'tags': collected.get('tags', []),
             'lead_time_days': int(collected.get('lead_time_days') or 0),        # Y7-O: 선주문 출고소요일(0이면 정본 7일)
             'shipping_fee': 0,
@@ -789,6 +790,12 @@ class CoupangUploader(BaseUploader):
         title = str((product or {}).get('title', '') or '') if isinstance(product, dict) else ''
         cid = self.predict_category(title)
         if cid:
+            # Y11O-1(오너): 상품명 리클라이너·라운지·안락·오토만 + 의자류 예측 → 안락의자(되돌리면 규칙 끔)
+            from src.uploaders.category_rules import coupang_fix
+            fx = coupang_fix(product if isinstance(product, dict) else {}, cid)
+            if fx:
+                logger.info('쿠팡 카테고리 상품명 규칙 — 예측 %s → %s(%s)', cid, fx['id'], fx['why'])
+                return fx['id'], 'rule', ''
             return str(cid), 'predict', ''
         # 사유는 방금 물은 결과(같은 업로더 캐시)에서 — 다시 묻지 않는다
         why = str((self._predict_cache.get((title.strip(), '')) or {}).get('why') or '예측 없음')

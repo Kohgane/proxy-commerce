@@ -4869,7 +4869,8 @@ def _pv_ai_fix(job_id: str, product_data: dict, data: dict, results: list, dispa
             return {}
     ex = _load()
     try:                                     # Y11-O: 고정 매핑표로 정한 네이버 카테고리 → 「AI가 고쳤어요 — 카테고리」 줄(AI 호출 없음)
-        if _af.record_fixed_category(product_data, ex, results):
+        _rec = _af.record_coupang_rule(product_data, ex, results)
+        if _af.record_fixed_category(product_data, ex, results) or _rec:
             from . import collect_history_store as _chs0
             _chs0.update(iid, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
     except Exception as exc:                                         # noqa: BLE001

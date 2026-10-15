@@ -67,22 +67,25 @@ def record(kind: str, **kw) -> None:
     _record({"at": datetime.now(timezone.utc).isoformat(), "kind": kind, **kw})
 
 
-def _loop() -> None:
+def _loop(q: "queue.Queue", state: dict) -> None:
+    """워커 본체 — 시작할 때 받은 큐·상태만 쓴다(모듈 전역을 매번 다시 읽으면 바뀐 큐를 옛 워커가 같이 먹는다)."""
     from src.utils import rss_sampler as _smp
+    me = threading.current_thread()
     while True:
         try:
-            item = _Q.get(timeout=60)
+            item = q.get(timeout=60)
         except queue.Empty:
             with _LOCK:
-                if _Q.empty():
-                    _STATE["thread"] = None
+                if q.empty():
+                    if state.get("thread") is me:          # 내가 지금 워커일 때만 자리를 비운다
+                        state["thread"] = None
                     return
             continue
         fn, a, kw, fut, name = item
         if not fut.set_running_or_notify_cancel():
             continue
         with _LOCK:
-            _STATE["busy"] += 1
+            state["busy"] += 1
         t0 = time.monotonic()
         w: dict = {}
         out, err = None, None
@@ -101,9 +104,9 @@ def _loop() -> None:
         record("render", name=name, ms=ms, base_mb=w.get("base"), peak_mb=w.get("peak"),
                inst_base_mb=w.get("inst_base"), inst_peak_mb=w.get("inst_peak"), inst_after_mb=after, ok=err is None)
         with _LOCK:
-            _STATE["busy"] -= 1
-            _STATE["last_end"] = time.monotonic()
-            _STATE["done"] += 1
+            state["busy"] -= 1
+            state["last_end"] = time.monotonic()
+            state["done"] += 1
         # 정리·기록을 마친 뒤에 부른 쪽을 깨운다(그리기 끝 = 메모리까지 돌려준 뒤)
         if err is not None:
             fut.set_exception(err)
@@ -113,13 +116,15 @@ def _loop() -> None:
 
 
 def _ensure() -> None:
+    # 잠금 안에서 start — 밖에서 하면 그 사이 다른 호출이 「아직 안 살아 있음」(is_alive False)으로 보고 워커를 하나 더 만든다
+    #   (두 장이 동시에 그려졌다 — Y11O-1 계약이 잡음).
     with _LOCK:
         t = _STATE["thread"]
         if t is not None and t.is_alive():
             return
-        t = threading.Thread(target=_loop, daemon=True, name="render-worker")
+        t = threading.Thread(target=_loop, args=(_Q, _STATE), daemon=True, name="render-worker")
         _STATE["thread"] = t
-    t.start()
+        t.start()
 
 
 def run(fn: Callable, *a: Any, _name: str = "render", _timeout: float = 180.0, **kw: Any) -> Any:

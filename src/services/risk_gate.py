@@ -287,6 +287,17 @@ def brand_filter(terms) -> List[str]:
     return [t for t in terms or [] if brand_token(t, brands, common)]
 
 
+_ITEM_FILE = Path(__file__).resolve().parents[1] / "uploaders" / "item_caution.json"
+
+
+def _item_cautions() -> List[dict]:
+    try:
+        return list(json.loads(_ITEM_FILE.read_text(encoding="utf-8")).get("items") or [])
+    except Exception as exc:                                       # noqa: BLE001
+        logger.warning("[리스크] 품목 주의 표 읽기 실패: %s", exc)
+        return []
+
+
 def _blacklist() -> List[str]:
     """등록 금지 브랜드(COUPANG_BLACKLIST85 — 소싱 판정과 같은 로더) 중 브랜드 낱말만(`brand_token`)."""
     try:
@@ -347,6 +358,14 @@ def scan(extra: dict, *, pending_images: int = 0) -> dict:
     if bl:
         h = _hit("blacklist", "브랜드 블랙리스트", "브랜드 블랙리스트", "hold", bl, False, where_text, imgs,
                  "등록 금지 브랜드 목록에 있는 이름")
+        if h:
+            hits.append(h)
+    # Y11O-2(오너): 품목 주의(src/uploaders/item_caution.json) — 항공 운송 제한 품목(향수·캔들·레이저포인터…) = 주의(막지 않음)
+    for it in _item_cautions():
+        if it.get("label") in allow:
+            continue
+        h = _hit("item:" + str(it.get("key")), it.get("label") or "품목 주의", it.get("label") or "품목 주의",
+                 it.get("grade") or "caution", it.get("names") or [], False, where_text, imgs, it.get("line") or "")
         if h:
             hits.append(h)
     shadowed = set()

@@ -180,19 +180,12 @@ def test_enforce_does_not_strip_common_noun_from_saved_blacklist_decision():
 
 # ── 4. 네이버 카테고리 고정 매핑표 · 1단계 갈림 AI 고르기 ─────────────────────────────────────────
 
-#: 운영 네이버 트리(app_state naver_categories, 2026-10-15)에서 옮긴 리프
-NAVER_REAL = {
-    "50003264": "가구/인테리어>서재/사무용가구>의자>일반의자", "50003293": "가구/인테리어>서재/사무용가구>의자>하이팩의자",
-    "50003683": "가구/인테리어>서재/사무용가구>의자>목받침의자", "50003291": "가구/인테리어>서재/사무용가구>의자>안락의자",
-    "50003682": "가구/인테리어>서재/사무용가구>의자>인테리어의자", "50003292": "가구/인테리어>서재/사무용가구>의자>흔들의자",
-    "50003265": "가구/인테리어>서재/사무용가구>의자>좌식의자", "50003266": "가구/인테리어>서재/사무용가구>의자>스툴",
-    "50003294": "가구/인테리어>서재/사무용가구>의자>간이/접이식의자", "50023459": "가구/인테리어>서재/사무용가구>학원/학교책걸상",
-    "50003245": "가구/인테리어>거실가구>소파>리클라이너소파", "50003242": "가구/인테리어>거실가구>소파>가죽소파",
-    "50003250": "가구/인테리어>거실가구>소파>빈백", "50003247": "가구/인테리어>거실가구>소파>소파베드",
-    "50003260": "가구/인테리어>주방가구>식탁/의자>식탁의자", "50001055": "가구/인테리어>아웃도어가구>야외의자",
-    "50001333": "가구/인테리어>아동/주니어가구>책상의자", "50001341": "가구/인테리어>아동/주니어가구>의자",
-    "50001514": "디지털/가전>소프트웨어>사무/회계", "50007327": "여가/생활편의>예체능레슨>댄스/무용",
-}
+#: 운영 네이버 트리(app_state naver_categories, 2026-10-15)에서 옮긴 리프 — 매핑표 ID 전부 + 1단계 갈림 후보
+NAVER_REAL = dict(json.load(open(os.path.join(os.path.dirname(__file__), "fixtures", "y11p_category_trees.json"),
+                                 encoding="utf-8"))["naver"])
+NAVER_REAL.update({"50001514": "디지털/가전>소프트웨어>사무/회계", "50007327": "여가/생활편의>예체능레슨>댄스/무용"})
+#: Y11O-1 뒤: 리클라이너·라운지·안락·오토만이 없는 사무용 의자(고정 매핑표 77989 → 일반의자 계약)
+OFFICE = "메쉬 사무용 회전 의자 높이조절 허리 받침"
 VR_TITLE = "VRSUK{비즈니스 시리즈} 심플 리클라이너 오일 왁스 가죽 사무용 회전 승강 1인 의자"
 VR_CP = "가구/홈데코>가구>학생/사무용가구>학생의자>학생의자/사무용의자"
 
@@ -235,20 +228,20 @@ def test_map_file_points_only_at_real_naver_leaves():
         assert all(a in NAVER_REAL for a in row.get("alt") or []), cid
 
 
-def test_vrsuk_office_chair_maps_directly(naver):
+def test_office_chair_without_lounge_words_maps_directly(naver):
     NC, _ = naver
-    s = NC.compute_suggestion({"title_ko": VR_TITLE})
+    s = NC.compute_suggestion({"title_ko": OFFICE})
     assert s["mapped"] and s["id"] == "50003264" and s["name"] == "가구/인테리어>서재/사무용가구>의자>일반의자"
     assert [a["id"] for a in s["alts"]] == ["50003293", "50003683"] and s["coupang_path"] == VR_CP
-    assert NC.pick({"title_ko": VR_TITLE}) == ("50003264", "map")
-    assert NC.hold({"title_ko": VR_TITLE}) is None
+    assert NC.pick({"title_ko": OFFICE}) == ("50003264", "map")
+    assert NC.hold({"title_ko": OFFICE}) is None
     assert NC.SOURCE_LABEL["map"] == "자동(고정 매핑표)"
 
 
 def test_mapped_category_shows_in_ai_fixed_line_and_can_be_reverted(naver):
     NC, _ = naver
     from src.services import ai_fix as AF
-    pd, ex = {"title_ko": VR_TITLE}, {}
+    pd, ex = {"title_ko": OFFICE}, {}
     results = [{"market": "smartstore:chezgoga", "ok": True}]
     assert AF.record_fixed_category(pd, ex, results) is True
     assert ex["naver_category_id"] == "50003264" and pd["naver_category_id"] == "50003264"
@@ -258,22 +251,22 @@ def test_mapped_category_shows_in_ai_fixed_line_and_can_be_reverted(naver):
     assert "고정 매핑표" in sm["items"][0]["why"]
     assert AF.record_fixed_category(pd, ex, results) is False                     # 이미 적었다
     assert AF.revert(ex, "naver_category") and ex["naver_category_id"] == ""
-    pd2 = AF.overlay({"title_ko": VR_TITLE}, ex)
+    pd2 = AF.overlay({"title_ko": OFFICE}, ex)
     assert pd2.get("naver_category_no_auto") is True and NC.pick(pd2) == ("", "")   # 되돌리면 다시 자동으로 채우지 않는다
-    assert AF.record_fixed_category({"title_ko": VR_TITLE}, ex, results) is False
+    assert AF.record_fixed_category({"title_ko": OFFICE}, ex, results) is False
 
 
 def test_owner_choice_overrides_map(naver):
     NC, _ = naver
     from src.services import ai_fix as AF
-    pd, ex = {"title_ko": VR_TITLE, "naver_category_id": "50003293"}, {"naver_category_id": "50003293"}
+    pd, ex = {"title_ko": OFFICE, "naver_category_id": "50003293"}, {"naver_category_id": "50003293"}
     assert NC.pick(pd) == ("50003293", "manual")
     assert AF.record_fixed_category(pd, ex, [{"market": "smartstore:chezgoga", "ok": True}]) is False
 
 
 def test_no_record_without_smartstore(naver):
     from src.services import ai_fix as AF
-    assert AF.record_fixed_category({"title_ko": VR_TITLE}, {}, [{"market": "coupang:gogane", "ok": True}]) is False
+    assert AF.record_fixed_category({"title_ko": OFFICE}, {}, [{"market": "coupang:gogane", "ok": True}]) is False
 
 
 def test_split_top_level_goes_to_ai_with_photo_and_shows_other_two(naver, monkeypatch):
@@ -285,7 +278,7 @@ def test_split_top_level_goes_to_ai_with_photo_and_shows_other_two(naver, monkey
         {"id": "50001341", "name": NAVER_REAL["50001341"], "score": 0.549},
         {"id": "50001514", "name": NAVER_REAL["50001514"], "score": 0.508},
         {"id": "50007327", "name": NAVER_REAL["50007327"], "score": 0.508}])
-    pd = {"title_ko": VR_TITLE, "images": ["https://img.alicdn.com/vrsuk.jpg"]}
+    pd = {"title_ko": OFFICE, "images": ["https://img.alicdn.com/vrsuk.jpg"]}
     h = NC.hold(pd)
     assert h["code"] == NC.REASON_CANDIDATES and len(h["candidates"]) == 3
     seen = []
