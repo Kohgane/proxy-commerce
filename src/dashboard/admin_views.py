@@ -2044,7 +2044,7 @@ def _ncat_table_titles(limit: int = 1000) -> list:
     if pg.pg_enabled():
         with pg.query() as cur:
             cur.execute("SELECT coalesce(nullif(extra_json->>'title_ko',''), title) t, count(*) "
-                        "FROM collect_history GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT %s", (limit,))
+                        "FROM collect_history WHERE deleted_at IS NULL GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT %s", (limit,))
             rows = [(str(t or ""), int(n)) for t, n in cur.fetchall() if str(t or "").strip()]
     else:
         from src.seller_console import collect_history_store as chs
@@ -2074,17 +2074,33 @@ def _ncat_table_run() -> dict:
             s = NC.compute_suggestion({"title_ko": title})
         except Exception as exc:                                  # noqa: BLE001
             s = {"why": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        rule = (s.get("coupang_rule") or {}) if isinstance(s.get("coupang_rule"), dict) else {}
         row.update(coupang_id=s.get("coupang_id", ""), coupang=s.get("coupang", ""), coupang_path=s.get("coupang_path", ""),
+                   coupang_rule=rule.get("why", ""), coupang_predicted=(rule.get("predicted") or {}).get("name", ""),
+                   mapped=bool(s.get("mapped")),
                    result=("auto" if s.get("id") else "candidates" if s.get("candidates") else "unset"),
                    naver=s.get("name", ""), naver_id=s.get("id", ""), score=s.get("score", 0.0),
                    candidates=" | ".join(c["name"] for c in s.get("candidates") or []), why=s.get("why", ""))
         out.append(row)
+    # Y11O-1(오너): 쿠팡 예측 리프 빈도(건수 합) 상위 — 매핑표에 있나(없으면 haiku가 고르고 후보 2개)
+    leaves: dict = {}
+    fixed = NC.fixed_map()
+    for r in out:
+        if not r.get("coupang_id"):
+            continue
+        L = leaves.setdefault(r["coupang_id"], {"id": r["coupang_id"], "path": r.get("coupang_path") or r.get("coupang"),
+                                                "count": 0, "titles": 0, "in_map": r["coupang_id"] in fixed})
+        L["count"] += int(r.get("count") or 0)
+        L["titles"] += 1
+    top = sorted(leaves.values(), key=lambda x: (-x["count"], x["path"]))[:50]
     summary = {"titles": len(out), "auto": sum(r["result"] == "auto" for r in out),
                "candidates": sum(r["result"] == "candidates" for r in out),
                "unset": sum(r["result"] == "unset" for r in out),
                "coupang_path_known": sum(bool(r["coupang_path"]) for r in out),
                "naver_tree": len((NC.tree() or {}).get("leaves") or {}),
                "coupang_tree": len((CC.table() or {}).get("paths") or {}), "coupang_tree_why": CC._REFRESH.get("why", "")}
+    summary["leaves_top"] = top
+    summary["leaves_unmapped"] = sum(1 for x in top if not x["in_map"])
     st.state_set(_NCAT_TABLE_KEY, {"summary": summary, "rows": out,
                                    "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
     return {"ok": True, **summary}
@@ -2126,8 +2142,12 @@ _NCAT_TABLE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="ut
 <a class="small ms-2" href="?format=csv">CSV 받기</a></form>
 <div class="small mb-2" data-role="ncat-job">작업: {{ job.state or '없음' }}{% if job.running_sec %} · {{ job.running_sec }}초째{% endif %}{% if job.elapsed_ms %} · {{ job.elapsed_ms }}ms{% endif %}{% if job.error %} · {{ job.error }}{% endif %}</div>
 {% if data.summary %}<div class="small mb-2" data-role="ncat-summary">{{ data.at }} · 상품명 {{ data.summary.titles }} · 자동 {{ data.summary.auto }} · 후보 {{ data.summary.candidates }} · 미지정 {{ data.summary.unset }} · 쿠팡 경로 확인 {{ data.summary.coupang_path_known }} · 네이버 리프 {{ data.summary.naver_tree }} · 쿠팡 경로 표 {{ data.summary.coupang_tree }}{% if data.summary.coupang_tree_why %} ({{ data.summary.coupang_tree_why }}){% endif %}</div>
+{% if data.summary.leaves_top %}<details class="small mb-2" data-role="ncat-leaves"><summary>쿠팡 예측 리프 빈도 상위 {{ data.summary.leaves_top|length }} · 매핑표에 없음 {{ data.summary.leaves_unmapped }}</summary>
+<table class="table table-sm small"><thead><tr><th>쿠팡 리프</th><th>건수</th><th>상품명</th><th>매핑표</th></tr></thead><tbody>
+{% for x in data.summary.leaves_top %}<tr data-in-map="{{ 1 if x.in_map else 0 }}"><td>{{ x.path }} ({{ x.id }})</td><td>{{ x.count }}</td><td>{{ x.titles }}</td><td>{{ '있음' if x.in_map else '없음 — haiku 선택' }}</td></tr>{% endfor %}
+</tbody></table></details>{% endif %}
 <div class="table-responsive"><table class="table table-sm small" style="min-width:860px"><thead style="white-space:nowrap"><tr><th>상품명</th><th>건수</th><th>쿠팡 예측 경로</th><th>결과</th><th>네이버</th><th>점수</th><th>사유·후보</th></tr></thead><tbody>
-{% for r in data.rows %}<tr data-result="{{ r.result }}"><td>{{ r.title }}</td><td>{{ r.count }}</td><td>{{ r.coupang_path or r.coupang }}</td><td>{{ {'auto':'자동','candidates':'후보','unset':'미지정'}[r.result] }}</td><td>{{ r.naver }}</td><td>{{ r.score }}</td><td>{{ r.candidates or r.why }}</td></tr>{% endfor %}
+{% for r in data.rows %}<tr data-result="{{ r.result }}"><td>{{ r.title }}</td><td>{{ r.count }}</td><td>{{ r.coupang_path or r.coupang }}{% if r.coupang_rule %}<br><span class="text-muted">예측 {{ r.coupang_predicted }} → {{ r.coupang_rule }}</span>{% endif %}</td><td>{{ {'auto':'자동','candidates':'후보','unset':'미지정'}[r.result] }}</td><td>{{ r.naver }}</td><td>{{ r.score }}</td><td>{{ r.candidates or r.why }}</td></tr>{% endfor %}
 </tbody></table></div>{% endif %}
 <a href="/admin/diagnostics">← 진단으로</a></div></body></html>"""
 

@@ -31,7 +31,7 @@ MAX_ROUNDS = 2
 MAX_CALLS = 6
 RETRY_AFTER = timedelta(hours=24)          # 검사에 떨어진 항목은 하루 동안 다시 묻지 않는다(같은 돈을 또 쓰지 않게)
 
-KIND_LABEL = {"option_value": "옵션값", "naver_category": "카테고리", "title": "상품명", "detail": "상세",
+KIND_LABEL = {"option_value": "옵션값", "naver_category": "카테고리", "coupang_category": "쿠팡 카테고리", "title": "상품명", "detail": "상세",
               "notice": "고시정보", "coupang_attr": "쿠팡 필수옵션", "coupang_axis": "쿠팡 옵션 속성"}
 _KANA = re.compile(r"[぀-ヿ]")
 _HAN = re.compile(r"[㐀-鿿豈-﫿]")
@@ -225,7 +225,28 @@ def record_fixed_category(pd: dict, ex: dict, results) -> bool:
     pd["naver_category_id"] = cid
     pd["naver_category_auto"] = {"after": cid, "provider": "map"}
     _mark(ex, "naver_category", "naver_category", f"{s.get('name') or cid}" + (f" (다른 후보: {alts})" if alts else ""),
-          "", cid, f"고정 매핑표 — 쿠팡 「{s.get('coupang') or ''}」", {"provider": "map", "model": ""})
+          "", cid, s.get("map_why") or f"고정 매핑표 — 쿠팡 「{s.get('coupang') or ''}」", {"provider": "map", "model": ""})
+    return True
+
+
+def record_coupang_rule(pd: dict, ex: dict, results) -> bool:
+    """Y11O-1 — 상품명 규칙이 쿠팡 예측 리프를 바로잡았으면 「AI가 고쳤어요 — 쿠팡 카테고리」 줄에 적는다(AI 호출 없음).
+    쿠팡을 검증했을 때만 · 오너가 되돌렸으면(막힘) 다시 적지 않는다. 되돌리면 그 상품은 규칙을 끈다(`overlay`)."""
+    if not any(str(_res_get(r, "market") or "").startswith("coupang") for r in results or []):
+        return False
+    if _skip(ex, "coupang_category"):
+        return False
+    try:
+        from src.uploaders import naver_categories as _nc
+        g = _nc.coupang_guess(pd)
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[AI 자동수정] 쿠팡 상품명 규칙 기록 실패: %s", exc)
+        return False
+    if not g.get("rule_why"):
+        return False
+    pred = g.get("predicted") or {}
+    _mark(ex, "coupang_category", "coupang_category", f"{pred.get('name') or pred.get('id')} → {g.get('name')}",
+          str(pred.get("id") or ""), str(g.get("id") or ""), g["rule_why"], {"provider": "rule", "model": ""})
     return True
 
 
@@ -424,8 +445,14 @@ def overlay(pd: dict, ex: dict) -> dict:
     화면은 사전검증 전에 그린 값을 들고 있다(AI가 고친 뒤 새로고침 안 함) — 저장본이 정본. 단 셀러가 그 칸을
     AI 뒤에 손으로 바꿨으면(화면 값이 AI 전 값도 AI 값도 아님) 셀러 값을 둔다.
     """
+    # Y11O-1: 카테고리 상품명 규칙의 라운지 신호(원문 「躺椅」 등)는 저장본 원문 상품명에 있다 — 화면은 한국어 상품명만 보낸다
+    src_titles = " ".join(dict.fromkeys(str(ex.get(k) or "") for k in ("title", "title_en", "title_src") if ex.get(k)))
+    if src_titles and not pd.get("category_text"):
+        pd["category_text"] = src_titles
     if "naver_category" in blocked(ex):
         pd["naver_category_no_auto"] = True          # Y11-O: 되돌린 카테고리를 고정 매핑표·쿠팡 예측이 다시 채우지 않게
+    if "coupang_category" in blocked(ex):
+        pd["coupang_category_no_override"] = True    # Y11O-1: 되돌린 쿠팡 상품명 규칙은 그 상품에서 끈다
     fx = fixes_of(ex)
     rev = {k: v for k, v in blocked(ex).items() if isinstance(v, dict) and "after" in v}
     if not fx and not rev:

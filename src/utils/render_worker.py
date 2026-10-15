@@ -113,13 +113,15 @@ def _loop() -> None:
 
 
 def _ensure() -> None:
+    # 잠금 안에서 start — 밖에서 하면 그 사이 다른 호출이 「아직 안 살아 있음」(is_alive False)으로 보고 워커를 하나 더 만든다
+    #   (두 장이 동시에 그려졌다 — Y11O-1 계약이 잡음).
     with _LOCK:
         t = _STATE["thread"]
         if t is not None and t.is_alive():
             return
         t = threading.Thread(target=_loop, daemon=True, name="render-worker")
         _STATE["thread"] = t
-    t.start()
+        t.start()
 
 
 def run(fn: Callable, *a: Any, _name: str = "render", _timeout: float = 180.0, **kw: Any) -> Any:

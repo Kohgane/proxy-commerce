@@ -173,7 +173,7 @@ def search(q: str, limit: int = 30) -> List[Dict[str, str]]:
 #   카테고리별 속성·표준형 옵션, 카탈로그 조회뿐). 그래서 **쿠팡 카테고리 예측**(`categorization/predict`)이 돌려준
 #   리프 이름을 네이버 리프 이름과 맞춰 본다. 확신(점수·2등과의 차이)이 모자라면 후보 3개를 보여 주고 1탭으로 고르게,
 #   오너가 고른 결과는 상품명 낱말 → 리프로 기억한다(같은 류 다음 상품은 자동).
-SUGGEST_KEY = "naver_cat_suggest:v3"     # Y11-O: 고정 매핑표·1단계 갈림 후보 유지 — 예전(v2) 기억은 쓰지 않는다
+SUGGEST_KEY = "naver_cat_suggest:v4"     # Y11O-1: 상품명 규칙(리클라이너·라운지…)·매핑표 50 — 예전(v3) 기억은 쓰지 않는다
 LEARN_KEY = "naver_cat_learn:"
 REASON_CANDIDATES = "category_candidates"
 SOURCE_LABEL = {"map": "자동(고정 매핑표)", "ai": "자동(AI가 고름)", "manual": "지정", "learned": "자동(내가 고른 기록)", "pattern": "자동(상품명 사전)",
@@ -411,7 +411,14 @@ def coupang_guess(p: dict) -> dict:
         path = path_of(r.get("id", ""))
     except Exception:
         path = ""
-    return {"id": r.get("id", ""), "name": r["name"], "path": path, "why": ""}
+    out = {"id": r.get("id", ""), "name": r["name"], "path": path, "why": ""}
+    # Y11O-1(오너): 상품명 리클라이너·라운지·안락·오토만 + 의자류 예측 → 쿠팡 안락의자(쿠팡 등록과 같은 규칙)
+    from src.uploaders.category_rules import coupang_fix
+    fx = coupang_fix(p, out["id"])
+    if fx:
+        out.update(id=fx["id"], name=fx["name"], path=fx["path"] or path, rule_why=fx["why"],
+                   predicted={"id": r.get("id", ""), "name": r["name"], "path": path})
+    return out
 
 
 def suggest(product: dict) -> dict:
@@ -426,6 +433,8 @@ def suggest(product: dict) -> dict:
     if not name:
         return {"id": "", "name": "", "score": 0.0, "coupang": "", "candidates": [], "why": "상품명이 없어요"}
     hit = _suggest_cache_get(name)
+    if p.get("coupang_category_no_override"):          # 오너가 쿠팡 상품명 규칙을 되돌린 상품 — 기억 말고 지금 계산
+        return compute_suggestion(p, remember=False)
     if hit and (hit.get("id") or hit.get("candidates") or hit.get("coupang")):
         # Z9: 쿠팡 경로 표 없이(리프 이름만) 낸 추정이면, 표가 들어온 뒤엔 다시 계산한다(추정을 굳히지 않는다).
         if not (hit.get("estimated") and _coupang_paths_ready()):
@@ -483,8 +492,20 @@ def compute_suggestion(p: dict, *, remember: bool = False) -> dict:
            "estimated": bool(g.get("name")) and not g.get("path")}
     if not g.get("name"):
         return out
-    fx = fixed_for(g.get("id", ""), g.get("path", ""))
     leaves = (tree() or {}).get("leaves") or {}
+    if g.get("rule_why"):
+        out["coupang_rule"] = {"why": g["rule_why"], "predicted": g.get("predicted") or {}}
+    from src.uploaders.category_rules import naver_fix
+    nf = naver_fix(p, g.get("id", ""))
+    if nf and nf["id"] in leaves:
+        # Y11O-1(오너): 리클라이너·라운지·안락·오토만 — 라운지 신호가 있으면 인테리어의자, 없으면 안락의자
+        out.update(id=nf["id"], name=leaves[nf["id"]], score=1.0, mapped=True, why="", map_why=nf["why"],
+                   alts=[{"id": a, "name": leaves[a]} for a in nf["alt"] if a in leaves])
+        if remember:
+            _suggest_cache_put(name, out)
+        logger.info("[네이버 카테고리] 상품명 규칙 %s → %s", nf["why"], leaves[nf["id"]])
+        return out
+    fx = fixed_for(g.get("id", ""), g.get("path", ""))
     if fx and str(fx.get("naver")) in leaves:
         # Y11-O(오너): 고정 매핑표에 있는 쿠팡 리프면 점수 비교 없이 바로 채운다(같이 보여 줄 다른 후보 = alt)
         nid = str(fx["naver"])
