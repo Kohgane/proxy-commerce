@@ -498,7 +498,7 @@ def _polish_view(e: dict) -> Optional[Dict]:
     pl = e.get("polish") if isinstance(e.get("polish"), dict) else None
     if not pl:
         return None
-    rows = [r for r in pl.get("rows") or [] if isinstance(r, dict) and (r.get("ko") != r.get("tgt") or r.get("why"))]
+    rows = [r for r in pl.get("rows") or [] if isinstance(r, dict) and (r.get("ko") != r.get("tgt") or r.get("why") or r.get("suggest_erase"))]
     return {"rows": rows[:20], "why": str(pl.get("why") or ""), "changed": int(pl.get("changed") or 0)}
 
 
@@ -515,6 +515,7 @@ MIN_PX = 11
 #: 테두리 띠가 이 값(밝기 10~90% 폭) 안이면 「한 색 바탕」 — 중앙값으로 메운다. 넘으면 글자 픽셀만 inpaint(그라데이션에 네모 방지).
 FLAT_SPREAD = 8
 _WIDE = re.compile("[ᄀ-ᇿ㄰-㆏가-힯　-鿿＀-￯]")
+_WIDE_HAN = re.compile("[\u3400-\u4dbf\u4e00-\u9fff]")
 
 
 def _units(text: str) -> float:
@@ -631,59 +632,75 @@ def _band(np, img, rect, bw: int):
     return np.concatenate(px) if px else img[y0:y1, x0:x1].reshape(-1, 3)
 
 
-def _coons(np, img, rect, bw: int) -> bool:
-    """테두리 네 변(띠 평균)에서 안쪽으로 매끈하게 잇는 채움(쿤스 패치) — 그라데이션 바탕용. 못 하면 False."""
-    H, W = img.shape[:2]
+#: 렌더 판 — 올리면 기계 다듬음 버전은 다음 「번역 다듬기」 때 다시 그린다(Y11-N: 겹친 상자 묶음·획 기준 세로 자리·판 유령)
+RENDER_V = 2
+#: Y11-N(오너): 탭 지우기 뒤 남은 잉크가 원래 잉크의 이 비율을 넘으면(6번 「톱1」 같은 큰 글자) 상자 전체를 바탕으로 메운다
+RESIDUAL_MAX = 0.15
+#: 텐센트 판 위 「유령」(희미하게 남은 원문 획) — 상자 안 글자 아닌 픽셀이 바깥 바탕과 이만큼(밝기 98%) 안이면 판·유령째 바탕으로 메운다
+GHOST_DIFF = 28
+
+
+def _ink_px(cv2, np, img, rect) -> int:
+    from src.services.image_text_render import _glyph_mask
+    m, _w = _glyph_mask(cv2, np, img, rect, 0)
+    return 0 if m is None else int((m > 0).sum())
+
+
+def _fill_box(cv2, np, img, rect, bw: int) -> str:
+    """상자 통째로 바탕 — 한 색이면 테두리 띠 중앙값, 아니면 상자 전체를 둘레에서 메운다(inpaint).
+    Y11-N 실측: 네 변 잇기(쿤스)는 사진 위 큰 상자(6번 「톱1」 864×452)에서 세로 줄무늬가 났다 — 통째 inpaint가 덜 거칠다."""
     x0, y0, x1, y1 = rect
-    w, h = x1 - x0, y1 - y0
-    f = img.astype(np.float32)
-    top = f[max(0, y0 - bw):y0, x0:x1].mean(axis=0) if y0 > 0 else None
-    bot = f[y1:min(H, y1 + bw), x0:x1].mean(axis=0) if y1 < H else None
-    lef = f[y0:y1, max(0, x0 - bw):x0].mean(axis=1) if x0 > 0 else None
-    rig = f[y0:y1, x1:min(W, x1 + bw)].mean(axis=1) if x1 < W else None
-    if top is None and bot is None or lef is None and rig is None:
-        return False
-    top, bot = (top if top is not None else bot), (bot if bot is not None else top)
-    lef, rig = (lef if lef is not None else rig), (rig if rig is not None else lef)
-    u = (np.arange(w, dtype=np.float32) + 0.5)[None, :, None] / w
-    v = (np.arange(h, dtype=np.float32) + 0.5)[:, None, None] / h
-    c00, c10, c01, c11 = (top[0] + lef[0]) / 2, (top[-1] + rig[0]) / 2, (bot[0] + lef[-1]) / 2, (bot[-1] + rig[-1]) / 2
-    patch = ((1 - v) * top[None] + v * bot[None] + (1 - u) * lef[:, None] + u * rig[:, None]
-             - ((1 - u) * (1 - v) * c00 + u * (1 - v) * c10 + (1 - u) * v * c01 + u * v * c11))
-    img[y0:y1, x0:x1] = np.clip(patch, 0, 255).astype(np.uint8)
-    return True
+    band = _band(np, img, rect, bw)
+    lum = band.astype(np.int32).sum(axis=1) / 3.0
+    if float(np.percentile(lum, 90) - np.percentile(lum, 10)) > FLAT_SPREAD:
+        m = np.zeros(img.shape[:2], np.uint8)
+        m[y0:y1, x0:x1] = 255
+        img[:] = cv2.inpaint(img, m, 9, cv2.INPAINT_TELEA)
+        return "inpaint-box"
+    img[y0:y1, x0:x1] = np.median(band, axis=0).astype(np.uint8)
+    return "fill-box"
 
 
-def erase_local(cv2, np, img, rect) -> str:
-    """상자 글자를 지운다(제자리). `rect` = 상자를 사방으로 조금 넓힌 자리(이웃 상자 쪽은 안 넓힘). 돌려주는 값 = 쓴 방법.
-    지우는 픽셀은 **그 상자 글자 획만**이다 — 넓힌 자리 테두리에 닿는 획(이웃 줄 글자가 삐져 들어온 것)은 남긴다(22번 「전방위」).
+def erase_local(cv2, np, img, rect, *, strict: bool = False) -> str:
+    """상자 글자를 지운다(제자리). `rect` = 상자(또는 겹친 상자 묶음)를 사방으로 조금 넓힌 자리(이웃 상자 쪽은 안 넓힘).
+    돌려주는 값 = 쓴 방법. 지우는 픽셀은 **그 자리 글자 획만** — 넓힌 자리 테두리에 닿는 획(이웃 줄 글자가 삐져 들어온 것)은 남긴다.
     - `fill`: 바탕이 한 색(흰 바탕 등) — 그 **중앙값으로** 글자 획을 메운다(오너 Y11-M). 표본은 상자 안 글자 아닌 픽셀.
+    - `fill-ghost`: 한 색 바탕인데 상자 안이 텐센트 옅은 판·희미한 원문 획뿐 — 자리 전체를 바깥 바탕으로(22번 유령 글자, Y11-N).
     - `inpaint`: 무늬·그라데이션 바탕 — 상자를 통째 칠하면 네모가 보인다(VRSUK 21번 실측). 획만 주변으로 메운다.
-    - `fill-box`/`blend`: 획을 못 고르면 상자를 통째 — 한 색이면 중앙값, 아니면 네 변 색을 안쪽으로 매끈하게 잇는다."""
+    - `fill-box`/`inpaint-box`: 획을 못 고르면, 또는 `strict`(사람이 탭한 지우기)인데 남은 잉크가 원래의 15%를 넘으면 상자 통째로."""
     x0, y0, x1, y1 = rect
     bw = max(2, min(12, int((y1 - y0) * 0.15)))
     from src.services.image_text_render import _glyph_mask
     mask, _why = _glyph_mask(cv2, np, img, rect, 3)
-    if mask is not None:
-        # 바탕 표본 = 상자 안 **글자 아닌 픽셀**(획 둘레 더 넓게 뺀 것) — 텐센트는 글자 뒤에 옅은 판을 깐다. 상자 밖 색으로
-        #   메우면 그 판 위에 글자 모양 「유령」이 남았다(22번 실측).
-        roi = img[y0:y1, x0:x1]
-        far = cv2.dilate(mask[y0:y1, x0:x1], np.ones((7, 7), np.uint8)) == 0
-        bg = roi[far] if int(far.sum()) >= 30 else _band(np, img, rect, bw)
-        lum = bg.astype(np.int32).sum(axis=1) / 3.0
-        if float(np.percentile(lum, 90) - np.percentile(lum, 10)) <= FLAT_SPREAD:
+    if mask is None:
+        return _fill_box(cv2, np, img, rect, bw)
+    before = _ink_px(cv2, np, img, rect) if strict else 0
+    # 바탕 표본 = 상자 안 **글자 아닌 픽셀**(획 둘레 더 넓게 뺀 것) — 텐센트는 글자 뒤에 옅은 판을 깐다. 상자 밖 색으로
+    #   메우면 그 판 위에 글자 모양 「유령」이 남았다(22번 실측).
+    roi = img[y0:y1, x0:x1]
+    far = cv2.dilate(mask[y0:y1, x0:x1], np.ones((7, 7), np.uint8)) == 0
+    bg = roi[far] if int(far.sum()) >= 30 else _band(np, img, rect, bw)
+    lum = bg.astype(np.int32).sum(axis=1) / 3.0
+    if float(np.percentile(lum, 90) - np.percentile(lum, 10)) <= FLAT_SPREAD:
+        band = _band(np, img, rect, bw)
+        blum = band.astype(np.int32).sum(axis=1) / 3.0
+        bmed = np.median(band, axis=0)
+        if (float(np.percentile(blum, 90) - np.percentile(blum, 10)) <= FLAT_SPREAD
+                and float(np.percentile(np.abs(lum - float(np.median(blum))), 98)) <= GHOST_DIFF):
+            img[y0:y1, x0:x1] = bmed.astype(np.uint8)          # 판·유령째 — 안쪽이 바깥 바탕과 같은 색 계열일 때만
+            how = "fill-ghost"
+        else:
             img[mask > 0] = np.median(bg, axis=0).astype(np.uint8)
-            return "fill"
+            how = "fill"
+    else:
         img[:] = cv2.inpaint(img, mask, 5, cv2.INPAINT_TELEA)
-        return "inpaint"
-    band = _band(np, img, rect, bw)
-    lum = band.astype(np.int32).sum(axis=1) / 3.0
-    flat = float(np.percentile(lum, 90) - np.percentile(lum, 10)) <= FLAT_SPREAD
-    med = np.median(band, axis=0).astype(np.uint8)
-    if not flat and _coons(np, img, rect, bw):
-        return "blend"
-    img[y0:y1, x0:x1] = med
-    return "fill-box"
+        how = "inpaint"
+    if strict and before:
+        left = _ink_px(cv2, np, img, rect)
+        if left > before * RESIDUAL_MAX:
+            logger.info("[사진 편집] 지운 뒤 잉크 %s/%s(%.0f%%) — 상자 통째로 바탕", left, before, 100.0 * left / before)
+            return _fill_box(cv2, np, img, rect, bw) + f"(잔여 {round(100.0 * left / before)}%)"
+    return how
 
 
 def _typo(raw: bytes, rect, tgt: str) -> Dict:
@@ -719,6 +736,24 @@ def _expand(rect, others, W: int, H: int, pad: int):
     return X0, Y0, max(X0 + 1, X1), max(Y0 + 1, Y1)
 
 
+#: 이 각도(도) 넘게 기운 글자 줄은 「기운 글자」 — 우리는 똑바로만 그린다(쿠폰 상세 4 회원 카드 실측)
+TILT_DEG = 6.0
+
+
+def _tilted(cv2, np, img, rect) -> bool:
+    """상자 안 글자 획이 기울었나 — 획 픽셀의 최소 외접 사각형 각도."""
+    from src.services.image_text_render import _glyph_mask
+    m, _w = _glyph_mask(cv2, np, img, rect, 0)
+    if m is None:
+        return False
+    ys, xs = np.nonzero(m)
+    if xs.size < 40:
+        return False
+    (_cx, _cy), (rw, rh), ang = cv2.minAreaRect(np.column_stack([xs, ys]).astype(np.float32))
+    a = abs(float(ang)) % 90.0
+    return min(a, 90.0 - a) > TILT_DEG
+
+
 def _ink(cv2, np, img, rect):
     """상자 안 텐센트 글자 잉크의 외접 `(w, h, x, y)` — 못 고르면 None."""
     from src.services.image_text_render import _glyph_mask
@@ -731,7 +766,8 @@ def _ink(cv2, np, img, rect):
     return (int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1), int(xs.min()), int(ys.min()))
 
 
-def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict, str]], others: Optional[List[Dict]] = None) -> Dict:
+def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict, str]], others: Optional[List[Dict]] = None,
+                 skip_tilted: bool = False) -> Dict:
     """`{ok, bytes, size, how, drawn, skipped, why}` — 바탕 그림 위에서 상자를 지우고 글자를 그린다. 좌표는 상자 공간 × `k`.
     `others` = 이 사진의 글자 상자 전부(지울 자리를 넓힐 때 이웃 상자를 피한다)."""
     from src.services.image_text_render import _load_cv2
@@ -748,15 +784,82 @@ def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict
         r = _rect_px(b, k, W, H)
         return r, _expand(r, near, W, H, max(3, int((r[3] - r[1]) * 0.15)))
 
-    typos = []
-    for b, t in texts:
-        r, ext = _area(b)
-        typos.append((b, t, r, ext, _typo(raw, ext, str(b.get("tgt") or "")), _ink(cv2, np, img, ext)))
-    how = []
-    for b in erase:
-        how.append(erase_local(cv2, np, img, _area(b)[1]))
-    for x in typos:
-        how.append(erase_local(cv2, np, img, x[3]))
+    # Y11-N(오너 22번 좌하단): 겹치거나 맞붙은 상자는 **묶어서** 한 번에 지우고 한 번에 그린다 — 따로 지우면 텐센트 판끼리 겹친
+    #   자리에 원문 획(유령)이 남았다. 묶음에 끼는 손 안 댄 상자는 지금 글자(tgt) 그대로 다시 그린다(한자 남은 상자는 안 끼움).
+    tilted_skip = []
+    if skip_tilted:
+        # 다듬기(기계)는 기운 글자를 다시 그리지 않는다 — 똑바로 그리면 모양이 바뀐다(텐센트 글자 그대로)
+        keep = []
+        for b, t in texts:
+            if _tilted(cv2, np, img, _area(b)[1]):
+                tilted_skip.append(t)
+            else:
+                keep.append((b, t))
+        texts = keep
+    edit_b = [(b, None) for b in erase] + [(b, t) for b, t in texts]
+    #   손 안 댄 상자는 **번역된 글자**만 낀다 — 원문 그대로인 브랜드·로고(EHILÀ)·숫자는 다시 그리지 않는다(글꼴이 바뀐다).
+    pool = [(b, None) for b in (others or []) if not any(b is e for e, _t in edit_b)
+            and str(b.get("tgt") or "").strip() and str(b.get("tgt") or "").strip() != str(b.get("src") or "").strip()
+            and not _WIDE_HAN.search(str(b.get("tgt") or "")) and not _tilted(cv2, np, img, _area(b)[1])]
+    allb = edit_b + pool
+    rects = [_rect_px(b, k, W, H) for b, _t in allb]
+
+    def _touch(a, c):
+        ha, hc = a[3] - a[1], c[3] - c[1]
+        if max(ha, hc) > 3 * max(1, min(ha, hc)):
+            return False                                         # 글자 크기가 크게 다르면(작은 줄 ↔ 큰 로고) 묶지 않는다
+        gap = max(6, int(0.15 * min(ha, hc)))
+        return not (a[2] + gap <= c[0] or c[2] + gap <= a[0] or a[3] + gap <= c[1] or c[3] + gap <= a[1])
+
+    n_erase = len(erase)
+
+    def _joins(j, m):
+        # 지우기만 하는 상자는 묶지 않는다 — 글자 상자와 묶으면 지운 자리 둘레 글자까지 다시 그리게 된다(6번 실측)
+        return j >= n_erase and m >= n_erase and _touch(rects[j], rects[m])
+
+    group, seen = [], set()
+    for i in range(len(edit_b)):
+        if i in seen:
+            continue
+        comp, stack = [], [i]
+        seen.add(i)
+        while stack:
+            j = stack.pop()
+            comp.append(j)
+            for m in range(len(allb)):
+                if m not in seen and _joins(j, m):
+                    seen.add(m)
+                    stack.append(m)
+        comp = sorted(comp)
+        if len(comp) > 1:
+            u = (min(rects[j][0] for j in comp), min(rects[j][1] for j in comp),
+                 max(rects[j][2] for j in comp), max(rects[j][3] for j in comp))
+            band = _band(np, img, u, 8)
+            lum = band.astype(np.int32).sum(axis=1) / 3.0
+            if float(np.percentile(lum, 90) - np.percentile(lum, 10)) > FLAT_SPREAD:
+                # 묶음은 한 색 바탕(텐센트 판이 겹친 자리)에서만 — 사진·그라데이션 위에서 묶으면 큰 글자(6번 「톱1」)까지
+                #   반쯤 지우고 다시 그렸다(Y11-N 실측). 그런 자리는 상자 하나씩(손 안 댄 상자는 안 건드림).
+                group.extend([[j] for j in comp if j < len(edit_b)])
+                continue
+        group.append(comp)
+    typos, how, merged = [], [], 0
+    for comp in group:
+        members = [allb[j] for j in comp]
+        mrect = [rects[j] for j in comp]
+        for (b, t), r in zip(members, mrect):
+            if t is None and any(b is e for e, _t in edit_b):
+                continue                                         # 지우기만 한 상자는 다시 그리지 않는다
+            ext = _area(b)[1]
+            ty = _typo(raw, ext, str(b.get("tgt") or ""))
+            ty["keep"] = t is None                               # 손 안 댄 상자 — 텐센트 크기 그대로(키우지 않는다)
+            typos.append((b, t if t is not None else str(b.get("tgt") or ""), r, ext, ty, _ink(cv2, np, img, ext)))
+        u = (min(r[0] for r in mrect), min(r[1] for r in mrect), max(r[2] for r in mrect), max(r[3] for r in mrect))
+        outside = [n for jn, n in enumerate(rects) if jn not in comp] + \
+                  [n for n in near if n not in mrect]
+        ext = _expand(u, outside, W, H, max(3, int(min(r[3] - r[1] for r in mrect) * 0.15)))
+        strict = any(t is None for b, t in members if any(b is e for e, _t in edit_b))
+        how.append(erase_local(cv2, np, img, ext, strict=strict))
+        merged += len(comp) - 1
     from PIL import Image, ImageDraw
     pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil)
@@ -768,7 +871,7 @@ def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict
         rf = fit_box(tgt, x1 - x0, y1 - y0, weight=w_key, max_lines=8)
         # 텐센트 글자 크기 = 그 글자를 잉크 외접 안에 넣은 크기 — 새 글자는 그보다 크게 그리지 않는다(위계 유지)
         tf = fit_box(tgt, ink[0] + 6, int(ink[1] * 1.3) + 6, weight=w_key, max_lines=8) if ink else None
-        cap = int(tf["size"] * 1.1) if tf else 0
+        cap = int(tf["size"] * (1.0 if ty.get("keep") else 1.1)) if tf else 0
         f = None
         for n in range(1, max(2, len((rf or {}).get("lines") or [])) + 1):   # 줄은 적게 — 텐센트 크기의 85%가 나오는 가장 적은 줄
             g = fit_box(text, x1 - x0, y1 - y0, weight=w_key, max_lines=n, max_px=cap)
@@ -781,24 +884,27 @@ def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict
             continue
         font = _font(f["size"], w_key)
         sizes.append(f["size"])
-        block = f["line_h"] * len(f["lines"])
         align = ty["align"]
         if align == "center" and len(f["lines"]) > 1 and len((rf or {}).get("lines") or []) > 1:
             align = "left"                                       # 텐센트 글자도 여러 줄(문단) — 문단은 왼쪽 정렬
         # 자리 = 텐센트 글자가 실제로 있던 곳(잉크 외접) — 상자는 글자보다 클 때가 많다(21번 제목: 상자 아래쪽이 비어 있음)
         bx0, bx1 = (ink[2], ink[2] + ink[0]) if ink else (x0, x1)
         cy = (ink[3] + ink[1] // 2) if ink else (y0 + y1) // 2
-        top = min(max(y0, cy - block // 2), max(y0, y1 - block))
+        # 세로 자리는 **실제 글자 획** 기준 — Pillow는 글꼴 윗선(ascent)부터 그려 획이 0.2em쯤 아래로 내려앉았다(Y11-N 실측).
+        _gl, gt, _gr, gb = font.getbbox("가")
+        ink_h = (len(f["lines"]) - 1) * f["line_h"] + (gb - gt)
+        itop = min(max(y0, cy - ink_h // 2), max(y0, y1 - ink_h))
         for i, line in enumerate(f["lines"]):
             l, _t, r, _b = font.getbbox(line)
             lw = r - l
             want = bx0 if align == "left" else (bx1 - lw) if align == "right" else (bx0 + bx1 - lw) // 2
             cx = min(max(x0, want), max(x0, x1 - lw)) - l
-            draw.text((cx, top + i * f["line_h"] + (f["line_h"] - f["size"]) // 2), line, font=font, fill=ty["color"])
+            draw.text((cx, itop + i * f["line_h"] - gt), line, font=font, fill=ty["color"])
         drawn += 1
     buf = io.BytesIO()
     pil.save(buf, format="JPEG", quality=92)
     return {"ok": True, "bytes": buf.getvalue(), "size": [W, H], "how": how, "drawn": drawn, "skipped": skipped, "sizes": sizes,
+            "merged": merged, "tilted": tilted_skip,
             "colors": ["%02x%02x%02x" % tuple(x[4]["color"]) for x in typos], "weights": [x[4]["weight"] for x in typos]}
 
 
@@ -832,12 +938,16 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
         return {"ok": False, "error": "편집할 사진을 열지 못했어요"}
     k = (RW / W) if W else 1.0                                 # 상자 공간 → 바탕 사진
     try:
-        rr = render_local(raw, k, erase, texts, others=p["boxes"])
+        rr = render_local(raw, k, erase, texts, others=p["boxes"], skip_tilted=(by == "polish"))
     except Exception as exc:                                    # noqa: BLE001
         logger.warning("[사진 편집] 그리기 실패 %s idx=%s: %s", kind, idx, exc)
         rr = {"ok": False, "why": type(exc).__name__}
     if not rr.get("ok"):
         return {"ok": False, "error": "편집본을 그리지 못했어요 — " + (rr.get("why") or "사유 불명")}
+    if not erase and not rr.get("drawn"):
+        # 바뀔 상자가 전부 기운 글자라 건너뛰었다 — 같은 그림을 새 버전으로 올리지 않는다(텐센트 글자 그대로)
+        return {"ok": False, "error": f"바꿀 상자가 없어요 — 기운 글자 {len(rr.get('tilted') or [])}곳은 텐센트 글자 그대로 둬요",
+                "tilted": rr.get("tilted") or []}
     from src.media.image_pipeline import upload_bytes
     up = upload_bytes(rr["bytes"], folder="edit")
     url = str(up.get("secure_url") or "") if up.get("ok") else ""
@@ -852,8 +962,9 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
     n = max([int(x.get("n") or 0) for x in e["edits"]] + [0]) + 1
     now = datetime.now(timezone.utc).isoformat()
     e["edits"].append({"n": n, "url": url, "base": p["url"], "base_key": base_key, "at": now, "by": by, "ops": todo,
-                       "erased": erased, "credits": c["credits"], "ready": True, "render": "local",
-                       "how": rr.get("how"), "colors": rr.get("colors"), "weights": rr.get("weights"), "skipped": rr.get("skipped")})
+                       "erased": erased, "credits": c["credits"], "ready": True, "render": "local", "render_v": RENDER_V,
+                       "how": rr.get("how"), "colors": rr.get("colors"), "weights": rr.get("weights"), "skipped": rr.get("skipped"),
+                       "tilted": rr.get("tilted")})
     if not e.get("status"):
         e["status"] = "done"
     e.setdefault("vendor", "edit")

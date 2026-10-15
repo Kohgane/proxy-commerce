@@ -30,7 +30,7 @@ BATCH = 10
 POLISH_BY = "polish"
 POLISH_LABEL = "번역본(다듬음)"
 #: 다듬기 프롬프트 판 — 바뀌면 옛 캐시 답은 지금 검사를 통과할 때만 다시 쓴다(Y11-L).
-PROMPT_VER = "y11l-1"
+PROMPT_VER = "y11n-1"
 _KST = timezone(timedelta(hours=9))
 _GLOSSARY_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploaders", "image_glossary.json")
 #: 다듬기 결과에서 버리는 과장(Y10 금지어 ban_ko에 더해 — 오너 반례 「최고·1위·100%」)
@@ -213,12 +213,15 @@ def check(src: str, tgt: str, ko: str, rule: Optional[Dict] = None) -> str:
 
 
 _SYSTEM = (
-    "너는 쇼핑몰 상품 사진 속 글자를 고치는 한국어 편집자다. 중국어 원문과 기계 번역 한국어를 받아, 사진에 그대로 얹을 "
+    "너는 쇼핑몰 상품 사진 속 글자를 고치는 한국어 편집자다. 원문(중국어·이탈리아어·영어 등)과 기계 번역 한국어를 받아, 사진에 그대로 얹을 "
     "자연스러운 한국어로 고친다. 규칙: ① 상품 설명 톤(짧은 명사·설명형), 원문 뜻만 — 없는 내용·과장 추가 금지. "
-    "② 브랜드·모델명·규격·숫자·단위는 원문 그대로 둔다. ③ 원문 뜻을 알 수 없거나 깨진 글자면 \"\"(빈칸 — 그 상자는 지운다). "
+    "② 브랜드·모델명·규격·숫자·단위는 원문 그대로 둔다. ③ 원문 뜻을 알 수 없거나 깨진 글자(OCR 조각)면 \"\"(빈칸 — 지울지는 사람이 정한다). "
     "④ 용어집을 반드시 따른다. ⑤ 금지어는 쓰지 않는다. ⑥ 상자 크기에 맞게 기계 번역과 비슷한 길이. "
     "⑦ 품목에 맞는 말만 — 주어진 「이 상품」 품목에 안 맞는 다른 품목 표현(예: 가구에 식감·맛·착용감)은 그 품목의 말로 바꾼다. "
     "⑧ 기계 번역(mt)이 비었거나 「redo」가 붙은 상자는 기계 번역이 실패한 것 — 원문(src) 전체를 새로 한국어로 번역한다(한자를 남기지 않는다). "
+    "⑨ 중국어가 아닌 외국어(이탈리아어·영어 낱말·문장)도 한국어로 번역한다 — 단 브랜드·모델명·™®가 붙은 낱말·뜻 없는 대문자 약어·코드"
+    "(예: EHILÀ, VRSUK, ZL)는 그대로 둔다. 대문자로 적혔어도 사전에 있는 낱말이면 번역한다(예: AUTOPULENTE → 셀프 클리닝, NESSUNA RIGIDITÀ → 뻣뻣함 없음). "
+    "⑩ 직역 금지 — 한국 쇼핑몰 상품 상세 카피체로 쓴다(예: 「모든 한 대는 편안한 챔피언」 ✗ → 「의자 하나하나가 편안함 그 자체」 ○). "
     "출력은 JSON 하나만: {\"boxes\":[{\"id\":\"t0\",\"ko\":\"...\"}]} — 받은 id 전부."
 )
 
@@ -259,6 +262,8 @@ def _parse(text: str) -> Dict[str, str]:
 
 #: Y11-M(오너): 한자 남은 상자는 AI에 두 번까지 — 그래도 한자가 남으면 한자 덩어리만 텐센트 텍스트 번역으로 옮겨 끼운다.
 HAN_AI_TRIES = 2
+#: Y11-N: 라틴 문자 낱말(3자 이상) — 옛 판에서 「빈칸」이던 외국어 상자를 새 규칙(⑨ 외국어도 번역)으로 다시 묻는 기준
+_LATIN_WORD = re.compile(r"[A-Za-zÀ-ÿ]{3,}")
 _HAN_RUN = re.compile("[㐀-䶿一-鿿]+")
 
 
@@ -319,6 +324,12 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
             continue
         if check(r["src"], r["glossary"], hit["ai"], ctx.get("rule")) and hit.get("pv") != PROMPT_VER:
             continue                                             # 옛 판 답이 지금 규칙에 걸림 — 이 상자만 다시 묻는다
+        if hit["ai"] == "" and hit.get("pv") != PROMPT_VER and r["glossary"] != r["tgt"]:
+            r["cached"] = True                                   # 용어집이 고친 상자(AUTOPULENTE→셀프 클리닝) — 옛 「빈칸」 답 대신 용어집, AI 안 부름
+            cached += 1
+            continue
+        if hit["ai"] == "" and hit.get("pv") != PROMPT_VER and _LATIN_WORD.search(r["src"]) and not han_left(r["src"]):
+            continue                                             # Y11-N 결정: 외국어는 번역 — 옛 판 「빈칸」 답(이탈리아어·영어)만 다시 묻는다
         r["tries"] = max(0, int(hit.get("tries") or 1) - 1)
         _take(r, hit["ai"], ctx)
         r["cached"] = True
@@ -369,12 +380,19 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
     return {"rows": rows, "calls": calls, "ai_why": ai_why, "cached": cached}
 
 
+def _redo_polish(x: dict) -> bool:
+    """다시 만들 기계 다듬음 버전 — 옛 렌더(Y11-M 이전 Cloudinary 변환·렌더 판 `RENDER_V` 미만) 또는 **지운 상자가 있는 것**(Y11-N: 다듬기는 지우지 않는다)."""
+    from src.services import image_edit as IE
+    return x.get("by") == POLISH_BY and (x.get("render") != "local" or int(x.get("render_v") or 1) < IE.RENDER_V
+                                         or any(isinstance(o, dict) and o.get("action") == "erase" for o in x.get("ops") or []))
+
+
 def old_render(e: Optional[dict]) -> bool:
-    """Y11-M: 이 장의 다듬음 버전이 옛 렌더(Cloudinary 변환 주소 — 지운 자리 위에 겹쳐 그려 번짐, 21번)로 만들어졌고,
-    그 위에 사람이 만든 편집이 없나. 그런 장만 다시 그린다(사람 편집·새 렌더 다듬음은 그대로)."""
+    """이 장의 다듬음 버전이 다시 만들 것(`_redo_polish`)이고, 그 위에 사람이 만든 편집이 없나. 그런 장만 번역본에서 다시 다듬는다.
+    Y11-M: 옛 렌더(지운 자리 위에 겹쳐 그려 번짐, 21번). Y11-N: AI 「빈칸」을 지우기로 적용한 장(쿠폰 상세 4·6번 등) — 텐센트 글자로 되돌린다."""
     from src.services import image_edit as IE
     eds = IE.edits(e or {})
-    old = [x for x in eds if x.get("by") == POLISH_BY and x.get("render") != "local"]
+    old = [x for x in eds if _redo_polish(x)]
     if not old:
         return False
     keys = {f"edit:{x['n']}" for x in old}
@@ -384,13 +402,13 @@ def old_render(e: Optional[dict]) -> bool:
 
 
 def drop_old_polish(extra: dict, kind: str, idx: int) -> int:
-    """옛 렌더 다듬음 버전을 목록에서 빼고 번역본으로 돌린다(기계가 만든 버전만 — 사람 편집·원본·번역본은 그대로). 뺀 수."""
+    """다시 만들 다듬음 버전(`_redo_polish`)을 목록에서 빼고 번역본으로 돌린다(기계가 만든 버전만 — 사람 편집·원본·번역본은 그대로). 뺀 수."""
     from src.services import image_edit as IE
     e = IE._entry(extra, kind, idx)
     if not e or not old_render(e):
         return 0
     IE._normalize(e)
-    gone = [x for x in e["edits"] if x.get("by") == POLISH_BY and x.get("render") != "local"]
+    gone = [x for x in e["edits"] if _redo_polish(x)]
     keys = {f"edit:{x['n']}" for x in gone}
     e["edits"] = [x for x in e["edits"] if f"edit:{x['n']}" not in keys]
     for k in keys:
@@ -430,13 +448,19 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     cache = {}
     for r in prev_pl.get("rows") or []:
         # AI가 실제로 답한 상자만(ai 비었는데 polish = 「지움」 답 · ai 비었는데 tencent = 답 없음)
-        if isinstance(r, dict) and isinstance(r.get("ai"), str) and (r["ai"] or r.get("from") == "polish"):
+        if isinstance(r, dict) and isinstance(r.get("ai"), str) and (r["ai"] or r.get("from") == "polish" or r.get("suggest_erase")):
             cache[(str(r.get("src") or ""), str(r.get("tgt") or ""))] = {"ai": r["ai"], "pv": prev_pl.get("pv") or "",
                                                                      "tries": r.get("tries") or 1, "tmt": r.get("tmt") or ""}
     pr = polish_boxes(boxes, ctx, cache=cache)
     by_id = {b["id"]: b for b in boxes}
-    ops, too_long = [], 0
+    ops, too_long, suggest = [], 0, 0
     for r in pr["rows"]:
+        if r["ko"] == "" and r["tgt"]:
+            # Y11-N(오너): 다듬기는 지우지 않는다 — AI 「빈칸」은 지우기 **제안**으로만 남기고 텐센트 글자 그대로(픽셀 0).
+            #   지우는 건 사람이 편집기에서 그 상자를 탭해 적용할 때만(자동 경로·백필 경로 둘 다 이 함수).
+            r["ko"], r["from"], r["suggest_erase"] = r["tgt"], "tencent", True
+            suggest += 1
+            continue
         if r["ko"] == r["tgt"]:
             continue
         # Y11-M: 기준 = 텐센트가 같은 상자에 그린 글자(같은 줄 수·크기의 FIT_KEEP 이상이면 들어감)
@@ -445,19 +469,19 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
             r["ko"], r["from"] = r["tgt"], "tencent"
             too_long += 1
             continue
-        ops.append({"id": r["id"], "action": "erase"} if r["ko"] == "" else {"id": r["id"], "action": "text", "text": r["ko"]})
+        ops.append({"id": r["id"], "action": "text", "text": r["ko"]})
     out = {"ok": True, "changed": len(ops), "rows": pr["rows"], "calls": pr["calls"], "why": pr["ai_why"],
-           "cached": int(pr.get("cached") or 0), "too_long": too_long,
+           "cached": int(pr.get("cached") or 0), "too_long": too_long, "suggest_erase": suggest,
            "han_left": sum(1 for r in pr["rows"] if r.get("han_left"))}
     e = IE._entry(extra, kind, idx, create=True)
     han_n = sum(1 for r in pr["rows"] if r.get("han_left"))
     han_fixed = sum(1 for r in pr["rows"] if r.get("han_left") and r["from"] in ("polish", "tmt"))
     e["polish"] = {"at": datetime.now(timezone.utc).isoformat(), "calls": pr["calls"], "changed": len(ops),
                    "rows": [{k: r.get(k, "") for k in ("id", "src", "tgt", "ko", "ai", "from", "why", "han_left", "cached",
-                                                       "tries", "tmt")}
+                                                       "tries", "tmt", "suggest_erase")}
                             for r in pr["rows"]][:40],
                    "han_left": han_n, "han_fixed": han_fixed, "rule": (ctx["rule"] or {}).get("key", ""),
-                   "cached": int(pr.get("cached") or 0), "too_long": too_long, "pv": PROMPT_VER,
+                   "cached": int(pr.get("cached") or 0), "too_long": too_long, "suggest_erase": suggest, "pv": PROMPT_VER,
                    "why": pr["ai_why"]}
     if not ops:
         return out
@@ -599,6 +623,9 @@ def item_line(item_id: str, extra: dict) -> str:
     s = f"번역 다듬기 {len(rows)}장: 바뀐 상자 {changed} · AI {calls}회" + (f"(캐시 {cached}상자)" if cached else "")
     if too_long:
         s += f" · 길어서 유지 {too_long}"
+    sug = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("suggest_erase"))
+    if sug:
+        s += f" · AI 지우기 제안 {sug}(편집기에서 탭해야 지움)"
     han_fixed = sum(int(pl.get("han_fixed") or 0) for _n, pl in rows)
     tmt = sum(1 for _n, pl in rows for r in pl.get("rows") or [] if r.get("from") == "tmt")
     han_n = sum(int(pl.get("han_left") or 0) for _n, pl in rows)

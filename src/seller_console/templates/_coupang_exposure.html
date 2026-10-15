@@ -140,7 +140,7 @@
     }, 3000);
   }
   // Y11-K: 결과줄 — GET이 「…중」이면 4초마다 다시 묻는다(최대 3분)
-  var diagTimers = {};
+  var diagTimers = {}, diagRunning = {};
   function diagLine(kind, n) {
     var path = kind === 'ocr' ? '/ocr-recheck' : '/image-polish', role = kind === 'ocr' ? 'cpx-ocr-line' : 'cpx-polish-line';
     if (diagTimers[kind]) { clearTimeout(diagTimers[kind]); diagTimers[kind] = null; }
@@ -149,7 +149,14 @@
       if (!el || !t) return;
       var txt = t.ok ? (t.line || '') : (t.error || '');
       el.textContent = txt; el.hidden = !txt;
-      if (t.ok && t.running && n < 45) diagTimers[kind] = setTimeout(function () { diagLine(kind, n + 1); }, 4000);
+      if (t.ok && t.running && n < 45) { diagRunning[kind] = true; diagTimers[kind] = setTimeout(function () { diagLine(kind, n + 1); }, 4000); return; }
+      // Y11-N(오너 09:31 캡처): 다듬기가 끝났는데 상세 타일·대표 줄은 서랍을 열 때 받은 옛 판(옛 렌더 주소)을 그대로 보였다 —
+      //   끝난 순간 판정표·노출 카드를 다시 읽는다(주소는 편집마다 새 public_id라 캐시 문제가 아니다).
+      if (kind === 'polish' && diagRunning.polish) {
+        diagRunning.polish = false;
+        if (window.kgpDetailPlanRefresh) window.kgpDetailPlanRefresh();
+        load();
+      }
     });
   }
   function diagStart(kind, b) {
@@ -159,7 +166,7 @@
       b.disabled = false;
       var el = body.querySelector('[data-role=' + role + ']');
       if (el) { el.textContent = (t && (t.line || t.error)) || '응답이 없어요'; el.hidden = false; }
-      if (t && t.ok && t.running) diagTimers[kind] = setTimeout(function () { diagLine(kind, 1); }, 4000);
+      if (t && t.ok && t.running) { diagRunning[kind] = true; diagTimers[kind] = setTimeout(function () { diagLine(kind, 1); }, 4000); }
     });
   }
   function show(d) { render(d); pollCheck(d, 0); if (d && d.diag_ok) { diagLine('ocr', 0); diagLine('polish', 0); } }
