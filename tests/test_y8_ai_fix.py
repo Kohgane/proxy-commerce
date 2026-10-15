@@ -33,8 +33,8 @@ class FakeAnthropic:
         self.calls = []
         self.answers = answers or {}
 
-    def __call__(self, model, system, prompt, max_tokens, timeout):
-        self.calls.append({"model": model, "prompt": prompt})
+    def __call__(self, model, system, prompt, max_tokens, timeout, images=None):
+        self.calls.append({"model": model, "prompt": prompt, "images": images})
         if "옵션 값(중국어 등 원문)" in prompt:
             ans = self.answers.get("option", {"values": {"泡泡粉": "버블 핑크", "藏蓝色": "네이비"}})
         elif "네이버 카테고리" in prompt:

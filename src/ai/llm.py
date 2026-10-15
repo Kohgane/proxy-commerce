@@ -104,11 +104,15 @@ def _log(provider: str, model: str, tin: int, tout: int, usd: Decimal, purpose: 
                 purpose or "-", "" if ok else f" fail={why[:120]}")
 
 
-def _call_anthropic(model: str, system: str, prompt: str, max_tokens: int, timeout: float) -> dict:
+def _call_anthropic(model: str, system: str, prompt: str, max_tokens: int, timeout: float,
+                    images: Optional[List[str]] = None) -> dict:
     import anthropic
     client = anthropic.Anthropic(api_key=_env("ANTHROPIC_API_KEY"), timeout=timeout, max_retries=1)
+    content: Any = prompt
+    if images:                                    # Y11-O: 사진 주소(공개 URL)를 같이 — 카테고리 고르기
+        content = [{"type": "image", "source": {"type": "url", "url": u}} for u in images] + [{"type": "text", "text": prompt}]
     kw: Dict[str, Any] = {"model": model, "max_tokens": int(max_tokens),
-                          "messages": [{"role": "user", "content": prompt}]}
+                          "messages": [{"role": "user", "content": content}]}
     if system:
         kw["system"] = system
     # Sonnet 5 계열은 effort를 받는다(짧은 수정 — 낮게). Haiku 4.5는 effort가 없다(넣으면 400).
@@ -121,10 +125,14 @@ def _call_anthropic(model: str, system: str, prompt: str, max_tokens: int, timeo
             "tokens_out": int(getattr(u, "output_tokens", 0) or 0), "stop_reason": getattr(resp, "stop_reason", "")}
 
 
-def _call_openai(model: str, system: str, prompt: str, max_tokens: int, timeout: float, json_mode: bool) -> dict:
+def _call_openai(model: str, system: str, prompt: str, max_tokens: int, timeout: float, json_mode: bool,
+                 images: Optional[List[str]] = None) -> dict:
     import requests as _req
     from src.seller_console.ai.translator import _post_with_429_retry
-    msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+    content: Any = prompt
+    if images:
+        content = [{"type": "text", "text": prompt}] + [{"type": "image_url", "image_url": {"url": u}} for u in images]
+    msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": content}]
     payload: Dict[str, Any] = {"model": model, "messages": msgs, "temperature": 0.2, "max_tokens": int(max_tokens)}
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
@@ -139,8 +147,11 @@ def _call_openai(model: str, system: str, prompt: str, max_tokens: int, timeout:
 
 
 def complete(prompt: str, *, system: str = "", size: str = "large", max_tokens: int = 2000, purpose: str = "",
-             timeout: float = 30.0, json_mode: bool = False, providers: Optional[List[str]] = None) -> dict:
+             timeout: float = 30.0, json_mode: bool = False, providers: Optional[List[str]] = None,
+             images: Optional[List[str]] = None) -> dict:
     """한 번 부른다 — Anthropic → OpenAI 순. 실패해도 예외 없이 `{"text": "", "error", "attempts"}`.
+
+    Y11-O: 같은 공급자가 **빈 응답**(글자 0)을 주면 그 공급자에 한 번 더 묻는다(`retried_empty`) — 그래도 비면 다음 공급자.
 
     성공: `{"text", "provider", "model", "tokens_in", "tokens_out", "usd", "attempts"}`.
     """
@@ -161,18 +172,26 @@ def complete(prompt: str, *, system: str = "", size: str = "large", max_tokens: 
             g = _guard()
             if not g.can_spend(estimated_cost_usd=est):
                 raise BudgetExceededError(g.summary())
-            r = (_call_anthropic(model, system, prompt, max_tokens, timeout) if prov == "anthropic"
-                 else _call_openai(model, system, prompt, max_tokens, timeout, json_mode))
-            usd = cost_usd(model, r["tokens_in"], r["tokens_out"])
-            try:
-                g.record(cost_usd=usd, provider=prov, tokens=r["tokens_in"] + r["tokens_out"], note=purpose or "llm")
-            except Exception as exc:                                  # noqa: BLE001 — 기록 실패는 호출 실패가 아니다
-                logger.warning("[AI] 비용 기록 실패: %s", exc)
-            _log(prov, model, r["tokens_in"], r["tokens_out"], usd, purpose)
+            for _try in range(2):
+                ikw = {"images": images} if images else {}
+                r = (_call_anthropic(model, system, prompt, max_tokens, timeout, **ikw) if prov == "anthropic"
+                     else _call_openai(model, system, prompt, max_tokens, timeout, json_mode, **ikw))
+                usd = cost_usd(model, r["tokens_in"], r["tokens_out"])
+                try:
+                    g.record(cost_usd=usd, provider=prov, tokens=r["tokens_in"] + r["tokens_out"], note=purpose or "llm")
+                except Exception as exc:                              # noqa: BLE001 — 기록 실패는 호출 실패가 아니다
+                    logger.warning("[AI] 비용 기록 실패: %s", exc)
+                _log(prov, model, r["tokens_in"], r["tokens_out"], usd, purpose)
+                if r["text"] or _try:
+                    break
+                attempts.append({"provider": prov, "model": model, "ok": False, "error": "빈 응답 — 한 번 더",
+                                 "status": None})
+                logger.info("[AI] 빈 응답 — 같은 공급자에 한 번 더 provider=%s purpose=%s", prov, purpose or "-")
             if not r["text"]:
                 raise ValueError("빈 응답" + (f"(stop_reason={r.get('stop_reason')})" if r.get("stop_reason") else ""))
             attempts.append({"provider": prov, "model": model, "ok": True})
-            return {**r, "provider": prov, "model": model, "usd": float(usd), "attempts": attempts}
+            return {**r, "provider": prov, "model": model, "usd": float(usd), "attempts": attempts,
+                    "retried_empty": any(a.get("error") == "빈 응답 — 한 번 더" for a in attempts)}
         except Exception as exc:                                      # noqa: BLE001 — 다음 공급자로
             if first_exc is None:
                 first_exc = exc

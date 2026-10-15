@@ -131,43 +131,80 @@ def fields(extra: dict) -> Dict[str, str]:
     }
 
 
+def _whole_prop(e: dict) -> bool:
+    """장 전체가 소품(소품 글자뿐 · 사진이 통째 돌아간 틀) — 위험 검사 대상이 아니다(Y11-O: 「참고」만)."""
+    from src.services import prop_text as PT
+    return bool(e.get("prop_only") or str(e.get("box_frame") or "") in PT.ROTATED_FRAMES)
+
+
+def _outbound_excluded(kind: str, e: dict, originals: List[str]) -> bool:
+    """등록에 안 나가는 상세 장(판촉·쿠폰·주소 제외 등) — 게이트 대상 아님(Y11-O: 「나가지 않는 그림에 보류를 걸지 않는다」).
+    「빼고 등록」으로 뺀 장(risk_exclude)은 위에서 이미 걸러진다."""
+    if kind != "detail":
+        return False
+    try:
+        from src.services.detail_image_plan import verdict
+        i = int(e.get("idx", -1))
+        orig = originals[i] if 0 <= i < len(originals) else ""
+        return verdict(e, orig)["use"] == "excluded"
+    except Exception:                                              # noqa: BLE001
+        return False
+
+
 def _images(extra: dict, *, props: Optional[list] = None):
-    """`[(kind, idx, 이름, 글자)]` — 번역 기록이 있는 장(OCR·원문·번역문).
+    """`[(kind, idx, 이름, 글자)]` — 번역 기록이 있는 장(OCR·원문·번역문) 중 **등록에 나가는 장**만.
 
     Y11-G(오너): 소품(책등·책 표지·포장) 글자는 글자가 아니다 — 위험 검사에서 빼고, `props`가 주어지면 거기에
-    `(kind, idx, 이름, 소품 글자)`로 따로 담는다(상표가 걸려도 「참고」 한 줄). 책·포스터 상품(반례)이면 빼지 않는다."""
+    `(kind, idx, 이름, 소품 글자)`로 따로 담는다(상표가 걸려도 「참고」 한 줄). 책·포스터 상품(반례)이면 빼지 않는다.
+    Y11-O: 장 전체가 소품이면 그 장은 통째로 검사 밖(예전엔 소품 글자를 한 줄로 이어 붙여 빼려다 못 빼서 상표가 다시 셌다).
+    소품 상자는 상자마다(원문·번역문 각각) 뺀다."""
     from src.services.detail_image_plan import entry_text
     from src.services import prop_text as PT
     off = PT.exempt(extra)
+    originals = [u for u in ((extra or {}).get("detail_images") or []) if u]
+    known = [] if off else PT.echo_texts(extra)
     out = []
     for key, kind, lab in (("images_ko", "gallery", "사진"), ("detail_images_ko", "detail", "상세")):
         for e in (extra or {}).get(key) or []:
-            if isinstance(e, dict) and e.get("idx") is not None and not e.get("risk_exclude"):   # 이미 뺀 장은 안 센다
-                t = entry_text(e)
-                nm = f"{lab} {int(e['idx']) + 1}"
-                pt = "" if off else _prop_text(e, t)
+            if not (isinstance(e, dict) and e.get("idx") is not None) or e.get("risk_exclude"):   # 이미 뺀 장은 안 센다
+                continue
+            if _outbound_excluded(kind, e, originals):
+                continue
+            t = entry_text(e)
+            nm = f"{lab} {int(e['idx']) + 1}"
+            if not off and _whole_prop(e):
+                pt = (str(e.get("prop_text") or "") + " " + t).strip()
                 if pt and props is not None:
                     props.append((kind, int(e["idx"]), nm, pt))
-                if pt:
-                    for frag in sorted({x for x in re.split(r"\s{2,}|\n", pt) if x.strip()} | {pt}, key=len, reverse=True):
-                        t = t.replace(frag, " ")
-                for frag in sorted(_risk_erased(e), key=len, reverse=True):       # Y11-J6: 「빼고 등록」으로 지운 상자 글자
-                    t = t.replace(frag, " ")
-                if t.strip():
-                    out.append((kind, int(e["idx"]), nm, t))
+                continue
+            frags = [] if off else prop_frags(e, known)
+            if frags and props is not None:
+                props.append((kind, int(e["idx"]), nm, " ".join(dict.fromkeys(frags))))
+            t = _minus(t, frags)                                  # 소품 상자 글자는 상자 수만큼만 뺀다(같은 낱말이 소품 밖에도 있으면 남는다)
+            for frag in sorted(_risk_erased(e), key=len, reverse=True):       # Y11-J6: 「빼고 등록」으로 지운 상자 글자
+                t = t.replace(frag, " ")
+            if t.strip():
+                out.append((kind, int(e["idx"]), nm, t))
     return out
 
 
-def _prop_text(e: dict, text: str) -> str:
-    """그 장의 소품 글자 — 장 전체가 소품(소품 글자뿐 · 사진이 통째 돌아간 틀)이면 장의 글자 전부, 아니면 소품 표시 상자의 글자."""
+def _minus(text: str, frags: List[str]) -> str:
+    """글자에서 조각을 **조각 하나에 한 번씩**만 뺀다(긴 것부터) — 소품 상자 「Zaha Hadid」 하나가 본문의 「Zaha Hadid」까지 지우지 않게."""
+    for f in sorted(frags or [], key=len, reverse=True):
+        text = text.replace(f, " ", 1)
+    return text
+
+
+def prop_frags(e: dict, known: Optional[List[str]] = None) -> List[str]:
+    """소품 상자의 글자 — 상자마다 원문·번역문 따로(이어 붙이지 않는다: 이어 붙인 줄은 장 글자 어디에도 없다).
+    소품 상자 = 소품 표시(`prop`) 또는 같은 상품의 통째 소품 사진 글자와 같은 작은 상자(`prop_text.echoes`)."""
     from src.services import prop_text as PT
-    if e.get("prop_only") or str(e.get("box_frame") or "") in PT.ROTATED_FRAMES:
-        return str(e.get("prop_text") or "") + " " + text if e.get("prop_only") else text
+    size = e.get("box_size") or e.get("size")
     frags = []
     for b in e.get("boxes") or []:
-        if isinstance(b, dict) and b.get("prop"):
-            frags += [str(b.get("src") or ""), str(b.get("tgt") or "")]
-    return " ".join(f for f in frags if f.strip())
+        if isinstance(b, dict) and (b.get("prop") or (known and PT.echoes(b, size, known))):
+            frags += [str(b.get(k) or "").strip() for k in ("src", "tgt")]
+    return [f for f in frags if f]
 
 
 # ── 검사 ───────────────────────────────────────────────────────────────────────────────────
@@ -187,12 +224,81 @@ def _trademark_entries() -> List[dict]:
     return ents
 
 
+_LATIN = re.compile(r"[A-Za-z]")
+_MARKS = re.compile(r"[™®©]")
+
+
+def _brand_names() -> set:
+    """브랜드 목록에 등재된 이름 — 상표 표(risk_tokens·ko_polish 상표) + 쿠팡 브랜드 표."""
+    out = set()
+    for e in _trademark_entries():
+        out |= {str(n) for n in e.get("names") or [] if n}
+    try:
+        p = Path(__file__).resolve().parents[1] / "uploaders" / "coupang_brands.json"
+        d = json.loads(p.read_text(encoding="utf-8"))
+        b = d.get("brands") if isinstance(d, dict) else None
+        if isinstance(b, dict):
+            out |= {str(k) for k in b} | {str(v) for v in b.values() if isinstance(v, str)}
+        elif isinstance(b, list):
+            out |= {str(x) for x in b}
+    except Exception:                                              # noqa: BLE001
+        pass
+    return out
+
+
+def _common_nouns() -> set:
+    """한글 보통명사(브랜드 아님) — risk_tokens.json `blacklist_common` + 네이버 카테고리 이름 칸(「향수」「캔들」…)."""
+    out = {str(x) for x in tokens().get("blacklist_common") or []}
+    try:
+        from src.uploaders import naver_categories as _nc
+        leaves = (_nc.tree() or {}).get("leaves") or {}
+    except Exception:                                              # noqa: BLE001 — 트리가 없으면 표만
+        leaves = {}
+    if leaves:
+        if _common_cache.get("id") != id(leaves):
+            segs = set()
+            for whole in leaves.values():
+                for seg in str(whole).split(">"):
+                    segs |= {w for w in re.split(r"[/·,\s]+", seg) if w}
+            _common_cache.update(id=id(leaves), segs=segs)
+        out |= _common_cache["segs"]
+    return out
+
+
+_common_cache: dict = {}
+
+
+def brand_token(term: str, brands: Optional[set] = None, common: Optional[set] = None) -> bool:
+    """Y11-O(오너): 블랙리스트 낱말 중 **브랜드로 볼 것** — 영문(라틴 글자)·™®·브랜드 표 등재, 그리고 한글 고유명사(음역 브랜드
+    「아디다스」「애플」). 한글 보통명사 단독(「향수」「캔들」 — `blacklist_common` 표·네이버 카테고리 이름 칸)은 브랜드가 아니다.
+    사진 속 「고급 광석 향수*1」(쿠폰 증정품)에 브랜드 보류를 걸지 않는다."""
+    t = str(term or "").strip()
+    if not t:
+        return False
+    if _LATIN.search(t) or _MARKS.search(t):
+        return True
+    if t in (brands if brands is not None else _brand_names()):
+        return True
+    return t not in (common if common is not None else _common_nouns())
+
+
+def brand_filter(terms) -> List[str]:
+    brands, common = _brand_names(), _common_nouns()
+    return [t for t in terms or [] if brand_token(t, brands, common)]
+
+
 def _blacklist() -> List[str]:
+    """등록 금지 브랜드(COUPANG_BLACKLIST85 — 소싱 판정과 같은 로더) 중 브랜드 낱말만(`brand_token`)."""
     try:
         from src.pipeline.coupang_replicate import load_blacklist85
-        return [str(x) for x in (load_blacklist85().get("terms") or []) if str(x).strip()]
+        raw = [str(x).strip() for x in (load_blacklist85().get("terms") or []) if str(x).strip()]
     except Exception:                                              # noqa: BLE001
         return []
+    keep = brand_filter(raw)
+    if len(keep) != len(raw):
+        logger.info("[리스크] 블랙리스트 %d개 중 보통명사 %d개는 브랜드 검사에서 뺌(%s)", len(raw), len(raw) - len(keep),
+                    ", ".join(t for t in raw if t not in keep)[:200])
+    return keep
 
 
 def _hit(key, cat, label, grade, names, case, where_text, imgs, why="") -> Optional[dict]:
@@ -280,9 +386,9 @@ def scan(extra: dict, *, pending_images: int = 0) -> dict:
         if e["label"] in allow:
             continue
         for _k, _i, nm, txt in props:
-            for f in _find(txt, e.get("names") or [], bool(e.get("case"))):
-                if (nm, f) not in seen:
-                    seen.add((nm, f))
+            for f in _find(txt, e.get("names") or [], bool(e.get("case")))[:1]:      # 한 장에 한 상표 한 줄(원문·번역문 둘 다 세지 않는다)
+                if (nm, e["label"]) not in seen:
+                    seen.add((nm, e["label"]))
                     notes.append({"label": e["label"], "found": f, "where": nm, "line": note_line(f, nm)})
     return {"hits": hits, "notes": notes, "waiting": int(pending_images or 0),
             "skip": (ex.get("risk_skip") or {}) if isinstance(ex.get("risk_skip"), dict) else {}}
@@ -298,12 +404,27 @@ def where_line(h: dict) -> str:
     return " · ".join(parts)
 
 
+def skip_hint(sc: dict) -> str:
+    """Y11-O — 「등록 안 함」 사유였던 상표가 지금 규칙으론 소품 「참고」뿐(걸린 항목 없음)이면 그렇다고 한 줄. 결정은 오너가 푼다."""
+    reason = str(((sc or {}).get("skip") or {}).get("reason") or "")
+    if not reason:
+        return ""
+    live = {h["label"] for h in sc.get("hits") or []}
+    noted = sorted({n["label"] for n in sc.get("notes") or [] if n["label"] not in live
+                    and (n["label"] in reason or n["found"] in reason)})
+    if not noted:
+        return ""
+    return (f"보류 사유였던 「{'·'.join(noted)}」는 지금 규칙으로는 소품(책 표지 등) 글자라 「참고」뿐이에요 — "
+            "「보류 풀기」를 누르면 등록할 수 있어요.")
+
+
 def holds(sc: dict) -> List[dict]:
     """사전검증 보류 줄 — 결정 안 된 차단·보류, 「등록 안 함」, 이미지 검사 대기."""
     out = []
     if (sc or {}).get("skip"):
-        out.append({"short": "등록 보류: " + str(sc["skip"].get("reason") or "직접 보류"), "fix": "risk_skip", "code": "risk_skip",
-                    "line": "「등록 안 함」으로 보류한 상품이에요 — 다시 올리려면 위험 블록에서 결정을 바꾸세요."})
+        reason = str(sc["skip"].get("reason") or "")
+        line = "「등록 안 함」으로 보류한 상품이에요 — 다시 올리려면 위험 블록에서 결정을 바꾸세요."
+        out.append({"short": "등록 보류: " + (reason or "직접 보류"), "fix": "risk_skip", "code": "risk_skip", "line": line})
     for h in (sc or {}).get("hits") or []:
         if h["grade"] == "caution":
             continue
@@ -358,6 +479,8 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False) -> dict:
     for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
         for e in ex.get(key) or []:
             if isinstance(e, dict) and (kind, int(e.get("idx", -1))) in want:
+                if _whole_prop(e) and not _prop_off(ex):
+                    continue                     # Y11-O: 소품뿐인 사진은 절대 빼지 않는다(상표가 걸려도 「참고」 — 오너 2026-10-15)
                 # Y11-J6(오너 2026-10-14): 사진째 빼지 않고 **그 낱말이 든 글자 상자만 지운다**(빈칸 렌더 = 새 편집본).
                 #   오너가 「빼고 등록」을 누른 것이 곧 사람 지시다(자동 픽셀 변경 아님 — Y11-E). 상자를 못 찾거나 편집을 못 쓰면
                 #   예전처럼 사진째 뺀다(사유에 왜 못 지웠는지).
@@ -372,6 +495,42 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False) -> dict:
                 else:
                     e["risk_exclude"] = f"{label} — 사진째 뺌({er.get('why') or '상자를 지우지 못함'})"
     return ex
+
+
+def _prop_off(ex: dict) -> bool:
+    from src.services import prop_text as PT
+    return PT.exempt(ex)
+
+
+def heal_prop_excludes(extra: dict) -> List[str]:
+    """Y11-O — 예전 「빼고 등록」(자동 적용 포함)이 건 사진 제외 중 **지금 규칙으로 걸 이유가 없는 것**을 푼다. 푼 사진 이름 목록.
+
+    - 소품뿐인 사진(거꾸로·옆으로 돌린 틀 · 소품 글자뿐) — 위험 검사 대상이 아니다(소품 글자 = 「참고」만).
+    - 그 낱말이 소품 상자에만 있던 사진(VRSUK 상세 25 책등 「Zaha Hadid」) — 소품 상자를 빼고 다시 보면 낱말이 없다.
+    상품이 책·포스터(반례)면 손대지 않는다. 사람이 「빼고 등록」해 상자를 지운 편집본(risk_erase)은 건드리지 않는다."""
+    if _prop_off(extra):
+        return []
+    from src.services.detail_image_plan import entry_text
+    from src.services import prop_text as PT
+    names, cases = [], []
+    for d in ((extra or {}).get("risk_decisions") or {}).values():
+        if isinstance(d, dict) and d.get("action") == "strip" and d.get("names"):
+            names.append(list(d["names"]))
+            cases.append(bool(d.get("case")))
+    known = PT.echo_texts(extra)
+    out = []
+    for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세")):
+        for e in (extra or {}).get(key) or []:
+            if not (isinstance(e, dict) and str(e.get("risk_exclude") or "").startswith("위험 —")):
+                continue
+            if not _whole_prop(e):
+                t = _minus(entry_text(e), prop_frags(e, known))
+                if not names or any(_find(t, n, c) for n, c in zip(names, cases)):
+                    continue                     # 소품 밖에 아직 그 낱말이 있다(또는 무슨 낱말로 뺐는지 모름) — 그대로 둔다
+            e.pop("risk_exclude")
+            e["risk_exclude_healed"] = datetime.now(timezone.utc).isoformat()
+            out.append(f"{lab} {int(e.get('idx', 0)) + 1}")
+    return out
 
 
 def strip_image_line(ex: dict, h: Optional[dict]) -> str:
@@ -455,13 +614,16 @@ def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = ""
         return {"ok": False, "error": "차단 항목은 「그래도 등록」할 수 없어요 — 빼고 등록하거나 등록하지 마세요."}
     if action not in ("strip", "allow"):
         return {"ok": False, "error": "알 수 없는 선택이에요."}
+    changed = True
     if action == "strip":
+        before = json.dumps(ex, ensure_ascii=False, sort_keys=True, default=str)
         strip_extra(ex, h, erase_pixels=True)
+        changed = json.dumps(ex, ensure_ascii=False, sort_keys=True, default=str) != before
     dec = ex.setdefault("risk_decisions", {})
     dec[key] = {"action": action, "at": now, "by": by, "found": h["found"][:6], "label": h["label"], "cat": h["cat"],
                 "names": list(h.get("names") or []), "case": bool(h.get("case"))}
     _learn(key, action, h)
-    return {"ok": True, "hit": h}
+    return {"ok": True, "hit": h, "changed": changed}
 
 
 def _auto_strippable(key: str) -> bool:
@@ -523,7 +685,8 @@ def enforce(pd: dict, extra: dict) -> dict:
     사진은 몸통 이미지 배열이 저장본(`risk_exclude`)으로 만들어지므로 여기선 글자만."""
     for d in ((extra or {}).get("risk_decisions") or {}).values():
         if isinstance(d, dict) and d.get("action") == "strip" and d.get("names"):
-            h = {"names": d["names"], "case": bool(d.get("case")), "images": [], "cat": d.get("cat", ""), "found": d.get("found") or []}
+            names = brand_filter(d["names"]) if d.get("cat") == "브랜드 블랙리스트" else d["names"]   # Y11-O: 보통명사는 다시 안 뺀다
+            h = {"names": names, "case": bool(d.get("case")), "images": [], "cat": d.get("cat", ""), "found": d.get("found") or []}
             strip_extra(pd, h)
     return pd
 
@@ -544,4 +707,4 @@ def card(sc: dict) -> dict:
         rows.append({k: h.get(k) for k in ("key", "cat", "label", "grade", "grade_label", "found", "decided", "can_allow", "why")}
                     | {"where_line": where_line(h)})
     return {"count": len(rows), "hits": rows, "waiting": sc.get("waiting") or 0, "skip": sc.get("skip") or {},
-            "notes": [n["line"] for n in sc.get("notes") or []]}
+            "notes": [n["line"] for n in sc.get("notes") or []], "skip_hint": skip_hint(sc)}

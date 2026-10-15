@@ -89,16 +89,17 @@ def test_the_2337_failure_no_longer_offers_food_babies_sports(monkeypatch):
     assert NC.hold({"title_ko": PLEATS})["code"] == NC.REASON_UNSET
 
 
-def test_candidates_all_different_tops_are_not_offered(monkeypatch):
-    """후보 3개가 전부 다른 1단계면 후보 자체를 내지 않는다 → category_unset."""
+def test_candidates_all_different_tops_go_to_ai_pick(monkeypatch):
+    """후보 3개가 전부 다른 1단계면 — Y11-O(오너 2026-10-15): 실패로 두지 않고 후보를 남겨 AI가 하나 고른다(예전 Y7-E는 후보를 버렸다)."""
     _with_coupang_paths(monkeypatch, {})
     monkeypatch.setattr(NC, "rank", lambda cp, title="", limit=3: [
         {"id": "1", "name": "식품>통조림/캔>세트", "score": 0.4}, {"id": "2", "name": "출산/육아>신생아의류>세트", "score": 0.4},
         {"id": "3", "name": "스포츠/레저>등산>등산의류>세트", "score": 0.4}])
     s = NC.compute_suggestion({"title_ko": PLEATS})
-    assert s["candidates"] == [] and s["id"] == "" and "1단계부터 갈려요" in s["why"]
+    assert [c["id"] for c in s["candidates"]] == ["1", "2", "3"] and s["id"] == "" and s["split"]
+    assert "1단계부터 갈려요" in s["why"] and "AI가" in s["why"]
     h = NC.hold({"title_ko": PLEATS})
-    assert h["code"] == NC.REASON_UNSET
+    assert h["code"] == NC.REASON_CANDIDATES and len(h["candidates"]) == 3
 
 
 def test_same_top_candidates_still_offered(monkeypatch):

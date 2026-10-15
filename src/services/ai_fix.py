@@ -154,7 +154,8 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
         except Exception:
             h = {}
         if h.get("candidates"):
-            tasks.append({"kind": "naver_category", "markets": mk, "candidates": h["candidates"][:5]})
+            tasks.append({"kind": "naver_category", "markets": mk, "candidates": h["candidates"][:5],
+                          "images": _rep_images(pd)})
     # c 상품명(표시광고·금지어·원문)은 `reject_autofix`(#886)가 같은 잡에서 먼저 고친다 — 여기서 또 묻지 않는다(카드 줄·되돌리기만 합친다)
     # e 고시정보(원산지 등)
     mk = _held(results, detail="고시정보 실값 미확인")
@@ -193,6 +194,41 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
     return tasks
 
 
+def _rep_images(pd: dict) -> List[str]:
+    """대표 사진 1장(카테고리 고르기용 — Y11-O 「상품명·이미지로」). http(s) 주소만."""
+    for k in ("images_ko", "images"):
+        for x in pd.get(k) or []:
+            u = x.get("url") if isinstance(x, dict) else x
+            if isinstance(u, str) and u.startswith(("http://", "https://")):
+                return [u]
+    return []
+
+
+def record_fixed_category(pd: dict, ex: dict, results) -> bool:
+    """Y11-O — 고정 매핑표로 정한 네이버 카테고리를 수집 기록에 적고 「AI가 고쳤어요 — 카테고리」 줄에 올린다(AI 호출 없음).
+    스마트스토어를 검증했을 때만 · 오너가 지정했거나 되돌렸으면 손대지 않는다. 적었으면 True."""
+    if not any(str(_res_get(r, "market") or "").startswith("smartstore") for r in results or []):
+        return False
+    if str(ex.get("naver_category_id") or "").strip() or _skip(ex, "naver_category"):
+        return False
+    try:
+        from src.uploaders import naver_categories as _nc
+        cid, src = _nc.pick(pd)
+        if src != "map" or not cid:
+            return False
+        s = _nc.suggest(pd)
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[AI 자동수정] 고정 매핑표 기록 실패: %s", exc)
+        return False
+    alts = " · ".join(a.get("name", "").split(">")[-1] for a in s.get("alts") or [] if a.get("name"))
+    ex["naver_category_id"] = cid
+    pd["naver_category_id"] = cid
+    pd["naver_category_auto"] = {"after": cid, "provider": "map"}
+    _mark(ex, "naver_category", "naver_category", f"{s.get('name') or cid}" + (f" (다른 후보: {alts})" if alts else ""),
+          "", cid, f"고정 매핑표 — 쿠팡 「{s.get('coupang') or ''}」", {"provider": "map", "model": ""})
+    return True
+
+
 # ── AI 호출 ────────────────────────────────────────────────────────────────────────────────────
 
 _SYSTEM = ("당신은 해외 구매대행 상품을 한국 오픈마켓(쿠팡·네이버 스마트스토어)에 올리는 등록 담당자입니다. "
@@ -223,7 +259,8 @@ def _prompt(task: dict, pd: dict) -> Tuple[str, str]:
                 + '\n\n답 형식: {"values": {"원문 값": "한국어 값", ...}}', "small")
     if k == "naver_category":
         cands = "\n".join(f"- {c['id']}: {c.get('name')}" for c in task["candidates"])
-        return (_context(pd) + "\n\n이 상품에 가장 맞는 네이버 카테고리를 아래 후보 중 **하나만** 고르세요(후보 밖 ID 금지).\n"
+        photo = "첨부한 대표 사진과 " if task.get("images") else ""
+        return (_context(pd) + f"\n\n{photo}상품명을 보고 이 상품에 가장 맞는 네이버 카테고리를 아래 후보 중 **하나만** 고르세요(후보 밖 ID 금지).\n"
                 + cands + '\n\n답 형식: {"id": "후보 ID", "why": "한 줄 이유(30자 이내)"}', "small")
     if k == "notice":
         spec = "\n".join(f"- {a}: {b}" for sp in (pd.get("detail_specs") or [])[:20]
@@ -255,8 +292,12 @@ def _prompt(task: dict, pd: dict) -> Tuple[str, str]:
 def _call(task: dict, pd: dict) -> dict:
     from src.ai import llm
     prompt, size = _prompt(task, pd)
+    imgs = list(task.get("images") or [])
     r = llm.complete(prompt, system=_SYSTEM, size=size, max_tokens=1200, purpose="ai_fix:" + task["kind"],
-                     timeout=20.0, json_mode=True)
+                     timeout=20.0, json_mode=True, images=imgs or None)
+    if imgs and not r.get("text") and not r.get("no_key"):           # 사진을 못 읽었으면(주소 막힘 등) 상품명만으로 한 번 더
+        r = llm.complete(prompt, system=_SYSTEM, size=size, max_tokens=1200, purpose="ai_fix:" + task["kind"],
+                         timeout=20.0, json_mode=True)
     r["json"] = llm.parse_json(r.get("text") or "") if r.get("text") else None
     return r
 
@@ -297,7 +338,10 @@ def _apply(task: dict, ans: dict, pd: dict, ex: dict, meta: dict) -> List[str]:
         before = str(ex.get("naver_category_id") or "")
         ex["naver_category_id"] = cid
         pd["naver_category_id"] = cid
-        _mark(ex, "naver_category", k, f"{cand.get('name')}", before, cid, str(ans.get("why") or ""), meta)
+        pd["naver_category_auto"] = {"after": cid, "provider": meta.get("provider") or "ai"}
+        others = " · ".join(str(c.get("name") or c["id"]) for c in task["candidates"] if str(c["id"]) != cid)[:160]
+        _mark(ex, "naver_category", k, f"{cand.get('name')}" + (f" (다른 후보: {others})" if others else ""),
+              before, cid, str(ans.get("why") or ""), meta)
         done.append("naver_category")
     elif k == "notice":
         origin = ans.get("origin")
@@ -380,6 +424,8 @@ def overlay(pd: dict, ex: dict) -> dict:
     화면은 사전검증 전에 그린 값을 들고 있다(AI가 고친 뒤 새로고침 안 함) — 저장본이 정본. 단 셀러가 그 칸을
     AI 뒤에 손으로 바꿨으면(화면 값이 AI 전 값도 AI 값도 아님) 셀러 값을 둔다.
     """
+    if "naver_category" in blocked(ex):
+        pd["naver_category_no_auto"] = True          # Y11-O: 되돌린 카테고리를 고정 매핑표·쿠팡 예측이 다시 채우지 않게
     fx = fixes_of(ex)
     rev = {k: v for k, v in blocked(ex).items() if isinstance(v, dict) and "after" in v}
     if not fx and not rev:
@@ -395,6 +441,8 @@ def overlay(pd: dict, ex: dict) -> dict:
         elif key == "naver_category":
             if str(pd.get("naver_category_id") or "") in ("", str(before or ""), str(after)):
                 pd["naver_category_id"] = after
+                # Y11-O: 출처(고정 매핑표·AI) — 카드가 「카테고리 지정」(오너)과 구분해 「카테고리 자동」으로
+                pd["naver_category_auto"] = {"after": after, "provider": f.get("provider") or ""}
         elif key == "notice:origin":
             pd["origin"] = pd.get("origin") or after
         elif key.startswith("coupang_axis:"):

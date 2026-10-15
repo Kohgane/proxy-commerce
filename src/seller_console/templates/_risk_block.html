@@ -15,7 +15,8 @@ window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
         : (cautionOnly ? ' <span class="kgp-risk-sub">— 등록은 그대로 진행돼요</span>' : ' <span class="kgp-risk-sub">— 다 골랐어요</span>')) + '</div>';
   if (risk.skip && risk.skip.reason) {
     h += '<div class="kgp-risk-skip" data-role="risk-skip"><span class="pc-badge pc-badge-danger">등록 보류: ' + esc(risk.skip.reason) + '</span>' +
-         ' <button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="" data-action="reset">보류 풀기</button></div>';
+         ' <button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="" data-action="reset">보류 풀기</button>' +
+         (risk.skip_hint ? '<div class="kgp-risk-why" data-role="risk-skip-hint">' + esc(risk.skip_hint) + '</div>' : '') + '</div>';
   }
   hits.forEach(function (x) {
     var tone = x.grade === 'block' ? 'pc-badge-danger' : (x.grade === 'hold' ? 'pc-badge-off' : 'pc-badge-caution');
