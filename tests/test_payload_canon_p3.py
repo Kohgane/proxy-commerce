@@ -35,8 +35,8 @@ def _payload(monkeypatch):
 def test_item_sale_price_present(monkeypatch):
     it = _payload(monkeypatch)["items"][0]
     assert it["salePrice"] == 48500                       # 7차 거부: 옵션 판매가 누락
-    assert it["originalPrice"] == int(round(48500 * 1.15 / 100) * 100)   # 정가 15% 상향 반올림
-    assert it["originalPrice"] > it["salePrice"]
+    # Y11-U(오너 2026-10-16): 정가 = 판매가 — 예전 정본(×1.15)은 쿠팡에 근거 없는 13% 할인을 보였다(표시광고 위험)
+    assert it["originalPrice"] == it["salePrice"]
 
 
 def test_item_canonical_fields(monkeypatch):

@@ -37,6 +37,9 @@ _CHIP = dict(CHIP_LABELS)
 _ORDER = {m: i for i, (m, _l) in enumerate(CHIP_LABELS)}
 
 COUPANG_WING_MODIFY = "https://wing.coupang.com/tenants/seller-web/vendor-inventory/modify?vendorInventoryId={sid}"
+#: Y11-U — 편집 링크가 첫 화면으로 떨어질 때(로그인·앱 가로채기) 바로 그 상품을 찾는 길(오너 스크린샷 실측 형식 · reject_watch와 같은 주소).
+#:   Wing 앱(쿠팡 윙 판매자센터) 상품 수정 딥링크는 공개 문서에서 찾지 못했다 — 웹 편집 화면으로 연다.
+COUPANG_WING_SEARCH = "https://wing.coupang.com/vendor-inventory/list?searchKeywords={sid}"
 NAVER_SELLER_HOME = "https://sell.smartstore.naver.com/"
 ELEVENST_SELLER_HOME = "https://soffice.11st.co.kr/"
 
@@ -48,7 +51,7 @@ NAVER_STATES = {
 }
 #: 칩 색(M7): 승인대기 회색 · 승인완료 초록 · 반려 빨강 · 실패(조회 실패·확인 못 함) 주황
 CHIP_TONE = {"approved": "ok", "pending": "wait", "saved": "wait", "rejected": "bad", "deleted": "bad",
-             "unknown": "fail", "unsupported": "wait", "": "wait"}
+             "unknown": "fail", "unsupported": "wait", "reviewing": "wait", "": "wait"}
 
 
 def chip_label(market: str) -> str:
@@ -136,7 +139,8 @@ def _coupang(rec: dict) -> dict:
     up = _coupang_up_for(rec["account"])
     st = up.review_status(sid)
     st["manage_url"] = COUPANG_WING_MODIFY.format(sid=sid)
-    st["manage_label"] = "Wing에서 열기"
+    st["manage_label"] = "Wing 상품 수정"
+    st["wing_search_url"] = COUPANG_WING_SEARCH.format(sid=sid)
     st["live_line"] = live_line(st.get("live"))
     return st
 
@@ -272,7 +276,7 @@ def db_row(rec: dict) -> dict:
     m = rec["market"]
     manage = ""
     if m.startswith("coupang") and rec.get("product_id"):
-        manage, mlabel = COUPANG_WING_MODIFY.format(sid=rec["product_id"]), "Wing에서 열기"
+        manage, mlabel = COUPANG_WING_MODIFY.format(sid=rec["product_id"]), "Wing 상품 수정"
     elif m.startswith("smartstore"):
         manage, mlabel = NAVER_SELLER_HOME, "판매자센터 열기"
     elif m == "elevenst":
@@ -288,6 +292,7 @@ def db_row(rec: dict) -> dict:
             # 쿠팡 구매자 주소는 승인 뒤에만 생긴다(마지막 조회값) · 그 밖은 등록 기록의 주소(네이버 = 채널 번호 주소)
             "link": str(rv.get("link") or "") if m.startswith("coupang") else str(rec.get("external_url") or ""),
             "manage_url": manage, "manage_label": mlabel, "pending": True,
+            "wing_search_url": COUPANG_WING_SEARCH.format(sid=rec["product_id"]) if m.startswith("coupang") and rec.get("product_id") else "",
             "registered_price": _price_line(rec),
             "name_fix_line": _name_fix_line(rec),
             "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait")}
