@@ -207,6 +207,16 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                     result["coupang_detail_kick"] = bool(_started)
             except Exception as exc:               # noqa: BLE001 — 쿠팡 큐 깨우기 실패가 번역 틱을 막지 않는다
                 logger.warning("쿠팡 상세 갱신 큐 깨우기 실패(틱은 계속): %s", exc)
+            # Y11-V(오너 2026-10-16 19:12): 네이버 본문 자동 다시 보내기 큐도 같은 틱이 깨운다(판매중일 때만 · 같은 본문 1회).
+            try:
+                from src.services import naver_detail_refresh as _ndr
+                if _ndr.queue_rows():
+                    from src.api.media_cron import _drain_naver_detail
+                    from src.utils import bg_job as _bg
+                    _started, _st = _bg.start("naver-detail-refresh", _drain_naver_detail)
+                    result["naver_detail_kick"] = bool(_started)
+            except Exception as exc:               # noqa: BLE001 — 네이버 큐 깨우기 실패가 번역 틱을 막지 않는다
+                logger.warning("네이버 본문 갱신 큐 깨우기 실패(틱은 계속): %s", exc)
             drain_sec = _t.monotonic() - t0
             pilot_budget = tick_budget - (_t.monotonic() - t0)
             if pilot_budget >= _PILOT_MIN_SEC:
