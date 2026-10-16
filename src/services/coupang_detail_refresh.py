@@ -64,7 +64,7 @@ def target(item: dict, up, seller_id: str = "") -> Dict:
     sku_images = _sku_image_patch(item, pd)
     # 해시 = 상세 + 옵션 사진 + 정가 규칙(Y11-U) — 셋 중 하나라도 바뀌면 다시 보낸다
     return {"ready": failed == 0, "contents": contents,
-            "hash": _hash({"contents": contents, "sku_images": sku_images, "list_price": _list_rule()}),
+            "hash": _hash({"contents": contents, "sku_images": sku_images, "list_price": _list_rule(), "img": 2}),
             "sku_images": sku_images,
             "translated": int(pd.get("detail_auto_translated") or 0), "failed": failed,
             "why": str(pd.get("detail_translate_why") or ""), "detail_images": n_img,
@@ -91,6 +91,19 @@ def _sku_image_patch(item: dict, pd: dict) -> dict:
         return {}
 
 
+def image_summary(sku: str, images: list) -> dict:
+    """Y11-W — 보낸 사진 줄 요약(반려 대조용): 장마다 종류·cdnPath 유무·vendorPath 호스트·확장자·쿼리·길이. 주소 전체는 남기지 않는다."""
+    from urllib.parse import urlparse
+    rows = []
+    for x in images or []:
+        v = str(x.get("vendorPath") or "")
+        u = urlparse(v) if v.startswith(("http://", "https://")) else None
+        rows.append({"type": str(x.get("imageType") or ""), "cdn": bool(x.get("cdnPath")),
+                     "vendor": (u.netloc if u else ("relative" if v else "")), "ext": (v.rsplit(".", 1)[-1][:5] if "." in v[-6:] else ""),
+                     "query": bool(u and u.query), "len": len(v)})
+    return {"sku": sku, "n": len(rows), "images": rows[:6]}
+
+
 def _list_rule() -> str:
     """해시에 넣는 정가 규칙 — 표시 할인율이 바뀌면 다시 보낸다(Y11-U 번복: 「판매가 그대로」로 나간 등록본도 원복)."""
     from src.uploaders.coupang_uploader import CoupangUploader as CU
@@ -102,23 +115,28 @@ def patch_items(body: dict, tg: dict) -> dict:
     `{"images": 바꾼 품목 수, "list_price": 정가를 고친 품목 수}`."""
     from src.uploaders.coupang_uploader import CoupangUploader as CU
     n_img = n_price = 0
+    sent: List[dict] = []
     for it in body.get("items") or []:
         it["contents"] = tg["contents"]
         sid = str(it.get("externalVendorSku") or "")
         new = (tg.get("sku_images") or {}).get(sid)
         if new:
             imgs = [x for x in (it.get("images") or []) if isinstance(x, dict)]
-            rest = [x for x in imgs if str(x.get("imageType") or "").upper() != "REPRESENTATION"]
+            rest = [x for x in imgs if str(x.get("imageType") or "").upper() != "REPRESENTATION"
+                    and (x.get("vendorPath") or x.get("cdnPath"))]
+            # Y11-W(오너 2026-10-16 23:56 · 고가네 「기타이미지 경로가 잘못되어」×16옵션): 기타 사진은 **쿠팡이 준 그대로**
+            #   (cdnPath·vendorPath 둘 다 · 순서만 다시). 예전엔 cdnPath(쿠팡 상대 경로 `vendor_inventory/…`)를 vendorPath(절대 주소 칸)에
+            #   옮겨 담아 보냈다 — 10:20 첫 옵션 사진 갱신부터 반려.
             it["images"] = ([{"imageOrder": 0, "imageType": "REPRESENTATION", "vendorPath": new}]
-                            + [{"imageOrder": i + 1, "imageType": "DETAIL",
-                                "vendorPath": x.get("vendorPath") or x.get("cdnPath")} for i, x in enumerate(rest)
-                               if x.get("vendorPath") or x.get("cdnPath")])
+                            + [dict(x, imageOrder=i + 1, imageType=x.get("imageType") or "DETAIL") for i, x in enumerate(rest)])
             n_img += 1
+            if len(sent) < 3:
+                sent.append(image_summary(sid, it["images"]))
         want = CU.list_price(it.get("salePrice"))
         if want and it.get("originalPrice") != want:
             it["originalPrice"] = want                            # 정가 = 판매가 × (1+표시 할인율 · 오너 설정)
             n_price += 1
-    return {"images": n_img, "list_price": n_price}
+    return {"images": n_img, "list_price": n_price, "sent": sent}
 
 
 def _effective_detail_images(item: dict, pd: dict) -> int:
@@ -187,13 +205,16 @@ def enqueue_item(item_id: str, extra: dict, seller_id: str = "", reason: str = S
     """Y11-U — 이 상품의 쿠팡 등록본마다 갱신 줄을 세운다(이미 서 있으면 그대로). 보낸 수가 아니라 **세운 줄 수**.
     번역 대기 줄이 아니라서 드레인이 검토 상태를 먼저 묻는다(승인·임시저장·반려일 때만 보냄 — 재심사 중엔 기다린다)."""
     n = 0
-    have = {(r.get("item_id"), r.get("market")) for r in queue_rows()}
-    for u in coupang_uploads(extra or {}):
-        if (str(item_id), u["market"]) in have:
-            continue
-        _queue_put({"item_id": str(item_id), "market": u["market"], "sid": u["sid"], "account": u["account"],
-                    "seller_id": seller_id, "reason": reason, "raw": "", "at": _now(), "tries": 0})
-        n += 1
+    try:
+        have = {(r.get("item_id"), r.get("market")) for r in queue_rows()}
+        for u in coupang_uploads(extra or {}):
+            if (str(item_id), u["market"]) in have:
+                continue
+            _queue_put({"item_id": str(item_id), "market": u["market"], "sid": u["sid"], "account": u["account"],
+                        "seller_id": seller_id, "reason": reason, "raw": "", "at": _now(), "tries": 0})
+            n += 1
+    except Exception as exc:                                     # noqa: BLE001 — 줄 세우기는 덤 — 부른 쪽(편집 저장·다듬기)을 막지 않는다
+        logger.warning("[쿠팡 상세 갱신] 줄 세우기 실패 item=%s: %s", str(item_id)[:8], exc)
     return n
 
 
@@ -283,7 +304,7 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                     row["detail_image"] = res["detail_image"]          # 이미지 블록 판정 + 응답 원문(거부면 글만 재전송 원문)
                 if res.get("contents_sent") is not None:
                     tg = dict(tg, hash=_hash({"contents": res["contents_sent"], "sku_images": tg.get("sku_images") or {},
-                                              "list_price": _list_rule()}))   # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
+                                              "list_price": _list_rule(), "img": 2}))   # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
             if row["ok"]:
                 _queue_drop(item_id, u["market"])
             else:

@@ -117,6 +117,7 @@ def strip_page_ui(text: str) -> Dict:
     cap = int(t.get("max_block_lines") or 80)
     out: List[str] = []
     labels = blocks = removed = 0
+    domestic: List[str] = []
     i = 0
     while i < len(lines):
         s = lines[i].strip()
@@ -133,7 +134,49 @@ def strip_page_ui(text: str) -> Dict:
             removed += 1
             i += 1
             continue
+        if s and is_domestic_key(s):
+            # Y11-W: 중국 내수 속성(배송·설치 도시·택시 운송·예약판매…) — 키 줄과 바로 뒤 값 줄(是/否·도시 목록)을 함께
+            domestic.append(s)
+            removed += 1
+            i += 1
+            if i < len(lines) and is_domestic_value(lines[i].strip()):
+                removed += 1
+                i += 1
+            continue
+        if s and is_city_list(s):
+            domestic.append(s[:20])
+            removed += 1
+            i += 1
+            continue
         out.append(lines[i])
         i += 1
     body = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
-    return {"text": body, "labels": labels, "blocks": blocks, "removed": removed}
+    return {"text": body, "labels": labels, "blocks": blocks, "removed": removed, "domestic": domestic}
+
+_CITY = re.compile(r"[\u4e00-\u9fff]{1,4}市|全国|北京|上海|天津|重庆")
+
+
+def is_domestic_key(line: str) -> bool:
+    """Y11-W — 줄이 중국 내수 속성 키(`domestic_keys`)를 담나(부분 일치). 규격 키(`spec_keys`)가 같이 있으면 아니다."""
+    s = str(line or "").strip()
+    if not s or len(s) > 24:
+        return False
+    t = table()
+    if any(k in s for k in (t.get("spec_keys") or [])):
+        return False
+    return any(k in s for k in (t.get("domestic_keys") or []))
+
+
+def is_domestic_value(line: str) -> bool:
+    s = str(line or "").strip()
+    pat = table().get("domestic_values") or ""
+    return bool(s) and (bool(pat and re.match(pat, s)) or is_city_list(s))
+
+
+def is_city_list(line: str) -> bool:
+    """도시 목록 줄(「佛山市 郑州市 … 全国」) — 도시 토막이 `city_list_min`개 이상이고 그 밖의 글자가 거의 없다."""
+    toks = [x for x in re.split(r"[\s,，、/]+", str(line or "").strip()) if x]
+    if len(toks) < int(table().get("city_list_min") or 3):
+        return False
+    hits = sum(1 for x in toks if _CITY.fullmatch(x) or x in ("其他", "全国"))
+    return hits >= max(3, int(len(toks) * 0.8))

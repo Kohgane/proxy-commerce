@@ -5669,6 +5669,8 @@ def _image_edit_save(item_id: str, ex: dict) -> bool:
         # Y11-V: 사진 편집·버전 고르기로 나갈 사진이 바뀌었다 — 네이버 등록본 본문 다시 보내기 줄(크론 · 판매중일 때만 · 같은 본문 1회)
         from src.services import naver_detail_refresh as _ndr
         _ndr.enqueue_item(item_id, ex, _seller_id())
+        from src.services import coupang_detail_refresh as _cdr       # Y11-W: 쿠팡 등록본도(같은 사진이 나간다)
+        _cdr.enqueue_item(item_id, ex, _seller_id(), reason="사진 편집")
     return ok
 
 

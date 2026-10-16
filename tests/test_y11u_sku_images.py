@@ -82,7 +82,7 @@ def test_patch_items_sets_option_image_and_list_price():
     tg = {"contents": [{"contentsType": "TEXT"}], "sku_images": {"s2": KO}}
     n = R.patch_items(body, tg)
     a, b = body["items"]
-    assert n == {"images": 1, "list_price": 1}                       # s1: 100 ×1.15 = 115 → 100원 반올림 100(그대로)
+    assert n["images"] == 1 and n["list_price"] == 1                       # s1: 100 ×1.15 = 115 → 100원 반올림 100(그대로)
     assert a["images"][0] == {"imageOrder": 0, "imageType": "REPRESENTATION", "vendorPath": KO}
     assert a["images"][1]["vendorPath"] == "https://old/d.jpg" and a["originalPrice"] == 4141700   # 원복 — 원래 표시 정가
     assert b["images"] == [] and b["contents"] == tg["contents"]
