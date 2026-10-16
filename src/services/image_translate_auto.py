@@ -497,6 +497,10 @@ def _translate_job(job: dict) -> tuple:
     why = str(entry.get("error_message") or entry.get("reason") or "")
     if kind == "sku" and st == "done":
         _after_sku_translated(item_id, uid, extra)
+    if st == "done":
+        # Y11-V: 번역본이 바뀌면 네이버 등록본 본문 다시 보내기 줄(보내는 건 크론 — 이 상품의 번역·다듬기가 다 끝난 뒤 · 판매중일 때만)
+        from src.services import naver_detail_refresh as _ndr
+        _ndr.enqueue_item(item_id, extra, uid)
     if st == "done" and istore.has_boxes(entry):
         # Y11-I: 번역 직후 자동 다듬기 — 새 버전(번역본(다듬음))만 만든다. 텐센트 번역본은 버전으로 남는다. 실패해도 번역은 그대로.
         from src.services import image_polish as _ip

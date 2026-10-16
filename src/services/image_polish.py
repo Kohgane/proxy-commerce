@@ -407,11 +407,28 @@ def outbound(extra: dict, kind: str, idx: int) -> bool:
     return True
 
 
-def _redo_polish(x: dict) -> bool:
-    """다시 만들 기계 다듬음 버전 — 옛 렌더(Y11-M 이전 Cloudinary 변환·렌더 판 `RENDER_V` 미만) 또는 **지운 상자가 있는 것**(Y11-N: 다듬기는 지우지 않는다)."""
+_HANGUL = re.compile(r"[가-힣]")
+
+
+def foreign_revert(text: str, box: Optional[dict]) -> bool:
+    """Y11-V(오너 2026-10-16 19:14 「M … ISURE에」): 텐센트가 한국어로 그린 상자를 **한글 없는 글자(원문 등)로 다시 그리기**.
+    어두운 사진 위 큰 장식 글자에선 텐센트 획을 다 못 지운 채 덧그려 깨졌다(상세 14: 「이수에」 위 「ISURE」 → 「ISURE에」).
+    다듬기는 이런 상자를 다시 그리지 않는다 — 텐센트 글자 그대로."""
+    t, tgt = str(text or "").strip(), str((box or {}).get("tgt") or "").strip()
+    return bool(t) and not _HANGUL.search(t) and bool(_HANGUL.search(tgt))
+
+
+def _redo_polish(x: dict, boxes: Optional[list] = None) -> bool:
+    """다시 만들 기계 다듬음 버전 — 옛 렌더(Y11-M 이전 Cloudinary 변환·렌더 판 `RENDER_V` 미만) 또는 **지운 상자가 있는 것**(Y11-N: 다듬기는 지우지 않는다)
+    또는 **한국어 상자를 한글 없는 글자로 덧그린 것**(Y11-V)."""
     from src.services import image_edit as IE
-    return x.get("by") == POLISH_BY and (x.get("render") != "local" or int(x.get("render_v") or 1) < IE.RENDER_V
-                                         or any(isinstance(o, dict) and o.get("action") == "erase" for o in x.get("ops") or []))
+    if x.get("by") != POLISH_BY:
+        return False
+    by_id = {f"t{i}": b for i, b in enumerate(boxes or []) if isinstance(b, dict)}
+    return (x.get("render") != "local" or int(x.get("render_v") or 1) < IE.RENDER_V
+            or any(isinstance(o, dict) and o.get("action") == "erase" for o in x.get("ops") or [])
+            or any(isinstance(o, dict) and o.get("action") == "text" and foreign_revert(o.get("text"), by_id.get(o.get("id")))
+                   for o in x.get("ops") or []))
 
 
 def old_render(e: Optional[dict]) -> bool:
@@ -419,7 +436,7 @@ def old_render(e: Optional[dict]) -> bool:
     Y11-M: 옛 렌더(지운 자리 위에 겹쳐 그려 번짐, 21번). Y11-N: AI 「빈칸」을 지우기로 적용한 장(쿠폰 상세 4·6번 등) — 텐센트 글자로 되돌린다."""
     from src.services import image_edit as IE
     eds = IE.edits(e or {})
-    old = [x for x in eds if _redo_polish(x)]
+    old = [x for x in eds if _redo_polish(x, (e or {}).get("boxes"))]
     if not old:
         return False
     keys = {f"edit:{x['n']}" for x in old}
@@ -435,7 +452,7 @@ def drop_old_polish(extra: dict, kind: str, idx: int) -> int:
     if not e or not old_render(e):
         return 0
     IE._normalize(e)
-    gone = [x for x in e["edits"] if _redo_polish(x)]
+    gone = [x for x in e["edits"] if _redo_polish(x, e.get("boxes"))]
     keys = {f"edit:{x['n']}" for x in gone}
     e["edits"] = [x for x in e["edits"] if f"edit:{x['n']}" not in keys]
     for k in keys:
@@ -490,6 +507,10 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
             suggest += 1
             continue
         if r["ko"] == r["tgt"]:
+            continue
+        if foreign_revert(r["ko"], by_id.get(r["id"]) or {"tgt": r["tgt"]}):
+            r["why"] = "원문으로 되돌리기는 다시 그리지 않음(텐센트 글자 유지)"     # Y11-V: 「ISURE에」
+            r["ko"], r["from"] = r["tgt"], "tencent"
             continue
         # Y11-M: 기준 = 텐센트가 같은 상자에 그린 글자(같은 줄 수·크기의 FIT_KEEP 이상이면 들어감)
         if r["ko"] and not IE.text_fit(r["ko"], by_id.get(r["id"]) or {}, ref=r["tgt"])["fits"]:
@@ -557,6 +578,9 @@ def polish_job(item_id: str, uid: str, kind: str, idx: int) -> Dict:
             ents = [x for x in fresh.get(ko_key) or [] if isinstance(x, dict) and int(x.get("idx", -1)) != int(idx)]
             fresh[ko_key] = sorted(ents + [mine], key=lambda x: int(x.get("idx", -1)))
             store.update(item_id, seller_ids={uid}, extra_json=json.dumps(fresh, ensure_ascii=False))
+            if res.get("version"):                               # Y11-V: 다듬은 버전이 생겼으면 네이버 본문 다시 보내기 줄
+                from src.services import naver_detail_refresh as _ndr
+                _ndr.enqueue_item(item_id, fresh, uid)
         logger.info("[다듬기] item=%s %s#%s 바뀐 상자 %s · haiku %s회 · %s", item_id, kind, idx, res.get("changed", 0),
                     res.get("calls", 0), res.get("why") or "ok")
         return res

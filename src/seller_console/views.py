@@ -3587,6 +3587,9 @@ def collect_naver_resend_detail(item_id):
         if isinstance(u, dict) and u.get("market") == market:
             u["detail_resent"] = {"at": datetime.now(timezone.utc).isoformat(), "images": imgs,
                                   "dropped": [d.get("reason", "")[:160] for d in v["dropped"]]}
+            from src.services import naver_detail_refresh as _ndr      # Y11-V: 손으로 보낸 본문도 자동 큐의 「같은 본문」 기준
+            u["detail_sync"] = {"hash": _ndr._hash(payload.get("description_html") or ""), "ok": True,
+                                "at": u["detail_resent"]["at"], "images": imgs, "by": "button"}
             if rec.get("channel_product_no") and not u.get("channel_product_no"):
                 u["channel_product_no"] = rec["channel_product_no"]
     try:
@@ -4855,6 +4858,9 @@ def _ocr_text_of(extra: dict) -> str:
         if 0 <= i < len(originals) and _dip.verdict(e, originals[i])["use"] == "excluded":
             continue
         parts.append(_dip.entry_text(e))
+    for e in (extra.get("sku_images_ko") or []):                 # Y11-U: 옵션(SKU) 사진도 나가는 사진이다
+        if isinstance(e, dict):
+            parts.append(_dip.entry_text(e))
     return " ".join(p for p in parts if p.strip())[:20000]
 
 
@@ -5658,7 +5664,12 @@ def _image_edit_item(item_id: str):
 
 def _image_edit_save(item_id: str, ex: dict) -> bool:
     from . import collect_history_store
-    return bool(collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    ok = bool(collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    if ok:
+        # Y11-V: 사진 편집·버전 고르기로 나갈 사진이 바뀌었다 — 네이버 등록본 본문 다시 보내기 줄(크론 · 판매중일 때만 · 같은 본문 1회)
+        from src.services import naver_detail_refresh as _ndr
+        _ndr.enqueue_item(item_id, ex, _seller_id())
+    return ok
 
 
 def _image_edit_drop_legacy(item_id: str, item: dict) -> list:
@@ -5763,11 +5774,14 @@ def collect_image_edit_translate(item_id: str, kind: str, idx: int):
         return jsonify({"ok": True, "queued": True, "message": "번역하는 중이에요 — 끝나면 글자 상자가 보여요"}), 202
     from src.services import image_translate_auto as _ita
     from src.services import image_translate_store as _its
-    if _its.has_boxes(next((e for e in (ex.get("detail_images_ko") or [])
+    # Y11-V(오너 2026-10-16 19:12): 상세·옵션(sku) 같은 길 — **그 종류의** 번역본을 본다. 예전엔 sku도 상세 같은 번호를 봐서
+    #   「아직 번역하지 않았어요」와 「이미 번역됨」(상세 0번 얘기)이 한 화면에 같이 떴다.
+    ko_key = _its.keys_of(kind)[1]
+    if _its.has_boxes(next((e for e in (ex.get(ko_key) or [])
                             if isinstance(e, dict) and int(e.get("idx", -1)) == idx), None)):
         return jsonify({"ok": False, "protected": True, "error": _its.PROTECTED_REASON}), 409   # Y11-F
     q = _ita._q()
-    n = q.requeue_pages(item_id, [("detail", idx)]) or q.enqueue(_seller_id(), item_id, [("detail", idx)])
+    n = q.requeue_pages(item_id, [(kind, idx)]) or q.enqueue(_seller_id(), item_id, [(kind, idx)])
     if not n:
         return jsonify({"ok": False, "error": "이미 번역 줄에 있어요 — 잠시 뒤 다시 열어 주세요."}), 409
     _ita.kick()

@@ -113,6 +113,23 @@ def _drain() -> dict:
             "left": max(0, len(queued) - len(picked))}
 
 
+def _drain_naver_detail() -> dict:
+    """Y11-V — 네이버 등록본 상세 본문 자동 다시 보내기 큐(번역본·다듬기 바뀜 → 판매중일 때만 · 같은 본문은 1회)."""
+    from src.services import naver_detail_refresh as ndr
+    from src.seller_console import collect_history_store as store
+
+    def get_item(item_id, seller_id):
+        return store.get(item_id, seller_ids={seller_id} if seller_id else None)
+
+    def save_for(item_id, seller_id):
+        return lambda ex: store.update(item_id, seller_ids={seller_id} if seller_id else None,
+                                       extra_json=json.dumps(ex, ensure_ascii=False))
+    out = ndr.drain(get_item, save_for)
+    logger.info("[네이버 본문 갱신 크론] %s", {k: out[k] for k in ("picked", "sent", "ok", "left")})
+    ndr.record_last(out)
+    return {"ok": True, **{k: out[k] for k in ("picked", "sent", "ok", "left")}}
+
+
 @media_cron_bp.post("/coupang-detail-refresh")
 def drain_coupang_detail_refresh():
     """Y11-Q — 「승인 후 자동 갱신」·「번역 대기」 쿠팡 상세 갱신 큐를 비운다(백그라운드 · 동시 1개). 헤더 `X-Cron-Secret`."""

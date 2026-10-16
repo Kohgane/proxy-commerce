@@ -244,7 +244,7 @@ def test_registration_sends_one_item_per_sku(wired):
     assert len(items) == 9
     by = {it["externalVendorSku"]: it for it in items}
     it = by["4852747022539"]                                 # 34.9 CNY · 재고 13
-    assert it["salePrice"] == 8800 and it["originalPrice"] == 8800       # ceil100(34.9×250=8725)=8800 · Y11-U: 정가 = 판매가(근거 없는 할인 0)
+    assert it["salePrice"] == 8800 and it["originalPrice"] == 10100      # ceil100(34.9×250=8725)=8800 · ×1.15(오너 설정 기본 15%)
     assert it["maximumBuyCount"] == 13
     assert it["itemName"] == "3-in-1 거치대+선정리 블랙"                    # 옵션 값만(수량 「1개」는 이름에 안 넣음)
     assert it["images"][0]["imageType"] == "REPRESENTATION" and "O1CN01VH5g2D27ieHYAj48U" in it["images"][0]["vendorPath"]

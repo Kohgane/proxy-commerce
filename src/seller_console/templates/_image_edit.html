@@ -197,6 +197,8 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
     if (role === 'kie-translate') {
       b.disabled = true; b.textContent = '번역 보내는 중…';
       call(base() + '/translate', {}).then(function (r) {
+        // Y11-V: 「이미 번역됨」이면 화면이 옛 상태다 — 오류 줄을 덧붙이지 않고 다시 읽는다(「아직 번역 안 함」과 같이 뜨지 않게)
+        if (r && r.protected) { st.changed = true; load(); return; }
         if (!r || !r.ok) { render(); body.insertAdjacentHTML('beforeend', '<p class="kie-err" data-role="kie-err">' + esc((r && r.error) || '번역을 보내지 못했어요') + '</p>'); return; }
         st.polls = 1; render(); poll();
       });

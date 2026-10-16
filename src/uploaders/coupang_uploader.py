@@ -554,6 +554,29 @@ class CoupangUploader(BaseUploader):
         """조회 400 + 본문 code DEFAULT — 수정 요청(재심사) 중 쿠팡이 상품 조회를 막는 응답(오너 실측 10-16)."""
         s = str(err or '')
         return bool(re.search(r'http_status=400\b|\b400\b', s)) and bool(re.search(r'"code"\s*:\s*"DEFAULT"', s))
+    @staticmethod
+    def list_markup_pct() -> float:
+        """쿠팡 표시 할인율(%) — 오너 설정 `COUPANG_LIST_MARKUP`(기본 15 · 「15」「15%」「0.15」 모두 15%). 음수·이상값은 기본."""
+        raw = str(os.getenv('COUPANG_LIST_MARKUP', '') or '').strip().rstrip('%').strip()
+        try:
+            v = float(raw) if raw else 15.0
+        except ValueError:
+            return 15.0
+        if 0 < v < 1:
+            v *= 100
+        return v if 0 <= v <= 300 else 15.0
+
+    @classmethod
+    def list_price(cls, sale) -> int:
+        """Y11-U 번복(오너 2026-10-16): 정가 = 판매가 × (1 + 표시 할인율) · 100원 반올림. 판매가가 없으면 0."""
+        try:
+            sp = int(sale or 0)
+        except (TypeError, ValueError):
+            return 0
+        if sp <= 0:
+            return 0
+        return max(sp, int(round(sp * (1 + cls.list_markup_pct() / 100.0) / 100) * 100))
+
     PRODUCT_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/{sid}'
     MODIFY_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
 
@@ -1631,9 +1654,8 @@ class CoupangUploader(BaseUploader):
             price = int(product.get('price', 0) or 0)
         except (TypeError, ValueError):
             price = 0
-        # Y11-U(오너 2026-10-16 14:59): 정가 = **판매가 그대로**. 예전 정본(판매가×1.15 100원 반올림)은 쿠팡에 근거 없는
-        #   할인(4,141,700 → 3,601,500 · 13%)을 보였다 — 표시광고 규정 위험. 할인은 실제로 할 때만(지금은 없음).
-        original_price = price
+        # 정본: 정가 = 판매가 × (1 + 표시 할인율 · 오너 설정, 기본 15%) 100원 반올림(할인 표기용). Y11-U 번복(오너 결정).
+        original_price = self.list_price(price)
         brand = str(product.get('brand', '') or '').strip()
         search_tags = self.search_tags_for(product, search_extra)
 
@@ -1641,7 +1663,7 @@ class CoupangUploader(BaseUploader):
         #   "옵션(...): 10원 이상의 판매가를 입력해주세요"의 정답지. 필드명·값 전부 정본 그대로.
         item = {
             'itemName': sku,                                # 정본: itemName = sku(제목 아님)
-            'originalPrice': original_price,                 # Y11-U: 판매가와 같은 값(근거 없는 할인 표시 0)
+            'originalPrice': original_price,                 # 정본: 판매가 × (1+표시 할인율) 100원 반올림
             'salePrice': price,                              # 정본: 옵션 판매가(누락 시 7차 거부)
             'maximumBuyCount': 3,                            # 정본
             'maximumBuyForPerson': 0,
@@ -1743,7 +1765,7 @@ class CoupangUploader(BaseUploader):
             **base,
             'itemName': name[:150],
             'salePrice': price,
-            'originalPrice': price,                          # Y11-U: 정가 = 판매가(근거 없는 할인 표시 0)
+            'originalPrice': self.list_price(price),        # 정본: 판매가 × (1+표시 할인율)
             'maximumBuyCount': int(stock) if isinstance(stock, int) and stock > 0 else base.get('maximumBuyCount', 3),
             'externalVendorSku': str(plan_item.get('sku_id') or base.get('externalVendorSku')),
             'images': [{'imageOrder': i, 'imageType': 'REPRESENTATION' if i == 0 else 'DETAIL', 'vendorPath': u}
