@@ -199,10 +199,12 @@ class CoupangAdapter(MarketAdapter):
         )
         try:
             import requests
+            from src.uploaders.coupang_uploader import CoupangUploader as _CU
             headers = _hmac_sign("PUT", url_path)
             resp = relay_request("PUT", f"{_BASE_URL}{url_path}",
                 headers=headers,
-                json={"vendorItemId": vendor_item_id, "originalPrice": new_price_krw, "salePrice": new_price_krw},
+                json={"vendorItemId": vendor_item_id, "salePrice": new_price_krw,
+                      "originalPrice": _CU.list_price(new_price_krw)},   # 정가 = 판매가 × (1+표시 할인율)
                 timeout=10, market="coupang",
             )
             if resp.status_code in (200, 201):

@@ -250,7 +250,7 @@ def test_refresh_item_hashes_what_was_accepted(state, monkeypatch):
     rows = R.refresh_item({"id": "it", "extra_json": json.dumps(ex)}, make_up=lambda a: Up(), save=saved.update)
     r = rows[0]
     assert r["ok"] and r["detail_image"]["state"] == "rejected" and r["translate_line"].startswith("상세 번역: deepl 51줄")
-    assert saved["coupang_detail_sync"]["coupang:gogane"]["hash"] == R._hash({"contents": text_only, "sku_images": {}, "list_price": "sale"})
+    assert saved["coupang_detail_sync"]["coupang:gogane"]["hash"] == R._hash({"contents": text_only, "sku_images": {}, "list_price": R._list_rule()})
 
 
 # ── 「지금 갱신」 버튼 · 잡 ─────────────────────────────────────────────────────────────────────────

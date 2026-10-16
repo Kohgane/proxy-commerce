@@ -64,7 +64,7 @@ def target(item: dict, up, seller_id: str = "") -> Dict:
     sku_images = _sku_image_patch(item, pd)
     # 해시 = 상세 + 옵션 사진 + 정가 규칙(Y11-U) — 셋 중 하나라도 바뀌면 다시 보낸다
     return {"ready": failed == 0, "contents": contents,
-            "hash": _hash({"contents": contents, "sku_images": sku_images, "list_price": "sale"}),
+            "hash": _hash({"contents": contents, "sku_images": sku_images, "list_price": _list_rule()}),
             "sku_images": sku_images,
             "translated": int(pd.get("detail_auto_translated") or 0), "failed": failed,
             "why": str(pd.get("detail_translate_why") or ""), "detail_images": n_img,
@@ -91,9 +91,16 @@ def _sku_image_patch(item: dict, pd: dict) -> dict:
         return {}
 
 
+def _list_rule() -> str:
+    """해시에 넣는 정가 규칙 — 표시 할인율이 바뀌면 다시 보낸다(Y11-U 번복: 「판매가 그대로」로 나간 등록본도 원복)."""
+    from src.uploaders.coupang_uploader import CoupangUploader as CU
+    return f"markup:{CU.list_markup_pct():g}"
+
+
 def patch_items(body: dict, tg: dict) -> dict:
-    """조회 원문 몸통의 items[]에 — 상세(contents) · 옵션 대표 사진(그 SKU의 번역본) · 정가 = 판매가(Y11-U)를 얹는다.
+    """조회 원문 몸통의 items[]에 — 상세(contents) · 옵션 대표 사진(그 SKU의 번역본) · 정가(판매가 × (1+표시 할인율))를 얹는다.
     `{"images": 바꾼 품목 수, "list_price": 정가를 고친 품목 수}`."""
+    from src.uploaders.coupang_uploader import CoupangUploader as CU
     n_img = n_price = 0
     for it in body.get("items") or []:
         it["contents"] = tg["contents"]
@@ -107,9 +114,9 @@ def patch_items(body: dict, tg: dict) -> dict:
                                 "vendorPath": x.get("vendorPath") or x.get("cdnPath")} for i, x in enumerate(rest)
                                if x.get("vendorPath") or x.get("cdnPath")])
             n_img += 1
-        sp = it.get("salePrice")
-        if sp and it.get("originalPrice") != sp:
-            it["originalPrice"] = sp
+        want = CU.list_price(it.get("salePrice"))
+        if want and it.get("originalPrice") != want:
+            it["originalPrice"] = want                            # 정가 = 판매가 × (1+표시 할인율 · 오너 설정)
             n_price += 1
     return {"images": n_img, "list_price": n_price}
 
@@ -276,7 +283,7 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                     row["detail_image"] = res["detail_image"]          # 이미지 블록 판정 + 응답 원문(거부면 글만 재전송 원문)
                 if res.get("contents_sent") is not None:
                     tg = dict(tg, hash=_hash({"contents": res["contents_sent"], "sku_images": tg.get("sku_images") or {},
-                                              "list_price": "sale"}))   # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
+                                              "list_price": _list_rule()}))   # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
             if row["ok"]:
                 _queue_drop(item_id, u["market"])
             else:

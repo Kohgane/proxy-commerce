@@ -74,7 +74,7 @@ def test_translate_plan_includes_sku_pages():
 def test_patch_items_sets_option_image_and_list_price():
     from src.services import coupang_detail_refresh as R
     body = {"items": [
-        {"externalVendorSku": "s2", "salePrice": 3601500, "originalPrice": 4141700,
+        {"externalVendorSku": "s2", "salePrice": 3601500, "originalPrice": 3601500,   # #921로 나간 상태(정가=판매가)
          "images": [{"imageOrder": 0, "imageType": "REPRESENTATION", "vendorPath": "https://old/b.jpg"},
                     {"imageOrder": 1, "imageType": "DETAIL", "vendorPath": "https://old/d.jpg"}]},
         {"externalVendorSku": "s1", "salePrice": 100, "originalPrice": 100, "images": []},
@@ -82,9 +82,9 @@ def test_patch_items_sets_option_image_and_list_price():
     tg = {"contents": [{"contentsType": "TEXT"}], "sku_images": {"s2": KO}}
     n = R.patch_items(body, tg)
     a, b = body["items"]
-    assert n == {"images": 1, "list_price": 1}
+    assert n == {"images": 1, "list_price": 1}                       # s1: 100 ×1.15 = 115 → 100원 반올림 100(그대로)
     assert a["images"][0] == {"imageOrder": 0, "imageType": "REPRESENTATION", "vendorPath": KO}
-    assert a["images"][1]["vendorPath"] == "https://old/d.jpg" and a["originalPrice"] == 3601500
+    assert a["images"][1]["vendorPath"] == "https://old/d.jpg" and a["originalPrice"] == 4141700   # 원복 — 원래 표시 정가
     assert b["images"] == [] and b["contents"] == tg["contents"]
 
 
@@ -98,8 +98,8 @@ def test_sku_image_patch_maps_by_original_sku(monkeypatch):
 
 def test_hash_changes_when_option_image_joins(monkeypatch):
     from src.services import coupang_detail_refresh as R
-    a = R._hash({"contents": [1], "sku_images": {}, "list_price": "sale"})
-    b = R._hash({"contents": [1], "sku_images": {"s2": KO}, "list_price": "sale"})
+    a = R._hash({"contents": [1], "sku_images": {}, "list_price": "markup:15"})
+    b = R._hash({"contents": [1], "sku_images": {"s2": KO}, "list_price": "markup:15"})
     assert a != b
 
 

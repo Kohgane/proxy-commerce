@@ -42,12 +42,27 @@ def test_reviewing_tone_is_gray_and_remembered():
     assert ex["uploaded"][0]["review"]["state"] == "reviewing"
 
 
-def test_original_price_equals_sale_price():
+def test_list_price_is_owner_markup(monkeypatch):
+    """Y11-U 번복(오너 2026-10-16): 정가 = 판매가 × (1 + 표시 할인율) — 설정 COUPANG_LIST_MARKUP(기본 15%)."""
     from src.uploaders.coupang_uploader import CoupangUploader
+    monkeypatch.delenv("COUPANG_LIST_MARKUP", raising=False)
     up = CoupangUploader.__new__(CoupangUploader)
     it = up._sku_item({"itemName": "x", "maximumBuyCount": 3, "externalVendorSku": "s"},
                       {"sell_price_krw": 3601500, "label": "블랙", "sku_id": "1", "image": ""}, {"images": []})
-    assert it["salePrice"] == it["originalPrice"] == 3601500
+    assert it["salePrice"] == 3601500 and it["originalPrice"] == 4141700      # VRSUK 원래 쿠팡 표시 그대로
+    for raw, want in (("20", 4321800), ("20%", 4321800), ("0.2", 4321800), ("0", 3601500), ("abc", 4141700), ("-5", 4141700)):
+        monkeypatch.setenv("COUPANG_LIST_MARKUP", raw)
+        assert CoupangUploader.list_price(3601500) == want, raw
+    assert CoupangUploader.list_price(0) == 0
+
+
+def test_popup_list_price_line(monkeypatch):
+    from src.seller_console import listing_status as MS
+    monkeypatch.delenv("COUPANG_LIST_MARKUP", raising=False)
+    rec = {"market": "coupang:gogane", "sent": {"sale_price": 3601500}}
+    assert MS.list_price_line(rec) == "표시 정가 4,141,700원 (할인 13%)"
+    assert MS.list_price_line({"market": "smartstore:chezgoga", "sent": {"sale_price": 1}}) == ""
+    assert MS.list_price_line({"market": "coupang:gogane"}) == ""
 
 
 def test_wing_links_and_popup_controls():
@@ -68,3 +83,23 @@ def test_action_results_render_at_top_of_row():
     seg = t[i:t.index("return h + '</div>';", i)]
     assert seg.index("mst-refresh-out") < seg.index("mst-error") and seg.index("mst-name-fix-out") < seg.index("mst-error")
     assert seg.count("mst-refresh-out") == 1 and seg.count("mst-name-fix-out") == 1
+
+
+def test_price_sync_keeps_list_markup(monkeypatch):
+    """같은 유형: 가격 자동조정(PUT …/prices)도 정가를 판매가로 덮지 않는다 — 정가 = 판매가 × (1+표시 할인율)."""
+    import src.seller_console.market_adapters.coupang_adapter as CA
+    monkeypatch.delenv("COUPANG_LIST_MARKUP", raising=False)
+    sent = {}
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"code": "SUCCESS"}
+    monkeypatch.setattr(CA, "_api_active", lambda: True)
+    monkeypatch.setattr(CA, "_dry_run", lambda: False)
+    monkeypatch.setattr(CA, "_hmac_sign", lambda *a, **k: {})
+    monkeypatch.setattr(CA, "relay_request", lambda *a, **k: sent.update(k.get("json") or {}) or R())
+    monkeypatch.setattr(CA.CoupangAdapter, "_find_vendor_item_id", lambda self, sku, vid: "777")
+    out = CA.CoupangAdapter().update_price("s1", 3601500)
+    assert out["updated"] and sent["salePrice"] == 3601500 and sent["originalPrice"] == 4141700

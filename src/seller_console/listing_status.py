@@ -214,7 +214,7 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
                dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」
                registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
-               registered_price=_price_line(rec), name_fix_line=_name_fix_line(rec),
+               registered_price=_price_line(rec), list_price_line=list_price_line(rec), name_fix_line=_name_fix_line(rec),
                tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
     with _LOCK:
         _CACHE[key] = (now, row)
@@ -269,6 +269,24 @@ def _price_line(rec: dict) -> str:
     return out
 
 
+def list_price_line(rec: dict) -> str:
+    """Y11-U 번복(오너 2026-10-16): 쿠팡 「표시 정가 n원 (할인 n%)」 — 정가 = 판매가 × (1 + 표시 할인율 · 오너 설정 기본 15%).
+    판매가는 보낸 값(없으면 계산값). 둘 다 없으면 빈 줄."""
+    if not str(rec.get("market") or "").startswith("coupang"):
+        return ""
+    sent, price = rec.get("sent") or {}, rec.get("price") or {}
+    try:
+        sp = int(sent.get("sale_price") or price.get("sell_krw") or 0)
+    except (TypeError, ValueError):
+        sp = 0
+    if sp <= 0:
+        return ""
+    from src.uploaders.coupang_uploader import CoupangUploader as CU
+    lp = CU.list_price(sp)
+    off = round((lp - sp) * 100 / lp) if lp > sp else 0
+    return f"표시 정가 {lp:,}원 (할인 {off}%)"
+
+
 def db_row(rec: dict) -> dict:
     """M8 — **DB만으로** 그린 팝업 한 줄(마켓에 묻지 않음). 상태는 마지막으로 알던 값(`uploaded[].review`) — 없으면 「상태 확인 중」.
     등록 기록이 있는 마켓은 전부 즉시 보인다(번호·링크·「본문 다시 보내기」)."""
@@ -294,6 +312,7 @@ def db_row(rec: dict) -> dict:
             "manage_url": manage, "manage_label": mlabel, "pending": True,
             "wing_search_url": COUPANG_WING_SEARCH.format(sid=rec["product_id"]) if m.startswith("coupang") and rec.get("product_id") else "",
             "registered_price": _price_line(rec),
+            "list_price_line": list_price_line(rec),
             "name_fix_line": _name_fix_line(rec),
             "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait")}
 
