@@ -74,8 +74,35 @@ def _srcs(t: Dict) -> List[str]:
     return [str(x) for x in v] if isinstance(v, list) else [str(v or "")]
 
 
+#: ⑨ 원문 유지 표기 — 상자 글자 전체가 브랜드·모델 표기면 음차하지 않고 원문 그대로(Y11X: 상세 13 「Proprietary 20」 →
+#   텐센트 「프로피리티어 20」·다듬기 「프로프라이어터리 20」). ⑨의 「브랜드·모델명·™®가 붙은 낱말」과 같은 규칙을 코드로 —
+#   ™®가 붙은 짧은 표기, 또는 영문 낱말(1~3개) + 숫자 모델 번호. 「Size 20」 같은 규격 낱말+숫자는 번역 대상이라 뺀다.
+_KEEP_MODEL = re.compile(r"^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ&'.\-]*(?:\s[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ&'.\-]*){0,2}\s?\d{1,4}[A-Za-zÀ-ÿ]?$")
+_KEEP_MARK = re.compile(r"^[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&'.\-]*(?:\s[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&'.\-]*){0,2}\s?[™®]$")
+_SPEC_WORDS = {"size", "color", "colour", "no", "step", "page", "item", "type", "pcs", "pc", "set", "cm", "mm", "kg", "level",
+               "top"}                                            # TOP1 = 판촉(「톱1」 금지어 계열) — 원문 유지 대상 아님
+
+
+def keep_original(src: str) -> str:
+    """⑨ 원문 유지 표기면 그 표기(앞뒤 공백 정리), 아니면 ""."""
+    s = re.sub(r"\s+", " ", str(src or "")).strip()
+    if not s or len(s) > 40:
+        return ""
+    if _KEEP_MARK.match(s):
+        return s
+    m = _KEEP_MODEL.match(s)
+    first = re.split(r"[\s\d]", s)[0].lower().rstrip(".")
+    if not m or len(re.sub(r"[^A-Za-zÀ-ÿ]", "", s)) < 3 or first in _SPEC_WORDS:
+        return ""
+    return s
+
+
 def apply_glossary(src: str, tgt: str, terms: Optional[List[Dict]] = None) -> str:
-    """원문에 용어가 있고 한국어에 그 용어의 「틀린 말」이 있으면 바른 말로(이미 바른 말이면 그대로)."""
+    """원문에 용어가 있고 한국어에 그 용어의 「틀린 말」이 있으면 바른 말로(이미 바른 말이면 그대로).
+    ⑨ 원문 유지 표기(`keep_original`)는 용어집 단계에서 원문 그대로 — AI가 없어도 음차가 나가지 않는다."""
+    keep = keep_original(src)
+    if keep:
+        return keep
     out = str(tgt or "")
     for t in terms if terms is not None else glossary():
         if not any(s and s in str(src or "") for s in _srcs(t)) or t["ko"] in out:
@@ -192,6 +219,9 @@ def check(src: str, tgt: str, ko: str, rule: Optional[Dict] = None) -> str:
     """다듬은 상자 하나를 쓸 수 있나 — 버릴 사유(쓸 수 있으면 "")."""
     if ko == "":
         return ""                                                # 빈칸(지움) — 뜻 모를 원문
+    keep = keep_original(src)
+    if keep and re.sub(r"\s+", " ", str(ko or "")).strip() != keep:
+        return f"원문 유지 표기({keep})"                         # ⑨: 브랜드·모델 표기를 음차·번역한 답은 받지 않는다
     b = _bans(ko)
     if b:
         return f"금지어·과장({b[0]})"
@@ -219,8 +249,8 @@ _SYSTEM = (
     "④ 용어집을 반드시 따른다. ⑤ 금지어는 쓰지 않는다. ⑥ 상자 크기에 맞게 기계 번역과 비슷한 길이. "
     "⑦ 품목에 맞는 말만 — 주어진 「이 상품」 품목에 안 맞는 다른 품목 표현(예: 가구에 식감·맛·착용감)은 그 품목의 말로 바꾼다. "
     "⑧ 기계 번역(mt)이 비었거나 「redo」가 붙은 상자는 기계 번역이 실패한 것 — 원문(src) 전체를 새로 한국어로 번역한다(한자를 남기지 않는다). "
-    "⑨ 중국어가 아닌 외국어(이탈리아어·영어 낱말·문장)도 한국어로 번역한다 — 단 브랜드·모델명·™®가 붙은 낱말·뜻 없는 대문자 약어·코드"
-    "(예: EHILÀ, VRSUK, ZL)는 그대로 둔다. 대문자로 적혔어도 사전에 있는 낱말이면 번역한다(예: AUTOPULENTE → 셀프 클리닝, NESSUNA RIGIDITÀ → 뻣뻣함 없음). "
+    "⑨ 중국어가 아닌 외국어(이탈리아어·영어 낱말·문장)도 한국어로 번역한다 — 단 브랜드·모델명·™®가 붙은 낱말·뜻 없는 대문자 약어·코드·"
+    "영문 낱말+숫자 모델 표기(예: EHILÀ, VRSUK, ZL, Proprietary 20)는 한글로 음차하지 말고 원문 그대로 둔다. 대문자로 적혔어도 사전에 있는 낱말이면 번역한다(예: AUTOPULENTE → 셀프 클리닝, NESSUNA RIGIDITÀ → 뻣뻣함 없음). "
     "⑩ 직역 금지 — 한국 쇼핑몰 상품 상세 카피체로 쓴다(예: 「모든 한 대는 편안한 챔피언」 ✗ → 「의자 하나하나가 편안함 그 자체」 ○). "
     "출력은 JSON 하나만: {\"boxes\":[{\"id\":\"t0\",\"ko\":\"...\"}]} — 받은 id 전부."
 )
@@ -462,7 +492,17 @@ def _redo_polish(x: dict, boxes: Optional[list] = None, size=None) -> bool:
             or any(o.get("action") == "text" and foreign_revert(o.get("text"), by_id.get(o.get("id"))) for o in ops)
             # Y11-W: 반쪽 문구(금지어를 뺀 배지)를 그린 버전 · 작은 라틴 장식 글자를 되살리지 않은 버전
             or any(o.get("action") == "text" and _short_of(o.get("text"), by_id.get(o.get("id"))) for o in ops)
-            or bool(size and any(tiny_latin(b, size) and i not in restored for i, b in by_id.items())))
+            or bool(size and any(tiny_latin(b, size) and i not in restored for i, b in by_id.items()))
+            # Y11X: ⑨ 원문 유지 표기(「Proprietary 20」)를 음차한 채 둔 버전 — 원본 되살림이 될 때만(틀이 다르면 그대로)
+            or bool(size and any(_keep_broken(b, i, ops, restored) for i, b in by_id.items())))
+
+
+def _keep_broken(box: dict, bid: str, ops: list, restored: set) -> bool:
+    """이 상자가 원문 유지 표기인데 그 버전에 원문(되살림 또는 원문 글자)으로 안 들어갔나."""
+    keep = keep_original(box.get("src"))
+    if not keep or bid in restored or str(box.get("tgt") or "").strip() == keep:
+        return False
+    return not any(o.get("id") == bid and o.get("action") == "text" and str(o.get("text") or "").strip() == keep for o in ops)
 
 
 def old_render(e: Optional[dict]) -> bool:

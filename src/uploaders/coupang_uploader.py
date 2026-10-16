@@ -671,7 +671,8 @@ class CoupangUploader(BaseUploader):
                 'images': len(imgs), 'image_types': sorted({str((i or {}).get('imageType') or '') for i in imgs if isinstance(i, dict)}),
                 'detail_lines': len(lines), 'detail_chars': len(plain.strip()), 'detail_images': detail_imgs,
                 'detail_head': (lines[0][:40] if lines else ''),
-                'foreign': [list(x)[:1] for x in CoupangUploader.foreign_fields(p)][:4]}
+                'foreign': [list(x)[:1] for x in CoupangUploader.foreign_fields(p)][:4],
+                'sent_images': _sent_images_of(p)}        # Y11X: 보낸 사진 주소 목록(해시+URL — 네이버와 같은 꼴)
 
     def live_fix_plan(self, data: dict, *, name: str = '', search_tags=None, brand=None) -> dict:
         """U1b — 쿠팡 원본(`data`)을 **고칠 칸만** 바꾼 수정 몸통 + 바뀌는 것 목록. 아무것도 안 바뀌면 `changes` 빈 목록.
@@ -1919,3 +1920,12 @@ class CoupangUploader(BaseUploader):
                 if attempt < 2:
                     time.sleep(3)
         return {'error': f'쿠팡 요청 실패(최대 3회) — {last or "사유 미상"}'}
+
+
+def _sent_images_of(payload: dict) -> dict:
+    """Y11X — 등록·조회 몸통의 사진 주소 목록. 실패해도 등록 기록은 그대로(빈 목록)."""
+    try:
+        from src.services.sent_images import from_coupang
+        return from_coupang(payload or {})
+    except Exception:                                            # noqa: BLE001
+        return {"hash": "", "n": 0, "images": []}

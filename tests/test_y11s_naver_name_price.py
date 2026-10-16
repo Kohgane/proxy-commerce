@@ -236,7 +236,9 @@ def test_naver_upload_returns_sent_price_and_name(monkeypatch):
     out = up.upload_product({"sku": "748639898871", "title": "t", "item_id": "it"})
     assert out.get("success"), out
     assert calls == [4118850, 4784940]
-    assert out["sent"] == {"sale_price": 4784940, "price_how": "option", "name": name}
+    sent = dict(out["sent"])
+    assert set(sent.pop("sent_images")) == {"hash", "n", "images"}                  # Y11X: 보낸 상세 사진 주소 목록
+    assert sent == {"sale_price": 4784940, "price_how": "option", "name": name}
 
 
 # ── 4. 쿠팡 상세 갱신 큐 — 번역 드레인 틱이 깨운다 ────────────────────────────────────────────────────

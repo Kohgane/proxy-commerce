@@ -120,7 +120,7 @@ def test_item_ocr_recheck_runs_all_han0_pages_and_line(monkeypatch):
     res = D.run(iid)
     assert [(p["kind"], p["no"], p["verdict"]) for p in res["pages"]] == [("detail", 3, "han"), ("detail", 6, "send"), ("detail", 7, "none")]
     assert D.line(res) == ("OCR 다시 판정 3장: 한자 나옴 1 · 라틴 있어 번역으로 1 · 글자 거의 없음 1"
-                           " — 「다시 번역」을 누르면 접수돼요")
+                           " — 「다시 번역」을 누르면 접수돼요 · " + D.run_at(res))       # Y11X: 끝 = 잰 시각(KST)
     assert D.line({"running": True}) == "OCR 다시 판정 중… (1~2분)"
 
 

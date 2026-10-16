@@ -190,7 +190,7 @@ def record_last(out: dict) -> None:
     try:
         from src.db import image_translate_queue_pg as st
         keep = ("market", "sid", "sent", "ok", "state", "error", "market_status", "body", "detail_images",
-                "translate_line", "detail_image", "patched", "waiting", "dropped", "reason", "tries", "at")
+                "translate_line", "detail_image", "patched", "waiting", "dropped", "reason", "tries", "at", "sent_images")
         rows = [{k: (str(r.get(k))[:1500] if isinstance(r.get(k), str) else r.get(k)) for k in keep if k in r}
                 for r in (out.get("rows") or [])][:10]
         st.state_set(LAST_KEY, {"at": _now(), **{k: out.get(k) for k in ("picked", "sent", "ok", "left")}, "rows": rows})
@@ -305,6 +305,12 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                 if res.get("contents_sent") is not None:
                     tg = dict(tg, hash=_hash({"contents": res["contents_sent"], "sku_images": tg.get("sku_images") or {},
                                               "list_price": _list_rule(), "img": 2}))   # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
+                # Y11X: 보낸 사진 주소 목록(해시+URL) — 실제로 받아진 상세(글만 재전송이면 그것) + 옵션 사진
+                from src.services import sent_images as _si
+                _sent = dict(body)
+                if res.get("contents_sent") is not None:
+                    _sent["items"] = [dict(it, contents=res["contents_sent"]) for it in body.get("items") or []]
+                row["sent_images"] = _si.from_coupang(_sent)
             if row["ok"]:
                 _queue_drop(item_id, u["market"])
             else:
@@ -317,6 +323,8 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
             sync[u["market"]] = {"hash": tg["hash"], "ok": row["ok"], "at": row["at"], "state": row["state"],
                                  "error": row["error"][:300], "market_status": row["market_status"],
                                  "lines": tg["translated"], "tries": row.get("tries", 0)}
+            if row.get("sent_images"):
+                sync[u["market"]]["sent_images"] = row["sent_images"]
         except Exception as exc:                                  # noqa: BLE001 — 한 마켓 실패가 다른 마켓을 막지 않는다
             row["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
             logger.warning("[쿠팡 상세 갱신] %s %s 실패: %s", item_id[:8], u["market"], row["error"])

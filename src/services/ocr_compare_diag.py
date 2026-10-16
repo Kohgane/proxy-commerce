@@ -234,8 +234,27 @@ def run(item_id: str, detail_idx: Optional[List[int]] = None) -> Dict:
     return out
 
 
+def run_at(res: Dict) -> str:
+    """Y11X: 결과를 잰 시각(KST 「10-14 22:02」) — 오래된 결과를 지금 결과로 읽지 않게 결과줄 끝에 붙인다. 못 읽으면 ""."""
+    from datetime import timedelta
+    raw = str((res or {}).get("at") or "").strip()
+    try:
+        d = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.astimezone(timezone(timedelta(hours=9))).strftime("%m-%d %H:%M") + " KST"
+
+
 def line(res: Dict) -> str:
-    """결과줄 — 「OCR 다시 판정 14장: 한자 나옴 n · 라틴 있어 번역으로 n · 글자 거의 없음 n — 「다시 번역」을 누르면 접수」."""
+    """결과줄 — 「OCR 다시 판정 14장: 한자 나옴 n · … — 「다시 번역」을 누르면 접수 · 10-14 22:02 KST」(끝 = 잰 시각)."""
+    s = _line(res)
+    when = run_at(res) if s and not (res or {}).get("running") else ""
+    return f"{s} · {when}" if when else s
+
+
+def _line(res: Dict) -> str:
     if not res:
         return ""
     if res.get("running"):

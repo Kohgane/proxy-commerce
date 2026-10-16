@@ -217,6 +217,15 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                     result["naver_detail_kick"] = bool(_started)
             except Exception as exc:               # noqa: BLE001 — 네이버 큐 깨우기 실패가 번역 틱을 막지 않는다
                 logger.warning("네이버 본문 갱신 큐 깨우기 실패(틱은 계속): %s", exc)
+            # Y11X(오너 2026-10-17): 한 장짜리 일회성 작업(이 장만 다시 다듬기 · 이 장만 OCR 다시 판정) — 줄이 있을 때만.
+            try:
+                from src.services import oneshot_ops as _one
+                if _one.queue_rows():
+                    from src.utils import bg_job as _bg
+                    _started, _st = _bg.start("oneshot-ops", _one.drain)
+                    result["oneshot_kick"] = bool(_started)
+            except Exception as exc:               # noqa: BLE001 — 일회성 작업 깨우기 실패가 번역 틱을 막지 않는다
+                logger.warning("일회성 작업 깨우기 실패(틱은 계속): %s", exc)
             drain_sec = _t.monotonic() - t0
             pilot_budget = tick_budget - (_t.monotonic() - t0)
             if pilot_budget >= _PILOT_MIN_SEC:

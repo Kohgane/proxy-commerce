@@ -391,6 +391,11 @@ class NaverSmartStoreUploader(BaseUploader):
             _how = (opt2.get('base_how') if probe and probe.get('second_ok') else opt.get('base_how')) if opt else ''
             out['sent'] = {'sale_price': int(_op.get('salePrice') or 0), 'price_how': str(_how or ''),
                            'name': str(_op.get('name') or '')}
+            try:                                                 # Y11X: 보낸 상세 사진 주소 목록(해시+URL — 쿠팡과 같은 꼴)
+                from src.services.sent_images import from_html as _sent_imgs
+                out['sent']['sent_images'] = _sent_imgs(str(_op.get('detailContent') or ''))
+            except Exception:                                    # noqa: BLE001
+                pass
             if probe:
                 out['base_probe'] = probe
             return out
