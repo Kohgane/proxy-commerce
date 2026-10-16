@@ -145,3 +145,35 @@ def test_tmall_invite_banner_is_store_ui():
     from src.services import detail_image_plan as D
     assert D.text_exclusion("天猫国际邀请入驻 /2021年 致力于把「好品质」 送入1000+家")
     assert D.text_exclusion("品牌入驻 旗舰店")
+
+
+# ── 1-b. 근원: 등록 빌더가 아이콘·스페이서를 빼서 넘기면 번역본 짝이 한 칸씩 밀렸다 ───────────────────────────────
+
+def _detail_extra():
+    D = [f"https://img.alicdn.com/imgextra/i1/d{i}.jpg" for i in range(5)]
+    return D, {"detail_images": D, "detail_images_ko": [
+        {"idx": 0, "status": "done", "use": True, "url": "https://res.cloudinary.com/x/t0.jpg", "source_text": "沙发"},
+        {"idx": 1, "status": "excluded", "vendor": "rule", "exclude": "작은 아이콘·로고(120×60)"},
+        {"idx": 2, "status": "skipped", "prop_only": True, "reason": "소품 글자뿐"},
+        {"idx": 3, "status": "done", "use": True, "url": "https://res.cloudinary.com/x/t3.jpg",
+         "source_text": "天猫国际邀请入驻 /2021年", "target_text": "티몰 국제 입점 초대"},
+        {"idx": 4, "status": "done", "use": True, "url": "https://res.cloudinary.com/x/t4.jpg", "source_text": "尺寸 82cm"}]}
+
+
+def test_effective_images_pairs_by_url_not_position():
+    from src.services import image_translate_store as its
+    D, ex = _detail_extra()
+    full = its.effective_images(ex, kind="detail")
+    filtered = its.effective_images(ex, kind="detail", originals=[D[0], D[2], D[3], D[4]])   # 빌더가 1번(아이콘)을 뺌
+    assert filtered == full
+    assert D[3] not in filtered and "https://res.cloudinary.com/x/t3.jpg" not in filtered      # 입점 배너는 빠진다
+    assert filtered == ["https://res.cloudinary.com/x/t0.jpg", D[2], "https://res.cloudinary.com/x/t4.jpg"]
+
+
+def test_align_handles_cleaned_urls_and_unknown():
+    from src.services import image_translate_store as its
+    D, ex = _detail_extra()
+    o, idx = its.align(ex, "detail", ["//img.alicdn.com/imgextra/i1/d3.jpg", D[4], "https://other/x.jpg"])
+    assert idx == [3, 4, -1]
+    plan = its.effective_plan(ex, kind="detail", originals=[D[0], D[2], D[3], D[4]])
+    assert [p["idx"] for p in plan] == [0, 2, 3, 4] and plan[2]["verdict"] == "excluded"

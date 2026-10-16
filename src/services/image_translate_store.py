@@ -475,6 +475,37 @@ def sku_image_map(extra: dict, *, item_id: str = "") -> dict:
     return {o: e for o, e in zip(originals, eff) if e and e != o}
 
 
+def align(extra: dict, kind: str, originals=None) -> tuple:
+    """Y11-V(오너 2026-10-16 19:12 · 네이버 상세 天猫 배너): 넘겨받은 원본 목록의 **각 장이 저장된 몇 번 장인지** — `(originals, idx)`.
+
+    번역본(`*_ko[idx]`)·CDN 표·바이트는 **저장된 목록의 번호**로 적혀 있다. 등록 빌더는 아이콘·스페이서를 먼저 빼서
+    (VRSUK 상세 28 → 26장, 1번 아이콘·27번 스페이서) 넘기는데, 예전엔 **자리 번호**로 짝을 지어 1번 뒤로 한 칸씩 밀렸다 —
+    원본 9번(티몰 입점 배너)이 8번 자리에 와 8번(소품 글자 → 원본) 판정을 받고 중국어 그대로 나갔다.
+    이제 **주소로** 짝을 짓는다(정리한 주소도 비교 · 같은 주소가 두 번이면 앞에서부터). 저장 목록에 없는 장은 -1(번역본 없음 = 원본).
+    겹치는 주소가 하나도 없으면(주소 모양만 바뀐 같은 목록) 예전처럼 자리로."""
+    ex = extra if isinstance(extra, dict) else {}
+    stored = originals_of(ex, kind)
+    if originals is None:
+        return stored, list(range(len(stored)))
+    originals = [u for u in (originals or []) if u]
+    if not stored or originals == stored:
+        return originals, list(range(len(originals)))
+    from src.services.detail_image_plan import fix_url as _fx
+    where: dict = {}
+    for j, u in enumerate(stored):
+        for k in dict.fromkeys((str(u), _fx(u))):
+            where.setdefault(k, []).append(j)
+    used, idx = set(), []
+    for u in originals:
+        j = next((j for k in dict.fromkeys((str(u), _fx(u))) for j in where.get(k, []) if j not in used), -1)
+        if j >= 0:
+            used.add(j)
+        idx.append(j)
+    if idx and all(j < 0 for j in idx):
+        return originals, list(range(len(originals)))           # 겹치는 주소가 하나도 없다 = 주소 모양만 바뀐 같은 목록(예전 계약: 자리로)
+    return originals, idx
+
+
 def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
                      item_id: str = "") -> list:
     """등록에 **실제로 나갈** 이미지 배열. 원본은 건드리지 않는다.
@@ -489,11 +520,8 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
     ex = extra if isinstance(extra, dict) else {}
     src_key, ko_key = keys_of(kind)
     # `originals`를 주면 **그걸** 기준으로 매핑한다 — 사람이 서랍에서 방금 고친 목록이
-    #   저장된 목록과 다를 수 있고, 등록에는 **지금 화면의 것**이 나가야 한다.
-    if originals is None:
-        originals = originals_of(ex, kind)
-    else:
-        originals = [u for u in (originals or []) if u]
+    #   저장된 목록과 다를 수 있고, 등록에는 **지금 화면의 것**이 나가야 한다. 짝은 **주소로**(Y11-V `align`).
+    originals, sidx = align(ex, kind, originals)
     by_idx = {int(e.get("idx", -1)): e for e in (ex.get(ko_key) or []) if isinstance(e, dict)}
 
     # F27: **사라진 번역본은 쓰지 않는다.** `images_ko`에 URL이 적혀 있어도 바이트가 없으면
@@ -509,7 +537,8 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
 
     cdn_map = origin_cdn_map(ex, kind)
     out = []
-    for i, orig in enumerate(originals):
+    for p, orig in enumerate(originals):
+        i = sidx[p]                                              # 저장된 번호(-1 = 저장 목록에 없는 장 — 번역본 없음)
         e = by_idx.get(i) or {}
         url = e.get("url") or ""
         if e.get("use") and e.get("status") == "done" and url:
@@ -529,11 +558,13 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
     #   없어 등록이 막히므로 그땐 빼지 않는다(요약에 그대로 보인다).
     if kind == "detail":
         # Y9(오너 2026-10-13): 상세는 판촉·스토어 UI·수상 배너·스페이서·아이콘을 빼고(「그래도 넣기」는 넣는다),
-        #   상품 사진·치수·소재 앞 · 브랜드 스토리 뒤 · 상한 20장(네이버 본문 길이 보호)에서 자른다.
+        #   상품 사진·치수·소재 앞 · 브랜드 스토리 뒤 · 상한 20장(네이버 본문 길이 보호)에서 자른다. 판정은 **저장된 번호**로.
         from src.services import detail_image_plan as _dip
-        return [u for _i, u in _dip.arrange(list(enumerate(out)), by_idx, originals)]
+        stored = originals_of(ex, kind)
+        pairs = [(sidx[p], u) if sidx[p] >= 0 else (len(stored) + p, u) for p, u in enumerate(out)]
+        return [u for _i, u in _dip.arrange(pairs, by_idx, stored)]
     # Y10: 리스크 게이트 「빼고 등록」으로 뺀 장(상표·디자인이 사진 속 글자에 있던 장)도 뺀다
-    drop = {i for i in range(len(originals)) if promo_excluded(by_idx.get(i) or {}) or (by_idx.get(i) or {}).get("risk_exclude")}
+    drop = {p for p in range(len(originals)) if promo_excluded(by_idx.get(sidx[p]) or {}) or (by_idx.get(sidx[p]) or {}).get("risk_exclude")}
     pairs = list(enumerate(out))
     if drop and len(drop) < len(out):
         pairs = [(i, u) for i, u in pairs if i not in drop]
@@ -651,10 +682,7 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
     """
     ex = extra if isinstance(extra, dict) else {}
     src_key, ko_key = keys_of(kind)
-    if originals is None:
-        originals = originals_of(ex, kind)
-    else:
-        originals = [u for u in (originals or []) if u]
+    originals, sidx = align(ex, kind, originals)                # Y11-V: 짝은 주소로(저장된 번호)
     by_idx = {int(e.get("idx", -1)): e for e in (ex.get(ko_key) or []) if isinstance(e, dict)}
 
     # F27: **바이트가 실제로 있는지**까지 본다. 「URL이 적혀 있다」와 「이미지가 온다」는 다르다 —
@@ -673,9 +701,12 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
     _order = {}
     if kind == "detail":
         from src.services import detail_image_plan as _dip
-        _order = {i: n + 1 for n, (i, _u) in enumerate(_dip.arrange(list(enumerate(originals)), by_idx, originals))}
+        _stored = originals_of(ex, kind)
+        _pairs = [(sidx[p], u) if sidx[p] >= 0 else (len(_stored) + p, u) for p, u in enumerate(originals)]
+        _order = {i: n + 1 for n, (i, _u) in enumerate(_dip.arrange(_pairs, by_idx, _stored))}
     plan = []
-    for i, orig in enumerate(originals):
+    for p, orig in enumerate(originals):
+        i = sidx[p] if sidx[p] >= 0 else len(originals_of(ex, kind)) + p   # 저장된 번호(없으면 겹치지 않는 번호)
         e = by_idx.get(i) or {}
         marked = bool(e.get("status") == "done" and e.get("url"))
         blob = live.get((kind, i)) if live is not None else None
@@ -691,7 +722,7 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
         use = bool(usable and e.get("use"))
         plan.append({
             "idx": i, "original": orig, "kind": kind,
-            "rep": i == _rep,                # Y7: 쿠팡에 대표로 나갈 장(순서는 원본 idx 그대로 — 토글이 idx로 짚는다)
+            "rep": p == _rep,                # Y7: 쿠팡에 대표로 나갈 장(순서는 원본 idx 그대로 — 토글이 idx로 짚는다)
             "translated_url": _eurl if usable else "",
             "url": (_eurl if use else _origin_or_cdn(orig, cdn_map, i)),
             "source": "translated" if use else "original",
