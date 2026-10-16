@@ -182,12 +182,12 @@ def test_copy_falls_back_to_bytes_in_the_same_thread(monkeypatch):
     monkeypatch.setattr(P, "upload_remote", up)
     monkeypatch.setattr(N, "fetch_image_bytes", lambda url, **kw: N.FetchedImage(_jpeg(300, 300), "image/jpeg", "jpg"))
     monkeypatch.setattr(ea, "_cdn_configured", lambda: True)
-    before = threading.active_count()
+    before = set(threading.enumerate())   # 개수가 아니라 「새로 생긴 스레드」를 본다 — 앞선 테스트의 스레드가 끝나도 흔들리지 않게
     out = ea._store_image_copies(["https://img.alicdn.com/x.jpg", "https://img.alicdn.com/y.jpg"], item_id="301c02cd", budget_sec=30)
     assert out["images_stored"] == ["https://res.cloudinary.com/x/1.jpg"] or len(out["images_stored"]) >= 1
     assert "원격 0 · 직접 2" in out["images_stored_note"]
     assert calls[0] == "url" and isinstance(calls[1], int)                       # 원격 먼저 → 실패하면 바이트
-    assert threading.active_count() == before
+    assert not [t for t in threading.enumerate() if t not in before]             # 같은 스레드에서 — 새 스레드 0
 
 
 def test_remote_upload_passes_url_and_size_limit(monkeypatch):
