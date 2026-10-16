@@ -61,10 +61,57 @@ def target(item: dict, up, seller_id: str = "") -> Dict:
     contents = up._build_contents(prepared)
     n_img = sum(len(c.get("contentDetails") or []) for c in contents
                 if any(str(d.get("detailType") or "").upper() == "IMAGE" for d in c.get("contentDetails") or []))
-    return {"ready": failed == 0, "contents": contents, "hash": _hash(contents),
+    sku_images = _sku_image_patch(item, pd)
+    # 해시 = 상세 + 옵션 사진 + 정가 규칙(Y11-U) — 셋 중 하나라도 바뀌면 다시 보낸다
+    return {"ready": failed == 0, "contents": contents,
+            "hash": _hash({"contents": contents, "sku_images": sku_images, "list_price": "sale"}),
+            "sku_images": sku_images,
             "translated": int(pd.get("detail_auto_translated") or 0), "failed": failed,
             "why": str(pd.get("detail_translate_why") or ""), "detail_images": n_img,
             "detail_images_skipped": skipped, "providers": dict(pd.get("detail_translate_providers") or {})}
+
+
+def _sku_image_patch(item: dict, pd: dict) -> dict:
+    """Y11-U(오너 2026-10-16 14:58) — `{sku_id: 번역본 사진 주소}`(번역본을 쓰기로 된 SKU만). 우리 주소인 장은 뺀다(쿠팡이 못 가져간다)."""
+    try:
+        from src.services import image_translate_store as _its
+        from src.services.image_reachability import is_internal
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+        mapping = _its.sku_image_map(ex, item_id=str(item.get("id") or ""))
+        out = {}
+        for k in ex.get("skus") or pd.get("skus") or []:          # 수집 원본 SKU(사진 원본 주소로 짝을 찾는다)
+            if not isinstance(k, dict):
+                continue
+            new = mapping.get(str(k.get("image") or k.get("img") or k.get("pic") or "").strip())
+            if new and str(k.get("sku_id") or "") and not is_internal(new):
+                out[str(k["sku_id"])] = new
+        return out
+    except Exception as exc:                                      # noqa: BLE001 — 옵션 사진은 덤 — 상세 갱신은 그대로
+        logger.warning("[쿠팡 상세 갱신] 옵션 사진 계산 실패(그대로 둠): %s", exc)
+        return {}
+
+
+def patch_items(body: dict, tg: dict) -> dict:
+    """조회 원문 몸통의 items[]에 — 상세(contents) · 옵션 대표 사진(그 SKU의 번역본) · 정가 = 판매가(Y11-U)를 얹는다.
+    `{"images": 바꾼 품목 수, "list_price": 정가를 고친 품목 수}`."""
+    n_img = n_price = 0
+    for it in body.get("items") or []:
+        it["contents"] = tg["contents"]
+        sid = str(it.get("externalVendorSku") or "")
+        new = (tg.get("sku_images") or {}).get(sid)
+        if new:
+            imgs = [x for x in (it.get("images") or []) if isinstance(x, dict)]
+            rest = [x for x in imgs if str(x.get("imageType") or "").upper() != "REPRESENTATION"]
+            it["images"] = ([{"imageOrder": 0, "imageType": "REPRESENTATION", "vendorPath": new}]
+                            + [{"imageOrder": i + 1, "imageType": "DETAIL",
+                                "vendorPath": x.get("vendorPath") or x.get("cdnPath")} for i, x in enumerate(rest)
+                               if x.get("vendorPath") or x.get("cdnPath")])
+            n_img += 1
+        sp = it.get("salePrice")
+        if sp and it.get("originalPrice") != sp:
+            it["originalPrice"] = sp
+            n_price += 1
+    return {"images": n_img, "list_price": n_price}
 
 
 def _effective_detail_images(item: dict, pd: dict) -> int:
@@ -118,12 +165,29 @@ def record_last(out: dict) -> None:
     try:
         from src.db import image_translate_queue_pg as st
         keep = ("market", "sid", "sent", "ok", "state", "error", "market_status", "body", "detail_images",
-                "translate_line", "detail_image", "waiting", "dropped", "reason", "tries", "at")
+                "translate_line", "detail_image", "patched", "waiting", "dropped", "reason", "tries", "at")
         rows = [{k: (str(r.get(k))[:1500] if isinstance(r.get(k), str) else r.get(k)) for k in keep if k in r}
                 for r in (out.get("rows") or [])][:10]
         st.state_set(LAST_KEY, {"at": _now(), **{k: out.get(k) for k in ("picked", "sent", "ok", "left")}, "rows": rows})
     except Exception as exc:                                      # noqa: BLE001 — 기록 실패는 로그만
         logger.warning("[쿠팡 상세 갱신] 마지막 결과 기록 실패: %s", exc)
+
+
+SKU_IMAGE_REASON = "옵션 사진 갱신"
+
+
+def enqueue_item(item_id: str, extra: dict, seller_id: str = "", reason: str = SKU_IMAGE_REASON) -> int:
+    """Y11-U — 이 상품의 쿠팡 등록본마다 갱신 줄을 세운다(이미 서 있으면 그대로). 보낸 수가 아니라 **세운 줄 수**.
+    번역 대기 줄이 아니라서 드레인이 검토 상태를 먼저 묻는다(승인·임시저장·반려일 때만 보냄 — 재심사 중엔 기다린다)."""
+    n = 0
+    have = {(r.get("item_id"), r.get("market")) for r in queue_rows()}
+    for u in coupang_uploads(extra or {}):
+        if (str(item_id), u["market"]) in have:
+            continue
+        _queue_put({"item_id": str(item_id), "market": u["market"], "sid": u["sid"], "account": u["account"],
+                    "seller_id": seller_id, "reason": reason, "raw": "", "at": _now(), "tries": 0})
+        n += 1
+    return n
 
 
 def queue_rows() -> List[dict]:
@@ -202,8 +266,7 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                 raw_state = str(live.get("statusName") or live.get("status") or "")
                 row["state"] = raw_state
                 body = json.loads(json.dumps(live))
-                for it in body.get("items") or []:
-                    it["contents"] = tg["contents"]
+                row["patched"] = patch_items(body, tg)                   # 상세 + 옵션 사진 + 정가(Y11-U)
                 body["requested"] = True
                 res = up.modify_product(body)
                 row["sent"] = True
@@ -212,7 +275,8 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                 if res.get("detail_image"):
                     row["detail_image"] = res["detail_image"]          # 이미지 블록 판정 + 응답 원문(거부면 글만 재전송 원문)
                 if res.get("contents_sent") is not None:
-                    tg = dict(tg, hash=_hash(res["contents_sent"]))     # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
+                    tg = dict(tg, hash=_hash({"contents": res["contents_sent"], "sku_images": tg.get("sku_images") or {},
+                                              "list_price": "sale"}))   # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
             if row["ok"]:
                 _queue_drop(item_id, u["market"])
             else:

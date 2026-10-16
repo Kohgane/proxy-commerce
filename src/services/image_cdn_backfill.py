@@ -225,7 +225,8 @@ def _point_entry_at_cdn(item_id: str, idx: int, kind: str, url: str) -> bool:
         if not row:
             return False
         extra = json.loads(row.get("extra_json") or "{}") or {}
-        ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+        from src.services.image_translate_store import keys_of as _ko
+        ko_key = _ko(kind)[1]
         rows = extra.get(ko_key) or []
         hit = False
         for e in rows:

@@ -66,7 +66,7 @@ def test_coupang_status_reason_wing_link_and_60s_cache(coupang):
     row = MS.query(rec, now=1000.0)
     assert row["state"] == "rejected" and row["status_raw"] == "승인반려"
     assert row["comment"] == "대표 이미지에 텍스트가 있습니다"
-    assert row["manage_url"] == WING and row["manage_label"] == "Wing에서 열기"
+    assert row["manage_url"] == WING and row["manage_label"] == "Wing 상품 수정"
     assert row["tone"] == "bad" and row["cached"] is False
     assert MS.query(rec, now=1030.0)["cached"] is True and coupang.calls == 1      # 60초 안엔 다시 안 묻는다
     MS.query(rec, now=1061.0)
@@ -156,7 +156,7 @@ def test_list_badge_opens_popup(item):
 @pytest.mark.skipif(not os.path.exists("/opt/pw-browsers/chromium") and not os.environ.get("KGP_REQUIRE_BROWSER"),
                     reason="브라우저 없음")
 def test_popup_390px_shows_state_reason_and_wing(item, coupang):
-    """실브라우저 390px: 목록 「쿠팡·우주대행」 칩 → 팝업에 우주대행 「반려」·사유·「Wing에서 열기」(오너 주소 형식)."""
+    """실브라우저 390px: 목록 「쿠팡·우주대행」 칩 → 팝업에 우주대행 「반려」·사유·「Wing 상품 수정」(오너 주소 형식)."""
     pytest.importorskip("playwright.sync_api")
     from urllib.parse import urlparse
     from playwright.sync_api import sync_playwright
@@ -184,5 +184,5 @@ def test_popup_390px_shows_state_reason_and_wing(item, coupang):
         woo = pg.inner_text('[data-role=mst-row][data-market="coupang:woojoo"]')
         href = pg.get_attribute('[data-role=mst-row][data-market="coupang:woojoo"] [data-role=mst-manage]', "href")
         b.close()
-    assert "반려" in woo and "대표 이미지에 텍스트가 있습니다" in woo and "Wing에서 열기" in woo
+    assert "반려" in woo and "대표 이미지에 텍스트가 있습니다" in woo and "Wing 상품 수정" in woo and "Wing에서 번호로 찾기" in woo
     assert href == WING

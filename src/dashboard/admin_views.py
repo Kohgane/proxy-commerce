@@ -1429,7 +1429,8 @@ def _page_url(uid: str, item_id: str, kind: str, idx: int) -> str:
         ex = _json.loads(row.get("extra_json") or "{}") or {}
     except Exception:
         ex = {}
-    urls = [u for u in (ex.get("images" if kind == "gallery" else "detail_images") or []) if u]
+    from src.services.image_translate_store import originals_of
+    urls = originals_of(ex, kind)
     return urls[idx] if 0 <= idx < len(urls) else ""
 
 

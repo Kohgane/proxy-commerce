@@ -547,7 +547,13 @@ class CoupangUploader(BaseUploader):
         '상품삭제': 'deleted', 'DELETED': 'deleted',
     }
     REVIEW_LABELS = {'approved': '승인', 'pending': '검토중', 'saved': '임시저장', 'rejected': '반려',
-                     'deleted': '삭제됨', 'unknown': '확인 못 함'}
+                     'deleted': '삭제됨', 'unknown': '확인 못 함', 'reviewing': '심사 중 — 잠시 후 조회'}
+
+    @staticmethod
+    def is_review_lock(err) -> bool:
+        """조회 400 + 본문 code DEFAULT — 수정 요청(재심사) 중 쿠팡이 상품 조회를 막는 응답(오너 실측 10-16)."""
+        s = str(err or '')
+        return bool(re.search(r'http_status=400\b|\b400\b', s)) and bool(re.search(r'"code"\s*:\s*"DEFAULT"', s))
     PRODUCT_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/{sid}'
     MODIFY_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
 
@@ -587,6 +593,11 @@ class CoupangUploader(BaseUploader):
                'name': '', 'search_tags': [], 'foreign': [], 'error': ''}
         data = self.get_product(sid)
         if 'error' in data:
+            if self.is_review_lock(data['error']):
+                # Y11-U(오너 2026-10-16 14:57 확인): 상품 수정(재심사) 중엔 조회가 400 {"code":"DEFAULT"} — 일시 현상이다.
+                #   「확인 못 함」(빨강)이 아니라 「심사 중 — 잠시 후 조회」(회색). 원문은 note로 남긴다.
+                out.update(state='reviewing', label=self.REVIEW_LABELS['reviewing'], note=str(data['error'])[:300])
+                return out
             out['error'] = str(data['error'])[:300]
             return out
         raw = str(data.get('statusName') or data.get('status') or '').strip()
@@ -1620,8 +1631,9 @@ class CoupangUploader(BaseUploader):
             price = int(product.get('price', 0) or 0)
         except (TypeError, ValueError):
             price = 0
-        # 정본: 정가 = 판매가 15% 상향 후 100원 반올림(할인 표기용).
-        original_price = int(round(price * 1.15 / 100) * 100) if price else 0
+        # Y11-U(오너 2026-10-16 14:59): 정가 = **판매가 그대로**. 예전 정본(판매가×1.15 100원 반올림)은 쿠팡에 근거 없는
+        #   할인(4,141,700 → 3,601,500 · 13%)을 보였다 — 표시광고 규정 위험. 할인은 실제로 할 때만(지금은 없음).
+        original_price = price
         brand = str(product.get('brand', '') or '').strip()
         search_tags = self.search_tags_for(product, search_extra)
 
@@ -1629,7 +1641,7 @@ class CoupangUploader(BaseUploader):
         #   "옵션(...): 10원 이상의 판매가를 입력해주세요"의 정답지. 필드명·값 전부 정본 그대로.
         item = {
             'itemName': sku,                                # 정본: itemName = sku(제목 아님)
-            'originalPrice': original_price,                 # 정본: price*1.15 100원 반올림
+            'originalPrice': original_price,                 # Y11-U: 판매가와 같은 값(근거 없는 할인 표시 0)
             'salePrice': price,                              # 정본: 옵션 판매가(누락 시 7차 거부)
             'maximumBuyCount': 3,                            # 정본
             'maximumBuyForPerson': 0,
@@ -1731,7 +1743,7 @@ class CoupangUploader(BaseUploader):
             **base,
             'itemName': name[:150],
             'salePrice': price,
-            'originalPrice': int(round(price * 1.15 / 100) * 100) if price else 0,
+            'originalPrice': price,                          # Y11-U: 정가 = 판매가(근거 없는 할인 표시 0)
             'maximumBuyCount': int(stock) if isinstance(stock, int) and stock > 0 else base.get('maximumBuyCount', 3),
             'externalVendorSku': str(plan_item.get('sku_id') or base.get('externalVendorSku')),
             'images': [{'imageOrder': i, 'imageType': 'REPRESENTATION' if i == 0 else 'DETAIL', 'vendorPath': u}

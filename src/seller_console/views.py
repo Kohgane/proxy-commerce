@@ -2467,7 +2467,8 @@ def item_timeline(item: dict) -> dict:
     steps = [("수집", _p(item.get("collected_at")))]
     ic = ex.get("image_check") if isinstance(ex.get("image_check"), dict) else {}
     steps.append(("보강 완료", _p(ic.get("at"))))
-    ko = [x for x in (ex.get("images_ko") or []) + (ex.get("detail_images_ko") or []) if isinstance(x, dict)]
+    ko = [x for x in (ex.get("images_ko") or []) + (ex.get("detail_images_ko") or []) + (ex.get("sku_images_ko") or [])
+          if isinstance(x, dict)]
     ts = sorted(t for t in (_p(x.get("at")) for x in ko if x.get("status") == "done") if t)
     steps.append(("번역 첫 장", ts[0] if ts else None))
     steps.append(("번역 마지막 장", ts[-1] if ts else None))
@@ -2849,6 +2850,20 @@ def _ensure_outward(item: dict) -> dict:
         return item
 
 
+def apply_sku_images(skus, mapping: dict):
+    """Y11-U — SKU마다 사진 주소를 번역본으로 바꾼 사본(번역본이 없는 SKU는 원본 그대로). 수집 원본(`extra.skus`)은 손대지 않는다."""
+    if not isinstance(skus, list) or not mapping:
+        return skus
+    out = []
+    for k in skus:
+        if isinstance(k, dict):
+            u = str(k.get("image") or k.get("img") or k.get("pic") or "").strip()
+            out.append(dict(k, image=mapping[u]) if u in mapping else k)
+        else:
+            out.append(k)
+    return out
+
+
 def _outbound_images(product_data: dict, item_id) -> tuple:
     """등록에 **실제로 나갈** 이미지 배열을 만들고 마켓 관점 도달을 잰다 — `(product_data, warn_pages, reach)`.
 
@@ -2881,6 +2896,8 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 _g, _d = _its.drop_cross_duplicates(product_data.get("images") or [],
                                                     product_data.get("detail_images") or [])
                 product_data["images"], product_data["detail_images"] = _g, _d
+                # Y11-U(오너 2026-10-16 14:58): 옵션(SKU) 사진도 번역본으로 — 쿠팡 대표·옵션 썸네일에 원문 사진이 나갔다
+                product_data["skus"] = apply_sku_images(product_data.get("skus"), _its.sku_image_map(_uex, item_id=item_id))
                 # Y7: 사전검증 판정(대표 사진·이미지 0장)도 **나갈 목록 그대로** — 화면이 렌더 때 받은 목록은 묵었을 수 있다
                 #   (「이 장을 대표로」 누른 직후 재검증).
                 if _g:
@@ -4139,7 +4156,50 @@ def coupang_exposure_data(item: dict) -> dict:
             # Y11-C2: 실패가 없어도 「다시 번역」 자리 + 오늘 텐센트 호출 수(공급사 미연결이면 null — 누를 곳을 만들지 않는다)
             "imgko_status": _imgko_status(iid),
             # Y11-K: 이 상품 버튼(OCR 다시 판정·번역 다듬기) — 과금이라 공유 사용자(오너 서버 자격)만 보인다
-            "diag_ok": _diag_buttons_ok()}
+            "diag_ok": _diag_buttons_ok(),
+            # Y11-U: 옵션(SKU) 사진 — 쿠팡 옵션 썸네일로 나갈 사진(번역본/원본) · 판촉 글자면 「지우기 제안」
+            "options": sku_option_rows(ex, iid)}
+
+
+def sku_option_rows(extra: dict, item_id: str = "") -> list:
+    """Y11-U(오너 2026-10-16 14:58) — 「옵션 사진」 줄 재료: SKU 사진마다 `{idx, url, original, source, status, reason, promo, labels}`.
+    `labels` = 그 사진을 쓰는 SKU 옵션 값(한국어 — 못 옮긴 조각은 원문). 판촉 글자(正品保障·20年质保 등)는 빼지 않고 「지우기 제안」."""
+    from src.services import image_translate_store as its
+    from src.services import detail_image_plan as _dip
+    try:
+        from src.collectors.option_ko import spec_ko as _sk
+    except Exception:                                            # noqa: BLE001
+        _sk = None
+    plan = its.effective_plan(extra, kind="sku", item_id=item_id)
+    if not plan:
+        return []
+    by_img: dict = {}
+    for k in extra.get("skus") or []:
+        if not isinstance(k, dict):
+            continue
+        u = str(k.get("image") or k.get("img") or k.get("pic") or "")
+        spec = [str(x) for x in (k.get("spec") or []) if str(x).strip()]
+        try:
+            lab = " / ".join(_sk(extra, spec)) if (_sk and spec) else " / ".join(spec)
+        except Exception:                                        # noqa: BLE001
+            lab = " / ".join(spec)
+        if u and lab and lab not in by_img.setdefault(u, []):
+            by_img[u].append(lab)
+    ents = {int(e.get("idx", -1)): e for e in (extra.get(its.keys_of("sku")[1]) or []) if isinstance(e, dict)}
+    rows = []
+    for p in plan:
+        e = ents.get(p["idx"]) or {}
+        promo = list(p.get("promo") or [])
+        if e.get("status") == "done":
+            txt = _dip.entry_text(e)
+            x = _dip.text_exclusion(txt)
+            for h in ([x] if x else []) + _dip.badge_hits(txt):    # 판촉 + 보증·정품 배지 — 빼지 않고 「지우기 제안」
+                if h not in promo:
+                    promo.append(h)
+        rows.append({"idx": p["idx"], "url": p["url"], "original": p["original"], "source": p["source"],
+                     "status": p.get("status") or "", "reason": str(e.get("reason") or e.get("error_message") or "")[:120],
+                     "promo": promo, "labels": by_img.get(p["original"], [])[:3]})
+    return rows
 
 
 def _item_sku(item) -> str:
@@ -5621,7 +5681,7 @@ def collect_image_edit(item_id: str, kind: str, idx: int):
     """Y11 사진 편집 — GET: 상자 목록(판촉·로고·일반·상표 위험 · 제품 영역 · 비용) · POST `{ops:[{id, action: erase|text, text?}]}`: 편집본.
 
     상자가 저장돼 있지 않은 옛 장은 GET 때 텐센트 OCR로 한 번 읽어 저장한다. 지우기·글자 고치기는 Cloudinary가 원본을 직접 받아 간다."""
-    if kind not in ("gallery", "detail"):
+    if kind not in ("gallery", "detail", "sku"):
         return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
     item, ex = _image_edit_item(item_id)
     if item is None:
@@ -5650,7 +5710,7 @@ def collect_image_edit(item_id: str, kind: str, idx: int):
 @bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/revert")
 def collect_image_edit_revert(item_id: str, kind: str, idx: int):
     """Y11 「되돌리기」 — 편집 전 장(번역본·원본)으로. 편집 비용은 이미 쓴 것이라 그대로 기록에 남는다."""
-    if kind not in ("gallery", "detail"):
+    if kind not in ("gallery", "detail", "sku"):
         return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
     item, ex = _image_edit_item(item_id)
     if item is None:
@@ -5668,7 +5728,7 @@ def collect_image_edit_revert(item_id: str, kind: str, idx: int):
 def collect_image_edit_select(item_id: str, kind: str, idx: int):
     """Y11-E 버전 고르기 — `{key: original|translated|edit:n}`. 「원본으로」 = `original`(수집 원본을 연다 · 나가는 사진도 원본).
     수집 원본은 읽기만 한다 — 고르면 번역본·편집본을 안 쓸 뿐, 원본 주소는 그대로다."""
-    if kind not in ("gallery", "detail"):
+    if kind not in ("gallery", "detail", "sku"):
         return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
     item, ex = _image_edit_item(item_id)
     if item is None:
@@ -5687,7 +5747,7 @@ def collect_image_edit_select(item_id: str, kind: str, idx: int):
 def collect_image_edit_translate(item_id: str, kind: str, idx: int):
     """Y11-B 「번역하고 글자 상자 받기」 — 순서는 번역이 먼저다. 이 한 장만 텐센트 이미지 번역에 다시 보내고(요청 밖에서),
     번역 결과의 줄 상자(`TransDetails[].BoundingBox`)로 편집한다. OCR이 미개통이어도 이 길은 된다. 번역 1장 요금이 든다."""
-    if kind not in ("gallery", "detail"):
+    if kind not in ("gallery", "detail", "sku"):
         return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
     item, ex = _image_edit_item(item_id)
     if item is None:
@@ -15043,7 +15103,7 @@ def image_storage_diag():
             ex = json.loads(it.get("extra_json") or "{}") or {}
         except Exception:
             continue
-        for _k in ("images_ko", "detail_images_ko"):
+        for _k in ("images_ko", "detail_images_ko", "sku_images_ko"):
             for _e in (ex.get(_k) or []):
                 # 공급사는 답했고(과금) 우리가 못 뒀다 — `NotStored`가 그 자리다.
                 if isinstance(_e, dict) and _e.get("error_class") == "NotStored":
@@ -15059,8 +15119,7 @@ def image_storage_diag():
             blob = live.get((kind, p["idx"])) or {}
             # F34-2: 초안이 아직 우리 주소를 가리키는 장 — 진단은 「대기 0」인데
             #   등록에선 막히던 자리다. 세는 표가 갈렸다는 사실을 **화면이 말한다.**
-            _entry = next((e for e in (ex.get("images_ko" if kind == "gallery"
-                                              else "detail_images_ko") or [])
+            _entry = next((e for e in (ex.get(store.keys_of(kind)[1]) or [])
                            if isinstance(e, dict) and int(e.get("idx", -1)) == p["idx"]), {})
             _drifted = bool(str(_entry.get("url") or "").startswith(
                 ("/seller/", "/admin/", "/api/")) and blob.get("cdn_url"))
@@ -15491,7 +15550,8 @@ def collect_image_ko(item_id: str, idx: int):
     if _get_owned_item(item_id) is None:
         return ("", 404)          # 남의 항목 이미지는 없다고 답한다(존재 여부도 안 알린다)
     from src.services.image_translate_store import read_translated
-    kind = "detail" if (request.args.get("kind") or "") == "detail" else "gallery"
+    from src.services.image_translate_store import parse_kind as _pk
+    kind = _pk(request.args.get("kind"))                        # Y11-U: 갤러리·상세·옵션(SKU) 사진
     raw = read_translated(item_id, idx, kind=kind)
     if not raw:
         return ("", 404)
@@ -15514,7 +15574,8 @@ def collect_image_use(item_id: str):
         return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
 
     data = request.get_json(silent=True) or {}
-    kind = "detail" if str(data.get("kind") or "") == "detail" else "gallery"
+    from src.services.image_translate_store import parse_kind as _pk
+    kind = _pk(data.get("kind"))
     try:
         flags = {int(k): bool(v) for k, v in (data.get("flags") or {}).items()}
     except Exception:
@@ -15524,7 +15585,7 @@ def collect_image_use(item_id: str):
 
     from src.services import image_translate_store as store
     extra = store.load_extra(item)
-    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    ko_key = store.keys_of(kind)[1]
     extra[ko_key] = store.set_use_flags(extra, flags, kind=kind)
     try:
         from . import collect_history_store
@@ -15550,14 +15611,15 @@ def collect_image_promo(item_id: str):
     if item is None:
         return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
     data = request.get_json(silent=True) or {}
-    kind = "detail" if str(data.get("kind") or "") == "detail" else "gallery"
+    from src.services.image_translate_store import parse_kind as _pk
+    kind = _pk(data.get("kind"))
     try:
         idx = int(data.get("idx"))
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "몇 번째 장인지 알 수 없습니다."}), 400
     from src.services import image_translate_store as store
     extra = store.load_extra(item)
-    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    ko_key = store.keys_of(kind)[1]
     extra[ko_key] = store.set_promo_include(extra, idx, bool(data.get("include")), kind=kind)
     from . import collect_history_store
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(),
