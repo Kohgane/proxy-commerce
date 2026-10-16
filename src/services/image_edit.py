@@ -791,7 +791,7 @@ def _ink(cv2, np, img, rect):
 
 
 def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict, str]], others: Optional[List[Dict]] = None,
-                 skip_tilted: bool = False) -> Dict:
+                 skip_tilted: bool = False, restore: Optional[List[Dict]] = None, orig_raw: bytes = b"") -> Dict:
     """`{ok, bytes, size, how, drawn, skipped, why}` — 바탕 그림 위에서 상자를 지우고 글자를 그린다. 좌표는 상자 공간 × `k`.
     `others` = 이 사진의 글자 상자 전부(지울 자리를 넓힐 때 이웃 상자를 피한다)."""
     from src.services.image_text_render import _load_cv2
@@ -925,12 +925,31 @@ def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict
             cx = min(max(x0, want), max(x0, x1 - lw)) - l
             draw.text((cx, itop + i * f["line_h"] - gt), line, font=font, fill=ty["color"])
         drawn += 1
+    restored = 0
+    if restore and orig_raw:
+        # Y11-W(오너 2026-10-16 23:58): **원본 픽셀 되살리기** — 텐센트가 한국어로 칠한 자리를 원문으로 되돌릴 땐 글자를 다시 그리지 않고
+        #   수집 원본의 그 자리를 붙인다(서명 낙서 위 작은 이탈리아어 「디센·세콜로…」 · 장식 글자 「ISURE에」). 틀이 같은 장(identity)만.
+        try:
+            from PIL import Image as _Im
+            with _Im.open(io.BytesIO(orig_raw)) as o0:
+                orig = o0.convert("RGB")
+                if orig.size != pil.size:
+                    orig = orig.resize(pil.size)
+                for b in restore:
+                    x0, y0, x1, y1 = _rect_px(b, k, W, H)
+                    pad = max(3, int((y1 - y0) * 0.35))
+                    box = (max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad), min(H, y1 + pad))
+                    pil.paste(orig.crop(box), box[:2])
+                    restored += 1
+        except Exception as exc:                                # noqa: BLE001 — 되살리기 실패면 그 상자는 텐센트 그대로
+            logger.warning("[사진 편집] 원본 되살리기 실패: %s", exc)
     buf = io.BytesIO()
     pil.save(buf, format="JPEG", quality=92)
     del draw                                                     # Y11-O: 장마다 화소 버퍼를 바로 놓는다(워커가 gc·malloc_trim)
     pil.close()
     img = None                                                  # noqa: F841 — 바탕 배열 참조를 놓는다
     return {"ok": True, "bytes": buf.getvalue(), "size": [W, H], "how": how, "drawn": drawn, "skipped": skipped, "sizes": sizes,
+            "restored": restored,
             "merged": merged, "tilted": tilted_skip, "warn": PHOTO_WARN if any("사진 위" in h for h in how) else "",
             "colors": ["%02x%02x%02x" % tuple(x[4]["color"]) for x in typos], "weights": [x[4]["weight"] for x in typos]}
 
@@ -944,7 +963,7 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
         return {"ok": False, "error": "사진 편집을 쓸 수 없어요 — " + why}
     p = plan(extra, kind, idx, small=small)
     by_id = {b["id"]: b for b in p["boxes"]}               # 지금 버전의 글자 상자(t#)만
-    todo = [o for o in ops or [] if isinstance(o, dict) and o.get("action") in ("erase", "text") and o.get("id") in by_id]
+    todo = [o for o in ops or [] if isinstance(o, dict) and o.get("action") in ("erase", "text", "restore") and o.get("id") in by_id]
     if not todo:
         return {"ok": False, "error": (p.get("why") or "지울 상자를 탭해서 골라 주세요") if not p["boxes"] else "지울 상자를 탭해서 골라 주세요"}
     raw = _fetch(p["url"])
@@ -956,6 +975,14 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
         return {"ok": False, "error": f"오늘 사진 편집 한도({daily_cap()}회)를 다 썼어요 — 내일 다시 해 주세요", "today": today}
     erase = [by_id[o["id"]] for o in todo if o["action"] == "erase"]
     texts = [(by_id[o["id"]], str(o.get("text") or "")[:60]) for o in todo if o["action"] == "text" and str(o.get("text") or "").strip()]
+    restore = [by_id[o["id"]] for o in todo if o["action"] == "restore"]
+    orig_raw = b""
+    if restore:
+        _e0 = _entry(extra, kind, idx) or {}
+        if _e0.get("box_frame") == "identity":                  # 틀이 같은 장만 — 좌표가 다르면 엉뚱한 자리를 붙인다
+            orig_raw = _fetch(_original(extra, kind, idx))
+        if not orig_raw:
+            restore = []                                         # 원본을 못 받았다 — 그 상자는 텐센트 그대로
     W = p["size"][0]
     try:
         from PIL import Image
@@ -968,13 +995,13 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
         # Y11-O(오너): 그리기는 요청·다듬기 스레드가 아니라 **사진 그리기 워커 하나**에서(한 번에 한 장 · 장마다 gc·malloc_trim)
         from src.utils import render_worker as _rw
         rr = _rw.run(render_local, raw, k, erase, texts, others=p["boxes"], skip_tilted=(by == "polish"),
-                     _name=f"{by}:{kind}{idx}")
+                     restore=restore, orig_raw=orig_raw, _name=f"{by}:{kind}{idx}")
     except Exception as exc:                                    # noqa: BLE001
         logger.warning("[사진 편집] 그리기 실패 %s idx=%s: %s", kind, idx, exc)
         rr = {"ok": False, "why": type(exc).__name__}
     if not rr.get("ok"):
         return {"ok": False, "error": "편집본을 그리지 못했어요 — " + (rr.get("why") or "사유 불명")}
-    if not erase and not rr.get("drawn"):
+    if not erase and not rr.get("drawn") and not rr.get("restored"):
         # 바뀔 상자가 전부 기운 글자라 건너뛰었다 — 같은 그림을 새 버전으로 올리지 않는다(텐센트 글자 그대로)
         return {"ok": False, "error": f"바꿀 상자가 없어요 — 기운 글자 {len(rr.get('tilted') or [])}곳은 텐센트 글자 그대로 둬요",
                 "tilted": rr.get("tilted") or []}

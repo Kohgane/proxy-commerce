@@ -94,7 +94,7 @@ def test_outbound_vrsuk_korean_only_with_note(monkeypatch):
     assert pd["description"].count("옮긴 줄") >= 30                     # 규격표 줄이 버려지지 않고 옮겨졌다
     assert len(calls) >= 1 and all("用户评价" not in c and "好颜郎" not in c for c in calls)   # 남의 글은 번역에 안 보낸다
     n = pd["detail_auto_translated"]
-    assert n >= 30 and pd["detail_translate_failed"] == 0 and pd["detail_page_ui_removed"] == 21
+    assert n >= 30 and pd["detail_translate_failed"] == 0 and pd["detail_page_ui_removed"] == 35   # Y11-W: + 내수 속성 14줄(키 7 + 값 7: 배송·설치 도시·택시 운송·예약판매…)
     assert dt.note(pd).startswith(f"원문 {n}칸 자동 번역")
     # 두 번 지나도 같은 값(사전검증 잡 → prevalidate → 등록) · 번역 호출 더 없음
     before = len(calls)

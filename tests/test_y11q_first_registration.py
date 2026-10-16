@@ -73,7 +73,7 @@ def test_vrsuk_51_lines_go_in_one_call_not_five(monkeypatch, state):
     dt._FAIL.clear()
     body = strip_page_ui(VR["description"])["text"]
     r = dt.translate_leftover(body)
-    assert len(calls) == 1 and r["failed"] == 0 and r["translated"] >= 45          # 예전: 떨어진 줄마다 묶음 5개 → 5회
+    assert len(calls) == 1 and r["failed"] == 0 and r["translated"] >= 35          # 예전: 떨어진 줄마다 묶음 5개 → 5회 · Y11-W: 내수 속성 14줄은 번역 전에 빠짐
     assert len(calls[0][1]["SourceText"]) <= 2000
 
 

@@ -99,7 +99,9 @@ def test_old_erased_coupon_is_restored_from_translated_with_cache(monkeypatch):
     e = ex["detail_images_ko"][0]
     assert seen == [] and r["calls"] == 0 and e["polish"]["outbound"] is False and e["polish"]["reask_old"] == 0
     assert not any(o["action"] == "erase" for o in applied[0])
-    assert r["suggest_erase"] == 16
+    # Y11-W: 16상자 중 사진 높이 1.5% 미만 라틴 장식 글자 2개(「Sale fory」·「stare a casa…」)는 원본 픽셀로 되살린다(지우기 제안 아님)
+    assert r["suggest_erase"] == 14
+    assert sum(1 for o in applied[0] if o["action"] == "restore") == 2
     assert [v["key"] for v in IE.versions(ex, "detail", 3)] == ["original", "translated"]   # 지운 버전은 빠지고 번역본(텐센트)
     assert IE.current_key(e) == "translated" and e["polish_rerender"][0]["dropped"] == ["edit:1"]
 

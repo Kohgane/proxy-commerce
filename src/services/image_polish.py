@@ -408,6 +408,31 @@ def outbound(extra: dict, kind: str, idx: int) -> bool:
 
 
 _HANGUL = re.compile(r"[가-힣]")
+_HAN = re.compile(r"[\u4e00-\u9fff]")
+TINY_PCT = 1.5
+
+
+def tiny_latin(box: Optional[dict], size=None) -> bool:
+    """Y11-W — 사진 높이의 `TINY_PCT`% 미만 상자에 한자 없는 원문(라틴 장식 글자)을 텐센트가 한국어로 칠한 것."""
+    b = box or {}
+    try:
+        H = float((size or [0, 0])[1] or 0)
+        h = float(b.get("h") or 0)
+    except (TypeError, ValueError, IndexError):
+        return False
+    src, tgt = str(b.get("src") or ""), str(b.get("tgt") or "")
+    return bool(H and 0 < h < H * TINY_PCT / 100 and src.strip() and not _HAN.search(src) and _HANGUL.search(tgt))
+
+
+def restorable(e: Optional[dict]) -> bool:
+    """원본 픽셀을 붙일 수 있나 — 번역본과 원본의 좌표 틀이 같은 장(identity)."""
+    return str((e or {}).get("box_frame") or "") == "identity"
+
+
+def ban_cut(r: dict) -> bool:
+    """금지어를 빼서 문구가 반 남짓으로 줄었나(「정품 보장」 → 「정품」)."""
+    ko, tgt = str(r.get("ko") or "").strip(), str(r.get("tgt") or "").strip()
+    return bool(str(r.get("why") or "").startswith("금지어") and ko and tgt and len(ko) < len(tgt) * 0.6)
 
 
 def foreign_revert(text: str, box: Optional[dict]) -> bool:
@@ -418,17 +443,26 @@ def foreign_revert(text: str, box: Optional[dict]) -> bool:
     return bool(t) and not _HANGUL.search(t) and bool(_HANGUL.search(tgt))
 
 
-def _redo_polish(x: dict, boxes: Optional[list] = None) -> bool:
+def _short_of(text, box: Optional[dict]) -> bool:
+    t, tgt = str(text or "").strip(), str((box or {}).get("tgt") or "").strip()
+    return bool(t and tgt and _HANGUL.search(t) and len(t) < len(tgt) * 0.6 and tgt.startswith(t))
+
+
+def _redo_polish(x: dict, boxes: Optional[list] = None, size=None) -> bool:
     """다시 만들 기계 다듬음 버전 — 옛 렌더(Y11-M 이전 Cloudinary 변환·렌더 판 `RENDER_V` 미만) 또는 **지운 상자가 있는 것**(Y11-N: 다듬기는 지우지 않는다)
     또는 **한국어 상자를 한글 없는 글자로 덧그린 것**(Y11-V)."""
     from src.services import image_edit as IE
     if x.get("by") != POLISH_BY:
         return False
     by_id = {f"t{i}": b for i, b in enumerate(boxes or []) if isinstance(b, dict)}
+    ops = [o for o in x.get("ops") or [] if isinstance(o, dict)]
+    restored = {o.get("id") for o in ops if o.get("action") == "restore"}
     return (x.get("render") != "local" or int(x.get("render_v") or 1) < IE.RENDER_V
-            or any(isinstance(o, dict) and o.get("action") == "erase" for o in x.get("ops") or [])
-            or any(isinstance(o, dict) and o.get("action") == "text" and foreign_revert(o.get("text"), by_id.get(o.get("id")))
-                   for o in x.get("ops") or []))
+            or any(o.get("action") == "erase" for o in ops)
+            or any(o.get("action") == "text" and foreign_revert(o.get("text"), by_id.get(o.get("id"))) for o in ops)
+            # Y11-W: 반쪽 문구(금지어를 뺀 배지)를 그린 버전 · 작은 라틴 장식 글자를 되살리지 않은 버전
+            or any(o.get("action") == "text" and _short_of(o.get("text"), by_id.get(o.get("id"))) for o in ops)
+            or bool(size and any(tiny_latin(b, size) and i not in restored for i, b in by_id.items())))
 
 
 def old_render(e: Optional[dict]) -> bool:
@@ -436,7 +470,7 @@ def old_render(e: Optional[dict]) -> bool:
     Y11-M: 옛 렌더(지운 자리 위에 겹쳐 그려 번짐, 21번). Y11-N: AI 「빈칸」을 지우기로 적용한 장(쿠폰 상세 4·6번 등) — 텐센트 글자로 되돌린다."""
     from src.services import image_edit as IE
     eds = IE.edits(e or {})
-    old = [x for x in eds if _redo_polish(x, (e or {}).get("boxes"))]
+    old = [x for x in eds if _redo_polish(x, (e or {}).get("boxes"), (e or {}).get("box_size") if restorable(e) else None)]
     if not old:
         return False
     keys = {f"edit:{x['n']}" for x in old}
@@ -452,7 +486,7 @@ def drop_old_polish(extra: dict, kind: str, idx: int) -> int:
     if not e or not old_render(e):
         return 0
     IE._normalize(e)
-    gone = [x for x in e["edits"] if _redo_polish(x, e.get("boxes"))]
+    gone = [x for x in e["edits"] if _redo_polish(x, e.get("boxes"), e.get("box_size") if restorable(e) else None)]
     keys = {f"edit:{x['n']}" for x in gone}
     e["edits"] = [x for x in e["edits"] if f"edit:{x['n']}" not in keys]
     for k in keys:
@@ -500,17 +534,33 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     by_id = {b["id"]: b for b in boxes}
     ops, too_long, suggest = [], 0, 0
     for r in pr["rows"]:
+        if tiny_latin(by_id.get(r["id"]) or {}, e.get("box_size")) and restorable(e):
+            # Y11-W: 사진 높이 1.5% 미만 라틴 장식 글자(서명 낙서 위 이탈리아어) — 번역하지 않는다. 텐센트가 칠한 자리를 원본으로 되살린다
+            r["why"], r["from"], r["ko"], r["suggest_erase"] = "작은 장식 글자 — 원본 되살림", "restore", r["src"], ""
+            ops.append({"id": r["id"], "action": "restore"})
+            continue
         if r["ko"] == "" and r["tgt"]:
             # Y11-N(오너): 다듬기는 지우지 않는다 — AI 「빈칸」은 지우기 **제안**으로만 남기고 텐센트 글자 그대로(픽셀 0).
             #   지우는 건 사람이 편집기에서 그 상자를 탭해 적용할 때만(자동 경로·백필 경로 둘 다 이 함수).
             r["ko"], r["from"], r["suggest_erase"] = r["tgt"], "tencent", True
             suggest += 1
             continue
+        _b = by_id.get(r["id"]) or {"tgt": r["tgt"]}
         if r["ko"] == r["tgt"]:
             continue
-        if foreign_revert(r["ko"], by_id.get(r["id"]) or {"tgt": r["tgt"]}):
-            r["why"] = "원문으로 되돌리기는 다시 그리지 않음(텐센트 글자 유지)"     # Y11-V: 「ISURE에」
-            r["ko"], r["from"] = r["tgt"], "tencent"
+        if foreign_revert(r["ko"], _b):
+            if restorable(e):                                    # Y11-W: 원문으로 되돌릴 땐 원본 픽셀을 붙인다(다시 그리지 않음)
+                r["why"], r["from"] = "원문으로 되돌림 — 원본 되살림", "restore"
+                ops.append({"id": r["id"], "action": "restore"})
+            else:
+                r["why"] = "원문으로 되돌리기는 다시 그리지 않음(텐센트 글자 유지)"     # Y11-V: 「ISURE에」
+                r["ko"], r["from"] = r["tgt"], "tencent"
+            continue
+        if ban_cut(r):
+            # Y11-W: 금지어(보장 등)를 빼고 남은 반쪽 문구(「정품 보장」→「정품」)를 배지에 그리지 않는다 — 텐센트 글자 + 지우기 제안
+            r["why"] = (r.get("why") or "금지어") + " — 반쪽 문구라 다시 그리지 않음(지우기 제안)"
+            r["ko"], r["from"], r["suggest_erase"] = r["tgt"], "tencent", True
+            suggest += 1
             continue
         # Y11-M: 기준 = 텐센트가 같은 상자에 그린 글자(같은 줄 수·크기의 FIT_KEEP 이상이면 들어감)
         if r["ko"] and not IE.text_fit(r["ko"], by_id.get(r["id"]) or {}, ref=r["tgt"])["fits"]:
@@ -581,6 +631,8 @@ def polish_job(item_id: str, uid: str, kind: str, idx: int) -> Dict:
             if res.get("version"):                               # Y11-V: 다듬은 버전이 생겼으면 네이버 본문 다시 보내기 줄
                 from src.services import naver_detail_refresh as _ndr
                 _ndr.enqueue_item(item_id, fresh, uid)
+                from src.services import coupang_detail_refresh as _cdr   # Y11-W: 쿠팡 등록본도(승인·반려·임시저장일 때 보냄)
+                _cdr.enqueue_item(item_id, fresh, uid, reason="다듬은 버전")
         logger.info("[다듬기] item=%s %s#%s 바뀐 상자 %s · haiku %s회 · %s", item_id, kind, idx, res.get("changed", 0),
                     res.get("calls", 0), res.get("why") or "ok")
         return res
