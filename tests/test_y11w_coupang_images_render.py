@@ -116,3 +116,20 @@ def test_render_local_restores_original_pixels():
     assert b > 150 and r < 90                                                               # 원본(파랑) 자리
     r2, _g2, b2 = im.getpixel((10, 10))
     assert r2 > 150 and b2 < 90                                                             # 그 밖은 번역본 그대로(빨강)
+
+
+def test_spec_block_becomes_key_value_lines_and_drops_tags():
+    """Y11-W 추가(오너): 규격 블록 「키: 값」 한 줄 · 颜色分类(옵션 뭉침)·流行元素·款式定位 태그 · 내수 속성 짝 제외. 값이 앞이든 뒤든 짝."""
+    from src.uploaders import detail_ui_junk as J
+    txt = ("金属\n框架材质\n品质奢华型\n款式定位\n手动调节\n调节功能\n风格\n复古怀旧\n总长\n83cm\n"
+           "颜色分类\n焦黄[Oilwaxed防水油蜡半皮]带踏 黑色全皮带踏\n流行元素\n藤 异形 刺绣\n是否可定制\n是\n品牌\nvrsuk")
+    r = J.strip_page_ui(txt)
+    assert r["text"].split("\n") == ["框架材质: 金属", "调节功能: 手动调节", "风格: 复古怀旧", "总长: 83cm", "品牌: vrsuk"]
+    assert [k for k in r["domestic"]] == ["款式定位", "颜色分类", "流行元素", "是否可定制"]
+    assert r["spec_pairs"] == 5
+
+
+def test_plain_description_is_untouched_by_pairing():
+    from src.uploaders import detail_ui_junk as J
+    txt = "편안한 1인 의자예요.\n오일 왁스 가죽을 썼어요.\n거실·서재에 잘 어울려요."
+    assert J.strip_page_ui(txt)["text"] == txt

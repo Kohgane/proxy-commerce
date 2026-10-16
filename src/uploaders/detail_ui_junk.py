@@ -134,24 +134,85 @@ def strip_page_ui(text: str) -> Dict:
             removed += 1
             i += 1
             continue
-        if s and is_domestic_key(s):
-            # Y11-W: 중국 내수 속성(배송·설치 도시·택시 운송·예약판매…) — 키 줄과 바로 뒤 값 줄(是/否·도시 목록)을 함께
-            domestic.append(s)
-            removed += 1
-            i += 1
-            if i < len(lines) and is_domestic_value(lines[i].strip()):
-                removed += 1
-                i += 1
-            continue
-        if s and is_city_list(s):
-            domestic.append(s[:20])
-            removed += 1
-            i += 1
-            continue
         out.append(lines[i])
         i += 1
+    out, pairs, dropped = spec_pairs(out)
+    removed += dropped
+    domestic = [k for k, _v in pairs.get("dropped") or []]
     body = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
-    return {"text": body, "labels": labels, "blocks": blocks, "removed": removed, "domestic": domestic}
+    return {"text": body, "labels": labels, "blocks": blocks, "removed": removed, "domestic": domestic,
+            "spec_pairs": len(pairs.get("kept") or [])}
+
+
+def is_spec_label(line: str) -> bool:
+    """규격 **키** 줄인가 — 짧고(≤10자) `spec_keys`와 같거나 `spec_label_re`로 끝난다(값 「金属」「83cm」「复古怀旧」은 아니다)."""
+    s = str(line or "").strip()
+    if not s or len(s) > 10 or re.search(r"[\s:：,，]", s):
+        return False
+    t = table()
+    if s in (t.get("spec_keys") or []) or s in (t.get("drop_keys") or []) or s in (t.get("domestic_keys") or []):
+        return True
+    pat = t.get("spec_label_re") or ""
+    return bool(pat and re.search(pat, s))
+
+
+def _drop_key(key: str) -> bool:
+    t = table()
+    return key in (t.get("drop_keys") or []) or any(k in key for k in (t.get("domestic_keys") or []))
+
+
+def spec_pairs(lines: List[str]):
+    """Y11-W 추가 — 「参数信息」 키·값 짝 맞추기 → `(줄들, {kept, dropped}, 뺀 줄 수)`.
+
+    키 줄을 만나면: 바로 앞에 짝 없는 짧은 값 줄이 있으면 그것과(값 먼저 「金属/框架材质」), 아니면 바로 뒤 줄과(키 먼저 「总长/83cm」).
+    짝은 「키: 값」 한 줄로. drop_keys·domestic_keys 키의 짝은 통째로 뺀다. 도시 목록 줄만 따로 있어도 뺀다.
+    키가 하나도 없으면 줄을 그대로 돌려준다(일반 상세 글은 건드리지 않는다)."""
+    keys = [i for i, ln in enumerate(lines) if is_spec_label(ln)]
+    if len(keys) < 2:
+        return [ln for ln in lines if not is_city_list(ln)], {"kept": [], "dropped": []}, sum(1 for ln in lines if is_city_list(ln))
+    out: List[str] = []
+    kept, dropped = [], []
+    pending = None                                           # out 안의 위치 — 짝 없는 짧은 값 줄
+    n_drop = 0
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        s = ln.strip()
+        if not s:
+            out.append(ln)
+            pending = None
+            i += 1
+            continue
+        if is_spec_label(s):
+            val = None
+            if pending is not None:
+                val = out.pop(pending)
+                pending = None
+                i += 1
+            elif i + 1 < len(lines) and lines[i + 1].strip() and not is_spec_label(lines[i + 1]):
+                val = lines[i + 1].strip()
+                i += 2
+            else:
+                i += 1
+            v = (val or "").strip()
+            if _drop_key(s) or is_city_list(v):
+                dropped.append((s, v[:20]))
+                n_drop += 2 if v else 1
+                continue
+            kept.append((s, v))
+            out.append(f"{s}: {v}" if v else s)
+            n_drop += 1 if v else 0                          # 두 줄 → 한 줄
+            continue
+        if is_city_list(s):
+            dropped.append(("", s[:20]))
+            n_drop += 1
+            i += 1
+            continue
+        out.append(ln)
+        # 짧은 값 줄만 다음 키의 「앞 값」 후보(긴 설명 문장은 짝이 아니다)
+        pending = (len(out) - 1) if (len(s) <= 24 and i + 1 < len(lines) and is_spec_label(lines[i + 1])) else None
+        i += 1
+    return out, {"kept": kept, "dropped": dropped}, n_drop
 
 _CITY = re.compile(r"[\u4e00-\u9fff]{1,4}市|全国|北京|上海|天津|重庆")
 
