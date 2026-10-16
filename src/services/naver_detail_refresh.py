@@ -138,6 +138,8 @@ def refresh_one(item: dict, rec: dict, *, seller_id: str = "", make_up: Optional
             up = make_up()
             v = _nd.judge(html, up, str(payload.get("sku") or item.get("id") or ""))
             row["images"] = len(__import__("re").findall(r"<img\b", v.get("html") or ""))
+            from src.services import sent_images as _si
+            row["sent_images"] = _si.from_html(v.get("html") or "")         # Y11X: 보낸 사진 주소 목록(쿠팡과 같은 꼴)
             row["dropped"] = [str(d.get("reason") or "")[:160] for d in v.get("dropped") or []]
             if not v.get("ok"):
                 row["error"] = "보낼 상세 본문이 비었어요(사진을 하나도 못 올렸고 글도 없음)"
@@ -193,6 +195,8 @@ def drain(get_item: Callable[[str, str], Optional[dict]], save_for: Callable[[st
             for u in ex.get("uploaded") or []:
                 if isinstance(u, dict) and u.get("market") == q["market"]:
                     u["detail_sync"] = {k: row.get(k) for k in ("hash", "ok", "at", "error", "images", "same")}
+                    if row.get("sent_images"):
+                        u["detail_sync"]["sent_images"] = row["sent_images"]
                     u["detail_sync"]["raw"] = str(row.get("raw") or "")[:600]
             try:
                 save_for(q["item_id"], q.get("seller_id") or "")(ex)
@@ -208,7 +212,7 @@ def record_last(out: dict) -> None:
     try:
         from src.db import image_translate_queue_pg as st
         keep = ("market", "product_id", "channel_product_no", "sent", "ok", "state", "same", "error", "raw", "images",
-                "dropped", "waiting", "reason", "tries", "at")
+                "dropped", "waiting", "reason", "tries", "at", "sent_images")
         rows = [{k: r.get(k) for k in keep if k in r} for r in (out.get("rows") or [])][:10]
         st.state_set(LAST_KEY, {"at": _now(), **{k: out.get(k) for k in ("picked", "sent", "ok", "left")}, "rows": rows})
     except Exception as exc:                                     # noqa: BLE001

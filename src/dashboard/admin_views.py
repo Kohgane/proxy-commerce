@@ -1772,7 +1772,8 @@ def diagnostics_ocr_compare():
         r = D.start(item, [i for i in idx if i >= 0] if idx else None)
         started, err = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("why") or "시작하지 못했어요"))
     cands = D.resolve(q) if q and not item else []
-    return render_template_string(_OCR_COMPARE_TEMPLATE, res=D.last(), cen=D.last_census(), q=q, item=item,
+    res = D.last()
+    return render_template_string(_OCR_COMPARE_TEMPLATE, res=res, at=D.run_at(res), cen=D.last_census(), q=q, item=item,
                                   no=raw_no, started=started, err=err, cands=cands, searched=bool(q and not item))
 
 
@@ -1794,6 +1795,7 @@ _OCR_COMPARE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="u
 {% elif started is sameas true %}<p class="small" data-role="ocr-compare-started">시작했어요 — 1~2분 뒤 새로고침하세요.</p>{% endif %}
 {% if res.running %}<p class="small" data-role="ocr-compare-running">재는 중… ({{ res.at }})</p>{% endif %}
 {% if res.error %}<p class="text-danger small">{{ res.error }}</p>{% endif %}
+{% if res.pages and not res.running %}<p class="small text-muted" data-role="ocr-compare-at">잰 시각 {{ at }}</p>{% endif %}
 {% for p in res.pages or [] %}<div class="border rounded p-2 mb-2 small" data-role="ocr-compare-page">
 <strong>{{ '사진' if p.kind == 'gallery' else '상세' }} {{ p.no }}번</strong>{% if p.verdict %} · 지금 판정 {{ {'han':'한자 나옴','send':'라틴 있어 번역으로','none':'글자 거의 없음','unknown':'못 함'}[p.verdict] }}{% endif %}{% if p.size %} · {{ p.size[0] }}×{{ p.size[1] }}{% endif %}{% if p.why %} · {{ p.why }}{% endif %}
 <table class="table table-sm mb-1"><thead><tr><th>보낸 방식</th><th>한자</th><th>라틴</th><th>읽은 글자</th></tr></thead><tbody>
