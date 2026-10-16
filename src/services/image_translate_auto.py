@@ -31,7 +31,7 @@ ENV_CAP = "IMAGE_TRANSLATE_DAILY_CAP"
 # Z3-2(오너 2026-10-04): 건당 상한 = 대표 1 + 갤러리 5(갤러리 0~5번) + 상세 10. 넘는 장은 원본 유지.
 # Y9(오너 2026-10-13): 상세는 수집 즉시 전 장(「상세 사진 번역 중 n/28」) — 상한 `IMAGE_TRANSLATE_DETAIL_CAP`(기본 30).
 #   주소만 봐도 뺄 장(스페이서·작은 아이콘)은 보내지 않는다(`detail_image_plan.url_exclusion`).
-PER_ITEM_CAP = {"gallery": 6, "detail": 30}
+PER_ITEM_CAP = {"gallery": 6, "detail": 30, "sku": 30}   # Y11-U: 옵션(SKU) 사진 — 상품당 30장(일 상한에 포함)
 
 
 def per_item_cap(kind: str) -> int:
@@ -169,7 +169,7 @@ def item_failure(item_id: str, extra: dict) -> dict:
     """
     from src.services import image_translate_tencent as tc
     failed = []
-    for key in ("images_ko", "detail_images_ko"):
+    for key in ("images_ko", "detail_images_ko", "sku_images_ko"):
         for e in (extra.get(key) or []):
             if isinstance(e, dict) and e.get("status") == "failed" and e.get("error_class") != "DailyCapReached" and not _q().is_no_text(
                     " ".join(str(e.get(k) or "") for k in ("error_code", "error_message", "reason"))):
@@ -237,10 +237,12 @@ def translate_plan(extra: dict, *, retry: bool = False) -> dict:
     from src.services import prop_text as _pt
     prop_off = _pt.exempt(extra)                                  # 책·포스터 상품이면 소품 규칙 끔(다시 보낸다)
     send, skip, no_text = [], {k: [] for k in SKIP_LABEL}, []
-    for src_key, ko_key, kind in (("images", "images_ko", "gallery"), ("detail_images", "detail_images_ko", "detail")):
+    from src.services import image_translate_store as _its
+    for kind in _its.KINDS:                                       # Y11-U: 갤러리 · 상세 · 옵션(SKU) 사진
+        ko_key = _its.keys_of(kind)[1]
         ents = {int(e.get("idx", -1)): e for e in (extra.get(ko_key) or []) if isinstance(e, dict)}
         cap, seen = per_item_cap(kind), set()
-        for i, u in enumerate([u for u in (extra.get(src_key) or []) if u]):
+        for i, u in enumerate(_its.originals_of(extra, kind)):
             fu = _dip.fix_url(u)
             ux = _dip.url_exclusion(fu)
             if ux:
@@ -459,9 +461,8 @@ def _translate_job(job: dict) -> tuple:
         extra = _json.loads(row.get("extra_json") or "{}") or {}
     except Exception:
         extra = {}
-    src_key = "images" if kind == "gallery" else "detail_images"
-    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
-    originals = [u for u in (extra.get(src_key) or []) if u]
+    ko_key = istore.keys_of(kind)[1]
+    originals = istore.originals_of(extra, kind)                  # Y11-U: SKU 사진은 skus[].image에서
     if not (0 <= idx < len(originals)):
         return "skipped", "그 장이 더는 없습니다"
     # Y11-F: 줄에 선 뒤 다른 길(편집기 「번역하고 글자 상자 받기」 등)이 이미 번역해 상자를 얻었으면 — 보내지도 덮지도 않는다.
@@ -494,6 +495,8 @@ def _translate_job(job: dict) -> tuple:
         pass
     st = entry.get("status")
     why = str(entry.get("error_message") or entry.get("reason") or "")
+    if kind == "sku" and st == "done":
+        _after_sku_translated(item_id, uid, extra)
     if st == "done" and istore.has_boxes(entry):
         # Y11-I: 번역 직후 자동 다듬기 — 새 버전(번역본(다듬음))만 만든다. 텐센트 번역본은 버전으로 남는다. 실패해도 번역은 그대로.
         from src.services import image_polish as _ip
@@ -507,6 +510,21 @@ def _translate_job(job: dict) -> tuple:
     if st == "excluded":                          # Y9: 주소·크기로 뺀 장 — 보내지 않았다(실패 아님)
         return "skipped", str(entry.get("reason") or "")
     return (st if st in ("done", "skipped") else "failed"), why
+
+
+def _after_sku_translated(item_id: str, uid: str, extra: dict) -> None:
+    """Y11-U — 옵션(SKU) 사진이 번역됐고 이 상품의 다른 장이 더 줄에 없으면 쿠팡 등록본 갱신 줄을 세운다(옵션 대표 사진 + 정가).
+    장마다 세우면 장마다 재심사가 걸린다 — 마지막 장에서 한 번."""
+    try:
+        c = _q().counts(item_id) or {}
+        if int(c.get("queued") or 0) > 0 or int(c.get("running") or 0) > 1:     # 지금 이 장이 running 1
+            return
+        from src.services import coupang_detail_refresh as _cdr
+        n = _cdr.enqueue_item(item_id, extra, uid)
+        if n:
+            logger.info("[이미지번역·자동] item=%s 옵션 사진 번역 끝 — 쿠팡 등록본 %d건 갱신 줄", str(item_id)[:8], n)
+    except Exception as exc:                                     # noqa: BLE001 — 갱신 줄은 덤 — 번역 결과는 그대로
+        logger.warning("[이미지번역·자동] 쿠팡 갱신 줄 세우기 실패: %s", exc)
 
 
 def translate_page(url: str, *, idx: int, kind: str, item_id: str, seller_id: str, title: str = "",

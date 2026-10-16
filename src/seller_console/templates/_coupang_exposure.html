@@ -118,9 +118,26 @@
       '<button type="button" class="cpx-act" data-role="cpx-ocr-recheck">OCR 다시 판정(이 상품)</button> ' +
       '<button type="button" class="cpx-act" data-role="cpx-polish">번역 다듬기(이 상품)</button></p>' +
       '<p class="cpx-cap" data-role="cpx-ocr-line" hidden></p><p class="cpx-cap" data-role="cpx-polish-line" hidden></p>' : '';
+    // Y11-U(오너 14:58): 옵션(SKU) 사진 — 쿠팡 옵션 썸네일로 나간다. 번역본/원본/번역 중 · 판촉 글자면 「지우기 제안」 + 「사진 편집」
+    var OSRC = {translated: '번역본', original: '원본'};
+    var opts = (d.options || []).map(function (o) {
+      var st = o.source === 'translated' ? 'is-ok' : (o.status === 'queued' || o.status === 'running' ? 'is-wait' : (o.status === 'failed' ? 'is-bad' : 'is-orig'));
+      var lab = o.source === 'translated' ? '번역본' : (o.status === 'queued' || o.status === 'running' ? '번역 중' : (o.status === 'failed' ? '번역 실패' : '원본'));
+      return '<figure class="cpx-tile cpx-opt" data-role="cpx-opt-tile" data-idx="' + o.idx + '">' +
+        '<img src="' + esc(view === 'orig' ? o.original : o.url) + '" alt="옵션 사진 ' + (o.idx + 1) + '" referrerpolicy="no-referrer" loading="lazy">' +
+        '<figcaption><span class="cpx-osrc ' + st + '" data-role="cpx-opt-src">' + lab + '</span></figcaption>' +
+        (o.labels && o.labels.length ? '<p class="cpx-olab">' + esc(o.labels.join(' · ')) + '</p>' : '') +
+        (o.promo && o.promo.length ? '<p class="cpx-opromo" data-role="cpx-opt-promo">판촉 글자 — 지우기 제안(' + esc(o.promo.slice(0, 2).join(', ')) + ')</p>' : '') +
+        (o.status === 'failed' && o.reason ? '<p class="cpx-out-why">' + esc(o.reason) + '</p>' : '') +
+        '<button type="button" class="cpx-act" data-role="cpx-opt-edit" data-idx="' + o.idx + '">사진 편집</button></figure>';
+    }).join('');
+    var nOrig = (d.options || []).filter(function (o) { return o.source !== 'translated'; }).length;
+    var optBlock = opts ? '<div class="cpx-slabel" data-role="cpx-opt-label">옵션 사진 ' + (d.options || []).length + '장 — 쿠팡 옵션 썸네일' +
+      (nOrig ? ' · 원본 ' + nOrig + '장(「다시 번역」으로 번역)' : '') + '</div><div class="cpx-strip" data-role="cpx-opts">' + opts + '</div>' : '';
     body.innerHTML = rev + fail + diag + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
       '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>' +
-      (out ? '<div class="cpx-slabel" data-role="cpx-out-label">등록에서 빠진 사진 — 판촉 글자를 지우면 다시 들어가요</div><div class="cpx-strip" data-role="cpx-out">' + out + '</div>' : '');
+      (out ? '<div class="cpx-slabel" data-role="cpx-out-label">등록에서 빠진 사진 — 판촉 글자를 지우면 다시 들어가요</div><div class="cpx-strip" data-role="cpx-out">' + out + '</div>' : '') +
+      optBlock;
   }
   var pollTimer = null;
   function pollCheck(d, n) {
@@ -199,6 +216,8 @@
       diagStart('ocr', b);
     } else if (role === 'cpx-polish') {
       diagStart('polish', b);
+    } else if (role === 'cpx-opt-edit') {
+      if (window.kgpImageEdit) window.kgpImageEdit.open(itemId, 'sku', +b.getAttribute('data-idx'), load);   // Y11-U — 옵션 사진
     } else if (role === 'cpx-edit') {
       if (window.kgpImageEdit) window.kgpImageEdit.open(itemId, 'gallery', +b.getAttribute('data-idx'), load);   // Y11 — 닫으면 다시 그린다
     } else if (role === 'cpx-override') {

@@ -2408,6 +2408,14 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kie-err { color: var(--danger); font-size: var(--caption); }
 .cpx-tile.is-out img { filter: grayscale(1) contrast(.85); }
 .cpx-out-why { font-size: var(--caption); color: var(--text-muted); margin: 2px 0; word-break: keep-all; overflow-wrap: anywhere; }
+/* Y11-U: 옵션(SKU) 사진 — 번역본/원본/진행/실패를 색+글로(비색 단서) */
+.cpx-osrc { font-size: var(--caption); padding: 0 6px; border-radius: var(--radius-sm); border: 1px solid var(--border); color: var(--text-muted); }
+.cpx-osrc.is-ok { color: var(--teal-strong); border-color: var(--teal); }
+.cpx-osrc.is-wait { color: var(--text-muted); }
+.cpx-osrc.is-bad { color: var(--danger); border-color: var(--danger); }
+.cpx-osrc.is-orig { color: var(--ink); }
+.cpx-olab { font-size: var(--caption); color: var(--text); margin: 2px 0; word-break: keep-all; overflow-wrap: anywhere; }
+.cpx-opromo { font-size: var(--caption); color: var(--warn); margin: 2px 0; word-break: keep-all; overflow-wrap: anywhere; }
 
 /* Y11-K: 드로어 상단 상품 ID(36자) — 폰 폭에서 줄 밖으로 안 나가게 */
 .kgp-id-line code { overflow-wrap: anywhere; word-break: break-all; }

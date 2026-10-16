@@ -96,7 +96,7 @@ def echo_texts(extra: Optional[dict]) -> List[str]:
     VRSUK 상세 25의 「Zaha Hadid」 상자(사진의 0.21%)는 OCR이 기울기·확신을 주지 않아 소품 표시가 안 됐다 — 같은 책
     (「IS THAT YUO」「Zaha Hadid」)이 사진 3·상세 9에 통째 소품으로 찍혀 있었다."""
     out = []
-    for key in ("images_ko", "detail_images_ko"):
+    for key in ("images_ko", "detail_images_ko", "sku_images_ko"):
         for e in (extra or {}).get(key) or []:
             if isinstance(e, dict) and (e.get("prop_only") or str(e.get("box_frame") or "") in ROTATED_FRAMES):
                 t = _norm_words(" ".join(str(e.get(k) or "") for k in ("prop_text", "source_text", "ocr_text")))

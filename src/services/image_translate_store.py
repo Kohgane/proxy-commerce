@@ -428,6 +428,53 @@ def load_extra(row: dict) -> dict:
 # D2 — 등록에 실제로 나갈 배열
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Y11-U(오너 2026-10-16 14:58) — 사진 종류: 갤러리 · 상세 · **옵션(SKU)**
+#   쿠팡 대표·옵션 썸네일에 SKU 사진이 원문 그대로 나갔다(【棕色半皮】…·正品保障·20年质保). SKU 사진도 같은 번역·소품·판촉
+#   규칙과 일 상한을 지난다. SKU 사진은 저장된 목록이 따로 없어 `skus[].image`에서 **나온 순서대로 중복 없이** 만든다.
+# ---------------------------------------------------------------------------
+KINDS = ("gallery", "detail", "sku")
+_KEYS = {"gallery": ("images", "images_ko"), "detail": ("detail_images", "detail_images_ko"),
+         "sku": ("sku_images", "sku_images_ko")}
+
+
+def keys_of(kind: str) -> tuple:
+    """`(원본 칸, 번역본 칸)` — 모르는 종류는 갤러리."""
+    return _KEYS.get(str(kind or ""), _KEYS["gallery"])
+
+
+def parse_kind(value, default: str = "gallery") -> str:
+    v = str(value or "")
+    return v if v in KINDS else default
+
+
+def sku_images_of(extra: dict) -> list:
+    """SKU 사진 원본 목록 — `skus[].image`(없으면 `img`·`pic`)를 나온 순서대로, 중복 없이."""
+    out = []
+    for k in (extra or {}).get("skus") or []:
+        if not isinstance(k, dict):
+            continue
+        u = str(k.get("image") or k.get("img") or k.get("pic") or "").strip()
+        if u and u not in out:
+            out.append(u)
+    return out
+
+
+def originals_of(extra: dict, kind: str) -> list:
+    if kind == "sku":
+        return sku_images_of(extra)
+    return [u for u in ((extra or {}).get(keys_of(kind)[0]) or []) if u]
+
+
+def sku_image_map(extra: dict, *, item_id: str = "") -> dict:
+    """`{원본 SKU 사진 주소: 나갈 주소}` — 번역본을 쓰기로 된 장만 바뀐다(나머지는 원본 그대로 · 등록이 SKU마다 바꿔 낀다)."""
+    originals = sku_images_of(extra)
+    if not originals:
+        return {}
+    eff = effective_images(extra, kind="sku", originals=originals, item_id=item_id)
+    return {o: e for o, e in zip(originals, eff) if e and e != o}
+
+
 def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
                      item_id: str = "") -> list:
     """등록에 **실제로 나갈** 이미지 배열. 원본은 건드리지 않는다.
@@ -440,12 +487,11 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
     「서랍에선 한국어인데 마켓엔 중국어」가 된다 — 그게 D2가 고치러 온 바로 그 증상이다.
     """
     ex = extra if isinstance(extra, dict) else {}
-    src_key = "images" if kind == "gallery" else "detail_images"
-    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    src_key, ko_key = keys_of(kind)
     # `originals`를 주면 **그걸** 기준으로 매핑한다 — 사람이 서랍에서 방금 고친 목록이
     #   저장된 목록과 다를 수 있고, 등록에는 **지금 화면의 것**이 나가야 한다.
     if originals is None:
-        originals = [u for u in (ex.get(src_key) or []) if u]
+        originals = originals_of(ex, kind)
     else:
         originals = [u for u in (originals or []) if u]
     by_idx = {int(e.get("idx", -1)): e for e in (ex.get(ko_key) or []) if isinstance(e, dict)}
@@ -475,6 +521,10 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
             out.append(_origin_or_cdn(orig, cdn_map, i) if gone else url)
         else:
             out.append(_origin_or_cdn(orig, cdn_map, i))
+    # Y11-U: SKU 사진은 SKU와 **자리로** 짝지어진다 — 빼거나 순서를 바꾸지 않는다(판촉 글자가 있으면 빼지 않고
+    #   「지우기 제안」 — 사진 편집에서 지운다).
+    if kind == "sku":
+        return out
     # T3: 프로모션 의심 장은 기본 제외(오너가 「그래도 넣기」를 켠 장은 넣는다). 전부 빠지면 대표 이미지가
     #   없어 등록이 막히므로 그땐 빼지 않는다(요약에 그대로 보인다).
     if kind == "detail":
@@ -513,7 +563,7 @@ def rep_first(pairs: list, originals: list, extra: dict, kind: str = "gallery") 
 
 # 번역본이 아닌 **원본**을 CDN에 올린 주소. 원본 배열(`images`)은 건드리지 않는다 —
 #   공급사 주소는 재번역·소싱처 감시가 쓴다. 옆에 따로 적는다 (F34-2b).
-CDN_MAP_KEYS = {"gallery": "images_cdn", "detail": "detail_images_cdn"}
+CDN_MAP_KEYS = {"gallery": "images_cdn", "detail": "detail_images_cdn", "sku": "sku_images_cdn"}
 
 
 def origin_cdn_map(extra: dict, kind: str) -> dict:
@@ -600,10 +650,9 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
     알아야 한다. 같은 판단을 화면이 다시 하지 않게 여기서 함께 낸다.
     """
     ex = extra if isinstance(extra, dict) else {}
-    src_key = "images" if kind == "gallery" else "detail_images"
-    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    src_key, ko_key = keys_of(kind)
     if originals is None:
-        originals = [u for u in (ex.get(src_key) or []) if u]
+        originals = originals_of(ex, kind)
     else:
         originals = [u for u in (originals or []) if u]
     by_idx = {int(e.get("idx", -1)): e for e in (ex.get(ko_key) or []) if isinstance(e, dict)}
@@ -655,7 +704,7 @@ def effective_plan(extra: dict, *, kind: str = "gallery", originals=None,
             "dense": bool(e.get("dense")),
             "promo": promo_of(e),
             "promo_include": bool(e.get("promo_include")),
-            "promo_excluded": promo_excluded(e),
+            "promo_excluded": promo_excluded(e) if kind != "sku" else False,   # Y11-U: SKU 사진은 빼지 않는다(지우기 제안만)
             # Y9: 상세 — 번역/원본/제외 판정 + 사유 · 등록 순서(빠지면 0)
             **(_detail_verdict(e, orig, _order.get(i, 0)) if kind == "detail" else {}),
             "stored_by": e.get("stored_by", ""),
@@ -685,7 +734,7 @@ def set_use_flags(extra: dict, flags: dict, *, kind: str = "gallery") -> list:
     **번역본이 없는 장은 켜지지 않는다.** 켜 봐야 `effective_images`가 원본을 쓰므로,
     화면만 켜진 척하면 사람이 「켰는데 왜 원본이지」를 겪는다.
     """
-    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    ko_key = keys_of(kind)[1]
     rows = [dict(e) for e in ((extra or {}).get(ko_key) or []) if isinstance(e, dict)]
     want = {int(k): bool(v) for k, v in (flags or {}).items()}
     for e in rows:
@@ -697,7 +746,7 @@ def set_use_flags(extra: dict, flags: dict, *, kind: str = "gallery") -> list:
 
 def set_promo_include(extra: dict, idx: int, include: bool, *, kind: str = "gallery") -> list:
     """T3: 프로모션 의심 장을 **그래도 넣을지**(오너 판단). 갱신된 `images_ko`를 돌려준다."""
-    ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    ko_key = keys_of(kind)[1]
     rows = [dict(e) for e in ((extra or {}).get(ko_key) or []) if isinstance(e, dict)]
     for e in rows:
         if int(e.get("idx", -1)) == int(idx):
@@ -727,7 +776,7 @@ def outbound_pages(extra: dict, *, item_id: str = "") -> list:
     from src.services.image_reachability import is_internal
 
     pages = []
-    for kind in ("gallery", "detail"):
+    for kind in KINDS:                                           # Y11-U: SKU 사진도 등록에 나간다 — 외부 주소 확인·CDN 대상
         for p in effective_plan(extra, kind=kind, item_id=item_id):
             row = dict(p)
             row["outward"] = not is_internal(row.get("url") or "")
@@ -787,7 +836,7 @@ def effective_summary(extra: dict) -> dict:
     """
     out = {"translated": 0, "original": 0, "warn_idx": [], "dense_idx": [], "promo_excluded": [],
            "promo_included": []}
-    for kind in ("gallery", "detail"):
+    for kind in KINDS:                                          # Y11-U: 옵션(SKU) 사진도 확인 대상
         for p in effective_plan(extra, kind=kind):
             if p.get("promo"):                                  # T3: 프로모션 의심 — 빠졌나/오너가 넣었나
                 (out["promo_excluded"] if p["promo_excluded"] else out["promo_included"]).append(

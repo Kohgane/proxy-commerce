@@ -73,6 +73,24 @@ def size_exclusion(w: int, h: int) -> str:
     return ""
 
 
+# Y11-U(오너 2026-10-16 14:58): 옵션(SKU) 사진 위 **보증·정품 배지**(正品保障·20年质保 등) — 빼지 않고 「지우기 제안」만.
+#   갤러리·상세 제외 규칙(promo_img)엔 넣지 않는다(그 장들의 등록 제외가 바뀌면 안 된다).
+BADGE_RE = (r"正品保[障证]", r"\d+\s*年\s*质保", r"质保\s*\d+\s*年", r"官方正品", r"假一[赔罚]\S{0,2}", r"品质保[证障]",
+            r"정품\s*보장", r"\d+\s*년\s*(?:품질\s*)?(?:보증|보장)", r"품질\s*보증", r"가품\s*보상")
+
+
+def badge_hits(text: str) -> List[str]:
+    """SKU 사진 글(원문·번역문)의 보증·정품 배지 조각 — 찾은 그대로."""
+    s = str(text or "")
+    out: List[str] = []
+    for p in BADGE_RE:
+        for m in re.finditer(p, s):
+            frag = m.group(0).strip()
+            if frag and frag not in out:
+                out.append(frag)
+    return [f for f in out if not any(f != g and f in g for g in out)]      # 「품질 보증」 ⊂ 「20년 품질 보증」 — 긴 것만
+
+
 def text_exclusion(text: str) -> str:
     """OCR 글(원문·번역문)로 뺄 장 — 판촉어(`promo_img`) + 스토어 UI·수상 배너. 사유 한 줄(빈 문자열 = 아님)."""
     s = str(text or "")

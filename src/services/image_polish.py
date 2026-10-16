@@ -550,7 +550,8 @@ def polish_job(item_id: str, uid: str, kind: str, idx: int) -> Dict:
         if "rows" in res:                                        # 다듬기 기록(바뀐 것 없음 포함)이 생겼을 때만 저장
             from src.services import image_edit as IE
             mine = IE._entry(extra, kind, idx)
-            ko_key = "images_ko" if kind == "gallery" else "detail_images_ko"
+            from src.services.image_translate_store import keys_of as _ko
+            ko_key = _ko(kind)[1]
             row = store.get(item_id, seller_ids={uid}) or {}     # 그 사이 다른 장이 적혔을 수 있다 — 이 장만 바꿔 넣는다
             fresh = json.loads(row.get("extra_json") or "{}") or {}
             ents = [x for x in fresh.get(ko_key) or [] if isinstance(x, dict) and int(x.get("idx", -1)) != int(idx)]
@@ -569,7 +570,8 @@ def item_targets(extra: dict) -> List[Tuple[str, int]]:
     from src.services import image_edit as IE
     from src.services import image_translate_store as istore
     out = []
-    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
+    for kind in istore.KINDS:                                    # Y11-U: 옵션(SKU) 사진도 다듬는다
+        key = istore.keys_of(kind)[1]
         for e in extra.get(key) or []:
             if not isinstance(e, dict) or e.get("status") != "done" or not istore.has_boxes(e):
                 continue

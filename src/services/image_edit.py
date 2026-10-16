@@ -77,7 +77,8 @@ def configured() -> Tuple[bool, str]:
 # ── 장 · 버전 ───────────────────────────────────────────────────────────────────────────────
 
 def _entry(extra: dict, kind: str, idx: int, create: bool = False) -> Optional[dict]:
-    key = "images_ko" if kind == "gallery" else "detail_images_ko"
+    from src.services.image_translate_store import keys_of
+    key = keys_of(kind)[1]
     rows = extra.setdefault(key, []) if create else (extra.get(key) or [])
     for e in rows:
         if isinstance(e, dict) and int(e.get("idx", -1)) == int(idx):
@@ -91,7 +92,8 @@ def _entry(extra: dict, kind: str, idx: int, create: bool = False) -> Optional[d
 
 def _original(extra: dict, kind: str, idx: int) -> str:
     """수집 원본 — `extra.images`(상세면 `detail_images`)의 그 장. **읽기만 한다**(Y11-E: 원본 불변)."""
-    src = [u for u in (extra.get("images" if kind == "gallery" else "detail_images") or []) if u]
+    from src.services.image_translate_store import originals_of
+    src = originals_of(extra, kind)                               # Y11-U: SKU 사진 포함
     return src[idx] if 0 <= idx < len(src) else ""
 
 
@@ -422,7 +424,7 @@ def legacy_ops(ed: Optional[dict]) -> bool:
 def drop_legacy_edits(extra: dict) -> List[Dict]:
     """색 덩어리 검출로 만든 편집본을 **버전 목록에서 빼고** 그 바탕으로 돌린다. 되돌린 장 `[{kind, idx, at}]` — 기록도 남긴다."""
     out = []
-    for kind, key in (("gallery", "images_ko"), ("detail", "detail_images_ko")):
+    for kind, key in (("gallery", "images_ko"), ("detail", "detail_images_ko"), ("sku", "sku_images_ko")):
         for e in list(extra.get(key) or []):
             if not isinstance(e, dict):
                 continue
