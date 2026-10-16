@@ -253,6 +253,35 @@ def title_fix(text: str, src: str, *, hits: dict | None = None) -> str:
     return s
 
 
+_CURLY = re.compile(r"\{([^{}]*)\}")
+_KANA = re.compile(r"[\u3040-\u30ff]")
+
+
+def unbrace_title(text: str) -> str:
+    """Y11-S(오너 2026-10-16 07:46) — 상품명의 **중괄호 묶음**을 통째로(쿠팡명 Y11-D 규칙과 같은 판단, 전 마켓 공통 제목).
+
+    실측: 네이버 상품명 「[해외직구] VRSUK{비즈니스 시리즈} 심플 리클라이너 …」 — Y11-D는 쿠팡명에만 들어가 있었다.
+    한글이 든 묶음 → 괄호만 벗기고 띄움(「VRSUK 비즈니스 시리즈 심플…」) · 한자·가나만 든 묶음 → 통째로 뗌 ·
+    그 밖(라틴·숫자) → 둥근 괄호로(「(SPORTLINK)」). 짝 없는 중괄호는 지운다. 대괄호·둥근 괄호는 그대로(「[해외직구]」).
+    """
+    s = str(text or "").translate(_FW)
+    if "{" not in s and "}" not in s:
+        return s
+
+    def _one(m):
+        inner = m.group(1).strip()
+        if not inner:
+            return " "
+        if re.search("[가-힣]", inner):
+            return f" {inner} "
+        if _HAN.search(inner) or _KANA.search(inner):
+            return " "
+        return f" ({inner}) "
+    s = _CURLY.sub(_one, s).replace("{", " ").replace("}", " ")
+    s = re.sub(r"\s+([,)\]])", r"\1", s)
+    return re.sub(r"\s{2,}", " ", s).strip()
+
+
 def polish_ko(text: str, *, hits: dict | None = None, src: str = "") -> str:
     """번역 **후** 한국어 정리 — 판촉어·가격 문구 삭제, 빈 괄호·겹친 구분자 정리.
 
@@ -299,7 +328,7 @@ def polish_ko(text: str, *, hits: dict | None = None, src: str = "") -> str:
     s = trademark_fix(s)
     if had_ip:
         s = _drop_ip_context(s, hits)
-    return _tidy(s)
+    return _tidy(unbrace_title(s))
 
 
 def drop_detail_lines(text: str) -> tuple:
@@ -360,6 +389,21 @@ def trademark_fix(text: str) -> str:
 
 
 MARK_MASK = "「확인 필요」"
+
+
+def gated_names(text: str) -> List[str]:
+    """Y11-S(오너 2026-10-16 07:46) — 원문에 든 레플리카·IP·지울 상표 이름(원문 표기 그대로, 나온 순서·중복 없이).
+    원문은 **그대로 보이고** 이 목록은 옆 배지로 — 예전엔 원문 가운데에 「확인 필요」를 끼워 넣었다(`mask_marks`)."""
+    s = str(text or "")
+    hits = {}
+    for e in rules().get("trademarks") or []:
+        if e.get("mode") not in ("replica", "drop", "ip"):
+            continue
+        for n in _tm_names(e):
+            m = re.search(re.escape(n), s, flags=re.I if n.isascii() else 0)
+            if m:
+                hits.setdefault(m.group(0).lower() if n.isascii() else m.group(0), (m.start(), m.group(0)))
+    return [n for _i, n in sorted(hits.values())]
 
 
 def mask_marks(text: str) -> str:

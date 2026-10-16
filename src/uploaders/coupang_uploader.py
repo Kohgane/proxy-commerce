@@ -372,13 +372,15 @@ class CoupangUploader(BaseUploader):
                 search_extra=chk['search_extra'], items_plan=chk.get('items_plan') or None)
             path = '/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
             result = self._api_request('POST', path, data=payload)
+            result, payload, img_check = self._detail_image_guard('POST', path, payload, result,
+                                                                  where=f"등록 {product.get('sku', '')}")
             if 'error' in result:
                 # 실패 = 무조건 전송 블록 원문을 남긴다(다음 세션이 로그 고고학을 반복하지 않게).
                 self._log_attr_block(product.get('sku', ''), payload,
                                      outcome='fail', detail=str(result['error']))
                 from src.uploaders.coupang_options import error_lines
                 return {'success': False, 'error': result['error'], 'sku': product.get('sku', ''),
-                        'error_lines': error_lines(result.get('error_body') or '')}
+                        'error_lines': error_lines(result.get('error_body') or ''), 'detail_image': img_check}
             # 쿠팡 응답의 data는 sellerProductId(숫자) 또는 {"sellerProductId": ...} 또는 null일 수 있다.
             data = result.get('data')
             if isinstance(data, dict):
@@ -409,7 +411,7 @@ class CoupangUploader(BaseUploader):
                     logger.warning('승인요청 실패(등록은 됨) sid=%s: %s', product_id, approval.get('error'))
             url = f'https://www.coupang.com/vp/products/{product_id}' if product_id else ''
             return {'success': True, 'product_id': product_id, 'url': url, 'sku': product.get('sku', ''),
-                    'sent': self.sent_summary(payload),
+                    'sent': self.sent_summary(payload), 'detail_image': img_check,
                     'approval_requested': bool(approval and approval.get('success')),
                     'approval_error': (None if (approval or {}).get('success') else (approval or {}).get('error'))}
         except Exception as exc:
@@ -628,7 +630,10 @@ class CoupangUploader(BaseUploader):
         plain = re.sub(r'<[^>]+>', '\n', text)
         lines = [ln for ln in (x.strip() for x in plain.split('\n')) if ln]
         imgs = it0.get('images') or []
+        _sp = [CoupangUploader._as_int(it.get('salePrice')) or 0 for it in items]
+        _sp = [x for x in _sp if x > 0]
         return {'category': str(p.get('displayCategoryCode') or ''), 'items': len(items),
+                'sale_price': min(_sp) if _sp else 0, 'name': str(p.get('sellerProductName') or ''),   # Y11-S: 실제 판매가·이름
                 'images': len(imgs), 'image_types': sorted({str((i or {}).get('imageType') or '') for i in imgs if isinstance(i, dict)}),
                 'detail_lines': len(lines), 'detail_chars': len(plain.strip()), 'detail_images': detail_imgs,
                 'detail_head': (lines[0][:40] if lines else ''),
@@ -675,18 +680,25 @@ class CoupangUploader(BaseUploader):
             return {'success': False, 'error': '수정 몸통에 sellerProductId가 없습니다(조회 원문이 아님)'}
         try:
             res = self._api_request('PUT', self.MODIFY_PATH, data=body)
+            # Y11-R 보강: 상세 이미지 블록 응답 판정 · 거부면 글만으로 한 번 더(받아진 몸통의 contents를 돌려준다)
+            res, sent_body, img = self._detail_image_guard('PUT', self.MODIFY_PATH, body, res, where='상세 갱신',
+                                                           sid=str(body.get('sellerProductId') or ''))
         except Exception as exc:
             return {'success': False, 'error': str(exc)}
+        extra = {'detail_image': img}
+        _it = (sent_body.get('items') or [{}])[0] if isinstance(sent_body, dict) else {}
+        if img and _it.get('contents') is not None:
+            extra['contents_sent'] = _it.get('contents')
         # M8: 쿠팡이 **답을 했는지**(HTTP 상태·본문 원문)를 같이 돌려준다 — 거부(4xx)는 마켓의 답, 응답 없음은 우리 쪽 장애
         status = (getattr(self, 'last_sign', None) or {}).get('status')
         if not isinstance(res, dict) or 'error' in res:
             return {'success': False, 'error': (res or {}).get('error') if isinstance(res, dict) else '응답 없음',
-                    'market_status': status, 'body': (res or {}).get('error_body', '') if isinstance(res, dict) else ''}
+                    'market_status': status, 'body': (res or {}).get('error_body', '') if isinstance(res, dict) else '', **extra}
         code = str(res.get('code') or '').upper()
         if code and code not in ('SUCCESS', '200', 'OK'):
             return {'success': False, 'error': f"쿠팡 수정 거부: {res.get('message') or code}",
-                    'market_status': status, 'body': json.dumps(res, ensure_ascii=False)[:8000]}
-        return {'success': True, 'market_status': status}
+                    'market_status': status, 'body': json.dumps(res, ensure_ascii=False)[:8000], **extra}
+        return {'success': True, 'market_status': status, 'body': json.dumps(res, ensure_ascii=False)[:2000], **extra}
 
     def request_approval(self, seller_product_id: str) -> dict:
         """SAVED(반려/임시저장) 상품 재승인 요청 — `PUT .../seller-products/{sid}/approvals` 한 방.
@@ -1280,6 +1292,97 @@ class CoupangUploader(BaseUploader):
             pass
         return out[:CoupangUploader.DETAIL_IMAGE_MAX]
 
+    # ── Y11-R 보강(오너 2026-10-16): 이미지 블록 첫 응답 판정 · 거부면 텍스트로 자동 재전송 · 이후 자동 끔 ─────
+    DETAIL_IMG_VERDICT_KEY = 'coupang_detail_image:verdict'
+    _IMG_VERDICT = {'at': 0.0, 'v': None}
+    _CONTENTS_HINT = re.compile(r'content|컨텐츠|콘텐츠|상세|이미지|image', re.I)
+
+    @classmethod
+    def detail_image_verdict(cls) -> dict:
+        """`{state, first, last, history}` — state: accepted(받음)·rejected(거부 → 이후 글만)·unclear. 60초 캐시."""
+        if cls._IMG_VERDICT['v'] is not None and time.time() - cls._IMG_VERDICT['at'] < 60:
+            return cls._IMG_VERDICT['v']
+        try:
+            from src.db import image_translate_queue_pg as st
+            v = st.state_get(cls.DETAIL_IMG_VERDICT_KEY) or {}
+        except Exception:                                         # noqa: BLE001 — 못 읽으면 판정 없음(보낸다)
+            v = {}
+        cls._IMG_VERDICT.update(at=time.time(), v=v)
+        return v
+
+    @classmethod
+    def note_detail_image_verdict(cls, state: str, *, raw: str, where: str = '', retry_raw: str = '', sid: str = '') -> dict:
+        """판정을 남긴다 — 한 번 `rejected`면 그대로(오너가 풀기 전까지 글만 보낸다). 첫 응답(`first`)은 덮지 않는다."""
+        from datetime import datetime, timezone
+        try:
+            from src.db import image_translate_queue_pg as st
+            cur = st.state_get(cls.DETAIL_IMG_VERDICT_KEY) or {}
+        except Exception:                                         # noqa: BLE001
+            st, cur = None, {}
+        row = {'state': state, 'at': datetime.now(timezone.utc).isoformat(), 'where': str(where)[:80], 'sid': str(sid or ''),
+               'raw': str(raw or '')[:1500], **({'retry_raw': str(retry_raw)[:1500]} if retry_raw else {})}
+        keep = cur.get('state') == 'rejected'
+        v = {'state': 'rejected' if keep else (state if state in ('accepted', 'rejected') else (cur.get('state') or state)),
+             'first': cur.get('first') or row, 'last': row, 'history': (list(cur.get('history') or []) + [row])[-10:]}
+        try:
+            if st is not None:
+                st.state_set(cls.DETAIL_IMG_VERDICT_KEY, v)
+        except Exception as exc:                                  # noqa: BLE001 — 기록 실패는 로그만
+            logger.warning('[쿠팡 상세 이미지] 판정 기록 실패: %s', exc)
+        cls._IMG_VERDICT.update(at=time.time(), v=v)
+        logger.info('[쿠팡 상세 이미지] %s (%s) 응답: %s%s', state, where, str(raw)[:300],
+                    f' · 글만 재전송: {str(retry_raw)[:300]}' if retry_raw else '')
+        return v
+
+    @staticmethod
+    def has_image_block(contents) -> bool:
+        return any(str((d or {}).get('detailType') or '').upper() == 'IMAGE'
+                   for c in (contents or []) if isinstance(c, dict) for d in (c.get('contentDetails') or []))
+
+    @staticmethod
+    def text_only(contents) -> list:
+        out = [c for c in (contents or []) if isinstance(c, dict)
+               and not any(str((d or {}).get('detailType') or '').upper() == 'IMAGE' for d in (c.get('contentDetails') or []))]
+        return out or [{'contentsType': 'TEXT', 'contentDetails': [{'content': '상품 상세페이지를 참조해 주세요.', 'detailType': 'TEXT'}]}]
+
+    @staticmethod
+    def _outcome(result) -> tuple:
+        """`(ok, 원문)` — 쿠팡이 받았나와 그 응답 원문(앞 1,500자)."""
+        if not isinstance(result, dict):
+            return False, '응답 없음'
+        if 'error' in result:
+            return False, (str(result.get('error') or '') + ' ' + str(result.get('error_body') or ''))[:1500]
+        code = str(result.get('code') or '').upper()
+        raw = json.dumps(result, ensure_ascii=False)[:1500]
+        return (not code or code in ('SUCCESS', '200', 'OK')), raw
+
+    def _detail_image_guard(self, method: str, path: str, body: dict, result, *, where: str = '', sid: str = ''):
+        """이미지 블록을 실은 몸통의 응답을 본다 → `(result, 실제로 받아진 몸통, 판정|None)`.
+
+        받았으면 accepted(첫 응답 원문 저장). 거부 사유가 상세·이미지 쪽이면 **이미지 블록을 빼고 한 번 더** 보낸다 —
+        글만으로 통과(또는 다른 이유로 거부)되면 rejected(이후 `_build_contents`가 글만 만든다), 글만으로도 같은
+        종류로 거부되면 unclear(이미지 탓이 아니었다 — 끄지 않는다). 상세와 무관한 거부는 다시 보내지 않는다.
+        """
+        items = (body or {}).get('items') or []
+        if not items or not self.has_image_block((items[0] or {}).get('contents')):
+            return result, body, None
+        ok, raw = self._outcome(result)
+        if ok:
+            self.note_detail_image_verdict('accepted', raw=raw, where=where, sid=sid)
+            return result, body, {'state': 'accepted', 'raw': raw}
+        if not self._CONTENTS_HINT.search(raw):
+            return result, body, {'state': 'other_error', 'raw': raw}
+        text_body = json.loads(json.dumps(body))
+        for it in text_body.get('items') or []:
+            it['contents'] = self.text_only(it.get('contents'))
+        r2 = self._api_request(method, path, data=text_body)
+        ok2, raw2 = self._outcome(r2)
+        state = 'rejected' if (ok2 or not self._CONTENTS_HINT.search(raw2)) else 'unclear'
+        self.note_detail_image_verdict(state, raw=raw, retry_raw=raw2, where=where, sid=sid)
+        if state == 'unclear':
+            return result, body, {'state': state, 'raw': raw, 'retry_raw': raw2, 'retry_ok': ok2}
+        return r2, text_body, {'state': state, 'raw': raw, 'retry_raw': raw2, 'retry_ok': ok2}
+
     def _build_contents(self, product: dict) -> list:
         """옵션 상세컨텐츠(contents). 비우면 쿠팡이 거부 → 상세설명 HTML/텍스트로 채운다.
 
@@ -1293,7 +1396,9 @@ class CoupangUploader(BaseUploader):
             'contentsType': 'TEXT',
             'contentDetails': [{'content': body, 'detailType': 'TEXT'}],
         }
-        imgs = self.detail_image_urls(product) if os.getenv('COUPANG_DETAIL_IMAGES', '1').strip() != '0' else []
+        off = (os.getenv('COUPANG_DETAIL_IMAGES', '1').strip() == '0'
+               or self.detail_image_verdict().get('state') == 'rejected')      # 쿠팡이 한 번 거부했으면 글만
+        imgs = [] if off else self.detail_image_urls(product)
         if not imgs:
             return [text_block]
         ctype = os.getenv('COUPANG_DETAIL_IMAGE_CONTENTS_TYPE', 'IMAGE').strip() or 'IMAGE'

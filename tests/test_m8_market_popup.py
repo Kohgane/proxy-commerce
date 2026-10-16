@@ -81,8 +81,6 @@ def test_1_status_phase_is_parallel(monkeypatch):
         return {"sid": rec["product_id"], "state": "approved", "label": "판매중", "error": ""}
     monkeypatch.setattr(MS, "_coupang", slow)
     monkeypatch.setattr(MS, "_naver", slow)
-    import src.seller_console.views as V
-    monkeypatch.setattr(V, "_price_line_for", lambda item, m: "가장 싼 옵션 기준 — …")
     iid = _item("m8-par")
     t0 = time.monotonic()
     d = _client("m8-par").get(f"/seller/collect/{iid}/market-status?phase=status").get_json()
@@ -90,7 +88,9 @@ def test_1_status_phase_is_parallel(monkeypatch):
     assert d["ok"] and len(d["rows"]) == 4 and all(r["label"] == "판매중" for r in d["rows"])
     assert took < 1.2, took                                                        # 직렬이면 1.6초
     assert isinstance(d["elapsed_ms"], int)
-    assert next(r for r in d["rows"] if r["market"] == "smartstore:gocosmos")["price_line"].startswith("가장 싼")
+    # Y11-S: 「지금 다시 내면」(지금 마진으로 다시 계산) 줄은 없다 — 등록 기록의 실제 전송값만(없으면 「등록 당시 값 기록 없음」)
+    _g = next(r for r in d["rows"] if r["market"] == "smartstore:gocosmos")
+    assert "price_line" not in _g and _g["registered_price"]
 
 
 def test_1_one_slow_market_fails_alone_after_timeout(monkeypatch):

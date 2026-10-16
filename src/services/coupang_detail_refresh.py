@@ -64,7 +64,7 @@ def target(item: dict, up, seller_id: str = "") -> Dict:
     return {"ready": failed == 0, "contents": contents, "hash": _hash(contents),
             "translated": int(pd.get("detail_auto_translated") or 0), "failed": failed,
             "why": str(pd.get("detail_translate_why") or ""), "detail_images": n_img,
-            "detail_images_skipped": skipped}
+            "detail_images_skipped": skipped, "providers": dict(pd.get("detail_translate_providers") or {})}
 
 
 def _effective_detail_images(item: dict, pd: dict) -> int:
@@ -110,9 +110,34 @@ def _queue_drop(item_id: str, market: str) -> None:
                                       if not (r.get("item_id") == item_id and r.get("market") == market)]})
 
 
+LAST_KEY = "coupang_detail_refresh:last"
+
+
+def record_last(out: dict) -> None:
+    """Y11-S — 마지막 드레인 결과를 운영 DB에(로그를 못 볼 때 보고용). 줄은 원문을 잘라서 — 글 내용·키는 없다."""
+    try:
+        from src.db import image_translate_queue_pg as st
+        keep = ("market", "sid", "sent", "ok", "state", "error", "market_status", "body", "detail_images",
+                "translate_line", "detail_image", "waiting", "dropped", "reason", "tries", "at")
+        rows = [{k: (str(r.get(k))[:1500] if isinstance(r.get(k), str) else r.get(k)) for k in keep if k in r}
+                for r in (out.get("rows") or [])][:10]
+        st.state_set(LAST_KEY, {"at": _now(), **{k: out.get(k) for k in ("picked", "sent", "ok", "left")}, "rows": rows})
+    except Exception as exc:                                      # noqa: BLE001 — 기록 실패는 로그만
+        logger.warning("[쿠팡 상세 갱신] 마지막 결과 기록 실패: %s", exc)
+
+
 def queue_rows() -> List[dict]:
     from src.db import image_translate_queue_pg as st
     return list((st.state_get(QUEUE_KEY) or {}).get("rows") or [])
+
+
+def providers_line(providers: dict) -> str:
+    """`{"deepl": 51}` → 「상세 번역: deepl 51줄(무료(DeepL Free 월 50만 자))」. 없으면 빈 줄."""
+    if not providers:
+        return ""
+    from src.uploaders.detail_translate import billing_of
+    return "상세 번역: " + " · ".join(f"{p} {n}줄" + (f"({billing_of(p)})" if billing_of(p) else "")
+                                     for p, n in providers.items())
 
 
 def sync_line(extra: dict, market: str, item_id: str = "", rows: Optional[List[dict]] = None) -> str:
@@ -157,6 +182,8 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
         try:
             up = make_up(u["account"])
             tg = target(item, up, seller_id)
+            # Y11-R 보강: 무엇을 보내려 했나(상세 이미지 장 수 · 번역 제공자별 줄 수와 과금)
+            row.update(detail_images=tg.get("detail_images", 0), translate_line=providers_line(tg.get("providers") or {}))
             if (sync.get(u["market"]) or {}).get("hash") == tg["hash"] and (sync.get(u["market"]) or {}).get("ok"):
                 row.update(ok=True, state="same", error="이미 같은 상세를 보냈어요")
                 out.append(row)
@@ -182,6 +209,10 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                 row["sent"] = True
                 row.update(ok=bool(res.get("success")), error=str(res.get("error") or "")[:500],
                            market_status=res.get("market_status"), body=str(res.get("body") or "")[:2000])
+                if res.get("detail_image"):
+                    row["detail_image"] = res["detail_image"]          # 이미지 블록 판정 + 응답 원문(거부면 글만 재전송 원문)
+                if res.get("contents_sent") is not None:
+                    tg = dict(tg, hash=_hash(res["contents_sent"]))     # 실제로 받아진 상세로 해시(글만 재전송이면 그것)
             if row["ok"]:
                 _queue_drop(item_id, u["market"])
             else:

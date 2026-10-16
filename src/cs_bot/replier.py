@@ -186,7 +186,8 @@ def _call_deepl_polish(text: str, language: str) -> tuple[str, Decimal, int]:
     target = {"ko": "KO", "en": "EN", "ja": "JA", "zh": "ZH"}.get(language, "KO")
     resp = requests.post(
         endpoint,
-        data={"auth_key": key, "text": text, "target_lang": target},
+        data={"text": text, "target_lang": target},
+        headers={"Authorization": f"DeepL-Auth-Key {key}"},   # 본문 auth_key는 403(2026-01-15~)
         timeout=8,
     )
     if not resp.ok:

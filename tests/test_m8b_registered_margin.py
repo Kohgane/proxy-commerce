@@ -161,4 +161,5 @@ def test_8_registration_records_price_snapshot_and_popup_shows_it(monkeypatch):
     assert _price_line({"price": {"line": "… = 84,665원 → 10원 올림 84,670원 · 마진 35%는 실수령(판매가 기준: …) · 같은 값의 판매가 대비 60.55%"}}) \
         == "… = 84,665원 → 10원 올림 84,670원"
     t = Path("src/seller_console/templates/_market_status.html").read_text(encoding="utf-8")
-    assert "등록 때 판매가 구성" in t and "지금 다시 내면" in t
+    # Y11-S(오너 2026-10-16 07:46): 「지금 다시 내면」(지금 마진으로 다시 계산) 줄은 없앴다 — 등록 기록의 실제 전송값만
+    assert "등록 때 판매가" in t and "지금 다시 내면" not in t

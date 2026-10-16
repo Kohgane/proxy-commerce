@@ -253,13 +253,13 @@ def _call_deepl(req: CopyRequest, variant_index: int = 0) -> CopyResult:
     if req.description:
         texts.append(req.description[:300])
 
+    # DeepL 2026-01-15부터 본문 `auth_key`는 403 — 헤더 인증만(Y11-R 보강)
     params = {
-        "auth_key": api_key,
         "text": texts,
         "source_lang": req.source_lang.upper(),
         "target_lang": "KO",
     }
-    resp = _req.post(base_url, data=params, timeout=10)
+    resp = _req.post(base_url, data=params, headers={"Authorization": f"DeepL-Auth-Key {api_key}"}, timeout=10)
     resp.raise_for_status()
     translations = resp.json().get("translations", [])
     title_ko = translations[0]["text"] if translations else req.title

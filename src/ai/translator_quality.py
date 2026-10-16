@@ -197,16 +197,16 @@ def _call_deepl(text: str, source_lang: str = "JA", target_lang: str = "KO") -> 
         import urllib.request
         import urllib.parse
         import json
-        params = urllib.parse.urlencode({
-            "auth_key": api_key,
+        params = urllib.parse.urlencode({          # DeepL 본문 auth_key는 403(2026-01-15~) — 헤더로
             "text": text,
             "source_lang": source_lang.upper(),
             "target_lang": target_lang.upper(),
         }).encode()
         req = urllib.request.Request(
-            "https://api-free.deepl.com/v2/translate",
+            "https://api-free.deepl.com/v2/translate" if api_key.endswith(":fx") else "https://api.deepl.com/v2/translate",
             data=params,
             method="POST",
+            headers={"Authorization": f"DeepL-Auth-Key {api_key}"},
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
