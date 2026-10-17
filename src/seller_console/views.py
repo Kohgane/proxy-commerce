@@ -10597,23 +10597,32 @@ def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
         logger.warning("[드로어] 표시 줄 계산 실패: %s", exc)
         return []
     out = []
+    eb = it.get("enrich_badge") if isinstance(it.get("enrich_badge"), dict) else None
     cs = it.get("collect_status") or {}
-    if isinstance(cs, dict) and cs.get("status") == "부분":
+    if eb:
+        # C-F14·F20: 부분 초안엔 완전 수집 잣대를 대지 않는다 — 「보강 대기」·「막힘 · 서버 사유」·「보강 완료」(배지 규칙 한 곳)
+        out.append("보강 완료" if eb.get("kind") == "done" else str(eb.get("label") or ""))
+    elif isinstance(cs, dict) and cs.get("status") == "부분":
         out.append("부분 수집 · " + "·".join(cs.get("missing_short") or cs.get("missing") or []))
     elif isinstance(cs, dict) and cs.get("status") == "실패":
         out.append("수집 실패")
     if it.get("translate_error"):
         out.append("번역 실패")
     if it.get("is_core"):
-        out.append("간이 수집")
+        mode = str(it.get("collect_mode") or "")
+        out.append("간이 수집 · " + ("공유 글 — 제목·링크만" if mode == "share" else
+                                    "목록 타일 — 제목·이미지만" if mode == "simple" else "제목·이미지만"))
     if not it.get("vendor_sku"):
         out.append("식별자 없음")
     if (it.get("hygiene") or {}).get("is_candidate"):
         out.append("비상품 의심")
     if it.get("image_short"):
         out.append("이미지 부족 · " + str(it["image_short"]))
-    if it.get("enrich_status") == "pending":
+    if not eb and it.get("enrich_status") == "pending":
         out.append("보강 중")
+    sb = it.get("sourcing_badge") if isinstance(it.get("sourcing_badge"), dict) else None
+    if sb and sb.get("label"):                                   # F24 소싱 원칙 판정(봇이 담을 때 잰 값)
+        out.append("소싱 판정 · " + str(sb["label"]))
     if it.get("risk_skip"):
         out.append("등록 보류 · " + str(it["risk_skip"]))
     return out

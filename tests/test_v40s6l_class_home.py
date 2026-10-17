@@ -163,7 +163,7 @@ V2_TOKENS = {"card", "badge", "alert"} | {
 STANDALONE_PAGES = {"bookmarklet_testpage.html"}
 
 # 실측 상한. **내려갈 때만 고친다** — 올리는 커밋은 곧 잔재를 들여온 커밋이다.
-V2_RESIDUE_CEILING = 45   # M7(2026-10-08): 목록 「등록됨」 맨 badge → 마켓별 칩(mk-chip)으로 1 감소
+V2_RESIDUE_CEILING = 32   # Y12-A(2026-10-17): 목록 줄의 배지·버튼을 드로어로 옮겨 45 → 32(래칫 조임)
 
 
 def _v2_residue() -> dict:

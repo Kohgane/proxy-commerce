@@ -17,6 +17,15 @@ def _tpl() -> str:
     return TPL.read_text(encoding="utf-8")
 
 
+#: Y12-A(오너 2026-10-17): 첫화면(대시보드)은 세 묶음만 — 계정 타일·반려 감시·등록 대장·소싱 대기·마켓 신호 진단은
+#: 사이드바 「진단」 한 곳(`diagnostics_home.html`)으로 그대로 옮겼다. 아래 G3·S3 계약은 그 화면에서 지킨다.
+DIAG = Path("src/seller_console/templates/diagnostics_home.html")
+
+
+def _diag() -> str:
+    return DIAG.read_text(encoding="utf-8")
+
+
 def _s6_css() -> str:
     """Stage 6 CSS 선언부만(주석은 근거로 값을 인용할 수 있어 제외)."""
     css = CSS.read_text(encoding="utf-8")
@@ -89,8 +98,8 @@ def test_g2_v3_supersedes_v2_geometry_ban():
 
 
 def test_g3_content_blocks_present():
-    """G3 — 4계정 타일 · 반려 최근 N건 · 등록 대장 · 소싱 대기."""
-    html = _tpl()
+    """G3 — 4계정 타일 · 반려 최근 N건 · 등록 대장 · 소싱 대기(Y12-A: 「진단」 화면)."""
+    html = _diag()
     for num, label in (("01", "등록 계정"), ("02", "반려 감시"),
                        ("03", "등록 대장"), ("04", "소싱 대기")):
         assert f'rp-step-num">{num}<' in html and label in html, label
@@ -123,7 +132,7 @@ def test_g3_disconnected_is_honest_not_zero():
         assert "connected" in blk
         if not blk["connected"]:
             assert blk["note"], key            # 사유 없는 미연결 금지
-    html = _tpl()
+    html = _diag()
     assert "미연결" in html and "op-off" in html
 
 
@@ -139,10 +148,10 @@ def test_snapshot_block_failure_does_not_kill_dashboard(monkeypatch):
 
 
 def test_onboarding_funnel_survived():
-    """온보딩은 Stage 6-a에서도 살아 있다 — 3카드 블록이 한 줄 스트립으로 압축됐을 뿐."""
-    html = _tpl()
-    assert "op-strip" in html and "5분 시작 가이드" in html
-    assert "onboarding.dismiss_href" in html and "/seller/start" in html
+    """온보딩은 지우지 않는다 — Y12-A(오너 결정 3): 대시보드의 「5분 시작 가이드」 줄은 사이드바 「시작 가이드」 한 곳으로 옮겼다."""
+    assert "op-strip" not in _tpl() and "onboarding.dismiss_href" not in _tpl()
+    base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
+    assert 'href="/seller/start"' in base and "시작 가이드" in base
 
 
 def test_no_dead_links_on_dashboard():
@@ -151,8 +160,8 @@ def test_no_dead_links_on_dashboard():
     os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
     from src.order_webhook import app
     rules = {str(r) for r in app.url_map.iter_rules()}
-    for href in re.findall(r'href="(/seller/[^"{]+)"', _tpl()):
-        assert href in rules, href
+    for href in re.findall(r'href="(/seller/[^"{]+)"', _tpl() + _diag()):
+        assert href.split("?")[0].split("#")[0] in rules, href
 
 
 # ── S3: 연동 마켓 요약 신호줄 (비차단 진단) ──────────────────────────────────────
@@ -164,13 +173,13 @@ def test_s3_signal_row_covers_markets_outside_the_four_account_axis():
     """
     from src.pipeline import ops_snapshot as ops
     axis = {m for m, _ko, _accts in ops.ACCOUNT_AXES}
-    assert axis == {"coupang", "smartstore"}                  # 축은 4계정 유지
+    assert axis == {"coupang", "smartstore"}                  # 축은 4계정 유지(Y12-A: 「진단」 화면)
     rows = ops.linked_markets("s3")["rows"]
     markets = {r["market"] for r in rows}
     assert "elevenst" in markets and not markets <= axis       # 축 밖 마켓이 실제로 들어온다
     for r in rows:
         assert set(r) >= {"market", "label", "configured", "source"}
-    html = _tpl()
+    html = _diag()
     assert "opMarketSignal" in html and "op-sig-item" in html
 
 
@@ -190,7 +199,7 @@ def test_s3_diagnostics_are_non_blocking_and_reuse_the_endpoint():
       실API를 한 요청에 묶으면 3초는 구조적으로 못 맞춘다(라이브에서 상시 '진단 실패').
       비차단이라는 뜻은 그대로 — 상한의 단위만 옮긴다.
     """
-    html = _tpl()
+    html = _diag()
     assert "markets_integration_diagnostics" in html           # 기존 진단 라우트를 그대로 부른다
     assert "AbortController" in html and "PER_MARKET_MS" in html
     # 서버 렌더 경로에는 진단 호출이 없다(있으면 대시보드가 마켓 응답만큼 느려진다).
@@ -199,7 +208,7 @@ def test_s3_diagnostics_are_non_blocking_and_reuse_the_endpoint():
 
 def test_s3_diagnostic_failure_says_it_failed_not_ok():
     """실패를 성공처럼 두지 않는다 — 못 받으면 '진단 실패'라고 말한다."""
-    html = _tpl()
+    html = _diag()
     assert "진단 실패" in html
     css = _s6_css()
     assert "--danger" in _block(css, ".op-sig-item.is-err .op-sig-dot")

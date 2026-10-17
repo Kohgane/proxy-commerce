@@ -29,9 +29,13 @@ def client(monkeypatch):
 
 
 def test_fixed_button_on_every_page(client):
-    for path in ["/seller/dashboard", "/seller/collect", "/seller/markets", "/seller/orders"]:
+    for path in ["/seller/collect", "/seller/markets", "/seller/orders"]:
         html = client.get(path).get_data(as_text=True)
         assert "fbBtn" in html, f"{path}에 For Beginners 고정 버튼 없음"
+    # Y12-A(오너 결정 3): 대시보드·상품목록에선 떠 있는 버튼을 뺀다(상품 줄을 가렸다) — 사이드바 「시작 가이드」로 간다
+    for path in ["/seller/dashboard", "/seller/collect/history"]:
+        html = client.get(path).get_data(as_text=True)
+        assert "fbBtn" not in html and 'href="/seller/start"' in html, path
 
 
 def test_collect_has_friendly_explainer(client):

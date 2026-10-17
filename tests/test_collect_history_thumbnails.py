@@ -37,5 +37,5 @@ def test_history_shows_thumbnails_and_edit(client):
     #   핀의 뜻("썸네일이 잘려서라도 정사각으로 뜬다")은 그대로 — 소스만 옮긴다.
     assert "ch-thumb" in html                  # 썸네일 스타일(클래스)
     assert "object-fit: cover" in Path("src/static/app.css").read_text(encoding="utf-8")
-    assert "편집·등록" in html                  # 편집·등록 버튼
+    assert "kgp-open-drawer" in html            # Y12-A: 「편집·등록」 버튼 대신 썸네일·상품명을 누르면 드로어
     assert "리클라이너 소파" in html

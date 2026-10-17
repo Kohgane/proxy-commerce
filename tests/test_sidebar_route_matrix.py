@@ -50,7 +50,8 @@ def test_sidebar_menu_links_exist_in_dashboard_html(client):
     # v17: api-status 등 관리자 전용 링크가 템플릿에 있으므로 관리자 세션으로 전체 노출 확인.
     with client.session_transaction() as sess:
         sess["user_id"] = "admin-user"; sess["user_email"] = "a@x.com"; sess["user_role"] = "admin"
-    html = client.get("/seller/dashboard").get_data(as_text=True)
+    # Y12-A: 대시보드·상품목록은 조용한 화면(변경 알림 배너·떠 있는 버튼 숨김) — 사이드바 전체는 다른 콘솔 화면에서 본다
+    html = client.get("/seller/orders").get_data(as_text=True)
     expected = [url for url in _template_sidebar_links() if url.startswith("/seller/")]
     for url in expected:
         assert url in html, f"사이드바 메뉴에 {url}이 누락"

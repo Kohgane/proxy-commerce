@@ -209,7 +209,8 @@ def _measure(route: str, hide: bool = False):
 
 @pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
 # 반려 감시는 6-h에서 내부 스크롤이 생긴 **첫 화면**이다 — 레이아웃이 바뀌면 겹침은 재발 후보다.
-@pytest.mark.parametrize("route", ["/seller/sourcing/reject-watch", "/seller/dashboard",
+# Y12-A: 대시보드는 버블을 아예 띄우지 않는다(상품 줄을 가렸다) — 옛 대시보드 카드는 「진단」 화면으로 옮겼으니 거기서 잰다
+@pytest.mark.parametrize("route", ["/seller/sourcing/reject-watch", "/seller/diagnostics",
                                   "/seller/orders", "/seller/catalog"])
 def test_nothing_interactive_sits_under_the_bubble(route):
     """★ 최하단까지 내렸을 때 **버블 밑에 눌러야 할 것이 하나도 없다.**

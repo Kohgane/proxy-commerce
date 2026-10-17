@@ -167,6 +167,6 @@ def test_recent_rejected_reads_what_the_queue_skips():
 def test_card_labels_the_two_phases():
     """두 상태를 한 줄로 뭉개지 않는다 — 라벨로 갈린다."""
     from pathlib import Path
-    tpl = Path("src/seller_console/templates/dashboard.html").read_text(encoding="utf-8")
+    tpl = Path("src/seller_console/templates/diagnostics_home.html").read_text(encoding="utf-8")   # Y12-A: 반려 감시 카드는 「진단」
     assert "r.phase == 'rejected'" in tpl
     assert "반려 {{ ops.rejections.rejected }}" in tpl and "감시 대기 {{ ops.rejections.watching }}" in tpl

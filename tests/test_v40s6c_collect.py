@@ -55,7 +55,9 @@ def test_inherits_6a_card_grammar():
     h = _t(HIST)
     assert "op-card" in h and "op-card-head" in h and "op-card-body" in h
     assert "op-card-foot pc-bulk-toolbar" in h        # 일괄 액션 = 카드 푸터
-    assert h.count("<section") == h.count("</section>") == 3   # 요약·필터 합본 + 목록 + 빈 목록
+    # Y12-A: 요약·필터 합본은 접힘 카드(<details class="op-card">) — 섹션은 목록 + 빈 목록
+    assert h.count("<section") == h.count("</section>") == 2
+    assert '<details class="op-card ch-filter-box"' in h
     assert '<div class="card ' not in h and '<div class="card">' not in h  # v2 카드 잔재 0
 
 

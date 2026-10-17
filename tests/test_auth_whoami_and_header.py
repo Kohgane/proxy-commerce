@@ -71,13 +71,14 @@ def test_admin_sidebar_menu_only_for_admin(client):
     with client.session_transaction() as sess:
         sess["user_id"] = "u-3"
         sess["user_role"] = "seller"
-    resp = client.get("/seller/dashboard")
+    # Y12-A: 관리자 패널 링크는 사이드바 「진단」 화면 안(진단 한 곳) — 관리자에게만
+    resp = client.get("/seller/diagnostics")
     assert "관리자 패널" not in resp.get_data(as_text=True)
 
     with client.session_transaction() as sess:
         sess["user_id"] = "u-4"
         sess["user_role"] = "admin"
-    resp2 = client.get("/seller/dashboard")
+    resp2 = client.get("/seller/diagnostics")
     assert "관리자 패널" in resp2.get_data(as_text=True)
 
 

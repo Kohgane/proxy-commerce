@@ -238,8 +238,13 @@ def test_console_badge_uses_tokens_not_emoji():
     tpl = (ROOT / "src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
     for e in ("✅", "⚠️", "❌"):
         assert e not in tpl, f"콘솔 템플릿에 {e}"
-    seg = tpl.split("it.sourcing_badge", 1)[1][:400]
-    assert "pc-badge-" in seg and "bi-" in seg
+    # Y12-A: 판정 배지는 목록 줄에서 드로어 맨 위 한 줄로 옮겼다 — 글자만(이모지 0)
+    from src.seller_console.views import _row_flags
+    import json as _json
+    flags = _row_flags({"id": "f24", "title": "t", "url": "https://item.taobao.com/item.htm?id=1",
+                        "extra_json": _json.dumps({"sourcing_verdict": {"verdict": "ok"}})})
+    sv = [f for f in flags if f.startswith("소싱 판정 · ")]
+    assert sv and not any(e in sv[0] for e in ("✅", "⚠️", "❌"))
 
 
 # ---------------------------------------------------------------------------
