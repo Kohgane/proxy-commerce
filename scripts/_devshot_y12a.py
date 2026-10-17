@@ -176,6 +176,17 @@ with sync_playwright() as pw:
         if cpx.count():
             cpx.screenshot(path=os.path.join(OUT, f"{TAG}-5-exposure-tab.png"))
             dump("5-exposure-tab", cpx.inner_text())
+    # 6. 대시보드(첫화면) · 7. 상품목록 — 데스크톱(1280) + 모바일(390) 전체
+    for wname, vw in (("desktop", {'width': 1280, 'height': 1000}), ("mobile", {'width': 390, 'height': 844})):
+        c2 = b.new_context(viewport=vw, ignore_https_errors=True, is_mobile=(wname == "mobile"))
+        c2.add_cookies([{'name': 'session', 'value': cookie, 'domain': '127.0.0.1', 'path': '/'}])
+        pg = c2.new_page()
+        for nm, path in (("6-dashboard", "/seller/"), ("7-list", "/seller/collect/history")):
+            pg.goto(BASE + path, wait_until="networkidle"); _style(pg); pg.wait_for_timeout(1500)
+            pg.screenshot(path=os.path.join(OUT, f"{TAG}-{nm}-{wname}.png"), full_page=True)
+            main = pg.locator("main, .console-main, #main").first
+            dump(f"{nm}-{wname}", (main if main.count() else pg.locator("body")).inner_text())
+        c2.close()
     b.close()
 
 # 5. 다듬기·OCR 결과줄(드로어 버튼이 받아 그대로 보이는 줄)
