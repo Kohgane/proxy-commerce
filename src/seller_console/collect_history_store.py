@@ -104,11 +104,19 @@ def append(
             raise OriginalImageOverwrite(f"수집 원본({_k})에 만든 그림 주소를 넣으려 했어요: {_bad[0][:120]}")
     if extra.get("images") and not isinstance(extra.get("images_original"), list):
         extra["images_original"] = [u for u in extra["images"] if isinstance(u, str) and u]
+    # Y12-A: 수집 때도 「손댈 것」 요약·열을 찍는다(아직 안 올린 상품의 「확인 필요」 원문 줄은 수집 순간부터 보인다)
+    _cols: dict = {}
+    try:
+        from .attention import stamp as _stamp
+        _cols = _stamp(extra, title=str(title or ""))
+    except Exception as exc:                                     # noqa: BLE001 — 요약 실패가 수집을 막지 않는다
+        logger.warning("[손댈 것] 수집 때 요약 실패(수집은 계속): %s", exc)
     _b = _pg_backend()
     if _b:
         return _b.append(source=source, url=url, title=title, image=image, price=price,
                          currency=currency, status=status, preview_url=preview_url,
-                         extra=extra, seller_id=seller_id, return_durable=return_durable, raw_url=raw_url)
+                         extra=extra, seller_id=seller_id, return_durable=return_durable, raw_url=raw_url,
+                         last_action_at=_cols.get("last_action_at"), attn_n=int(_cols.get("attn_n") or 0))
 
     item_id = secrets.token_hex(6)
     domain = urlparse(url).netloc
@@ -128,6 +136,8 @@ def append(
         "extra_json": json.dumps(extra or {}, ensure_ascii=False),
         "seller_id": seller_id or "",
         "raw_url": raw_url,
+        "last_action_at": _cols.get("last_action_at") or "",
+        "attn_n": int(_cols.get("attn_n") or 0),
     }
     _in_memory.append(row_data)
     if return_durable:

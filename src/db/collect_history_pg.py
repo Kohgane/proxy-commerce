@@ -112,8 +112,10 @@ def _product_key(url: str):
 
 def append(*, source: str, url: str, title: str, image: str = "", price: str = "",
            currency: str = "", status: str = "ok", preview_url: str = "",
-           extra: dict = None, seller_id: str = "", return_durable: bool = False, raw_url: str = ""):
-    """수집 1건 추가(트랜잭션 커밋 후에만 성공=durable). product_key 유니크로 중복 방지."""
+           extra: dict = None, seller_id: str = "", return_durable: bool = False, raw_url: str = "",
+           last_action_at=None, attn_n: int = 0):
+    """수집 1건 추가(트랜잭션 커밋 후에만 성공=durable). product_key 유니크로 중복 방지.
+    Y12-A: `last_action_at`·`attn_n`(목록 정렬·「손댈 것만」 열)도 함께 넣는다."""
     pkey = _product_key(url)
     domain = urlparse(url).netloc
     extra_json = json.dumps(extra or {}, ensure_ascii=False)
@@ -122,14 +124,15 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
         if pkey:
             cur.execute(
                 """INSERT INTO collect_history
-                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url,
+                    last_action_at, attn_n)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)
                    ON CONFLICT (user_id, product_key)
                      WHERE product_key IS NOT NULL AND product_key <> '' AND deleted_at IS NULL
                    DO NOTHING
                    RETURNING id""",
                 (seller_id, pkey, source, domain, url, title, image, str(price or ""),
-                 currency, status, preview_url, extra_json, raw_url or ""))
+                 currency, status, preview_url, extra_json, raw_url or "", last_action_at or None, int(attn_n or 0)))
             row = cur.fetchone()
             if row:
                 item_id = str(row[0])
@@ -141,11 +144,12 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
         else:
             cur.execute(
                 """INSERT INTO collect_history
-                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url)
-                   VALUES (%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url,
+                    last_action_at, attn_n)
+                   VALUES (%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)
                    RETURNING id""",
                 (seller_id, source, domain, url, title, image, str(price or ""),
-                 currency, status, preview_url, extra_json, raw_url or ""))
+                 currency, status, preview_url, extra_json, raw_url or "", last_action_at or None, int(attn_n or 0)))
             item_id = str(cur.fetchone()[0])
         if item_id and not preview_url:
             cur.execute("UPDATE collect_history SET preview_url=%s WHERE id=%s AND preview_url=''",
