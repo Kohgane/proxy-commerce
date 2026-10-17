@@ -134,7 +134,8 @@ def test_02_card_no_longer_excludes_rejections():
     from src.db import market_registrations_pg as REG
     from src.pipeline import ops_snapshot as ops
 
-    assert "rejected" not in REG._WATCH_STATUSES          # 큐가 반려를 빼는 건 설계대로다
+    # Y12-A(오너 2026-10-17 e): 반려도 감시 큐에서 재조회한다(반려 판정이 재조회를 끊지 않는다) — 카드는 반려 줄을 한 번만 싣는다
+    assert "rejected" in REG._WATCH_STATUSES
     with patch.object(REG, "enabled", return_value=True), \
          patch.object(REG, "watch_queue", return_value=[{"sid": "A1", "title": "감시 대기 건"}]), \
          patch.object(REG, "recent_rejected",
@@ -149,7 +150,7 @@ def test_02_card_no_longer_excludes_rejections():
 
 
 def test_recent_rejected_reads_what_the_queue_skips():
-    """`recent_rejected`는 큐가 건너뛰는 상태를 읽는다 — 큐를 넓히지 않는다(감시 의미 보존)."""
+    """`recent_rejected`는 반려 줄만 골라 읽는다. Y12-A e: 반려도 큐에서 계속 재조회된다(사흘 전 반례)."""
     from src.db import market_registrations_pg as REG
     REG._MEM.clear()
     REG.record("A1", account="gogane", title="감시 대기")
@@ -158,7 +159,7 @@ def test_recent_rejected_reads_what_the_queue_skips():
     try:
         watching = [r["sid"] for r in REG.watch_queue(account="gogane")]
         rejected = [r["sid"] for r in REG.recent_rejected(account="gogane")]
-        assert watching == ["A1"] and rejected == ["B1"]   # 겹치지 않고, 둘 다 잡힌다
+        assert watching == ["A1", "B1"] and rejected == ["B1"]   # 반려도 재조회 큐에 · 반려 줄은 따로 읽힌다
         assert REG.recent_rejected(account="gogane")[0]["reject_kind"] == "image_spec"
     finally:
         REG._MEM.clear()

@@ -44,7 +44,7 @@ def test_approved_graduates_out_of_the_queue():
 
 
 def test_rejected_and_saved_keep_their_meaning():
-    """반려는 나가고(확정), 임시저장은 남는다(아직 조치가 필요하다).
+    """승인은 나가고, 반려·임시저장은 남는다(Y12-A e — 반려 판정이 재조회를 끊지 않는다).
 
     ★ 폴백 수리(2026-09-05)로 임시저장이 **제 이름을 갖게 됐다.** 전에는 `unknown`에
       뭉뚱그렸는데, 그러면 '미상'(아무것도 확인 못 함)과 '임시저장'(승인요청이 필요함)이
@@ -53,8 +53,8 @@ def test_rejected_and_saved_keep_their_meaning():
     _run(["APPROVED", "REJECTED", "SAVED"])
     assert REG.get("REJECTED")["status"] == "rejected"
     assert REG.get("SAVED")["status"] == "saved"
-    # 큐에 남는 건 임시저장 하나 — 승인·반려는 확정이라 빠진다.
-    assert [r["sid"] for r in REG.watch_queue(account="gogane")] == ["SAVED"]
+    # 큐에 남는 건 반려·임시저장 — 승인만 확정이라 빠진다(반려가 풀렸는지 다시 봐야 한다).
+    assert [r["sid"] for r in REG.watch_queue(account="gogane")] == ["REJECTED", "SAVED"]
 
 
 def test_lookup_failure_never_marks_as_checked():
@@ -148,7 +148,8 @@ def test_non_actionable_classifications_leave_the_polling_queue():
     for sid in _W5_HIST:
         REG.record(sid, account="gogane", title=f"상품 {sid}")
     _w5_run(record_fn=lambda sid, **kw: REG.mark_checked(sid, **kw))
-    assert [r["sid"] for r in REG.watch_queue(account="gogane")] == ["C"]   # 임시저장만 남는다
+    # 임시저장(C)과 반려(B)가 남는다 — Y12-A e: 반려도 재조회(브랜드 수정요청·증빙 필요는 그대로 졸업)
+    assert [r["sid"] for r in REG.watch_queue(account="gogane")] == ["B", "C"]
     for sid in ("A", "D", "E"):
         assert REG.get(sid) is not None, "졸업이 대장 행을 지웠다"          # 기록은 유지
 
