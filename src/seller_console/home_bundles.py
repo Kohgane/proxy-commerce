@@ -1,8 +1,10 @@
 """Y12-A(오너 2026-10-17) — 대시보드(첫화면) 세 묶음. 묶음마다 숫자 하나 + 눌러서 펼침.
 
-1. 손댈 것 — 반려(마켓별) · 보내기 실패 · 오너 확인 대기(지우기 제안 사진 · 등록 보류 · 「확인 필요」 원문 줄). 0이면 「없음」.
-   옆에 「마켓 상태 마지막 조회 HH:MM」(0이 낡은 0인지 보이게).
-2. 돌아가는 것 — 보내는 중(쿠팡·네이버 갱신 줄) · 다듬는 중 · 번역 대기. 0이면 묶음째 숨김.
+1. 손댈 것 — 반려(마켓별) · 보내기 실패 · 수집 실패(재수집 소진) · 오너 확인 대기(지우기 제안 사진 · 등록 보류 ·
+   「확인 필요」 원문 줄). 0이면 「없음」. 옆에 「마켓 상태 마지막 조회 HH:MM」(0이 낡은 0인지 보이게).
+   Y12-B: 기준 = 오너가 눌러야 풀리는 것만.
+2. 돌아가는 것 — 보내는 중(쿠팡·네이버 갱신 줄) · 다듬는 중 · 번역 대기 · 재수집 대기(자동 재수집이 예정된 수집 실패).
+   0이면 묶음째 숨김.
 3. 오늘 쓴 것 — 「이미지 번역 n/상한」 한 줄(상한 = 운영 env 값 그대로).
 
 숫자는 이미 있는 값만 센다(새로 지어내지 않는다). 못 읽으면 그 묶음에 「확인 못 함」.
@@ -50,6 +52,8 @@ def _attention(seller_ids) -> Dict:
                 key, label = f"rejected:{i['market']}", i["text"]
             elif i["kind"] == "send_fail":
                 key, label = f"send_fail:{i['market']}", i["text"]
+            elif i["kind"] == "collect_fail":
+                key, label = "collect_fail", "수집 실패"
             else:
                 key, label = "owner", "오너 확인 대기"
             g = groups.setdefault(key, {"label": label, "n": 0, "kind": i["kind"]})
@@ -63,7 +67,7 @@ def _attention(seller_ids) -> Dict:
                                    + f" · {check_note(r.get('checked_at'))}"]})
         g = groups.setdefault(f"rejected:ledger:{r.get('account')}", {"label": label, "n": 0, "kind": "rejected"})
         g["n"] += 1
-    order = {"rejected": 0, "send_fail": 1, "owner": 2}
+    order = {"rejected": 0, "send_fail": 1, "collect_fail": 2, "owner": 3}
     return {"n": len(products), "groups": sorted(groups.values(), key=lambda g: (order.get(g["kind"], 9), g["label"])),
             "products": products[:30], "capped": len(rows) >= ATTN_SCAN_LIMIT}
 
@@ -90,7 +94,7 @@ def _ledger_rejections(limit: int = 50) -> List[Dict]:
         return []
 
 
-def _running() -> Dict:
+def _running(seller_ids=None) -> Dict:
     from src.services import coupang_detail_refresh as cdr
     from src.services import naver_detail_refresh as ndr
     sending = len(cdr.queue_rows()) + len(ndr.queue_rows())
@@ -106,9 +110,12 @@ def _running() -> Dict:
     from src.db import image_translate_queue_pg as q
     c = q.counts() or {}
     waiting = int(c.get("queued") or 0) + int(c.get("running") or 0)
+    # Y12-B: 자동 재수집이 예정된 수집 실패 — 손댈 것이 아니라 여기(오너가 누를 일이 없다)
+    from . import collect_history_store as store
+    refetch = int(store.count_items(days=3650, seller_ids=seller_ids, refetch_only=True) or 0)
     lines = [x for x in ((f"보내는 중 {sending}건", sending), (f"다듬는 중 {polishing}건", polishing),
-                         (f"번역 대기 {waiting}장", waiting)) if x[1]]
-    return {"n": sending + polishing + waiting, "lines": [x[0] for x in lines]}
+                         (f"번역 대기 {waiting}장", waiting), (f"재수집 대기 {refetch}건", refetch)) if x[1]]
+    return {"n": sending + polishing + waiting + refetch, "lines": [x[0] for x in lines]}
 
 
 def _today() -> Dict:
@@ -120,7 +127,7 @@ def _today() -> Dict:
 def build(seller_ids) -> Dict:
     """`{attention:{n, groups, products, error}, running:{n, lines}, today:{used, cap}, last_check}`."""
     out: Dict = {}
-    for key, fn in (("attention", lambda: _attention(seller_ids)), ("running", _running), ("today", _today)):
+    for key, fn in (("attention", lambda: _attention(seller_ids)), ("running", lambda: _running(seller_ids)), ("today", _today)):
         try:
             out[key] = fn()
         except Exception as exc:                                 # noqa: BLE001 — 한 묶음 실패가 다른 묶음을 막지 않는다

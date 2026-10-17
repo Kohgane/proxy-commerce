@@ -145,17 +145,28 @@ def append(
     return item_id
 
 
+def _attn_of(row: dict) -> dict:
+    import json as _json
+    try:
+        a = (_json.loads(row.get("extra_json") or "{}") or {}).get("attn")
+    except Exception:
+        return {}
+    return a if isinstance(a, dict) else {}
+
+
 def list_items(
     *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
     seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0, lean: bool = False,
-    order: str = "created", attn_only: bool = False,
+    order: str = "created", attn_only: bool = False, refetch_only: bool = False,
 ) -> list[dict]:
     """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만. lean=True면 대형 컬럼 제외(속도).
-    Y12-A: `order="action"` = 마지막 동작 최신순(기간도 마지막 동작 기준) · `attn_only` = 「손댈 것만」."""
+    Y12-A: `order="action"` = 마지막 동작 최신순(기간도 마지막 동작 기준) · `attn_only` = 「손댈 것만」.
+    Y12-B: `refetch_only` = 「재수집 대기」(자동 재수집이 예정된 수집 실패 — 요약 `attn.refetch`)."""
     _b = _pg_backend()
     if _b:
         return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id,
-                             seller_ids=seller_ids, limit=limit, offset=offset, lean=lean, order=order, attn_only=attn_only)
+                             seller_ids=seller_ids, limit=limit, offset=offset, lean=lean, order=order, attn_only=attn_only,
+                             refetch_only=refetch_only)
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
@@ -166,6 +177,8 @@ def list_items(
         if _key(row) < cutoff:
             continue
         if attn_only and not int(row.get("attn_n") or 0):
+            continue
+        if refetch_only and not _attn_of(row).get("refetch"):
             continue
         if domain and row.get("domain", "") != domain:
             continue
@@ -210,12 +223,13 @@ def list_items(
     return result
 
 
-def count_items(*, days: int = 30, seller_ids: Optional[set] = None, order: str = "action", attn_only: bool = False) -> int:
-    """Y12-A — 목록 기본 뷰(마지막 동작 기준 기간 · 손댈 것만)의 전체 건수(페이지 수 계산용)."""
+def count_items(*, days: int = 30, seller_ids: Optional[set] = None, order: str = "action", attn_only: bool = False,
+                refetch_only: bool = False) -> int:
+    """Y12-A — 목록 기본 뷰(마지막 동작 기준 기간 · 손댈 것만)의 전체 건수(페이지 수 계산용). Y12-B: 재수집 대기 건수."""
     _b = _pg_backend()
     if _b:
-        return _b.count_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only)
-    return len(list_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only))
+        return _b.count_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only, refetch_only=refetch_only)
+    return len(list_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only, refetch_only=refetch_only))
 
 
 def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> Optional[dict]:

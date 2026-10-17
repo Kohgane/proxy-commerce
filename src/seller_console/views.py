@@ -5786,6 +5786,39 @@ def collect_image_edit_select(item_id: str, kind: str, idx: int):
     return jsonify(dict(r, ok=True))
 
 
+@bp.post("/collect/<item_id>/erase-suggest/skip")
+def collect_erase_suggest_skip(item_id: str):
+    """Y12-B(오너 2026-10-17) 지우기 제안 「넘김」 — `{kind, idx}` = 그 사진 하나 · `{all: true}` = 「전부 넘김」(남은 사진 전부).
+
+    넘김은 **기록만** 남긴다(`erase_skip`) — 원본·번역본·편집본 픽셀도, 나가는 사진도 그대로다(그래서 마켓 갱신 줄도 안 건다).
+    처리되면(지움이든 넘김이든) 「손댈 것」에서 빠지고, 드로어엔 「넘긴 제안 n」으로 접혀 남는다."""
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from .attention import erase_photos, skip_erase
+    body = request.get_json(force=True, silent=True) or {}
+    if body.get("all"):
+        todo = [(p["kind"], p["idx"]) for p in erase_photos(ex) if p["state"] == "pending"]
+    else:
+        kind = str(body.get("kind") or "")
+        if kind not in ("gallery", "detail", "sku"):
+            return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
+        try:
+            todo = [(kind, int(body.get("idx")))]
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "사진 번호가 없어요."}), 400
+    done = [t for t in todo if skip_erase(ex, t[0], t[1])]
+    if not done:
+        return jsonify({"ok": False, "error": "넘길 지우기 제안이 없어요."}), 409
+    from . import collect_history_store
+    if not collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    left = sum(1 for p in erase_photos(ex) if p["state"] == "pending")
+    logger.info("[지우기 제안] 넘김 item=%s %s장 · 남은 제안 %s장", item_id, len(done), left)
+    return jsonify({"ok": True, "skipped": len(done), "left": left,
+                    "message": f"{len(done)}장 넘겼어요" + (f" — 남은 제안 {left}장" if left else " — 남은 제안 없음")})
+
+
 @bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/translate")
 def collect_image_edit_translate(item_id: str, kind: str, idx: int):
     """Y11-B 「번역하고 글자 상자 받기」 — 순서는 번역이 먼저다. 이 한 장만 텐센트 이미지 번역에 다시 보내고(요청 밖에서),
@@ -10585,6 +10618,24 @@ def discovery_keywords_remove():
 # Phase 135.2: /seller/collect/history + /seller/collect/preview/<id>
 # ---------------------------------------------------------------------------
 
+def _erase_photos_view(extra) -> list:
+    """Y12-B — 드로어 「지우기 제안」 줄: 남은 제안(사진별 「사진 편집」·「넘김」) + 넘긴 제안(접힘). 썸네일 = 나가는 사진(없으면 수집 원본)."""
+    try:
+        from .attention import erase_photos
+        from src.services.image_translate_store import originals_of
+        out = []
+        for p in erase_photos(extra if isinstance(extra, dict) else {}):
+            if p["state"] == "erased":
+                continue
+            src = originals_of(extra, p["kind"])
+            p["thumb"] = p["url"] or (src[p["idx"]] if 0 <= p["idx"] < len(src) else "")
+            out.append(p)
+        return out
+    except Exception as exc:                                     # noqa: BLE001 — 제안 줄 실패가 드로어를 막지 않는다
+        logger.warning("[드로어] 지우기 제안 줄 실패: %s", exc)
+        return []
+
+
 def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
     """Y12-A — 목록 줄에서 뺀 표시(수집 상태·번역·간이·식별자·비상품·이미지 부족·보강·등록 보류)를 드로어 맨 위 한 줄로.
     드로어는 `item`에서 extra_json을 떼어 넘기므로 파싱해 둔 `extra`를 따로 받는다(없으면 빈 extra로 「수집 실패」가 된다)."""
@@ -10630,6 +10681,13 @@ def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
         out.append("소싱 판정 · " + str(sb["label"]))
     if it.get("risk_skip"):
         out.append("등록 보류 · " + str(it["risk_skip"]))
+    try:                                                         # Y12-B: 자동 재수집 예정이면 그 사실도(오너가 누를 일 없음)
+        from .attention import collect_fail
+        cf = collect_fail(extra if isinstance(extra, dict) else {}, str(item.get("title") or ""))
+        if cf and cf["phase"] == "waiting":
+            out.append(cf["text"] + " · " + cf["why"])
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[드로어] 재수집 대기 판정 실패: %s", exc)
     return out
 
 
@@ -11309,7 +11367,7 @@ def collect_preview_by_id(item_id: str):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
-        market_records=_market_records(extra), item_flags=_row_flags(item, extra),
+        market_records=_market_records(extra), item_flags=_row_flags(item, extra), erase_photos=_erase_photos_view(extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
         field_src=field_src,

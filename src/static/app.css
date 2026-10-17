@@ -2503,3 +2503,22 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .mk-badges { gap: 3px; }
   .hb-meta { margin-left: 0; width: 100%; }
 }
+
+/* ── Y12-B(오너 2026-10-17): 드로어 「지우기 제안」 — 사진별 「사진 편집」·「넘김」 · 상품별 「전부 넘김」 · 「넘긴 제안 n」 접힘 ── */
+.ers-head { display: flex; align-items: center; gap: var(--space-2, 12px); flex-wrap: wrap; }
+.ers-n { color: var(--text-muted); font-size: .85rem; }
+.ers-all { margin-left: auto; }
+.ers-note { font-size: .8rem; color: var(--text-muted); margin: 6px 0 8px; }
+.ers-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ers-row { display: flex; align-items: center; gap: var(--space-2, 12px); padding: 6px 0; border-top: 1px solid var(--border); }
+.ers-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: var(--radius-sm, 6px); flex: none; background: var(--bg); }
+.ers-what { flex: 1 1 0; min-width: 0; font-size: .85rem; overflow-wrap: anywhere; }   /* 썸네일 옆에 붙는다(줄바꿈 때 썸네일만 홀로 남지 않게) */
+.ers-acts { display: flex; gap: 4px; flex: none; }
+.ers-acts .btn { min-height: 36px; }
+.ers-skipped { margin-top: 8px; font-size: .85rem; }
+.ers-skipped > summary { cursor: pointer; color: var(--text-muted); }
+@media (max-width: 575.98px) {
+  .ers-row { flex-wrap: wrap; }
+  .ers-acts { width: 100%; justify-content: flex-end; }
+  .ers-acts .btn { min-height: 44px; }
+}
