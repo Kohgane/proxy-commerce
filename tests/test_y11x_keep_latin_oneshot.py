@@ -122,3 +122,25 @@ def test_coupang_register_summary_carries_sent_images():
     from src.uploaders.coupang_uploader import CoupangUploader
     s = CoupangUploader.sent_summary({"items": [{"contents": [{"contentDetails": [{"detailType": "IMAGE", "content": D14}]}]}]})
     assert s["sent_images"]["images"][0]["url"] == D14
+
+
+# ── 3-b. 같은 틱의 쿠팡·네이버 저장이 서로 덮지 않는다(10-17 05:10 VRSUK) ─────────────────────────────────────────────
+
+def test_coupang_and_naver_savers_do_not_overwrite_each_other(monkeypatch):
+    from src.seller_console import collect_history_store as store
+    from src.services import coupang_detail_refresh as R
+    from src.services import naver_detail_refresh as N
+    base = {"uploaded": [{"market": "coupang:gogane", "product_id": "1"},
+                         {"market": "smartstore:chezgoga", "product_id": "2"}],
+            "coupang_detail_sync": {"coupang:gogane": {"hash": "old-1650"}}}
+    db = {"extra_json": json.dumps(base)}
+    monkeypatch.setattr(store, "get", lambda item_id, seller_id=None, seller_ids=None: dict(db, id=item_id))
+    monkeypatch.setattr(store, "update", lambda item_id, seller_id=None, seller_ids=None, **f: db.update(f) or True)
+    stale_cp, stale_nv = json.loads(db["extra_json"]), json.loads(db["extra_json"])   # 두 잡이 같은 때 읽은 값
+    stale_cp["coupang_detail_sync"]["coupang:gogane"] = {"hash": "new-0510", "sent_images": {"n": 33}}
+    R.store_save("it", {"u"})(stale_cp)                                               # 쿠팡이 먼저 쓰고
+    stale_nv["uploaded"][1]["detail_sync"] = {"hash": "nv-0510", "ok": True}
+    N.store_save("it", {"u"})(stale_nv)                                               # 네이버가 처음 읽은 값으로 나중에 쓴다
+    got = json.loads(db["extra_json"])
+    assert got["coupang_detail_sync"]["coupang:gogane"] == {"hash": "new-0510", "sent_images": {"n": 33}}   # 예전: old-1650
+    assert got["uploaded"][1]["detail_sync"] == {"hash": "nv-0510", "ok": True}

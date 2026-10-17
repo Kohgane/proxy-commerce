@@ -3967,8 +3967,7 @@ def _kick_coupang_detail_refresh(item_id: str) -> bool:
         from . import collect_history_store as _chs
 
         def _run():
-            _cdr.refresh_item(item, seller_id=sid_, save=lambda e: _chs.update(
-                str(item_id), seller_ids=ids, extra_json=json.dumps(e, ensure_ascii=False)))
+            _cdr.refresh_item(item, seller_id=sid_, save=_cdr.store_save(str(item_id), ids))
         _th.Thread(target=_cv.copy_context().run, args=(_run,), daemon=True).start()
         return True
     except Exception as exc:                                         # noqa: BLE001 — 갱신 시작 실패가 검증을 막지 않는다
@@ -4010,8 +4009,7 @@ def collect_coupang_detail_refresh_now(item_id):
     def _run():
         # 번역(체인)·쿠팡 조회·수정(이미지 블록 거부면 글만 한 번 더)까지 20~30초 — 요청을 붙잡지 않고 팝업이 묻는다
         try:
-            rows = _cdr.refresh_item(item, seller_id=sid_, markets=[market], save=lambda e: _chs.update(
-                str(item_id), seller_ids=ids, extra_json=json.dumps(e, ensure_ascii=False)))
+            rows = _cdr.refresh_item(item, seller_id=sid_, markets=[market], save=_cdr.store_save(str(item_id), ids))
             r = rows[0] if rows else {"error": "보낼 등록본이 없어요"}
             try:
                 r["sync_line"] = _cdr.sync_line(json.loads((_chs.get(str(item_id), seller_ids=ids) or {})
