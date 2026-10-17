@@ -166,7 +166,7 @@ def test_u2_status_mapping_and_rejection_reason(monkeypatch):
     up, calls = _up_with(monkeypatch, product={"statusName": "승인반려", "sellerProductName": "x", "items": []},
                          histories={"data": [{"statusName": "승인반려", "comment": "상표권 확인 필요", "createdAt": "2026-10-02T10:00:00"}]})
     st = up.review_status("16401838524")
-    assert (st["state"], st["label"], st["comment"]) == ("rejected", "반려", "상표권 확인 필요")
+    assert (st["state"], st["label"], st["comment"]) == ("rejected", "승인반려", "상표권 확인 필요")   # Y12-A: Wing 표기
     assert calls[0][1].endswith("/seller-products/16401838524") and calls[0][0] == "GET"
     up2, _ = _up_with(monkeypatch, product={"statusName": "승인완료", "productId": 8123, "items": [{"searchTags": ["수입"]}]})
     st2 = up2.review_status("16397045086")
@@ -196,19 +196,20 @@ def test_u2_route_persists_review_and_list_badge(monkeypatch):
     with c.session_transaction() as s:
         s["user_id"] = "u-u2"
     d = c.get(f"/seller/collect/{iid}/review-status").get_json()
-    assert d["ok"] and d["rows"][0]["sid"] == "16401838524" and d["rows"][0]["label"] == "검토중"
+    assert d["ok"] and d["rows"][0]["sid"] == "16401838524" and d["rows"][0]["label"] == "승인대기"   # Y12-A: Wing 표기
     ex = json.loads(S.get(iid, seller_ids={"u-u2"})["extra_json"])
     assert ex["uploaded"][0]["review"]["state"] == "pending" and ex["uploaded"][0]["product_id"] == "16401838524"
     h = c.get("/seller/collect/history").get_data(as_text=True)
-    # M7(2026-10-08): 목록 배지는 마켓별 칩 — 검토중(pending)은 회색(wait) 칩, 누르면 M6 상태 팝업
-    assert 'data-role="mk-chip"' in h and 'data-tone="wait"' in h
+    # M7 → Y12-A: 목록 뱃지 — 승인대기(pending)는 테두리만(wait), 누르면 M6 상태 팝업
+    assert 'data-role="mk-chip"' in h and 'data-kind="wait"' in h and "승인대기" in h
 
 
 def test_u2_screens_ask_for_review_instead_of_opening_the_seller_number_url():
     m5 = Path("src/seller_console/templates/_m5_flow.html").read_text(encoding="utf-8")
     pv = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert 'data-role="m5-review-btn"' in m5 and "/review-status" in m5 and "60000" in m5 and "WING에서 찾기" in m5
-    assert 'data-role="cp-review-btn"' in pv and 'data-role="cp-result-review"' in pv and "cpReviewStatus" in pv
+    # Y12-A: 드로어의 「검토 상태 보기」 버튼은 없앰(마켓 등록본 줄을 누르면 같은 팝업) · 등록 결과 줄의 「마켓 상태」 링크는 유지
+    assert 'data-role="cp-review-btn"' not in pv and 'data-role="cp-result-review"' in pv and "cpReviewStatus" in pv
 
 
 # ── U1b 등록본 점검·교정 ──────────────────────────────────────────────────────

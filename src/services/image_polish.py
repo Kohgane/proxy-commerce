@@ -785,7 +785,7 @@ def item_detail(item_id: str, extra: dict) -> str:
     from src.db import image_translate_queue_pg as q
     st = q.state_get(_item_key(item_id)) or {}
     rows = []
-    for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세")):
+    for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세"), ("sku_images_ko", "옵션 사진")):   # Y12-A: 한 줄 장 수와 같게
         for e in extra.get(key) or []:
             pl = e.get("polish") if isinstance(e, dict) else None
             if isinstance(pl, dict):

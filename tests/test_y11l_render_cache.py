@@ -58,7 +58,7 @@ def test_polish_keeps_tencent_when_too_long(monkeypatch):
     pl = ex["images_ko"][0]["polish"]
     assert pl["too_long"] == 1 and not applied and r["changed"] == 0
     assert pl["rows"][0]["why"].startswith("길어서 유지")
-    assert "길어서 유지 1" in P.item_line("x", ex)
+    assert "길어서 유지 1" in P.item_detail("x", ex)
 
 
 # ── 2. AI 캐시: 렌더만 다시 할 때 AI를 다시 안 부른다 ───────────────────────────────────────
@@ -78,7 +78,7 @@ def test_rerun_uses_cache_zero_ai_calls(monkeypatch):
     monkeypatch.setattr(IE, "apply", lambda *a, **k: {"ok": True, "version": "edit:1"})
     r = P.polish_entry(ex, "gallery", 0)                                         # 글꼴 고친 뒤 다시: 캐시
     assert len(calls) == 1 and r["calls"] == 0 and r["cached"] == 1 and r["changed"] == 1
-    assert P.item_line("x", ex) == "번역 다듬기 1장: 바뀐 상자 1 · AI 0회(캐시 1상자)"
+    assert P.item_detail("x", ex) == "번역 다듬기 1장: 바뀐 상자 1 · AI 0회(캐시 1상자)"
 
 
 def test_old_prompt_answer_failing_new_rule_is_asked_again(monkeypatch):

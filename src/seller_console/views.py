@@ -4382,7 +4382,7 @@ def collect_ocr_recheck(item_id):
         r = D.start(iid)
         if not r.get("ok"):
             return jsonify({"ok": False, "error": r.get("why") or "시작하지 못했어요"}), 409
-        return jsonify({"ok": True, "running": True, "line": "OCR 다시 판정 중… (1~2분)"})
+        return jsonify({"ok": True, "running": True, "line": "OCR 판정 중… (1~2분)"})
     res = D.last_item(iid)
     return jsonify({"ok": True, "running": bool(res.get("running")), "line": D.line(res), "detail": D.detail(res)})
 
@@ -4399,9 +4399,9 @@ def collect_image_polish(item_id):
         r = _ip.start_item(iid)
         if not r.get("ok"):
             return jsonify({"ok": False, "error": r.get("why") or "시작하지 못했어요"}), 409
-        if not r.get("n"):
-            return jsonify({"ok": True, "running": False, "line": "번역 다듬기: " + str(r.get("why") or "다듬을 번역본이 없어요")})
-        return jsonify({"ok": True, "running": True, "line": f"번역 다듬기 중… (0/{r['n']}장)"})
+        if not r.get("n"):                                       # Y12-A: 한 문장 · 사유는 접힘
+            return jsonify({"ok": True, "running": False, "line": "다듬기 · 다듬을 번역본이 없어요", "detail": str(r.get("why") or "")})
+        return jsonify({"ok": True, "running": True, "line": f"다듬기 중 · 0/{r['n']}장"})
     fresh = _get_owned_item(iid) or item
     try:
         ex = json.loads(fresh.get("extra_json") or "{}") or {}

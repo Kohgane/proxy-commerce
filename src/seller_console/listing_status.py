@@ -270,6 +270,8 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
                 else "상태를 묻지 못했어요 — " + str(row.get("error") or "")[:160])
         row.update(state=str(rv.get("state") or "unknown"), status_raw=str(rv.get("status_raw") or ""), comment=str(rv.get("comment") or ""),
                    error="", stale=True, stale_note=note, link=row.get("link") or str(rv.get("link") or ""))
+    if row.get("state") == "unsupported":                   # 「등록됨」 하나 + 조회 미연동은 접힘 한 줄(정직 표기 유지)
+        row["unsupported_note"] = str(row.get("label") or "")
     row["label"] = state_word(m, row.get("state"), row.get("status_raw")) or row.get("label") or ""
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
                dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」

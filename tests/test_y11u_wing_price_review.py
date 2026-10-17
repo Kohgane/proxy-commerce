@@ -28,7 +28,8 @@ def test_review_lock_is_gray_reviewing_not_error():
     assert not CU.is_review_lock("쿠팡 거부 — http_status=400 body={\"code\":\"ERROR\",\"message\":\"x\"}")
     assert not CU.is_review_lock("쿠팡 서버 오류 — http_status=500 body={\"code\":\"DEFAULT\"}")
     st = _up({"error": LOCK}).review_status("16415921785")
-    assert st["state"] == "reviewing" and st["label"] == "심사 중 — 잠시 후 조회" and st["error"] == "" and "DEFAULT" in st["note"]
+    # Y12-A: 「심사 중」 변주 없음 — 조회만 막힌 상태(화면은 마지막 성공 값 유지 · listing_status.query)
+    assert st["state"] == "reviewing" and st["label"] == "조회 잠시 막힘" and st["error"] == "" and "DEFAULT" in st["note"]
     st = _up({"error": "쿠팡 거부 — http_status=404 body={}"}).review_status("1")
     assert st["state"] == "unknown" and st["error"]
 
@@ -73,7 +74,7 @@ def test_wing_links_and_popup_controls():
     assert row["manage_url"].endswith("vendorInventoryId=16415921785") and row["manage_label"] == "Wing 상품 수정"
     assert row["wing_search_url"] == "https://wing.coupang.com/vendor-inventory/list?searchKeywords=16415921785"
     t = (ROOT / "src/seller_console/templates/_market_status.html").read_text(encoding="utf-8")
-    assert 'data-role="mst-wing-search"' in t and 'data-role="mst-copy-sid"' in t and 'data-role="mst-reviewing"' in t
+    assert 'data-role="mst-wing-search"' in t and 'data-role="mst-copy-sid"' in t and 'data-role="mst-stale"' in t
 
 
 def test_action_results_render_at_top_of_row():

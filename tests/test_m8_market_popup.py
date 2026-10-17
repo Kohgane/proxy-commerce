@@ -85,7 +85,10 @@ def test_1_status_phase_is_parallel(monkeypatch):
     t0 = time.monotonic()
     d = _client("m8-par").get(f"/seller/collect/{iid}/market-status?phase=status").get_json()
     took = time.monotonic() - t0
-    assert d["ok"] and len(d["rows"]) == 4 and all(r["label"] == "판매중" for r in d["rows"])
+    # Y12-A: 상태 낱말은 마켓 표기 하나 — 쿠팡 approved = 승인완료 · 네이버 approved = 판매중
+    assert d["ok"] and len(d["rows"]) == 4
+    assert {r["market"]: r["label"] for r in d["rows"]} == {"coupang:gogane": "승인완료", "coupang:woojoo": "승인완료",
+                                                           "smartstore:chezgoga": "판매중", "smartstore:gocosmos": "판매중"}
     assert took < 1.2, took                                                        # 직렬이면 1.6초
     assert isinstance(d["elapsed_ms"], int)
     # Y11-S: 「지금 다시 내면」(지금 마진으로 다시 계산) 줄은 없다 — 등록 기록의 실제 전송값만(없으면 「등록 당시 값 기록 없음」)
@@ -108,7 +111,7 @@ def test_1_one_slow_market_fails_alone_after_timeout(monkeypatch):
     assert time.monotonic() - t0 < 1.2
     by = {r["market"]: r for r in rows}
     assert by["coupang:woojoo"]["label"] == "상태 확인 실패" and "답하지 않았어요" in by["coupang:woojoo"]["error"]
-    assert by["coupang:gogane"]["label"] == "검토중" and by["smartstore:chezgoga"]["label"] == "판매중"
+    assert by["coupang:gogane"]["label"] == "승인대기" and by["smartstore:chezgoga"]["label"] == "판매중"   # Y12-A: Wing 표기
 
 
 def test_1_market_error_text_is_kept_per_row(monkeypatch):

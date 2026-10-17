@@ -77,7 +77,7 @@ def test_polish_never_erases_blank_answer_is_a_suggestion(monkeypatch):
     row = ex["images_ko"][0]["polish"]["rows"][0]
     assert row["suggest_erase"] and row["ko"] == "88VIP 전용 소비 쿠폰" and row["from"] == "tencent"
     assert [x["tgt"] for x in IE._polish_view(ex["images_ko"][0])["rows"] if x.get("suggest_erase")] == ["88VIP 전용 소비 쿠폰"]
-    assert "AI 지우기 제안 1(편집기에서 탭해야 지움)" in P.item_line("x", ex)
+    assert "AI 지우기 제안 1(편집기에서 탭해야 지움)" in P.item_detail("x", ex)
 
 
 def test_old_erased_coupon_is_restored_from_translated_with_cache(monkeypatch):
@@ -119,7 +119,7 @@ def test_outbound_photo_reasks_old_prompt_answers_and_line_says_so(monkeypatch):
     pl = ex["detail_images_ko"][0]["polish"]
     assert len(seen) == 1 and pl["outbound"] is True and pl["reask_old"] == 4 and r["cached"] == 0
     assert {"id": "t1", "action": "text", "text": "의자 하나하나가 편안함 그 자체"} in applied[0]
-    assert "재질문 4상자(옛 프롬프트)" in P.item_line("x", ex)
+    assert "재질문 4상자(옛 프롬프트)" in P.item_detail("x", ex)
     # 같은 판에서 답한 상자(t1)는 캐시 — 다시 안 묻는다(답 없던 상자만 다시)
     seen.clear()
     ex["detail_images_ko"][0].update(current="translated", edits=[])

@@ -74,12 +74,14 @@
         : '상품번호 ' + esc(r.product_id || '없음')) + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') + '</div>';
     // Y12-A(오너 2026-10-17): 확인 시각·등록 때 판매가·이유·지금 올라간 내용·응답 원문은 「자세히」로 접는다(상태 낱말은 뱃지 하나)
     var more = [];
-    if (r.checked_at) more.push('확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : ''));
-    if (r.stale_note) more.push(esc(r.stale_note) + ' — 마지막으로 확인한 상태예요');
-    if (r.registered_price) more.push('등록 때 판매가: ' + esc(r.registered_price));
-    if (r.detail_sync_why) more.push(esc(r.detail_sync_why));
-    if (r.live_line) more.push(esc(r.live_line));
-    if (r.error) more.push('원문: ' + esc(r.error));
+    if (r.checked_at) more.push('<span data-role="mst-checked">확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') + '</span>');
+    // Y12-A 결정 8: 막힌 조회(쿠팡 수정 심사 중 400 등)는 상태를 바꾸지 않는다 — 마지막 성공 값 + 사유는 여기 접힘
+    if (r.stale_note) more.push('<span data-role="mst-stale">' + esc(r.stale_note) + ' — 마지막으로 확인한 상태예요</span>');
+    if (r.unsupported_note) more.push('<span data-role="mst-unsupported">' + esc(r.unsupported_note) + '</span>');
+    if (r.registered_price) more.push('<span data-role="mst-price-registered">등록 때 판매가: ' + esc(r.registered_price) + '</span>');
+    if (r.detail_sync_why) more.push('<span data-role="mst-detail-sync-why">' + esc(r.detail_sync_why) + '</span>');
+    if (r.live_line) more.push('<span data-role="mst-live">' + esc(r.live_line) + '</span>');
+    if (r.error) more.push('<span data-role="mst-error-raw">원문: ' + esc(r.error) + '</span>');
     if (r.dup_count) h += '<div class="mst-err" data-role="mst-dup">같은 상품이 이 마켓에 ' + r.dup_count + '건 있어요 — 남길 번호를 정하고, 나머지는 판매자센터에서 지운 뒤 「이 기록 빼기」</div>';
     if (r.comment) h += '<div class="mst-reason" data-role="mst-reason"><b>반려 사유</b> ' + esc(r.comment) + '</div>';
     // M8-8: 등록 때 쓴 재료(마진·환율·수수료) — 지금 다시 낸 줄과 다르면 무엇이 달랐는지 바로 보인다

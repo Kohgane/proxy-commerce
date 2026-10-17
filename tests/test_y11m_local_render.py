@@ -132,10 +132,10 @@ def test_result_line_drop_reasons_and_running_count():
     rows = [{"why": "길어서 유지(상자에 안 들어감)"}] * 3 + [{"why": "금지어·과장(88VIP)"}, {"why": "다른 품목 표현(식감)"}]
     ex = {"detail_images_ko": [{"idx": 5, "polish": {"changed": 2, "calls": 1, "too_long": 3, "rows": rows, "at": "2026-10-14T16:22:00+00:00"}},
                                {"idx": 27, "polish": {"changed": 1, "calls": 1, "rows": [], "at": "2026-10-14T13:23:00+00:00"}}]}
-    line = P.item_line("x", ex)
+    line = P.item_detail("x", ex)                                    # Y12-A: 사유는 접힘 줄
     assert "길어서 유지 3" in line and "AI 결과 버림 2(" in line and "금지어·과장 1" in line and "다른 품목 표현 1" in line
     q.state_set(P._item_key("x"), {"running": True, "n": 1, "at": "2026-10-14T16:21:00+00:00"})
-    assert P.item_line("x", ex) == "번역 다듬기 중… (1/1장)"            # 13:23에 다듬은 28번은 이번 실행이 아니다(옛 「24/23」)
+    assert P.item_line("x", ex) == "다듬기 중 · 1/1장"            # 13:23에 다듬은 28번은 이번 실행이 아니다(옛 「24/23」)
 
 
 # ── 3. 한자 남은 상자 — AI 두 번 → 그래도 남으면 한자만 텍스트 번역해 끼운다 · 다시 눌러도 AI·번역 0 ──────────────────

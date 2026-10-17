@@ -70,10 +70,12 @@ def test_list_rows_render_chips_without_asking_markets():
     none = _item("m7-own", None, title="아직 안 올린 상품")
     h = _client("m7-own").get("/seller/collect/history").get_data(as_text=True)
     row = h.split(f'value="{iid}"')[1].split("</tr>")[0]
-    for chip in ("쿠팡·고가네", "쿠팡·우주대행", "셰고가", "고코스모스", "11번가", "멀티샵"):
-        assert f">{chip}</button>" in row, chip
+    # Y12-A: 뱃지 = 이름 + 마켓 표기 상태 낱말(데스크톱) · 약자(모바일) — 모양으로 상태(완료 채움·대기 테두리·반려 글자)
+    for full in ("고가네 승인반려", "우주대행 승인완료", "셰고가 등록됨", "고코스모스 등록됨", "11번가 등록됨", "멀티샵 등록됨"):
+        assert f'<span class="mk-full">{full}</span>' in row, full
     assert row.count('data-role="mk-chip"') == 6 and f'data-item="{iid}"' in row
-    assert 'data-tone="ok"' in row and 'data-tone="bad"' in row and 'data-tone="fail"' in row
+    assert 'data-kind="bad"' in row and 'data-kind="done"' in row and 'data-kind="wait"' in row
+    assert '<span class="mk-short">반려</span>' in row                        # 반려는 약자 대신 글자
     other = h.split(f'value="{none}"')[1].split("</tr>")[0]
     assert 'data-role="mk-chip"' not in other                                 # 등록 안 한 상품엔 칩 없음
 
@@ -170,7 +172,7 @@ def test_chips_wrap_at_390px_without_overflow():
         return tops, box, heights, head
     tops, (sw, cw, right), heights, head = _browser(html, "/seller/collect/history", c, act)
     assert head and max(head) <= 26, head
-    assert len(set(tops)) >= 2                                                  # 여섯 칩이 두 줄 이상으로 줄바꿈
+    assert len(set(tops)) == 1                                                  # Y12-A: 390px에서 뱃지가 한 줄(약자)
     assert sw <= cw and right <= 390                                            # 가로 넘침 0
     assert max(heights) <= 32                                                   # 칩 글자가 세로로 쪼개지지 않는다
 
