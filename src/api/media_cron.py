@@ -122,8 +122,7 @@ def _drain_naver_detail() -> dict:
         return store.get(item_id, seller_ids={seller_id} if seller_id else None)
 
     def save_for(item_id, seller_id):
-        return lambda ex: store.update(item_id, seller_ids={seller_id} if seller_id else None,
-                                       extra_json=json.dumps(ex, ensure_ascii=False))
+        return ndr.store_save(item_id, {seller_id} if seller_id else None)     # Y11X: 제 칸(detail_sync)만 덧대 저장
     out = ndr.drain(get_item, save_for)
     logger.info("[네이버 본문 갱신 크론] %s", {k: out[k] for k in ("picked", "sent", "ok", "left")})
     ndr.record_last(out)
@@ -148,8 +147,7 @@ def _drain_coupang_detail() -> dict:
         return store.get(item_id, seller_ids={seller_id} if seller_id else None)
 
     def save_for(item_id, seller_id):
-        return lambda ex: store.update(item_id, seller_ids={seller_id} if seller_id else None,
-                                       extra_json=json.dumps(ex, ensure_ascii=False))
+        return cdr.store_save(item_id, {seller_id} if seller_id else None)     # Y11X: 제 칸(coupang_detail_sync)만 덧대 저장
     out = cdr.drain(get_item, save_for)
     logger.info("[쿠팡 상세 갱신 크론] %s", {k: out[k] for k in ("picked", "sent", "ok", "left")})
     cdr.record_last(out)                       # Y11-S: 마지막 회전 결과(보고용 — 줄마다 응답 원문·이미지 판정·번역 제공자)

@@ -295,6 +295,22 @@ def guard_originals(item_id: str, extra_json, *, seller_id=None, seller_ids=None
     return _json.dumps(new, ensure_ascii=False)
 
 
+def merge_extra(item_id: str, apply, *, seller_ids: Optional[set] = None) -> bool:
+    """Y11X(오너 2026-10-17): extra_json을 **지금 DB 값에** 덧대 저장한다 — `apply(fresh_extra)`가 제 칸만 바꾼다.
+
+    쿠팡 상세 갱신·네이버 본문 갱신이 같은 틱에 동시에 돌며 각자 처음 읽은 extra 전체를 써서, 나중에 쓴 쪽이 먼저 쓴 쪽의
+    기록을 지웠다(10-17 05:10 VRSUK — 쿠팡 `coupang_detail_sync` 해시·보낸 사진 목록이 네이버 저장에 덮여 16:50 값으로 남음)."""
+    row = get(item_id, seller_ids=seller_ids)
+    if not row:
+        return False
+    try:
+        fresh = json.loads(row.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001 — 못 읽으면 덮지 않는다
+        return False
+    apply(fresh)
+    return update(item_id, seller_ids=seller_ids, extra_json=json.dumps(fresh, ensure_ascii=False))
+
+
 def update(item_id: str, *, seller_id: Optional[str] = None,
            seller_ids: Optional[set] = None, **fields) -> bool:
     """수집 이력 단건 필드 갱신. 허용: title, image_url, price, currency, status, extra_json.

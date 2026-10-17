@@ -254,6 +254,20 @@ def sync_line(extra: dict, market: str, item_id: str = "", rows: Optional[List[d
     return ""
 
 
+def store_save(item_id: str, seller_ids: Optional[set] = None) -> Callable[[dict], None]:
+    """Y11X — `refresh_item(save=…)`용: **쿠팡 갱신 기록(`coupang_detail_sync`)만** 지금 DB 값에 덧대 저장한다.
+    같은 틱에 도는 네이버 본문 갱신·다듬기 저장과 서로 덮지 않는다(10-17 05:10 VRSUK 기록 소실)."""
+    from src.seller_console import collect_history_store as store
+
+    def _save(ex: dict) -> None:
+        mine = (ex or {}).get("coupang_detail_sync") or {}
+
+        def _apply(fresh: dict) -> None:
+            fresh["coupang_detail_sync"] = {**(fresh.get("coupang_detail_sync") or {}), **mine}
+        store.merge_extra(str(item_id), _apply, seller_ids=seller_ids)
+    return _save
+
+
 def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]] = None,
                  make_up: Optional[Callable[[str], object]] = None, save: Optional[Callable[[dict], None]] = None) -> List[dict]:
     """이 상품의 쿠팡 등록본마다 상세 갱신 시도 — 줄마다 `{market, sid, sent, ok, state, error, market_status, body}`.

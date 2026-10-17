@@ -152,6 +152,23 @@ def refresh_one(item: dict, rec: dict, *, seller_id: str = "", make_up: Optional
     return row
 
 
+def store_save(item_id: str, seller_ids: Optional[set] = None) -> Callable[[dict], None]:
+    """Y11X — `drain(save_for=…)`용: **이 상품 네이버 등록본의 `detail_sync`만** 지금 DB 값에 덧대 저장한다
+    (같은 틱의 쿠팡 갱신 기록·다듬기 결과를 덮지 않는다)."""
+    from src.seller_console import collect_history_store as store
+
+    def _save(ex: dict) -> None:
+        mine = {u.get("market"): u["detail_sync"] for u in (ex or {}).get("uploaded") or []
+                if isinstance(u, dict) and isinstance(u.get("detail_sync"), dict)}
+
+        def _apply(fresh: dict) -> None:
+            for u in fresh.get("uploaded") or []:
+                if isinstance(u, dict) and u.get("market") in mine:
+                    u["detail_sync"] = mine[u["market"]]
+        store.merge_extra(str(item_id), _apply, seller_ids=seller_ids)
+    return _save
+
+
 def drain(get_item: Callable[[str, str], Optional[dict]], save_for: Callable[[str, str], Callable[[dict], None]],
           *, budget: int = 6, make_up=None, status_of=None) -> Dict:
     out = {"picked": 0, "sent": 0, "ok": 0, "left": 0, "rows": []}
