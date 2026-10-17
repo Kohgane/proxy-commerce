@@ -48,7 +48,13 @@ def test_all_present_is_success():
 
 def test_failure_rendered_in_list_and_drawer_and_toast():
     # 목록 배지·드로어 로그·토스트에 실패 3단계 반영
-    assert 'cs.status == "실패"' in ROWS and "실패 · 추출 실패" in ROWS
+    # Y12-A: 목록 상태 → 드로어 맨 위 한 줄(동작으로 잰다)
+    import json as _json
+    from src.seller_console.views import _row_flags
+
+    def _flags(url, ex, title="t", source="extension"):
+        return _row_flags({"id": "x", "title": title, "url": url, "source": source, "extra_json": _json.dumps(ex)})
+    assert "수집 실패" in _flags("https://x/g-1", {"title": "", "price": "", "price_status": "needs_check", "images": []}, title="")
     assert 'collect_status.status == "실패"' in PREVIEW and "수집 실패" in PREVIEW
     assert 'fs.status === "실패"' in CS and "수집 실패" in CS
 
@@ -64,5 +70,7 @@ def test_list_failure_badge_renders():
     with app.test_client() as c:
         with c.session_transaction() as s:
             s["user_id"] = "u1"; s["email"] = "u1"; s["authenticated"] = True
-        b = c.get("/seller/collect/history").get_data(as_text=True)
-        assert "실패 · 추출 실패" in b     # 옛 레코드도 렌더 시 재판정 → 실패 배지
+        assert c.get("/seller/collect/history").status_code == 200
+        from src.seller_console.views import _row_flags
+        rows = ch.list_items(days=3650, seller_ids={"u1"})
+        assert any("수집 실패" in _row_flags(r) for r in rows)     # 옛 레코드도 열 때 재판정 → 실패 표시(드로어)

@@ -192,7 +192,8 @@ def test_r1_history_is_recorded_and_the_hole_is_closed():
     그리고 **임시저장이 이제 큐에 남는다**는 것 — 9/03의 구멍이 닫혔다는 증거다.
     """
     from src.db.market_registrations_pg import _WATCH_STATUSES
-    assert "rejected" not in _WATCH_STATUSES          # 반려는 확정 — 큐를 떠나는 게 맞다
+    # Y12-A(오너 2026-10-17 e): 반려도 큐에 남는다 — 반려 판정이 재조회를 끊으면 풀렸는지·다시 반려됐는지 모른다
+    assert "rejected" in _WATCH_STATUSES
     # 9/03에 큐를 떠나게 만든 그 입력이, 이제는 남는다.
     assert RW._next_status({"wing_state": "saved", "comment": "임시저장"}) == "saved"
     assert "saved" in _WATCH_STATUSES

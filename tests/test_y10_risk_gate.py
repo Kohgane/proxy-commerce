@@ -166,8 +166,9 @@ def test_skip_puts_chip_and_holds():
     assert d["ok"] and d["risk"]["skip"]["reason"] == "상표/디자인 Eames"
     saved = _saved(iid, sid)
     assert R.holds(R.scan(saved))[0]["short"] == "등록 보류: 상표/디자인 Eames"
-    html = c.get("/seller/collect/history").get_data(as_text=True)
-    assert "등록 보류: 상표/디자인 Eames" in html
+    # Y12-A: 등록 보류는 드로어 맨 위 한 줄 + 대시보드 「손댈 것」(오너 확인 대기)
+    drawer = c.get(f"/seller/collect/preview/{iid}?drawer=1").get_data(as_text=True)
+    assert "등록 보류 · 상표/디자인 Eames" in drawer
     assert c.post(f"/seller/collect/{iid}/risk-decision", json={"key": "", "action": "reset"}).get_json()["ok"]
     assert not _saved(iid, sid).get("risk_skip")
 

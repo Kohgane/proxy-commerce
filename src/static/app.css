@@ -1060,10 +1060,13 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(18px) saturate(1.1);
   z-index: 1081; box-shadow: var(--nm-soft-lg);
-  transform: translateX(100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+  transform: translateX(100%);
+  /* Y12-A: 닫힌 시트는 밀어내기만 하면 전체 캡처·긴 화면에서 빈 시트로 드러난다 — 닫히면 아예 감춘다(닫힘 애니메이션 뒤). */
+  visibility: hidden;
+  transition: transform .26s cubic-bezier(.4, 0, .2, 1), visibility 0s linear .26s;
   display: flex; flex-direction: column;
 }
-.kgp-drawer.show { transform: translateX(0); }
+.kgp-drawer.show { transform: translateX(0); visibility: visible; transition: transform .26s cubic-bezier(.4, 0, .2, 1), visibility 0s; }
 .kgp-drawer-head {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -1110,7 +1113,7 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* 편집 화면(드로어 안) — 콘솔 chrome을 감추고 편집기만 남긴다. */
 .kgp-editor .console-sidebar, .kgp-editor .mobile-topbar, .kgp-editor .mobile-search,
 .kgp-editor .console-topbar, .kgp-editor .sidebar-overlay,
-.kgp-editor #fbWrap, .kgp-editor #fbReopen, .kgp-editor #kgp-progress { display: none !important; }
+.kgp-editor #kgp-progress { display: none !important; }
 .kgp-editor .console-shell { display: block !important; }
 .kgp-editor .console-main { margin: 0 !important; }
 .kgp-editor .console-content { padding: var(--space-3) !important; overflow-x: hidden; }
@@ -2424,3 +2427,79 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* Y11-L: 상세 타일 「사진 편집」 — 갤러리 타일과 같은 진입 */
 .kgp-dcell-edit { margin: 0 var(--space-1) var(--space-1); min-height: 32px; }
 .kgp-dcell-img[role=button] { cursor: pointer; }
+
+/* Y12-A(오너 23:31 a): 「진단」은 옛 대시보드 카드를 **흐르는 높이**로 — `.op-shell`(뷰포트 고정 + main overflow hidden)을
+   쓰면 카드 본문이 잘린다. 같은 카드 문법(op-card)만 빌리고 높이는 내용대로, 넘치면 페이지가 스크롤. */
+.diag-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-5); align-items: start; }
+.diag-grid > .op-card { overflow: visible; }
+.diag-grid > .op-card .op-card-body { overflow: visible; }
+.diag-grid .op-card-head { flex-wrap: wrap; row-gap: 4px; }                 /* 390px: 제목이 두 줄로 쪼개지지 않게 메타를 아래로 */
+.diag-grid .op-sig-item { white-space: nowrap; flex: none; }              /* 「임시저장」이 한 글자씩 세로로 꺾이지 않게 */
+@media (max-width: 1199.98px) { .diag-grid { grid-template-columns: minmax(0, 1fr); } .diag-grid > * { grid-column: 1 / -1; } }
+
+/* ── Y12-A(오너 2026-10-17): 대시보드 세 묶음 · 상품목록 한 줄 · 마켓 뱃지(모양으로 상태 — 색만으로 구분하지 않는다) ── */
+.hb-wrap { display: grid; gap: var(--space-2, 12px); max-width: 860px; }
+.hb-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius, 12px); padding: 12px 16px; }
+.hb-card.is-alert { border-left: 3px solid var(--orange); }
+.hb-card > summary { list-style: none; cursor: pointer; }
+.hb-card > summary::-webkit-details-marker { display: none; }
+.hb-sum, .hb-flat { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hb-title { font-weight: 700; color: var(--text); }
+.hb-num { font-size: 1.4rem; font-weight: 800; color: var(--orange-strong, var(--orange)); line-height: 1; }
+.hb-num-muted { font-size: .9rem; font-weight: 600; color: var(--text-muted); }
+.hb-none, .hb-line { color: var(--text-muted); }
+.hb-line b { color: var(--text); }
+.hb-meta { margin-left: auto; font-size: .75rem; color: var(--text-muted); }
+.hb-body { margin-top: 10px; font-size: .9rem; }
+.hb-groups, .hb-items { list-style: none; margin: 0 0 8px; padding: 0; }
+.hb-groups li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.hb-items li { padding: 4px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.hb-why { display: block; font-size: .78rem; color: var(--text-muted); }
+
+.ch-topbar { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.ch-search { flex: 1 1 auto; min-width: 0; }
+.mk-attn-toggle { flex: none; white-space: nowrap; padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  font-size: .85rem; color: var(--text); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.mk-attn-toggle.is-on { background: var(--ink, var(--text)); color: var(--surface); border-color: transparent; }
+.ch-filter-box > summary { list-style: none; cursor: pointer; }
+.ch-more > summary { cursor: pointer; font-size: .8rem; color: var(--text-muted); }
+.ch-list-head { display: flex; align-items: center; gap: 10px; }
+.ch-count { font-weight: 700; }
+.ch-table { table-layout: fixed; width: 100%; }
+[data-fs-root].ch-norail { padding-right: 0; }   /* 레일 없는 정렬(기본)에서는 레일 자리를 비우지 않는다 */
+.ch-table td { vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
+.ch-c-chk { width: 36px; }
+.ch-c-img { width: 56px; }
+.ch-c-badges { width: 460px; }   /* 「고코스모스 판매중」까지 4개가 한 줄 */
+/* 1줄 말줄임은 표 문법(td.cardcell-title · td[data-label]) 한 곳 — 여기서 다시 정하지 않는다 */
+.ch-c-when { width: 180px; font-size: .8rem; color: var(--text-muted); }
+.ch-title-1 { font-weight: 600; color: var(--text); text-decoration: none; }
+.mk-badges { flex-wrap: nowrap; }
+.mk-badge .mk-short, .ch-when-short { display: none; }
+.mk-badge.kind-done { background: var(--success); border-color: var(--success); color: var(--on-accent); }
+.mk-badge.kind-wait { background: transparent; border: 1px solid var(--text-muted); color: var(--text); }
+.mk-badge.kind-bad { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+.mk-badge.kind-fail { background: transparent; border: 1px dashed var(--orange); color: var(--orange-strong, var(--orange)); }
+
+@media (max-width: 767.98px) {
+  /* 390px 한 줄: 체크 · 썸네일 · 상품명(말줄임) · 뱃지 4(약자) · 시각 — 두 줄로 안 꺾인다 */
+  .ch-table, .ch-table tbody, .ch-table tr { display: block; width: 100%; }
+  .table-responsive > table.ch-table.pc-swiss-table { min-width: 0; }   /* seller.css 「표 하한 560px」 예외 — 한 줄 목록은 가로 스크롤 없이 */
+  .ch-table tr.ch-row { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  .ch-table tr.ch-row > td { display: block; padding: 0; border: 0; width: auto; }
+  .ch-c-chk { flex: none; }
+  .ch-c-img { flex: none; }
+  .ch-c-img .ch-thumb { width: 36px; height: 36px; }
+  .ch-c-title { flex: 1 1 auto; min-width: 0; }
+  .ch-c-badges { flex: none; }
+  .ch-c-when { flex: none; font-size: .72rem; }
+  .ch-c-when .ch-when-text, .ch-c-when .ch-when-time { display: none; }
+  .ch-c-when .ch-when-short { display: inline; }
+  .ch-table tr.ch-row > td.ch-c-chk { padding: 0 !important; }   /* ps-3(16px)까지 걷어 상품명 폭 확보 */
+  .ch-card-table > .op-card-body { padding: 4px 6px; }
+  .mk-badge { min-width: 22px; min-height: 22px; padding: 0 5px; justify-content: center; font-size: .7rem; }
+  .mk-badge .mk-full { display: none; }
+  .mk-badge .mk-short { display: inline; }
+  .mk-badges { gap: 3px; }
+  .hb-meta { margin-left: 0; width: 100%; }
+}

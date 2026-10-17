@@ -26,31 +26,30 @@ def test_no_bootstrap_color_badges_in_rows():
 
 
 def test_price_right_aligned():
-    assert 'class="small text-end" data-label="가격"' in ROWS + CSS_S6C   # 가격 셀 우정렬
-    assert '<th class="text-end">가격</th>' in HTML              # 헤더 우정렬
+    # Y12-A: 목록 줄에서 가격은 드로어로 — 남은 가격 표(엑셀 가져오기 미리보기)는 헤더·셀 둘 다 우정렬
+    assert '<th class="text-end">가격</th>' in HTML and '<td class="text-end">${_esc(p.price)}</td>' in HTML
 
 
 def test_domain_is_token_chip():
-    # 도메인 = 토큰 칩(한지 배경·line 보더), 평문 muted 아님.
-    assert "ch-url-pill" in ROWS                       # 6-c: 인라인 → 클래스
-    pill = CSS_S6C.split(".ch-url-pill")[1][:260]
-    assert "var(--hanji)" in pill and "var(--border)" in pill and "var(--text-muted)" in pill
+    # Y12-A(오너 결정): 목록 한 줄 = 썸네일·상품명·뱃지·시각 — 도메인 칩은 줄에서 빠졌다(드로어 맨 위)
+    assert "ch-url-pill" not in ROWS and "it.domain" not in ROWS
 
 
 def test_source_single_neutral_chip():
-    # 경로 = 단일 중립 칩(맵으로 라벨), 5색 배지 아님.
-    assert "{'extension':'확장'" in ROWS + CSS_S6C or "'extension':'확장'" in ROWS + CSS_S6C
-    assert "ch-badge-src" in ROWS                      # 6-c: 인라인 → 클래스
-    assert "var(--ink-soft)" in CSS_S6C.split(".ch-badge-src")[1][:200]
+    # Y12-A: 경로 칩도 줄에서 빠졌다(드로어)
+    assert "ch-badge-src" not in ROWS and "it.source" not in ROWS
 
 
 def test_status_badges_use_tokens():
-    # 상태: 성공=teal·부분=warn·실패=danger·보관=muted 토큰(색 남용 없음, 행당 1개).
-    assert "var(--teal)" in ROWS and "var(--warn)" in ROWS and "var(--danger)" in ROWS
+    # Y12-A: 줄의 상태 = 마켓 뱃지 모양(완료 채움·대기 테두리·반려/실패 글자) — 색은 토큰만
+    for kind, tok in (("done", "var(--success)"), ("wait", "var(--text-muted)"), ("bad", "var(--danger)"), ("fail", "var(--orange)")):
+        assert tok in CSS_S6C.split(f".mk-badge.kind-{kind}")[1][:200], kind
 
 
 def test_title_truncate_preserved():
-    assert "text-truncate" in ROWS + CSS_S6C   # 제목 1줄 말줄임 유지
+    # 제목 1줄 말줄임 — 표 문법(td.cardcell-title) 한 곳에서(슬라이스가 다시 정하지 않는다)
+    assert 'class="cardcell-title ch-cell-title ch-c-title"' in ROWS
+    assert "text-overflow: ellipsis" in CSS_S6C.split(".pc-swiss-table > tbody > tr > td.cardcell-title")[1][:200]
 
 
 def test_history_page_renders(flask_client, monkeypatch):

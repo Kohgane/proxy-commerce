@@ -715,7 +715,8 @@ def start_item(item_id: str) -> Dict:
 
     from src.db import image_translate_queue_pg as q
     _RUN["busy"] = True                                          # 시작 응답 전에 잡아 둔다(연타 두 번 시작 금지)
-    q.state_set(_item_key(item_id), {"running": True, "n": len(targets), "at": datetime.now(timezone.utc).isoformat()})
+    started_at = datetime.now(timezone.utc).isoformat()
+    q.state_set(_item_key(item_id), {"running": True, "n": len(targets), "at": started_at, "started_at": started_at})
 
     def _go():
         done, whys = 0, []
@@ -727,7 +728,7 @@ def start_item(item_id: str) -> Dict:
                     whys.append(str(r["why"]))
         finally:
             _RUN["busy"] = False
-            q.state_set(_item_key(item_id), {"running": False, "n": len(targets), "done": done,
+            q.state_set(_item_key(item_id), {"running": False, "n": len(targets), "done": done, "started_at": started_at,
                                              "why": (max(set(whys), key=whys.count) if whys else ""),
                                              "at": datetime.now(timezone.utc).isoformat()})
 
@@ -740,11 +741,51 @@ def _item_key(item_id: str) -> str:
 
 
 def item_line(item_id: str, extra: dict) -> str:
-    """결과줄 — 「번역 다듬기 n장: 바뀐 상자 n · AI n회 · 버린 결과 n」 + 장별 한 줄 요약(앞 3장)."""
+    """Y12-A(오너 2026-10-17) 결과줄 한 문장 — 「다듬기 완료 · 24장 · 바뀐 장 1」(바뀐 장 = **마지막 실행**에서 새 버전이 생긴 장 수,
+    누적 아님). 상자·AI 횟수·캐시·길어서·버림 사유는 `item_detail`(접힘). 진행 중이면 「다듬기 중 · n/n장」."""
+    from src.db import image_translate_queue_pg as q
+    st = q.state_get(_item_key(item_id)) or {}
+    pls = [e.get("polish") for key in ("images_ko", "detail_images_ko", "sku_images_ko") for e in (extra.get(key) or [])
+           if isinstance(e, dict) and isinstance(e.get("polish"), dict)]
+    if st.get("running"):
+        since = str(st.get("at") or "")
+        done = sum(1 for pl in pls if str(pl.get("at") or "") >= since) if since else 0
+        return f"다듬기 중 · {min(done, int(st.get('n') or 0) or done)}/{st.get('n') or '?'}장"
+    if not pls:
+        return "다듬기 · 다듬은 사진이 아직 없어요" if st else ""
+    return f"다듬기 완료 · {len(pls)}장 · 바뀐 장 {changed_last_run(pls, st)}"
+
+
+def changed_last_run(pls: list, st: Optional[dict] = None) -> int:
+    """마지막 실행에서 새 버전이 생긴 장 수. 실행 기록(`started_at`)이 있으면 그 뒤, 없으면(장 하나만 돌린 일회성·자동 다듬기)
+    가장 최근 다듬기 시각부터 10분 안 — 그 묶음이 마지막 실행이다."""
+    from datetime import timedelta
+    ats = []
+    for pl in pls:
+        try:
+            ats.append(datetime.fromisoformat(str(pl.get("at") or "").replace("Z", "+00:00")))
+        except ValueError:
+            ats.append(None)
+    known = [a for a in ats if a]
+    if not known:
+        return 0
+    start = None
+    if (st or {}).get("started_at"):
+        try:
+            start = datetime.fromisoformat(str(st["started_at"]).replace("Z", "+00:00"))
+        except ValueError:
+            start = None
+    if start is None or start > max(known):
+        start = max(known) - timedelta(minutes=10)
+    return sum(1 for pl, a in zip(pls, ats) if a and a >= start and pl.get("version"))
+
+
+def item_detail(item_id: str, extra: dict) -> str:
+    """접힘 — 예전 결과줄(「번역 다듬기 n장: 바뀐 상자 n · AI n회 · 버린 결과 n」 + 사유)."""
     from src.db import image_translate_queue_pg as q
     st = q.state_get(_item_key(item_id)) or {}
     rows = []
-    for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세")):
+    for key, lab in (("images_ko", "사진"), ("detail_images_ko", "상세"), ("sku_images_ko", "옵션 사진")):   # Y12-A: 한 줄 장 수와 같게
         for e in extra.get(key) or []:
             pl = e.get("polish") if isinstance(e, dict) else None
             if isinstance(pl, dict):

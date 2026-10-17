@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # 행 dict가 노출하는 키(Sheets 스토어와 동일 — 템플릿/호출자 호환).
 _SELECT = ("id, created_at, source, domain, url, title, image_url, price, currency, "
-           "status, preview_url, extra_json, user_id")
+           "status, preview_url, extra_json, user_id, last_action_at, attn_n")
 
 # 속도(v46 STEP1): 목록 쿼리는 대형 컬럼(extra_json의 이미지 40장·상세설명·리뷰·스펙)을 통째로
 #   끌지 않고, 목록 렌더에 필요한 작은 필드만 SQL에서 축약(jsonb_build_object) → 전송량·직렬화 급감.
@@ -55,6 +55,9 @@ _LEAN_EXTRA = (
     "'image_check', extra_json->'image_check',"
     # Y10: 「등록 안 함」 — 목록 칩 「등록 보류: 사유」(작은 dict)
     "'risk_skip', extra_json->'risk_skip',"
+    # Y12-A: 목록 「마지막 동작」·뱃지 「실패」·「손댈 것」 — 작은 값만
+    "'coupang_detail_sync', extra_json->'coupang_detail_sync',"
+    "'attn', extra_json->'attn',"
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
     "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END,"
     # lean은 이미지를 **첫 장만** 싣는다 → 개수를 세면 늘 1이다. 실제 장수는 SQL이 세서 보낸다.
@@ -63,14 +66,17 @@ _LEAN_EXTRA = (
     ") AS extra_json"
 )
 _SELECT_LEAN = ("id, created_at, source, domain, url, title, image_url, price, currency, "
-                "status, preview_url, " + _LEAN_EXTRA + ", user_id")
+                "status, preview_url, " + _LEAN_EXTRA + ", user_id, last_action_at, attn_n")
 
 
 def _shape(t) -> dict:
     """DB 행 튜플 → Sheets 스토어와 동일 모양의 dict."""
     (rid, created_at, source, domain, url, title, image_url, price, currency,
-     status, preview_url, extra_json, user_id) = t
+     status, preview_url, extra_json, user_id) = t[:13]
+    last_action_at, attn_n = (t[13], t[14]) if len(t) > 14 else (None, 0)
     return {
+        "last_action_at": last_action_at.astimezone(timezone.utc).isoformat() if last_action_at else "",
+        "attn_n": int(attn_n or 0),
         "id": str(rid),
         "collected_at": created_at.astimezone(timezone.utc).isoformat() if created_at else "",
         "source": source or "",
@@ -106,8 +112,10 @@ def _product_key(url: str):
 
 def append(*, source: str, url: str, title: str, image: str = "", price: str = "",
            currency: str = "", status: str = "ok", preview_url: str = "",
-           extra: dict = None, seller_id: str = "", return_durable: bool = False, raw_url: str = ""):
-    """수집 1건 추가(트랜잭션 커밋 후에만 성공=durable). product_key 유니크로 중복 방지."""
+           extra: dict = None, seller_id: str = "", return_durable: bool = False, raw_url: str = "",
+           last_action_at=None, attn_n: int = 0):
+    """수집 1건 추가(트랜잭션 커밋 후에만 성공=durable). product_key 유니크로 중복 방지.
+    Y12-A: `last_action_at`·`attn_n`(목록 정렬·「손댈 것만」 열)도 함께 넣는다."""
     pkey = _product_key(url)
     domain = urlparse(url).netloc
     extra_json = json.dumps(extra or {}, ensure_ascii=False)
@@ -116,14 +124,15 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
         if pkey:
             cur.execute(
                 """INSERT INTO collect_history
-                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url,
+                    last_action_at, attn_n)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)
                    ON CONFLICT (user_id, product_key)
                      WHERE product_key IS NOT NULL AND product_key <> '' AND deleted_at IS NULL
                    DO NOTHING
                    RETURNING id""",
                 (seller_id, pkey, source, domain, url, title, image, str(price or ""),
-                 currency, status, preview_url, extra_json, raw_url or ""))
+                 currency, status, preview_url, extra_json, raw_url or "", last_action_at or None, int(attn_n or 0)))
             row = cur.fetchone()
             if row:
                 item_id = str(row[0])
@@ -135,11 +144,12 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
         else:
             cur.execute(
                 """INSERT INTO collect_history
-                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url)
-                   VALUES (%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (user_id, product_key, source, domain, url, title, image_url, price, currency, status, preview_url, extra_json, raw_url,
+                    last_action_at, attn_n)
+                   VALUES (%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)
                    RETURNING id""",
                 (seller_id, source, domain, url, title, image, str(price or ""),
-                 currency, status, preview_url, extra_json, raw_url or ""))
+                 currency, status, preview_url, extra_json, raw_url or "", last_action_at or None, int(attn_n or 0)))
             item_id = str(cur.fetchone()[0])
         if item_id and not preview_url:
             cur.execute("UPDATE collect_history SET preview_url=%s WHERE id=%s AND preview_url=''",
@@ -148,25 +158,75 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
     return (item_id, durable) if return_durable else item_id
 
 
+_ACTION_AT = "COALESCE(last_action_at, created_at)"
+
+
 def list_items(*, domain: str = "", source: str = "", days: int = 30,
-               seller_id=None, seller_ids=None, limit=None, offset=0, lean=False) -> list:
+               seller_id=None, seller_ids=None, limit=None, offset=0, lean=False, order="created", attn_only=False) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)
     _cols = _SELECT_LEAN if lean else _SELECT      # 속도: 목록은 대형 컬럼 제외한 축약 projection
-    sql = (f"SELECT {_cols} FROM collect_history WHERE deleted_at IS NULL "
-           f"AND created_at >= %s AND {sc}")
+    _at = _ACTION_AT if order == "action" else "created_at"     # Y12-A: 마지막 동작 최신순(기간도 그 기준)
+    # Y12-A: 페이지 조회면 같은 쿼리로 전체 건수(`count(*) OVER()`)도 받는다 — 건수 쿼리를 따로 늘리지 않는다(페이지 쿼리 ≤3)
+    _tot = ", count(*) OVER()" if limit is not None else ""
+    sql = (f"SELECT {_cols}{_tot} FROM collect_history WHERE deleted_at IS NULL "
+           f"AND {_at} >= %s AND {sc}")
     args = [cutoff] + params
+    if attn_only:
+        sql += " AND attn_n > 0"
     if domain:
         sql += " AND domain = %s"; args.append(domain)
     if source:
         sql += " AND source = %s"; args.append(source)
-    sql += " ORDER BY created_at DESC"
+    sql += f" ORDER BY {_at} DESC"
     # 속도: 기본 뷰(최신순·필터없음)는 SQL LIMIT/OFFSET로 그 페이지만 가져온다(전체 스캔 회피).
     if limit is not None:
         sql += " LIMIT %s OFFSET %s"; args.append(int(limit)); args.append(int(offset))
     with pg.query() as cur:
         cur.execute(sql, args)
-        return [_shape(t) for t in cur.fetchall()]
+        rows = cur.fetchall()
+    if not _tot:
+        return [_shape(t) for t in rows]
+    out = []
+    for t in rows:
+        d = _shape(t[:-1])
+        d["_total"] = int(t[-1] or 0)
+        out.append(d)
+    return out
+
+
+def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=False) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    sc, params = _scope(None, seller_ids)
+    _at = _ACTION_AT if order == "action" else "created_at"
+    sql = f"SELECT count(*) FROM collect_history WHERE deleted_at IS NULL AND {_at} >= %s AND {sc}"
+    if attn_only:
+        sql += " AND attn_n > 0"
+    with pg.query() as cur:
+        cur.execute(sql, [cutoff] + params)
+        return int((cur.fetchone() or (0,))[0] or 0)
+
+
+def ids_for_attention_backfill(limit: int = 500) -> list:
+    """Y12-A 일회성 — 목록 정렬·「손댈 것」 열이 아직 비었고 등록 기록·등록 보류가 있는 상품 id(전 셀러)."""
+    with pg.query() as cur:
+        cur.execute("SELECT id::text, user_id FROM collect_history WHERE deleted_at IS NULL AND last_action_at IS NULL "
+                    "AND (extra_json ? 'uploaded' OR extra_json ? 'risk_skip') ORDER BY created_at DESC LIMIT %s", [int(limit)])
+        return [(r[0], r[1]) for r in cur.fetchall()]
+
+
+def set_attention(item_id: str, last_action_at, attn_n: int, attn: dict) -> bool:
+    """Y12-A 일회성 — 열 두 개와 `extra.attn`만 바꾼다(그 밖의 extra 칸·수집 원본은 손대지 않는다).
+    `attn`이 비면(None) 키를 지운다 — 빈 요약을 남기지 않는다."""
+    with pg.tx() as cur:
+        if attn:
+            cur.execute("UPDATE collect_history SET last_action_at=%s, attn_n=%s, "
+                        "extra_json = jsonb_set(extra_json, '{attn}', %s::jsonb, true) WHERE id::text=%s RETURNING id",
+                        [last_action_at or None, int(attn_n or 0), json.dumps(attn, ensure_ascii=False), str(item_id)])
+        else:
+            cur.execute("UPDATE collect_history SET last_action_at=%s, attn_n=%s, extra_json = extra_json - 'attn' "
+                        "WHERE id::text=%s RETURNING id", [last_action_at or None, int(attn_n or 0), str(item_id)])
+        return cur.fetchone() is not None
 
 
 def get(item_id: str, seller_id=None, seller_ids=None):
@@ -224,6 +284,11 @@ def update(item_id: str, *, seller_id=None, seller_ids=None, **fields) -> bool:
         return False
     sc, params = _scope(seller_id, seller_ids)
     sets, args = [], []
+    # Y12-A: 목록 「마지막 동작 최신순」·「손댈 것만」 열(값 그대로 — None이면 created_at으로 본다)
+    if "last_action_at" in fields:
+        sets.append("last_action_at = %s"); args.append(fields["last_action_at"] or None)
+    if "attn_n" in fields:
+        sets.append("attn_n = %s"); args.append(int(fields["attn_n"] or 0))
     for k, v in updates.items():
         if k == "extra_json":
             sets.append("extra_json = %s::jsonb"); args.append(v)

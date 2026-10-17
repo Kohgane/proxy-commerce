@@ -21,12 +21,14 @@ def client():
 
 
 def test_collect_history_table_is_cardable():
-    # 표에 table-cards 클래스(본문) + 셀에 data-label(카드 라벨)은 행 파셜(단일소스)로 이동.
-    assert "table-cards" in HIST
+    # Y12-A(오너 2026-10-17): 수집 목록은 카드가 아니라 **한 줄**(390px에서도) — 썸네일·상품명·뱃지·시각 4칸.
+    #   가격·경로·수집 시각·상태는 드로어 맨 위 한 줄. 모바일 한 줄 규칙은 app.css `.ch-table`.
+    assert "ch-table" in HIST and "table-cards" not in HIST
     ROWS = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    for lbl in ('data-label="가격"', 'data-label="경로"', 'data-label="수집 시각"', 'data-label="상태"'):
-        assert lbl in ROWS, f"{lbl} 누락"
-    assert "cardcell-actions" in ROWS
+    for cell in ("ch-c-chk", "ch-c-img", "ch-c-title", "ch-c-badges", "ch-c-when"):
+        assert cell in ROWS, f"{cell} 누락"
+    css = Path("src/static/app.css").read_text(encoding="utf-8")
+    assert ".ch-table tr.ch-row { display: flex;" in css
 
 
 def test_table_cards_mobile_css():
@@ -43,10 +45,9 @@ def test_global_table_minwidth_removed():
 
 
 def test_for_beginners_fab_shrinks_on_mobile():
-    # 플로팅 버튼이 본문 가리지 않게 — 모바일 아이콘 FAB로 축소 + 라벨 래핑
-    assert 'class="fb-label"' in BASE
-    assert "#fbWrap #fbBtn .fb-label { display: none; }" in CONSOLE_CSS
-    assert "padding-bottom: 84px;" in CONSOLE_CSS
+    # Y12-A(오너 d): 떠 있는 버튼 자체를 뺐다 — 축소 규칙·하단 여백 예약도 함께 없음
+    assert 'class="fb-label"' not in BASE and "#fbWrap" not in CONSOLE_CSS
+    assert "padding-bottom: 84px;" not in CONSOLE_CSS
 
 
 def test_collect_history_renders(client):

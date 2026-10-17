@@ -7,6 +7,10 @@
 허용 작업은 둘뿐(그 밖의 줄은 「모르는 작업」으로 버린다):
 - `polish_page` {item_id, kind, idx} — 그 장만 `image_polish.polish_job`(다시 만들 다듬음 버전일 때만 새로 그림)
 - `ocr_recheck` {item_id, detail_idx:[…]} — 그 상세 장만 `ocr_compare_diag.run`(장당 OCR 4회)
+- `attn_backfill` {} — Y12-A: 목록 정렬·「손댈 것」 열(`last_action_at`·`attn_n`)과 `extra.attn`을 등록 기록·등록 보류가 있는
+  상품에만 한 번 채운다(그 밖의 칸은 손대지 않는다 · 한 번에 500건)
+- `review_status` {item_id, market} — Y12-A(오너 23:31 Y11W-1): 그 상품·그 마켓 **상태만 1회 조회**(쿠팡 GET, 무료)하고
+  성공 값만 등록 기록 `review`에 남긴다(막힌 조회는 덮지 않음 — 결정 8). 결과 원문 = `ops:oneshot:last`
 """
 from __future__ import annotations
 
@@ -18,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
-OPS = ("polish_page", "ocr_recheck")
+OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status")
 
 
 def _now() -> str:
@@ -35,6 +39,10 @@ def _run(row: dict) -> Dict:
     item_id = str(row.get("item_id") or "")
     if op not in OPS:
         return {"ok": False, "why": f"모르는 작업({op[:30]})"}
+    if op == "attn_backfill":
+        return _attn_backfill()
+    if op == "review_status":
+        return _review_status(item_id, str(row.get("market") or ""))
     from src.services import ocr_compare_diag as D
     item, uid = D._item(item_id)
     if not item:
@@ -77,3 +85,51 @@ def drain() -> Dict:
                     str(res.get("why") or "")[:120])
     st.state_set(LAST_KEY, {"at": _now(), "rows": out})
     return {"picked": len(out), "rows": out}
+
+
+def _attn_backfill() -> Dict:
+    import json
+    from src.db import collect_history_pg as chp
+    from src.seller_console.attention import last_action, summarize, items as attn_items
+    done = 0
+    for item_id, uid in chp.ids_for_attention_backfill():
+        row = chp.get(item_id, seller_ids={uid} if uid else None) or {}
+        try:
+            ex = json.loads(row.get("extra_json") or "{}") or {}
+        except Exception:                                        # noqa: BLE001
+            continue
+        attn = summarize(ex, row.get("title") or "")
+        n = len(attn_items(ex, row.get("title") or "", fresh=True))
+        la = last_action(ex, row.get("collected_at") or "")
+        has = bool(int(attn.get("erase") or 0) or attn.get("check"))
+        if chp.set_attention(item_id, la["at"] or row.get("collected_at"), n, attn if has else None):
+            done += 1
+    return {"ok": True, "done": done}
+
+
+def _review_status(item_id: str, market: str) -> Dict:
+    """한 상품·한 마켓 상태 1회 조회 → 성공 값만 기록(`listing_status.remember`). 화면 팝업 「마켓 상태」와 같은 길."""
+    import json
+    from src.seller_console import collect_history_store as store
+    from src.seller_console import listing_status as MS
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    item_id = str(item.get("id") or item_id)
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        return {"ok": False, "why": "상품 기록을 읽지 못했어요"}
+    recs = [r for r in MS.records(ex) if r["market"] == market]
+    if not recs:
+        return {"ok": False, "why": f"등록 기록 없음({market[:30]})"}
+    MS.reset_cache()
+    row = MS.query(recs[-1])
+    saved = False
+    if MS.remember(ex, row):
+        saved = store.merge_extra(item_id, lambda fresh: MS.remember(fresh, row), seller_ids={uid} if uid else None)
+    return {"ok": not row.get("error"), "market": market, "state": row.get("state"), "label": row.get("label"),
+            "status_raw": row.get("status_raw"), "comment": str(row.get("comment") or "")[:200],
+            "checked_at": row.get("checked_at"), "stale": bool(row.get("stale")),
+            "why": str(row.get("stale_note") or row.get("error") or "")[:200], "saved": bool(saved)}

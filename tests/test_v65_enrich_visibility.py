@@ -40,12 +40,18 @@ def test_row_enrich_status_derivation():
 
 
 def test_row_enrich_badges():
-    # 행 템플릿: 대기=스피너 '보강 중…', 완료='보강 완료'(토큰), 단건은 배지 없음.
-    assert 'it.enrich_status == "pending"' in ROWS + CSS_S6C
-    assert "보강 중…" in ROWS + CSS_S6C and "spinner-border" in ROWS + CSS_S6C
-    assert 'it.enrich_status == "done"' in ROWS + CSS_S6C and "보강 완료" in ROWS + CSS_S6C
-    # 토큰 색(청록/한지) — 부트스트랩 색 남용 아님.
-    assert "var(--teal)" in ROWS and "kgp-badge-quiet" in ROWS   # 6-c: 한지 칩 → 클래스
+    # Y12-A: 보강 표시는 목록 줄에서 드로어 맨 위 한 줄(`_row_flags`)로 — 대기 「보강 중」 · 완료 「보강 완료」 · 단건 없음
+    import json as _json
+    from src.seller_console.views import _row_flags
+
+    def _flags(url, ex, title="t", source="extension"):
+        return _row_flags({"id": "x", "title": title, "url": url, "source": source, "extra_json": _json.dumps(ex)})
+    u = "https://item.taobao.com/item.htm?id=1"
+    partial = {"title": "t", "price": "100", "currency": "CNY", "images": ["https://a/1.jpg"]}
+    assert "보강 중" in _flags(u, partial, source="bulk")                     # 벌크로 수집 · 상세 미보강
+    assert "보강 완료" in _flags(u, dict(partial, enriched=True), source="bulk")
+    single = _flags(u, partial, source="extension")                          # 단건은 배지 없음
+    assert "보강 중" not in single and "보강 완료" not in single
     assert "var(--hanji)" in CSS_S6C.split(".kgp-badge-quiet")[1][:160]
 
 

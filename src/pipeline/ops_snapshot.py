@@ -164,6 +164,33 @@ def registration_counts(marketplace: str = "coupang") -> dict:
         return {"connected": False, "note": "대장 조회 실패", "counts": {}}
 
 
+def _reject_words(r: dict) -> dict:
+    """Y12-A(오너 2026-10-17 23:31) — 대장의 반려 줄을 **화면 낱말**로. 키(`unknown` 등)는 화면에 0건.
+
+    - 기록 사유가 「임시저장」이면 반려 확정이 아니다(09-05 수리 전 판정 — 사유가 있다 ≠ 반려다).
+      → phase `stale`, 상태 낱말 「임시저장」, 손댈 것에 안 올림. (실측: Fellow Stagg 16359486080 · 08-29 17:03 UTC)
+    - 그 밖 `rejected` → 「승인반려」(Wing 표기) + 사유 이름(미분류면 붙이지 않음).
+    - 마지막 조회 시각(KST)을 같이 싣는다 — 낡은 0·낡은 1을 가려 읽게.
+    """
+    import re as _re
+    from src.seller_console.attention import kst
+    comment = str(r.get("reject_comment") or "")
+    when = kst(r.get("checked_at")) if r.get("checked_at") else ""
+    if _re.search(r"임시\s*저장|\bSAVED\b", comment, _re.I):
+        return {"phase": "stale", "state_word": "임시저장", "kind_word": "", "checked_kst": when}
+    kind_word = ""
+    try:
+        from src.pipeline.reject_watch import REJECTION_KINDS
+        k = str(r.get("reject_kind") or "")
+        if k and k != "unknown":
+            kind_word = str((REJECTION_KINDS.get(k) or {}).get("ko") or "")
+    except Exception:                                            # noqa: BLE001 — 낱말 표가 없어도 키는 안 보인다
+        kind_word = ""
+    from src.seller_console.attention import check_note
+    return {"phase": "rejected", "state_word": "승인반려", "kind_word": kind_word, "checked_kst": when,
+            "check_note": check_note(r.get("checked_at"))}   # 24시간 넘으면 「조회 낡음」 — 숨기지 않는다(오너 e)
+
+
 def recent_rejections(limit: int = 5, marketplace: str = "coupang") -> dict:
     """02 카드 — **감시 대기 + 반려 확정**을 함께 보여준다.
 
@@ -179,13 +206,16 @@ def recent_rejections(limit: int = 5, marketplace: str = "coupang") -> dict:
         if not ledger.enabled():
             return {"connected": False, "note": "등록 대장 미연결", "rows": []}
         cap = int(limit or 5)
+        # Y12-A e: 반려도 감시 큐에서 재조회한다 — 「감시」 줄엔 반려를 겹쳐 싣지 않는다(반려 줄은 아래 반려 확정 쪽에)
         watching = [dict(r, phase="watching") for r in
-                    (ledger.watch_queue(marketplace=marketplace, limit=cap) or [])]
-        rejected = [dict(r, phase="rejected") for r in
-                    (ledger.recent_rejected(marketplace=marketplace, limit=cap) or [])]
-        # 반려 확정이 먼저다 — 조치가 필요한 쪽이 위로 온다.
-        return {"connected": True, "note": "", "rows": (rejected + watching)[:cap],
-                "watching": len(watching), "rejected": len(rejected)}
+                    (ledger.watch_queue(marketplace=marketplace, limit=cap) or []) if r.get("status") != "rejected"]
+        rejected, stale = [], []
+        for r in (ledger.recent_rejected(marketplace=marketplace, limit=cap) or []):
+            row = dict(r, **_reject_words(r))
+            (stale if row["phase"] == "stale" else rejected).append(row)
+        # 반려 확정이 먼저다 — 조치가 필요한 쪽이 위로 온다. 낡은 기록은 맨 뒤(세지 않는다).
+        return {"connected": True, "note": "", "rows": (rejected + watching + stale)[:cap],
+                "watching": len(watching), "rejected": len(rejected), "stale": len(stale)}
     except Exception as exc:
         logger.warning('반려 큐 조회 실패: %s', exc)
         return {"connected": False, "note": "큐 조회 실패", "rows": []}

@@ -119,9 +119,11 @@ def test_item_ocr_recheck_runs_all_han0_pages_and_line(monkeypatch):
     monkeypatch.setattr(D, "explain_boxes", lambda raw, exempt=False: {"ok": True, "boxes": []})
     res = D.run(iid)
     assert [(p["kind"], p["no"], p["verdict"]) for p in res["pages"]] == [("detail", 3, "han"), ("detail", 6, "send"), ("detail", 7, "none")]
-    assert D.line(res) == ("OCR 다시 판정 3장: 한자 나옴 1 · 라틴 있어 번역으로 1 · 글자 거의 없음 1"
-                           " — 「다시 번역」을 누르면 접수돼요 · " + D.run_at(res))       # Y11X: 끝 = 잰 시각(KST)
-    assert D.line({"running": True}) == "OCR 다시 판정 중… (1~2분)"
+    # Y12-A: 결과줄 한 문장(다시 번역할 장 = 한자 + 라틴) · 판정별 수는 접힘(detail)
+    assert D.line(res) == "OCR 판정 완료 · 3장 · 다시 번역할 장 2 · " + D.run_at(res).replace(" KST", "")
+    assert D.detail(res) == ("OCR 다시 판정 3장: 한자 나옴 1 · 라틴 있어 번역으로 1 · 글자 거의 없음 1"
+                             " — 「다시 번역」을 누르면 접수돼요 · " + D.run_at(res))       # Y11X: 끝 = 잰 시각(KST)
+    assert D.line({"running": True}) == "OCR 판정 중… (1~2분)"
 
 
 def test_drawer_buttons_shared_only_and_result_line(monkeypatch):
@@ -131,16 +133,16 @@ def test_drawer_buttons_shared_only_and_result_line(monkeypatch):
     c = _client()
     monkeypatch.setattr(D, "run", lambda item, idx=None: {"item": item, "pages": [{"verdict": "han"}], "count": {"han": 1}})
     d = c.post(f"/seller/collect/{iid}/ocr-recheck", json={}).get_json()
-    assert d["ok"] and d["running"] and d["line"] == "OCR 다시 판정 중… (1~2분)"
+    assert d["ok"] and d["running"] and d["line"] == "OCR 판정 중… (1~2분)"
     import time
     for _ in range(50):
         g = c.get(f"/seller/collect/{iid}/ocr-recheck").get_json()
         if not g["running"]:
             break
         time.sleep(0.02)
-    assert g["line"].startswith("OCR 다시 판정 1장: 한자 나옴 1")
+    assert g["line"].startswith("OCR 판정 완료 · 1장 · 다시 번역할 장 1") and g["detail"].startswith("OCR 다시 판정 1장: 한자 나옴 1")
     p = c.post(f"/seller/collect/{iid}/image-polish", json={}).get_json()
-    assert p["ok"] and not p["running"] and p["line"].startswith("번역 다듬기: 다듬을 번역본이 없어요")
+    assert p["ok"] and not p["running"] and p["line"] == "다듬기 · 다듬을 번역본이 없어요" and p["detail"]
 
 
 def test_exposure_payload_says_buttons_on_for_shared():
@@ -153,7 +155,8 @@ def test_polish_line_counts(monkeypatch):
     from src.services import image_polish as IP
     ex = {"detail_images_ko": [{"idx": 12, "polish": {"changed": 2, "calls": 1, "rows": [{"why": ""}, {"why": "금지어·과장(1위)"}]}},
                                {"idx": 16, "polish": {"changed": 1, "calls": 1, "rows": []}}]}
-    assert IP.item_line("x", ex) == "번역 다듬기 2장: 바뀐 상자 3 · AI 2회 · AI 결과 버림 1(금지어·과장 1)"   # Y11-M: 사유별
+    assert IP.item_detail("x", ex) == "번역 다듬기 2장: 바뀐 상자 3 · AI 2회 · AI 결과 버림 1(금지어·과장 1)"   # Y11-M: 사유별(접힘)
+    assert IP.item_line("x", ex) == "다듬기 완료 · 2장 · 바뀐 장 0"                                  # Y12-A: 한 문장(버전 없음 = 0)
 
 
 # ── 3. 드로어 상단 SKU 옆 전체 ID + 복사 · 목록 ID 열(접기) ──────────────────────────────────────────
@@ -165,4 +168,6 @@ def test_drawer_shows_full_id_and_sku_and_list_has_id_column():
     assert 'data-role="item-id-line"' in html and f'<code data-role="item-id">{iid}</code>' in html
     assert '<strong data-role="item-sku">913382613725</strong>' in html and 'data-role="item-id-copy"' in html
     lst = c.get("/seller/collect/history").get_data(as_text=True)
-    assert 'data-role="row-id"' in lst and f"<code>{iid[:8]}</code>" in lst and f'<code class="ch-id-full">{iid}</code>' in lst
+    # Y12-A(오너 결정): 상품 ID는 목록 줄에서 빼고 드로어로 — 드로어는 「자세히」 안에 전체 ID + 복사
+    assert 'data-role="row-id"' not in lst and f'data-item-id="{iid}"' in lst
+    assert 'data-role="item-id-more"' in html and html.index('data-role="item-id-more"') < html.index('data-role="item-id-line"')

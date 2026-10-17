@@ -55,7 +55,9 @@ def test_inherits_6a_card_grammar():
     h = _t(HIST)
     assert "op-card" in h and "op-card-head" in h and "op-card-body" in h
     assert "op-card-foot pc-bulk-toolbar" in h        # 일괄 액션 = 카드 푸터
-    assert h.count("<section") == h.count("</section>") == 3   # 요약·필터 합본 + 목록 + 빈 목록
+    # Y12-A: 요약·필터 합본은 접힘 카드(<details class="op-card">) — 섹션은 목록 + 빈 목록
+    assert h.count("<section") == h.count("</section>") == 2
+    assert '<details class="op-card ch-filter-box"' in h
     assert '<div class="card ' not in h and '<div class="card">' not in h  # v2 카드 잔재 0
 
 
@@ -88,7 +90,7 @@ def test_editor_chrome_hiding_is_scoped_to_body_switch():
     block = _s6c_css()
     # ★ 지키려는 건 **콘솔 chrome을 무스코프로 숨기는 것**이다. 컴포넌트가 자기 클래스를 숨기는 건
     #   정상이므로 여기서 막으면 이후 슬라이스마다 오발한다(T1에서 실제로 걸렸다).
-    chrome = (".console-", ".mobile-", ".sidebar-", "#fbWrap", "#fbReopen", "#kgp-progress")
+    chrome = (".console-", ".mobile-", ".sidebar-", "#kgp-progress")   # Y12-A: 떠 있는 버블은 없다
     for rule in re.findall(r"([^\n{}]+)\{[^}]*display:\s*none\s*!important", block):
         if any(sel in rule for sel in chrome):
             assert ".kgp-editor" in rule, f"무스코프 chrome 숨김: {rule.strip()}"

@@ -131,8 +131,7 @@ def test_drawer_template_renders_reviews_and_honest_empty():
 
 def test_list_row_exposes_review_count_and_rating():
     from pathlib import Path
-    r = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    assert "it.review_count" in r and "it.rating" in r
+    # Y12-A: 목록 줄은 썸네일·상품명·뱃지·시각만 — 리뷰 수·평점은 드로어(위 계약). 값 계산은 그대로 유지
     v = Path("src/seller_console/views.py").read_text(encoding="utf-8")
     assert 'it["review_count"]' in v and 'it["rating"]' in v
 

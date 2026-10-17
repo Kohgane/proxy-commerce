@@ -90,7 +90,7 @@
       '<span class="pc-badge pc-badge-danger">이미지 번역 실패: ' + esc(f.raw || f.label) + '</span> ' + esc(f.label) +
       ' — 원본 사진으로 나가요(등록은 막지 않아요). ' +
       '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' +
-      (f.cap ? ' <span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(f.today) + '/' + esc(f.cap) + '장</span>' : '') + '</p>' : '';
+      (f.cap ? ' <details class="d-inline"><summary>자세히</summary><span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(f.today) + '/' + esc(f.cap) + '장</span></details>' : '') + '</p>' : '';
     // Y11-C2: 실패가 없어도 「다시 번역」은 늘 보인다 — 상자 없는 옛 번역본(대표사진 등)을 다시 받으려면 누를 곳이 있어야 한다
     var st = d.imgko_status;
     if (!fail && st) {
@@ -99,8 +99,8 @@
         (st.cap_full ? '오늘 상한 도달 — 내일 0시 KST 이후 처리' : '10분 내 처리') + ')</span>' : '';
       fail = '<p class="cpx-cap" data-role="cpx-imgko-line">이미지 번역 ' +
         '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' + wait +
-        ' <span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(st.today) + '/' + esc(st.cap) + '장' +
-        (st.polish_cap ? ' · 다듬기 ' + esc(st.polish_today) + '/' + esc(st.polish_cap) + '회' : '') + '</span></p>';
+        ' <details class="d-inline"><summary>자세히</summary><span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(st.today) + '/' + esc(st.cap) + '장' +
+        (st.polish_cap ? ' · 다듬기 ' + esc(st.polish_today) + '/' + esc(st.polish_cap) + '회' : '') + '</span></details></p>';
     }
     // Y11: 등록에서 빠진 사진(판촉 의심·위험) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     var out = (d.left_out || []).map(function (s) {
@@ -117,7 +117,8 @@
     var diag = d.diag_ok ? '<p class="cpx-cap" data-role="cpx-diag">' +
       '<button type="button" class="cpx-act" data-role="cpx-ocr-recheck">OCR 다시 판정(이 상품)</button> ' +
       '<button type="button" class="cpx-act" data-role="cpx-polish">번역 다듬기(이 상품)</button></p>' +
-      '<p class="cpx-cap" data-role="cpx-ocr-line" hidden></p><p class="cpx-cap" data-role="cpx-polish-line" hidden></p>' : '';
+      '<p class="cpx-cap" data-role="cpx-ocr-line" hidden></p><details class="cpx-cap" data-role="cpx-ocr-detail" hidden><summary>자세히</summary><span></span></details>' +
+      '<p class="cpx-cap" data-role="cpx-polish-line" hidden></p><details class="cpx-cap" data-role="cpx-polish-detail" hidden><summary>자세히</summary><span></span></details>' : '';
     // Y11-U(오너 14:58): 옵션(SKU) 사진 — 쿠팡 옵션 썸네일로 나간다. 번역본/원본/번역 중 · 판촉 글자면 「지우기 제안」 + 「사진 편집」
     var OSRC = {translated: '번역본', original: '원본'};
     var opts = (d.options || []).map(function (o) {
@@ -166,6 +167,9 @@
       if (!el || !t) return;
       var txt = t.ok ? (t.line || '') : (t.error || '');
       el.textContent = txt; el.hidden = !txt;
+      // Y12-A: 결과줄은 한 문장 — 상자·AI 횟수·캐시·한자/라틴 수·사유는 「자세히」(접힘)
+      var dt = body.querySelector('[data-role=' + role.replace('-line', '-detail') + ']');
+      if (dt) { var dtxt = (t.ok && t.detail && t.detail !== txt) ? t.detail : ''; dt.querySelector('span').textContent = dtxt; dt.hidden = !dtxt; }
       if (t.ok && t.running && n < 45) { diagRunning[kind] = true; diagTimers[kind] = setTimeout(function () { diagLine(kind, n + 1); }, 4000); return; }
       // Y11-N(오너 09:31 캡처): 다듬기가 끝났는데 상세 타일·대표 줄은 서랍을 열 때 받은 옛 판(옛 렌더 주소)을 그대로 보였다 —
       //   끝난 순간 판정표·노출 카드를 다시 읽는다(주소는 편집마다 새 public_id라 캐시 문제가 아니다).

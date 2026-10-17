@@ -42,9 +42,10 @@ def test_ocr_line_ends_with_run_time_kst():
     from src.services import ocr_compare_diag as D
     res = {"at": "2026-10-14T13:02:30+00:00", "pages": [{"verdict": "unknown", "why": "이미지를 내려받지 못했습니다(ValueError)"}],
            "count": {"han": 0, "send": 0, "none": 0, "unknown": 1}}
-    assert D.line(res).endswith(" · 10-14 22:02 KST")
-    assert "판정 못 함 1" in D.line(res)
-    assert D.line({"running": True, "at": "2026-10-14T13:02:30+00:00"}) == "OCR 다시 판정 중… (1~2분)"
+    # Y12-A: 한 문장 · 끝 = 잰 시각(KST, 표기 없이) · 판정 못 함은 0이 아니면 줄에 남는다(사유는 접힘 `detail`)
+    assert D.line(res) == "OCR 판정 완료 · 1장 · 다시 번역할 장 0 · 판정 못 함 1 · 10-14 22:02"
+    assert "ValueError" in D.detail(res) and D.detail(res).endswith("10-14 22:02 KST")
+    assert D.line({"running": True, "at": "2026-10-14T13:02:30+00:00"}) == "OCR 판정 중… (1~2분)"
 
 
 @pytest.fixture

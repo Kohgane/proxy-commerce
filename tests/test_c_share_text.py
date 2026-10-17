@@ -170,8 +170,11 @@ def test_share_mode_shows_the_partial_badge():
     """★ '간이' 뱃지 조건은 **한 곳**(SIMPLE_COLLECT_MODES)에서만 정의된다 — 두 벌이 되면 또 어긋난다."""
     from src.api.extension_api import SIMPLE_COLLECT_MODES
     assert "share" in SIMPLE_COLLECT_MODES
-    rows = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    assert "'share'" in rows, "공유 수집분 툴팁이 제 사유를 말해야 한다(다른 모드 문구를 빌리면 거짓말)"
+    # Y12-A: 「간이」 표시는 목록 줄에서 드로어 맨 위 한 줄(`_row_flags`)로 옮겼다 — 사유는 모드마다 제 말로
+    from src.seller_console.views import _row_flags
+    flags = _row_flags({"id": "s1", "title": "t", "url": "https://item.taobao.com/item.htm?id=1", "extra_json":
+                        '{"mode": "share", "title": "t"}', "collected_at": "2026-10-17T00:00:00+00:00"})
+    assert any(f.startswith("간이 수집 · 공유 글") for f in flags), ("공유 수집분 표시가 제 사유를 말해야 한다", flags)
 
 
 def test_review_screen_names_what_is_missing():
@@ -1921,10 +1924,14 @@ def test_a_draft_with_price_is_never_called_a_collection_failure():
     html = c.get("/seller/collect/history").data.decode()
 
     assert "실패 · 추출 실패" not in html, "가격까지 담긴 초안을 아직 실패라 부른다"
-    # 넷 다 보강 대기여야 한다(가격 유무는 등록 축이지 보강 축이 아니다).
-    assert html.count("보강 대기") >= 4, "초안이 보강 대기로 안 보인다"
     for title in ("소파 뒤쪽 수납 선반", "iPhone17 신제품", "iPhone18 필수템", "회전 큐브"):
         assert title in html, f"{title} 행이 없다"
+    # Y12-A: 보강 배지는 목록 줄에서 드로어 맨 위 한 줄로 — 넷 다 「보강 대기」(가격 유무는 등록 축이지 보강 축이 아니다)
+    from src.seller_console import collect_history_store as chs
+    from src.seller_console.views import _row_flags
+    rows = [r for r in chs.list_items(days=3650, seller_ids={"default"})]
+    assert sum(1 for r in rows if "보강 대기" in _row_flags(r)) >= 4, "초안이 보강 대기로 안 보인다"
+    assert not any(any("실패" in f for f in _row_flags(r)) for r in rows)
 
 
 def test_list_badges_follow_the_owner_spec():
@@ -1958,12 +1965,14 @@ def test_list_badges_follow_the_owner_spec():
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = "default"
-    html = c.get("/seller/collect/history").data.decode()
-
-    assert "막힘 · 로그인 벽 감지" in html, "막힌 사유를 서버 기록 그대로 안 보여 준다"
-    assert "보강 대기" in html
-    assert "완료" in html
-    assert "실패" not in html.split("막힘 · 로그인 벽 감지")[0][-2000:], "막힘을 실패라 부른다"
+    assert c.get("/seller/collect/history").status_code == 200
+    # Y12-A: 보강 배지는 드로어 맨 위 한 줄(`_row_flags`) — 규칙은 enrich_badge 한 곳 그대로
+    from src.seller_console.views import _row_flags
+    flags = {r["title"]: _row_flags(r) for r in chs.list_items(days=3650, seller_ids={"default"})}
+    assert "막힘 · 로그인 벽 감지" in flags["막힌 상품"], "막힌 사유를 서버 기록 그대로 안 보여 준다"
+    assert "보강 대기" in flags["대기 상품"]
+    assert "보강 완료" in flags["완료된 상품"]
+    assert not any("실패" in f for f in flags["막힌 상품"]), "막힘을 실패라 부른다"
 
 
 def test_the_two_axes_never_share_a_field():

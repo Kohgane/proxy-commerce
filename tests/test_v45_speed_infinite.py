@@ -51,13 +51,13 @@ def test_history_first_page_and_fragment(client):
                   seller_id="default", extra={"title_en": f"item{i}"})
     full = client.get("/seller/collect/history?sort=title").get_data(as_text=True)
     # 첫 페이지는 50건만(60이 아니라) + 무한스크롤 메타 + 나이아 버킷 init
-    assert full.count("kgp-open-drawer btn btn-success") == 50
+    assert full.count("class=\"ch-row") == 50                 # Y12-A: 한 상품 = 한 줄(ch-row)
     assert 'id="fsInfiniteScroll"' in full and 'data-total="60"' in full and 'data-has-more="1"' in full
     assert "onJump" in full and "buckets:" in full
     # 프래그먼트: 나머지 10건, HTML 문서(doctype) 아님
     frag = client.get("/seller/collect/history?sort=title&fmt=rows&offset=50")
     body = frag.get_data(as_text=True)
-    assert body.count("kgp-open-drawer btn btn-success") == 10
+    assert body.count("class=\"ch-row") == 10
     assert "<!doctype" not in body.lower() and "<html" not in body.lower()
 
 

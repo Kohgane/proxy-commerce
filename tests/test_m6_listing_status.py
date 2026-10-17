@@ -40,7 +40,7 @@ def test_records_order_backfill_and_tone():
     assert [r["market"] for r in recs] == ["coupang:woojoo", "coupang", "smartstore:chezgoga", "elevenst"]
     legacy = recs[1]
     assert legacy["product_id"] == "16401838524"                         # 예전 기록은 주소에서 번호를 읽는다(소급)
-    assert legacy["tone"] == "ok" and legacy["state_label"] == "승인"
+    assert legacy["tone"] == "ok" and legacy["state_label"] == "승인완료"           # Y12-A: Wing 표기 하나
     assert recs[0]["chip"] == "쿠팡·우주대행" and recs[0]["tone"] == "wait"
 
 
@@ -99,7 +99,8 @@ def test_naver_status_and_seller_center(monkeypatch):
 
 def test_unsupported_markets_say_so():
     row = MS.query(MS.records(_extra())[3])
-    assert row["state"] == "unsupported" and "상태 조회 미연동" in row["label"]
+    # Y12-A: 상태 낱말은 「등록됨」 하나 · 조회 미연동은 접힘 한 줄로 그대로 말한다
+    assert row["state"] == "unsupported" and row["label"] == "등록됨" and "상태 조회 미연동" in row["unsupported_note"]
     assert row["manage_url"] == "https://soffice.11st.co.kr/"
 
 
@@ -136,7 +137,9 @@ def test_failed_lookup_keeps_last_known_state(item, monkeypatch):
             raise RuntimeError("HTTP 401 Invalid signature")
     monkeypatch.setattr(V, "_coupang_up_for", lambda account: Boom())
     d = _client().get(f"/seller/collect/{item}/market-status?market=coupang").get_json()
-    assert "HTTP 401 Invalid signature" in d["rows"][0]["error"]                 # 원문 그대로
+    # Y12-A 결정 8: 조회 실패는 상태를 바꾸지 않는다 — 마지막 값(승인완료) 그대로 · 원문은 접힘 한 줄에 그대로
+    assert d["rows"][0]["label"] == "승인완료" and d["rows"][0]["stale"]
+    assert "HTTP 401 Invalid signature" in d["rows"][0]["stale_note"]
     from src.seller_console import collect_history_store as S
     ex = json.loads(S.get(item, seller_ids={"m6-own"})["extra_json"])
     assert [u for u in ex["uploaded"] if u["market"] == "coupang"][0]["review"]["state"] == "approved"

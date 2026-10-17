@@ -63,7 +63,9 @@ def test_changelog_page_renders_all_batches(client):
 
 
 def test_console_banner_present_and_links_changelog(client):
-    r = client.get("/seller/dashboard")
+    # Y12-A: 대시보드·상품목록은 조용한 화면(배너 숨김) — 다른 콘솔 화면에 그대로
+    assert 'id="kgpUpdateBanner"' not in client.get("/seller/dashboard").get_data(as_text=True)
+    r = client.get("/seller/orders")
     assert r.status_code == 200
     h = r.get_data(as_text=True)
     assert 'id="kgpUpdateBanner"' in h

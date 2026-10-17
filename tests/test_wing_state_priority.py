@@ -36,10 +36,10 @@ def _judge(status_name: str, comment: str | None = None, title: str = "ALPAKA �
 
 # ── A~E 5케이스 (오너 실측표) ────────────────────────────────────────────────
 def test_case_a_real_rejection_still_leaves_the_queue():
-    """A 진짜 반려 — **현행 판정 유지가 회귀 게이트다.** 반려는 확정이라 큐를 떠난다."""
+    """A 진짜 반려 — 판정은 그대로 `rejected`. Y12-A(오너 e): 반려도 큐에 **남아 재조회**된다(승인만 졸업)."""
     r = _judge("승인반려", "대표이미지는 최소 500*500 입니다")
     assert r["wing_state"] == "rejected"
-    assert r["status"] == "rejected" and r["stays"] is False
+    assert r["status"] == "rejected" and r["stays"] is True
     assert r["kind"] == "image_spec", "사유 분류는 그대로 — comment는 kind 판정엔 계속 쓴다"
 
 

@@ -248,7 +248,26 @@ def run_at(res: Dict) -> str:
 
 
 def line(res: Dict) -> str:
-    """결과줄 — 「OCR 다시 판정 14장: 한자 나옴 n · … — 「다시 번역」을 누르면 접수 · 10-14 22:02 KST」(끝 = 잰 시각)."""
+    """Y12-A(오너 2026-10-17) 결과줄 한 문장 — 「OCR 판정 완료 · 1장 · 다시 번역할 장 0 · 10-17 14:00」(끝 = 잰 시각 KST).
+    한자·라틴·글자 없음 수와 사유는 `detail`(접힘) · 「판정 못 함 n」은 0이 아니면 줄에 남는다."""
+    if not res:
+        return ""
+    if res.get("running"):
+        return "OCR 판정 중… (1~2분)"
+    if res.get("error"):
+        return "OCR 판정 실패"
+    n = len(res.get("pages") or [])
+    if not n:
+        return "OCR 판정 · 「한자 0」으로 건너뛴 사진이 없어요"
+    c = res.get("count") or {}
+    when = run_at(res).replace(" KST", "")
+    unk = int(c.get("unknown") or 0)                             # 판정 못 함은 0이 아닐 때 줄에 남긴다(Y11W-4 — 숨기면 못 본다)
+    return (f"OCR 판정 완료 · {n}장 · 다시 번역할 장 {int(c.get('han') or 0) + int(c.get('send') or 0)}"
+            + (f" · 판정 못 함 {unk}" if unk else "") + (f" · {when}" if when else ""))
+
+
+def detail(res: Dict) -> str:
+    """접힘 — 예전 결과줄(한자 나옴·라틴 있어 번역으로·글자 거의 없음·판정 못 함(사유)) + 잰 시각."""
     s = _line(res)
     when = run_at(res) if s and not (res or {}).get("running") else ""
     return f"{s} · {when}" if when else s

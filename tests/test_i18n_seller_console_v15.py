@@ -43,4 +43,5 @@ def test_english_render_via_cookie(client):
     assert 'lang="en"' in html
     assert "Home (Dashboard)" in html          # 영어 1급 — 핵심 내비 영어로
     assert "Collect products" in html
-    assert "New here?" in html                 # For Beginners 버튼도 영어
+    # Y12-A(오너 d): 떠 있는 For Beginners 버튼은 모든 페이지에서 뺐다 — 영어 문구는 i18n 표에만 남는다
+    assert "New here?" not in html

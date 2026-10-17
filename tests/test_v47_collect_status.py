@@ -99,5 +99,12 @@ def test_source_contract():
     assert "compute_collect_status" in API                    # 서버 단일 판정
     assert "field_sources" in EX                              # 추출기 필드별 소스
     assert "field_status" in CS and "부분 수집" in CS         # 토스트 정직 표기
-    assert "collect_status" in ROWS and "부분 ·" in ROWS      # 목록 상태 컬럼
+    # Y12-A: 목록 상태 컬럼 → 드로어 맨 위 한 줄(동작으로 잰다 — 소스 문자열 핀 금지)
+    import json as _json
+    from src.seller_console.views import _row_flags
+
+    def _flags(url, ex, title="t", source="extension"):
+        return _row_flags({"id": "x", "title": title, "url": url, "source": source, "extra_json": _json.dumps(ex)})
+    assert any(f.startswith("부분 수집 · ") for f in _flags(
+        "https://item.taobao.com/item.htm?id=1", {"title": "t", "price": "100", "currency": "CNY", "images": ["https://a/1.jpg"]}))
     assert "수집 로그" in PREVIEW and "collect_status.fields" in PREVIEW  # 드로어 수집 로그

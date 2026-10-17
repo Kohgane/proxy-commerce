@@ -58,6 +58,52 @@ def chip_label(market: str) -> str:
     return _CHIP.get(market) or market
 
 
+# ── Y12-A(오너 2026-10-17): 상태 낱말 하나 · 뱃지 이름·약자 ─────────────────────────────────────────────────────
+#: 쿠팡 상태 → Wing 표기(하나만). 「검토중」「심사 중」「승인」 같은 우리말 변주는 쓰지 않는다.
+COUPANG_WORDS = {"approved": "승인완료", "pending": "승인대기", "saved": "임시저장", "rejected": "승인반려", "deleted": "상품삭제"}
+#: 목록 뱃지 이름(데스크톱) · 약자(모바일 390px — 4개가 한 줄)
+BADGE_NAMES = {"coupang:gogane": "고가네", "coupang:woojoo": "우주대행", "coupang": "쿠팡",
+               "smartstore:chezgoga": "셰고가", "smartstore:gocosmos": "고코스모스", "smartstore": "스마트스토어",
+               "elevenst": "11번가", "woocommerce": "멀티샵", "shopify": "Shopify"}
+BADGE_SHORT = {"coupang:gogane": "고", "coupang:woojoo": "우", "coupang": "쿠", "smartstore:chezgoga": "셰",
+               "smartstore:gocosmos": "코", "smartstore": "스", "elevenst": "11", "woocommerce": "멀", "shopify": "S"}
+
+
+def state_word(market: str, state: str, status_raw: str = "") -> str:
+    """화면에 쓰는 상태 낱말 하나 — 쿠팡 = Wing 표기 · 네이버 = 판매자센터 표기(statusType) · 그 밖 = 「등록됨」. 모르면 ""."""
+    m, st, raw = str(market or ""), str(state or ""), str(status_raw or "").strip()
+    if m.startswith("coupang"):
+        return COUPANG_WORDS.get(st, "")
+    if m.startswith("smartstore"):
+        hit = NAVER_STATES.get(raw.upper())
+        return hit[1] if hit else ({"approved": "판매중", "pending": "판매대기", "rejected": "승인거부"}.get(st, ""))
+    return "등록됨" if st in ("", "unsupported", "approved") else ""
+
+
+def badge_kind(state: str, send_fail: bool = False) -> str:
+    """뱃지 모양(색만으로 구분하지 않는다): done = 채움(승인완료·판매중) · wait = 테두리만(승인대기·판매대기·임시저장·모름)
+    · bad = 「반려」 글자(승인반려·판매금지·삭제) · fail = 「실패」 글자(보내기 실패)."""
+    st = str(state or "")
+    if st in ("rejected", "deleted"):
+        return "bad"
+    if send_fail:
+        return "fail"
+    return "done" if st == "approved" else "wait"
+
+
+def send_failed(extra: dict, market: str) -> bool:
+    """이 마켓에 마지막으로 보낸 상세가 실패했나 — 쿠팡 `coupang_detail_sync[m].ok` · 네이버 `uploaded[].detail_sync.ok`."""
+    ex = extra or {}
+    if str(market).startswith("coupang"):
+        s = (ex.get("coupang_detail_sync") or {}).get(market) if isinstance(ex.get("coupang_detail_sync"), dict) else None
+        return isinstance(s, dict) and s.get("ok") is False and bool(s.get("at"))
+    for u in ex.get("uploaded") or []:
+        if isinstance(u, dict) and u.get("market") == market and isinstance(u.get("detail_sync"), dict):
+            ds = u["detail_sync"]
+            return ds.get("ok") is False and bool(ds.get("at"))
+    return False
+
+
 def records(extra: dict) -> List[Dict]:
     """수집 행의 등록 기록(마켓별 1건, 화면 순서) — 상품번호가 없으면 예전 주소에서 읽는다(소급)."""
     import re
@@ -83,7 +129,10 @@ def records(extra: dict) -> List[Dict]:
                     "sent": u.get("sent") if isinstance(u.get("sent"), dict) else {},      # Y11-S: 실제로 나간 판매가·이름
                     "name_fix": u.get("name_fix") if isinstance(u.get("name_fix"), dict) else {},   # Y11-S: 상품명 고침 결과
                     "tone": CHIP_TONE.get(str(rv.get("state") or ""), "wait"),
-                    "state_label": str(rv.get("label") or "등록됨")})
+                    "state_label": state_word(m, rv.get("state"), rv.get("status_raw")) or "등록됨",
+                    "name": BADGE_NAMES.get(m) or chip_label(m), "short": BADGE_SHORT.get(m) or chip_label(m)[:1],
+                    "send_fail": send_failed(extra, m)})
+        out[-1]["kind"] = badge_kind(rv.get("state"), out[-1]["send_fail"])
     out.sort(key=lambda r: (_ORDER.get(r["market"], 99), r["at"]))
     # Y7-K: 같은 상품·같은 마켓 등록이 2건 이상 — 카드 「중복 n건 — 정리」 재료
     cnt: Dict[str, int] = {}
@@ -211,9 +260,23 @@ def query(rec: dict, *, now: Optional[float] = None) -> dict:
         except Exception as exc:                            # noqa: BLE001 — 원문 그대로(C 규칙)
             row = {"sid": rec["product_id"], "state": "unknown", "label": "확인 못 함",
                    "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    # Y12-A(오너 2026-10-17 결정 8): 조회가 막히거나(쿠팡 수정 심사 중 400 DEFAULT) 실패하면 **마지막으로 성공한 조회 값**을
+    #   그대로 보인다 — 「승인대기」로 바꾸지 않는다(반례: VRSUK 고가네 승인완료 → 재심사 400 → 승인대기로 보이면 거짓).
+    #   조회 시각도 마지막 성공 시각 그대로(갱신 안 됨). 막힌 사유는 접힘 한 줄(`stale_note`).
+    rv = rec.get("review") or {}
+    stale = row.get("state") == "reviewing" or (row.get("state") == "unknown" and row.get("error") and rv.get("state"))
+    if stale:
+        note = ("쿠팡이 바뀐 내용을 심사하는 동안 조회를 잠시 막았어요" if row.get("state") == "reviewing"
+                else "상태를 묻지 못했어요 — " + str(row.get("error") or "")[:160])
+        row.update(state=str(rv.get("state") or "unknown"), status_raw=str(rv.get("status_raw") or ""), comment=str(rv.get("comment") or ""),
+                   error="", stale=True, stale_note=note, link=row.get("link") or str(rv.get("link") or ""))
+    if row.get("state") == "unsupported":                   # 「등록됨」 하나 + 조회 미연동은 접힘 한 줄(정직 표기 유지)
+        row["unsupported_note"] = str(row.get("label") or "")
+    row["label"] = state_word(m, row.get("state"), row.get("status_raw")) or row.get("label") or ""
     row.update(market=m, chip=rec["chip"], market_label=rec["label"], product_id=rec["product_id"],
                dup_count=rec.get("dup_count") or 0,                     # Y7-K: 같은 마켓 2건 이상 — 팝업 「이 기록 빼기」
-               registered_at=rec["at"], checked_at=datetime.now(timezone.utc).isoformat(),
+               registered_at=rec["at"],
+               checked_at=(str(rv.get("checked_at") or "") if stale else datetime.now(timezone.utc).isoformat()),
                registered_price=_price_line(rec), list_price_line=list_price_line(rec), name_fix_line=_name_fix_line(rec),
                tone=CHIP_TONE.get(str(row.get("state") or ""), "fail"))
     with _LOCK:
@@ -304,7 +367,8 @@ def db_row(rec: dict) -> dict:
     return {"market": m, "chip": rec["chip"], "market_label": rec["label"], "product_id": rec["product_id"],
             "channel_product_no": rec.get("channel_product_no") or "", "sid": rec.get("shown_no") or rec["product_id"],
             "dup_count": rec.get("dup_count") or 0, "registered_at": rec["at"],
-            "state": str(rv.get("state") or ""), "label": str(rv.get("label") or ""),
+            "state": str(rv.get("state") or ""),
+            "label": state_word(m, rv.get("state"), rv.get("status_raw")) or str(rv.get("label") or ""),
             "comment": str(rv.get("comment") or ""), "status_raw": str(rv.get("status_raw") or ""),
             "last_checked_at": str(rv.get("checked_at") or ""),
             # 쿠팡 구매자 주소는 승인 뒤에만 생긴다(마지막 조회값) · 그 밖은 등록 기록의 주소(네이버 = 채널 번호 주소)
@@ -349,8 +413,13 @@ def query_many(recs: List[dict], *, timeout: float = None, extra_fn=None) -> Lis
         why = (f"{int(timeout)}초 안에 마켓이 답하지 않았어요" if not f.done()
                else f"{type(f.exception()).__name__}: {str(f.exception())[:200]}")
         row = db_row(rec)
-        row.update(state="unknown", label="상태 확인 실패", error=why, pending=False, tone="fail",
-                   checked_at=datetime.now(timezone.utc).isoformat(), cached=False, timed_out=not f.done())
+        if row.get("state"):
+            # Y12-A: 마켓이 답하지 않으면 마지막 성공 값 그대로(조회 시각 갱신 안 함) — 사유는 접힘 한 줄
+            row.update(pending=False, stale=True, stale_note="상태를 묻지 못했어요 — " + why, checked_at=row.get("last_checked_at") or "",
+                       cached=False, timed_out=not f.done())
+        else:
+            row.update(state="unknown", label="상태 확인 실패", error=why, pending=False, tone="fail",
+                       checked_at=datetime.now(timezone.utc).isoformat(), cached=False, timed_out=not f.done())
         out.append(row)
     pool.shutdown(wait=False, cancel_futures=True)        # 늦은 일꾼은 혼자 끝난다(캐시에만 남음) — 응답은 기다리지 않는다
     return out
@@ -358,8 +427,8 @@ def query_many(recs: List[dict], *, timeout: float = None, extra_fn=None) -> Lis
 
 def remember(extra: dict, row: dict) -> bool:
     """마지막으로 알려진 상태를 `uploaded[].review`에 — 조회가 실패했으면 예전 값을 덮지 않는다(실패도 칩 색으로는 안 바꾼다)."""
-    if row.get("state") in ("unknown",) and row.get("error"):
-        return False
+    if (row.get("state") in ("unknown",) and row.get("error")) or row.get("stale"):
+        return False                                        # Y12-A: 막힌 조회는 마지막 성공 값을 덮지 않는다
     for u in (extra or {}).get("uploaded") or []:
         if isinstance(u, dict) and u.get("market") == row.get("market") and (
                 not row.get("product_id") or not u.get("product_id")

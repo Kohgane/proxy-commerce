@@ -588,7 +588,8 @@ def init_schema():
                   "schema_stage15.sql",  # AUTH-1: 이메일+비밀번호 계정(password_accounts) — 시트 대신 커밋 확인
                   "schema_stage16.sql",  # J1: 옵션 값·상품명 번역기 큐(수집하면 자동)
                   "schema_stage17.sql",  # Y11-D: 수집 주소 광고 링크(click.simba) → 정규 주소 + raw_url 보존
-                  "schema_stage18.sql"): # F-PROXY-1: proxy_orders(구매대행 승인 큐 + 증빙 대장)
+                  "schema_stage18.sql",  # F-PROXY-1: proxy_orders(구매대행 승인 큐 + 증빙 대장)
+                  "schema_stage19.sql"): # Y12-A: collect_history.last_action_at·attn_n(목록 최신 동작순·손댈 것만)
         f = here / fname
         if f.exists():
             run_ddl(f.read_text(encoding="utf-8"))

@@ -101,8 +101,9 @@ def test_short_images_are_flagged_with_reason_in_list_and_drawer(monkeypatch):
     ex = _extra(iid, seller)
     ic = ex["image_check"]
     assert ic["ok"] is False and "갤러리 1/5장" in ic["reason"] and "상세 이미지 0장" in ic["reason"]
-    lst = c.get("/seller/collect/history").get_data(as_text=True)
-    assert 'data-role="image-short"' in lst and "이미지 부족 · 갤러리 1/5장" in lst
+    # Y12-A: 목록 줄은 한 줄(썸네일·상품명·뱃지·시각) — 이미지 부족은 드로어 맨 위 한 줄 + 드로어 상세
+    assert c.get("/seller/collect/history").status_code == 200
+    assert "이미지 부족 · 갤러리 1/5장" in c.get(f"/seller/collect/preview/{iid}?drawer=1").get_data(as_text=True)
     drawer = c.get(f"/seller/collect/preview/{iid}?drawer=1").get_data(as_text=True)
     assert 'data-role="image-short"' in drawer and "이미지 부족 — 갤러리 1/5장" in drawer
 

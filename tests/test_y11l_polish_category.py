@@ -96,7 +96,7 @@ def test_result_line_says_han_retranslated():
     from src.services import image_polish as P
     ex = {"detail_images_ko": [{"idx": 21, "polish": {"changed": 3, "calls": 1, "han_left": 2, "han_fixed": 1, "rows": []}},
                                {"idx": 20, "polish": {"changed": 1, "calls": 1, "rows": []}}]}
-    assert P.item_line("x", ex) == "번역 다듬기 2장: 바뀐 상자 4 · AI 2회 · 한자 잔존 1상자 재번역(못 고친 1)"
+    assert P.item_detail("x", ex) == "번역 다듬기 2장: 바뀐 상자 4 · AI 2회 · 한자 잔존 1상자 재번역(못 고친 1)"
 
 
 def test_polish_entry_records_han_and_rule(monkeypatch):

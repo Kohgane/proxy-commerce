@@ -241,9 +241,14 @@ def test_naver_link_even_when_not_on_sale(monkeypatch):
 def test_sync_line_states():
     from src.services.coupang_detail_refresh import sync_line
     q = [{"item_id": "it", "market": "coupang:gogane", "reason": "번역 대기", "tries": 0}]
-    assert sync_line({}, "coupang:gogane", "it", q) == "상세 갱신 대기 — 번역 대기"
+    # Y12-A: 한 줄은 짧게(큐 = 「쿠팡 상세 보내는 중」 · 보냄 = 「KST 시각 쿠팡 상세 보냄」) — 이유는 접힘(sync_why)
+    from src.services.coupang_detail_refresh import sync_why
+    assert sync_line({}, "coupang:gogane", "it", q) == "쿠팡 상세 보내는 중"
+    assert sync_why({}, "coupang:gogane", "it", q) == "번역 대기"
     assert sync_line({}, "smartstore:shegoga", "it", q) == ""
-    ex = {"coupang_detail_sync": {"coupang:woojoo": {"ok": True, "state": "승인완료"}}}
-    assert sync_line(ex, "coupang:woojoo", "it", []) == "새 상세를 쿠팡에 보냈어요(다시 심사)"
+    ex = {"coupang_detail_sync": {"coupang:woojoo": {"ok": True, "state": "승인완료", "at": "2026-10-17T05:10:21+00:00"}}}
+    assert sync_line(ex, "coupang:woojoo", "it", []) == "10-17 14:10 쿠팡 상세 보냄"
+    assert "다시 심사" in sync_why(ex, "coupang:woojoo", "it", [])
     ex = {"coupang_detail_sync": {"coupang:woojoo": {"ok": False, "error": "조회 실패"}}}
-    assert sync_line(ex, "coupang:woojoo", "it", []).startswith("상세 갱신 실패")
+    assert sync_line(ex, "coupang:woojoo", "it", []) == "쿠팡 상세 보내기 실패"
+    assert sync_why(ex, "coupang:woojoo", "it", []) == "조회 실패"

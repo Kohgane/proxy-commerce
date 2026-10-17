@@ -546,8 +546,11 @@ class CoupangUploader(BaseUploader):
         '승인반려': 'rejected', 'DENIED': 'rejected',
         '상품삭제': 'deleted', 'DELETED': 'deleted',
     }
-    REVIEW_LABELS = {'approved': '승인', 'pending': '검토중', 'saved': '임시저장', 'rejected': '반려',
-                     'deleted': '삭제됨', 'unknown': '확인 못 함', 'reviewing': '심사 중 — 잠시 후 조회'}
+    # Y12-A(오너 2026-10-17): 상태 낱말은 **Wing 표기 그대로 하나** — 승인대기·승인완료·승인반려(+임시저장·상품삭제).
+    #   「승인대기」는 쿠팡이 실제로 「승인대기중」「심사중」을 돌려줬을 때만. 조회가 막힌 400 DEFAULT(`reviewing`)는
+    #   상태가 아니라 「조회 잠시 막힘」 — 화면은 마지막으로 성공한 조회 값을 그대로 쓴다(listing_status.query).
+    REVIEW_LABELS = {'approved': '승인완료', 'pending': '승인대기', 'saved': '임시저장', 'rejected': '승인반려',
+                     'deleted': '상품삭제', 'unknown': '확인 못 함', 'reviewing': '조회 잠시 막힘'}
 
     @staticmethod
     def is_review_lock(err) -> bool:

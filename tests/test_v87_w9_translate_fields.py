@@ -159,5 +159,6 @@ def test_bulk_translate_stores_field_flags_and_clears_error(monkeypatch):
 def test_list_js_removes_stale_badge_on_success():
     t = Path("src/seller_console/templates/collect_history.html").read_text(encoding="utf-8")
     assert "kgp-tr-badge" in t and "querySelectorAll('.kgp-tr-badge')" in t   # 성공 시 뱃지 DOM 제거
+    # Y12-A: 번역 뱃지는 줄에서 드로어 맨 위 한 줄로 — 드로어는 열 때마다 새로 계산(잔존 뱃지 없음)
     rows = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    assert rows.count("kgp-tr-badge") >= 3                     # 세 뱃지에 클래스 부여
+    assert "kgp-tr-badge" not in rows and "translate_error" not in rows

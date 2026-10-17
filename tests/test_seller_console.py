@@ -72,17 +72,22 @@ class TestSellerConsoleViews:
         resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
+        # Y12-A(오너 2026-10-17): 첫화면 = 세 묶음(손댈 것·돌아가는 것·오늘 쓴 것). 4블록은 사이드바 「진단」으로 옮겼다.
+        assert 'data-role="hb-attention"' in html and 'data-role="hb-today"' in html
+        assert "gogabridj" in html and 'href="/seller/diagnostics"' in html
+        diag = client.get("/seller/diagnostics").get_data(as_text=True)
         for block in ("등록 계정", "반려 감시", "등록 대장", "소싱 대기"):
-            assert block in html, block
-        assert "/seller/markets" in html            # 옛 마켓 현황으로 가는 길은 살아 있다
-        assert "gogabridj" in html
+            assert block in diag, block
+        assert "/seller/markets" in diag            # 옛 마켓 현황으로 가는 길은 살아 있다
 
     def test_dashboard_home_renders_onboarding_guide(self, client):
         resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "5분 시작 가이드" in html
-        assert "마켓 연동 → 첫 소싱 → 첫 상품 등록" in html
+        # Y12-A(오너 결정 3): 온보딩은 지우지 않고 사이드바 「시작 가이드」 한 곳으로 — 대시보드 본문엔 없다
+        assert "5분 시작 가이드" not in html
+        assert 'href="/seller/start"' in html and "시작 가이드" in html
+        assert client.get("/seller/start").status_code == 200
 
     def test_onboarding_dismiss_sets_cookie(self, client):
         resp = client.get("/seller/onboarding/dismiss?next=/seller/dashboard")
@@ -528,9 +533,8 @@ class TestDashboardResilience:
             resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        # 위젯 빌더가 죽어도 **골격은 유지**된다(빈 상태 degrade). Stage 6-a의 4블록 기준.
-        for block in ("등록 계정", "반려 감시", "등록 대장", "소싱 대기"):
-            assert block in html, block
+        # 위젯 빌더가 죽어도 **골격은 유지**된다(빈 상태 degrade). Y12-A 세 묶음 기준.
+        assert 'data-role="hb-attention"' in html and 'data-role="hb-today"' in html
 
     def test_dashboard_renders_empty_states_with_no_widgets(self, client):
         """위젯이 비어도 최근 활동/최근 상품 영역의 빈 상태가 정직하게 표시된다."""
@@ -538,9 +542,11 @@ class TestDashboardResilience:
             resp = client.get("/seller/dashboard")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        # Stage 6-a 빈 상태 — 미연결과 0건을 **구분**해서 말한다(0을 찍으면 둘이 섞인다).
-        assert "미연결" in html or "감시 중인 반려 건이 없습니다." in html
-        assert "소싱 대기" in html
+        # Y12-A 빈 상태 — 손댈 것 0은 「없음」 한 줄 · 돌아가는 것 0이면 묶음째 숨김
+        assert 'data-role="hb-attention-none"' in html and 'data-role="hb-running"' not in html
+        diag = client.get("/seller/diagnostics").get_data(as_text=True)
+        assert "미연결" in diag or "감시 중인 반려 건이 없습니다." in diag      # 미연결과 0건 구분은 「진단」에서
+        assert "소싱 대기" in diag
 
 
 # ---------------------------------------------------------------------------

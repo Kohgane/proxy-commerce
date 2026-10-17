@@ -90,7 +90,7 @@ def test_1_records_accumulate_and_chip_shows_duplicate_badge(disp):
     assert MS.duplicates(ex) == [{"market": "smartstore:chezgoga", "chip": "셰고가", "count": 2,
                                   "numbers": ["13802276439", "13803311539"]}]
     html = c.get("/seller/collect/history").get_data(as_text=True)
-    assert 'data-role="mk-dup-badge"' in html and "중복 2건 — 정리" in html
+    assert 'data-role="mk-dup-badge"' in html and ">중복 2</button>" in html          # Y12-A: 한 줄 폭 — 짧게(뜻은 title)
     m5 = c.get(f"/seller/m/item/{iid}").get_data(as_text=True)
     assert 'data-role="mk-dup-badge"' in m5
 
