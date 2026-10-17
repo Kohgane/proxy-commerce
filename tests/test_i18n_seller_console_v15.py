@@ -43,4 +43,5 @@ def test_english_render_via_cookie(client):
     assert 'lang="en"' in html
     assert "Home (Dashboard)" in html          # 영어 1급 — 핵심 내비 영어로
     assert "Collect products" in html
-    assert "New here?" in html                 # For Beginners 버튼도 영어
+    # Y12-A: 대시보드엔 떠 있는 For Beginners 버튼이 없다(사이드바 「시작 가이드」) — 다른 콘솔 화면에서 잰다
+    assert "New here?" in client.get("/seller/orders").get_data(as_text=True)

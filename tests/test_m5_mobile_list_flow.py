@@ -75,7 +75,8 @@ def test_same_two_endpoints_as_desktop():
     assert "item_id: itemId" in t and "confirm_warn" in t
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b", t.split("<script>")[0])            # 토큰만(스타일에 hex 0)
     assert not re.search(r"[\U0001F300-\U0001FAFF]", t)
-    assert 'id="rp-ledger"' in Path("src/seller_console/templates/dashboard.html").read_text(encoding="utf-8")
+    # Y12-A: 등록 대장 카드는 대시보드에서 「진단」 화면으로 옮겼다
+    assert 'id="rp-ledger"' in Path("src/seller_console/templates/diagnostics_home.html").read_text(encoding="utf-8")
 
 
 def test_embedded_product_prechecks_and_registers_end_to_end(client, monkeypatch):

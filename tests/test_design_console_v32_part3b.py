@@ -46,7 +46,8 @@ def test_collect_history_summary_editorial(client):
         #   `op-tile-v`가 `var(--font-display)`를 쓰는 건 app.css 6-a 슬라이스가 보증한다.
         assert "op-tile-v" in html                # 세리프 대형 KPI
         assert "op-tile-k" in html                # 오버라인 라벨
-        assert "console-kpi-label" in html        # 헤더 오버라인은 유지
+        # Y12-A: 헤더는 「상품」 한 줄(오버라인 접음) — 요약 타일은 「필터」 접힘 카드 안
+        assert 'data-role="ch-filter-box"' in html
         assert "fs-4 fw-bold" not in html         # 옛 마크업 제거
     finally:
         store._in_memory[:] = []

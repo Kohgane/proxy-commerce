@@ -119,7 +119,7 @@ def test_attention_items_three_kinds():
                         "detail_sync": {"at": "2026-10-17T05:10:17+00:00", "ok": False}}],
           "detail_images_ko": [{"idx": 3, "polish": {"suggest_erase": 4, "at": "x"}}],
           "risk_skip": {"reason": "상표/디자인 Zaha Hadid"}}
-    got = items(ex, "제목")
+    got = items(ex, "제목", fresh=True)
     kinds = [i["kind"] for i in got]
     assert kinds.count("rejected") == 1 and kinds.count("send_fail") == 1 and kinds.count("owner") == 2
     texts = " / ".join(i["text"] for i in got)
@@ -144,7 +144,7 @@ def test_update_stamps_columns_and_list_sorts_by_action(monkeypatch):
     assert [r["id"] for r in only] == [old]
     assert S.count_items(days=3650, seller_ids={"u-y12"}, attn_only=True) == 1
     saved = json.loads(S.get(old, seller_ids={"u-y12"})["extra_json"])
-    assert saved["attn"] == {"erase": 0, "check": []}
+    assert "attn" not in saved                                    # 남길 게 없으면 빈 요약을 쓰지 않는다
     S._in_memory.clear()
 
 

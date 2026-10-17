@@ -95,8 +95,9 @@ def _attn_backfill() -> Dict:
         except Exception:                                        # noqa: BLE001
             continue
         attn = summarize(ex, row.get("title") or "")
-        ex["attn"] = attn
+        n = len(attn_items(ex, row.get("title") or "", fresh=True))
         la = last_action(ex, row.get("collected_at") or "")
-        if chp.set_attention(item_id, la["at"] or row.get("collected_at"), len(attn_items(ex, row.get("title") or "")), attn):
+        has = bool(int(attn.get("erase") or 0) or attn.get("check"))
+        if chp.set_attention(item_id, la["at"] or row.get("collected_at"), n, attn if has else None):
             done += 1
     return {"ok": True, "done": done}

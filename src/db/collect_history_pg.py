@@ -206,11 +206,16 @@ def ids_for_attention_backfill(limit: int = 500) -> list:
 
 
 def set_attention(item_id: str, last_action_at, attn_n: int, attn: dict) -> bool:
-    """Y12-A 일회성 — 열 두 개와 `extra.attn`만 바꾼다(그 밖의 extra 칸·수집 원본은 손대지 않는다)."""
+    """Y12-A 일회성 — 열 두 개와 `extra.attn`만 바꾼다(그 밖의 extra 칸·수집 원본은 손대지 않는다).
+    `attn`이 비면(None) 키를 지운다 — 빈 요약을 남기지 않는다."""
     with pg.tx() as cur:
-        cur.execute("UPDATE collect_history SET last_action_at=%s, attn_n=%s, "
-                    "extra_json = jsonb_set(extra_json, '{attn}', %s::jsonb, true) WHERE id::text=%s RETURNING id",
-                    [last_action_at or None, int(attn_n or 0), json.dumps(attn or {}, ensure_ascii=False), str(item_id)])
+        if attn:
+            cur.execute("UPDATE collect_history SET last_action_at=%s, attn_n=%s, "
+                        "extra_json = jsonb_set(extra_json, '{attn}', %s::jsonb, true) WHERE id::text=%s RETURNING id",
+                        [last_action_at or None, int(attn_n or 0), json.dumps(attn, ensure_ascii=False), str(item_id)])
+        else:
+            cur.execute("UPDATE collect_history SET last_action_at=%s, attn_n=%s, extra_json = extra_json - 'attn' "
+                        "WHERE id::text=%s RETURNING id", [last_action_at or None, int(attn_n or 0), str(item_id)])
         return cur.fetchone() is not None
 
 

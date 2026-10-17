@@ -806,10 +806,10 @@ function excelRenderReport(d) {
     html += `</ul></div>`;
   }
   if (d.preview && d.preview.length) {
-    html += `<div class="table-responsive"><table class="table table-sm small mb-0"><thead><tr><th>행</th><th>구분</th><th>제목</th><th>가격</th></tr></thead><tbody>`;
+    html += `<div class="table-responsive"><table class="table table-sm small mb-0"><thead><tr><th>행</th><th>구분</th><th>제목</th><th class="text-end">가격</th></tr></thead><tbody>`;
     d.preview.forEach(function (p) {
       const badge = p.mode === 'update' ? '<span class="pc-badge pc-badge-muted">갱신</span>' : '<span class="pc-badge pc-badge-on">신규</span>';
-      html += `<tr><td>${p.row}</td><td>${badge}</td><td>${_esc(p.title)}</td><td>${_esc(p.price)}</td></tr>`;
+      html += `<tr><td>${p.row}</td><td>${badge}</td><td>${_esc(p.title)}</td><td class="text-end">${_esc(p.price)}</td></tr>`;
     });
     html += `</tbody></table></div>`;
     if (d.apply_count > d.preview.length) html += `<div class="small text-muted mt-1">…외 ${d.apply_count - d.preview.length}건</div>`;

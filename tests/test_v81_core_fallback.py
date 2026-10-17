@@ -64,5 +64,8 @@ def test_server_stores_mode_and_history_badge():
     assert _resolve_collect_mode({"mode": "core"}) == "core", "북마클릿 코어 폴백 모드가 보존돼야 한다"
     views = Path("src/seller_console/views.py").read_text(encoding="utf-8")
     assert 'it["is_core"]' in views and "SIMPLE_COLLECT_MODES" in views
-    rows = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    assert "{% if it.is_core %}" in rows and "간이" in rows and "다시 수집" in rows
+    # Y12-A: 「간이」 표시는 드로어 맨 위 한 줄 — 드로어엔 [다시 수집]이 있다
+    from src.seller_console.views import _row_flags
+    flags = _row_flags({"id": "c1", "title": "t", "url": "https://item.taobao.com/item.htm?id=1", "extra_json": '{"mode": "core"}'})
+    assert any(f.startswith("간이 수집") for f in flags), flags
+    assert "다시 수집" in Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")

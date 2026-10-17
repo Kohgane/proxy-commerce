@@ -117,8 +117,14 @@ def summarize(extra: dict, title: str = "") -> Dict:
             "check": _title_marks(extra, title) if not registered else []}
 
 
-def items(extra: dict, title: str = "") -> List[Dict]:
-    """손댈 것 `[{kind, market, text}]` — kind = rejected · send_fail · owner. 요약(`extra.attn`)이 있으면 그것, 없으면 그 자리에서."""
+def _has(attn: Dict) -> bool:
+    return bool(int((attn or {}).get("erase") or 0) or (attn or {}).get("check"))
+
+
+def items(extra: dict, title: str = "", *, fresh: bool = False) -> List[Dict]:
+    """손댈 것 `[{kind, market, text}]` — kind = rejected · send_fail · owner.
+    오너 확인 대기(지우기 제안·「확인 필요」)는 저장 때 남긴 요약 `extra.attn`을 읽는다(목록·대시보드는 사진 기록 없이 읽는다 —
+    요약이 없으면 없음). `fresh=True`면 그 자리에서 다시 잰다(저장·백필)."""
     from .listing_status import records, send_failed, state_word
     ex = extra or {}
     out: List[Dict] = []
@@ -130,7 +136,7 @@ def items(extra: dict, title: str = "") -> List[Dict]:
         elif send_failed(ex, r["market"]):
             out.append({"kind": "send_fail", "market": r["market"],
                         "text": f"{r['label']} " + ("상세 보내기 실패" if r["market"].startswith("coupang") else "본문 보내기 실패")})
-    attn = ex.get("attn") if isinstance(ex.get("attn"), dict) else summarize(ex, title)
+    attn = summarize(ex, title) if fresh else (ex.get("attn") if isinstance(ex.get("attn"), dict) else {})
     if int(attn.get("erase") or 0):
         out.append({"kind": "owner", "market": "", "text": f"지우기 제안 사진 {int(attn['erase'])}장"})
     rs = ex.get("risk_skip") if isinstance(ex.get("risk_skip"), dict) else None
@@ -145,6 +151,10 @@ def stamp(extra: dict, title: str = "", collected_at: str = "") -> Dict:
     """저장 직전: `extra.attn`을 새로 쓰고 열 값 `{last_action_at, attn_n}`을 돌려준다."""
     if not isinstance(extra, dict):
         return {}
-    extra["attn"] = summarize(extra, title)
+    attn = summarize(extra, title)
+    if _has(attn):                                               # 남길 게 있을 때만 — 빈 요약으로 extra를 늘리지 않는다
+        extra["attn"] = attn
+    else:
+        extra.pop("attn", None)
     la = last_action(extra, collected_at)
     return {"last_action_at": la["at"] or None, "attn_n": len(items(extra, title))}

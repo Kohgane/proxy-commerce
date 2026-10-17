@@ -111,7 +111,9 @@ def test_console_badge_covers_both_simple_modes():
 
 def test_badge_tooltip_distinguishes_tile_from_bookmarklet():
     """같은 '간이'라도 원인이 다르다 — 타일은 확장 정상 동작, 북마클릿은 수집기 미로드."""
-    rows = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    assert "{% if it.is_core %}" in rows and "간이" in rows
-    assert "it.collect_mode == 'simple'" in rows, "타일 간이에도 '확장 미로드' 문구가 뜬다(오안내)"
-    assert "목록 타일에서 간이 수집" in rows
+    # Y12-A: 드로어 맨 위 한 줄 — 타일 간이와 북마클릿 간이를 다르게 말한다
+    from src.seller_console.views import _row_flags
+    tile = _row_flags({"id": "s1", "title": "t", "url": "https://item.taobao.com/item.htm?id=1", "extra_json": '{"mode": "simple"}'})
+    core = _row_flags({"id": "s2", "title": "t", "url": "https://item.taobao.com/item.htm?id=2", "extra_json": '{"mode": "core"}'})
+    assert "간이 수집 · 목록 타일 — 제목·이미지만" in tile, "타일 간이에도 '확장 미로드' 문구가 뜬다(오안내)"
+    assert any(f.startswith("간이 수집") for f in core) and core != tile

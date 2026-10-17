@@ -149,9 +149,14 @@ def test_toggle_off_is_not_a_failure(client, monkeypatch):
 
 # ── 표시 계약: 목록·드로어·views·PG ───────────────────────────────────
 def test_list_row_shows_three_state_badges():
-    assert "번역 실패" in ROWS and "다시 번역" in PREVIEW
-    assert "원문(번역 안 함)" in ROWS
-    assert "it.translate_error" in ROWS and "it.translate_requested is false" in ROWS
+    # Y12-A: 세 상태는 드로어 맨 위 한 줄(`_row_flags`) — 실패 · 원문(번역 안 함) · 번역됨(표시 없음)
+    from src.seller_console.views import _row_flags
+    u = "https://item.rakuten.co.jp/x/1/"
+    assert "번역 실패" in _row_flags({"id": "t1", "title": "t", "url": u, "extra_json": '{"translate_error": "quota"}'})
+    assert "원문(번역 안 함)" in _row_flags({"id": "t2", "title": "t", "url": u, "extra_json": '{"translate_requested": false}'})
+    ok = _row_flags({"id": "t3", "title": "t", "url": u, "extra_json": '{"translated": true}'})
+    assert "번역 실패" not in ok and "원문(번역 안 함)" not in ok
+    assert "다시 번역" in PREVIEW
 
 
 def test_views_exposes_translate_status_and_pg_projects_it():

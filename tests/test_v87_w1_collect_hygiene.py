@@ -186,4 +186,6 @@ def test_template_ui_contract():
     assert "hygiene=cleanup" in tpl and "정리 후보" in tpl
     assert "runBulkArchiveCandidates" in tpl              # 선택 보관(삭제 아님)
     assert "bulkDeleteAck" in tpl                         # 영구 삭제 2단 확인 체크
-    assert "비상품 의심" in rows and "hygiene" in rows      # 후보 배지
+    import inspect
+    from src.seller_console import views as V
+    assert "비상품 의심" in inspect.getsource(V._row_flags)   # Y12-A: 후보 배지는 드로어 맨 위 한 줄

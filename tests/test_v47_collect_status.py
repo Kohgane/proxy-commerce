@@ -99,5 +99,7 @@ def test_source_contract():
     assert "compute_collect_status" in API                    # 서버 단일 판정
     assert "field_sources" in EX                              # 추출기 필드별 소스
     assert "field_status" in CS and "부분 수집" in CS         # 토스트 정직 표기
-    assert "collect_status" in ROWS and "부분 ·" in ROWS      # 목록 상태 컬럼
+    import inspect
+    from src.seller_console import views as _V
+    assert "collect_status" in inspect.getsource(_V._row_flags) and "부분 수집 · " in inspect.getsource(_V._row_flags)   # Y12-A: 드로어 맨 위
     assert "수집 로그" in PREVIEW and "collect_status.fields" in PREVIEW  # 드로어 수집 로그

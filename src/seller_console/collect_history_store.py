@@ -330,8 +330,10 @@ def _stamp_attention(fields: dict) -> dict:
         ex = json.loads(fields["extra_json"] or "{}") or {}
         if not isinstance(ex, dict):
             return {}
+        before = ex.get("attn")
         cols = stamp(ex, title=str(fields.get("title") or ""))
-        fields["extra_json"] = json.dumps(ex, ensure_ascii=False)
+        if ex.get("attn") != before:                             # 요약이 바뀔 때만 다시 쓴다(그 밖엔 받은 글자 그대로)
+            fields["extra_json"] = json.dumps(ex, ensure_ascii=False)
         return cols
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[손댈 것] 요약 계산 실패(저장은 그대로): %s", exc)

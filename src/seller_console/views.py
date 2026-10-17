@@ -10608,18 +10608,23 @@ def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
         out.append("수집 실패")
     if it.get("translate_error"):
         out.append("번역 실패")
+    elif it.get("translate_requested") is False:                 # W6 세 상태: 실패 · 원문(번역 안 함) · (번역됨 = 표시 없음)
+        out.append("원문(번역 안 함)")
     if it.get("is_core"):
         mode = str(it.get("collect_mode") or "")
         out.append("간이 수집 · " + ("공유 글 — 제목·링크만" if mode == "share" else
                                     "목록 타일 — 제목·이미지만" if mode == "simple" else "제목·이미지만"))
-    if not it.get("vendor_sku"):
-        out.append("식별자 없음")
+    if not it.get("vendor_sku"):                                 # F39: 무엇을 기대했는지도 같이
+        exp = str(it.get("vendor_sku_expected") or "")
+        out.append("식별자 없음" + (f" · {exp}" if exp else ""))
     if (it.get("hygiene") or {}).get("is_candidate"):
         out.append("비상품 의심")
     if it.get("image_short"):
         out.append("이미지 부족 · " + str(it["image_short"]))
     if not eb and it.get("enrich_status") == "pending":
         out.append("보강 중")
+    elif not eb and it.get("enrich_status") == "done":
+        out.append("보강 완료")
     sb = it.get("sourcing_badge") if isinstance(it.get("sourcing_badge"), dict) else None
     if sb and sb.get("label"):                                   # F24 소싱 원칙 판정(봇이 담을 때 잰 값)
         out.append("소싱 판정 · " + str(sb["label"]))

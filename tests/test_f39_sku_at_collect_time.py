@@ -245,10 +245,13 @@ def test_old_rows_are_judged_now_not_trusted():
 
 def test_the_template_shows_the_badge():
     from pathlib import Path
-    tpl = (Path(__file__).resolve().parents[1]
-           / "src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    assert "식별자 없음" in tpl and "not it.vendor_sku" in tpl
-    assert "it.vendor_sku_expected" in tpl, "무엇을 기대했는지 화면이 말하지 않는다"
+    # Y12-A: 목록 줄의 배지는 드로어 맨 위 한 줄(`_row_flags`)로 옮겼다 — 식별자 없음 + 무엇을 기대했는지
+    import json as _json
+    from src.seller_console.views import _row_flags
+    flags = _row_flags({"id": "f39", "title": "t", "url": "https://item.taobao.com/item.htm",
+                        "extra_json": _json.dumps({"vendor_sku": "", "vendor_sku_expected": "주소의 id= 숫자"})})
+    sku = [f for f in flags if f.startswith("식별자 없음")]
+    assert sku and "주소의 id= 숫자" in sku[0], ("무엇을 기대했는지 화면이 말하지 않는다", flags)
 
 
 # ---------------------------------------------------------------------------
