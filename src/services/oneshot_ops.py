@@ -7,6 +7,8 @@
 허용 작업은 둘뿐(그 밖의 줄은 「모르는 작업」으로 버린다):
 - `polish_page` {item_id, kind, idx} — 그 장만 `image_polish.polish_job`(다시 만들 다듬음 버전일 때만 새로 그림)
 - `ocr_recheck` {item_id, detail_idx:[…]} — 그 상세 장만 `ocr_compare_diag.run`(장당 OCR 4회)
+- `attn_backfill` {} — Y12-A: 목록 정렬·「손댈 것」 열(`last_action_at`·`attn_n`)과 `extra.attn`을 등록 기록·등록 보류가 있는
+  상품에만 한 번 채운다(그 밖의 칸은 손대지 않는다 · 한 번에 500건)
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
-OPS = ("polish_page", "ocr_recheck")
+OPS = ("polish_page", "ocr_recheck", "attn_backfill")
 
 
 def _now() -> str:
@@ -35,6 +37,8 @@ def _run(row: dict) -> Dict:
     item_id = str(row.get("item_id") or "")
     if op not in OPS:
         return {"ok": False, "why": f"모르는 작업({op[:30]})"}
+    if op == "attn_backfill":
+        return _attn_backfill()
     from src.services import ocr_compare_diag as D
     item, uid = D._item(item_id)
     if not item:
@@ -77,3 +81,22 @@ def drain() -> Dict:
                     str(res.get("why") or "")[:120])
     st.state_set(LAST_KEY, {"at": _now(), "rows": out})
     return {"picked": len(out), "rows": out}
+
+
+def _attn_backfill() -> Dict:
+    import json
+    from src.db import collect_history_pg as chp
+    from src.seller_console.attention import last_action, summarize, items as attn_items
+    done = 0
+    for item_id, uid in chp.ids_for_attention_backfill():
+        row = chp.get(item_id, seller_ids={uid} if uid else None) or {}
+        try:
+            ex = json.loads(row.get("extra_json") or "{}") or {}
+        except Exception:                                        # noqa: BLE001
+            continue
+        attn = summarize(ex, row.get("title") or "")
+        ex["attn"] = attn
+        la = last_action(ex, row.get("collected_at") or "")
+        if chp.set_attention(item_id, la["at"] or row.get("collected_at"), len(attn_items(ex, row.get("title") or "")), attn):
+            done += 1
+    return {"ok": True, "done": done}

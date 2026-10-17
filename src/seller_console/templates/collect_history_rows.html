@@ -1,149 +1,49 @@
-{# 수집이력 행 파셜 — 첫 로드·무한스크롤(fmt=rows)·나이아 점프 공유. current_lang은 컨텍스트 전역. #}
+{# 수집이력 행 파셜 — 첫 로드·무한스크롤(fmt=rows)·나이아 점프 공유. current_lang은 컨텍스트 전역.
+   Y12-A(오너 2026-10-17): 한 상품 = 한 줄 — 썸네일 · 상품명(1줄 말줄임) · 마켓 뱃지 4 · 마지막 동작 시각. 그 밖(도메인·가격·경로·
+   수집 시각·ID·수집 상태·번역·간이·식별자·비상품·이미지 부족·보강 배지)은 드로어 맨 위 한 줄로 옮겼다.
+   뱃지: 데스크톱 「고가네 승인완료」(이름 + 마켓 표기 상태 낱말) · 모바일 390px 약자(고·우·셰·코) —
+   완료 = 채움 · 대기 = 테두리만 · 반려·실패 = 약자 대신 글자(색만으로 구분하지 않는다). 누르면 마켓 상태 팝업. #}
 {% for it in items %}
-<tr data-fs-key="{{ it.title_display or it.title or '#' }}">
-  <td class="ps-3 cardcell-check"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" aria-label="선택"></td>
-  <td class="cardcell-img">
-    {# v39 C: 클릭 = 인페이지 편집 드로어(새 창/원본 이동 0). #}
-    <a href="javascript:void(0)" class="kgp-open-drawer d-inline-flex align-items-center gap-1" role="button"
-       data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" title="클릭하면 편집 드로어가 열려요">
+{% set _t = it.title_display or it.title or '(제목 없음)' %}
+<tr data-fs-key="{{ _t or '#' }}" data-item-id="{{ it.id }}" class="ch-row{% if it.attn %} is-attn{% endif %}">
+  <td class="ps-3 cardcell-check ch-c-chk"><input type="checkbox" class="row-chk" value="{{ it.id }}" data-title="{{ _t }}" aria-label="선택"></td>
+  <td class="cardcell-img ch-c-img">
+    <a href="javascript:void(0)" class="kgp-open-drawer d-inline-flex" role="button" aria-label="{{ _t }} 열기"
+       data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ _t }}">
     {% if it.thumbs %}
-      {% for t in it.thumbs %}
-      <img src="{{ t }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
-           width="{{ '52' if loop.first else '34' }}" height="{{ '52' if loop.first else '34' }}"
-           class="ch-thumb {{ 'ch-thumb-lg' if loop.first else 'ch-thumb-sm' }}"
-           onerror="this.style.display='none'">
-      {% endfor %}
+      <img src="{{ it.thumbs[0] }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
+           width="44" height="44" class="ch-thumb ch-thumb-lg" onerror="this.style.display='none'">
     {% else %}
-      {# v41 X-1: 이미지 없으면 다른 상품 이미지 대신 정직한 '이미지 없음' 표기(엉뚱 이미지 0). #}
-      <span class="d-inline-flex align-items-center justify-content-center text-muted ch-thumb-none"
-            title="이미지 없음" aria-label="이미지 없음"
-            ><i class="bi bi-image"></i></span>
+      <span class="d-inline-flex align-items-center justify-content-center text-muted ch-thumb-none" aria-label="이미지 없음"><i class="bi bi-image"></i></span>
     {% endif %}
     </a>
   </td>
-  <td class="cardcell-title ch-cell-title">
-    <a href="javascript:void(0)" class="kgp-open-drawer text-decoration-none fw-semibold text-dark d-block text-truncate" role="button"
-       data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}" title="{{ it.title_display or it.title or '(제목 없음)' }}">
-      {{ it.title_display or it.title or "(제목 없음)" }}
-    </a>
-    {# v87-W6: 번역 상태 3분 — 실패(사유+재시도 유도)/원문(사용자 선택)/미번역. 성공은 조용(기본 기대). #}
-    {% if it.translate_error %}
-    <span class="badge mt-1 kgp-tr-badge kgp-open-drawer" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
-          style="background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);cursor:pointer"
-          title="번역 실패: {{ it.translate_error }} — 클릭해 드로어에서 다시 번역"><i class="bi bi-exclamation-triangle"></i> 번역 실패</span>
-    {% elif it.translate_requested is false %}
-    <span class="badge mt-1 kgp-tr-badge kgp-badge-quiet"  title="수집 시 번역 안 함(원문 그대로 저장)"><i class="bi bi-translate"></i> 원문(번역 안 함)</span>
-    {% elif it.title_is_original %}
-    <span class="badge mt-1 kgp-tr-badge" style="background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)" title="{{ '아직 한국어로 번역되지 않았어요' if current_lang != 'en' else 'Original (not translated)' }}"><i class="bi bi-translate"></i> 원문</span>
-    {% endif %}
-    {# v64 STEP7: 도메인 = 은은한 칩(토큰) — 색 남용 없이 위계만. #}
-    <span class="d-inline-block text-truncate mt-1 ch-url-pill" title="{{ it.url }}"
-          >{{ it.domain or it.url }}</span>
-    {# v87-W1: 비상품 정리 후보 — 상품이 아닌 페이지로 의심(삭제 아님, 정리 후보로만 표기). #}
-    {% if it.hygiene and it.hygiene.is_candidate %}
-    <span class="pc-badge pc-badge-off mt-1" title="{{ it.hygiene.reasons|join(' · ') }} — ‘정리 후보’에서 보관할 수 있어요(삭제 아님)"><i class="bi bi-exclamation-triangle"></i> 비상품 의심</span>
-    {% endif %}
-    {# F39: 등록에 쓸 **상품 식별자**가 없는 행. 예전엔 업로더가 처음 알려 줬다(너무 늦다) —
-       목록에서 미리 안다. 무엇을 찾으려 했는지도 함께 말한다(호스트별). #}
-    {% if not it.vendor_sku %}
-    <span class="pc-badge pc-badge-danger mt-1"
-          title="{{ it.vendor_sku_expected or '상품 주소에서 식별자를 찾지 못했습니다' }} — 이대로는 마켓에 등록할 수 없어요"><i class="bi bi-hash"></i> 식별자 없음</span>
-    {% endif %}
-    {# Y10: 위험 블록에서 「등록 안 함」을 고른 상품 — 「등록 보류: 사유」 #}
-    {% if it.risk_skip %}
-    <span class="pc-badge pc-badge-danger mt-1" data-role="risk-skip-chip">등록 보류: {{ it.risk_skip }}</span>
-    {% endif %}
-    {# M7(오너 2026-10-08): 등록된 마켓만 소형 칩 — 색 = 마지막으로 알려진 상태(승인대기 회색·승인완료 초록·반려 빨강·실패 주황).
-       칩을 누르면 M6 상태 팝업(그때 마켓에 묻는다). 목록을 그릴 땐 마켓에 묻지 않는다. #}
+  <td class="cardcell-title ch-cell-title ch-c-title">
+    <a href="javascript:void(0)" class="kgp-open-drawer ch-title-1" role="button"
+       data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ _t }}">{{ _t }}</a>
+  </td>
+  <td class="ch-c-badges">
     {% if it.market_chips %}
-    <div class="mk-chips mt-1" data-role="mk-chips">
+    <div class="mk-chips mk-badges" data-role="mk-chips">
       {% for c in it.market_chips %}
-      <button type="button" class="mk-chip tone-{{ c.tone }}" data-role="mk-chip" data-market-status="{{ c.market }}" data-item="{{ it.id }}"
-              data-tone="{{ c.tone }}" title="{{ c.label }} — {{ c.state_label }}{{ ' · ' ~ (c.shown_no or c.product_id) if (c.shown_no or c.product_id) }} · 눌러서 검토 상태 보기">{{ c.chip }}</button>
+      {% set _word = c.state_label %}
+      <button type="button" class="mk-chip mk-badge kind-{{ c.kind }}" data-role="mk-chip" data-kind="{{ c.kind }}"
+              data-market-status="{{ c.market }}" data-item="{{ it.id }}"
+              title="{{ c.label }} {{ '보내기 실패' if c.kind == 'fail' else _word }}{{ ' · ' ~ (c.shown_no or c.product_id) if (c.shown_no or c.product_id) }}"
+              aria-label="{{ c.label }} {{ '보내기 실패' if c.kind == 'fail' else _word }}">
+        <span class="mk-full">{{ c.name }} {{ '실패' if c.kind == 'fail' else _word }}</span>
+        <span class="mk-short">{{ '반려' if c.kind == 'bad' else ('실패' if c.kind == 'fail' else c.short) }}</span>
+      </button>
       {% if c.dup_count %}<button type="button" class="mk-chip mk-chip-dup" data-role="mk-dup-badge" data-market-status="{{ c.market }}" data-item="{{ it.id }}"
-              title="같은 상품이 이 마켓에 {{ c.dup_count }}건 등록돼 있어요 — 눌러서 정리">중복 {{ c.dup_count }}건 — 정리</button>{% endif %}
+              title="같은 상품이 이 마켓에 {{ c.dup_count }}건 등록돼 있어요 — 눌러서 정리">중복 {{ c.dup_count }}</button>{% endif %}
       {% endfor %}
     </div>
     {% endif %}
-    {# v81 STEP1 북마클릿 코어 폴백 / v86-F 목록 타일 간이 — 둘 다 제목·이미지만. [다시 수집] 권장(warn 토큰). #}
-    {% if it.is_core %}
-    <span class="badge mt-1 kgp-tr-badge kgp-open-drawer ch-badge-warn" role="button" data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
-          
-          title="{% if it.collect_mode == 'simple' %}목록 타일에서 간이 수집됨(제목·이미지만 — 상세·옵션은 목록에 없음){% elif it.collect_mode == 'share' %}앱 공유 텍스트로 수집됨 — 공유 글에는 제목과 링크만 들어 있어요(가격·이미지·옵션 미수집){% else %}확장 수집기 미로드로 간이 수집됨(제목·이미지만){% endif %}. 클릭 → 드로어에서 [다시 수집]으로 상세·가격 보완"><i class="bi bi-lightning-charge"></i> 간이</span>
-    {% endif %}
   </td>
-  {# v64 STEP7: 가격 우정렬(스캔 편의). 원가·환율 병기는 드로어 가격 탭으로(목록은 수집가만). #}
-  <td class="small text-end" data-label="가격">
-    {% if it.price %}<span class="fw-semibold">{{ it.price }}</span> <span class="text-muted">{{ it.currency }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
-  </td>
-  {# v64 STEP7: 경로 = 단일 중립 칩(토큰) — 부트스트랩 색 남용(파랑/노랑/청록) 제거, 위계만. #}
-  <td data-label="경로">
-    {% set _src = {'extension':'확장','chrome_extension':'확장','bookmarklet':'북마클릿','quick':'즉시','manual':'수동','bulk':'벌크','bulk_collect':'벌크'} %}
-    <span class="badge ch-badge-src">{{ _src.get(it.source, it.source or '-') }}</span>
-  </td>
-  <td class="text-muted small" data-label="수집 시각">{{ it.collected_at|kst if it.collected_at else "-" }}</td>
-  {# Y11-K: 상품 ID — 앞 8자만 보이고 누르면 전체(접어 두기). 진단·문의 때 사람이 ID를 찾을 필요가 없게 #}
-  <td class="text-muted small ch-id-col" data-label="ID"><details data-role="row-id"><summary><code>{{ (it.id or '')[:8] }}</code></summary><code class="ch-id-full">{{ it.id }}</code></details></td>
-  {# v64 STEP7: 상태 = 행당 배지 1개, 의미 토큰만(성공=청록·부분=주황·실패=적·보관=먹muted). 부트스트랩 색 남용 제거. #}
-  <td data-label="상태">
-    {% if it.status == "archived" %}
-      <span class="badge kgp-badge-quiet" ><i class="bi bi-archive"></i> 보관</span>
-    {% elif it.enrich_badge %}
-      {# C-F14: 부분 초안(폰으로 담은 것)은 **보강 축**으로 말한다 — 완전 수집 잣대(7필드)를
-         들이대면 제목·상품번호·가격이 다 담긴 것도 「실패」가 된다(실측). #}
-      {% set eb = it.enrich_badge %}
-      {# 새 배지는 공용 문법(`pc-badge`)으로 쓴다 — 이 파일의 옛 인라인 `badge`는 v2 잔재이고
-         래칫(`test_v2_residue_never_grows`)이 그걸 늘리지 못하게 막는다. #}
-      {% if eb.kind == "blocked" %}{% set eb_cls = "pc-badge-danger" %}{% set eb_ico = "bi-hand-thumbs-down" %}
-      {% elif eb.kind == "done" %}{% set eb_cls = "pc-badge-on" %}{% set eb_ico = "bi-check-lg" %}
-      {% else %}{% set eb_cls = "pc-badge-off" %}{% set eb_ico = "bi-hourglass-split" %}{% endif %}
-      <span class="pc-badge {{ eb_cls }}" title="{{ eb.title }}"><i class="bi {{ eb_ico }}"></i> {{ eb.label }}</span>
-      {% if it.sourcing_badge %}
-      {# F24: 소싱 원칙 판정 — 봇이 담을 때 재서 적어 둔 값. 화면 기호는 **토큰 색**이다
-         (텔레그램 답장은 기호를 쓰지만 콘솔은 이모지 0 — 자리가 다르다). #}
-      <span class="pc-badge pc-badge-{{ it.sourcing_badge.kind }} ms-1"
-            title="소싱 원칙 판정"><i class="bi bi-clipboard-check"></i> {{ it.sourcing_badge.label }}</span>
-      {% endif %}
-    {% elif it.status == "ok" %}
-      {# v47 STEP2: 수집 필드 상태 — 성공(N/5) 또는 부분(누락 필드명). 가짜 성공·무음 실패 금지. #}
-      {% set cs = it.collect_status %}
-      {% if cs and cs.status == "실패" %}
-        <span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)" title="{{ cs.cause }}"><i class="bi bi-x-octagon"></i> 실패 · 추출 실패</span>
-      {% elif cs and cs.status == "부분" %}
-        <span class="badge" style="background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)"
-              title="누락: {{ cs.missing|join('·') }} ({{ cs.filled }}/{{ cs.total }} 필드)"><i class="bi bi-exclamation-triangle"></i> 부분 · {{ (cs.missing_short or cs.missing)|join('·') }}</span>
-      {% elif cs %}
-        <span class="badge" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)" title="모든 필드 수집({{ cs.filled }}/{{ cs.total }})"><i class="bi bi-check-lg"></i> 성공 {{ cs.filled }}/{{ cs.total }}</span>
-      {% else %}
-        <span class="badge" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)"><i class="bi bi-check-lg"></i></span>
-      {% endif %}
-    {% else %}
-      <span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)">{{ it.status }}</span>
+  <td class="ch-c-when" title="{{ it.last_action.line if it.last_action else '' }}">
+    {% if it.last_action and it.last_action.line %}
+    <span class="ch-when-time" data-role="last-action-time">{{ it.last_action.line[:11] }}</span><span class="ch-when-text"> {{ it.last_action.text }}</span>
     {% endif %}
-    {# F49-T 5부: 이미지 완료 기준 미달 — 사유(갤러리 n/원본 · 상세 0장)와 함께. #}
-    {% if it.image_short %}
-      <span class="pc-badge pc-badge-danger mt-1" data-role="image-short" title="상세 보강 뒤에도 이미지가 원본보다 적어요 — {{ it.image_short }}"><i class="bi bi-images"></i> 이미지 부족 · {{ it.image_short }}</span>
-    {% endif %}
-    {# v65 STEP4: 보강(2단 수집) 상태 — 대기(스피너)/완료. 단건은 배지 없음(보강 불필요). #}
-    {% if it.enrich_status == "pending" %}
-      <span class="badge d-inline-flex align-items-center gap-1 mt-1 kgp-badge-quiet" 
-            title="상세(옵션·상세·리뷰)를 백그라운드에서 보강 중이에요"><span class="spinner-border spinner-border-sm" style="width:.7rem;height:.7rem;border-width:.13em"></span> 보강 중…</span>
-    {% elif it.enrich_status == "done" %}
-      <span class="badge mt-1" style="background:color-mix(in srgb,var(--teal) 15%,transparent);color:var(--teal)"
-            title="상세 보강 완료"><i class="bi bi-stars"></i> 보강 완료</span>
-    {% endif %}
-    {# v87-W4: 리뷰 수·평점 노출(수신·저장 트랙). 값이 있을 때만 표기(목록 컴팩트 — 0건은 드로어에서 정직 표기). #}
-    {% if it.review_count or it.rating %}
-    <span class="d-block text-muted mt-1 ch-note-sm"  title="수집된 리뷰 수·평점">
-      <i class="bi bi-star-fill" style="color:var(--gold)"></i>
-      {% if it.review_count %}리뷰 {{ it.review_count }}{% endif %}{% if it.rating %} · {{ it.rating }}/5{% endif %}
-    </span>
-    {% endif %}
-  </td>
-  <td class="text-nowrap cardcell-actions">
-    <button type="button" class="kgp-open-drawer btn btn-success btn-sm py-0"
-            data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ it.title_display or it.title or '(제목 없음)' }}"
-            title="확인·수정 후 마켓에 등록"><i class="bi bi-pencil-square"></i> 편집·등록</button>
   </td>
 </tr>
 {% endfor %}

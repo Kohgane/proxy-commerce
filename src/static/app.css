@@ -2424,3 +2424,64 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* Y11-L: 상세 타일 「사진 편집」 — 갤러리 타일과 같은 진입 */
 .kgp-dcell-edit { margin: 0 var(--space-1) var(--space-1); min-height: 32px; }
 .kgp-dcell-img[role=button] { cursor: pointer; }
+
+/* ── Y12-A(오너 2026-10-17): 대시보드 세 묶음 · 상품목록 한 줄 · 마켓 뱃지(모양으로 상태 — 색만으로 구분하지 않는다) ── */
+.hb-wrap { display: grid; gap: var(--space-2, 12px); max-width: 860px; }
+.hb-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius, 12px); padding: 12px 16px; }
+.hb-card.is-alert { border-left: 3px solid var(--orange); }
+.hb-card > summary { list-style: none; cursor: pointer; }
+.hb-card > summary::-webkit-details-marker { display: none; }
+.hb-sum, .hb-flat { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hb-title { font-weight: 700; color: var(--text); }
+.hb-num { font-size: 1.4rem; font-weight: 800; color: var(--orange-strong, var(--orange)); line-height: 1; }
+.hb-num-muted { font-size: .9rem; font-weight: 600; color: var(--text-muted); }
+.hb-none, .hb-line { color: var(--text-muted); }
+.hb-line b { color: var(--text); }
+.hb-meta { margin-left: auto; font-size: .75rem; color: var(--text-muted); }
+.hb-body { margin-top: 10px; font-size: .9rem; }
+.hb-groups, .hb-items { list-style: none; margin: 0 0 8px; padding: 0; }
+.hb-groups li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.hb-items li { padding: 4px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.hb-why { display: block; font-size: .78rem; color: var(--text-muted); }
+
+.ch-topbar { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.ch-search { flex: 1 1 auto; min-width: 0; }
+.mk-attn-toggle { flex: none; white-space: nowrap; padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  font-size: .85rem; color: var(--text); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.mk-attn-toggle.is-on { background: var(--ink, var(--text)); color: var(--surface); border-color: transparent; }
+.ch-filter-box > summary { list-style: none; cursor: pointer; }
+.ch-more > summary { cursor: pointer; font-size: .8rem; color: var(--text-muted); }
+.ch-list-head { display: flex; align-items: center; gap: 10px; }
+.ch-count { font-weight: 700; }
+.ch-table { table-layout: fixed; width: 100%; }
+.ch-table td { vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
+.ch-c-chk { width: 36px; }
+.ch-c-img { width: 56px; }
+.ch-c-badges { width: 360px; }
+.ch-c-when { width: 200px; font-size: .8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-title-1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text); text-decoration: none; }
+.mk-badges { flex-wrap: nowrap; }
+.mk-badge .mk-short { display: none; }
+.mk-badge.kind-done { background: var(--success); border-color: var(--success); color: var(--on-accent); }
+.mk-badge.kind-wait { background: transparent; border: 1px solid var(--text-muted); color: var(--text); }
+.mk-badge.kind-bad { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+.mk-badge.kind-fail { background: transparent; border: 1px dashed var(--orange); color: var(--orange-strong, var(--orange)); }
+
+@media (max-width: 767.98px) {
+  /* 390px 한 줄: 체크 · 썸네일 · 상품명(말줄임) · 뱃지 4(약자) · 시각 — 두 줄로 안 꺾인다 */
+  .ch-table, .ch-table tbody, .ch-table tr { display: block; width: 100%; }
+  .ch-table tr.ch-row { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  .ch-table tr.ch-row > td { display: block; padding: 0; border: 0; width: auto; }
+  .ch-c-chk { flex: none; }
+  .ch-c-img { flex: none; }
+  .ch-c-img .ch-thumb { width: 36px; height: 36px; }
+  .ch-c-title { flex: 1 1 auto; min-width: 0; }
+  .ch-c-badges { flex: none; }
+  .ch-c-when { flex: none; font-size: .72rem; }
+  .ch-c-when .ch-when-text { display: none; }
+  .mk-badge { min-width: 22px; min-height: 22px; padding: 0 5px; justify-content: center; font-size: .7rem; }
+  .mk-badge .mk-full { display: none; }
+  .mk-badge .mk-short { display: inline; }
+  .mk-badges { gap: 3px; }
+  .hb-meta { margin-left: 0; width: 100%; }
+}

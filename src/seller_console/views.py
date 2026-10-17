@@ -1233,9 +1233,29 @@ def _render_dashboard_home():
     context["onboarding"]["dismiss_href"] = url_for("seller_console.dismiss_onboarding", next=request.path)
     # Stage 6-a — 운영 스냅샷. 새 집계를 만들지 않고 기존 산출(계정 자격·등록 대장·수집 요약)만 모은다.
     #   블록별로 독립 실패하고, 실패는 화면에서 '미연결'로 정직 표기된다(0을 찍지 않는다).
-    from src.pipeline import ops_snapshot
-    context["ops"] = ops_snapshot.build(_seller_identities(), seller_id=_seller_id())
+    # Y12-A(오너 2026-10-17): 대시보드 = 세 묶음(손댈 것 · 돌아가는 것 · 오늘 쓴 것)만. 계정·마켓 연동 신호·등록 대장·
+    #   소싱 대기는 「진단」(/seller/diagnostics) 한 곳으로 옮겼다.
+    from .home_bundles import build as _bundles
+    context["home"] = _bundles(_seller_identities())
     return render_template("dashboard.html", widgets=widgets, page="dashboard", **context)
+
+
+@bp.get("/diagnostics")
+def diagnostics_home():
+    """Y12-A — 「진단」 한 곳: 예전 대시보드 카드(등록 계정·마켓 연동 신호·반려 감시·등록 대장·소싱 대기) +
+    관리자 진단 도구(OCR 비교·번역 다듬기·이미지 모드 비교·네이버 카테고리 표·naver-recent·갱신 큐·호출 기록) 링크."""
+    if not _check_auth():
+        return redirect(url_for("auth.login", next=request.url))
+    from src.pipeline import ops_snapshot
+    ops = ops_snapshot.build(_seller_identities(), seller_id=_seller_id())
+    queues = {}
+    try:
+        from src.db import image_translate_queue_pg as _st
+        for k in ("coupang_detail_refresh:last", "naver_detail_refresh:last", "ops:oneshot:last"):
+            queues[k] = _st.state_get(k) or {}
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[진단] 큐 기록 읽기 실패: %s", exc)
+    return render_template("diagnostics_home.html", page="diagnostics", ops=ops, queues=queues)
 
 
 @bp.get("/")
@@ -3351,10 +3371,18 @@ def collect_review_status(item_id):
         st.update(market=u["market"], market_label=u["label"], checked_at=now)
         rows.append(st)
     by = {r["market"]: r for r in rows}
+    from .listing_status import state_word as _sw
     for u in extra.get("uploaded") or []:
         if isinstance(u, dict) and u.get("market") in by:
             r = by[u["market"]]
-            u["review"] = {k: r.get(k) for k in ("state", "label", "comment", "link", "product_id", "checked_at", "live")}
+            old_rv = u.get("review") if isinstance(u.get("review"), dict) else {}
+            if (r.get("state") == "reviewing" or (r.get("state") == "unknown" and r.get("error"))) and old_rv.get("state"):
+                # Y12-A(오너 결정 8): 조회가 막히거나 실패하면 마지막 성공 값 그대로 — 「승인대기」로 바꾸지 않는다
+                r.update(state=old_rv.get("state"), status_raw=old_rv.get("status_raw") or "", stale=True,
+                         checked_at=old_rv.get("checked_at") or "", label=_sw(u["market"], old_rv.get("state"), old_rv.get("status_raw")))
+                continue
+            r["label"] = _sw(u["market"], r.get("state"), r.get("status_raw")) or r.get("label")
+            u["review"] = {k: r.get(k) for k in ("state", "label", "comment", "link", "product_id", "checked_at", "live", "status_raw")}
             u["product_id"] = u.get("product_id") or r.get("sid")
     from .collect_history_store import update as _update
     _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
@@ -3395,6 +3423,7 @@ def collect_market_status(item_id):
     def _sync(row):
         if _cdr is not None and str(row.get("market") or "").startswith("coupang"):
             row["detail_sync_line"] = _cdr.sync_line(extra, row["market"], str(item_id), _q_rows)
+            row["detail_sync_why"] = _cdr.sync_why(extra, row["market"], str(item_id), _q_rows)   # Y12-A: 접힘
 
     if str(request.args.get("phase") or "") == "db":
         rows = [MS.db_row(r) for r in recs]
@@ -3423,6 +3452,9 @@ def collect_market_status(item_id):
         logger.warning("[네이버 상품명] 자동 고침 시작 실패: %s", exc)
     logger.info("[마켓 상태] item=%s 마켓 %d곳 병렬 %dms 캐시 %d 실패 %d", str(item_id)[:8], len(rows), ms,
                 sum(1 for r in rows if r.get("cached")), sum(1 for r in rows if r.get("error")))
+    if any(not r.get("cached") and not r.get("stale") and not r.get("error") for r in rows):
+        from .home_bundles import mark_status_checked as _mark   # Y12-A: 대시보드 「마켓 상태 마지막 조회 HH:MM」
+        _mark()
     if any(MS.remember(extra, r) for r in rows if not r.get("cached")):
         from .collect_history_store import update as _update
         _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
@@ -4352,7 +4384,7 @@ def collect_ocr_recheck(item_id):
             return jsonify({"ok": False, "error": r.get("why") or "시작하지 못했어요"}), 409
         return jsonify({"ok": True, "running": True, "line": "OCR 다시 판정 중… (1~2분)"})
     res = D.last_item(iid)
-    return jsonify({"ok": True, "running": bool(res.get("running")), "line": D.line(res)})
+    return jsonify({"ok": True, "running": bool(res.get("running")), "line": D.line(res), "detail": D.detail(res)})
 
 
 @bp.route("/collect/<item_id>/image-polish", methods=["GET", "POST"])
@@ -4376,7 +4408,7 @@ def collect_image_polish(item_id):
     except Exception:
         ex = {}
     line = _ip.item_line(iid, ex)
-    return jsonify({"ok": True, "running": line.startswith("번역 다듬기 중"), "line": line})
+    return jsonify({"ok": True, "running": line.startswith("다듬기 중"), "line": line, "detail": _ip.item_detail(iid, ex)})
 
 
 @bp.get("/collect/<item_id>/detail-plan")
@@ -10553,6 +10585,37 @@ def discovery_keywords_remove():
 # Phase 135.2: /seller/collect/history + /seller/collect/preview/<id>
 # ---------------------------------------------------------------------------
 
+def _row_flags(item: dict) -> list:
+    """Y12-A — 목록 줄에서 뺀 표시(수집 상태·번역·간이·식별자·비상품·이미지 부족·보강·등록 보류)를 드로어 맨 위 한 줄로."""
+    try:
+        it = dict(item)
+        _shape_collect_items([it], "ko")
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[드로어] 표시 줄 계산 실패: %s", exc)
+        return []
+    out = []
+    cs = it.get("collect_status") or {}
+    if isinstance(cs, dict) and cs.get("status") == "부분":
+        out.append("부분 수집 · " + "·".join(cs.get("missing_short") or cs.get("missing") or []))
+    elif isinstance(cs, dict) and cs.get("status") == "실패":
+        out.append("수집 실패")
+    if it.get("translate_error"):
+        out.append("번역 실패")
+    if it.get("is_core"):
+        out.append("간이 수집")
+    if not it.get("vendor_sku"):
+        out.append("식별자 없음")
+    if (it.get("hygiene") or {}).get("is_candidate"):
+        out.append("비상품 의심")
+    if it.get("image_short"):
+        out.append("이미지 부족 · " + str(it["image_short"]))
+    if it.get("enrich_status") == "pending":
+        out.append("보강 중")
+    if it.get("risk_skip"):
+        out.append("등록 보류 · " + str(it["risk_skip"]))
+    return out
+
+
 def _shape_collect_items(items, current_lang):
     """수집이력 행 파셜(collect_history_rows.html)이 기대하는 필드로 item dict를 in-place 가공.
     목록 렌더(collect_history)와 실시간 증분(collect_history_since)이 동일 모양을 쓰게 단일소스.
@@ -10592,6 +10655,10 @@ def _shape_collect_items(items, current_lang):
         # M7: 마켓별 소형 칩(등록된 마켓만) — 색은 마지막으로 알려진 상태(uploaded[].review). 목록은 마켓에 묻지 않는다.
         from .listing_status import chips as _mk_chips
         it["market_chips"] = _mk_chips(ex)              # Y7-K: 마켓당 칩 하나 + 중복 배지
+        # Y12-A: 한 줄 = 썸네일 · 상품명 · 뱃지 4 · 마지막 동작(「10-17 14:10 쿠팡 상세 보냄」 KST)
+        from .attention import last_action as _last_action, items as _attn_items
+        it["last_action"] = _last_action(ex, it.get("collected_at") or "")
+        it["attn"] = _attn_items(ex, it.get("title") or "")
         # U2: 마지막으로 물어본 쿠팡 검토 상태(승인·검토중·반려) — 목록 배지. 안 물어봤으면 비움(지어내지 않음).
         it["uploaded_review"] = [{"label": str(u.get("market_label") or u.get("market")),
                                   "state": (u.get("review") or {}).get("state") or "",
@@ -10720,7 +10787,8 @@ def collect_history():
     reg_f = request.args.get("reg", "").strip()                # M7: "none"=미등록만 · "done"=등록됨만
     if reg_f not in ("none", "done"):
         reg_f = ""
-    sort = (request.args.get("sort") or "newest").strip()
+    sort = (request.args.get("sort") or "action").strip()        # Y12-A: 기본 = 마지막 동작 최신순
+    attn_f = request.args.get("attn", "").strip() == "1"           # Y12-A: 「손댈 것만」
     per_page = request.args.get("per_page", 50, type=int)
     if per_page not in (20, 50, 100):
         per_page = 50
@@ -10731,8 +10799,9 @@ def collect_history():
 
     # 속도: 기본 뷰(최신순·필터 없음)는 목록을 SQL LIMIT/OFFSET로 그 페이지만 가져온다
     #   (전체 스캔 회피 — 상품 많아도 첫 페이지 비용 고정). 필터/타 정렬은 기존 전체 로드 경로.
-    _sql_page = (sort == "newest" and not q and not status_f and not group_f and not domain and not source and not hygiene_f
-                 and not reg_f)
+    _sql_page = (sort in ("newest", "action") and not q and not status_f and not group_f and not domain and not source
+                 and not hygiene_f and not reg_f)
+    _order = "action" if sort == "action" else "created"
 
     items = []
     summ = {"total": 0, "today": 0, "domains": 0, "by_source": {"extension": 0, "bookmarklet": 0, "manual": 0, "bulk": 0}}
@@ -10746,9 +10815,11 @@ def collect_history():
         #   같은 쿼리를 이중 계상하던 것 해소). 목록은 lean=True(대형 컬럼 제외), 그룹 필터일 때만 full.
         _use_lean = not group_f
         if _sql_page:
-            items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True)
+            items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True,
+                               order=_order, attn_only=attn_f)
         else:
-            items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean)
+            items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean,
+                               order=_order, attn_only=attn_f)
         # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
         if fmt != "rows":
             summ = summary(days=days, seller_ids=_ids)
@@ -10760,6 +10831,12 @@ def collect_history():
     if _sql_page:
         # SQL이 이미 최신순·해당 페이지만 반환 — 파이썬 필터/정렬/슬라이스 생략.
         total_filtered = summ.get("total", len(items))
+        if _order == "action" or attn_f:                     # Y12-A: 마지막 동작 기준 기간·손댈 것만은 건수가 다르다
+            try:
+                from .collect_history_store import count_items as _cnt
+                total_filtered = _cnt(days=days, seller_ids=_seller_identities(), order=_order, attn_only=attn_f)
+            except Exception as exc:                          # noqa: BLE001
+                logger.warning("목록 건수 실패: %s", exc)
         fastscroll = False
         all_rows = items
         has_more = (offset + len(items)) < total_filtered
@@ -10822,7 +10899,9 @@ def collect_history():
             items.sort(key=_price_num)
         elif sort == "title":
             items.sort(key=lambda r: (r.get("title") or "").lower())
-        else:  # newest (기본)
+        elif sort == "action":  # Y12-A 기본: 마지막 동작 최신순
+            items.sort(key=lambda r: str(r.get("last_action_at") or "") or r.get("collected_at", ""), reverse=True)
+        else:  # newest
             items.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
 
         # 첫 offset~per_page개만(전체 로드 후 슬라이스). 이름순은 나이아 점프용 all_rows 필요.
@@ -10893,7 +10972,7 @@ def collect_history():
         fs_buckets=fs_buckets,
         filters={"domain": domain, "source": source, "days": days,
                  "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page,
-                 "hygiene": hygiene_f, "reg": reg_f},
+                 "hygiene": hygiene_f, "reg": reg_f, "attn": attn_f},
         hygiene_mode=(hygiene_f == "cleanup"),
         # M7: 「미등록만 · 등록됨만」 — 다른 필터는 그대로 두고 reg만 바꾼 주소(페이지는 1로)
         reg_urls={k: url_for(request.endpoint, **{**{kk: vv for kk, vv in request.args.items() if kk not in ("reg", "page", "offset")},
@@ -11211,7 +11290,7 @@ def collect_preview_by_id(item_id: str):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
-        market_records=_market_records(extra),
+        market_records=_market_records(extra), item_flags=_row_flags(item),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
         field_src=field_src,

@@ -138,17 +138,24 @@ def append(
 def list_items(
     *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
     seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0, lean: bool = False,
+    order: str = "created", attn_only: bool = False,
 ) -> list[dict]:
-    """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만. lean=True면 대형 컬럼 제외(속도)."""
+    """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만. lean=True면 대형 컬럼 제외(속도).
+    Y12-A: `order="action"` = 마지막 동작 최신순(기간도 마지막 동작 기준) · `attn_only` = 「손댈 것만」."""
     _b = _pg_backend()
     if _b:
         return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id,
-                             seller_ids=seller_ids, limit=limit, offset=offset, lean=lean)
+                             seller_ids=seller_ids, limit=limit, offset=offset, lean=lean, order=order, attn_only=attn_only)
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    def _key(row):
+        return (str(row.get("last_action_at") or "") or row.get("collected_at", "")) if order == "action" else row.get("collected_at", "")
     result = []
     for row in _in_memory:
-        if row.get("collected_at", "") < cutoff:
+        if _key(row) < cutoff:
+            continue
+        if attn_only and not int(row.get("attn_n") or 0):
             continue
         if domain and row.get("domain", "") != domain:
             continue
@@ -161,7 +168,7 @@ def list_items(
         elif seller_id is not None and _rsid != str(seller_id):
             continue
         result.append(dict(row))
-    result.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
+    result.sort(key=_key, reverse=True)
     if limit is not None:
         result = result[int(offset):int(offset) + int(limit)]
     if lean:
@@ -187,8 +194,18 @@ def list_items(
                 # F49-T 5부: 목록 타일 보강 여부(enrich_axes가 읽는다) · 이미지 완료 기준(「이미지 부족」 배지).
                 "enriched": _ex.get("enriched"), "image_check": _ex.get("image_check"),
                 "risk_skip": _ex.get("risk_skip"),   # Y10 목록 칩 「등록 보류: 사유」
+                # Y12-A: 목록 「마지막 동작」·뱃지 「실패」·「손댈 것」(작은 값만)
+                "coupang_detail_sync": _ex.get("coupang_detail_sync"), "attn": _ex.get("attn"),
             }, ensure_ascii=False)
     return result
+
+
+def count_items(*, days: int = 30, seller_ids: Optional[set] = None, order: str = "action", attn_only: bool = False) -> int:
+    """Y12-A — 목록 기본 뷰(마지막 동작 기준 기간 · 손댈 것만)의 전체 건수(페이지 수 계산용)."""
+    _b = _pg_backend()
+    if _b:
+        return _b.count_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only)
+    return len(list_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only))
 
 
 def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> Optional[dict]:
@@ -295,6 +312,22 @@ def guard_originals(item_id: str, extra_json, *, seller_id=None, seller_ids=None
     return _json.dumps(new, ensure_ascii=False)
 
 
+def _stamp_attention(fields: dict) -> dict:
+    """Y12-A — 저장할 extra에 「손댈 것」 요약(`attn`)을 새로 쓰고 열 값(`last_action_at`·`attn_n`)을 돌려준다.
+    계산이 실패해도 저장은 그대로(열만 안 바뀜)."""
+    try:
+        from .attention import stamp
+        ex = json.loads(fields["extra_json"] or "{}") or {}
+        if not isinstance(ex, dict):
+            return {}
+        cols = stamp(ex, title=str(fields.get("title") or ""))
+        fields["extra_json"] = json.dumps(ex, ensure_ascii=False)
+        return cols
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[손댈 것] 요약 계산 실패(저장은 그대로): %s", exc)
+        return {}
+
+
 def merge_extra(item_id: str, apply, *, seller_ids: Optional[set] = None) -> bool:
     """Y11X(오너 2026-10-17): extra_json을 **지금 DB 값에** 덧대 저장한다 — `apply(fresh_extra)`가 제 칸만 바꾼다.
 
@@ -318,6 +351,7 @@ def update(item_id: str, *, seller_id: Optional[str] = None,
     Y11-E: `extra_json`을 바꾸면 **수집 원본 불변**을 먼저 검사한다(`guard_originals` — 어기면 `OriginalImageOverwrite`)."""
     if fields.get("extra_json") is not None:
         fields["extra_json"] = guard_originals(item_id, fields["extra_json"], seller_id=seller_id, seller_ids=seller_ids)
+        fields.update(_stamp_attention(fields))
     _b = _pg_backend()
     if _b:
         return _b.update(item_id, seller_id=seller_id, seller_ids=seller_ids, **fields)
@@ -326,6 +360,9 @@ def update(item_id: str, *, seller_id: Optional[str] = None,
     updates = {k: ("" if v is None else str(v)) for k, v in fields.items() if k in allowed}
     if not updates:
         return False
+    for k in ("last_action_at", "attn_n"):                       # Y12-A: 목록 정렬·필터 열(인메모리)
+        if k in fields:
+            updates[k] = fields[k]
 
     def _scope_ok(row_sid) -> bool:
         rsid = str(row_sid or "")

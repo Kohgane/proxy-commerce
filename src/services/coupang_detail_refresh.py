@@ -233,9 +233,20 @@ def providers_line(providers: dict) -> str:
 
 
 def sync_line(extra: dict, market: str, item_id: str = "", rows: Optional[List[dict]] = None) -> str:
-    """Y11-R — 마켓 상태 팝업·드로어 맨 위 한 줄: 이 쿠팡 등록본의 **상세 갱신**이 어디까지 왔나(큐·마지막 전송)."""
+    """Y11-R — 마켓 상태 팝업·드로어 맨 위 한 줄: 이 쿠팡 등록본의 **상세 갱신**이 어디까지 왔나(큐·마지막 전송).
+    Y12-A(오너 2026-10-17): 한 줄은 짧게 — 「쿠팡 상세 보내는 중」 · 「10-17 14:10 쿠팡 상세 보냄」 · 「쿠팡 상세 보내기 실패」.
+    이유(다듬은 버전·기타이미지 수리·시도 횟수·실패 원문)는 접힘(`sync_why`)."""
+    return _sync(extra, market, item_id, rows)[0]
+
+
+def sync_why(extra: dict, market: str, item_id: str = "", rows: Optional[List[dict]] = None) -> str:
+    """접힘 줄 — 한 줄(`sync_line`)의 이유."""
+    return _sync(extra, market, item_id, rows)[1]
+
+
+def _sync(extra: dict, market: str, item_id: str = "", rows: Optional[List[dict]] = None):
     if not str(market or "").startswith("coupang"):
-        return ""
+        return "", ""
     try:
         rows = queue_rows() if rows is None else rows
     except Exception:                                             # noqa: BLE001 — 한 줄 재료라 팝업을 막지 않는다
@@ -243,15 +254,16 @@ def sync_line(extra: dict, market: str, item_id: str = "", rows: Optional[List[d
     q = next((r for r in rows if r.get("market") == market and (not item_id or r.get("item_id") == item_id)), None)
     if q:
         tail = f" · {int(q.get('tries') or 0)}번 시도" if q.get("tries") else ""
-        return f"상세 갱신 대기 — {q.get('reason') or '대기'}{tail}"
+        return "쿠팡 상세 보내는 중", f"{q.get('reason') or '대기'}{tail}"
     s = ((extra or {}).get("coupang_detail_sync") or {}).get(market) or {}
+    from src.seller_console.attention import kst
     if s.get("ok") and s.get("state") != "same":
-        return "새 상세를 쿠팡에 보냈어요(다시 심사)"
+        return f"{kst(s.get('at'))} 쿠팡 상세 보냄".strip(), "쿠팡이 바뀐 내용을 다시 심사해요"
     if s.get("ok"):
-        return "상세 최신 — 보낼 것 없음"
+        return "쿠팡 상세 최신", "보낼 것 없음"
     if s.get("error"):
-        return f"상세 갱신 실패 — {str(s['error'])[:120]}"
-    return ""
+        return "쿠팡 상세 보내기 실패", str(s["error"])[:200]
+    return "", ""
 
 
 def store_save(item_id: str, seller_ids: Optional[set] = None) -> Callable[[dict], None]:

@@ -63,6 +63,10 @@
 </head>
 <body class="console-body{% block body_class %}{% endblock %}">
 {% set _path = request.path if request is defined else '' %}
+{# Y12-A(오너 2026-10-17): 대시보드·상품목록·드로어엔 「이번 업데이트」 배너·떠 있는 「처음이신가요?」 버튼을 띄우지 않는다
+   (떠 있는 버튼이 상품 줄을 가렸다). 가이드는 사이드바 「시작 가이드」 한 곳 — 지우는 게 아니라 옮기는 것. #}
+{% set _quiet_chrome = _path in ('/seller/', '/seller') or _path.startswith('/seller/dashboard') or _path.startswith('/seller/collect/history')
+   or (request is defined and request.args.get('drawer')) %}
 {% set _user_id = session.get('user_id') if session is defined else None %}
 {% set _user_email = session.get('user_email') if session is defined else None %}
 {% set _user_name = session.get('user_name') if session is defined else None %}
@@ -151,6 +155,9 @@
       <li><a class="console-nav-link {% if _path == '/seller/orders' or (_path.startswith('/seller/orders') and not _path.startswith('/seller/orders/auto')) %}active{% endif %}" href="/seller/orders"><i class="bi bi-receipt"></i><span>{{ t('nav.orders') }}</span></a></li>
       <li><a class="console-nav-link {% if (_path.startswith('/seller/markets') and not _path.startswith('/seller/markets/connect') and not _path.startswith('/seller/markets/guide')) or _path.startswith('/seller/market-status') %}active{% endif %}" href="/seller/markets"><i class="bi bi-shop"></i><span>{{ t('nav.markets') }}</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/guide/business') %}active{% endif %}" href="/seller/guide/business"><i class="bi bi-question-circle"></i><span>{{ t('nav.help') }}</span></a></li>
+      {# Y12-A: 온보딩(5분 시작 가이드)은 지우지 않고 이 메뉴 한 곳으로 · 진단 패널·큐·호출 기록은 「진단」 한 곳으로 #}
+      <li><a class="console-nav-link {% if _path.startswith('/seller/start') %}active{% endif %}" href="/seller/start" data-role="nav-start-guide"><i class="bi bi-play-circle"></i><span>시작 가이드</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/diagnostics') %}active{% endif %}" href="/seller/diagnostics" data-role="nav-diagnostics"><i class="bi bi-activity"></i><span>진단</span></a></li>
     </ul>
 
     <!-- 고급 기능(접이식, 기본 닫힘 — 현재 위치가 안에 있으면 JS가 자동으로 펼침) -->
@@ -267,7 +274,7 @@
          한 함수가 본다). 예전엔 여기서 `_user_role`만 봐서, 오너가 구글로 로그인하면
          자기 진단 화면 링크가 **아예 안 보였다**. #}
       {% if is_admin %}
-      <a class="d-block text-decoration-none mb-1" href="/admin/diagnostics"><i class="bi bi-tools"></i> 관리자 패널</a>
+      {# Y12-A: 「관리자 패널」은 「진단」 화면 안으로 옮겼다(진단 한 곳) #}
       <a class="d-block text-decoration-none mb-1" href="/seller/admin/identity-audit"><i class="bi bi-person-badge"></i> 정체성 감사</a>
       {# D1: 공급사 품질은 **봐야** 안다 — 관리자만 들어가는 채점 자리. #}
       <a class="d-block text-decoration-none mb-1" href="/seller/admin/image-translate-bench"><i class="bi bi-translate"></i> 이미지 번역 채점</a>
@@ -343,7 +350,7 @@
 
     <main class="console-content">
       {# v81 STEP7: '이번 업데이트' 배너 — 체인지로그 단일 소스. 최신 버전 1회만(localStorage dismiss). 이모지 0. #}
-      {% if changelog_banner and changelog_banner.points %}
+      {% if changelog_banner and changelog_banner.points and not _quiet_chrome %}
       <div id="kgpUpdateBanner" class="kgp-update-banner" data-ver="{{ changelog_banner.version }}" hidden>
         <span class="kgp-ub-keystone" aria-hidden="true"></span>
         <span class="kgp-ub-label">이번 업데이트</span>
@@ -390,7 +397,8 @@
   </div>
 </div>
 
-<!-- v14: For Beginners 진입 버튼 — 모든 페이지 고정 + 바로 밑 작은 on/off(상태 기억) -->
+<!-- v14: For Beginners 진입 버튼 — 모든 페이지 고정 + 바로 밑 작은 on/off(상태 기억) · Y12-A: 대시보드·목록·드로어엔 없음 -->
+{% if not _quiet_chrome %}
 <div id="fbWrap" class="fb-wrap">
   <a href="/seller/start" id="fbBtn" class="btn btn-cta fb-btn">
      <i class="bi bi-stars"></i> <span class="fb-label">{{ t('fb.cta') }}</span>
@@ -398,6 +406,7 @@
   <button type="button" id="fbHide" class="btn btn-link p-0 text-muted fb-hide">{{ t('fb.hide') }}</button>
 </div>
 <button type="button" id="fbReopen" class="btn btn-cta fb-reopen" title="처음이신가요? 가이드 열기"><i class="bi bi-stars"></i></button>
+{% endif %}
 <script>
 (function () {
   var wrap = document.getElementById('fbWrap');

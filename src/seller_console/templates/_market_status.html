@@ -71,23 +71,25 @@
       '<div class="mst-meta">' + (r.channel_product_no || String(r.market || '').indexOf('smartstore') === 0
         // 오너 2026-10-10: 네이버는 **채널 상품번호만** 보인다(원상품번호는 로그·DB 내부용)
         ? '상품번호 ' + esc(r.channel_product_no || '확인 중')
-        : '상품번호 ' + esc(r.product_id || '없음')) + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') +
-      (r.status_raw ? ' · 마켓 표기 「' + esc(r.status_raw) + '」' : '') +
-      (r.checked_at ? ' · 확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : '') : '') + '</div>';
+        : '상품번호 ' + esc(r.product_id || '없음')) + (r.registered_at ? ' · 등록 ' + esc(kst(r.registered_at)) : '') + '</div>';
+    // Y12-A(오너 2026-10-17): 확인 시각·등록 때 판매가·이유·지금 올라간 내용·응답 원문은 「자세히」로 접는다(상태 낱말은 뱃지 하나)
+    var more = [];
+    if (r.checked_at) more.push('확인 ' + esc(kst(r.checked_at)) + (r.cached ? '(1분 안에 다시 묻지 않아요)' : ''));
+    if (r.stale_note) more.push(esc(r.stale_note) + ' — 마지막으로 확인한 상태예요');
+    if (r.registered_price) more.push('등록 때 판매가: ' + esc(r.registered_price));
+    if (r.detail_sync_why) more.push(esc(r.detail_sync_why));
+    if (r.live_line) more.push(esc(r.live_line));
+    if (r.error) more.push('원문: ' + esc(r.error));
     if (r.dup_count) h += '<div class="mst-err" data-role="mst-dup">같은 상품이 이 마켓에 ' + r.dup_count + '건 있어요 — 남길 번호를 정하고, 나머지는 판매자센터에서 지운 뒤 「이 기록 빼기」</div>';
     if (r.comment) h += '<div class="mst-reason" data-role="mst-reason"><b>반려 사유</b> ' + esc(r.comment) + '</div>';
     // M8-8: 등록 때 쓴 재료(마진·환율·수수료) — 지금 다시 낸 줄과 다르면 무엇이 달랐는지 바로 보인다
     // Y11-S: 등록 기록의 **실제 전송값**(없으면 「등록 당시 값 기록 없음」) — 지금 마진으로 다시 계산한 줄은 싣지 않는다
-    if (r.registered_price) h += '<div class="mst-meta" data-role="mst-price-registered">등록 때 판매가: ' + esc(r.registered_price) + '</div>';
     if (r.list_price_line) h += '<div class="mst-meta" data-role="mst-list-price">' + esc(r.list_price_line) + '</div>';
-    if (r.error) h += '<div class="mst-err" data-role="mst-error">상태 확인 실패 — ' + esc(r.error) + '</div>';
-    // Y11-U(오너 14:57 확인): 수정(재심사) 중엔 쿠팡이 조회를 잠시 막는다(400 DEFAULT) — 오류가 아니라 회색 한 줄
-    if (r.state === 'reviewing') h += '<div class="mst-meta" data-role="mst-reviewing">쿠팡이 바뀐 내용을 심사하는 동안 상품 조회를 잠시 막아요 — 잠시 후 다시 열면 보여요</div>';
+    if (r.error) h += '<div class="mst-err" data-role="mst-error">상태 확인 실패</div>';
     if (r.live_name) h += '<div class="mst-meta" data-role="mst-live-name">네이버 상품명: ' + esc(r.live_name) + '</div>';
     if (r.name_fix_line) h += '<div class="mst-meta" data-role="mst-name-fix-line">' + esc(r.name_fix_line) + '</div>';
     // Y11-R: 쿠팡 = 지금 올라가 있는 내용(쿠팡 원본 조회) · 상세 갱신 큐 상태
     if (r.name) h += '<div class="mst-meta" data-role="mst-live-name">쿠팡 상품명: ' + esc(r.name) + '</div>';
-    if (r.live_line) h += '<div class="mst-meta" data-role="mst-live">' + esc(r.live_line) + '</div>';
     if (r.detail_sync_line) h += '<div class="mst-meta" data-role="mst-detail-sync">' + esc(r.detail_sync_line) + '</div>';
     var links = '';
     if (r.manage_url) links += '<a href="' + esc(r.manage_url) + '" target="_blank" rel="noopener" data-role="mst-manage">' + esc(r.manage_label || '마켓에서 열기') + '</a>';
@@ -101,8 +103,8 @@
     if (r.dup_count && r.product_id)
       links += '<button type="button" class="mst-dup-remove" data-role="mst-dup-remove" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '">이 기록 빼기</button>';
     // M8-7: 기록이 하나뿐이어도 **다시 등록하려면** 뺄 수 있다(두 번 눌러야 빠짐 · 마켓의 상품은 그대로 — 판매자센터에서)
-    else if (r.product_id)
-      links += '<button type="button" class="mst-dup-remove" data-role="mst-dup-remove" data-single="1" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '">기록 빼기(다시 등록용)</button>';
+    else if (r.product_id)                                   // Y12-A: 「자세히」 안으로
+      more.push('<button type="button" class="mst-dup-remove" data-role="mst-dup-remove" data-single="1" data-market="' + esc(r.market) + '" data-pid="' + esc(r.product_id) + '">기록 빼기(다시 등록용)</button>');
     if (String(r.market || '').indexOf('smartstore') === 0 && r.product_id) {
       links += '<button type="button" class="mst-resend" data-role="mst-resend" data-market="' + esc(r.market) + '">본문 다시 보내기</button>';
       // Y11-S: 상품명만(중괄호 묶음 정리) — 네이버 응답 원문을 이 줄 아래에
@@ -112,6 +114,7 @@
     if (String(r.market || '').indexOf('coupang') === 0 && r.product_id)
       links += '<button type="button" class="mst-resend" data-role="mst-refresh-now" data-market="' + esc(r.market) + '">지금 갱신</button>';
     if (links) h += '<div class="mst-links">' + links + '</div>';
+    if (more.length) h += '<details class="mst-more" data-role="mst-more"><summary>자세히</summary><div class="mst-meta">' + more.join('<br>') + '</div></details>';
     if (String(r.market || '').indexOf('smartstore') === 0)
       h += '<div class="mst-meta" data-role="mst-resend-out" hidden></div>';
     return h + '</div>';
@@ -122,7 +125,8 @@
   function refreshLines(r) {
     var b = [];
     if (r.sent) b.push('<div class="' + (r.ok ? 'mst-ok' : 'mst-err') + '" data-role="mst-refresh-verdict">' +
-      (r.ok ? '쿠팡에 새 상세를 보냈어요(다시 심사)' : '쿠팡이 받지 않았어요') + (r.market_status ? ' · HTTP ' + esc(r.market_status) : '') + '</div>');
+      (r.ok ? kst(r.at || new Date().toISOString()).replace(' KST', '') + ' 쿠팡 상세 보냄' : '쿠팡이 받지 않았어요') + '</div>' +
+      (r.market_status ? '<details class="mst-more"><summary>자세히</summary><div class="mst-meta">HTTP ' + esc(r.market_status) + ' · 쿠팡이 바뀐 내용을 다시 심사해요</div></details>' : ''));
     else b.push('<div class="mst-err" data-role="mst-refresh-verdict">보내지 않았어요 — ' + esc(r.error || '사유 미상') + '</div>');
     if (r.sent && r.error) b.push('<div class="mst-meta">' + esc(r.error) + '</div>');
     if (r.detail_images != null) b.push('<div class="mst-meta">상세 이미지 ' + esc(r.detail_images) + '장 · 규격 글 아래</div>');
@@ -246,6 +250,7 @@
         var el = body.querySelector('[data-role=mst-row][data-market="' + r.market + '"][data-pid="' + (r.product_id || '') + '"]');
         if (el) swapRow(el, row(r)); else body.insertAdjacentHTML('beforeend', row(r));
       });
+      setTitle(d.rows || []);
       document.dispatchEvent(new CustomEvent('kgp:market-status', {detail: {itemId: curItem, rows: d.rows || []}}));
       return d;
     }).catch(function (e) {
@@ -263,12 +268,21 @@
       if (!d || !d.ok) throw new Error((d && d.error) || '불러오지 못했어요');
       if (!(d.rows || []).length) { body.innerHTML = '<p data-role="mst-empty">' + esc(d.message || '등록 기록이 없어요.') + '</p>'; return d; }
       body.innerHTML = d.rows.map(row).join('');
+      setTitle(d.rows);
       return loadStatus(my);
     }).catch(function (e) {
       if (my !== seq) return;
       body.innerHTML = retryLine('mst-error', '불러오지 못했어요 — ' + ((e && e.message) || e));
     });
   }
+  // Y12-A: 버튼 이름 = 팝업 제목 = 상태 낱말 — 뱃지 하나를 눌러 열면 제목이 「쿠팡 — 고가네 · 승인완료」
+  function setTitle(rows) {
+    var t = dlg.querySelector('#mstTitle');
+    if (!t) return;
+    var one = (rows || []).filter(function (x) { return !curMarket || x.market === curMarket; });
+    t.textContent = (curMarket && one.length === 1 && one[0].label) ? (one[0].market_label || one[0].chip) + ' · ' + one[0].label : '마켓 상태';
+  }
+  window.kgpSetMarketTitle = setTitle;
   window.kgpMarketStatus = function (itemId, market) {
     curItem = itemId; curMarket = market || '';
     if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }

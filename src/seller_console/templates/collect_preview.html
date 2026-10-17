@@ -25,12 +25,16 @@
     </div>
     <div class="op-card-body">
       {# Y11-K(오너 2026-10-14): 사람이 상품 ID를 찾을 필요가 없게 — 상품번호(SKU) 옆에 전체 ID + 복사. #}
+      {# Y12-A: 목록 줄에서 뺀 표시는 여기 한 줄 · 상품번호·ID는 「자세히」 안 #}
+      {% if item_flags %}<p class="small mb-2" data-role="item-flags">{{ item_flags|join(' · ') }}</p>{% endif %}
+      <details class="small text-muted mb-2" data-role="item-id-more"><summary>자세히</summary>
       <p class="small text-muted mb-2 kgp-id-line" data-role="item-id-line">
         {% if item_sku %}상품번호(SKU) <strong data-role="item-sku">{{ item_sku }}</strong> · {% endif %}ID
         <code data-role="item-id">{{ item.id }}</code>
         <button type="button" class="btn btn-sm btn-ghost py-0 px-2" data-role="item-id-copy"
                 onclick="(function(b){var v=document.querySelector('[data-role=item-id]').textContent.trim();var done=function(){b.textContent='복사됨';setTimeout(function(){b.textContent='복사'},1500)};if(navigator.clipboard){navigator.clipboard.writeText(v).then(done,function(){b.textContent='길게 눌러 복사'})}else{b.textContent='길게 눌러 복사'}})(this)">복사</button>
       </p>
+      </details>
       {# Y11-R(오너 2026-10-16): 「검토 상태 보기」 **상시 위치** = 드로어 맨 위(등록 결과 팝업이 아니라). 열 때 마켓별 상태를 한 번 묻는다.
          M8(오너 2026-10-10): 「쿠팡 등록본」 → **「마켓 등록본」** — 등록 기록 전 마켓(네이버 셰고가·고코스모스 포함). 줄을 누르면 상태 팝업.
          U2·U1b: 관리자면 쿠팡 등록본을 **지금 규칙으로 다시 만든 상품명·검색어**와 비교해 고친 칸만 보내는 버튼(쿠팡 기록이 있을 때).
@@ -39,16 +43,18 @@
       {% for r in (market_records or []) %}{% if (r.market or '').startswith('coupang') %}{% set _ = _cp_up.append(r) %}{% endif %}{% endfor %}
       {% if market_records %}
       <div class="kgp-inset mb-3" data-role="cp-live">
-        <div class="small fw-semibold mb-1" data-role="ml-title">마켓 등록본 <span class="text-muted fw-normal">· 줄을 누르면 그 마켓의 검토 상태와 지금 올라간 내용</span></div>
+        <div class="small fw-semibold mb-1" data-role="ml-title">마켓 등록본</div>
         {% set ml_records = market_records %}{% set ml_item = item.id %}{% set ml_auto = true %}
         {% include "_market_listings.html" %}
+        {# Y12-A: 「검토 상태 보기」 버튼 삭제 — 줄(상태 뱃지)이 같은 팝업을 연다. 등록본 점검은 「자세히」 안 #}
+        {% if is_admin and _cp_up %}
+        <details class="mt-2 small" data-role="cp-live-more"><summary>자세히</summary>
         <div class="d-flex flex-wrap gap-2 mt-2">
-          <button type="button" class="btn btn-sm btn-ghost" id="cpReviewBtn" data-role="cp-review-btn"><i class="bi bi-hourglass-split"></i> 검토 상태 보기</button>
-          {% if is_admin and _cp_up %}
           <button type="button" class="btn btn-sm btn-ghost" id="cpLiveCheck" data-role="cp-live-check"><i class="bi bi-search"></i> 등록본 점검</button>
           <button type="button" class="btn btn-sm btn-cta" id="cpLiveSend" data-role="cp-live-send" hidden><i class="bi bi-send"></i> 고친 칸 쿠팡에 보내기</button>
-          {% endif %}
         </div>
+        </details>
+        {% endif %}
         <div id="cpLiveOut" class="small mt-2" aria-live="polite"></div>
       </div>
       {% endif %}
@@ -2658,7 +2664,7 @@ function cpReviewStatus(round) {
       });
       if (out) out.innerHTML = h || _cpEsc((d && (d.message || d.error)) || '쿠팡 등록 기록이 없어요.');
       if (pending && round < 10) setTimeout(() => cpReviewStatus(round + 1), 60000);
-    }).catch(() => { if (out) out.textContent = '검토 상태를 묻지 못했어요 — 잠시 뒤 다시 눌러 주세요.'; });
+    }).catch(() => { if (out) out.textContent = '상태를 묻지 못했어요 — 잠시 뒤 다시 눌러 주세요.'; });
 }
 function cpLiveCheck(send) {
   const out = document.getElementById('cpLiveOut');
@@ -2739,7 +2745,7 @@ function renderUploadResults(data) {
     if (r.success) {
       // U2: 쿠팡 vp/products/{셀러 상품번호}는 승인 전 「상품을 찾을 수 없습니다」 — 쿠팡은 검토 상태를 묻는다.
       const linkPart = String(r.market || '').indexOf('coupang') === 0
-        ? ` · <a href="#" data-role="cp-result-review" data-market-status="${_cpEsc(r.market)}" data-item="${_cpEsc(_ITEM_ID)}">검토 상태 보기</a>`
+        ? ` · <a href="#" data-role="cp-result-review" data-market-status="${_cpEsc(r.market)}" data-item="${_cpEsc(_ITEM_ID)}">마켓 상태</a>`
         : (r.external_url
           ? ` · <a href="${r.external_url}" target="_blank" rel="noopener noreferrer">상품 페이지 열기</a>`
           : '');

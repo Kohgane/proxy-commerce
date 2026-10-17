@@ -3,21 +3,15 @@
 {% block content %}
 <div class="container-fluid py-4 ch-page">
   {# v87-X2: STEP3 에디토리얼 격상 — 오버라인(금 라벨)+세리프 헤더+금 헤어라인(P~T 계보). 기능 불변. #}
+  {# Y12-A(오너 2026-10-17): 머리 = 제목 「상품」 하나. 계정 안내는 「자세히」 안으로. #}
   <header class="ch-head">
-    <div class="console-kpi-label mb-1">한눈에 보기</div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-box-seam"></i> 수집한 상품, 한눈에</h4>
-    <p class="text-muted small mb-2">크롬 확장·북마클릿·수동 입력으로 모은 상품을 한자리에서 확인·편집·업로드해요.</p>
-{# C-F15-A2: 이 화면이 **어느 계정**을 보고 있는지 말한다.
-   실측: PC와 폰이 다른 계정이었고 어느 화면도 그걸 말하지 않아, 목록이 비어 보이는 이유를
-   알 길이 없었다. 계정은 '보이지 않는 필터'라 눈에 보여야 한다. #}
-{% if session_account %}
-<p class="text-muted small mb-2">
-  <i class="bi bi-person-badge"></i> 지금 보고 있는 계정 <strong>{{ session_account }}</strong>
-  — 고가수집기 토큰도 <strong>이 계정</strong>에서 발급한 것이어야 같은 목록을 봅니다.
-  <a href="/seller/me/tokens">토큰 확인</a>
-</p>
-{% endif %}
-    <hr class="pc-hairline mt-0 mb-0">
+    <h4 class="mb-0 fw-bold">상품</h4>
+    {% if session_account %}
+    <details class="ch-more small text-muted" data-role="ch-account"><summary>자세히</summary>
+      <i class="bi bi-person-badge"></i> 지금 보고 있는 계정 <strong>{{ session_account }}</strong>
+      — 고가수집기 토큰도 <strong>이 계정</strong>에서 발급한 것이어야 같은 목록을 봅니다. <a href="/seller/me/tokens">토큰 확인</a>
+    </details>
+    {% endif %}
   </header>
 
   <!-- v72b STEP4: 고가수집기 확장 신선도 배너 — content_script가 각인한 설치 버전(data-kgp-ext)을
@@ -25,22 +19,28 @@
   <div id="extFreshBanner" class="pc-status small mb-3 d-none align-items-center gap-2"
        data-expected="{{ expected_ext_version }}"></div>
 
-  {% if summary.total and summary.total > 0 %}
-  <!-- 초보 흐름: 다음 할 일 한 줄(happy path) -->
-  <div class="op-strip">
-    <i class="bi bi-signpost-2"></i>
-    <span><strong>다음 할 일:</strong> 상품을 눌러 확인·편집한 뒤, 마켓에 업로드하세요.</span>
-    <a href="/seller/markets/connect" class="btn btn-primary btn-sm ms-auto"><i class="bi bi-shop"></i> 마켓 연동하기</a>
-  </div>
-  {% endif %}
+  {# Y12-A: 「다음 할 일」 줄 삭제 #}
 
-  <!-- 01 요약 — 카드 1장 안에 기하 타일 4(조각마다 카드 금지 · 5-f 문법) -->
-  <section class="op-card">
-    <div class="op-card-head">
-      <span class="rp-step-eyebrow"><span class="rp-step-num">01</span>요약 · 필터</span>
+  {# Y12-A: 맨 위 한 줄 = 검색 + 「손댈 것만」 하나. 요약·도메인·경로·상태·정렬·기간·개수·등록 여부는 「필터」 안으로 접음. #}
+  <div class="ch-topbar" data-role="ch-topbar">
+    <form method="get" class="ch-search" role="search">
+      <input type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="상품 검색" aria-label="상품 검색">
+      {% if filters.attn %}<input type="hidden" name="attn" value="1">{% endif %}
+    </form>
+    <a class="mk-attn-toggle{% if filters.attn %} is-on{% endif %}" data-role="attn-filter"
+       href="{{ '/seller/collect/history' if filters.attn else '/seller/collect/history?attn=1' }}"{% if filters.attn %} aria-current="page"{% endif %}>손댈 것만</a>
+  </div>
+  <details class="op-card ch-filter-box" data-role="ch-filter-box"{% if filters.domain or filters.source or filters.status or filters.group or filters.reg or (filters.sort and filters.sort != 'action') %} open{% endif %}>
+    <summary class="op-card-head">
+      <span class="rp-step-eyebrow">필터</span>
       <span class="op-tile-sub ms-auto">최근 {{ filters.days }}일 기준</span>
-    </div>
+    </summary>
     <div class="op-card-body">
+      <nav class="mk-filter mk-filter-row mb-2" data-role="mk-filter" aria-label="등록 여부">
+        {% for k, lab in (('', '전체'), ('none', '미등록만'), ('done', '등록됨만')) %}
+        <a href="{{ (reg_urls or {}).get(k, '?reg=' ~ k) }}" class="{{ 'is-on' if (filters.reg or '') == k }}" data-reg="{{ k or 'all' }}"{% if (filters.reg or '') == k %} aria-current="page"{% endif %}>{{ lab }}</a>
+        {% endfor %}
+      </nav>
       <div class="ch-stats">
         <div class="ch-stat {% if summary.total %}is-on{% endif %}">
           <div class="op-tile-k">총 수집</div>
@@ -113,7 +113,8 @@
         <div class="col-6 col-md-2">
           <label class="form-label small text-muted mb-1">정렬</label>
           <select name="sort" class="form-select form-select-sm">
-            <option value="newest" {% if filters.sort == "newest" %}selected{% endif %}>최신순</option>
+            <option value="action" {% if filters.sort == "action" %}selected{% endif %}>마지막 동작순</option>
+            <option value="newest" {% if filters.sort == "newest" %}selected{% endif %}>수집 최신순</option>
             <option value="oldest" {% if filters.sort == "oldest" %}selected{% endif %}>오래된순</option>
             <option value="price_high" {% if filters.sort == "price_high" %}selected{% endif %}>가격 높은순</option>
             <option value="price_low" {% if filters.sort == "price_low" %}selected{% endif %}>가격 낮은순</option>
@@ -145,7 +146,7 @@
         </div>
       </form>
     </div>
-  </section>
+  </details>
 
   {# v87-W1: 비상품 정리 후보 진입 + 안내. 삭제가 아니라 보관(복원 가능)이 기본. #}
   {% if hygiene_mode %}
@@ -163,43 +164,21 @@
   <!-- 목록 -->
   {% if items %}
   <section class="op-card ch-card-table">
-    <div class="op-card-head">
-      <span class="rp-step-eyebrow"><span class="rp-step-num">02</span>수집 목록</span>
-      <span class="op-tile-sub ms-auto">총 {{ pagination.total }}건</span>
+    <div class="op-card-head ch-list-head">
+      <input type="checkbox" id="chkAll" title="전체 선택" aria-label="전체 선택">
+      <span class="ch-count">상품 {{ pagination.total }}</span>
       {% if not hygiene_mode %}
-      <a href="/seller/collect/history?hygiene=cleanup" class="btn btn-ghost btn-sm"
-         title="상품이 아닌 페이지(메일·챗·검색·문서)를 골라 보관해요 — 삭제 아님">
-        <i class="bi bi-funnel"></i> 정리 후보
-      </a>
-      <a href="/seller/collect/image-audit" class="btn btn-ghost btn-sm" data-role="image-audit-link"
-         title="타오바오·티몰·1688 상품의 이미지가 모자란 이유를 가르고, 상세 보강을 다시 돌려요">
-        <i class="bi bi-images"></i> 이미지 점검
-      </a>
+      <details class="ch-more ms-auto" data-role="ch-more-tools"><summary>더보기</summary>
+        <a href="/seller/collect/history?hygiene=cleanup" class="btn btn-ghost btn-sm"
+           title="상품이 아닌 페이지(메일·챗·검색·문서)를 골라 보관해요 — 삭제 아님"><i class="bi bi-funnel"></i> 정리 후보</a>
+        <a href="/seller/collect/image-audit" class="btn btn-ghost btn-sm" data-role="image-audit-link"
+           title="타오바오·티몰·1688 상품의 이미지가 모자란 이유를 가르고, 상세 보강을 다시 돌려요"><i class="bi bi-images"></i> 이미지 점검</a>
+      </details>
       {% endif %}
     </div>
-    {# M7: 등록 여부 필터 — 등록 기록으로만 가른다(마켓에 묻지 않음). 머리줄 밖 한 줄(390px에서 머리줄을 짓누르지 않게) #}
-    <nav class="mk-filter mk-filter-row" data-role="mk-filter" aria-label="등록 여부">
-      {% for k, lab in (('', '전체'), ('none', '미등록만'), ('done', '등록됨만')) %}
-      <a href="{{ (reg_urls or {}).get(k, '?reg=' ~ k) }}" class="{{ 'is-on' if (filters.reg or '') == k }}" data-reg="{{ k or 'all' }}"{% if (filters.reg or '') == k %} aria-current="page"{% endif %}>{{ lab }}</a>
-      {% endfor %}
-    </nav>
     <div class="op-card-body">
-      <div class="small text-muted px-3 pb-2">오른쪽 <strong>인덱스 레일</strong>(ㄱ~ㅎ·A~Z·#)을 누르거나 긁어 빠르게 이동하세요.{% if not fastscroll %} (다른 정렬 중엔 눌렀을 때 제목순으로 전환됩니다.){% endif %}</div>
-      <div class="table-responsive" data-fs-root>
-        <table class="table table-hover mb-0 table-cards pc-swiss-table">
-          <thead>
-            <tr>
-              <th class="ps-3"><input type="checkbox" id="chkAll" title="전체 선택" aria-label="전체 선택"></th>
-              <th>이미지</th>
-              <th>제목</th>
-              <th class="text-end">가격</th>
-              <th>경로</th>
-              <th>수집 시각</th>
-              <th>ID</th>
-              <th>상태</th>
-              <th>미리보기·등록</th>
-            </tr>
-          </thead>
+      <div class="table-responsive ch-list" data-fs-root>
+        <table class="table table-hover mb-0 ch-table pc-swiss-table">
           {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows). 행은 collect_history_rows.html 단일소스. #}
           {# v57 STEP2: 실시간 증분 커서 — 초기 렌더 시점 최신 collected_at(신규 삽입 기준선). #}
           <tbody data-fs-list id="chRows" data-newest="{{ items[0].collected_at if items else '' }}">
@@ -208,7 +187,7 @@
         </table>
       </div>
       {# 속도: 무한스크롤 — 바닥 근접 시 다음 50건을 이어붙인다(페이지 이동 없음). #}
-      {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page %}
+      {% set _qs = '&q=' ~ filters.q ~ '&domain=' ~ filters.domain ~ '&source=' ~ filters.source ~ '&status=' ~ filters.status ~ '&group=' ~ filters.group ~ '&sort=' ~ filters.sort ~ '&days=' ~ filters.days ~ '&per_page=' ~ filters.per_page ~ ('&attn=1' if filters.attn else '') %}
       <div id="fsInfiniteScroll"
            data-loaded="{{ items|length }}"
            data-total="{{ pagination.total }}"
@@ -218,7 +197,8 @@
         <span id="fsAllLoaded" class="d-none">전체 {{ pagination.total }}건 모두 표시했어요</span>
       </div>
       </div>
-      <div class="op-card-foot pc-bulk-toolbar ch-toolbar">
+      {# Y12-A: 일괄 버튼은 **골랐을 때만** 뜬다(0개면 숨김 — 모바일에서 버튼 14개가 목록 아래를 채웠다) #}
+      <div class="op-card-foot pc-bulk-toolbar ch-toolbar" id="chToolbar" data-role="ch-toolbar" hidden>
         <span class="small text-muted">선택 <strong id="selCount">0</strong>개</span>
         <button type="button" class="btn btn-success btn-sm" id="bulkUploadBtn" onclick="openBulkUploadModal()" disabled>
           <i class="bi bi-box-arrow-up-right"></i> 선택 상품 일괄 마켓 등록
@@ -229,7 +209,8 @@
         <button type="button" class="btn btn-ghost btn-sm" id="bulkGroupBtn" onclick="openBulkGroupModal()" disabled>
           <i class="bi bi-folder"></i> 그룹 지정
         </button>
-        <button type="button" class="btn btn-ghost btn-sm" id="bulkTranslateBtn" onclick="runBulkTranslate()" disabled>
+        <button type="button" class="btn btn-ghost btn-sm" id="bulkTranslateBtn" onclick="runBulkTranslate()" disabled
+                {% if translation_free %}title="무료 번역 {{ translation_free.remaining }}/{{ translation_free.limit }}회 남음"{% endif %}>
           <i class="bi bi-translate"></i> 한국어 번역
         </button>
         <button type="button" class="btn btn-ghost btn-sm" id="bulkCleanBtn" onclick="runBulkClean()" disabled
@@ -237,7 +218,7 @@
           <i class="bi bi-stars"></i> 상품명 정제
         </button>
         {% if translation_free %}
-        <span class="small {{ 'text-muted' if translation_free.remaining > 0 else 'text-danger' }}" id="translFree"
+        <span class="small {{ 'text-muted' if translation_free.remaining > 0 else 'text-danger' }}" id="translFree" hidden
               title="무료 번역은 실제 번역된 건수만 차감됩니다(번역기 미설정 시 차감 없음).">
           무료 번역 <strong id="translRemain">{{ translation_free.remaining }}</strong>/{{ translation_free.limit }}회 남음
         </span>
@@ -279,8 +260,7 @@
   {% else %}
   <section class="op-card">
     <div class="op-card-head">
-      <span class="rp-step-eyebrow"><span class="rp-step-num">02</span>수집 목록</span>
-      <span class="op-tile-sub ms-auto">0건</span>
+      <span class="ch-count">상품 0</span>
     </div>
     {% if filters.reg %}
     <nav class="mk-filter mk-filter-row" data-role="mk-filter" aria-label="등록 여부">
@@ -861,6 +841,8 @@ function refreshSelCount() {
   const n = selectedItemIds().length;
   const el = document.getElementById('selCount');
   if (el) el.textContent = n;
+  const tb = document.getElementById('chToolbar');           // Y12-A: 골랐을 때만 일괄 버튼
+  if (tb) tb.hidden = n === 0;
   const btn = document.getElementById('bulkUploadBtn');
   if (btn) btn.disabled = n === 0;
   const del = document.getElementById('bulkDeleteBtn');
@@ -1414,8 +1396,8 @@ async function runBulkUpload() {
       el.classList.remove('d-none', 'pc-status-success', 'pc-status-info', 'pc-status-warning');
       if (!installed) {
         el.classList.add('pc-status-info');
-        el.innerHTML = '<i class="bi bi-info-circle"></i><span>고가수집기 확장이 감지되지 않았어요 ' +
-          '(최신 v' + expected + '). <a href="/seller/extension">설치·재로딩 방법</a></span>';
+        el.title = '최신 v' + expected;                       // Y12-A: 버전은 접음(마우스 올림)
+        el.innerHTML = '<i class="bi bi-info-circle"></i><span>고가수집기 확장이 없어요 · <a href="/seller/extension">설치</a></span>';
         return;
       }
       var c = cmp(installed, expected);

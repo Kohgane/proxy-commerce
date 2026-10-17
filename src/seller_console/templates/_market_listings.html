@@ -9,7 +9,7 @@
   <button type="button" class="ml-row" data-role="ml-row" data-market="{{ r.market }}" data-market-status="{{ r.market }}" data-item="{{ ml_item }}">
     <span class="ml-name">{{ r.label }}</span>
     <code class="ml-no" data-role="ml-no">{{ r.shown_no or '번호 없음' }}</code>
-    <span class="ml-state ml-tone-{{ r.tone }}" data-role="ml-state">{{ rv.label or '상태 보기' }}</span>
+    <span class="ml-state ml-tone-{{ r.tone }}" data-role="ml-state">{{ r.state_label or '상태 보기' }}</span>
     <span class="ml-sub" data-role="ml-sub" hidden></span>
   </button>
   {% if rv.comment %}<div class="ml-reason">반려 사유: {{ rv.comment }}</div>{% endif %}
@@ -41,7 +41,10 @@
         TONES.forEach(function (t) { st.classList.remove('ml-tone-' + t); });
         st.classList.add('ml-tone-' + (TONES.indexOf(r.tone) >= 0 ? r.tone : 'fail'));
         var sub = btn.querySelector('[data-role=ml-sub]');
-        var line = r.error ? ('상태 확인 실패 — ' + r.error) : (r.detail_sync_line || r.live_line || '');
+        // Y12-A: 한 줄은 짧게(「쿠팡 상세 보내는 중」·「10-17 14:10 쿠팡 상세 보냄」) — 이유·조회 막힘·지금 올라간 내용은 마우스 올림(접음)
+        var line = r.error ? '상태 확인 실패' : (r.detail_sync_line || '');
+        var why = [r.error || '', r.detail_sync_why || '', r.stale_note || '', r.live_line || ''].filter(Boolean).join(' · ');
+        if (why) btn.title = why;
         if (sub && line) { sub.textContent = line; sub.hidden = false; }
       });
     })
