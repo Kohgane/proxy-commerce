@@ -1,0 +1,9 @@
+detail_images_ko[21] url 그대로=True · 넘김 글자 2
+detail_images_ko[24] url 그대로=True · 넘김 글자 4
+detail_images_ko[26] url 그대로=True · 넘김 글자 4
+sku_images_ko[5] url 그대로=True · 넘김 글자 4
+sku_images_ko[6] url 그대로=True · 넘김 글자 5
+sku_images_ko[7] url 그대로=True · 넘김 글자 5
+sku_images_ko[8] url 그대로=True · 넘김 글자 5
+sku_images_ko[9] url 그대로=True · 넘김 글자 4
+detail_images 원본 그대로=True

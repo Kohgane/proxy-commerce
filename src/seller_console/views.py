@@ -3452,9 +3452,8 @@ def collect_market_status(item_id):
         logger.warning("[네이버 상품명] 자동 고침 시작 실패: %s", exc)
     logger.info("[마켓 상태] item=%s 마켓 %d곳 병렬 %dms 캐시 %d 실패 %d", str(item_id)[:8], len(rows), ms,
                 sum(1 for r in rows if r.get("cached")), sum(1 for r in rows if r.get("error")))
-    if any(not r.get("cached") and not r.get("stale") and not r.get("error") for r in rows):
-        from .home_bundles import mark_status_checked as _mark   # Y12-A: 대시보드 「마켓 상태 마지막 조회 HH:MM」
-        _mark()
+    # Y12-C: 대시보드 「마지막 조회」는 따로 적지 않는다 — 등록 기록 `review.checked_at`(아래 remember)을 그대로 읽는다.
+    #   (옛 `market_status:last_check` 칸은 이 팝업만 적어 일회성 조회·감시 조회가 빠졌다 → 「기록 없음」 거짓)
     if any(MS.remember(extra, r) for r in rows if not r.get("cached")):
         from .collect_history_store import update as _update
         _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
@@ -5784,6 +5783,39 @@ def collect_image_edit_select(item_id: str, kind: str, idx: int):
     if not _image_edit_save(item_id, ex):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
     return jsonify(dict(r, ok=True))
+
+
+@bp.post("/collect/<item_id>/erase-suggest/skip")
+def collect_erase_suggest_skip(item_id: str):
+    """Y12-B(오너 2026-10-17) 지우기 제안 「넘김」 — `{kind, idx}` = 그 사진 하나 · `{all: true}` = 「전부 넘김」(남은 사진 전부).
+
+    넘김은 **기록만** 남긴다(`erase_skip`) — 원본·번역본·편집본 픽셀도, 나가는 사진도 그대로다(그래서 마켓 갱신 줄도 안 건다).
+    처리되면(지움이든 넘김이든) 「손댈 것」에서 빠지고, 드로어엔 「넘긴 제안 n」으로 접혀 남는다."""
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from .attention import erase_photos, skip_erase
+    body = request.get_json(force=True, silent=True) or {}
+    if body.get("all"):
+        todo = [(p["kind"], p["idx"]) for p in erase_photos(ex) if p["state"] == "pending"]
+    else:
+        kind = str(body.get("kind") or "")
+        if kind not in ("gallery", "detail", "sku"):
+            return jsonify({"ok": False, "error": "알 수 없는 사진 종류예요."}), 400
+        try:
+            todo = [(kind, int(body.get("idx")))]
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "사진 번호가 없어요."}), 400
+    done = [t for t in todo if skip_erase(ex, t[0], t[1])]
+    if not done:
+        return jsonify({"ok": False, "error": "넘길 지우기 제안이 없어요."}), 409
+    from . import collect_history_store
+    if not collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    left = sum(1 for p in erase_photos(ex) if p["state"] == "pending")
+    logger.info("[지우기 제안] 넘김 item=%s %s장 · 남은 제안 %s장", item_id, len(done), left)
+    return jsonify({"ok": True, "skipped": len(done), "left": left,
+                    "message": f"{len(done)}장 넘겼어요" + (f" — 남은 제안 {left}장" if left else " — 남은 제안 없음")})
 
 
 @bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/translate")
@@ -10585,6 +10617,24 @@ def discovery_keywords_remove():
 # Phase 135.2: /seller/collect/history + /seller/collect/preview/<id>
 # ---------------------------------------------------------------------------
 
+def _erase_photos_view(extra) -> list:
+    """Y12-B — 드로어 「지우기 제안」 줄: 남은 제안(사진별 「사진 편집」·「넘김」) + 넘긴 제안(접힘). 썸네일 = 나가는 사진(없으면 수집 원본)."""
+    try:
+        from .attention import erase_photos
+        from src.services.image_translate_store import originals_of
+        out = []
+        for p in erase_photos(extra if isinstance(extra, dict) else {}):
+            if p["state"] == "erased":
+                continue
+            src = originals_of(extra, p["kind"])
+            p["thumb"] = p["url"] or (src[p["idx"]] if 0 <= p["idx"] < len(src) else "")
+            out.append(p)
+        return out
+    except Exception as exc:                                     # noqa: BLE001 — 제안 줄 실패가 드로어를 막지 않는다
+        logger.warning("[드로어] 지우기 제안 줄 실패: %s", exc)
+        return []
+
+
 def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
     """Y12-A — 목록 줄에서 뺀 표시(수집 상태·번역·간이·식별자·비상품·이미지 부족·보강·등록 보류)를 드로어 맨 위 한 줄로.
     드로어는 `item`에서 extra_json을 떼어 넘기므로 파싱해 둔 `extra`를 따로 받는다(없으면 빈 extra로 「수집 실패」가 된다)."""
@@ -10630,6 +10680,13 @@ def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
         out.append("소싱 판정 · " + str(sb["label"]))
     if it.get("risk_skip"):
         out.append("등록 보류 · " + str(it["risk_skip"]))
+    try:                                                         # Y12-B: 자동 재수집 예정이면 그 사실도(오너가 누를 일 없음)
+        from .attention import collect_fail
+        cf = collect_fail(extra if isinstance(extra, dict) else {}, str(item.get("title") or ""))
+        if cf and cf["phase"] == "waiting":
+            out.append(cf["text"] + " · " + cf["why"])
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[드로어] 재수집 대기 판정 실패: %s", exc)
     return out
 
 
@@ -10660,6 +10717,9 @@ def _shape_collect_items(items, current_lang):
         else:  # ko
             it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
             it["title_is_original"] = not _translated
+        # Y12-C(오너 2026-10-18): 목록 제목도 중괄호 규칙(`unbrace_title` — 마켓 상품명과 같은 판단) — 「VRSUK{비즈니스…}」 금지
+        from src.collectors.ko_polish import unbrace_title as _ub_title
+        it["title_display"] = _ub_title(it["title_display"]).strip() or it["title_display"]
         # v87-W6: 번역 상태(레코드 단위) — 번역함/원문(안 함)/실패 3분. 실패는 사유 + 재시도 유도.
         from src.seller_console.ai.translator import translated_flag as _tflag
         it["translated"] = _tflag(ex)          # R0: papago·azure 번역이 「안 됨」으로 저장된 옛 행도 바르게
@@ -10670,8 +10730,9 @@ def _shape_collect_items(items, current_lang):
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
         # M7: 마켓별 소형 칩(등록된 마켓만) — 색은 마지막으로 알려진 상태(uploaded[].review). 목록은 마켓에 묻지 않는다.
-        from .listing_status import chips as _mk_chips
+        from .listing_status import chips as _mk_chips, badge_slots as _mk_slots
         it["market_chips"] = _mk_chips(ex)              # Y7-K: 마켓당 칩 하나 + 중복 배지
+        it["market_slots"] = _mk_slots(ex)              # Y12-C: 고·우·셰·코 고정 자리(빈 자리 = 빈 테두리)
         # Y12-A: 한 줄 = 썸네일 · 상품명 · 뱃지 4 · 마지막 동작(「10-17 14:10 쿠팡 상세 보냄」 KST)
         from .attention import last_action as _last_action, items as _attn_items
         it["last_action"] = _last_action(ex, it.get("collected_at") or "")
@@ -11309,7 +11370,7 @@ def collect_preview_by_id(item_id: str):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
-        market_records=_market_records(extra), item_flags=_row_flags(item, extra),
+        market_records=_market_records(extra), item_flags=_row_flags(item, extra), erase_photos=_erase_photos_view(extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
         field_src=field_src,

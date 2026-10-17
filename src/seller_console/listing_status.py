@@ -69,6 +69,41 @@ BADGE_SHORT = {"coupang:gogane": "고", "coupang:woojoo": "우", "coupang": "쿠
                "smartstore:gocosmos": "코", "smartstore": "스", "elevenst": "11", "woocommerce": "멀", "shopify": "S"}
 
 
+#: Y12-C(오너 2026-10-18): 목록 뱃지 = **계정별 고정 자리** 고·우·셰·코(항상 이 순서) — 미등록 계정은 빈 테두리로 자리만.
+#:   계정이 안 적힌 옛 쿠팡 기록(`coupang`, U0 2계정 전 10-02 등록)은 고가네 자리다 — W0(오너 10-03): 무접두 쿠팡 키 = 고가네
+#:   (실측: 플리츠 「쿠」 = 쿠팡 고가네 16401838524). 계정 모르는 옛 스마트스토어(`smartstore`)는 자리를 짐작하지 않고 뒤에 붙인다.
+BADGE_SLOTS = (("coupang:gogane", ("coupang:gogane", "coupang")), ("coupang:woojoo", ("coupang:woojoo",)),
+               ("smartstore:chezgoga", ("smartstore:chezgoga",)), ("smartstore:gocosmos", ("smartstore:gocosmos",)))
+_SLOT_OF = {m: slot for slot, ms in BADGE_SLOTS for m in ms}
+
+
+def slot_of(market: str) -> str:
+    """등록 기록의 마켓 코드 → 고정 자리(고가네·우주대행·셰고가·고코스모스). 자리 밖이면 ""."""
+    return _SLOT_OF.get(str(market or ""), "")
+
+
+def badge_slots(extra: dict) -> List[Dict]:
+    """Y12-C — 목록 한 줄 뱃지: 고·우·셰·코 네 자리(빈 자리는 `empty`) + 자리 밖 마켓(11번가·멀티샵 등)은 뒤에.
+    자리마다 가장 최근 등록 하나 · 같은 자리에 2건 이상이면 `dup_count`(옛 `coupang`과 `coupang:gogane`도 같은 자리)."""
+    by: Dict[str, List[Dict]] = {}
+    extra_chips: List[Dict] = []
+    for r in chips(extra):
+        s = slot_of(r["market"])
+        (by.setdefault(s, []) if s else extra_chips).append(r)
+    allrec = records(extra)
+    out: List[Dict] = []
+    for slot, _ms in BADGE_SLOTS:
+        hit = sorted(by.get(slot) or [], key=lambda r: r["at"])
+        if not hit:
+            out.append({"empty": True, "market": slot, "name": BADGE_NAMES[slot], "short": BADGE_SHORT[slot], "kind": "none"})
+            continue
+        r = dict(hit[-1], name=BADGE_NAMES[slot], short=BADGE_SHORT[slot])
+        n = sum(1 for x in allrec if slot_of(x["market"]) == slot)
+        r["dup_count"] = n if n > 1 else 0
+        out.append(r)
+    return out + extra_chips
+
+
 def state_word(market: str, state: str, status_raw: str = "") -> str:
     """화면에 쓰는 상태 낱말 하나 — 쿠팡 = Wing 표기 · 네이버 = 판매자센터 표기(statusType) · 그 밖 = 「등록됨」. 모르면 ""."""
     m, st, raw = str(market or ""), str(state or ""), str(status_raw or "").strip()

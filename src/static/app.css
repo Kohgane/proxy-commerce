@@ -2503,3 +2503,81 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .mk-badges { gap: 3px; }
   .hb-meta { margin-left: 0; width: 100%; }
 }
+
+/* ── Y12-B(오너 2026-10-17): 드로어 「지우기 제안」 — 사진별 「사진 편집」·「넘김」 · 상품별 「전부 넘김」 · 「넘긴 제안 n」 접힘 ── */
+.ers-head { display: flex; align-items: center; gap: var(--space-2, 12px); flex-wrap: wrap; }
+.ers-n { color: var(--text-muted); font-size: .85rem; }
+.ers-all { margin-left: auto; }
+.ers-note { font-size: .8rem; color: var(--text-muted); margin: 6px 0 8px; }
+.ers-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ers-row { display: flex; align-items: center; gap: var(--space-2, 12px); padding: 6px 0; border-top: 1px solid var(--border); }
+.ers-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: var(--radius-sm, 6px); flex: none; background: var(--bg); }
+.ers-what { flex: 1 1 0; min-width: 0; font-size: .85rem; overflow-wrap: anywhere; }   /* 썸네일 옆에 붙는다(줄바꿈 때 썸네일만 홀로 남지 않게) */
+.ers-acts { display: flex; gap: 4px; flex: none; }
+.ers-acts .btn { min-height: 36px; }
+.ers-skipped { margin-top: 8px; font-size: .85rem; }
+.ers-skipped > summary { cursor: pointer; color: var(--text-muted); }
+@media (max-width: 575.98px) {
+  .ers-row { flex-wrap: wrap; }
+  .ers-acts { width: 100%; justify-content: flex-end; }
+  .ers-acts .btn { min-height: 44px; }
+}
+
+/* ── Y12-C(오너 2026-10-18): 대시보드 채우기 — Wing·퍼센티 식 밀도 · 390px 기준 2열 타일 ──
+   데스크톱: 왼쪽 A 오늘 할 일·D 최근 동작 / 오른쪽 C 상품 현황·B 마켓별 현황·E 오늘 쓴 것. 모바일: 한 줄로 A→C→B→돌아가는 것→D→E. */
+.hb-grid { max-width: 1180px; display: flex; flex-direction: column; }
+.hb-col { display: contents; }                                  /* 모바일: 두 기둥을 풀어 한 줄로 A→C→B→돌아가는 것→D→E */
+.hb-a { order: 1; } .hb-c { order: 2; } .hb-b { order: 3; } .hb-r { order: 4; } .hb-d { order: 5; } .hb-e { order: 6; }
+@media (min-width: 992px) {                                      /* 데스크톱: 두 기둥이 따로 쌓인다(행 높이를 맞추느라 빈칸 안 생김) */
+  .hb-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+  .hb-col { display: flex; flex-direction: column; gap: var(--space-2, 12px); min-width: 0; }
+}
+.hb-grid .hb-card { min-width: 0; }
+.hb-grid .hb-sum { margin-bottom: 8px; }
+/* A 오늘 할 일 — 줄: 상품 · 무엇 · [보기] */
+.hb-todo { list-style: none; margin: 0; padding: 0; }
+.hb-todo-row { display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 6px 0; border-top: 1px solid var(--border); font-size: .88rem; }
+.hb-todo-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-todo-x { color: var(--text-muted); overflow-wrap: anywhere; }
+.hb-todo-go { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-pill); color: var(--teal); text-decoration: none; font-weight: 600; font-size: .82rem; }
+.hb-todo-go:focus-visible, .hb-tile:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.hb-more { display: block; }
+/* C·E 타일 — 2열(390) · 4열(데스크톱 C) */
+.hb-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 992px) { .hb-c .hb-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.hb-tile { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; min-height: 64px; border: 1px solid var(--border);
+  border-radius: var(--radius, 12px); background: var(--bg); color: var(--text); text-decoration: none; }
+a.hb-tile:hover { border-color: var(--teal); }
+.hb-tile.is-alert { border-left: 3px solid var(--orange); }
+.hb-tile-k { font-size: .78rem; color: var(--text-muted); }
+.hb-tile-v { font-size: 1.35rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hb-tile-v small { font-size: .8rem; font-weight: 600; color: var(--text-muted); }
+/* B 마켓별 현황 표 */
+.hb-mtable { width: 100%; border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums; table-layout: fixed; }
+.hb-mtable th, .hb-mtable td { padding: 6px 4px; border-top: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.hb-mtable thead th { border-top: 0; font-size: .72rem; font-weight: 600; color: var(--text-muted); }
+.hb-mtable th:first-child, .hb-mtable td:first-child { text-align: left; }
+.hb-mtable col.c-name { width: 27%; } .hb-mtable col.c-n { width: 12%; } .hb-mtable col.c-on { width: 14%; } .hb-mtable col.c-t { width: 23%; }
+.hb-mtable tbody th { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.hb-mname { display: block; }
+.hb-mkt { display: block; font-size: .7rem; font-weight: 400; color: var(--text-muted); }
+.hb-mtable .is-bad { color: var(--danger); font-weight: 700; }
+.hb-mtable .is-off { color: var(--text-muted); }
+.hb-mtime { font-size: .78rem; color: var(--text-muted); }
+@media (max-width: 575.98px) {
+  .hb-mtable { font-size: .78rem; }
+  .hb-mtable col.c-name { width: 24%; } .hb-mtable col.c-n { width: 12%; } .hb-mtable col.c-on { width: 15%; } .hb-mtable col.c-t { width: 25%; }
+  .hb-todo-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .hb-todo-t { grid-column: 1 / -1; }
+  .hb-todo-go { min-height: 44px; }
+}
+/* D 최근 동작 */
+.hb-recent { list-style: none; margin: 0; padding: 0; font-size: .85rem; }
+.hb-recent li { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 5px 0; border-top: 1px solid var(--border); }
+.hb-recent time { color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; }
+.hb-rtext { flex: 1 1 auto; }
+.hb-rtitle { flex: 1 1 100%; font-size: .76rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 목록 뱃지 빈 자리(Y12-C) — 미등록 계정 = 빈 점선 테두리로 자리만(고·우·셰·코 순서 고정) */
+.mk-badge.kind-none { background: transparent; border: 1px dashed var(--border); color: var(--text-muted); cursor: default; }

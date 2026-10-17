@@ -223,6 +223,26 @@ def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: i
              "reject_kind": r[4] or "", "reject_comment": r[5] or ""} for r in rows]
 
 
+def account_counts(*, marketplace: str = "coupang") -> list:
+    """Y12-C 대시보드 마켓별 현황 — `[{account, status, held, n, checked_at}]`. `held` = 사유가 임시저장인 반려 줄
+    (09-05 수리 전 판정 — 반려로 세지 않는다, 진단 「임시저장 · 낡은 기록」 그대로)."""
+    if not enabled():
+        agg: dict = {}
+        for r in _MEM.values():
+            if r["marketplace"] != marketplace:
+                continue
+            k = (r["account"], r["status"], _held(r))
+            a = agg.setdefault(k, {"account": k[0], "status": k[1], "held": k[2], "n": 0, "checked_at": None})
+            a["n"] += 1
+        return list(agg.values())
+    with pg.query() as cur:
+        cur.execute(f"""SELECT account, status, NOT ({_HELD_SQL}), count(*), max(checked_at) FROM market_registrations
+                        WHERE deleted_at IS NULL AND marketplace=%s GROUP BY 1, 2, 3""", (marketplace,))
+        rows = cur.fetchall()
+    return [{"account": r[0] or "", "status": r[1] or "", "held": bool(r[2]), "n": int(r[3] or 0),
+             "checked_at": r[4].isoformat() if hasattr(r[4], "isoformat") else (r[4] or None)} for r in rows]
+
+
 def counts(*, marketplace: str = "coupang") -> dict:
     """상태별 건수(대시보드·정직 표기용). 조회 실패는 예외로 올린다(가짜 0 금지)."""
     if not enabled():

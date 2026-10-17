@@ -35,6 +35,78 @@
                 onclick="(function(b){var v=document.querySelector('[data-role=item-id]').textContent.trim();var done=function(){b.textContent='복사됨';setTimeout(function(){b.textContent='복사'},1500)};if(navigator.clipboard){navigator.clipboard.writeText(v).then(done,function(){b.textContent='길게 눌러 복사'})}else{b.textContent='길게 눌러 복사'}})(this)">복사</button>
       </p>
       </details>
+      {# Y12-B(오너 2026-10-17): 지우기 제안 — 사진별 「넘김」 + 상품별 「전부 넘김」. 지움(사진 편집)이든 넘김이든 처리되면 손댈 것에서 빠진다.
+         넘김은 기록만(사진·원본 픽셀 그대로). 넘긴 제안은 「넘긴 제안 n」으로 접어 다시 볼 수 있다. #}
+      {% set _ep_left = (erase_photos or [])|selectattr('state', 'equalto', 'pending')|list %}
+      {% set _ep_skip = (erase_photos or [])|selectattr('state', 'equalto', 'skipped')|list %}
+      {% if _ep_left or _ep_skip %}
+      <div class="kgp-inset mb-3 ers" data-role="erase-suggest" data-item="{{ item.id }}">
+        <div class="ers-head">
+          <strong>지우기 제안</strong>
+          {% if _ep_left %}<span class="ers-n" data-role="erase-left-n">{{ _ep_left|length }}장</span>
+          <button type="button" class="btn btn-sm btn-ghost ers-all" data-role="erase-skip-all">전부 넘김</button>
+          {% else %}<span class="ers-n" data-role="erase-left-none">남은 제안 없음</span>{% endif %}
+        </div>
+        {% if _ep_left %}
+        <p class="ers-note">AI가 지우자고 한 글자예요. 지우려면 「사진 편집」, 그대로 두려면 「넘김」 — 넘겨도 사진은 그대로예요.</p>
+        <ul class="ers-list">
+          {% for p in _ep_left %}
+          <li class="ers-row" data-role="erase-row" data-kind="{{ p.kind }}" data-idx="{{ p.idx }}">
+            {% if p.thumb %}<img class="ers-thumb" src="{{ p.thumb }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">{% endif %}
+            <span class="ers-what"><b>{{ p.word }}</b> {{ p.texts[:3]|join(' · ') }}{% if p.texts|length > 3 %} 외 {{ p.texts|length - 3 }}{% endif %}</span>
+            <span class="ers-acts">
+              <button type="button" class="btn btn-sm btn-ghost" data-role="erase-edit">사진 편집</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-role="erase-skip">넘김</button>
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if _ep_skip %}
+        <details class="ers-skipped" data-role="erase-skipped"><summary>넘긴 제안 {{ _ep_skip|length }}</summary>
+          <ul class="ers-list">
+            {% for p in _ep_skip %}
+            <li class="ers-row" data-role="erase-skipped-row" data-kind="{{ p.kind }}" data-idx="{{ p.idx }}">
+              {% if p.thumb %}<img class="ers-thumb" src="{{ p.thumb }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">{% endif %}
+              <span class="ers-what"><b>{{ p.word }}</b> {{ p.texts[:3]|join(' · ') }}{% if p.skipped_at %} · 넘김 {{ p.skipped_at }}{% endif %}</span>
+              <span class="ers-acts"><button type="button" class="btn btn-sm btn-ghost" data-role="erase-edit">사진 편집</button></span>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
+      </div>
+      <script>
+      (function () {
+        var box = document.querySelector('[data-role=erase-suggest]');
+        if (!box) return;
+        var item = box.getAttribute('data-item');
+        function toast(m, t) { if (window.pcToast) window.pcToast(m, t || 'info'); }
+        function skip(payload, btn) {
+          if (btn) { btn.disabled = true; btn.textContent = '넘기는 중…'; }
+          fetch('/seller/collect/' + encodeURIComponent(item) + '/erase-suggest/skip',
+                {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
+            .then(function (r) { return r.json().catch(function () { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }); })
+            .then(function (d) {
+              if (d.ok) { toast(d.message, 'success'); location.reload(); return; }
+              toast(d.error || '넘기지 못했어요', 'danger');
+              if (btn) { btn.disabled = false; btn.textContent = payload.all ? '전부 넘김' : '넘김'; }
+            })
+            .catch(function () { toast('넘기지 못했어요 — 잠시 뒤 다시 눌러 주세요', 'danger'); if (btn) { btn.disabled = false; btn.textContent = payload.all ? '전부 넘김' : '넘김'; } });
+        }
+        box.addEventListener('click', function (ev) {
+          var b = ev.target.closest('button[data-role]');
+          if (!b) return;
+          var row = b.closest('.ers-row');
+          var role = b.getAttribute('data-role');
+          if (role === 'erase-skip-all') skip({all: true}, b);
+          else if (role === 'erase-skip' && row) skip({kind: row.getAttribute('data-kind'), idx: +row.getAttribute('data-idx')}, b);
+          else if (role === 'erase-edit' && row && window.kgpImageEdit)
+            window.kgpImageEdit.open(item, row.getAttribute('data-kind'), +row.getAttribute('data-idx'), function () { location.reload(); });
+        });
+      })();
+      </script>
+      {% endif %}
       {# Y11-R(오너 2026-10-16): 「검토 상태 보기」 **상시 위치** = 드로어 맨 위(등록 결과 팝업이 아니라). 열 때 마켓별 상태를 한 번 묻는다.
          M8(오너 2026-10-10): 「쿠팡 등록본」 → **「마켓 등록본」** — 등록 기록 전 마켓(네이버 셰고가·고코스모스 포함). 줄을 누르면 상태 팝업.
          U2·U1b: 관리자면 쿠팡 등록본을 **지금 규칙으로 다시 만든 상품명·검색어**와 비교해 고친 칸만 보내는 버튼(쿠팡 기록이 있을 때).

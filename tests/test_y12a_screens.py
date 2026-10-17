@@ -130,10 +130,11 @@ def test_update_stamps_columns_and_list_sorts_by_action(monkeypatch):
     from src.seller_console import collect_history_store as S
     monkeypatch.setattr(S, "_pg_backend", lambda: None)
     S._in_memory.clear()
+    # Y12-B: 가격·사진을 실제로 담은 수집(둘 다 비면 「수집 실패」로 손댈 것이 된다)
     old = S.append(source="share", url="https://item.taobao.com/item.htm?id=1", seller_id="u-y12", title="먼저 수집",
-                   price="1", currency="CNY", extra={"title_ko": "먼저 수집"})
+                   price="1", currency="CNY", extra={"title_ko": "먼저 수집", "price": "1", "images": ["https://img.alicdn.com/1.jpg"]})
     new = S.append(source="share", url="https://item.taobao.com/item.htm?id=2", seller_id="u-y12", title="나중 수집",
-                   price="1", currency="CNY", extra={"title_ko": "나중 수집"})
+                   price="1", currency="CNY", extra={"title_ko": "나중 수집", "price": "1", "images": ["https://img.alicdn.com/2.jpg"]})
     # 먼저 수집한 상품에 오늘 쿠팡 반려 — 마지막 동작이 가장 최근 + 손댈 것 1
     ex = {"title_ko": "먼저 수집", "uploaded": [{"market": "coupang:gogane", "market_label": "쿠팡 — 고가네", "product_id": "9",
                                                   "at": "2099-01-01T00:00:00+00:00", "review": {"state": "rejected"}}]}

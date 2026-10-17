@@ -57,8 +57,9 @@ def test_upload_modal_uses_tokens():
 # ── 화면 3: 한눈에 보기(수집 이력, collect_history) ──────────────────
 def test_killist_has_editorial_header():
     t = (TPL / "collect_history.html").read_text(encoding="utf-8")
-    # Y12-A(오너 승인): 머리 = 제목 「상품」 하나 · 계정 안내는 「자세히」 접힘(오버라인·긴 세리프 헤더 제거)
-    assert '<h4 class="mb-0 fw-bold">상품</h4>' in t and 'data-role="ch-account"' in t
+    # Y12-A(오너 승인): 머리 = 제목 「상품」 하나(오버라인·긴 세리프 헤더 제거).
+    # Y12-C(오너 2026-10-18): 그 밑 「자세히」(계정 안내) 삭제 — 계정은 사이드바에 보인다.
+    assert '<h4 class="mb-0 fw-bold">상품</h4>' in t and 'data-role="ch-account"' not in t
     assert "수집한 상품, 한눈에" not in t
 
 

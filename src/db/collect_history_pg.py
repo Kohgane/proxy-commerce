@@ -162,7 +162,8 @@ _ACTION_AT = "COALESCE(last_action_at, created_at)"
 
 
 def list_items(*, domain: str = "", source: str = "", days: int = 30,
-               seller_id=None, seller_ids=None, limit=None, offset=0, lean=False, order="created", attn_only=False) -> list:
+               seller_id=None, seller_ids=None, limit=None, offset=0, lean=False, order="created", attn_only=False,
+               refetch_only=False) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)
     _cols = _SELECT_LEAN if lean else _SELECT      # 속도: 목록은 대형 컬럼 제외한 축약 projection
@@ -174,6 +175,8 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
     args = [cutoff] + params
     if attn_only:
         sql += " AND attn_n > 0"
+    if refetch_only:                                      # Y12-B: 「재수집 대기」(자동 재수집 예정 수집 실패)
+        sql += " AND extra_json->'attn' ? 'refetch'"
     if domain:
         sql += " AND domain = %s"; args.append(domain)
     if source:
@@ -195,23 +198,62 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
     return out
 
 
-def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=False) -> int:
+def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=False, refetch_only=False) -> int:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(None, seller_ids)
     _at = _ACTION_AT if order == "action" else "created_at"
     sql = f"SELECT count(*) FROM collect_history WHERE deleted_at IS NULL AND {_at} >= %s AND {sc}"
     if attn_only:
         sql += " AND attn_n > 0"
+    if refetch_only:
+        sql += " AND extra_json->'attn' ? 'refetch'"
     with pg.query() as cur:
         cur.execute(sql, [cutoff] + params)
         return int((cur.fetchone() or (0,))[0] or 0)
 
 
-def ids_for_attention_backfill(limit: int = 500) -> list:
-    """Y12-A 일회성 — 목록 정렬·「손댈 것」 열이 아직 비었고 등록 기록·등록 보류가 있는 상품 id(전 셀러)."""
+#: Y12-C — 사진 번역 기록 세 칸(다듬기 시각만 뽑는다 · 사진 기록 통째는 VRSUK 한 건이 500KB라 안 끈다)
+_KO_ARR = " || ".join(f"(CASE WHEN jsonb_typeof(extra_json->'{k}')='array' THEN extra_json->'{k}' ELSE '[]'::jsonb END)"
+                      for k in ("images_ko", "detail_images_ko", "sku_images_ko"))
+
+
+def dashboard_rows(*, seller_ids=None) -> list:
+    """Y12-C 대시보드 한 쿼리 — 상품마다 **작은 칸만**: 제목 · 수집 시각 · 마지막 동작 · 손댈 것 수 · 등록 기록 ·
+    쿠팡 상세 보냄 기록 · 손댈 것 요약 · 등록 보류 · 다듬기 시각 목록(`_polish_ats`). 대시보드 묶음 전부가 이것 하나를 읽는다."""
+    sc, params = _scope(None, seller_ids)
+    sql = (f"SELECT id::text, title, created_at, last_action_at, attn_n, jsonb_build_object("
+           "'title_ko', extra_json->'title_ko', "
+           "'uploaded', extra_json->'uploaded', "
+           "'coupang_detail_sync', extra_json->'coupang_detail_sync', "
+           "'attn', extra_json->'attn', "
+           "'risk_skip', extra_json->'risk_skip', "
+           f"'_polish_ats', (SELECT COALESCE(jsonb_agg(e->'polish'->>'at'), '[]'::jsonb) FROM jsonb_array_elements({_KO_ARR}) e "
+           "WHERE jsonb_typeof(e->'polish')='object' AND e->'polish' ? 'at' AND e->'polish' ? 'version')) "
+           f"FROM collect_history WHERE deleted_at IS NULL AND {sc}")
     with pg.query() as cur:
-        cur.execute("SELECT id::text, user_id FROM collect_history WHERE deleted_at IS NULL AND last_action_at IS NULL "
-                    "AND (extra_json ? 'uploaded' OR extra_json ? 'risk_skip') ORDER BY created_at DESC LIMIT %s", [int(limit)])
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    return [{"id": r[0], "title": r[1] or "", "collected_at": _iso(r[2]), "last_action_at": _iso(r[3]),
+             "attn_n": int(r[4] or 0), "extra": r[5] if isinstance(r[5], dict) else {}} for r in rows]
+
+
+def _iso(v) -> str:
+    if not v:
+        return ""
+    return v.isoformat() if hasattr(v, "isoformat") else str(v)
+
+
+def ids_for_attention_backfill(limit: int = 500) -> list:
+    """Y12-A 일회성 — 목록 정렬·「손댈 것」 열이 아직 비었고 등록 기록·등록 보류가 있는 상품 id(전 셀러).
+    Y12-B: + 수집 실패 후보(이미 채운 행도 — 요약에 실패 칸이 새로 생겼다): 보강 대기·막힘 · 보강 축 없이 가격·갤러리 둘 다 빈 행."""
+    with pg.query() as cur:
+        cur.execute("SELECT id::text, user_id FROM collect_history WHERE deleted_at IS NULL AND ("
+                    "(last_action_at IS NULL AND (extra_json ? 'uploaded' OR extra_json ? 'risk_skip')) "
+                    "OR extra_json->>'enrich_state' IN ('pending', 'blocked') "
+                    "OR (NOT (extra_json ? 'enrich_state') AND COALESCE(extra_json->>'price', '') IN ('', '0', '0.0', '0.00') "
+                    "    AND COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(extra_json->'images') = 'array' "
+                    "        THEN extra_json->'images' END), 0) = 0)"
+                    ") ORDER BY created_at DESC LIMIT %s", [int(limit)])
         return [(r[0], r[1]) for r in cur.fetchall()]
 
 
