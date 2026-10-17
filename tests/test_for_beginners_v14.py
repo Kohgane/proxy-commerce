@@ -13,10 +13,9 @@ BASE = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8
 
 
 def test_for_beginners_fixed_button_with_toggle():
-    assert "fbBtn" in BASE and "처음이신가요" in BASE         # 큰 진입 버튼
-    assert "position:fixed" in BASE                          # 모든 페이지 고정
-    assert "fbHide" in BASE and "fbReopen" in BASE           # 바로 밑 on/off
-    assert "kgp_fb_hidden" in BASE                           # 상태 기억(localStorage)
+    # Y12-A(오너 2026-10-17 d): 떠 있는 버튼은 모든 페이지에서 뺐다 — 시작 가이드는 사이드바 「시작 가이드」 한 곳
+    assert "fbBtn" not in BASE and "fbReopen" not in BASE and "kgp_fb_hidden" not in BASE
+    assert 'href="/seller/start" data-role="nav-start-guide"' in BASE
 
 
 @pytest.fixture
@@ -29,13 +28,10 @@ def client(monkeypatch):
 
 
 def test_fixed_button_on_every_page(client):
-    for path in ["/seller/collect", "/seller/markets", "/seller/orders"]:
+    # Y12-A(오너 d): 어떤 페이지에도 떠 있는 버튼이 없고, 사이드바 「시작 가이드」는 어디서나 보인다
+    for path in ["/seller/dashboard", "/seller/collect/history", "/seller/collect", "/seller/markets", "/seller/orders"]:
         html = client.get(path).get_data(as_text=True)
-        assert "fbBtn" in html, f"{path}에 For Beginners 고정 버튼 없음"
-    # Y12-A(오너 결정 3): 대시보드·상품목록에선 떠 있는 버튼을 뺀다(상품 줄을 가렸다) — 사이드바 「시작 가이드」로 간다
-    for path in ["/seller/dashboard", "/seller/collect/history"]:
-        html = client.get(path).get_data(as_text=True)
-        assert "fbBtn" not in html and 'href="/seller/start"' in html, path
+        assert "fbBtn" not in html and 'data-role="nav-start-guide"' in html, path
 
 
 def test_collect_has_friendly_explainer(client):

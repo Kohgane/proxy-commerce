@@ -186,7 +186,9 @@ def _reject_words(r: dict) -> dict:
             kind_word = str((REJECTION_KINDS.get(k) or {}).get("ko") or "")
     except Exception:                                            # noqa: BLE001 — 낱말 표가 없어도 키는 안 보인다
         kind_word = ""
-    return {"phase": "rejected", "state_word": "승인반려", "kind_word": kind_word, "checked_kst": when}
+    from src.seller_console.attention import check_note
+    return {"phase": "rejected", "state_word": "승인반려", "kind_word": kind_word, "checked_kst": when,
+            "check_note": check_note(r.get("checked_at"))}   # 24시간 넘으면 「조회 낡음」 — 숨기지 않는다(오너 e)
 
 
 def recent_rejections(limit: int = 5, marketplace: str = "coupang") -> dict:
@@ -204,8 +206,9 @@ def recent_rejections(limit: int = 5, marketplace: str = "coupang") -> dict:
         if not ledger.enabled():
             return {"connected": False, "note": "등록 대장 미연결", "rows": []}
         cap = int(limit or 5)
+        # Y12-A e: 반려도 감시 큐에서 재조회한다 — 「감시」 줄엔 반려를 겹쳐 싣지 않는다(반려 줄은 아래 반려 확정 쪽에)
         watching = [dict(r, phase="watching") for r in
-                    (ledger.watch_queue(marketplace=marketplace, limit=cap) or [])]
+                    (ledger.watch_queue(marketplace=marketplace, limit=cap) or []) if r.get("status") != "rejected"]
         rejected, stale = [], []
         for r in (ledger.recent_rejected(marketplace=marketplace, limit=cap) or []):
             row = dict(r, **_reject_words(r))

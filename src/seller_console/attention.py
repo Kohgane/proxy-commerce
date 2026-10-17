@@ -32,6 +32,20 @@ def kst(v) -> str:
     return d.astimezone(KST).strftime("%m-%d %H:%M") if d else ""
 
 
+#: Y12-A(오너 e): 반려는 숨기지 않는다 — 마지막 조회가 이보다 오래면 「조회 낡음」을 붙인다.
+STALE_CHECK_HOURS = 24
+
+
+def check_note(checked_at, now: Optional[datetime] = None) -> str:
+    """「마지막 조회 10-17 14:10」(+ 24시간 넘으면 「· 조회 낡음」). 조회 기록이 없으면 「조회 기록 없음 · 조회 낡음」."""
+    d = _ts(checked_at)
+    if not d:
+        return "조회 기록 없음 · 조회 낡음"
+    now = now or datetime.now(timezone.utc)
+    old = (now - d) > timedelta(hours=STALE_CHECK_HOURS)
+    return f"마지막 조회 {kst(d.isoformat())}" + (" · 조회 낡음" if old else "")
+
+
 def _market_word(m: str) -> str:
     if m.startswith("coupang"):
         return "쿠팡"
@@ -132,7 +146,8 @@ def items(extra: dict, title: str = "", *, fresh: bool = False) -> List[Dict]:
         rv = r.get("review") or {}
         if str(rv.get("state") or "") == "rejected":
             out.append({"kind": "rejected", "market": r["market"],
-                        "text": f"{r['label']} {state_word(r['market'], 'rejected', rv.get('status_raw'))}"})
+                        "text": f"{r['label']} {state_word(r['market'], 'rejected', rv.get('status_raw'))}",
+                        "note": check_note(rv.get("checked_at"))})
         elif send_failed(ex, r["market"]):
             out.append({"kind": "send_fail", "market": r["market"],
                         "text": f"{r['label']} " + ("상세 보내기 실패" if r["market"].startswith("coupang") else "본문 보내기 실패")})

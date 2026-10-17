@@ -1113,7 +1113,7 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* 편집 화면(드로어 안) — 콘솔 chrome을 감추고 편집기만 남긴다. */
 .kgp-editor .console-sidebar, .kgp-editor .mobile-topbar, .kgp-editor .mobile-search,
 .kgp-editor .console-topbar, .kgp-editor .sidebar-overlay,
-.kgp-editor #fbWrap, .kgp-editor #fbReopen, .kgp-editor #kgp-progress { display: none !important; }
+.kgp-editor #kgp-progress { display: none !important; }
 .kgp-editor .console-shell { display: block !important; }
 .kgp-editor .console-main { margin: 0 !important; }
 .kgp-editor .console-content { padding: var(--space-3) !important; overflow-x: hidden; }

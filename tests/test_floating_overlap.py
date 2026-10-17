@@ -1,19 +1,13 @@
-"""tests/test_floating_overlap.py — 고정 플로팅 요소는 인터랙티브 요소를 덮지 않는다 (오너 계약 6-f-4).
+"""tests/test_floating_overlap.py — 떠 있는 요소는 누를 것을 덮지 않는다 (오너 계약 6-f-4 → Y12-A 결정 d).
 
-**겹침은 z-order 문제가 아니다.** 플로팅 버블이 위에 뜨는 건 맞다 — 문제는 그 밑에
-**아무 자리도 예약돼 있지 않다는 것**이다. 그래서 마지막 카드의 액션 버튼이 영구히 깔린다.
-스크롤을 끝까지 내려도 안 드러난다. 페이지가 거기서 끝나기 때문이다.
+6-f-4: 「처음이신가요?」 버블이 마지막 카드의 액션 버튼을 영구히 덮었다(orders `CSV 내보내기` 1872px²) —
+그때는 본문 아래에 버블 자리를 예약해 막았다(하단 132/84px).
 
-실측(수리 전, 1920×940):
-- orders `CSV 내보내기` — 1872px². **이게 본체다**: 페이지가 아예 안 스크롤되는 높이라
-  더 내려서 꺼낼 수도 없다(탈출구 0).
-- reject-watch `처방 실행` — 620~690px². 다만 이건 **스크롤 위치에 따라 달라진다**
-  (분류표 아래 카드가 더 있으면 완전 최하단에선 비켜난다). 오너 화면에선 덮여 있었다.
-- 모바일 390은 겹침 0 — v36이 이미 `padding-bottom: 84px`를 비워 뒀다.
-  **데스크톱만 빠져 있었다.** 한쪽만 고쳐 놓고 잊은 이 프로젝트의 단골 결함.
+**Y12-A(오너 2026-10-17 d): 떠 있는 「처음이신가요?」 버튼은 모든 페이지에서 뺐다.** 시작 가이드는 사이드바
+「시작 가이드」 한 곳. 버블이 없으니 예약 공간도 뺐다(빈 여백도 결함이다).
 
-계약은 두 겹이다. 계산값(예약 폭)과 **렌더**(실제 교차)를 같이 본다 —
-계산값만 보면 [[flex는 text-align을 무시한다]]를 또 만난다.
+계약은 두 겹으로 남긴다 — ① 버블·예약이 다시 들어오지 않는다 ② **어떤 떠 있는 요소도**(다음에 누가 붙이든)
+최하단까지 내렸을 때 누를 것을 덮지 않는다(렌더 실측).
 """
 from __future__ import annotations
 
@@ -28,70 +22,18 @@ import pytest
 CSS = Path("src/seller_console/static/console.css")
 BASE = Path("src/seller_console/templates/_base.html")
 
-# 버블 실측(1920×940): 152×95 @(1750,827) — 하단 18px 띄움 → 바닥에서 113px를 차지한다.
-BUBBLE_OCCUPIES = 113
-MINI_OCCUPIES = 62                       # 재오픈 미니 44 + 하단 18
+
+def test_bubble_is_gone_from_every_page():
+    base = BASE.read_text(encoding="utf-8")
+    for gone in ('id="fbWrap"', 'id="fbReopen"', 'id="fbBtn"', "kgp_fb_hidden"):
+        assert gone not in base, gone
+    assert 'href="/seller/start"' in base and "시작 가이드" in base       # 사이드바 한 곳
 
 
-def _rule(css: str, selector: str) -> str | None:
-    m = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css)
-    return m.group(1) if m else None
-
-
-def _px(decls: str, prop: str) -> float | None:
-    m = re.search(prop + r"\s*:\s*([\d.]+)px", decls)
-    return float(m.group(1)) if m else None
-
-
-# ── 예약 공간이 CSS에 있나 (브라우저 없이도 도는 층) ─────────────────────────
-def test_desktop_reserves_space_for_the_bubble():
-    """★ 데스크톱 본문이 버블 높이만큼 바닥을 비운다."""
+def test_reserve_for_the_bubble_is_gone_too():
     css = CSS.read_text(encoding="utf-8")
-    block = css.split("@media (min-width: 768px)")[1].split("\n}")[0]
-    pad = _px(block, "padding-bottom")
-    assert pad is not None, "데스크톱 예약 규칙이 없다"
-    assert pad >= BUBBLE_OCCUPIES, f"예약 {pad}px < 버블 점유 {BUBBLE_OCCUPIES}px"
-
-
-def test_mobile_reserve_is_still_there():
-    """v36의 모바일 예약을 데스크톱 수리가 지우지 않았는지 — **양쪽을 한 번에 본다.**
-
-    이 프로젝트가 반복해 온 실수가 '이중 구현, 한쪽만 수리'다. 다음엔 반대로 모바일이
-    지워질 수 있으니 두 층을 같은 계약이 붙든다.
-    """
-    css = CSS.read_text(encoding="utf-8")
-    # 모바일 블록은 여러 개다 — 어느 블록에 있든 인정하되, **모바일 미디어 안**이어야 한다.
-    mobile = "".join(css.split("max-width: 767.98px")[1:])
-    assert re.search(r"\.console-content\s*\{\s*padding-bottom:\s*84px", mobile), "모바일 예약이 사라졌다"
-
-
-def test_reserve_is_the_default_not_a_js_grant():
-    """★ 기본값이 '버블 있음'이다 — JS가 죽어도 자리는 비어 있어야 한다.
-
-    반대로 짜면(JS가 클래스를 **붙여야** 자리가 생김) 스크립트 하나 깨질 때 결함이 되살아난다.
-    """
-    css = CSS.read_text(encoding="utf-8")
-    block = css.split("@media (min-width: 768px)")[1].split("\n}")[0]
-    default = _rule(block, ".console-content")
-    assert default and "padding-bottom" in default, "예약이 조건부 클래스 뒤에 숨어 있다"
-    hidden = _rule(block, "body.pc-fb-hidden .console-content")
-    assert hidden, "숨김 상태 축소 규칙이 없다"
-    assert MINI_OCCUPIES <= (_px(hidden, "padding-bottom") or 0) < (_px(default, "padding-bottom") or 0)
-
-
-def test_hidden_state_toggles_the_reserve():
-    """숨기면 예약도 같이 줄어든다 — 숨겼는데 큰 여백이 남으면 그건 그것대로 결함이다."""
-    js = BASE.read_text(encoding="utf-8")
-    fn = js.split("function apply()")[1].split("\n  }")[0]
-    assert "classList.toggle('pc-fb-hidden', hidden)" in fn
-    # 표시 토글과 **같은 함수**에서 — 두 곳으로 갈라지면 언젠가 어긋난다.
-    assert "wrap.style.display" in fn and "reopen.style.display" in fn
-
-
-def test_editor_drawer_leaves_no_dead_space():
-    """드로어는 버블 자체를 숨긴다(app.css `.kgp-editor`) → 빈 자리를 남길 이유가 없다."""
-    assert ".kgp-editor #fbWrap" in Path("src/static/app.css").read_text(encoding="utf-8")
-    assert "body.kgp-editor .console-content" in CSS.read_text(encoding="utf-8")
+    assert "pc-fb-hidden" not in css and ".fb-wrap" not in css and "#fbWrap" not in css
+    assert "padding-bottom: 132px" not in css and "padding-bottom: 84px" not in css
 
 
 # ── 실제로 안 겹치나 (헤드리스) ──────────────────────────────────────────────
@@ -111,7 +53,7 @@ def _pw_ok():
 #   좌표를 그대로 돌려줬다 — 화면엔 없는 버튼이 '버블에 가려졌다'고 잡혔다(면적 2840px²).
 #   잘려서 안 보이는 것은 가려질 수도 없다. 조상들의 클립 박스로 **보이는 사각형**을 먼저 구한다.
 #   계약을 무르게 하는 게 아니다 — 없는 겹침을 지우고 진짜만 남긴다.
-PROBE = """(ids) => {
+PROBE = """() => {
   function visibleRect(e) {                    // 조상 클립을 모두 통과한 뒤 남는 사각형
     let r = e.getBoundingClientRect();
     if (!r.width || !r.height) return null;
@@ -129,16 +71,19 @@ PROBE = """(ids) => {
     }
     return r;
   }
-  const out = {};
-  for (const id of ids) {
-    const el = document.getElementById(id);
-    const s = el && getComputedStyle(el);
-    if (!el || s.display === 'none' || s.visibility === 'hidden') { out[id] = null; continue; }
+  // 떠 있는 요소 = position fixed/sticky가 아닌 fixed 중 보이는 것(사이드바·상단바·닫힌 오버레이 제외)
+  const out = {floating: []};
+  document.querySelectorAll('body *').forEach(function (el) {
+    const s = getComputedStyle(el);
+    if (s.position !== 'fixed' || s.display === 'none' || s.visibility === 'hidden' || s.pointerEvents === 'none') return;
+    if (el.closest('.sidebar, .console-sidebar, .console-topbar, .mobile-topbar, .modal, .kgp-drawer, .kgp-drawer-backdrop, .sidebar-overlay')) return;
+    if (parseFloat(s.opacity || '1') === 0) return;
     const b = el.getBoundingClientRect();
+    if (!b.width || !b.height) return;
     const hits = [];
     document.querySelectorAll('a.btn, button.btn, input, select, textarea, summary, a[href], [role=button]')
       .forEach(function (e) {
-        if (e.closest('#fbWrap, #fbReopen, .sidebar, .console-sidebar')) return;
+        if (el.contains(e) || e.closest('.sidebar, .console-sidebar')) return;
         const cs = getComputedStyle(e);
         if (cs.display === 'none' || cs.visibility === 'hidden') return;
         const r = visibleRect(e);
@@ -148,8 +93,8 @@ PROBE = """(ids) => {
         if (ov > 0) hits.push({t: (e.textContent || e.value || e.tagName).replace(/\\s+/g, ' ').trim().slice(0, 30),
                                area: Math.round(ov)});
       });
-    out[id] = hits;
-  }
+    if (hits.length) out.floating.push({el: (el.id || el.className || el.tagName).toString().slice(0, 40), hits: hits});
+  });
   const main = document.querySelector('main');
   out._pad = main ? getComputedStyle(main).paddingBottom : '';
   return out;
@@ -180,15 +125,15 @@ def _page_html(route: str) -> str:
     return html.replace("</head>", style + "</head>", 1)
 
 
-def _measure(route: str, hide: bool = False):
+def _measure(route: str, width: int = 1920, height: int = 940):
     from playwright.sync_api import sync_playwright
     exe = (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
-    slug = route.strip("/").replace("/", "-") + ("-hidden" if hide else "")
+    slug = route.strip("/").replace("/", "-") + f"-{width}"
     tmp = Path(tempfile.gettempdir()) / f"kgp_overlap_{slug}.html"
     tmp.write_text(_page_html(route), encoding="utf-8")
     with sync_playwright() as pw:
         br = pw.chromium.launch(**({"executable_path": exe} if exe else {}))
-        pg = br.new_page(viewport={"width": 1920, "height": 940})
+        pg = br.new_page(viewport={"width": width, "height": height})
         pg.set_default_timeout(15000)
         # `file://`로 연다: 이름을 풀 것도, 붙을 곳도 없다(DNS 0 · 소켓 0). 그러면서도 출처가
         # 있어서 localStorage가 살아 있다 — `about:`나 `set_content`면 던져서 숨김 토글이 안 돈다.
@@ -196,38 +141,19 @@ def _measure(route: str, hide: bool = False):
                                     else r.abort()))     # 외부는 전부 끊는다
         pg.goto(tmp.as_uri(), wait_until="domcontentloaded")
         pg.wait_for_timeout(300)
-        if hide:
-            pg.evaluate("() => document.getElementById('fbHide').click()")
-            pg.wait_for_timeout(200)
         for _ in range(3):                        # 지연 렌더로 높이가 자라면 한 번 더 내린다
             pg.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
             pg.wait_for_timeout(200)
-        r = pg.evaluate(PROBE, ["fbWrap", "fbReopen"])
+        r = pg.evaluate(PROBE)
         br.close()
     return r
 
 
 @pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
-# 반려 감시는 6-h에서 내부 스크롤이 생긴 **첫 화면**이다 — 레이아웃이 바뀌면 겹침은 재발 후보다.
-# Y12-A: 대시보드는 버블을 아예 띄우지 않는다(상품 줄을 가렸다) — 옛 대시보드 카드는 「진단」 화면으로 옮겼으니 거기서 잰다
-@pytest.mark.parametrize("route", ["/seller/sourcing/reject-watch", "/seller/diagnostics",
-                                  "/seller/orders", "/seller/catalog"])
-def test_nothing_interactive_sits_under_the_bubble(route):
-    """★ 최하단까지 내렸을 때 **버블 밑에 눌러야 할 것이 하나도 없다.**
-
-    최하단으로 재는 이유: 페이지 중간이라면 더 스크롤해서 버튼을 꺼낼 수 있다.
-    끝이면 못 꺼낸다 — 그게 이 결함의 본체다.
-    """
-    r = _measure(route)
-    assert r["fbWrap"] == [], f"{route}: 버블이 {r['fbWrap']}를 덮는다"
-    assert float(r["_pad"].rstrip("px")) >= BUBBLE_OCCUPIES, f"{route}: 예약 {r['_pad']}"
-
-
-@pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")
-def test_hidden_mini_button_also_clears():
-    """숨김 상태(미니 버튼)도 같은 잣대 — 자리를 줄였으니 그만큼은 여전히 비어 있어야 한다."""
-    r = _measure("/seller/orders", hide=True)
-    assert r["fbWrap"] is None, "숨겼는데 버블이 남아 있다"
-    assert r["fbReopen"] == [], f"미니 버튼이 {r['fbReopen']}를 덮는다"
-    assert float(r["_pad"].rstrip("px")) >= MINI_OCCUPIES
-
+@pytest.mark.parametrize("route", ["/seller/dashboard", "/seller/collect/history", "/seller/diagnostics",
+                                   "/seller/sourcing/reject-watch", "/seller/orders", "/seller/catalog"])
+@pytest.mark.parametrize("size", [(1920, 940), (390, 844)])
+def test_nothing_floating_covers_anything(route, size):
+    """★ 최하단까지 내렸을 때 **떠 있는 어떤 요소도** 누를 것을 덮지 않는다(데스크톱·폰)."""
+    r = _measure(route, *size)
+    assert r["floating"] == [], f"{route} {size}: {r['floating']}"

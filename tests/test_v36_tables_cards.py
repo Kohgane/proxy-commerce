@@ -45,10 +45,9 @@ def test_global_table_minwidth_removed():
 
 
 def test_for_beginners_fab_shrinks_on_mobile():
-    # 플로팅 버튼이 본문 가리지 않게 — 모바일 아이콘 FAB로 축소 + 라벨 래핑
-    assert 'class="fb-label"' in BASE
-    assert "#fbWrap #fbBtn .fb-label { display: none; }" in CONSOLE_CSS
-    assert "padding-bottom: 84px;" in CONSOLE_CSS
+    # Y12-A(오너 d): 떠 있는 버튼 자체를 뺐다 — 축소 규칙·하단 여백 예약도 함께 없음
+    assert 'class="fb-label"' not in BASE and "#fbWrap" not in CONSOLE_CSS
+    assert "padding-bottom: 84px;" not in CONSOLE_CSS
 
 
 def test_collect_history_renders(client):

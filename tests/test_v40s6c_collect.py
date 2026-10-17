@@ -90,7 +90,7 @@ def test_editor_chrome_hiding_is_scoped_to_body_switch():
     block = _s6c_css()
     # ★ 지키려는 건 **콘솔 chrome을 무스코프로 숨기는 것**이다. 컴포넌트가 자기 클래스를 숨기는 건
     #   정상이므로 여기서 막으면 이후 슬라이스마다 오발한다(T1에서 실제로 걸렸다).
-    chrome = (".console-", ".mobile-", ".sidebar-", "#fbWrap", "#fbReopen", "#kgp-progress")
+    chrome = (".console-", ".mobile-", ".sidebar-", "#kgp-progress")   # Y12-A: 떠 있는 버블은 없다
     for rule in re.findall(r"([^\n{}]+)\{[^}]*display:\s*none\s*!important", block):
         if any(sel in rule for sel in chrome):
             assert ".kgp-editor" in rule, f"무스코프 chrome 숨김: {rule.strip()}"

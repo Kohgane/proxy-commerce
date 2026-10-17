@@ -397,37 +397,7 @@
   </div>
 </div>
 
-<!-- v14: For Beginners 진입 버튼 — 모든 페이지 고정 + 바로 밑 작은 on/off(상태 기억) · Y12-A: 대시보드·목록·드로어엔 없음 -->
-{% if not _quiet_chrome %}
-<div id="fbWrap" class="fb-wrap">
-  <a href="/seller/start" id="fbBtn" class="btn btn-cta fb-btn">
-     <i class="bi bi-stars"></i> <span class="fb-label">{{ t('fb.cta') }}</span>
-  </a>
-  <button type="button" id="fbHide" class="btn btn-link p-0 text-muted fb-hide">{{ t('fb.hide') }}</button>
-</div>
-<button type="button" id="fbReopen" class="btn btn-cta fb-reopen" title="처음이신가요? 가이드 열기"><i class="bi bi-stars"></i></button>
-{% endif %}
-<script>
-(function () {
-  var wrap = document.getElementById('fbWrap');
-  var reopen = document.getElementById('fbReopen');
-  var hide = document.getElementById('fbHide');
-  if (!wrap || !reopen || !hide) return;
-  function get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
-  function set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
-  function apply() {
-    var hidden = get('kgp_fb_hidden') === '1';
-    wrap.style.display = hidden ? 'none' : 'flex';
-    reopen.style.display = hidden ? 'flex' : 'none';
-    // 6-f-4: 예약 공간도 같이 줄인다(console.css `.pc-fb-hidden`). 숨겼는데 큰 자리가
-    // 남아 있으면 그건 그것대로 빈 여백이다.
-    document.body.classList.toggle('pc-fb-hidden', hidden);
-  }
-  hide.addEventListener('click', function(){ set('kgp_fb_hidden','1'); apply(); });
-  reopen.addEventListener('click', function(){ set('kgp_fb_hidden','0'); apply(); });
-  apply();
-})();
-</script>
+<!-- v14 For Beginners 떠 있는 버튼 — Y12-A(오너 결정 d): 모든 페이지에서 뺐다. 시작 가이드는 사이드바 「시작 가이드」 한 곳. -->
 
 <!-- 속도 ③: 스크립트는 body 끝 배치라 초기 렌더를 막지 않음(defer와 동일 효과). 뒤 인라인 스크립트가
      bootstrap/seller.js에 의존하므로 defer 속성은 실행순서를 깨 미사용(placement로 비차단 달성). -->

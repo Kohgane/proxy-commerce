@@ -100,7 +100,7 @@
             <span class="op-sig-dot"></span>{{ r.state_word if r.phase in ('rejected', 'stale') else '감시' }}
           </span>
           <span class="op-row-title" title="{{ r.reject_comment or r.title }}">{{ r.title or r.sid or r.product_id }}</span>
-          <span class="op-tile-sub" data-role="op-reject-sub">{{ r.kind_word or '' }}{% if r.kind_word and r.checked_kst %} · {% endif %}{% if r.checked_kst %}{{ '낡은 기록 · ' if r.phase == 'stale' }}마지막 조회 {{ r.checked_kst }}{% endif %}</span>
+          <span class="op-tile-sub" data-role="op-reject-sub">{% if r.phase == 'stale' %}낡은 기록{% if r.checked_kst %} · 마지막 조회 {{ r.checked_kst }}{% endif %}{% elif r.phase == 'rejected' %}{{ r.kind_word ~ ' · ' if r.kind_word }}{{ r.check_note }}{% endif %}</span>
         </div>
         {% endfor %}
       </div>

@@ -44,7 +44,7 @@ def _attention(seller_ids) -> Dict:
         if not its:
             continue
         products.append({"id": r.get("id"), "title": str(ex.get("title_ko") or r.get("title") or "")[:60],
-                         "lines": [i["text"] for i in its]})
+                         "lines": [i["text"] + (f" · {i['note']}" if i.get("note") else "") for i in its]})
         for i in its:
             if i["kind"] == "rejected":
                 key, label = f"rejected:{i['market']}", i["text"]
@@ -57,9 +57,10 @@ def _attention(seller_ids) -> Dict:
     # Y12-A(오너 23:31): 등록 대장(복제 등록분 — 수집 목록 밖)의 **살아 있는** 반려도 같은 묶음에. 낡은 기록(임시저장 사유)은 안 올린다.
     for r in _ledger_rejections():
         label = f"쿠팡 — {_ACCOUNT_KO.get(str(r.get('account') or ''), str(r.get('account') or ''))} 승인반려"
+        from .attention import check_note
         products.append({"id": "", "title": str(r.get("title") or r.get("product_id") or "")[:60],
                          "lines": [label + (f" · {r['kind_word']}" if r.get("kind_word") else "")
-                                   + (f" · 마지막 조회 {r['checked_kst']}" if r.get("checked_kst") else "")]})
+                                   + f" · {check_note(r.get('checked_at'))}"]})
         g = groups.setdefault(f"rejected:ledger:{r.get('account')}", {"label": label, "n": 0, "kind": "rejected"})
         g["n"] += 1
     order = {"rejected": 0, "send_fail": 1, "owner": 2}
@@ -71,7 +72,8 @@ _ACCOUNT_KO = {"gogane": "고가네", "woojoo": "우주대행"}
 
 
 def _ledger_rejections(limit: int = 50) -> List[Dict]:
-    """등록 대장의 반려 확정 줄 중 **살아 있는 것만**(낱말·조회 시각은 `ops_snapshot._reject_words` 한 곳)."""
+    """등록 대장의 반려 줄 **전부**(오너 e — 조회가 오래됐다고 숨기지 않는다, 「조회 낡음」 표시).
+    사유가 「임시저장」인 줄은 반려가 아니라 임시저장이다(낱말은 `ops_snapshot._reject_words` 한 곳) — 손댈 것 · 반려에서 뺀다."""
     try:
         from src.db import market_registrations_pg as ledger
         if not ledger.enabled():

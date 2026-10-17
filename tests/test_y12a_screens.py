@@ -325,3 +325,56 @@ def test_oneshot_review_status_reads_once_and_keeps_success_only(monkeypatch):
     assert res2["stale"] and res2["label"] == "승인완료" and not res2["saved"]
     ex2 = json.loads(S.get(iid, seller_ids={uid})["extra_json"])
     assert next(u for u in ex2["uploaded"] if u["market"] == "coupang:woojoo")["review"]["checked_at"] == before
+
+
+# ── 6. 오너 추가 2(d·e·f) ───────────────────────────────────────────────────────────────────────────
+def test_rejected_rows_stay_in_watch_queue_but_saved_comment_rows_wait_for_owner(monkeypatch):
+    """e: 반려 판정이 재조회를 끊지 않는다(다른 상태와 같은 주기). f: 사유가 「임시저장」인 반려 줄(Stagg)은 오너 승인 전엔 큐 밖."""
+    from src.db import market_registrations_pg as L
+    monkeypatch.setattr(L, "enabled", lambda: False)
+    L._MEM.clear()
+    for pid, st, cmt in (("R1", "rejected", "대표이미지는 최대 10M"), ("S1", "rejected", "판매자(A01381223) 임시저장"),
+                         ("W1", "submitted", ""), ("A1", "approved", "")):
+        L.record(pid, account="gogane", title=pid)
+        L.mark_checked(pid, status=st, reject_comment=cmt)
+    sids = {r["sid"] for r in L.watch_queue(limit=50)}
+    assert sids == {"R1", "W1"}
+    assert "rejected" in L._WATCH_STATUSES and "임시" in L._HELD_SQL and "COALESCE(reject_comment" in L._HELD_SQL
+    L._MEM.clear()
+
+
+def test_attention_rejections_never_hidden_and_stale_check_is_marked():
+    """e 반례: 진짜 반려인데 사흘 전 조회 → 손댈 것에서 사라지면 안 된다. 숨기지 않고 「조회 낡음」."""
+    from datetime import timedelta
+    from src.seller_console.attention import check_note, items
+    now = datetime(2026, 10, 17, 14, 0, tzinfo=timezone.utc)
+    assert check_note("2026-10-17T05:10:00+00:00", now) == "마지막 조회 10-17 14:10"
+    assert check_note((now - timedelta(days=3)).isoformat(), now) == "마지막 조회 10-14 23:00 · 조회 낡음"
+    assert check_note("", now) == "조회 기록 없음 · 조회 낡음"
+    old = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    ex = {"uploaded": [{"market": "coupang:gogane", "market_label": "쿠팡 — 고가네", "product_id": "1",
+                        "review": {"state": "rejected", "status_raw": "승인반려", "checked_at": old}}]}
+    got = items(ex, "t")
+    assert got and got[0]["kind"] == "rejected" and got[0]["note"].endswith("조회 낡음")
+
+
+def test_ledger_rejection_three_days_old_still_in_attention_with_marker(monkeypatch):
+    from datetime import timedelta
+    from src.db import market_registrations_pg as L
+    from src.seller_console import home_bundles as H
+    old = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    monkeypatch.setattr(L, "enabled", lambda: True)
+    monkeypatch.setattr(L, "recent_rejected", lambda **k: [
+        {"account": "gogane", "title": "사흘 전 반려", "product_id": "9", "reject_kind": "image_spec",
+         "reject_comment": "대표이미지 규격", "checked_at": old}])
+    a = H._attention({"u-y12a-ledger3"})
+    assert a["n"] == 1 and a["products"][0]["lines"][0].endswith("조회 낡음")
+    assert "쿠팡 — 고가네 승인반려 · 이미지 규격 · 마지막 조회" in a["products"][0]["lines"][0]
+
+
+def test_no_floating_beginners_button_anywhere_sidebar_only():
+    """d: 떠 있는 「처음이신가요?」는 모든 페이지에서 뺐다 — 사이드바 「시작 가이드」 한 곳."""
+    for path in ("/seller/", "/seller/collect/history", "/seller/orders", "/seller/diagnostics", "/seller/markets"):
+        html = _client("u-y12a-fb").get(path).get_data(as_text=True)
+        assert 'id="fbWrap"' not in html and 'id="fbReopen"' not in html, path
+        assert 'data-role="nav-start-guide"' in html, path

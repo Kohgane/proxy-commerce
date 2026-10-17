@@ -81,7 +81,9 @@ def test_console_account_has_a_rule_not_just_a_name():
     이름이 있는데 집이 없으면, 다음 사람은 그 이름을 믿고 쓰다가 아무 일도 안 일어나는 걸 본다.
     """
     css = _decl(CONSOLE)
-    for cls in (".console-account", ".console-avatar", ".fb-wrap", ".fb-btn"):
+    # Y12-A(오너 d): 떠 있는 「처음이신가요?」(.fb-wrap/.fb-btn)는 모든 페이지에서 뺐다 — 규칙도 함께 뺐다(집 없는 이름 0)
+    assert ".fb-wrap" not in css and ".fb-btn" not in css
+    for cls in (".console-account", ".console-avatar"):
         assert re.search(re.escape(cls) + r"\s*\{", css), f"클래스 규칙 없음: {cls}"
 
 

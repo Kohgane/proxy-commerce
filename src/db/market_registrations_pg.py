@@ -18,7 +18,17 @@ _MEM: dict = {}
 #   `saved`(임시저장)는 조치 대상이지 확정이 아니다 — 승인요청을 다시 걸면 결과가 또 나온다.
 #   ★ 이게 없으면 `_next_status`가 `saved`를 써도 행이 그대로 큐를 떠난다(반쪽 수리).
 #     판정 쪽만 고치고 저장 쪽을 빼먹는 게 이 프로젝트의 단골 결함이라 둘을 같이 본다.
-_WATCH_STATUSES = ("submitted", "unknown", "saved")
+#: Y12-A(오너 2026-10-17 e): **반려도 계속 재조회한다**(다른 상태와 같은 주기) — 반려 판정이 재조회를 끊으면
+#:   반려가 풀렸는지·다시 반려됐는지를 영영 모른다(지뢰 「반려 판정이 재조회를 끊는다」, 실측 Stagg 49일).
+#:   단, 사유가 「임시저장」인 반려 줄(09-05 수리 전 판정)은 **오너 승인 뒤에만** 다시 조회한다(`_HELD_SQL`).
+_WATCH_STATUSES = ("submitted", "unknown", "saved", "rejected")
+_HELD_RE = __import__("re").compile(r"임시\s*저장|\bSAVED\b", __import__("re").I)
+_HELD_SQL = "NOT (status = 'rejected' AND COALESCE(reject_comment, '') ~* '임시\\s*저장|SAVED')"
+
+
+def _held(r: dict) -> bool:
+    """오너 승인 전 재조회 보류 — 사유가 임시저장인 반려 줄."""
+    return str(r.get("status") or "") == "rejected" and bool(_HELD_RE.search(str(r.get("reject_comment") or "")))
 
 
 def enabled() -> bool:
@@ -64,11 +74,11 @@ def record(product_id: str, *, marketplace: str = "coupang", account: str = "",
 def watch_queue(*, marketplace: str = "coupang", account: str = "", limit: int = 50) -> list:
     """감시 대상(미확정 등록분) — 오래 안 본 것 먼저. 반환: [{sid, title, account, ...}].
 
-    확정된 건(approved/rejected 처리 완료/deleted)은 큐에 안 넣는다 — 반복 조회 낭비 방지.
+    확정된 건(approved/deleted)은 큐에 안 넣는다 — 반복 조회 낭비 방지. 반려는 넣는다(Y12-A e).
     """
     if not enabled():
         rows = [r for r in _MEM.values()
-                if r["marketplace"] == marketplace and r["status"] in _WATCH_STATUSES
+                if r["marketplace"] == marketplace and r["status"] in _WATCH_STATUSES and not _held(r)
                 and (not account or r["account"] == account)]
         return [{"sid": r["product_id"], "title": r["title"], "account": r["account"],
                  "market_url": r["market_url"], "status": r["status"]}
@@ -76,7 +86,7 @@ def watch_queue(*, marketplace: str = "coupang", account: str = "", limit: int =
     # `status`도 같이 준다(6-h-3 N3): 화면이 **상태별로 링크를 갈라야** 하는데,
     #   상태가 안 오면 갈 수가 없어 승인 전 건에도 구매자 URL을 걸게 된다(그게 그 결함이었다).
     sql = ["""SELECT product_id, title, account, market_url, status FROM market_registrations
-              WHERE deleted_at IS NULL AND marketplace=%s AND status = ANY(%s)"""]
+              WHERE deleted_at IS NULL AND marketplace=%s AND status = ANY(%s) AND """ + _HELD_SQL]
     args = [marketplace, list(_WATCH_STATUSES)]
     if account:
         sql.append("AND account=%s")
@@ -183,11 +193,11 @@ def get(product_id: str, *, marketplace: str = "coupang") -> Optional[dict]:
 
 
 def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: int = 5) -> list:
-    """반려 **확정** 건 최근 N개. `watch_queue`가 구조적으로 제외하는 상태다.
+    """반려 **확정** 건 최근 N개(화면 읽기용).
 
-    F5(2026-09-04): 대시보드 02 카드가 `watch_queue`만 읽어서, 제목이 '반려 감시'인데
-    정작 `rejected`는 한 건도 안 보였다(`_WATCH_STATUSES`에 없으니까). 감시 대기와
-    반려 확정은 다른 상태라 큐를 넓히지 않고 **읽는 함수를 따로** 둔다.
+    F5(2026-09-04): 대시보드 02 카드가 `watch_queue`만 읽어서 `rejected`가 한 건도 안 보였다 — 읽는 함수를 따로 둔다.
+    Y12-A(2026-10-17 e): 반려도 이제 `watch_queue`에 들어가 **재조회된다**(반려 판정이 재조회를 끊지 않는다).
+    이 함수는 화면이 반려 줄만 골라 읽는 길로 남는다.
     """
     if not enabled():
         rows = [r for r in _MEM.values()
