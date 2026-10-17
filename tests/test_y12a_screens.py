@@ -266,3 +266,62 @@ def test_closed_drawer_sheet_hidden():
     block = css[i:css.index("}", i)]
     assert "visibility: hidden" in block
     assert ".kgp-drawer.show { transform: translateX(0); visibility: visible;" in css
+
+
+# ── 5. 오너 23:31 추가 ───────────────────────────────────────────────────────────────────────────────
+def test_diagnostics_cards_flow_not_viewport_locked():
+    """a. 「진단」은 옛 대시보드 카드를 흐르는 높이로 — `.op-shell`(뷰포트 고정 + main overflow hidden)을 쓰면 본문이 잘린다."""
+    t = open("src/seller_console/templates/diagnostics_home.html", encoding="utf-8").read()
+    assert "op-shell" not in t and 'class="diag-grid"' in t
+    css = open("src/static/app.css", encoding="utf-8").read()
+    assert ".diag-grid > .op-card { overflow: visible; }" in css
+
+
+def test_ledger_rejection_words_never_show_keys_and_saved_comment_is_stale():
+    """b. 실측 Fellow Stagg(쿠팡 고가네 16359486080): status=rejected · kind=unknown · 사유 「판매자(…) 임시저장」 ·
+    마지막 조회 08-29 17:03 UTC — 09-05 수리 전 판정(사유가 있다 ≠ 반려다). 손댈 것에 안 올리고 화면에 키 0."""
+    from src.pipeline.ops_snapshot import _reject_words
+    stagg = {"reject_kind": "unknown", "reject_comment": "판매자(A01381223) 임시저장",
+             "checked_at": "2026-08-29T17:03:13+00:00"}
+    w = _reject_words(stagg)
+    assert w == {"phase": "stale", "state_word": "임시저장", "kind_word": "", "checked_kst": "08-30 02:03"}
+    live = _reject_words({"reject_kind": "image_spec", "reject_comment": "대표이미지는 최대 10M",
+                          "checked_at": "2026-10-17T05:00:00+00:00"})
+    assert live["phase"] == "rejected" and live["state_word"] == "승인반려" and live["kind_word"] == "이미지 규격"
+    assert _reject_words({"reject_kind": "unknown", "reject_comment": "x"})["kind_word"] == ""   # 키 「unknown」은 안 보인다
+
+
+def test_home_attention_counts_only_live_ledger_rejections(monkeypatch):
+    from src.db import market_registrations_pg as L
+    from src.seller_console import home_bundles as H
+    monkeypatch.setattr(L, "enabled", lambda: True)
+    monkeypatch.setattr(L, "recent_rejected", lambda **k: [
+        {"account": "gogane", "title": "Fellow Stagg EKG Pro", "product_id": "16359486080", "reject_kind": "unknown",
+         "reject_comment": "판매자(A01381223) 임시저장", "checked_at": "2026-08-29T17:03:13+00:00"},
+        {"account": "woojoo", "title": "살아 있는 반려", "product_id": "1", "reject_kind": "image_spec",
+         "reject_comment": "대표이미지 규격", "checked_at": "2026-10-17T05:00:00+00:00"}])
+    a = H._attention({"u-y12a-ledger"})
+    assert a["n"] == 1 and [g["label"] for g in a["groups"]] == ["쿠팡 — 우주대행 승인반려"]
+    assert "Stagg" not in json.dumps(a, ensure_ascii=False) and "unknown" not in json.dumps(a, ensure_ascii=False)
+
+
+def test_oneshot_review_status_reads_once_and_keeps_success_only(monkeypatch):
+    """Y11W-1: 한 상품·한 마켓 상태 1회 조회(쿠팡 GET) → 성공 값만 기록 · 막힌 조회는 덮지 않음."""
+    from src.services import oneshot_ops as O
+    uid = "u-y12a-op"
+    iid = _seed(uid, UP4)
+    monkeypatch.setattr(MS, "_coupang", lambda rec: {"sid": rec["product_id"], "state": "approved", "label": "승인완료",
+                                                    "status_raw": "승인완료", "comment": "", "link": "", "error": ""})
+    res = O._run({"op": "review_status", "item_id": iid, "market": "coupang:woojoo"})
+    assert res["ok"] and res["label"] == "승인완료" and res["saved"] and not res["stale"]
+    from src.seller_console import collect_history_store as S
+    ex = json.loads(S.get(iid, seller_ids={uid})["extra_json"])
+    woo = next(u for u in ex["uploaded"] if u["market"] == "coupang:woojoo")
+    assert woo["review"]["state"] == "approved" and woo["review"]["checked_at"]
+    monkeypatch.setattr(MS, "_coupang", lambda rec: {"sid": rec["product_id"], "state": "reviewing", "label": "조회 잠시 막힘",
+                                                    "status_raw": "", "comment": "", "link": "", "error": ""})
+    before = woo["review"]["checked_at"]
+    res2 = O._run({"op": "review_status", "item_id": iid, "market": "coupang:woojoo"})
+    assert res2["stale"] and res2["label"] == "승인완료" and not res2["saved"]
+    ex2 = json.loads(S.get(iid, seller_ids={uid})["extra_json"])
+    assert next(u for u in ex2["uploaded"] if u["market"] == "coupang:woojoo")["review"]["checked_at"] == before

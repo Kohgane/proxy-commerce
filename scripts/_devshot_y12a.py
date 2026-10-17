@@ -121,6 +121,16 @@ ch._in_memory.append({"id": "it-vrsuk", "seller_id": "u1", "source": "extension"
                       "price": "6995.00", "currency": "CNY", "status": "ok", "preview_url": "", "collected_at": "2026-09-27T11:05:20+00:00",
                       "extra_json": json.dumps(EXTRA, ensure_ascii=False)})
 
+# 등록 대장(복제 등록분) — 운영 DB 실측 반려 줄 1건(Fellow Stagg, 10-17 조회) 그대로. 다른 대장 집계는 미연결로 둔다.
+from src.db import market_registrations_pg as _L
+_STAGG = {"marketplace": "coupang", "account": "gogane", "product_id": "16359486080", "sid": "16359486080",
+          "title": "Fellow Stagg EKG Pro 구즈넥 주전자, 컬러 LCD, 스테인리스 스틸", "status": "rejected",
+          "reject_kind": "unknown", "reject_comment": "판매자(A01381223) 임시저장",
+          "checked_at": "2026-08-29T17:03:13+00:00"}
+_L.enabled = lambda: True
+_L.recent_rejected = lambda **k: [dict(_STAGG)]
+_L.watch_queue = lambda **k: []
+
 from src.order_webhook import app
 PORT = 5121
 threading.Thread(target=lambda: app.run(port=PORT, use_reloader=False), daemon=True).start()
@@ -197,7 +207,7 @@ with sync_playwright() as pw:
         c2 = b.new_context(viewport=vw, ignore_https_errors=True, is_mobile=(wname == "mobile"))
         c2.add_cookies([{'name': 'session', 'value': cookie, 'domain': '127.0.0.1', 'path': '/'}])
         pg = c2.new_page()
-        for nm, path in (("6-dashboard", "/seller/"), ("7-list", "/seller/collect/history")):
+        for nm, path in (("6-dashboard", "/seller/"), ("7-list", "/seller/collect/history"), ("8-diagnostics", "/seller/diagnostics")):
             pg.goto(BASE + path, wait_until="networkidle"); _style(pg); pg.wait_for_timeout(1500)
             pg.screenshot(path=os.path.join(OUT, f"{TAG}-{nm}-{wname}.png"), full_page=True)
             main = pg.locator("main, .console-main, #main").first

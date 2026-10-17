@@ -24,14 +24,16 @@
 <section class="op-card mb-3" data-role="diag-queues">
   <div class="op-card-head"><span class="rp-step-eyebrow">갱신 큐 · 일회성 작업 — 마지막 회전</span></div>
   <div class="op-card-body small">
+    {% set _qname = {'coupang_detail_refresh:last': '쿠팡 상세 갱신', 'naver_detail_refresh:last': '네이버 본문 갱신',
+                     'ops:oneshot:last': '일회성 작업'} %}
     {% for k, v in (queues or {}).items() %}
-    <details class="mb-1"><summary>{{ k }} · {{ (v.at or '')|kst }}{% if v.left is defined %} · 남은 줄 {{ v.left }}{% endif %}</summary>
+    <details class="mb-1"><summary>{{ _qname.get(k, '기록') }} · {{ (v.at or '')|kst or '기록 없음' }}{% if v.left is defined %} · 남은 줄 {{ v.left }}{% endif %}</summary>
       <pre class="small mb-0" style="white-space:pre-wrap">{{ v|tojson(indent=1) }}</pre></details>
     {% endfor %}
   </div>
 </section>
 {% endif %}
-<div class="op-shell">
+<div class="diag-grid" data-role="diag-grid">
 
   <!-- 01 · 등록 계정 -->
   <section class="op-card op-span-5">
@@ -81,7 +83,7 @@
     <div class="op-card-head">
       <span class="rp-step-eyebrow"><span class="rp-step-num">02</span>반려 감시</span>
       <span class="op-tile-sub ms-auto">
-        {% if ops.rejections.connected %}반려 {{ ops.rejections.rejected }} · 감시 대기 {{ ops.rejections.watching }} · {% endif %}처방 실행은 승인 뒤
+        {% if ops.rejections.connected %}반려 {{ ops.rejections.rejected }} · 감시 대기 {{ ops.rejections.watching }}{% if ops.rejections.stale %} · 낡은 기록 {{ ops.rejections.stale }}{% endif %} · {% endif %}처방 실행은 승인 뒤
       </span>
     </div>
     <div class="op-card-body">
@@ -93,11 +95,12 @@
         {% for r in ops.rejections.rows %}
         <div class="op-row">
           {# 반려 확정과 감시 대기는 **다른 상태**다 — 라벨로 갈라 놓지 않으면 같은 줄로 읽힌다. #}
-          <span class="op-sig-item{% if r.phase == 'rejected' %} is-err{% endif %}">
-            <span class="op-sig-dot"></span>{{ '반려' if r.phase == 'rejected' else '감시' }}
+          {# Y12-A: 상태 낱말은 Wing 표기 하나(승인반려·임시저장) · 키(unknown 등)는 화면에 0건 · 마지막 조회 시각(KST) #}
+          <span class="op-sig-item{% if r.phase == 'rejected' %} is-err{% elif r.phase == 'stale' %} is-unknown{% endif %}">
+            <span class="op-sig-dot"></span>{{ r.state_word if r.phase in ('rejected', 'stale') else '감시' }}
           </span>
           <span class="op-row-title" title="{{ r.reject_comment or r.title }}">{{ r.title or r.sid or r.product_id }}</span>
-          <span class="op-tile-sub">{{ r.reject_kind or r.account }}</span>
+          <span class="op-tile-sub" data-role="op-reject-sub">{{ r.kind_word or '' }}{% if r.kind_word and r.checked_kst %} · {% endif %}{% if r.checked_kst %}{{ '낡은 기록 · ' if r.phase == 'stale' }}마지막 조회 {{ r.checked_kst }}{% endif %}</span>
         </div>
         {% endfor %}
       </div>

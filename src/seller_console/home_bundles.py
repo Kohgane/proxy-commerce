@@ -54,9 +54,38 @@ def _attention(seller_ids) -> Dict:
                 key, label = "owner", "오너 확인 대기"
             g = groups.setdefault(key, {"label": label, "n": 0, "kind": i["kind"]})
             g["n"] += 1
+    # Y12-A(오너 23:31): 등록 대장(복제 등록분 — 수집 목록 밖)의 **살아 있는** 반려도 같은 묶음에. 낡은 기록(임시저장 사유)은 안 올린다.
+    for r in _ledger_rejections():
+        label = f"쿠팡 — {_ACCOUNT_KO.get(str(r.get('account') or ''), str(r.get('account') or ''))} 승인반려"
+        products.append({"id": "", "title": str(r.get("title") or r.get("product_id") or "")[:60],
+                         "lines": [label + (f" · {r['kind_word']}" if r.get("kind_word") else "")
+                                   + (f" · 마지막 조회 {r['checked_kst']}" if r.get("checked_kst") else "")]})
+        g = groups.setdefault(f"rejected:ledger:{r.get('account')}", {"label": label, "n": 0, "kind": "rejected"})
+        g["n"] += 1
     order = {"rejected": 0, "send_fail": 1, "owner": 2}
     return {"n": len(products), "groups": sorted(groups.values(), key=lambda g: (order.get(g["kind"], 9), g["label"])),
             "products": products[:30], "capped": len(rows) >= ATTN_SCAN_LIMIT}
+
+
+_ACCOUNT_KO = {"gogane": "고가네", "woojoo": "우주대행"}
+
+
+def _ledger_rejections(limit: int = 50) -> List[Dict]:
+    """등록 대장의 반려 확정 줄 중 **살아 있는 것만**(낱말·조회 시각은 `ops_snapshot._reject_words` 한 곳)."""
+    try:
+        from src.db import market_registrations_pg as ledger
+        if not ledger.enabled():
+            return []
+        from src.pipeline.ops_snapshot import _reject_words
+        out = []
+        for r in ledger.recent_rejected(marketplace="coupang", limit=limit) or []:
+            w = _reject_words(r)
+            if w["phase"] == "rejected":
+                out.append(dict(r, **w))
+        return out
+    except Exception as exc:                                     # noqa: BLE001 — 대장 실패가 묶음을 막지 않는다
+        logger.debug("[대시보드] 등록 대장 반려 조회 실패: %s", exc)
+        return []
 
 
 def _running() -> Dict:

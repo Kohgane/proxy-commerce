@@ -2428,6 +2428,15 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .kgp-dcell-edit { margin: 0 var(--space-1) var(--space-1); min-height: 32px; }
 .kgp-dcell-img[role=button] { cursor: pointer; }
 
+/* Y12-A(오너 23:31 a): 「진단」은 옛 대시보드 카드를 **흐르는 높이**로 — `.op-shell`(뷰포트 고정 + main overflow hidden)을
+   쓰면 카드 본문이 잘린다. 같은 카드 문법(op-card)만 빌리고 높이는 내용대로, 넘치면 페이지가 스크롤. */
+.diag-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-5); align-items: start; }
+.diag-grid > .op-card { overflow: visible; }
+.diag-grid > .op-card .op-card-body { overflow: visible; }
+.diag-grid .op-card-head { flex-wrap: wrap; row-gap: 4px; }                 /* 390px: 제목이 두 줄로 쪼개지지 않게 메타를 아래로 */
+.diag-grid .op-sig-item { white-space: nowrap; flex: none; }              /* 「임시저장」이 한 글자씩 세로로 꺾이지 않게 */
+@media (max-width: 1199.98px) { .diag-grid { grid-template-columns: minmax(0, 1fr); } .diag-grid > * { grid-column: 1 / -1; } }
+
 /* ── Y12-A(오너 2026-10-17): 대시보드 세 묶음 · 상품목록 한 줄 · 마켓 뱃지(모양으로 상태 — 색만으로 구분하지 않는다) ── */
 .hb-wrap { display: grid; gap: var(--space-2, 12px); max-width: 860px; }
 .hb-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius, 12px); padding: 12px 16px; }
