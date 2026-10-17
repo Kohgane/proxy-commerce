@@ -10585,10 +10585,13 @@ def discovery_keywords_remove():
 # Phase 135.2: /seller/collect/history + /seller/collect/preview/<id>
 # ---------------------------------------------------------------------------
 
-def _row_flags(item: dict) -> list:
-    """Y12-A — 목록 줄에서 뺀 표시(수집 상태·번역·간이·식별자·비상품·이미지 부족·보강·등록 보류)를 드로어 맨 위 한 줄로."""
+def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
+    """Y12-A — 목록 줄에서 뺀 표시(수집 상태·번역·간이·식별자·비상품·이미지 부족·보강·등록 보류)를 드로어 맨 위 한 줄로.
+    드로어는 `item`에서 extra_json을 떼어 넘기므로 파싱해 둔 `extra`를 따로 받는다(없으면 빈 extra로 「수집 실패」가 된다)."""
     try:
         it = dict(item)
+        if extra is not None:
+            it["extra_json"] = json.dumps(extra, ensure_ascii=False)
         _shape_collect_items([it], "ko")
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[드로어] 표시 줄 계산 실패: %s", exc)
@@ -11290,7 +11293,7 @@ def collect_preview_by_id(item_id: str):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
-        market_records=_market_records(extra), item_flags=_row_flags(item),
+        market_records=_market_records(extra), item_flags=_row_flags(item, extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
         field_src=field_src,

@@ -13,7 +13,7 @@ import time
 sys.path.insert(0, os.getcwd())
 os.environ["SELLER_CONSOLE_AUTH"] = "0"
 TAG = sys.argv[1] if len(sys.argv) > 1 else "before"
-OUT = os.path.join("docs", "screens", "y12a")
+OUT = os.path.join("docs", "screens", "y12a", *([TAG] if TAG == "after" else []))
 os.makedirs(OUT, exist_ok=True)
 
 FIX = json.load(open("tests/fixtures/y11o_vrsuk_risk.json", encoding="utf-8"))
@@ -66,6 +66,21 @@ for _k, _i, _c, _ca, _ch, _tl, _se, _w in POLISH:
                     "suggest_erase": _se, "why": "", "rows": [{"why": w} for w in _w]}
     _ents[_i] = _e
     FIX[_k] = [_ents[x] for x in sorted(_ents)]
+# 운영 DB 10-17 실측 다듬기 시각·버전(장별) — 마지막 실행 = 상세 13번 한 장(10-17 05:00) → 「바뀐 장 1」
+_REAL = {("images_ko", 0): ("2026-10-15T06:39:18+00:00", "edit:1")}
+for _i, _t in ((2, "10-15T06:39:26"), (3, "10-15T06:39:28"), (5, "10-15T06:39:32"), (6, "10-15T06:39:35"), (7, "10-15T06:39:40"),
+               (9, "10-15T06:39:43"), (11, "10-15T06:39:49"), (16, "10-15T06:40:37"), (17, "10-15T06:40:41"), (18, "10-15T06:40:47"),
+               (19, "10-15T06:40:52"), (20, "10-15T06:40:59"), (14, "10-16T14:56:14"), (22, "10-16T14:56:19"), (4, "10-16T16:39:26"),
+               (10, "10-16T16:39:31"), (13, "10-16T16:39:35"), (15, "10-16T16:39:38"), (21, "10-16T16:39:43"), (23, "10-16T16:39:49"),
+               (24, "10-16T16:39:52"), (26, "10-16T16:39:55"), (12, "10-17T05:00:35")):
+    _REAL[("detail_images_ko", _i)] = (f"2026-{_t}+00:00", None if _i in (3, 15) else "edit:1")
+for _k in ("images_ko", "detail_images_ko"):
+    for _e in FIX.get(_k) or []:
+        _r = _REAL.get((_k, int(_e.get("idx", -1))))
+        if _r and isinstance(_e.get("polish"), dict):
+            _e["polish"]["at"] = _r[0]
+            if _r[1]:
+                _e["polish"]["version"] = _r[1]
 EXTRA = dict(FIX, uploaded=UPLOADED, coupang_detail_sync=SYNC,
              title_ko="VRSUK{비즈니스 시리즈} 심플 리클라이너 오일 왁스 가죽 사무용 회전 승강 1인 의자")
 
@@ -82,7 +97,8 @@ STATE[D.item_key("it-vrsuk")] = {"item": "it-vrsuk", "at": "2026-10-17T05:00:42+
                                  "pages": [{"kind": "detail", "idx": 0, "no": 1, "verdict": "none", "why": "", "url": "https://img.alicdn.com/x.jpg"}]}
 Q.state_get = lambda k: STATE.get(k)
 Q.state_set = lambda k, v: STATE.__setitem__(k, v)
-Q.counts = lambda item_id: {"queued": 0, "running": 0}
+Q.counts = lambda item_id="": {"queued": 0, "running": 0}
+Q.day_count = lambda k: 17   # 캡처용: 오늘 쓴 것 n
 
 # ── 마켓 조회는 DB 기록 그대로(밖으로 호출 없음) ─────────────────────────────────────────────────────────────
 from src.seller_console import listing_status as MS
@@ -186,6 +202,11 @@ with sync_playwright() as pw:
             pg.screenshot(path=os.path.join(OUT, f"{TAG}-{nm}-{wname}.png"), full_page=True)
             main = pg.locator("main, .console-main, #main").first
             dump(f"{nm}-{wname}", (main if main.count() else pg.locator("body")).inner_text())
+            if nm == "6-dashboard":                               # 묶음 펼침(눌러서 펼침) 상태도 한 장
+                pg.evaluate("document.querySelectorAll('details.hb-card').forEach(d => d.open = true)")
+                pg.wait_for_timeout(300)
+                pg.screenshot(path=os.path.join(OUT, f"{TAG}-{nm}-open-{wname}.png"), full_page=True)
+                dump(f"{nm}-open-{wname}", (main if main.count() else pg.locator("body")).inner_text())
         c2.close()
     b.close()
 

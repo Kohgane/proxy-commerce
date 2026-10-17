@@ -1060,10 +1060,13 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(18px) saturate(1.1);
   z-index: 1081; box-shadow: var(--nm-soft-lg);
-  transform: translateX(100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+  transform: translateX(100%);
+  /* Y12-A: 닫힌 시트는 밀어내기만 하면 전체 캡처·긴 화면에서 빈 시트로 드러난다 — 닫히면 아예 감춘다(닫힘 애니메이션 뒤). */
+  visibility: hidden;
+  transition: transform .26s cubic-bezier(.4, 0, .2, 1), visibility 0s linear .26s;
   display: flex; flex-direction: column;
 }
-.kgp-drawer.show { transform: translateX(0); }
+.kgp-drawer.show { transform: translateX(0); visibility: visible; transition: transform .26s cubic-bezier(.4, 0, .2, 1), visibility 0s; }
 .kgp-drawer-head {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -2454,14 +2457,15 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .ch-list-head { display: flex; align-items: center; gap: 10px; }
 .ch-count { font-weight: 700; }
 .ch-table { table-layout: fixed; width: 100%; }
+[data-fs-root].ch-norail { padding-right: 0; }   /* 레일 없는 정렬(기본)에서는 레일 자리를 비우지 않는다 */
 .ch-table td { vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
 .ch-c-chk { width: 36px; }
 .ch-c-img { width: 56px; }
-.ch-c-badges { width: 360px; }
-.ch-c-when { width: 200px; font-size: .8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-c-badges { width: 460px; }   /* 「고코스모스 판매중」까지 4개가 한 줄 */
+.ch-c-when { width: 180px; font-size: .8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ch-title-1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text); text-decoration: none; }
 .mk-badges { flex-wrap: nowrap; }
-.mk-badge .mk-short { display: none; }
+.mk-badge .mk-short, .ch-when-short { display: none; }
 .mk-badge.kind-done { background: var(--success); border-color: var(--success); color: var(--on-accent); }
 .mk-badge.kind-wait { background: transparent; border: 1px solid var(--text-muted); color: var(--text); }
 .mk-badge.kind-bad { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
@@ -2470,6 +2474,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 @media (max-width: 767.98px) {
   /* 390px 한 줄: 체크 · 썸네일 · 상품명(말줄임) · 뱃지 4(약자) · 시각 — 두 줄로 안 꺾인다 */
   .ch-table, .ch-table tbody, .ch-table tr { display: block; width: 100%; }
+  .table-responsive > table.ch-table.pc-swiss-table { min-width: 0; }   /* seller.css 「표 하한 560px」 예외 — 한 줄 목록은 가로 스크롤 없이 */
   .ch-table tr.ch-row { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-bottom: 1px solid var(--border); }
   .ch-table tr.ch-row > td { display: block; padding: 0; border: 0; width: auto; }
   .ch-c-chk { flex: none; }
@@ -2478,7 +2483,10 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   .ch-c-title { flex: 1 1 auto; min-width: 0; }
   .ch-c-badges { flex: none; }
   .ch-c-when { flex: none; font-size: .72rem; }
-  .ch-c-when .ch-when-text { display: none; }
+  .ch-c-when .ch-when-text, .ch-c-when .ch-when-time { display: none; }
+  .ch-c-when .ch-when-short { display: inline; }
+  .ch-table tr.ch-row > td.ch-c-chk { padding: 0 !important; }   /* ps-3(16px)까지 걷어 상품명 폭 확보 */
+  .ch-card-table > .op-card-body { padding: 4px 6px; }
   .mk-badge { min-width: 22px; min-height: 22px; padding: 0 5px; justify-content: center; font-size: .7rem; }
   .mk-badge .mk-full { display: none; }
   .mk-badge .mk-short { display: inline; }

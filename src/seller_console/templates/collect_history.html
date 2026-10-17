@@ -177,7 +177,7 @@
       {% endif %}
     </div>
     <div class="op-card-body">
-      <div class="table-responsive ch-list" data-fs-root>
+      <div class="table-responsive ch-list{{ "" if fastscroll else " ch-norail" }}" data-fs-root>
         <table class="table table-hover mb-0 ch-table pc-swiss-table">
           {# 속도: 첫 50건만 렌더 + 무한스크롤(fmt=rows). 행은 collect_history_rows.html 단일소스. #}
           {# v57 STEP2: 실시간 증분 커서 — 초기 렌더 시점 최신 collected_at(신규 삽입 기준선). #}
@@ -1356,7 +1356,8 @@ async function runBulkUpload() {
     setDone();
 
     var root = document.querySelector('[data-fs-root]');
-    if (root && window.KGPFastScroll) window.KGPFastScroll.init(root, {
+    // Y12-A: 레일은 이름순(제목순)일 때만 — 기본(마지막 동작순)에서는 390px 한 줄 폭을 먹고 쓸 일이 없다.
+    if (root && window.KGPFastScroll && {{ 'true' if fastscroll else 'false' }}) window.KGPFastScroll.init(root, {
       enabled: {{ 'true' if fastscroll else 'false' }},
       switchUrl: "{{ _fs_switch }}",
       buckets: {{ fs_buckets|tojson if fs_buckets is defined else '{}' }},

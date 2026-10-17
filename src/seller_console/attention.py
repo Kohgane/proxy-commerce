@@ -76,9 +76,17 @@ def last_action(extra: dict, collected_at: str = "") -> Dict:
         if d and (best is None or d > best[0]):
             best = (d, a)
     if not best:
-        return {"at": "", "text": "", "line": ""}
+        return {"at": "", "text": "", "line": "", "short": ""}
     d, a = best
-    return {"at": d.astimezone(timezone.utc).isoformat(), "text": a["text"], "line": f"{kst(d.isoformat())} {a['text']}"}
+    return {"at": d.astimezone(timezone.utc).isoformat(), "text": a["text"], "line": f"{kst(d.isoformat())} {a['text']}",
+            "short": short_when(d)}
+
+
+def short_when(d: datetime, now: Optional[datetime] = None) -> str:
+    """모바일 한 줄용 짧은 시각(KST) — 오늘이면 「14:10」, 아니면 「10-17」."""
+    k = d.astimezone(KST)
+    today = (now or datetime.now(timezone.utc)).astimezone(KST).date()
+    return k.strftime("%H:%M") if k.date() == today else k.strftime("%m-%d")
 
 
 def erase_suggestions(extra: dict) -> int:
