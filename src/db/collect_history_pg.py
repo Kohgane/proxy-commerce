@@ -167,7 +167,9 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
     sc, params = _scope(seller_id, seller_ids)
     _cols = _SELECT_LEAN if lean else _SELECT      # 속도: 목록은 대형 컬럼 제외한 축약 projection
     _at = _ACTION_AT if order == "action" else "created_at"     # Y12-A: 마지막 동작 최신순(기간도 그 기준)
-    sql = (f"SELECT {_cols} FROM collect_history WHERE deleted_at IS NULL "
+    # Y12-A: 페이지 조회면 같은 쿼리로 전체 건수(`count(*) OVER()`)도 받는다 — 건수 쿼리를 따로 늘리지 않는다(페이지 쿼리 ≤3)
+    _tot = ", count(*) OVER()" if limit is not None else ""
+    sql = (f"SELECT {_cols}{_tot} FROM collect_history WHERE deleted_at IS NULL "
            f"AND {_at} >= %s AND {sc}")
     args = [cutoff] + params
     if attn_only:
@@ -182,7 +184,15 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
         sql += " LIMIT %s OFFSET %s"; args.append(int(limit)); args.append(int(offset))
     with pg.query() as cur:
         cur.execute(sql, args)
-        return [_shape(t) for t in cur.fetchall()]
+        rows = cur.fetchall()
+    if not _tot:
+        return [_shape(t) for t in rows]
+    out = []
+    for t in rows:
+        d = _shape(t[:-1])
+        d["_total"] = int(t[-1] or 0)
+        out.append(d)
+    return out
 
 
 def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=False) -> int:

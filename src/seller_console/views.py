@@ -10848,7 +10848,9 @@ def collect_history():
     if _sql_page:
         # SQL이 이미 최신순·해당 페이지만 반환 — 파이썬 필터/정렬/슬라이스 생략.
         total_filtered = summ.get("total", len(items))
-        if _order == "action" or attn_f:                     # Y12-A: 마지막 동작 기준 기간·손댈 것만은 건수가 다르다
+        if (_order == "action" or attn_f) and items and "_total" in items[0]:
+            total_filtered = int(items[0]["_total"])         # Y12-A: 목록 쿼리가 같이 준 건수(쿼리 추가 0)
+        elif _order == "action" or attn_f:                   # Y12-A: 마지막 동작 기준 기간·손댈 것만은 건수가 다르다
             try:
                 from .collect_history_store import count_items as _cnt
                 total_filtered = _cnt(days=days, seller_ids=_seller_identities(), order=_order, attn_only=attn_f)
