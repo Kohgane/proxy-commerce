@@ -186,6 +186,11 @@ def test_template_ui_contract():
     assert "hygiene=cleanup" in tpl and "정리 후보" in tpl
     assert "runBulkArchiveCandidates" in tpl              # 선택 보관(삭제 아님)
     assert "bulkDeleteAck" in tpl                         # 영구 삭제 2단 확인 체크
-    import inspect
-    from src.seller_console import views as V
-    assert "비상품 의심" in inspect.getsource(V._row_flags)   # Y12-A: 후보 배지는 드로어 맨 위 한 줄
+    # Y12-A: 후보 배지는 드로어 맨 위 한 줄(동작으로 잰다)
+    import json as _json
+    from src.seller_console.views import _row_flags
+
+    def _flags(url, ex, title="t", source="extension"):
+        return _row_flags({"id": "x", "title": title, "url": url, "source": source, "extra_json": _json.dumps(ex)})
+    assert "비상품 의심" in _flags("https://mail.google.com/mail/u/0/#inbox", {"title": "받은편지함 - Gmail"},
+                                 title="받은편지함 - Gmail")

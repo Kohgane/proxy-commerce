@@ -40,7 +40,7 @@
     </div>
     {% endif %}
   </td>
-  <td class="ch-c-when" title="{{ it.last_action.line if it.last_action else '' }}">
+  <td class="ch-c-when" data-label="마지막 동작" title="{{ it.last_action.line if it.last_action else '' }}">
     {% if it.last_action and it.last_action.line %}
     <span class="ch-when-time" data-role="last-action-time">{{ it.last_action.line[:11] }}</span><span class="ch-when-short">{{ it.last_action.short }}</span><span class="ch-when-text"> {{ it.last_action.text }}</span>
     {% endif %}

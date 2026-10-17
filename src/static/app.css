@@ -2471,8 +2471,9 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .ch-c-chk { width: 36px; }
 .ch-c-img { width: 56px; }
 .ch-c-badges { width: 460px; }   /* 「고코스모스 판매중」까지 4개가 한 줄 */
-.ch-c-when { width: 180px; font-size: .8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ch-title-1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text); text-decoration: none; }
+/* 1줄 말줄임은 표 문법(td.cardcell-title · td[data-label]) 한 곳 — 여기서 다시 정하지 않는다 */
+.ch-c-when { width: 180px; font-size: .8rem; color: var(--text-muted); }
+.ch-title-1 { font-weight: 600; color: var(--text); text-decoration: none; }
 .mk-badges { flex-wrap: nowrap; }
 .mk-badge .mk-short, .ch-when-short { display: none; }
 .mk-badge.kind-done { background: var(--success); border-color: var(--success); color: var(--on-accent); }

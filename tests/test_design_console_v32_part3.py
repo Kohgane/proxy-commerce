@@ -4,7 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 CSS = Path("src/seller_console/static/console.css").read_text(encoding="utf-8")
-DASH = Path("src/seller_console/templates/dashboard.html").read_text(encoding="utf-8")
+# Y12-A(오너 2026-10-17): 첫화면은 세 묶음 — 옛 대시보드 카드(KPI 타일·카드 헤더)는 「진단」 화면으로 그대로 옮겼다
+DASH = Path("src/seller_console/templates/diagnostics_home.html").read_text(encoding="utf-8")
 
 
 def test_kpi_value_is_serif_large_number():

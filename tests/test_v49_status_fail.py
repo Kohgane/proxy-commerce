@@ -48,9 +48,13 @@ def test_all_present_is_success():
 
 def test_failure_rendered_in_list_and_drawer_and_toast():
     # 목록 배지·드로어 로그·토스트에 실패 3단계 반영
-    import inspect
-    from src.seller_console import views as _V
-    assert '"수집 실패"' in inspect.getsource(_V._row_flags)       # Y12-A: 목록 상태 → 드로어 맨 위 한 줄
+    # Y12-A: 목록 상태 → 드로어 맨 위 한 줄(동작으로 잰다)
+    import json as _json
+    from src.seller_console.views import _row_flags
+
+    def _flags(url, ex, title="t", source="extension"):
+        return _row_flags({"id": "x", "title": title, "url": url, "source": source, "extra_json": _json.dumps(ex)})
+    assert "수집 실패" in _flags("https://x/g-1", {"title": "", "price": "", "price_status": "needs_check", "images": []}, title="")
     assert 'collect_status.status == "실패"' in PREVIEW and "수집 실패" in PREVIEW
     assert 'fs.status === "실패"' in CS and "수집 실패" in CS
 

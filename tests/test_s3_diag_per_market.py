@@ -16,7 +16,8 @@ from pathlib import Path
 import pytest
 
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
-TPL = Path("src/seller_console/templates/dashboard.html").read_text(encoding="utf-8")
+# Y12-A: 연동 마켓 신호줄·비동기 진단은 대시보드에서 「진단」 화면으로 그대로 옮겼다
+TPL = Path("src/seller_console/templates/diagnostics_home.html").read_text(encoding="utf-8")
 
 
 @pytest.fixture

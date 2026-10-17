@@ -47,7 +47,9 @@ def test_status_badges_use_tokens():
 
 
 def test_title_truncate_preserved():
-    assert "ch-title-1" in ROWS and "text-overflow: ellipsis" in CSS_S6C.split(".ch-title-1")[1][:200]   # 제목 1줄 말줄임
+    # 제목 1줄 말줄임 — 표 문법(td.cardcell-title) 한 곳에서(슬라이스가 다시 정하지 않는다)
+    assert 'class="cardcell-title ch-cell-title ch-c-title"' in ROWS
+    assert "text-overflow: ellipsis" in CSS_S6C.split(".pc-swiss-table > tbody > tr > td.cardcell-title")[1][:200]
 
 
 def test_history_page_renders(flask_client, monkeypatch):
