@@ -23,9 +23,13 @@
        data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ _t }}">{{ _t }}</a>
   </td>
   <td class="ch-c-badges">
-    {% if it.market_chips %}
+    {% if it.market_slots %}
     <div class="mk-chips mk-badges" data-role="mk-chips">
-      {% for c in it.market_chips %}
+      {% for c in it.market_slots %}
+      {% if c.empty %}
+      {# Y12-C: 미등록 계정 = 빈 테두리로 자리만(고·우·셰·코 순서 고정) #}
+      <span class="mk-chip mk-badge kind-none" data-role="mk-slot-empty" data-slot="{{ c.market }}" title="{{ c.name }} 미등록" aria-label="{{ c.name }} 미등록"><span class="mk-full">{{ c.name }}</span><span class="mk-short"></span></span>
+      {% else %}
       {% set _word = c.state_label %}
       <button type="button" class="mk-chip mk-badge kind-{{ c.kind }}" data-role="mk-chip" data-kind="{{ c.kind }}"
               data-market-status="{{ c.market }}" data-item="{{ it.id }}"
@@ -36,6 +40,7 @@
       </button>
       {% if c.dup_count %}<button type="button" class="mk-chip mk-chip-dup" data-role="mk-dup-badge" data-market-status="{{ c.market }}" data-item="{{ it.id }}"
               title="같은 상품이 이 마켓에 {{ c.dup_count }}건 등록돼 있어요 — 눌러서 정리">중복 {{ c.dup_count }}</button>{% endif %}
+      {% endif %}
       {% endfor %}
     </div>
     {% endif %}

@@ -39,3 +39,38 @@ def test_pg_backfill_picks_failure_candidates_and_refetch_filter(monkeypatch):
     assert [r["id"] for r in S.list_items(days=3650, seller_ids={uid}, refetch_only=True)] == [wt_id]
     with pg.tx() as cur:
         cur.execute("DELETE FROM collect_history WHERE user_id=%s", [uid])
+
+
+@pytest.mark.skipif(not _has_pg, reason="로컬 PostgreSQL(DATABASE_URL) 설정 시만")
+def test_pg_dashboard_rows_small_columns_and_ledger_account_counts():
+    """Y12-C — 대시보드 한 쿼리가 작은 칸만 싣고(사진 기록 통째 X, 다듬기 시각만) · 대장 계정별 건수가 임시저장 반려를 `held`로 가른다."""
+    import json
+    from src.db import pg
+    from src.db import collect_history_pg as P
+    from src.db import market_registrations_pg as L
+    from src.seller_console import home_bundles as H
+    pg.reset_state(); pg.init_schema()
+    uid = "u-y12c-pg"
+    ex = {"title_ko": "VRSUK{비즈니스}", "price": "1", "images": ["https://img.alicdn.com/a.jpg"],
+          "uploaded": [{"market": "coupang:woojoo", "account": "woojoo", "product_id": "9", "at": "2026-10-15T15:38:55+00:00",
+                        "review": {"state": "approved", "status_raw": "승인완료", "checked_at": "2026-10-17T17:10:20+00:00"}}],
+          "detail_images_ko": [{"idx": i, "big": "x" * 5000,
+                                "polish": {"at": f"2026-10-15T06:39:{10 + i:02d}+00:00", "version": "edit:1"}} for i in range(2)]}
+    iid = _add(uid, ex, url="https://item.taobao.com/item.htm?id=905")
+    rows = [r for r in P.dashboard_rows(seller_ids={uid}) if r["id"] == iid]
+    assert len(rows) == 1
+    small = rows[0]["extra"]
+    assert sorted(small["_polish_ats"]) == ["2026-10-15T06:39:10+00:00", "2026-10-15T06:39:11+00:00"]
+    assert "detail_images_ko" not in small and len(json.dumps(small)) < 2000
+    assert H._markets(rows)["rows"][1]["sale"] == 1
+    with pg.tx() as cur:
+        cur.execute("DELETE FROM market_registrations WHERE product_id IN ('y12c-a', 'y12c-b')")
+    L.record("y12c-a", account="gogane", title="andobil")
+    L.mark_checked("y12c-a", status="approved")
+    L.record("y12c-b", account="gogane", title="Stagg")
+    L.mark_checked("y12c-b", status="rejected", reject_kind="unknown", reject_comment="판매자(A01381223) 임시저장")
+    got = {(c["status"], c["held"]): c["n"] for c in L.account_counts(marketplace="coupang") if c["account"] == "gogane"}
+    assert got.get(("approved", False), 0) >= 1 and got.get(("rejected", True), 0) >= 1
+    with pg.tx() as cur:
+        cur.execute("DELETE FROM market_registrations WHERE product_id IN ('y12c-a', 'y12c-b')")
+        cur.execute("DELETE FROM collect_history WHERE user_id=%s", [uid])

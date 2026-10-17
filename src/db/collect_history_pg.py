@@ -212,6 +212,37 @@ def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=Fa
         return int((cur.fetchone() or (0,))[0] or 0)
 
 
+#: Y12-C — 사진 번역 기록 세 칸(다듬기 시각만 뽑는다 · 사진 기록 통째는 VRSUK 한 건이 500KB라 안 끈다)
+_KO_ARR = " || ".join(f"(CASE WHEN jsonb_typeof(extra_json->'{k}')='array' THEN extra_json->'{k}' ELSE '[]'::jsonb END)"
+                      for k in ("images_ko", "detail_images_ko", "sku_images_ko"))
+
+
+def dashboard_rows(*, seller_ids=None) -> list:
+    """Y12-C 대시보드 한 쿼리 — 상품마다 **작은 칸만**: 제목 · 수집 시각 · 마지막 동작 · 손댈 것 수 · 등록 기록 ·
+    쿠팡 상세 보냄 기록 · 손댈 것 요약 · 등록 보류 · 다듬기 시각 목록(`_polish_ats`). 대시보드 묶음 전부가 이것 하나를 읽는다."""
+    sc, params = _scope(None, seller_ids)
+    sql = (f"SELECT id::text, title, created_at, last_action_at, attn_n, jsonb_build_object("
+           "'title_ko', extra_json->'title_ko', "
+           "'uploaded', extra_json->'uploaded', "
+           "'coupang_detail_sync', extra_json->'coupang_detail_sync', "
+           "'attn', extra_json->'attn', "
+           "'risk_skip', extra_json->'risk_skip', "
+           f"'_polish_ats', (SELECT COALESCE(jsonb_agg(e->'polish'->>'at'), '[]'::jsonb) FROM jsonb_array_elements({_KO_ARR}) e "
+           "WHERE jsonb_typeof(e->'polish')='object' AND e->'polish' ? 'at' AND e->'polish' ? 'version')) "
+           f"FROM collect_history WHERE deleted_at IS NULL AND {sc}")
+    with pg.query() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    return [{"id": r[0], "title": r[1] or "", "collected_at": _iso(r[2]), "last_action_at": _iso(r[3]),
+             "attn_n": int(r[4] or 0), "extra": r[5] if isinstance(r[5], dict) else {}} for r in rows]
+
+
+def _iso(v) -> str:
+    if not v:
+        return ""
+    return v.isoformat() if hasattr(v, "isoformat") else str(v)
+
+
 def ids_for_attention_backfill(limit: int = 500) -> list:
     """Y12-A 일회성 — 목록 정렬·「손댈 것」 열이 아직 비었고 등록 기록·등록 보류가 있는 상품 id(전 셀러).
     Y12-B: + 수집 실패 후보(이미 채운 행도 — 요약에 실패 칸이 새로 생겼다): 보강 대기·막힘 · 보강 축 없이 가격·갤러리 둘 다 빈 행."""

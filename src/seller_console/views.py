@@ -3452,9 +3452,8 @@ def collect_market_status(item_id):
         logger.warning("[네이버 상품명] 자동 고침 시작 실패: %s", exc)
     logger.info("[마켓 상태] item=%s 마켓 %d곳 병렬 %dms 캐시 %d 실패 %d", str(item_id)[:8], len(rows), ms,
                 sum(1 for r in rows if r.get("cached")), sum(1 for r in rows if r.get("error")))
-    if any(not r.get("cached") and not r.get("stale") and not r.get("error") for r in rows):
-        from .home_bundles import mark_status_checked as _mark   # Y12-A: 대시보드 「마켓 상태 마지막 조회 HH:MM」
-        _mark()
+    # Y12-C: 대시보드 「마지막 조회」는 따로 적지 않는다 — 등록 기록 `review.checked_at`(아래 remember)을 그대로 읽는다.
+    #   (옛 `market_status:last_check` 칸은 이 팝업만 적어 일회성 조회·감시 조회가 빠졌다 → 「기록 없음」 거짓)
     if any(MS.remember(extra, r) for r in rows if not r.get("cached")):
         from .collect_history_store import update as _update
         _update(str(item_id), seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
@@ -10718,6 +10717,9 @@ def _shape_collect_items(items, current_lang):
         else:  # ko
             it["title_display"] = (_tko if _translated else (_ten or _tko)) or "(제목 없음)"
             it["title_is_original"] = not _translated
+        # Y12-C(오너 2026-10-18): 목록 제목도 중괄호 규칙(`unbrace_title` — 마켓 상품명과 같은 판단) — 「VRSUK{비즈니스…}」 금지
+        from src.collectors.ko_polish import unbrace_title as _ub_title
+        it["title_display"] = _ub_title(it["title_display"]).strip() or it["title_display"]
         # v87-W6: 번역 상태(레코드 단위) — 번역함/원문(안 함)/실패 3분. 실패는 사유 + 재시도 유도.
         from src.seller_console.ai.translator import translated_flag as _tflag
         it["translated"] = _tflag(ex)          # R0: papago·azure 번역이 「안 됨」으로 저장된 옛 행도 바르게
@@ -10728,8 +10730,9 @@ def _shape_collect_items(items, current_lang):
         it["uploaded_markets"] = [str(u.get("market_label") or u.get("market"))
                                   for u in up if isinstance(u, dict) and (u.get("market_label") or u.get("market"))] if isinstance(up, list) else []
         # M7: 마켓별 소형 칩(등록된 마켓만) — 색은 마지막으로 알려진 상태(uploaded[].review). 목록은 마켓에 묻지 않는다.
-        from .listing_status import chips as _mk_chips
+        from .listing_status import chips as _mk_chips, badge_slots as _mk_slots
         it["market_chips"] = _mk_chips(ex)              # Y7-K: 마켓당 칩 하나 + 중복 배지
+        it["market_slots"] = _mk_slots(ex)              # Y12-C: 고·우·셰·코 고정 자리(빈 자리 = 빈 테두리)
         # Y12-A: 한 줄 = 썸네일 · 상품명 · 뱃지 4 · 마지막 동작(「10-17 14:10 쿠팡 상세 보냄」 KST)
         from .attention import last_action as _last_action, items as _attn_items
         it["last_action"] = _last_action(ex, it.get("collected_at") or "")

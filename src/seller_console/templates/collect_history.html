@@ -3,15 +3,10 @@
 {% block content %}
 <div class="container-fluid py-4 ch-page">
   {# v87-X2: STEP3 에디토리얼 격상 — 오버라인(금 라벨)+세리프 헤더+금 헤어라인(P~T 계보). 기능 불변. #}
-  {# Y12-A(오너 2026-10-17): 머리 = 제목 「상품」 하나. 계정 안내는 「자세히」 안으로. #}
+  {# Y12-A(오너 2026-10-17): 머리 = 제목 「상품」 하나.
+     Y12-C(오너 2026-10-18): 그 밑 「자세히」(계정 안내 한 줄 — 셀러 분리 때 토큰 혼선 방지용)는 삭제 — 계정은 사이드바에 이미 보인다. #}
   <header class="ch-head">
     <h4 class="mb-0 fw-bold">상품</h4>
-    {% if session_account %}
-    <details class="ch-more small text-muted" data-role="ch-account"><summary>자세히</summary>
-      <i class="bi bi-person-badge"></i> 지금 보고 있는 계정 <strong>{{ session_account }}</strong>
-      — 고가수집기 토큰도 <strong>이 계정</strong>에서 발급한 것이어야 같은 목록을 봅니다. <a href="/seller/me/tokens">토큰 확인</a>
-    </details>
-    {% endif %}
   </header>
 
   <!-- v72b STEP4: 고가수집기 확장 신선도 배너 — content_script가 각인한 설치 버전(data-kgp-ext)을
@@ -593,6 +588,11 @@ function closeItemDrawer() {
 // v55 STEP4: 인스턴트 내비 스왑마다 재바인딩되어 중복(→클릭 이중발화) 되던 것을 kgpInitOnce로 1회만 바인딩
 //   (document 위임이라 스왑 후에도 현재 DOM에 동작). 이하 document/window 리스너 동일.
 function _chOnce(k) { return !window.kgpInitOnce || window.kgpInitOnce('ch_' + k); }
+// Y12-C: 대시보드 「오늘 할 일」 [보기] — `?open=<상품 id>`로 들어오면 그 상품 드로어를 바로 연다
+(function () {
+  var _o = new URLSearchParams(location.search).get('open');
+  if (_o) openItemDrawer(_o, '', '');
+})();
 if (_chOnce('drawer_click'))
 document.addEventListener('click', function (e) {
   const el = e.target.closest('.kgp-open-drawer');

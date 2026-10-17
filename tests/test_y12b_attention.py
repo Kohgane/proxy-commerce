@@ -97,7 +97,7 @@ def test_dashboard_refetch_line_in_running_and_fail_in_attention():
     html = _client(uid).get("/seller/").get_data(as_text=True)
     assert 'data-role="hb-attention-n">1<' in html and "수집 실패" in html
     run = html[html.index('data-role="hb-running"'):]
-    assert "재수집 대기 1건" in run[:run.index("</details>")]
+    assert "재수집 대기 1건" in run[:run.index("</section>")]
 
 
 def test_drawer_flags_say_refetch_waiting():

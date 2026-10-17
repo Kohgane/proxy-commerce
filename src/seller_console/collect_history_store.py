@@ -471,6 +471,29 @@ def delete(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[se
     return len(delete_ids(item_ids, seller_id=seller_id, seller_ids=seller_ids))
 
 
+def dashboard_rows(*, seller_ids: Optional[set] = None) -> list:
+    """Y12-C — 대시보드 한 쿼리(PG `collect_history_pg.dashboard_rows`와 같은 모양). 인메모리는 extra에서 같은 작은 칸만 뽑는다."""
+    _b = _pg_backend()
+    if _b:
+        return _b.dashboard_rows(seller_ids=seller_ids)
+    import json as _json
+    out = []
+    for row in _in_memory:
+        if seller_ids is not None and str(row.get("seller_id", "") or "") not in seller_ids:
+            continue
+        try:
+            ex = _json.loads(row.get("extra_json") or "{}") or {}
+        except Exception:
+            ex = {}
+        ats = [e["polish"]["at"] for k in ("images_ko", "detail_images_ko", "sku_images_ko") for e in ex.get(k) or []
+               if isinstance(e, dict) and isinstance(e.get("polish"), dict) and e["polish"].get("at") and e["polish"].get("version")]
+        small = {k: ex.get(k) for k in ("title_ko", "uploaded", "coupang_detail_sync", "attn", "risk_skip")}
+        small["_polish_ats"] = ats
+        out.append({"id": row.get("id"), "title": row.get("title") or "", "collected_at": row.get("collected_at") or "",
+                    "last_action_at": str(row.get("last_action_at") or ""), "attn_n": int(row.get("attn_n") or 0), "extra": small})
+    return out
+
+
 def summary(days: int = 30, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> dict:
     """기간별 요약 통계."""
     # 속도(v46 STEP1): PG면 SQL 집계(count/FILTER)로 위임 — 전체 행(대형 extra_json 포함) 파이썬 스캔 금지.

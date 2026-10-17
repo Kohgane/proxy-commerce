@@ -50,11 +50,14 @@ def check_note(checked_at, now: Optional[datetime] = None) -> str:
 
 
 def _market_word(m: str) -> str:
+    """등록 줄의 이름 — Y12-C: 계정 자리 이름(고가네·우주대행·셰고가·고코스모스 · 옛 `coupang` = 고가네). 자리 밖은 마켓 이름."""
+    from .listing_status import BADGE_NAMES, chip_label, slot_of
+    if slot_of(m):
+        return BADGE_NAMES[slot_of(m)]
     if m.startswith("coupang"):
         return "쿠팡"
     if m.startswith("smartstore"):
         return "네이버"
-    from .listing_status import chip_label
     return chip_label(m)
 
 
@@ -82,7 +85,44 @@ def actions(extra: dict, collected_at: str = "") -> List[Dict]:
             pl = e.get("polish") if isinstance(e, dict) else None
             if isinstance(pl, dict) and pl.get("at") and pl.get("version"):
                 out.append({"at": pl["at"], "text": "다듬기 완료"})
+    for at in ex.get("_polish_ats") or []:                       # Y12-C: 대시보드 한 쿼리가 뽑아 준 다듬기 시각(사진 기록 없이)
+        if at:
+            out.append({"at": at, "text": "다듬기 완료"})
     return out
+
+
+#: Y12-C — 한 번 다듬기(사진 여러 장, 장마다 몇 초씩)를 한 줄로 묶는 간격
+POLISH_RUN_GAP = timedelta(minutes=10)
+
+
+def recent_events(extra: dict, collected_at: str = "") -> List[Dict]:
+    """Y12-C 대시보드 「최근 동작」 재료 `[{at(datetime), text}]` — 기존 기록에서만(지어내지 않는다).
+
+    `actions()`의 동작(수집·등록·보냄·다듬기)에 **상태 조회 결과**(등록 기록 `review.checked_at` → 「우주대행 상태 조회 → 승인완료」)를
+    더하고, 다듬기는 한 번 돌린 묶음(10분 안)을 「다듬기 완료 · n장」 한 줄로."""
+    from .listing_status import BADGE_NAMES, chip_label, records, slot_of, state_word
+    ev, pol = [], []
+    for a in actions(extra, collected_at):
+        d = _ts(a["at"])
+        if not d:
+            continue
+        (pol if a["text"] == "다듬기 완료" else ev).append((d, a["text"]))
+    pol.sort()
+    run: List = []
+    for d, _t in pol + [(None, "")]:
+        if run and (d is None or d - run[-1] > POLISH_RUN_GAP):
+            ev.append((run[-1], f"다듬기 완료 · {len(run)}장"))
+            run = []
+        if d is not None:
+            run.append(d)
+    for r in records(extra):
+        rv = r.get("review") or {}
+        d = _ts(rv.get("checked_at"))
+        word = state_word(r["market"], rv.get("state"), rv.get("status_raw"))
+        if d and word:
+            name = BADGE_NAMES.get(slot_of(r["market"]) or r["market"]) or chip_label(r["market"])   # 옛 `coupang` = 고가네 자리
+            ev.append((d, f"{name} 상태 조회 → {word}"))
+    return [{"at": d, "text": t} for d, t in ev]
 
 
 def last_action(extra: dict, collected_at: str = "") -> Dict:

@@ -7,54 +7,108 @@
                     Neumo=조작 요소 / Glass=오버레이. 넷이 한 요소에 겹치지 않는다.
     데이터는 **기존 산출만**(ops_snapshot) — 새 집계 발명 0. 미연결은 숫자 대신 정직 표기. #}
 {% block content %}
-{#  Y12-A(오너 2026-10-17): 첫화면 = 세 묶음만. 묶음마다 숫자 하나 + 눌러서 펼침.
-    1 손댈 것(반려·보내기 실패·오너 확인 대기 — 0이면 「없음」 한 줄 · 옆에 마켓 상태 마지막 조회 시각)
-    2 돌아가는 것(보내는 중·다듬는 중·번역 대기 — 0이면 묶음째 숨김)
-    3 오늘 쓴 것(이미지 번역 n/상한 한 줄 — 상한은 운영 env 값 그대로)
-    계정·마켓 연동 신호·등록 대장·소싱 대기 카드와 진단 패널은 사이드바 「진단」 한 곳. 「5분 시작 가이드」는 사이드바 「시작 가이드」. #}
+{#  Y12-C(오너 2026-10-18): Wing·퍼센티 식 밀도 — 390px 기준 2열 타일. 위에서부터
+    A 오늘 할 일(손댈 것을 줄로 · [보기] = 그 상품 드로어) · C 상품 현황 타일 4(누르면 그 필터 목록) · B 마켓별 현황 표 4행 ·
+    돌아가는 것(0이면 숨김) · D 최근 동작 10줄(KST) · E 오늘 쓴 것(이미지 번역 · 다듬기).
+    주문·매출 타일은 없다 — 운영 DB에 실주문이 없다(빈 약속 타일 금지). 진단 패널은 사이드바 「진단」. #}
 {% set h = home or {} %}
-<div class="hb-wrap" data-role="home-bundles">
+<div class="hb-wrap hb-grid" data-role="home-bundles">
+  <div class="hb-col hb-col-l">
   {% set a = h.attention or {} %}
-  <details class="hb-card{% if a.n %} is-alert{% endif %}" data-role="hb-attention">
-    <summary class="hb-sum">
-      <span class="hb-title">손댈 것</span>
+  <section class="hb-card hb-a{% if a.n %} is-alert{% endif %}" data-role="hb-attention">
+    <div class="hb-sum">
+      <span class="hb-title">오늘 할 일</span>
       {% if a.error %}<span class="hb-num hb-num-muted">{{ a.error }}</span>
-      {% elif a.n %}<span class="hb-num" data-role="hb-attention-n">{{ a.n }}</span>
-      {% else %}<span class="hb-none" data-role="hb-attention-none">없음</span>{% endif %}
+      {% elif a.n %}<span class="hb-num" data-role="hb-attention-n">{{ a.n }}</span>{% endif %}
       <span class="hb-meta" data-role="hb-last-check">마켓 상태 마지막 조회 {{ h.last_check or '기록 없음' }}</span>
-    </summary>
-    {% if a.n %}
-    <div class="hb-body">
-      <ul class="hb-groups">
-        {% for g in a.groups or [] %}<li><span>{{ g.label }}</span><b>{{ g.n }}</b></li>{% endfor %}
-      </ul>
-      <ul class="hb-items">
-        {% for p in a.products or [] %}
-        <li><a href="/seller/collect/history?attn=1#{{ p.id }}">{{ p.title or '(제목 없음)' }}</a>
-          <span class="hb-why">{{ p.lines|join(' · ') }}</span></li>
-        {% endfor %}
-      </ul>
-      <a class="btn btn-ghost btn-sm" href="/seller/collect/history?attn=1">손댈 것만 보기</a>
     </div>
+    {% if a.error %}
+    {% elif a.n %}
+    <ul class="hb-todo" data-role="hb-todo">
+      {% for t in a.todo or [] %}
+      <li class="hb-todo-row"><span class="hb-todo-t">{{ t.title or '(제목 없음)' }}</span><span class="hb-todo-x">{{ t.text }}</span>
+        <a class="hb-todo-go" data-role="hb-todo-go" href="{{ t.url }}">보기</a></li>
+      {% endfor %}
+      {% if a.more %}<li class="hb-todo-row hb-more"><a href="/seller/collect/history?attn=1&days=3650">나머지 {{ a.more }}줄 — 손댈 것만 보기</a></li>{% endif %}
+    </ul>
+    {% else %}
+    <p class="hb-none" data-role="hb-attention-none">없음</p>
     {% endif %}
-  </details>
+  </section>
 
   {% set r = h.running or {} %}
   {% if r.n or r.error %}
-  <details class="hb-card" data-role="hb-running">
-    <summary class="hb-sum">
-      <span class="hb-title">돌아가는 것</span>
-      {% if r.error %}<span class="hb-num hb-num-muted">{{ r.error }}</span>{% else %}<span class="hb-num">{{ r.n }}</span>{% endif %}
-    </summary>
-    <div class="hb-body"><ul class="hb-groups">{% for ln in r.lines or [] %}<li>{{ ln }}</li>{% endfor %}</ul></div>
-  </details>
+  <section class="hb-card hb-r" data-role="hb-running">
+    <div class="hb-sum"><span class="hb-title">돌아가는 것</span>
+      {% if r.error %}<span class="hb-num hb-num-muted">{{ r.error }}</span>{% else %}<span class="hb-num">{{ r.n }}</span>{% endif %}</div>
+    <ul class="hb-groups">{% for ln in r.lines or [] %}<li>{{ ln }}</li>{% endfor %}</ul>
+  </section>
   {% endif %}
 
+  {% set rc = h.recent %}
+  <section class="hb-card hb-d" data-role="hb-recent">
+    <div class="hb-sum"><span class="hb-title">최근 동작</span></div>
+    {% if rc is mapping and rc.error %}<span class="hb-num hb-num-muted">{{ rc.error }}</span>
+    {% elif rc %}
+    <ol class="hb-recent">
+      {% for e in rc %}
+      <li data-role="hb-recent-row"><time>{{ e.at }}</time><span class="hb-rtext">{{ e.text }}</span>
+        {% if e.id %}<a class="hb-rtitle" href="/seller/collect/history?open={{ e.id }}">{{ e.title or '(제목 없음)' }}</a>{% endif %}</li>
+      {% endfor %}
+    </ol>
+    {% else %}<p class="hb-none">기록 없음</p>{% endif %}
+  </section>
+
+  </div>
+  <div class="hb-col hb-col-r">
+  {% set p = h.products or {} %}
+  <section class="hb-card hb-c" data-role="hb-products" aria-label="상품 현황">
+    {% if p.error %}<span class="hb-num hb-num-muted">{{ p.error }}</span>{% else %}
+    <div class="hb-tiles">
+      {% for k, lab, url in (('collected', '수집', '/seller/collect/history?days=3650'),
+                             ('registered', '등록 완료', '/seller/collect/history?reg=done&days=3650'),
+                             ('unregistered', '미등록', '/seller/collect/history?reg=none&days=3650'),
+                             ('attn', '손댈 것', '/seller/collect/history?attn=1&days=3650')) %}
+      <a class="hb-tile{% if k == 'attn' and p[k] %} is-alert{% endif %}" data-role="hb-tile-{{ k }}" href="{{ url }}">
+        <span class="hb-tile-k">{{ lab }}</span><b class="hb-tile-v">{{ p[k] }}</b></a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  {% set m = h.markets or {} %}
+  <section class="hb-card hb-b" data-role="hb-markets">
+    <div class="hb-sum"><span class="hb-title">마켓별 현황</span></div>
+    {% if m.error %}<span class="hb-num hb-num-muted">{{ m.error }}</span>{% else %}
+    <table class="hb-mtable">
+      <colgroup><col class="c-name"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-on"><col class="c-t"></colgroup>
+      <thead><tr><th scope="col">계정</th><th scope="col">판매중</th><th scope="col">승인대기</th><th scope="col">반려</th>
+        <th scope="col">연결</th><th scope="col">마지막 조회</th></tr></thead>
+      <tbody>
+        {% for r in m.rows or [] %}
+        <tr data-role="hb-market-row" data-slot="{{ r.slot }}">
+          <th scope="row"><span class="hb-mname">{{ r.name }}</span><span class="hb-mkt">{{ r.market_ko }}</span></th>
+          <td>{{ r.sale }}</td><td>{{ r.wait }}</td><td class="{{ 'is-bad' if r.rejected }}">{{ r.rejected }}</td>
+          <td class="{{ 'is-off' if r.connected is sameas false }}">{{ '연결' if r.connected else ('미연결' if r.connected is sameas false else '—') }}</td>
+          <td class="hb-mtime">{{ r.last_check or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
   {% set t = h.today or {} %}
-  <div class="hb-card hb-flat" data-role="hb-today">
-    <span class="hb-title">오늘 쓴 것</span>
+  <section class="hb-card hb-e" data-role="hb-today">
+    <div class="hb-sum"><span class="hb-title">오늘 쓴 것</span></div>
     {% if t.error %}<span class="hb-num hb-num-muted">{{ t.error }}</span>
-    {% else %}<span class="hb-line">이미지 번역 <b>{{ t.used }}</b>/{{ t.cap }}</span>{% endif %}
+    {% else %}
+    <div class="hb-tiles hb-tiles-2">
+      <div class="hb-tile hb-tile-static"><span class="hb-tile-k">이미지 번역</span><b class="hb-tile-v">{{ t.used }}<small>/{{ t.cap }}</small></b></div>
+      <div class="hb-tile hb-tile-static"><span class="hb-tile-k">다듬기</span><b class="hb-tile-v">{{ t.polish_used }}<small>/{{ t.polish_cap }}</small></b></div>
+    </div>
+    {% endif %}
+  </section>
   </div>
 </div>
 {% endblock %}
