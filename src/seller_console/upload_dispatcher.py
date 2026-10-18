@@ -1211,7 +1211,7 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("선주문을 확인하고 「선주문 그래도 등록」")
     if any(h["fix"] == "option_short" for h in holds):
         # Y13-C 2: 축약은 사전검증이 그 자리에서 AI에 묻는다(기다릴 것 없음) — 그래도 남은 값은 검사에서 버린 것 → 손으로
-        fixes.append("옵션 탭에서 남은 값을 25자 안으로 줄인")                          # Y11-P
+        fixes.append("AI 축약이 검사에서 떨어진 값을 옵션 탭에서 25자 안으로 줄인")     # Y11-P
     if any(h["fix"] == "naver_split" for h in holds):
         fixes.append("「가격대별로 나눠 등록」을 누른")                                 # Y11-P
     if any(h["fix"] == "detail_blank" for h in holds):

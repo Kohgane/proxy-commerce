@@ -83,7 +83,7 @@ def test_old_guard_rejects_are_asked_again_new_ones_wait():
 def test_option_short_hold_does_not_say_wait():
     from src.seller_console.upload_dispatcher import readiness_message
     msg = readiness_message([{"short": "옵션값 25자 초과", "fix": "option_short", "line": "x"}])
-    assert "기다리" not in msg and "옵션 탭에서 남은 값을 25자 안으로 줄인" in msg
+    assert "기다리" not in msg and "AI 축약이 검사에서 떨어진 값을 옵션 탭에서 25자 안으로 줄인" in msg
 
 
 # ── 3. 배송 치수 — 사진 규격에서 실측 · 가구는 기본 크기 추정 금지 ───────────────────────────────────────────
