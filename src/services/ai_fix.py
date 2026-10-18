@@ -85,9 +85,17 @@ def blocked(ex: dict) -> Dict[str, str]:
     return v if isinstance(v, dict) else {}
 
 
+#: Y13-C 2: 축약 검사를 고친 시각 — 그 전에 「단어 중간 절단·지킬 말 빠짐」으로 버린 축약은 하루를 기다리지 않고 다시 묻는다
+#   (예전 검사가 맞는 답을 버렸다 — 같은 돈을 또 쓰는 게 아니라 그때 버린 답을 새 검사로 받는 것).
+SHORT_GUARD_SINCE = datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)
+
+
 def _recently_tried(ex: dict, key: str) -> bool:
     t = (ex.get("ai_fix_tried") or {}).get(key) if isinstance(ex.get("ai_fix_tried"), dict) else None
     try:
+        if t and key.startswith("option_short:") and datetime.fromisoformat(str(t)) < SHORT_GUARD_SINCE and \
+                str((ex.get("ai_fix_rejects") or {}).get(key) or "").startswith(("단어 중간 절단", "지킬 말 빠짐")):
+            return False
         return bool(t) and datetime.now(timezone.utc) - datetime.fromisoformat(str(t)) < RETRY_AFTER
     except Exception:
         return False
@@ -229,6 +237,22 @@ def _words(s: str) -> List[str]:
     return [w for w in re.split(r"[\s/·,()\[\]+]+", str(s or "")) if w]
 
 
+#: Y13-C 2(운영 10-18 피샹리 3건 「단어 중간 절단」 실측): 낱말 끝의 이 꼬리는 떼도 낱말을 자른 게 아니다 — 「검정색」→「검정」,
+#   「베이지색」→「베이지」, 「실리콘가죽」→「실리콘」. 낱말 **하나** 안에서만 · 남는 앞부분 2자 이상(「소가죽」→「소」·「천연소」는 그대로 버림).
+_SHORT_SUFFIX = ("색", "가죽", "컬러")
+
+
+def _stem(w: str) -> str:
+    for suf in _SHORT_SUFFIX:
+        if w.endswith(suf) and len(w) - len(suf) >= 2:
+            return w[: -len(suf)]
+    return w
+
+
+def _stem_of_word(w: str, words: List[str]) -> bool:
+    return len(w) >= 2 and any(o != w and _stem(o) == w for o in words)
+
+
 def short_guard(ko: str, short: str) -> str:
     """Y11-Q 축약 품질 — 통과면 "", 아니면 버리는 이유.
 
@@ -237,12 +261,12 @@ def short_guard(ko: str, short: str) -> str:
     """
     ow = _words(ko)
     joined = {"".join(ow[i:j]) for i in range(len(ow)) for j in range(i + 1, min(len(ow), i + 4) + 1)}
-    cut = [w for w in _words(short) if w not in joined]
+    cut = [w for w in _words(short) if w not in joined and not _stem_of_word(w, ow)]
     if cut:
         return f"단어 중간 절단({', '.join(cut[:3])})"
     flat = re.sub(r"\s+", "", short)
     lost = [k for k in _SHORT_KEEP if k in ko and k not in flat]
-    if ow and ow[0] not in flat:
+    if ow and ow[0] not in flat and _stem(ow[0]) not in flat:
         lost.insert(0, f"색상 「{ow[0]}」")
     if lost:
         return f"지킬 말 빠짐({', '.join(lost[:3])})"
@@ -453,6 +477,7 @@ def _apply(task: dict, ans: dict, pd: dict, ex: dict, meta: dict) -> List[str]:
                 or ("지금 값의 숫자·영문 빠짐(" + ", ".join(lost_tokens(r["ko"], short)) + ")" if lost_tokens(r["ko"], short) else "")
             if why:
                 _tried(ex, key, why)
+                task.setdefault("_rejected", []).append(f"{r['ko']} → {short or '(빈 답)'}: {why}")
                 continue
             taken.add(short)
             before = ov.get(r["src"], "")
@@ -544,7 +569,8 @@ def run_round(pd: dict, ex: dict, results, *, calls_left: int) -> Dict[str, Any]
                 break
             continue
         keys = _apply(task, r["json"], pd, ex, {"provider": r.get("provider"), "model": r.get("model")})
-        out["log"].append(f"{KIND_LABEL[task['kind']]}: {len(keys)}개 적용")
+        out["log"].append(f"{KIND_LABEL[task['kind']]}: {len(keys)}개 적용"
+                          + (f" · 검사에서 버림 {len(task['_rejected'])}개({task['_rejected'][0][:90]})" if task.get("_rejected") else ""))
         if keys:
             out["applied"] += keys
             out["markets"] += [m for m in task["markets"] if m not in out["markets"]]

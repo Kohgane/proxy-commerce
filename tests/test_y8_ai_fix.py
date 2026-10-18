@@ -185,7 +185,10 @@ def test_6_pleats_set_unchanged(monkeypatch, ai, naver_cats):
     d = prevalidate(_client(sid), {"product": {"title": "플리츠 투피스 세트", "price": 199, "images": ex["images"],
                                                 "description": ex["description"]}, "item_id": iid, "markets": ["coupang"]})
     assert d["all_ok"] and not d.get("ai_fix") and ai.calls == []
-    assert _saved(iid, sid) == before
+    saved = _saved(iid, sid)
+    # Y13-C 4: 잡 끝 「등록 준비 완료」 표시 칸(`pv_ready`)은 AI가 아니라 사전검증 결과 기록 — 그 밖은 한 글자도 안 바뀜
+    assert saved.pop("pv_ready", {}).get("ok") is True
+    assert saved == before
 
 
 # ── 5. 가드 ────────────────────────────────────────────────────────────────────────────────

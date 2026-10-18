@@ -4822,6 +4822,7 @@ def _pv_prepare(data: dict, product_data: dict):
                 product_data["ai_detail_blocked"] = True                 # 상세 초안 「되돌리기」 — 다시 만들지 않는다
             # Y9: 상표·IP 검사 재료 — 등록에 나갈 사진의 글자(텐센트 OCR 원문·번역문). 제외된 장은 안 나가므로 뺀다.
             product_data["image_ocr_text"] = _ocr_text_of(_sx)
+            product_data["photo_text"] = product_data["image_ocr_text"]          # Y13-C 3: 배송 치수 재료(등록과 같은 글자)
             # Y13-A 7: 나가는 번역본에 판촉 글자가 남았으면 「나가기 전 경고」(주의 칩 · 보류 아님)
             from src.services.image_polish import promo_left_caution as _plc
             product_data["promo_photo_caution"] = _plc(_sx)
@@ -4876,24 +4877,9 @@ def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
 
 
 def _ocr_text_of(extra: dict) -> str:
-    """Y9 — 갤러리·상세 사진의 글자(번역 결과의 원문·번역문, OCR 판정 글자). 등록에서 빠지는 상세 장은 뺀다."""
-    from src.services import detail_image_plan as _dip
-    parts = []
-    for e in (extra.get("images_ko") or []):
-        if isinstance(e, dict):
-            parts.append(_dip.entry_text(e))
-    originals = [u for u in (extra.get("detail_images") or []) if u]
-    for e in (extra.get("detail_images_ko") or []):
-        if not isinstance(e, dict):
-            continue
-        i = int(e.get("idx", -1))
-        if 0 <= i < len(originals) and _dip.verdict(e, originals[i])["use"] == "excluded":
-            continue
-        parts.append(_dip.entry_text(e))
-    for e in (extra.get("sku_images_ko") or []):                 # Y11-U: 옵션(SKU) 사진도 나가는 사진이다
-        if isinstance(e, dict):
-            parts.append(_dip.entry_text(e))
-    return " ".join(p for p in parts if p.strip())[:20000]
+    """Y9 — 갤러리·상세 사진의 글자. Y13-C: 본체는 `detail_image_plan.photo_text`(등록 `build_product`와 같은 함수)."""
+    from src.services.detail_image_plan import photo_text
+    return photo_text(extra)
 
 
 def _detail_translate_progress(item_id: str, extra: dict) -> dict:
@@ -5647,9 +5633,40 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
         perf = _pv_perf_diff(p0, _pv_perf_now())
         cur = _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat(),
                          elapsed_ms=elapsed, perf=perf)
+        _pv_mark_ready(data, markets, cur, job_id)
         # Z9: 잡 한 줄 — 요청 로그(slow_request)는 202로 이미 찍혀 이 시간이 어디에도 안 남는다.
         logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
                     json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
+
+
+def _pv_mark_ready(data: dict, markets: list, cur: dict, job_id: str) -> None:
+    """Y13-C 4(오너 2026-10-18 「BLACKHOLES 통과면 드로어에 등록 준비 완료 — 오너는 등록 버튼만」): 사전검증이 끝나면 상품 기록에
+    `pv_ready` = {ok(고른 마켓 **전부** 통과), markets, at, job}. 하나라도 보류·실패면 ok=False(지난 「준비 완료」를 지운다).
+    편집 저장(`collect_preview_save`)이 지운다. 이 칸만 덧대 저장(`merge_extra`)."""
+    iid = str((data or {}).get("item_id") or "")
+    if not iid or not markets:
+        return
+    res = (cur or {}).get("results") or {}
+    ok = all(isinstance(res.get(m), dict) and res[m].get("ok") for m in markets)
+    rec = {"ok": bool(ok), "markets": list(markets), "at": datetime.now(timezone.utc).isoformat(), "job": job_id,
+           "held": [m for m in markets if not (isinstance(res.get(m), dict) and res[m].get("ok"))]}
+    try:
+        from . import collect_history_store as _chs
+        _chs.merge_extra(iid, lambda fresh: fresh.__setitem__("pv_ready", rec), seller_ids=_seller_identities())
+    except Exception as exc:                                     # noqa: BLE001 — 표시용 칸 — 잡 결과는 그대로
+        logger.warning("[사전검증 잡] %s 등록 준비 표시 저장 실패: %s", job_id[:8], exc)
+
+
+def pv_ready_view(extra: dict) -> dict:
+    """드로어 한 줄 — 「등록 준비 완료 · 쿠팡 2 · 스마트스토어 2 통과(10-18 17:20)」. 준비 아님이면 {}."""
+    r = (extra or {}).get("pv_ready") if isinstance((extra or {}).get("pv_ready"), dict) else {}
+    if not r.get("ok"):
+        return {}
+    from collections import Counter
+    c = Counter(str(m).split(":")[0] for m in r.get("markets") or [])
+    names = {"coupang": "쿠팡", "smartstore": "스마트스토어", "elevenst": "11번가", "shopify": "Shopify", "woocommerce": "WooCommerce"}
+    parts = [f"{names.get(k, k)} {n}" if n > 1 else names.get(k, k) for k, n in c.items()]
+    return {"line": " · ".join(parts), "at": r.get("at") or "", "n": len(r.get("markets") or [])}
 
 
 @bp.get("/collect/prevalidate/job/<job_id>")
@@ -11383,6 +11400,7 @@ def collect_preview_by_id(item_id: str):
       return render_template(
         "collect_preview.html", market_desc_preview=market_desc_preview, market_desc_dropped=market_desc_dropped,
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
+        pv_ready=pv_ready_view(extra if isinstance(extra, dict) else {}),
         market_records=_market_records(extra), item_flags=_row_flags(item, extra), erase_photos=_erase_photos_view(extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, sku_brand_removed=sku_brand_removed, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
@@ -11694,6 +11712,7 @@ def collect_preview_save(item_id: str):
         extra["category_code"] = category_code
         extra["category"] = category_code
     extra["edited"] = True
+    extra.pop("pv_ready", None)                       # Y13-C 4: 고친 뒤엔 「등록 준비 완료」가 낡았다 — 사전검증을 다시
 
     ok = collect_history_store.update(
         item_id,

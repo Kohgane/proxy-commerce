@@ -19,6 +19,9 @@
 - `carry_requeue` {item_ids:[…]} — Y13-A 9(오너 16:41 「12건 이월 대기열로 재투입」): 4013 분류(#45) 전에 `provider_fail`로 적힌
   공유 초안을 `provider_quota`로 바로잡고(5000 등 다른 사유는 사유 그대로) 이월 대기에 넣는다 — 한도가 풀리는 날 워커가 1회씩 부른다.
   수집 원본·다른 칸은 손대지 않는다(`auto_enrich.kind`·`carry_requeued_at`만)
+- `retranslate` {item_id, pages:[[kind, idx], …]?} — Y13-C 1(오너 2026-10-18 「다시 번역 큐 투입 — 오너 안 누른다」): 화면 「다시 번역」과
+  **같은 계획**(`translate_plan(retry=True)`)에서 `pages`에 적힌 장만 줄에 넣는다(없으면 계획 전부). 계획이 빼는 장(스페이서·아이콘·
+  중복·상한)은 넣지 않고 사유를 남긴다 — 결과 = 접수·건너뜀·이미 대기
 """
 from __future__ import annotations
 
@@ -30,7 +33,8 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
-OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue")
+OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
+       "retranslate")
 
 
 def _now() -> str:
@@ -55,6 +59,9 @@ def _run(row: dict) -> Dict:
         return _prevalidate(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "carry_requeue":
         return _carry_requeue([str(i) for i in (row.get("item_ids") or []) if i][:50])
+    if op == "retranslate":
+        return _retranslate(item_id, [(str(p[0]), int(p[1])) for p in (row.get("pages") or [])
+                                      if isinstance(p, (list, tuple)) and len(p) == 2][:40])
     if op == "image_probe":
         return _image_probe(item_id, str(row.get("kind") or "detail"), [int(i) for i in (row.get("idx") or [])][:6])
     from src.services import ocr_compare_diag as D
@@ -256,3 +263,34 @@ def _carry_requeue(item_ids: List[str]) -> Dict:
                         share=str(ex.get("share_raw") or ""), kind=kind)
         rows.append({"item_id": iid[:8], "kind": kind, "position": pos})
     return {"ok": True, "queued": sum(1 for r in rows if r.get("position")), "rows": rows, "waiting": carry.count()}
+
+
+def _retranslate(item_id: str, pages: List[tuple]) -> Dict:
+    """「다시 번역」과 같은 계획 → 적힌 장만 접수(없으면 계획 전부). 계획 밖 장은 사유(스페이서·아이콘·중복·상한·이미 번역됨)."""
+    import json
+    from src.services import ocr_compare_diag as D
+    from src.services import image_translate_auto as A
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        ex = {}
+    plan = A.translate_plan(ex, retry=True)
+    want = set(pages)
+    send = [(k, i) for k, i, _w in plan["send"] if not want or (k, i) in want]
+    why = {}
+    for label, lst in plan["skip"].items():
+        for k, i in lst:
+            why[(k, i)] = A.SKIP_LABEL.get(label, label)
+    for k, i in plan["no_text"]:
+        why[(k, i)] = "글자 없음(텐센트)"
+    q = A._q()
+    new = q.enqueue(uid or str(item.get("seller_id") or ""), str(item.get("id") or item_id), send) if send else 0
+    again = q.requeue_pages(str(item.get("id") or item_id), send) if send else 0
+    if new or again:
+        A.kick()
+    rows = [{"kind": k, "idx": i, "sent": (k, i) in set(send), "why": "" if (k, i) in set(send) else why.get((k, i), "계획 밖")}
+            for k, i in (sorted(want) if want else send)]
+    return {"ok": True, "accepted": new + again, "waiting": max(0, len(send) - new - again), "rows": rows}

@@ -1198,6 +1198,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
         fixes.append("편집 화면에서 판매가 직접 입력")
     if any(h["fix"] == "ship_ratio" for h in holds):
         fixes.append("원가·크기를 확인하거나 「그래도 등록」")
+    if any(h["fix"] == "ship_dims" for h in holds):
+        fixes.append("「무게·크기 직접 넣기」에 가로·세로·높이를 넣은")                 # Y13-C 3
     if any(h["fix"] == "naver_category" for h in holds):
         fixes.append("후보 카테고리를 누르거나 「카테고리 지정 →」에서 고르기"
                      if any(h.get("candidates") for h in holds) else "「카테고리 지정 →」에서 네이버 카테고리 고르기")
@@ -1208,7 +1210,8 @@ def readiness_message(holds: List[Dict[str, str]]) -> str:
     if any(h["fix"] == "lead_time" for h in holds):
         fixes.append("선주문을 확인하고 「선주문 그래도 등록」")
     if any(h["fix"] == "option_short" for h in holds):
-        fixes.append("AI 축약을 기다리거나 옵션 탭에서 25자 안으로 줄인")              # Y11-P
+        # Y13-C 2: 축약은 사전검증이 그 자리에서 AI에 묻는다(기다릴 것 없음) — 그래도 남은 값은 검사에서 버린 것 → 손으로
+        fixes.append("AI 축약이 검사에서 떨어진 값을 옵션 탭에서 25자 안으로 줄인")     # Y11-P
     if any(h["fix"] == "naver_split" for h in holds):
         fixes.append("「가격대별로 나눠 등록」을 누른")                                 # Y11-P
     if any(h["fix"] == "detail_blank" for h in holds):
@@ -1576,7 +1579,7 @@ class UploadDispatcher:
         if market in _KO_OPTION_MARKETS:
             try:
                 from .shipping_ratio import hold as _ship_hold
-                _sh = _ship_hold(pd, str(pd.get("seller_id") or ""))
+                _sh = _ship_hold(pd, str(pd.get("seller_id") or ""), market)   # Y13-C c: 분모 = 이 마켓 판매가
             except Exception:
                 _sh = None
             if _sh:

@@ -102,7 +102,8 @@ def test_divisor_env_and_setting(monkeypatch):
 def test_bulky_three_branches(title, why):
     from src.seller_console import shipping_ratio as SR
     e = SR.estimate({"url": "https://item.taobao.com/item.htm?id=9", "title": title, "price": "300", "currency": "CNY"})
-    assert e["code"] == "bulky_carrier" and why in e["line"] and e["line"].startswith("대형화물 — 국내 배송비 별도(경동택배 표준운임)")
+    # Y13-C c: 줄은 「운임 n원 · 판매가 n원 대비 n%」로 시작 — 대형화물 사유는 그 뒤에 그대로
+    assert e["code"] == "bulky_carrier" and why in e["line"] and "대형화물 — 국내 배송비 별도(경동택배 표준운임)" in e["line"]
     assert e["jeju_line"] == "제주·도서산간은 추가 운임이 붙어요."
 
 
@@ -180,7 +181,7 @@ def test_settings_page_shows_version_and_validates():
 def test_margin_calculator_uses_engine():
     iid = _item({"title_ko": "파우치 무게 1.72kg"})
     h = _client().get(f"/seller/collect/preview/{iid}").get_data(as_text=True)
-    assert "const _SHIP_EST_KRW = 6400;" in h and 'data-role="mc-ship-note">추정 배송비 6,400원' in h
+    assert "const _SHIP_EST_KRW = 6400;" in h and 'data-role="mc-ship-note">운임 6,400원 · 판매가 ' in h   # Y13-C c 문구
 
 
 def test_image_includes_rate_table():

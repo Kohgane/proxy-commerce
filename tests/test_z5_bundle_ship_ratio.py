@@ -8,6 +8,7 @@ from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + �
 
 SOFA = {"url": "https://item.taobao.com/item.htm?id=733241700286", "title_src": "格斯潘懒人沙发单人", "title": "격스판 빈백 소파 1인용", "title_ko": "격스판 빈백 소파 1인용",
         "price": "780", "currency": "CNY", "images": ["https://img.alicdn.com/a.jpg", "https://img.alicdn.com/b.jpg"]}
+SOFA_DIMS = dict(SOFA, title="격스판 빈백 소파 1인용 90x80x70cm", title_ko="격스판 빈백 소파 1인용 90x80x70cm")   # Y13-C: 실측 있는 소파
 LAMP = {"url": "https://detail.tmall.hk/item.htm?id=1", "title_src": "【BLACKHOLES】黑洞小夜灯", "title": "블랙홀 미니 무드등", "title_ko": "블랙홀 미니 무드등",
         "price": "69.9", "currency": "CNY", "images": ["https://img.alicdn.com/a.jpg", "https://img.alicdn.com/b.jpg"]}
 
@@ -16,7 +17,7 @@ LAMP = {"url": "https://detail.tmall.hk/item.htm?id=1", "title_src": "【BLACKHO
 def _fx(monkeypatch):
     from src.seller_console import data_aggregator as D
     monkeypatch.setattr(D, "get_fx_rates", lambda: {"CNY": 188.4, "USD": 1370.5})
-    for k in ("SHIPPING_RATIO_HOLD_PCT", "SHIPPING_RATE_KRW_PER_KG_CN_DIRECT", "SHIPPING_RATE_KRW_PER_KG_CN_FORWARDER",
+    for k in ("SHIPPING_RATIO_HOLD_PCT", "SHIPPING_RATIO_MAX", "SHIPPING_RATE_KRW_PER_KG_CN_DIRECT", "SHIPPING_RATE_KRW_PER_KG_CN_FORWARDER",
               "SHIPPING_RATE_KRW_PER_KG_US", "SHIPPING_VOL_DIVISOR_CN", "SHIPPING_VOL_DIVISOR_US"):
         monkeypatch.delenv(k, raising=False)
     # Z6(2026-10-08) 갱신: 중국발 요율은 배송비 엔진(data/shipping 퍼센티 요율표) — kg당 env는 폐기(무시).
@@ -26,15 +27,23 @@ def _fx(monkeypatch):
     st.state_set("ship_settings:shared", {})
 
 
-def test_sofa_is_held_by_shipping_ratio_and_lamp_passes():
-    """Z6 갱신: 소파(크기 표 90×80×70 · 세 변 합 240cm)는 대형화물 → 비율은 LCL 추정(0.51cbm → 1cbm 94,500원)으로 잰다."""
+def test_sofa_is_held_by_shipping_ratio_and_lamp_passes(monkeypatch):
+    """Z6 갱신: 소파(세 변 합 240cm)는 대형화물 → LCL 추정(0.51cbm → 1cbm 94,500원).
+    Y13-C(오너 2026-10-18): 가구는 기본 크기로 추정하지 않는다(치수 없으면 「치수 확인 필요」) · 비율 분모 = 판매가 · 기준 `SHIPPING_RATIO_MAX`."""
     from src.seller_console.shipping_ratio import estimate, hold
     from src.seller_console.upload_dispatcher import UploadDispatcher
-    s = estimate(SOFA)
-    assert s["state"] == "ok" and s["code"] == "bulky_carrier" and s["ratio_pct"] > 35 and "소파 기본값" in s["basis"]
+    s0 = estimate(SOFA)
+    assert s0["state"] == "need_dims"
+    h0 = [x for x in UploadDispatcher.readiness_holds(dict(SOFA), "coupang") if x["fix"] == "ship_dims"]
+    assert h0 and h0[0]["short"] == "치수 확인 필요"
+    s = estimate(SOFA_DIMS)
+    assert s["state"] == "ok" and s["code"] == "bulky_carrier" and "읽은 치수" in s["basis"]
     assert s["ship_krw"] == 94500 and "LCL 견적 0.51cbm(청구 1cbm) → 94,500원" in s["lcl_line"]
-    h = [x for x in UploadDispatcher.readiness_holds(dict(SOFA), "coupang") if x["fix"] == "ship_ratio"]
-    assert h and h[0]["short"].startswith("배송비 비율 초과 ") and h[0]["short"].endswith("(LCL 추정)")
+    assert s["sell_krw"] > s["cost_krw"] and s["ratio_pct"] == round(94500 / s["sell_krw"] * 100)
+    assert s["line"].startswith(f"운임 94,500원 · 판매가 {s['sell_krw']:,}원 대비 {s['ratio_pct']}%")
+    monkeypatch.setenv("SHIPPING_RATIO_MAX", str(s["ratio_pct"] - 1))          # 숫자만 바꿔 보류 경로
+    h = [x for x in UploadDispatcher.readiness_holds(dict(SOFA_DIMS), "coupang") if x["fix"] == "ship_ratio"]
+    assert h and h[0]["short"].startswith("운임 94,500원 · 판매가 대비 ") and h[0]["short"].endswith("(LCL 추정)")
     lamp = estimate(LAMP)
     assert lamp["state"] == "unknown" and lamp["line"].startswith("부피 미확인")       # 못 잰 건 통과
     assert hold(dict(LAMP)) is None
@@ -45,9 +54,14 @@ def test_threshold_and_read_dimensions(monkeypatch):
     from src.seller_console.shipping_ratio import estimate, hold
     box = {"url": "https://item.taobao.com/item.htm?id=2", "title": "접이식 수납함 40x30x20cm", "price": "50", "currency": "CNY"}
     e = estimate(box)
-    assert e["basis"] == "상품 글에서 읽은 치수" and e["chargeable_kg"] == 4.0 and e["ship_krw"] == 8800   # 표 4kg
-    monkeypatch.setenv("SHIPPING_RATIO_HOLD_PCT", "10000")
-    assert hold(box) is None                                                   # 임계값 env
+    assert e["basis"] == "상품 글·사진에서 읽은 치수" and e["chargeable_kg"] == 4.0 and e["ship_krw"] == 8800   # 표 4kg
+    monkeypatch.setenv("SHIPPING_RATIO_MAX", "0")
+    assert hold(box)["fix"] == "ship_ratio"                                    # 임계값 env(숫자만)
+    monkeypatch.setenv("SHIPPING_RATIO_MAX", "10000")
+    assert hold(box) is None
+    monkeypatch.delenv("SHIPPING_RATIO_MAX")
+    monkeypatch.setenv("SHIPPING_RATIO_HOLD_PCT", "0")                         # 옛 이름도 읽는다(새 이름이 없을 때)
+    assert hold(box)["fix"] == "ship_ratio"
 
 
 def test_size_table_is_remote_json(monkeypatch):
@@ -79,18 +93,19 @@ def test_override_button_records_and_releases_hold(monkeypatch):
         monkeypatch.setenv(k, "x1")
     from src.seller_console import collect_history_store as S
     seller = "owner-z5-override"
-    ex = dict(SOFA)
+    monkeypatch.setenv("SHIPPING_RATIO_MAX", "5")                              # Y13-C: 판매가 대비 — 숫자만 낮춰 보류 경로
+    ex = dict(SOFA_DIMS)
     iid = S.append(source="extension", url="https://item.taobao.com/item.htm?id=733241700286", seller_id=seller,
-                   title=SOFA["title"], price="780", currency="CNY", extra=ex)
+                   title=SOFA_DIMS["title"], price="780", currency="CNY", extra=ex)
     c = _client(seller)
-    d = _pv(c, {"product": dict(SOFA), "markets": ["coupang"], "item_id": iid})
+    d = _pv(c, {"product": dict(SOFA_DIMS), "markets": ["coupang"], "item_id": iid})
     r = d["results"][0]
-    assert r["hold"] and "ship_ratio" in r["fixes"] and "배송비 비율 초과" in r["message"]
+    assert r["hold"] and "ship_ratio" in r["fixes"] and "판매가 대비" in r["message"]
     o = c.post(f"/seller/collect/{iid}/ship-ratio-override").get_json()
     assert o["ok"] and o["override"]["by"] == "cn-user@example.com" and "LCL 추정" in o["override"]["line"]
     saved = json.loads(S.get(iid, seller_ids={seller})["extra_json"])["ship_ratio_override"]
-    assert saved["ratio_pct"] > 35
-    d = _pv(c, {"product": dict(SOFA), "markets": ["coupang"], "item_id": iid})
+    assert saved["ratio_pct"] > 5
+    d = _pv(c, {"product": dict(SOFA_DIMS), "markets": ["coupang"], "item_id": iid})
     assert "ship_ratio" not in (d["results"][0].get("fixes") or [])            # 같은 화면 상품으로 다시 → 풀림
 
 

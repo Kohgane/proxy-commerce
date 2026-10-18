@@ -323,7 +323,7 @@ def plan(product: Dict, *, stock_default: int = 999, base_override: int = 0, bas
         long_names = list(dict.fromkeys(long_names))
         return {**out, "mode": "hold", "reason_code": REASON_NAME_LEN, "long_names": long_names,
                 "why": (f"보류: 네이버 옵션값은 {OPTION_NAME_MAX}자까지예요 — 넘는 값 {len(long_names)}개"
-                        f"(「{long_names[0]}」 {len(long_names[0])}자). 옵션 탭에서 줄이거나 AI 축약을 기다려 주세요")}
+                        f"(「{long_names[0]}」 {len(long_names[0])}자) — 사전검증이 AI 축약을 바로 불러요. 검사에서 떨어진 값은 옵션 탭에서 줄여 주세요")}
     seen, dup = set(), []
     for _k, names, _sp in rows:
         key = tuple(names)

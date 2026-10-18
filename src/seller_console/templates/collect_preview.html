@@ -130,6 +130,13 @@
         <div id="cpLiveOut" class="small mt-2" aria-live="polite"></div>
       </div>
       {% endif %}
+      {# Y13-C 4(오너 2026-10-18): 사전검증이 고른 마켓을 전부 통과했으면 — 오너는 등록 버튼만. 편집 저장·다음 사전검증 보류면 사라진다 #}
+      {% if pv_ready %}
+      <div class="pc-status pc-status-success d-flex flex-wrap align-items-center gap-2 mb-2" data-role="pv-ready">
+        <span><i class="bi bi-check2-circle"></i> <b>등록 준비 완료</b> — 사전검증 {{ pv_ready.line }} 통과{% if pv_ready.at %} ({{ pv_ready.at|kst }}){% endif %}</span>
+        <button type="button" class="btn btn-sm btn-cta ms-auto" data-role="pv-ready-register" onclick="openUploadModal()"><i class="bi bi-box-arrow-up-right"></i> 마켓 등록</button>
+      </div>
+      {% endif %}
       <!-- v45 P9: 편집 칩 탭(고가브릿지 토큰) — 필드를 탭별로 분리(한 탭씩 표시). -->
       <div class="kgp-etabs" role="tablist" aria-label="상품 편집 탭">
         <button type="button" class="kgp-etab-chip active" data-etab="basic" onclick="kgpEtab('basic')"><i class="bi bi-tag"></i> 상품명·카테고리</button>

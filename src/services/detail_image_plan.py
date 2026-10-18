@@ -132,6 +132,28 @@ def entry_text(e: dict) -> str:
         return t
 
 
+def photo_text(extra: dict) -> str:
+    """Y9 — 갤러리·상세·옵션 사진의 글자(번역 결과의 원문·번역문, OCR 판정 글자). 등록에서 빠지는 상세 장은 뺀다.
+    Y13-C 3: 사전검증(`_pv_prepare`)과 등록(`build_product`)이 **같은 함수** — 상표 검사·배송 치수가 같은 글자를 본다."""
+    extra = extra or {}
+    parts = []
+    for e in (extra.get("images_ko") or []):
+        if isinstance(e, dict):
+            parts.append(entry_text(e))
+    originals = [u for u in (extra.get("detail_images") or []) if u]
+    for e in (extra.get("detail_images_ko") or []):
+        if not isinstance(e, dict):
+            continue
+        i = int(e.get("idx", -1))
+        if 0 <= i < len(originals) and verdict(e, originals[i])["use"] == "excluded":
+            continue
+        parts.append(entry_text(e))
+    for e in (extra.get("sku_images_ko") or []):                 # Y11-U: 옵션(SKU) 사진도 나가는 사진이다
+        if isinstance(e, dict):
+            parts.append(entry_text(e))
+    return " ".join(p for p in parts if p.strip())[:20000]
+
+
 def honest_skip_reason(e: dict) -> str:
     """건너뛴 장의 사유 — 「글자 없는 사진」은 PictureWithoutText일 때만(Y11-C). 예전 OCR 「한자 0」 기록은 저장된 문구가
     「글자 없는 사진(OCR 판정 …)」이라 보여 줄 때 바로잡는다(글자는 있었다 — 중국어가 아니었을 뿐)."""

@@ -96,6 +96,8 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         # Z 후속2: 옵션 값을 왜 못 옮겼나(번역기 응답 원문) — 「옵션 값 n개 미해석」 보류 문구가 싣는다
         "option_translate_diag": ex.get("option_translate_diag") if isinstance(ex.get("option_translate_diag"), dict) else {},          # Z5 후속: 중국발 발주 경로(상품) — 없으면 계정 설정
         "detail_specs": ex.get("detail_specs") if isinstance(ex.get("detail_specs"), list) else [],
+        # Y13-C 3: 사진 글자(대표 「尺寸 100x114x74」·상세 「左右宽100cm 前后长114cm」) — 배송 치수 재료. 사전검증과 같은 함수
+        "photo_text": _photo_text(ex),
         "seller_id": seller_id,
         "coupang_name_source": "manual" if ex.get("coupang_name") else "",
         "coupang_brand_pos": str(ex.get("coupang_brand_pos") or ""),
@@ -136,3 +138,11 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         for k, v in edits.items():
             base[k] = v
     return base
+
+
+def _photo_text(ex: dict) -> str:
+    try:
+        from src.services.detail_image_plan import photo_text
+        return photo_text(ex)
+    except Exception:                                            # noqa: BLE001 — 사진 글자가 없어도 상품은 만든다
+        return ""
