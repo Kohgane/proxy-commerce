@@ -429,6 +429,7 @@
         <div class="pc-inset mt-3" data-role="sku-table">
           <div class="console-kpi-label mb-1">SKU {{ _skus|length }}개
             {{ src_badge('sku') }}</div>
+          {% if sku_brand_removed %}<p class="small text-muted mb-1" data-role="sku-brand-removed">브랜드 「{{ sku_brand_removed|join('·') }}」는 옵션 값에서 뺐어요 — 상품명 쪽에 둡니다</p>{% endif %}
           <table class="table table-sm mb-0" style="font-size:.82rem">
             <thead><tr><th>조합</th><th class="text-end">원가</th><th class="text-end">참고가</th><th class="text-end">재고</th></tr></thead>
             <tbody>

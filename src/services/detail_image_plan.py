@@ -49,9 +49,8 @@ def detail_limit() -> int:
 
 def fix_url(url: str) -> str:
     """주소 정리 — `//` → `https://`, 알리 CDN 꼬리(`.jpg_1200x1200q30.jpg_.webp`·`.png_.webp`) → 원본 확장자에서 끊는다."""
-    u = str(url or "").strip()
-    if u.startswith("//"):
-        u = "https:" + u
+    from src.collectors.image_norm import abs_image_url
+    u = abs_image_url(url)                                         # Y13-A: `//` 정리는 한 함수
     if "alicdn.com" in u:
         u = _ALI_TAIL.sub(r"\1", u)
     return u
@@ -142,6 +141,34 @@ def honest_skip_reason(e: dict) -> str:
     return r or "원본 그대로"
 
 
+_TRANSLATE_FAIL_HINTS = ("번역 실패", "번역 결과가 원문과 같습니다", "번역기가 빈 문자열", "번역기")
+
+
+def fail_reason(e: dict, orig_url: str = "") -> str:
+    """Y13-A(오너 2026-10-18 피샹리) — 실패한 장의 사유 한 줄. 「그릴 줄이 없습니다」는 **OCR이 정말 0상자일 때만** 쓴다.
+
+    옛 D3 `RenderFailed`(「그릴 줄이 없습니다(원본 그대로)」)는 글자 줄을 **읽고도** 번역·그리기에서 다 빠진 경우였다(0상자면
+    그 앞에서 「번역할 글자가 없습니다」로 끝난다) → 「번역 실패 · 사유」. 빠진 줄 사유(`skipped`)가 남아 있으면 그걸로 가른다:
+    번역 실패가 하나라도 있으면 「번역 실패」, 전부 작은 글자·규칙이면 「번역 안 함」."""
+    e = e or {}
+    msg = str(e.get("error_message") or "").strip()
+    cls = str(e.get("error_class") or "").strip()
+    skipped = [s for s in (e.get("skipped") or []) if isinstance(s, dict)]
+    if "그릴 줄이 없습니다" in msg or cls == "RenderFailed":
+        tr = [str(s.get("reason") or "") for s in skipped if any(h in str(s.get("reason") or "") for h in _TRANSLATE_FAIL_HINTS)]
+        if tr:
+            return f"번역 실패 · {tr[0][:80]}"
+        if skipped:
+            return f"번역 안 함 · {str(skipped[0].get('reason') or '작은 글자·규칙')[:80]}(읽은 줄 {len(skipped)}개 모두 뺌)"
+        return "번역 실패 · 읽은 글자 줄을 그리지 못했어요(옛 기록 — 「다시 번역」하면 텐센트로 다시 봅니다)"
+    if msg.startswith("번역 실패") or msg.startswith("번역 안 함"):
+        return msg[:120]
+    if cls == "FetchFailed" and "(ValueError" in msg and str(orig_url or "").strip().startswith("//"):
+        # Y13-A: 피샹리 상세 1번 — 스킴 없는 `//cdn…` 주소를 urllib이 못 열었다(ValueError). 받기 경로는 고쳤다(abs_image_url)
+        return "번역 실패 · 주소 앞이 「//」라 열지 못했어요(옛 기록 — 이제 열립니다, 「다시 번역」하면 받습니다)"
+    return f"번역 실패 · {(msg or cls or '사유 미상')[:110]}"
+
+
 def verdict(e: dict, orig_url: str) -> Dict[str, str]:
     """한 장 — `{use: translated|original|excluded|pending|failed, reason, section}`. 「그래도 넣기」면 제외를 무른다."""
     e = e or {}
@@ -162,8 +189,7 @@ def verdict(e: dict, orig_url: str) -> Dict[str, str]:
         return {"use": "original", "reason": "글자 없는 사진 — 원본 그대로", "section": sec}
     if st in ("queued", "running", ""):
         return {"use": "pending" if st else "original", "reason": "번역 대기" if st else "아직 번역 안 함 — 원본", "section": sec}
-    return {"use": "failed", "reason": str(e.get("error_message") or e.get("error_class") or "실패")[:120] + " — 원본으로",
-            "section": sec}
+    return {"use": "failed", "reason": fail_reason(e, orig_url) + " — 원본으로", "section": sec}
 
 
 def arrange(pairs: List[Tuple[int, str]], by_idx: Dict[int, dict], originals: List[str],
@@ -210,7 +236,10 @@ def _fmt(raw: bytes) -> str:
     return ""
 
 
-def prepare_for_tencent(raw: bytes) -> Tuple[Optional[bytes], dict]:
+TENCENT_MIN_SIDE = 20             # Y13-A: 공급사 최소 변(이보다 작으면 `InvalidParameterValue.Data` — 스페이서 s.gif 1×1 실측)
+
+
+def prepare_for_tencent(raw: bytes, *, force: bool = False) -> Tuple[Optional[bytes], dict]:
     """원본 바이트 → 텐센트가 받는 JPEG/PNG(긴 변 ≤ 4096 · ≤ 4MB). `(bytes | None, {fmt, w, h, converted, note})`.
 
     JPEG·PNG가 이미 한도 안이면 그대로(다시 인코딩하지 않는다 — 화질 손실 0). webp·gif(첫 프레임)·그 밖은 JPEG로.
@@ -230,8 +259,12 @@ def prepare_for_tencent(raw: bytes) -> Tuple[Optional[bytes], dict]:
         info.update(fmt=str(fmt or info["fmt"]), w=int(w or 0), h=int(h or 0))
     except Exception:
         pass
-    if info["fmt"] in ("JPEG", "PNG") and len(raw) <= TENCENT_MAX_BYTES and max(info["w"], info["h"]) <= TENCENT_MAX_SIDE \
-            and info["w"]:
+    if info["w"] and info["h"] and min(info["w"], info["h"]) < TENCENT_MIN_SIDE:
+        # Y13-A(피샹리 상세 24번 g.alicdn.com/s.gif 1×1): 보내 봐야 `InvalidParameterValue.Data` — 보내지 않는다(돈 0)
+        info["note"] = f"너무 작은 사진({info['w']}×{info['h']} — 공급사 최소 {TENCENT_MIN_SIDE}px)"
+        return None, info
+    if not force and info["fmt"] in ("JPEG", "PNG") and len(raw) <= TENCENT_MAX_BYTES \
+            and max(info["w"], info["h"]) <= TENCENT_MAX_SIDE and info["w"]:
         return raw, info
     im, fmt, w, h, why = open_small(raw, TENCENT_MAX_SIDE)
     info.update(w=w or info["w"], h=h or info["h"])

@@ -185,6 +185,12 @@ def _resolve_option_value(value: str, *, values_ko: str = "", override: str = ""
     if str(override or "").strip():
         return {"value": str(override).strip(), "how": "override", "confirm": False, "why": ""}
     if not _CJK.search(v):
+        # Y13-A(오너 2026-10-18 BLACKHOLES): 라틴 값은 낱말이 전부 표에 있을 때만 한국어 표기(Yellow light → 옐로 라이트).
+        #   모르는 낱말이 하나라도 있으면 원문 그대로(모델명을 지어 옮기지 않는다 — 런북 2호 체크 14).
+        from src.collectors import ko_polish as _kp0
+        _lk = _kp0.latin_option_ko(v)
+        if _lk:
+            return {"value": _lk, "how": "glossary", "confirm": False, "why": ""}
         return {"value": v, "how": "", "confirm": False, "why": ""}
     # U4(오너 2026-10-02): 보증·서비스·안내 문구(「售后品质保障丨购买无忧」)는 옵션이 아니다 — 번역하지 않고 「옵션 아님」.
     from src.collectors import ko_polish as _kp
@@ -362,7 +368,8 @@ def plan_attributes(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> D
         if not value:
             missing.append(name)
             continue
-        if _CJK.search(value) and ("색상" in name or source == "옵션"):
+        from src.collectors.ko_polish import latin_option_ko as _lok
+        if (_CJK.search(value) or _lok(value)) and ("색상" in name or source == "옵션"):   # Y13-A: 라틴 값도 같은 사슬
             # F51-b: 해석 순서(오너 수정 → 용어집 → 조각 치환 → 번역기) — 한 곳(`resolve_option_value`).
             _ov = product.get("option_value_overrides") if isinstance(product.get("option_value_overrides"), dict) else {}
             r = resolve_option_value(value, values_ko=value_ko_map(product).get(value, ""),
@@ -604,6 +611,22 @@ def _as_float(v) -> float:
         return 0.0
 
 
+def _align_spec(axes: List[Dict], spec: List[str]) -> List[str]:
+    """Y13-A — 축 i에 들어갈 SKU 값: 그 축의 값 목록에 **있는** 스펙 조각(자리가 아니라 값으로 짝). 못 찾으면 그 자리 값.
+    실측(BLACKHOLES): 축 1개 · 스펙 2칸이라 자리로 짝지으면 색상 칸에 브랜드 조각이 들어갔다."""
+    used, out = set(), []
+    for i, o in enumerate(axes):
+        vals = {str(v).strip() for v in _opt_values(o)}
+        hit = next((j for j, v in enumerate(spec) if j not in used and str(v).strip() in vals), None)
+        if hit is None:
+            hit = i if i < len(spec) and i not in used else None
+        if hit is None:
+            break
+        used.add(hit)
+        out.append(spec[hit])
+    return out
+
+
 def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Dict:
     """SKU마다 `plan_attributes`를 돌려 item 계획을 만든다 — `{multi, items, holds, notes, search_extra}`."""
     ok, live, zero, why = sku_mode(product)
@@ -642,8 +665,9 @@ def plan_sku_items(raw_meta_attrs, product: Dict, *, meta_ok: bool = True) -> Di
         spec = list(k.get("spec") or [])
         # 이 SKU 하나만 가진 상품으로 바꿔 **기존 규칙 그대로** 돌린다(값 1개 → 「값이 N개」 보류 없음).
         one = dict(product)
-        one["options"] = [{"name": (mapped[i] or axes[i]["name"]), "values": [spec[i]], "_meta_resolved": bool(mapped[i])}
-                          for i in range(min(len(axes), len(spec)))]
+        al = _align_spec(axes, spec)
+        one["options"] = [{"name": (mapped[i] or axes[i]["name"]), "values": [al[i]], "_meta_resolved": bool(mapped[i])}
+                          for i in range(min(len(axes), len(al)))]
         one.pop("skus", None)
         # F51-b: 번역기 값·오너 수정은 **원 옵션**에 붙어 있다 — 값 1개짜리로 줄인 뒤에도 찾게 넘긴다.
         one["_values_ko"] = value_ko_map(product)

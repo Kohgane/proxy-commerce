@@ -27,12 +27,39 @@ def _nbytes(part) -> int:
 
 
 def _chunk_bytes() -> int:
-    """Z10 — 네이버 CDN 업로드 한 번에 묶을 바이트 상한(`IMAGE_UPLOAD_CHUNK_BYTES`, 기본 4MB). 넘으면 그 자리에서 올리고 비운다.
-    한 묶음은 릴레이를 지나며 multipart·base64·JSON으로 7~8벌 뜬다 — 4MB면 30MB 안팎."""
+    """Z10 — 네이버 CDN 업로드 한 번에 묶을 바이트 상한(`IMAGE_UPLOAD_CHUNK_BYTES`, 기본 1.5MB). 넘으면 그 자리에서 올리고 비운다.
+    한 묶음은 릴레이를 지나며 multipart·base64·JSON으로 7~8벌 뜬다. Y13-A(오너 2026-10-18 15:43 MemoryCapExceeded 470>460):
+    4MB(30MB 안팎)에서 1.5MB로 — 인스턴스가 이미 413MB에서 시작하면 남는 여유가 47MB뿐이다. 사실상 한 장씩 올리고 버린다."""
     try:
-        return max(1, int(os.getenv("IMAGE_UPLOAD_CHUNK_BYTES", str(4 * 1024 * 1024)) or 0))
+        return max(1, int(os.getenv("IMAGE_UPLOAD_CHUNK_BYTES", str(1536 * 1024)) or 0))
     except (TypeError, ValueError):
-        return 4 * 1024 * 1024
+        return 1536 * 1024
+
+
+def _detail_max_width() -> int:
+    """Y13-A — 상세 본문 사진 가로 상한(`IMAGE_DETAIL_MAX_WIDTH`, 기본 1,000px). 네이버 상세 표시 폭은 860px이다 —
+    4,160px 원본을 2,000px로 풀던 것을 1,000px로(JPEG은 디코드부터 1/4). 세로로 긴 장은 가로만 본다(세로 글자 보존)."""
+    try:
+        return max(0, int(os.getenv("IMAGE_DETAIL_MAX_WIDTH", "1000") or 0))
+    except (TypeError, ValueError):
+        return 1000
+
+
+import contextvars as _cv
+
+#: Y13-A — 지금 받는 장이 **상세 본문** 장이면 가로 상한(`cdn_map`이 켠다). `_fetch_image` 시그니처는 그대로(대표 사진 경로는 상한 없음).
+_DETAIL_WIDTH = _cv.ContextVar("naver_detail_width", default=0)
+
+
+def _release() -> None:
+    """장마다·묶음마다 — gc + glibc `malloc_trim`(놓은 힙을 운영체제에 돌려준다 · 인스턴스 합계가 다음 단계 전에 내려온다)."""
+    import gc as _gc
+    _gc.collect()
+    try:
+        from src.utils.render_worker import trim
+        trim()
+    except Exception:                                             # noqa: BLE001
+        pass
 
 
 class NaverSmartStoreUploader(BaseUploader):
@@ -813,7 +840,7 @@ class NaverSmartStoreUploader(BaseUploader):
         from src.collectors.image_norm import fetch_image_bytes
         return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES,
                                  allowed_formats=self.IMAGE_ALLOWED_FORMATS,
-                                 on_skip=on_skip)
+                                 on_skip=on_skip, max_width=_DETAIL_WIDTH.get())
 
     _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"[^>]*>', re.I)
 
@@ -852,7 +879,11 @@ class NaverSmartStoreUploader(BaseUploader):
 
         def _one(un):
             reasons = []
-            got = self._fetch_image(un[1], on_skip=lambda su, sr: reasons.append(sr))
+            tok = _DETAIL_WIDTH.set(_detail_max_width())
+            try:
+                got = self._fetch_image(un[1], on_skip=lambda su, sr: reasons.append(sr))
+            finally:
+                _DETAIL_WIDTH.reset(tok)
             return un, got, (reasons[0] if reasons else '사유 미상')
 
         def _flush(chunk):
@@ -873,7 +904,7 @@ class NaverSmartStoreUploader(BaseUploader):
                 for u, _n, _g in chunk:
                     dropped.append({'url': u, 'reason': f'네이버 CDN 업로드 실패 — {why}'})
             chunk.clear()
-            _gc.collect()
+            _release()                                            # Y13-A: 올린 묶음 바이트를 운영체제에 돌려준다
 
         chunk, chunk_bytes = [], 0
         for i, un in enumerate(todo):
@@ -894,6 +925,7 @@ class NaverSmartStoreUploader(BaseUploader):
                 _flush(chunk)
                 chunk_bytes = 0
         _flush(chunk)
+        _rss.guard('image_upload_done', f'{stat["fetched"]}장 올린 뒤')   # Y13-A: 넘었으면 이 단계 이름으로(다음 단계 탓 아님)
         logger.info('[네이버 CDN] sku=%s 받음 %d장 %dB · 올림 %d번 · 캐시 %d · 뺌 %d', sku, stat['fetched'], stat['bytes'],
                     stat['uploads'], cached, len(dropped))
         for d in dropped:

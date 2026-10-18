@@ -197,12 +197,68 @@ def build_dispatch_payload(product_data: Dict[str, Any],
             pd["detail_images"] = real_detail_images(pd["detail_images"])
     except Exception as exc:
         logger.warning("[등록] 상세 이미지 정리 실패(빌더 값 그대로): %s", exc)
-    # U4: 옵션이 아닌 값(보증·서비스·안내 문구)과 그 SKU는 **보내지 않는다**(전 마켓 같은 자리). 저장값은 그대로.
+    return apply_outbound_options(pd)
+
+
+def apply_outbound_options(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """**마켓에 나갈 옵션** — 등록 빌더와 사전검증이 같은 함수를 쓴다(Y13-A: 사전검증은 이 정리를 안 거쳐 등록과 다른 옵션을 쟀다 — #917).
+    U4: 옵션이 아닌 값(보증·서비스·안내 문구)과 그 SKU는 보내지 않는다. Y13-A: 옵션 값의 브랜드 조각(「【BLACKHOLES】」)은
+    빼고 상품명 쪽으로 — 중복 판정은 그 뒤 마켓 빌더가 한다. 저장값은 그대로(사본)."""
     try:
         pd = drop_non_option_values(pd)
     except Exception as exc:
         logger.warning("[등록] 옵션 아닌 값 정리 실패(빌더 값 그대로): %s", exc)
+    try:
+        pd = drop_brand_option_slots(pd)
+    except Exception as exc:
+        logger.warning("[등록] 옵션 브랜드 조각 정리 실패(빌더 값 그대로): %s", exc)
     return pd
+
+
+def drop_brand_option_slots(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """Y13-A(오너 2026-10-18 15:43 BLACKHOLES) — SKU 스펙·옵션 값에서 브랜드 조각을 뺀 사본.
+
+    실측: 옵션은 축 하나(颜色分类: Yellow light · White light)인데 SKU 스펙은 두 칸(「【BLACKHOLES】」, 「Yellow light」) —
+    가게가 브랜드를 축(大小)으로 달았다. 쿠팡 빌더는 축과 스펙을 **자리로** 짝지어 두 SKU 모두 색상 「【BLACKHOLES】」가 되어
+    「옵션 값이 같아집니다」로 막혔다. 브랜드 조각을 빼고, 빼서 모든 SKU에서 빈 칸이 된 자리는 스펙에서 지운다(그 축도).
+    브랜드가 상품명에 없으면 `brand` 칸으로 옮긴다(비어 있을 때만). 저장값은 그대로 — 나가는 값만."""
+    from src.collectors import ko_polish as _kp
+    out = dict(pd or {})
+    toks = _kp.brand_tokens(out)
+    skus = [k for k in (out.get("skus") or []) if isinstance(k, dict)]
+    if not toks or not skus:
+        return out
+    specs = [[_kp.strip_brand_value(v, toks) for v in (k.get("spec") or [])] for k in skus]
+    width = max((len(s) for s in specs), default=0)
+    empty = {i for i in range(width) if all(i >= len(s) or not s[i] for s in specs)}
+    raw = [list(k.get("spec") or []) for k in skus]
+    if not empty and specs == raw:
+        return out
+    new_skus = []
+    for k, s in zip(skus, specs):
+        new_skus.append(dict(k, spec=[v for i, v in enumerate(s) if i not in empty], spec_src=list(k.get("spec") or [])))
+    out["skus"] = new_skus
+    opts = []
+    for o in out.get("options") or []:
+        if not isinstance(o, dict):
+            opts.append(o)
+            continue
+        vals = [v.get("name") if isinstance(v, dict) else v for v in (o.get("values") or [])]
+        cleaned = [_kp.strip_brand_value(str(v or ""), toks) for v in vals]
+        if vals and not any(cleaned):
+            continue                                              # 브랜드뿐인 축 — 스펙에서도 빠졌다
+        if cleaned != [str(v or "") for v in vals]:
+            o = dict(o, values=[c for c in cleaned if c])
+            if o.get("values_ko"):
+                o["values_ko"] = [vk for vk, c in zip(o["values_ko"], cleaned) if c]
+        opts.append(o)
+    out["options"] = opts
+    title = str(out.get("title_ko") or out.get("title") or "")
+    moved = [t for t in toks if t.lower() not in title.lower()]
+    if moved and not str(out.get("brand") or "").strip():
+        out["brand"] = moved[0]
+    out["option_brand_removed"] = toks
+    return out
 
 
 def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
@@ -1234,6 +1290,7 @@ class UploadDispatcher:
             product_data = apply_outbound_text(product_data)
         except Exception as exc:                                     # noqa: BLE001
             logger.warning("[사전검증] 나갈 글자 정리 실패(원래 값): %s", exc)
+        product_data = apply_outbound_options(product_data)           # Y13-A: 나갈 옵션도 등록과 같은 함수로
         for market in markets:
             base, ctx = _for_market(market)
             if base != market and market not in ACCOUNT_MARKET_CODES:

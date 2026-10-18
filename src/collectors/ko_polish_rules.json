@@ -1,5 +1,5 @@
 {
- "version": "2026-10-10-Y7J",
+ "version": "2026-10-18-Y13A",
  "note": "T1 ko_polish — 상품명·옵션명·옵션값·이미지 줄 번역 공통 후처리. 오너가 화면 C 옆 관리자 화면에서 덮어쓸 수 있다(app_state, 재배포 없이).",
  "delete_cn": [
   "海外特供",
@@ -1946,6 +1946,8 @@
   "国标插头",
   "国标插排"
  ],
+ "en_option_words_note": "Y13-A(오너 2026-10-18 BLACKHOLES): 라틴 옵션 값(Yellow light)은 **낱말이 전부 이 표에 있을 때만** 한국어 표기로(옐로 라이트). 하나라도 모르면 원문 그대로 — 모델명(Proprietary 20)은 옮기지 않는다(런북 2호 체크 14).",
+ "en_option_words": {"black": "블랙", "white": "화이트", "yellow": "옐로", "red": "레드", "blue": "블루", "green": "그린", "pink": "핑크", "purple": "퍼플", "gray": "그레이", "grey": "그레이", "brown": "브라운", "beige": "베이지", "orange": "오렌지", "gold": "골드", "golden": "골드", "silver": "실버", "navy": "네이비", "khaki": "카키", "ivory": "아이보리", "cream": "크림", "mint": "민트", "rose": "로즈", "violet": "바이올렛", "coffee": "커피", "wine": "와인", "sky": "스카이", "olive": "올리브", "light": "라이트", "dark": "다크", "warm": "웜", "cool": "쿨", "cold": "콜드", "natural": "내추럴", "neutral": "뉴트럴", "transparent": "투명", "clear": "클리어", "matte": "매트", "glossy": "글로시", "rgb": "RGB", "colorful": "컬러풀", "colour": "컬러", "color": "컬러", "mix": "믹스", "mixed": "믹스"},
  "abbrev_ko": [
   [
    "3-in-1",

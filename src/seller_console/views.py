@@ -4992,6 +4992,8 @@ def _pv_prewarm_naver_detail(product_data: dict, markets: list) -> bool:
     스토어마다 그 스토어 키로(등록과 같은 업로더). 실패해도 막지 않는다 — 마켓 검증이 같은 함수로 다시 잰다.
     """
     from .upload_dispatcher import _for_market, naver_detail_verdict
+    from src.uploaders.naver_uploader import _release
+    _release()                                                    # Y13-A: 올리기 전에 놓은 힙부터 돌려준다(시작 바닥을 낮춘다)
     did = False
     for m in markets:
         try:
@@ -11317,10 +11319,14 @@ def collect_preview_by_id(item_id: str):
         from src.collectors import option_ko as _okv
         _ex_d = extra if isinstance(extra, dict) else {}
         opt_view = _okv.options_view(_ex_d)
-        sku_ko = [_okv.spec_ko(_ex_d, list(k.get("spec") or [])) for k in (_ex_d.get("skus") or []) if isinstance(k, dict)]
+        # Y13-A: SKU 조합표도 **나가는 값**으로 — 브랜드 조각(「【BLACKHOLES】」)을 뺀 스펙(등록·사전검증과 같은 함수)
+        from .upload_dispatcher import drop_brand_option_slots as _dbs
+        _ex_o = _dbs(_ex_d)
+        sku_brand_removed = list(_ex_o.get("option_brand_removed") or [])
+        sku_ko = [_okv.spec_ko(_ex_o, list(k.get("spec") or [])) for k in (_ex_o.get("skus") or []) if isinstance(k, dict)]
     except Exception as exc:
         logger.warning("[옵션 한국어] 화면 재료 실패: %s", exc)
-        opt_view, sku_ko = [], []
+        opt_view, sku_ko, sku_brand_removed = [], [], []
     # Z6: 마진 계산기 배송비 = 배송비 엔진(카드·사전검증과 같은 결과)
     try:
         from .product_builder import build_product as _bp_ship
@@ -11372,7 +11378,7 @@ def collect_preview_by_id(item_id: str):
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
         market_records=_market_records(extra), item_flags=_row_flags(item, extra), erase_photos=_erase_photos_view(extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
-        opt_view=opt_view, sku_ko=sku_ko, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
+        opt_view=opt_view, sku_ko=sku_ko, sku_brand_removed=sku_brand_removed, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
         field_src=field_src,
         item_sku=_item_sku(item),
         page="collect_history",

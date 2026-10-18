@@ -807,6 +807,60 @@ def non_option(value: str) -> List[str]:
     return out
 
 
+# ── Y13-A(오너 2026-10-18 BLACKHOLES): 옵션 값의 브랜드 조각 · 라틴 값 표기 ─────────────────────────────
+
+_BRACKET = re.compile(r"[【\[［]\s*([^】\]］]{1,40}?)\s*[】\]］]")
+_LATIN_VALUE = re.compile(r"[A-Za-z][A-Za-z\s\-/]*")
+
+
+def brand_tokens(product: Dict | None) -> List[str]:
+    """옵션 값에서 뺄 브랜드 낱말 — 브랜드 칸 · 원문 상품명의 【X】 · 스펙에 통째로 「【X】」인 라틴 값(가게가 브랜드를 축으로 단다)."""
+    p = product or {}
+    out: List[str] = []
+
+    def _add(t):
+        t = str(t or "").strip()
+        if t and len(t) >= 2 and t.lower() not in {x.lower() for x in out}:
+            out.append(t)
+    _add(_brand_core("brand", p.get("brand") or ""))
+    for key in ("title_en", "title_src", "title"):
+        for m in _BRACKET.finditer(str(p.get(key) or "")):
+            if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 .&'\-]*", m.group(1).strip()):
+                _add(m.group(1))
+    for k in p.get("skus") or []:
+        for v in (k.get("spec") or []) if isinstance(k, dict) else []:
+            m = _BRACKET.fullmatch(str(v or "").strip())
+            if m and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 .&'\-]*", m.group(1).strip()):
+                _add(m.group(1))
+    return out
+
+
+def strip_brand_value(value: str, tokens) -> str:
+    """옵션 값 하나에서 브랜드 조각(「【BLACKHOLES】」·맨 낱말 BLACKHOLES)을 뺀 나머지. 다 빠지면 빈 문자열."""
+    s = str(value or "")
+    toks = [str(t).strip() for t in tokens or [] if str(t or "").strip()]
+    if not toks:
+        return s.strip()
+    low = {t.lower() for t in toks}
+    s = _BRACKET.sub(lambda m: "" if m.group(1).strip().lower() in low else m.group(0), s)
+    for t in toks:
+        s = re.sub(r"(?<![A-Za-z0-9])" + re.escape(t) + r"(?![A-Za-z0-9])", "", s, flags=re.I)
+    return re.sub(r"\s{2,}", " ", s).strip(" -_/·,")
+
+
+def latin_option_ko(value: str) -> str:
+    """라틴 옵션 값 → 한국어 표기(「Yellow light」 → 「옐로 라이트」). 낱말이 **전부** 표(`en_option_words`)에 있을 때만 —
+    하나라도 모르면 빈 문자열(원문 그대로 둔다 · 모델명을 지어 옮기지 않는다)."""
+    s = str(value or "").strip()
+    if not s or not _LATIN_VALUE.fullmatch(s):
+        return ""
+    table = {str(k).lower(): str(v) for k, v in (rules().get("en_option_words") or {}).items()}
+    words = [w for w in re.split(r"[\s\-/]+", s) if w]
+    if not words or any(w.lower() not in table for w in words):
+        return ""
+    return " ".join(table[w.lower()] for w in words)
+
+
 _TOKEN = re.compile(r"[가-힣A-Za-z0-9]+")
 
 

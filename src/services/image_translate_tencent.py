@@ -180,6 +180,8 @@ def fetch_image(url: str) -> tuple:
     F25: 공급사가 URL 입력을 거절해서(위 ① 참고) 우리가 받아 base64로 보낸다.
     받는 데도 예산이 있다 — 소싱처가 느린 날 여기서 워커를 잡으면 F22와 같은 자리다.
     """
+    from src.collectors.image_norm import abs_image_url
+    url = abs_image_url(url)                                    # Y13-A: `//cdn…`(피샹리 상세 1번) — urllib ValueError 재발 막음
     # Z3-P: 타오바오 주거 프록시는 **mtop(핸드셰이크·h5api)만** — 이미지는 직결(트라이얼 100MB 절약).
     #   TAOBAO_PROXY_SCOPE=all(디버그)일 때만 타오바오 이미지가 프록시를 탄다.
     try:
@@ -420,8 +422,18 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
                     "hint": "사진 형식·크기를 확인하세요."})
         out["ms"] = int((time.perf_counter() - t0) * 1000)
         return out
+    if norm is None and str(info.get("fmt") or "") in ("JPEG", "PNG") and not info.get("w") \
+            and not str(info.get("note") or "").startswith("너무 작은"):
+        norm = data                                            # 머리를 못 읽은 JPEG·PNG — 예전처럼 그대로(거절되면 아래에서 다시 구워 1회)
     if norm is None:
-        norm = data                                            # 풀지 못한 JPEG·PNG·형식 미상 — 예전처럼 그대로(공급사가 판정)
+        # Y13-A(오너 2026-10-18 피샹리 InvalidParameterValue.Data): 예전엔 못 바꾼 장(형식 미상·한도 넘는 PNG·1px 스페이서)을
+        #   그대로 보내 공급사가 `Data 无效`로 거절했다(과금 위험 + 사유가 공급사 문구뿐). 이제 보내지 않고 우리 사유를 남긴다.
+        out.update({"error_class": "ConvertFailed", "error_code": "",
+                    "error_message": f"텐센트 입력으로 바꾸지 못했어요 — {info.get('note') or '사유 불명'}",
+                    "hint": "사진 형식·크기를 확인하세요."})
+        out["input"] = {k: info.get(k) for k in ("fmt", "w", "h")}
+        out["ms"] = int((time.perf_counter() - t0) * 1000)
+        return out
     if norm is not data:
         out["converted"] = str(info.get("note") or "")
     data = norm
@@ -478,13 +490,31 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
             except Exception as first:
                 code = getattr(first, "code", "") or ""
                 msg = getattr(first, "message", "") or str(first)
-                if not _is_rate_limited(code, msg):
+                if code == "InvalidParameterValue.Data" and not out.get("converted"):
+                    # Y13-A: 그대로 보낸 JPEG·PNG를 공급사가 거절 — JPEG로 다시 구워(≤4096px · ≤4MB) 딱 한 번만 다시 보낸다
+                    from src.services.detail_image_plan import prepare_for_tencent as _prep
+                    again, ainfo = _prep(data, force=True)
+                    if again is None:
+                        _LAST_CALL[0] = time.monotonic()
+                        raise
+                    out["data_retried"] = str(ainfo.get("note") or "JPEG로 다시 구움")
+                    out["converted"] = out["data_retried"]
+                    data = again
+                    out["request_bytes"] = len(data)
+                    payload["Data"] = base64.b64encode(data).decode("ascii")
+                    req.from_json_string(__import__("json").dumps(payload))
+                    _LAST_CALL[0] = time.monotonic()
+                    _wait_turn()
+                    resp = cli.ImageTranslateLLM(req)
+                    first = None
+                elif not _is_rate_limited(code, msg):
                     _LAST_CALL[0] = time.monotonic()
                     raise
-                logger.info("[이미지번역] 초당 한도 — %.0f초 쉬고 1회 재시도", RATE_RETRY_WAIT_SEC)
-                out["rate_retried"] = True
-                time.sleep(RATE_RETRY_WAIT_SEC)
-                resp = cli.ImageTranslateLLM(req)
+                if first is not None:
+                    logger.info("[이미지번역] 초당 한도 — %.0f초 쉬고 1회 재시도", RATE_RETRY_WAIT_SEC)
+                    out["rate_retried"] = True
+                    time.sleep(RATE_RETRY_WAIT_SEC)
+                    resp = cli.ImageTranslateLLM(req)
             _LAST_CALL[0] = time.monotonic()
 
         lines = []

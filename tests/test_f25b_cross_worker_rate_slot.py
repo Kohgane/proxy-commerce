@@ -195,7 +195,7 @@ def test_translate_says_so_when_the_queue_is_too_long(monkeypatch):
     monkeypatch.setenv("TENCENT_SECRET_KEY", "key")
     monkeypatch.setattr("src.services.rate_slot.wait_turn",
                         lambda k, iv: {"wait": 999.0, "backend": "server", "too_long": True})
-    monkeypatch.setattr(tc, "fetch_image", lambda u: (b"img", ""))
+    monkeypatch.setattr(tc, "fetch_image", lambda u: (b"\xff\xd8img", ""))  # Y13-A: 형식 미상 바이트는 안 보낸다 — JPEG 머리
     out = tc.translate_image(url="https://img.example/a.jpg")
     assert out["ok"] is False
     assert out["error_class"] == "RateQueueTooLong"
