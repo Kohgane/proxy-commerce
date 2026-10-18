@@ -8,7 +8,8 @@
 - `polish_page` {item_id, kind, idx} — 그 장만 `image_polish.polish_job`(다시 만들 다듬음 버전일 때만 새로 그림)
 - `ocr_recheck` {item_id, detail_idx:[…]} — 그 상세 장만 `ocr_compare_diag.run`(장당 OCR 4회)
 - `attn_backfill` {} — Y12-A: 목록 정렬·「손댈 것」 열(`last_action_at`·`attn_n`)과 `extra.attn`을 등록 기록·등록 보류가 있는
-  상품에만 한 번 채운다(그 밖의 칸은 손대지 않는다 · 한 번에 500건)
+  상품에만 한 번 채운다(그 밖의 칸은 손대지 않는다 · 한 번에 500건). Y12-B: 수집 실패 후보(보강 대기·막힘 · 보강 축 없이
+  가격·갤러리 둘 다 빈 상품)도 — 「손댈 것 · 수집 실패」·「재수집 대기」 요약을 옛 행에도 붙인다
 - `review_status` {item_id, market} — Y12-A(오너 23:31 Y11W-1): 그 상품·그 마켓 **상태만 1회 조회**(쿠팡 GET, 무료)하고
   성공 값만 등록 기록 `review`에 남긴다(막힌 조회는 덮지 않음 — 결정 8). 결과 원문 = `ops:oneshot:last`
 """
@@ -90,7 +91,7 @@ def drain() -> Dict:
 def _attn_backfill() -> Dict:
     import json
     from src.db import collect_history_pg as chp
-    from src.seller_console.attention import last_action, summarize, items as attn_items
+    from src.seller_console.attention import _has, last_action, summarize, items as attn_items
     done = 0
     for item_id, uid in chp.ids_for_attention_backfill():
         row = chp.get(item_id, seller_ids={uid} if uid else None) or {}
@@ -101,8 +102,7 @@ def _attn_backfill() -> Dict:
         attn = summarize(ex, row.get("title") or "")
         n = len(attn_items(ex, row.get("title") or "", fresh=True))
         la = last_action(ex, row.get("collected_at") or "")
-        has = bool(int(attn.get("erase") or 0) or attn.get("check"))
-        if chp.set_attention(item_id, la["at"] or row.get("collected_at"), n, attn if has else None):
+        if chp.set_attention(item_id, la["at"] or row.get("collected_at"), n, attn if _has(attn) else None):
             done += 1
     return {"ok": True, "done": done}
 

@@ -86,4 +86,5 @@ def test_templates_have_badges_retry_and_item_id():
     # 목록: M7(2026-10-08)부터 「등록됨」 뱃지 대신 마켓별 칩(등록된 마켓만, 상태색) — 행 마크업은 파셜.
     from pathlib import Path
     HISTORY_ROWS = Path("src/seller_console/templates/collect_history_rows.html").read_text(encoding="utf-8")
-    assert "market_chips" in HISTORY_ROWS and 'data-role="mk-chip"' in HISTORY_ROWS
+    # Y12-C: 목록 뱃지는 계정 고정 자리(`market_slots` — 고·우·셰·코 · 빈 자리 포함)로 그린다
+    assert "market_slots" in HISTORY_ROWS and 'data-role="mk-chip"' in HISTORY_ROWS

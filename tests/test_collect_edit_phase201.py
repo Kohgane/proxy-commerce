@@ -30,12 +30,14 @@ def test_store_update_inmemory_and_seller_isolation():
         source="manual", url="https://shop.example.com/p",
         title="old", price="10", currency="USD", seller_id="s1",
     )
-    assert store.update(item_id, seller_id="s1", title="new", price="20", extra_json='{"a":1}') is True
+    # Y12-B: 가격이 담긴 extra(가격·사진 둘 다 비면 「손댈 것 · 수집 실패」 요약이 붙는다 — 그건 test_y12b_attention)
+    ej = '{"a":1,"price":"20"}'
+    assert store.update(item_id, seller_id="s1", title="new", price="20", extra_json=ej) is True
 
     got = store.get(item_id, seller_id="s1")
     assert got["title"] == "new"
     assert got["price"] == "20"
-    assert got["extra_json"] == '{"a":1}'
+    assert got["extra_json"] == ej
 
     # 타 셀러는 갱신 불가
     assert store.update(item_id, seller_id="other", title="hack") is False

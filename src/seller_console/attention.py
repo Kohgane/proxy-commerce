@@ -5,6 +5,9 @@
 목록·대시보드는 무거운 extra(사진 번역 기록)를 읽지 않고 그 값만 쓴다.
 
 손댈 것(오너 결정 6): 반려(마켓별) · 보내기 실패 · 오너 확인 대기(지우기 제안 사진 · 등록 보류 · 「확인 필요」 원문 줄).
+Y12-B(오너 2026-10-17): 기준 = **오너가 눌러야 풀리는 것만** 손댈 것.
+  수집 실패 — 자동 재수집이 예정된 건은 「돌아가는 것 · 재수집 대기」(`attn.refetch`), 재수집 소진·자동 재수집 없음만 손댈 것(`attn.fail`).
+  지우기 제안 — 사진별 「넘김」·상품별 「전부 넘김」. 지움이든 넘김이든 처리되면 빠진다(넘김은 기록만 · 픽셀 0).
 """
 from __future__ import annotations
 
@@ -47,11 +50,14 @@ def check_note(checked_at, now: Optional[datetime] = None) -> str:
 
 
 def _market_word(m: str) -> str:
+    """등록 줄의 이름 — Y12-C: 계정 자리 이름(고가네·우주대행·셰고가·고코스모스 · 옛 `coupang` = 고가네). 자리 밖은 마켓 이름."""
+    from .listing_status import BADGE_NAMES, chip_label, slot_of
+    if slot_of(m):
+        return BADGE_NAMES[slot_of(m)]
     if m.startswith("coupang"):
         return "쿠팡"
     if m.startswith("smartstore"):
         return "네이버"
-    from .listing_status import chip_label
     return chip_label(m)
 
 
@@ -79,7 +85,44 @@ def actions(extra: dict, collected_at: str = "") -> List[Dict]:
             pl = e.get("polish") if isinstance(e, dict) else None
             if isinstance(pl, dict) and pl.get("at") and pl.get("version"):
                 out.append({"at": pl["at"], "text": "다듬기 완료"})
+    for at in ex.get("_polish_ats") or []:                       # Y12-C: 대시보드 한 쿼리가 뽑아 준 다듬기 시각(사진 기록 없이)
+        if at:
+            out.append({"at": at, "text": "다듬기 완료"})
     return out
+
+
+#: Y12-C — 한 번 다듬기(사진 여러 장, 장마다 몇 초씩)를 한 줄로 묶는 간격
+POLISH_RUN_GAP = timedelta(minutes=10)
+
+
+def recent_events(extra: dict, collected_at: str = "") -> List[Dict]:
+    """Y12-C 대시보드 「최근 동작」 재료 `[{at(datetime), text}]` — 기존 기록에서만(지어내지 않는다).
+
+    `actions()`의 동작(수집·등록·보냄·다듬기)에 **상태 조회 결과**(등록 기록 `review.checked_at` → 「우주대행 상태 조회 → 승인완료」)를
+    더하고, 다듬기는 한 번 돌린 묶음(10분 안)을 「다듬기 완료 · n장」 한 줄로."""
+    from .listing_status import BADGE_NAMES, chip_label, records, slot_of, state_word
+    ev, pol = [], []
+    for a in actions(extra, collected_at):
+        d = _ts(a["at"])
+        if not d:
+            continue
+        (pol if a["text"] == "다듬기 완료" else ev).append((d, a["text"]))
+    pol.sort()
+    run: List = []
+    for d, _t in pol + [(None, "")]:
+        if run and (d is None or d - run[-1] > POLISH_RUN_GAP):
+            ev.append((run[-1], f"다듬기 완료 · {len(run)}장"))
+            run = []
+        if d is not None:
+            run.append(d)
+    for r in records(extra):
+        rv = r.get("review") or {}
+        d = _ts(rv.get("checked_at"))
+        word = state_word(r["market"], rv.get("state"), rv.get("status_raw"))
+        if d and word:
+            name = BADGE_NAMES.get(slot_of(r["market"]) or r["market"]) or chip_label(r["market"])   # 옛 `coupang` = 고가네 자리
+            ev.append((d, f"{name} 상태 조회 → {word}"))
+    return [{"at": d, "text": t} for d, t in ev]
 
 
 def last_action(extra: dict, collected_at: str = "") -> Dict:
@@ -103,15 +146,112 @@ def short_when(d: datetime, now: Optional[datetime] = None) -> str:
     return k.strftime("%H:%M") if k.date() == today else k.strftime("%m-%d")
 
 
-def erase_suggestions(extra: dict) -> int:
-    """「지우기 제안」이 남은 **나가는** 사진 장 수(다듬기 기록 `suggest_erase` · 나가지 않는 장은 세지 않는다)."""
-    n = 0
+_KIND_OF = {"images_ko": "gallery", "detail_images_ko": "detail", "sku_images_ko": "sku"}
+_KIND_WORD = {"gallery": "대표·추가", "detail": "상세", "sku": "옵션 사진"}
+
+
+def _suggested(pl: dict) -> List[str]:
+    """다듬기 기록에서 AI가 「지우기 제안」한 상자의 글자(텐센트 글자 · 빈 글자는 뺀다)."""
+    return [str(r.get("tgt") or "") for r in pl.get("rows") or []
+            if isinstance(r, dict) and r.get("suggest_erase") and str(r.get("tgt") or "").strip()]
+
+
+def erase_photos(extra: dict) -> List[Dict]:
+    """Y12-B(오너 2026-10-17) — 지우기 제안이 있는 **나가는** 사진 `[{kind, idx, word, texts, state, url}]`.
+
+    state: `pending`(아직 손 안 댐) · `erased`(지금 나가는 편집본이 그 글자를 지웠다) · `skipped`(오너가 「넘김」).
+    지움이든 넘김이든 제안 글자가 **전부** 처리돼야 `pending`에서 빠진다. 넘김은 기록만 남긴다(원본·번역본 픽셀 0).
+    다시 다듬어 **새 제안 글자**가 나오면 그 글자는 다시 `pending`이다(넘긴 글자 기준으로 맞춘다)."""
+    out: List[Dict] = []
     for key in _KO_KEYS:
         for e in (extra or {}).get(key) or []:
             pl = e.get("polish") if isinstance(e, dict) else None
-            if isinstance(pl, dict) and int(pl.get("suggest_erase") or 0) > 0 and pl.get("outbound", True):
-                n += 1
-    return n
+            if not (isinstance(pl, dict) and int(pl.get("suggest_erase") or 0) > 0 and pl.get("outbound", True)):
+                continue
+            texts = _suggested(pl)
+            sk = e.get("erase_skip") if isinstance(e.get("erase_skip"), dict) else {}
+            if not texts:
+                # 상자 줄 없이 장 수만 남은 기록 — 글자로 못 맞추니 그 다듬기 실행(`polish.at`)째로 넘김을 맞춘다
+                state = "skipped" if sk.get("polish_at") and sk.get("polish_at") == pl.get("at") else "pending"
+                left = []
+            else:
+                ed = e.get("edit") if isinstance(e.get("edit"), dict) and e.get("use") else {}
+                erased = {str(x) for x in (ed or {}).get("erased") or []}
+                skipped = {str(x) for x in sk.get("texts") or []}
+                left = [t for t in texts if t not in erased and t not in skipped]
+                state = "pending" if left else ("skipped" if any(t in skipped and t not in erased for t in texts) else "erased")
+            kind = str(e.get("kind") or _KIND_OF[key])
+            out.append({"kind": kind, "idx": int(e.get("idx", -1)), "word": f"{_KIND_WORD.get(kind, kind)} {int(e.get('idx', -1)) + 1}번째",
+                        "texts": left or texts, "state": state, "url": str(e.get("url") or "") if e.get("use") else "",
+                        "skipped_at": kst(sk.get("at")) if state == "skipped" else ""})
+    return out
+
+
+def erase_suggestions(extra: dict) -> int:
+    """「지우기 제안」이 남은 **나가는** 사진 장 수 — 지움·넘김으로 처리된 장은 세지 않는다(Y12-B)."""
+    return sum(1 for p in erase_photos(extra) if p["state"] == "pending")
+
+
+def skip_erase(extra: dict, kind: str, idx: int, by: str = "owner") -> bool:
+    """「넘김」 — 그 사진의 지우기 제안 글자를 넘긴 것으로 적는다(사진·원본·번역본은 그대로). 넘길 제안이 없으면 False."""
+    from src.services.image_translate_store import keys_of
+    for e in (extra or {}).get(keys_of(kind)[1]) or []:
+        if not (isinstance(e, dict) and int(e.get("idx", -1)) == int(idx)):
+            continue
+        pl = e.get("polish") if isinstance(e.get("polish"), dict) else {}
+        texts = _suggested(pl)
+        if not (texts or int(pl.get("suggest_erase") or 0) > 0):
+            return False
+        prev = e.get("erase_skip") if isinstance(e.get("erase_skip"), dict) else {}
+        e["erase_skip"] = {"at": datetime.now(timezone.utc).isoformat(), "by": by, "polish_at": pl.get("at") or "",
+                           "texts": sorted({*(str(x) for x in prev.get("texts") or []), *texts})}
+        return True
+    return False
+
+
+#: 보강 큐 재시도 상한 — 서버 상한(`extension_api.ENRICH_MAX_ATTEMPTS`)을 그대로 읽는다(못 읽으면 같은 값 3).
+def _max_attempts() -> int:
+    try:
+        from src.api.extension_api import ENRICH_MAX_ATTEMPTS
+        return int(ENRICH_MAX_ATTEMPTS)
+    except Exception:                                            # noqa: BLE001
+        return 3
+
+
+_CARRY_KINDS = ("provider_quota", "provider_cap")                # onebound_carry.CARRY_KINDS — 하루 한도에 막혀 이월 대기
+
+
+def collect_fail(extra: dict, title: str = "") -> Optional[Dict]:
+    """Y12-B(오너 2026-10-17 A3) — 수집 실패 판정 `{phase, text, why}` · 실패가 아니면 None.
+
+    phase `waiting` = 자동 재수집이 예정됐다(PC 고가수집기 보강 큐에 남음 · 온바운드 하루 한도 이월) → 「돌아가는 것 · 재수집 대기」.
+    phase `exhausted` = 자동으로는 다시 안 온다(보강 시도 상한 소진 · 막힘 · 보강 축 없는 완전 수집의 핵심 정보 미확보)
+      → 「손댈 것」(오너가 「원본에서 다시 수집」을 눌러야 풀린다).
+    보강 축만 있고 실패 기록이 없는 부분 초안(「보강 대기」)과 이미 마켓에 올라간 상품은 실패가 아니다."""
+    from src.collectors.collect_status import compute_collect_status, enrich_axes
+    from .listing_status import records
+    ex = extra or {}
+    if records(ex):                                              # 마켓에 올라간 상품 — 수집은 이미 넘었다
+        return None
+    ax = enrich_axes(ex)
+    if ax["is_draft"]:
+        st, att, cap = ax["enrich_state"], ax["attempts"], _max_attempts()
+        if st == "done":
+            return None
+        if st == "blocked" or att >= cap:
+            return {"phase": "exhausted", "text": "수집 실패 · " + (ax["reason"] or f"{att}회 시도 후 멈춤"),
+                    "why": f"자동 재수집 {cap}회를 다 썼어요 — 「원본에서 다시 수집」"}
+        ae = ex.get("auto_enrich") if isinstance(ex.get("auto_enrich"), dict) else {}
+        failed = att > 0 or bool(ex.get("enrich_fail")) or str(ae.get("state") or "") == "manual"
+        if not (failed or ex.get("enrich_rerun")):
+            return None
+        why = ("하루 한도 — 한도가 풀리면 서버가 자동으로" if str(ae.get("kind") or "") in _CARRY_KINDS
+               else "PC 고가수집기가 켜지면 차례로 엽니다")
+        return {"phase": "waiting", "text": "재수집 대기", "why": f"{why} · 시도 {att}/{cap}"}
+    if compute_collect_status(ex, title)["status"] == "실패":
+        return {"phase": "exhausted", "text": "수집 실패 · 가격·갤러리를 못 읽었어요",
+                "why": "자동 재수집이 없어요 — 「원본에서 다시 수집」"}
+    return None
 
 
 def _title_marks(extra: dict, title: str = "") -> List[str]:
@@ -126,13 +266,18 @@ def summarize(extra: dict, title: str = "") -> Dict:
     """저장 때 남기는 작은 요약 `extra.attn` — 목록·대시보드는 이것만 읽는다(무거운 사진 기록은 저장 때 한 번)."""
     from .listing_status import records
     registered = bool(records(extra))
-    return {"erase": erase_suggestions(extra),
-            # 「확인 필요」 원문 줄(상표 이름) — 아직 안 올린 상품만(올린 상품은 등록 때 이미 넘었다)
-            "check": _title_marks(extra, title) if not registered else []}
+    out = {"erase": erase_suggestions(extra),
+           # 「확인 필요」 원문 줄(상표 이름) — 아직 안 올린 상품만(올린 상품은 등록 때 이미 넘었다)
+           "check": _title_marks(extra, title) if not registered else []}
+    cf = collect_fail(extra, title)                              # Y12-B: 수집 실패 — 소진은 손댈 것, 예정은 재수집 대기
+    if cf:
+        out["fail" if cf["phase"] == "exhausted" else "refetch"] = cf["text"] + " · " + cf["why"]
+    return out
 
 
 def _has(attn: Dict) -> bool:
-    return bool(int((attn or {}).get("erase") or 0) or (attn or {}).get("check"))
+    a = attn or {}
+    return bool(int(a.get("erase") or 0) or a.get("check") or a.get("fail") or a.get("refetch"))
 
 
 def items(extra: dict, title: str = "", *, fresh: bool = False) -> List[Dict]:
@@ -152,6 +297,8 @@ def items(extra: dict, title: str = "", *, fresh: bool = False) -> List[Dict]:
             out.append({"kind": "send_fail", "market": r["market"],
                         "text": f"{r['label']} " + ("상세 보내기 실패" if r["market"].startswith("coupang") else "본문 보내기 실패")})
     attn = summarize(ex, title) if fresh else (ex.get("attn") if isinstance(ex.get("attn"), dict) else {})
+    if attn.get("fail"):                                         # Y12-B: 재수집 소진 · 자동 재수집 없음 — 오너가 눌러야 풀린다
+        out.append({"kind": "collect_fail", "market": "", "text": str(attn["fail"])})
     if int(attn.get("erase") or 0):
         out.append({"kind": "owner", "market": "", "text": f"지우기 제안 사진 {int(attn['erase'])}장"})
     rs = ex.get("risk_skip") if isinstance(ex.get("risk_skip"), dict) else None
