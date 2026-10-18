@@ -1579,7 +1579,7 @@ class UploadDispatcher:
         if market in _KO_OPTION_MARKETS:
             try:
                 from .shipping_ratio import hold as _ship_hold
-                _sh = _ship_hold(pd, str(pd.get("seller_id") or ""))
+                _sh = _ship_hold(pd, str(pd.get("seller_id") or ""), market)   # Y13-C c: 분모 = 이 마켓 판매가
             except Exception:
                 _sh = None
             if _sh:

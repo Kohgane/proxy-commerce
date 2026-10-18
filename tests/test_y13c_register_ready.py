@@ -196,3 +196,32 @@ def test_gate_decisions_are_recorded(monkeypatch):
     ok, _ = B.start("y13c-test2", lambda: {})
     rows = st.state_get(B.GATE_KEY)["rows"]
     assert [(r["job"], r["ok"], r["mb"], r["limit"]) for r in rows[-2:]] == [("y13c-test", False, 425, 420), ("y13c-test2", True, 300, 420)]
+
+
+# ── c. 배송비 비율 분모 = 판매가(오너 결정 2026-10-18) — 피샹리 실측 수치 그대로 ─────────────────────────────────
+def test_fishangli_ship_ratio_is_against_sell_price_and_passes(monkeypatch):
+    """피샹리(운영 6f9c7ddf): 원가 215,766원 · 운임 94,500원(LCL 1cbm — 실측 100×114×74 = 0.85cbm) · 판매가 589,400원
+    → 16% < 35% 통과. 예전 분모(원가)로는 44% 보류였다. 분모는 등록이 매기는 판매가(`UploadDispatcher._landed_krw`) 한 함수."""
+    from src.seller_console import shipping_ratio as R
+    from src.seller_console.upload_dispatcher import UploadDispatcher
+    seen = []
+    monkeypatch.setattr(UploadDispatcher, "_landed_krw",
+                        staticmethod(lambda pd, market="": seen.append(market) or (589400.0, "")))
+    monkeypatch.setattr(R, "_fx", lambda c: 107.94)
+    monkeypatch.delenv("SHIPPING_RATIO_MAX", raising=False)
+    pd = dict(SOFA, photo_text=FISH_D6)
+    est = R.estimate(pd, market="smartstore:chezgoga")
+    assert (est["ship_krw"], est["sell_krw"], est["ratio_pct"], est["cost_krw"]) == (94500, 589400, 16, 215772)
+    assert est["line"].startswith("운임 94,500원 · 판매가 589,400원 대비 16% (기준 35%)")
+    assert R.hold(pd, market="smartstore:chezgoga") is None and seen[-1] == "smartstore:chezgoga"
+    # 숫자만 바꾼다 — SHIPPING_RATIO_MAX=15면 같은 상품이 보류(문구 「운임 n원 · 판매가 대비 n%」)
+    monkeypatch.setenv("SHIPPING_RATIO_MAX", "15")
+    h = R.hold(pd, market="coupang:gogane")
+    assert h["short"] == "운임 94,500원 · 판매가 대비 16% (LCL 추정)" and "(기준 15%)" in h["line"]
+
+
+def test_dispatcher_precheck_passes_market_to_ship_hold():
+    """사전검증 보류 판정이 그 마켓 판매가로 비율을 잰다 — 호출부가 마켓을 넘긴다(같은 함수 · 마켓별 수수료)."""
+    from pathlib import Path
+    src = Path("src/seller_console/upload_dispatcher.py").read_text(encoding="utf-8")
+    assert '_ship_hold(pd, str(pd.get("seller_id") or ""), market)' in src

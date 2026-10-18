@@ -130,12 +130,15 @@ def test_z5_reads_gross_weight_and_package_volume(item, monkeypatch):
     pd = _pd(*item)
     e = SR.estimate(pd, "fx3")
     assert e["code"] == "bulky_carrier" and e["bulky"][0] == "실중량 40kg ≥ 20kg"
-    assert e["line"].startswith("대형화물 — 국내 배송비 별도(경동택배 표준운임) · 실중량 40kg ≥ 20kg")
+    assert "대형화물 — 국내 배송비 별도(경동택배 표준운임) · 실중량 40kg ≥ 20kg" in e["line"]
     # LCL: 0.36cbm → 표 최소 1cbm 94,500원(표가 말하지 않은 구간이라 추정) · 원가 1150元×190 = 218,500원 → 43%
     assert e["lcl"]["cbm"] == 0.36 and e["lcl"]["krw"] == 94500 and e["lcl"]["estimated"] is True
-    assert e["ship_krw"] == 94500 and e["cost_krw"] == 218500 and e["ratio_pct"] == 43
+    # Y13-C c(오너 2026-10-18): 분모 = 판매가(원가 218,500원의 43% → 판매가 대비)
+    assert e["ship_krw"] == 94500 and e["cost_krw"] == 218500 and e["sell_krw"] > e["cost_krw"]
+    assert e["ratio_pct"] == round(94500 / e["sell_krw"] * 100) and e["line"].startswith("운임 94,500원 · 판매가 ")
     assert "LCL 견적 0.36cbm(청구 1cbm) → 94,500원 (표 밖 추정) — LCL: 관부가세·국내운송 별도" == e["lcl_line"]
-    assert SR.hold(pd, "fx3")["short"] == "배송비 비율 초과 43% (LCL 추정)"
+    h = SR.hold(pd, "fx3")
+    assert (h is None) if e["ratio_pct"] <= SR.threshold_pct() else h["short"] == f"운임 94,500원 · 판매가 대비 {e['ratio_pct']}% (LCL 추정)"
 
 
 def test_brand_passes_y6_and_never_reaches_coupang_fields(item):

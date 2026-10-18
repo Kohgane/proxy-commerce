@@ -42,6 +42,11 @@ from src.seller_console import shipping_ratio as R
 sofa = {"title_src": "菲尚丽家单人沙发椅设计师客厅阳台休闲懒人沙发可睡可躺舒适单椅", "title": "피샹리 1인용 소파 의자",
         "url": "https://detail.tmall.com/item.htm?id=851803804374", "price": "1999", "currency": "CNY", "photo_text": FISH_D6}
 R._fx = lambda c: 107.94                      # 운영 사전검증 원가 215,766원 = 1999 × 107.94(그날 환율)
+try:                                          # Y13-C c: 분모 = 판매가 — 운영 등록 판매가 589,400원(같은 함수 `_landed_krw`)
+    from src.seller_console.upload_dispatcher import UploadDispatcher as _UD
+    _UD._landed_krw = staticmethod(lambda pd, market="": (589400.0, ""))
+except Exception:
+    pass
 sz = R.read_size(sofa)
 lines.append(f"[사진 규격 있음] 치수: {sz.get('dims_cm')} · 근거: {sz.get('basis') or '(없음)'}")
 est = R.estimate(sofa)
