@@ -16,6 +16,9 @@
   화면과 **같은 사전검증 잡**을 띄운다(몸통 = 등록 빌더 `build_product`). 결과는 잡 기록 `prevalidate_job:<id>`(화면이 읽는 그것)
 - `image_probe` {item_id, kind, idx:[…]} — Y13-A: 실제 주소를 서버에서 받아 형식·크기·base64·정규화 결과를 남기고 텐센트 OCR에
   한 번 보내 응답 코드를 남긴다(장당 OCR 1회 · 최대 6장 · 번역은 안 보냄). `InvalidParameterValue.Data` 재현 로그
+- `carry_requeue` {item_ids:[…]} — Y13-A 9(오너 16:41 「12건 이월 대기열로 재투입」): 4013 분류(#45) 전에 `provider_fail`로 적힌
+  공유 초안을 `provider_quota`로 바로잡고(5000 등 다른 사유는 사유 그대로) 이월 대기에 넣는다 — 한도가 풀리는 날 워커가 1회씩 부른다.
+  수집 원본·다른 칸은 손대지 않는다(`auto_enrich.kind`·`carry_requeued_at`만)
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
-OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe")
+OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue")
 
 
 def _now() -> str:
@@ -50,6 +53,8 @@ def _run(row: dict) -> Dict:
         return _review_status(item_id, str(row.get("market") or ""))
     if op == "prevalidate":
         return _prevalidate(item_id, [str(m) for m in (row.get("markets") or []) if m])
+    if op == "carry_requeue":
+        return _carry_requeue([str(i) for i in (row.get("item_ids") or []) if i][:50])
     if op == "image_probe":
         return _image_probe(item_id, str(row.get("kind") or "detail"), [int(i) for i in (row.get("idx") or [])][:6])
     from src.services import ocr_compare_diag as D
@@ -204,7 +209,7 @@ def _image_probe(item_id: str, kind: str, idxs: List[int]) -> Dict:
             continue
         fmt, w, h = image_head(data)[:3]
         row.update(fmt=fmt, w=w, h=h, bytes=len(data), b64=int(len(data) * 4 / 3))
-        norm, info = P.prepare_for_tencent(data)
+        norm, info = P.prepare_for_tencent(data, url=url)
         row["prepare"] = {"sent": "원본 그대로" if norm is data else ("안 보냄" if norm is None else "바꿈"),
                           "note": str(info.get("note") or ""), "bytes": len(norm or b"")}
         if norm is not None:
@@ -214,3 +219,40 @@ def _image_probe(item_id: str, kind: str, idxs: List[int]) -> Dict:
         rows.append(row)
         data = norm = None
     return {"ok": True, "kind": kind, "rows": rows}
+
+
+def _carry_requeue(item_ids: List[str]) -> Dict:
+    """옛 4013 기록 → `provider_quota` + 이월 대기. 보강 대기(`enrich_state=pending`) 공유 초안만 — 그 밖은 건너뛴 사유를 남긴다."""
+    import json
+    from src.seller_console import collect_history_store as store
+    from src.services import ocr_compare_diag as D
+    from src.services import onebound_carry as carry
+    rows = []
+    for iid in item_ids:
+        item, uid = D._item(iid)
+        if not item:
+            rows.append({"item_id": iid[:8], "why": "상품 없음"})
+            continue
+        try:
+            ex = json.loads(item.get("extra_json") or "{}") or {}
+        except Exception:                                        # noqa: BLE001
+            ex = {}
+        ae = ex.get("auto_enrich") if isinstance(ex.get("auto_enrich"), dict) else {}
+        if ex.get("enrich_state") != "pending":
+            rows.append({"item_id": iid[:8], "why": f"보강 대기 아님({ex.get('enrich_state') or '없음'})"})
+            continue
+        reason = str(ae.get("reason") or "")
+        kind = "provider_quota" if ("4013" in reason or "已超量" in reason) else str(ae.get("kind") or "")
+        now = datetime.now(timezone.utc).isoformat()
+
+        def _fix(fresh, kind=kind, now=now):
+            a = fresh.get("auto_enrich") if isinstance(fresh.get("auto_enrich"), dict) else {}
+            if a and a.get("kind") != kind:
+                fresh["auto_enrich"] = dict(a, kind=kind)
+            fresh["carry_requeued_at"] = now
+            return True
+        store.merge_extra(str(item.get("id") or iid), _fix, seller_ids={uid} if uid else None)
+        pos = carry.add(uid, str(item.get("id") or iid), url=str(item.get("url") or ""),
+                        share=str(ex.get("share_raw") or ""), kind=kind)
+        rows.append({"item_id": iid[:8], "kind": kind, "position": pos})
+    return {"ok": True, "queued": sum(1 for r in rows if r.get("position")), "rows": rows, "waiting": carry.count()}

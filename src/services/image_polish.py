@@ -573,11 +573,21 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     pr = polish_boxes(boxes, ctx, cache=cache)
     by_id = {b["id"]: b for b in boxes}
     ops, too_long, suggest = [], 0, 0
+    _logos = IE.logo_names(extra, [b.get("src") for b in boxes])
+    _is_rep = kind == "gallery" and int(idx) == 0
+    _can_restore = restorable(e)
     for r in pr["rows"]:
         if tiny_latin(by_id.get(r["id"]) or {}, e.get("box_size")) and restorable(e):
             # Y11-W: 사진 높이 1.5% 미만 라틴 장식 글자(서명 낙서 위 이탈리아어) — 번역하지 않는다. 텐센트가 칠한 자리를 원본으로 되살린다
+            #   (판촉 낱말 「Sale」이 섞여도 장식 글자가 먼저 — Y13-B)
             r["why"], r["from"], r["ko"], r["suggest_erase"] = "작은 장식 글자 — 원본 되살림", "restore", r["src"], ""
             ops.append({"id": r["id"], "action": "restore"})
+            continue
+        handled = guard_row(r, _logos, _is_rep, _can_restore)
+        if handled is not None:
+            if handled.get("op"):
+                ops.append(handled["op"])
+            suggest += int(bool(handled.get("suggest")))
             continue
         if r["ko"] == "" and r["tgt"]:
             # Y11-N(오너): 다듬기는 지우지 않는다 — AI 「빈칸」은 지우기 **제안**으로만 남기고 텐센트 글자 그대로(픽셀 0).
@@ -832,3 +842,58 @@ def item_detail(item_id: str, extra: dict) -> str:
     if whys:
         s += " · " + whys[0][:60]
     return s
+
+
+def promo_left_caution(extra: dict) -> str:
+    """Y13-A 7 — 「나가기 전 경고」: 나가는 번역본(갤러리·상세·옵션)에 판촉 글자가 남았나. 넘김(`erase_skip`)한 글자는 뺀다.
+    다듬은 장은 다듬은 글자(되살린 원문 제외), 아니면 번역문. 없으면 빈 문자열."""
+    from src.collectors.ko_polish import promo_hits
+    hits, pages = [], 0
+    for key in ("images_ko", "detail_images_ko", "sku_images_ko"):
+        for e in (extra or {}).get(key) or []:
+            if not isinstance(e, dict) or e.get("status") != "done" or not e.get("url") or e.get("use") is False:
+                continue
+            if e.get("risk_exclude") or e.get("exclude"):
+                continue
+            skip = {str(t) for t in ((e.get("erase_skip") or {}).get("texts") or [])}
+            pl = e.get("polish") if isinstance(e.get("polish"), dict) else {}
+            if pl.get("rows"):
+                # 되살린 원문은 빼되, 판촉이라 되살린 상자(지우기 제안 · 아직 안 지움)는 원문 글자로 센다 — 사진에 남아 있다
+                texts = [str(r.get("ko") or "") for r in pl["rows"] if isinstance(r, dict)
+                         and (r.get("from") != "restore" or (r.get("suggest_erase") and not r.get("brand_logo")))]
+            else:
+                texts = str(e.get("target_text") or "").split("\n")
+            got = promo_hits(" ".join(t for t in texts if t and t not in skip))
+            if got:
+                pages += 1
+                hits += [h for h in got if h not in hits]
+    if not pages:
+        return ""
+    return f"나가기 전 경고: 번역본 {pages}장에 판촉 글자(「{'」·「'.join(hits[:3])}」) — 지우기 제안을 확인하세요"
+
+
+def guard_row(r: dict, logos, is_rep: bool, can_restore: bool):
+    """Y13-A 7·8 — 다듬기 전에 가로채는 상자. 처리했으면 `{op?, suggest}`, 아니면 None(평소 다듬기).
+
+    8. 브랜드 로고(菲尚丽家 / FEISHANGLIJIA, 오너 16:41): 음차 금지(「피샹리가」 되돌림) · 원문 유지 + 상표 참고 · 대표 사진이면 지우기 제안.
+    7. 판촉 상자(오너 16:37): 기본값 = 지우기 제안 · 번역 안 함(번역해 그리면 판촉이 한국어로 나간다).
+    원문으로 되돌릴 수 있으면 원본 픽셀을 붙이고(`restore`), 못 하면 텐센트 글자 그대로 + 제안만."""
+    from src.collectors.ko_polish import promo_hits
+    src = str(r.get("src") or "")
+    if logos and any(n.lower() in src.lower() for n in logos):
+        r["why"] = "브랜드 로고 — 음차 안 함(원문 유지 · 상표 참고)" + (" · 대표 사진이라 지우기 제안" if is_rep else "")
+        r["brand_logo"] = True
+        out = {"suggest": is_rep}
+        if is_rep:
+            r["suggest_erase"] = True
+    elif promo_hits(src) or promo_hits(str(r.get("tgt") or "")):
+        r["why"], r["suggest_erase"] = "판촉 문구 — 번역 안 함(지우기 제안)", True
+        out = {"suggest": True}
+    else:
+        return None
+    if can_restore:
+        r["ko"], r["from"] = src, "restore"
+        out["op"] = {"id": r["id"], "action": "restore"}
+    else:
+        r["ko"], r["from"] = r.get("tgt") or "", "tencent"
+    return out

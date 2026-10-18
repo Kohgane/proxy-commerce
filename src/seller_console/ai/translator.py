@@ -627,6 +627,8 @@ def draft_source_lines(description: str, title: str = "") -> list:
     from src.uploaders.detail_ui_junk import is_junk as _ui_junk
     if _ui_junk(str(description or "")):
         return []                                               # Y7-N: 본문 전체가 가게 UI 글자 — 재료 0
+    from src.uploaders.detail_ui_junk import drop_shop_ui_lines as _dsu
+    description = _dsu(str(description or ""))["text"]          # Y13-B: 한 줄짜리 발송 UI + 그 옆 가게 이름
     txt, _d = _kp.drop_detail_lines(str(description or ""))
     txt, _m = _kp.gate_lines(txt)
     out = []

@@ -252,6 +252,27 @@ def _brand_names(extra: dict) -> List[str]:
     return [n for n in names if n and n.upper() not in ("GENERIC", "OTHER", "其他", "无")]
 
 
+def logo_names(extra: dict, texts) -> List[str]:
+    """Y13-A 8(오너 16:41 피샹리 菲尚丽家 / FEISHANGLIJIA) — 이 사진의 브랜드 로고 낱말.
+    브랜드 칸·제목 앞 라틴 + **제목 앞 한자 2~4자 중 그 병음이 같은 사진에 찍혀 있는 것**(브랜드 칸이 비어도 로고가 스스로 증명).
+    그 한자와 병음 둘 다 돌려준다. 못 찾으면 브랜드 칸 쪽만."""
+    names = list(_brand_names(extra))
+    blob = " ".join(str(t or "") for t in texts or []).upper().replace(" ", "")
+    title = str(extra.get("title") or extra.get("title_en") or "").strip()
+    try:
+        from src.collectors.ko_polish import romanize
+        for n in (4, 3, 2):
+            han = title[:n]
+            if len(han) == n and all("\u4e00" <= ch <= "\u9fff" for ch in han):
+                lat = romanize(han)
+                if lat and len(lat) >= 4 and lat in blob:
+                    names += [han, lat]
+                    break
+    except Exception:                                           # noqa: BLE001
+        pass
+    return [n for i, n in enumerate(names) if n and n not in names[:i]]
+
+
 def classify(text: str, extra: dict) -> str:
     t = str(text or "")
     try:
