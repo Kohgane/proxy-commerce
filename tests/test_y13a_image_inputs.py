@@ -204,7 +204,7 @@ def test_d3_zero_boxes_is_the_only_no_draw_line(monkeypatch):
     monkeypatch.setattr(tc, "translate_image", lambda url, mode=0: {"ok": True, "lines": [], "ms": 5})
     out = A.translate_page_d3(FISH_1, idx=0, kind="detail", item_id="i", seller_id="s")
     assert got[0].startswith("https://img.alicdn.com/") and out["status"] == "skipped"
-    assert out["reason"] == "그릴 줄이 없습니다 — 글자 0상자(원본 그대로)"
+    assert out["reason"] == "그릴 줄이 없습니다 — 번역할 글자가 없습니다(0상자 · 원본 그대로)"
 
 
 def test_old_protocol_relative_fetch_failure_says_it_is_fixed():

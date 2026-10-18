@@ -45,6 +45,12 @@ def _detail_max_width() -> int:
         return 1000
 
 
+import contextvars as _cv
+
+#: Y13-A — 지금 받는 장이 **상세 본문** 장이면 가로 상한(`cdn_map`이 켠다). `_fetch_image` 시그니처는 그대로(대표 사진 경로는 상한 없음).
+_DETAIL_WIDTH = _cv.ContextVar("naver_detail_width", default=0)
+
+
 def _release() -> None:
     """장마다·묶음마다 — gc + glibc `malloc_trim`(놓은 힙을 운영체제에 돌려준다 · 인스턴스 합계가 다음 단계 전에 내려온다)."""
     import gc as _gc
@@ -818,7 +824,7 @@ class NaverSmartStoreUploader(BaseUploader):
             u = 'https:' + u
         return u.split('?')[0]
 
-    def _fetch_image(self, url: str, on_skip=None, max_width: int = 0):
+    def _fetch_image(self, url: str, on_skip=None):
         """외부 URL → `FetchedImage`(bytes·content_type·ext). 실패/규격미달이면 None.
 
         **다운로드는 `collectors.image_norm.fetch_image_bytes`에 위임**한다 — 소스 CDN 다운로드는
@@ -834,7 +840,7 @@ class NaverSmartStoreUploader(BaseUploader):
         from src.collectors.image_norm import fetch_image_bytes
         return fetch_image_bytes(url, min_bytes=self.IMAGE_MIN_BYTES,
                                  allowed_formats=self.IMAGE_ALLOWED_FORMATS,
-                                 on_skip=on_skip, max_width=max_width)
+                                 on_skip=on_skip, max_width=_DETAIL_WIDTH.get())
 
     _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"[^>]*>', re.I)
 
@@ -873,7 +879,11 @@ class NaverSmartStoreUploader(BaseUploader):
 
         def _one(un):
             reasons = []
-            got = self._fetch_image(un[1], on_skip=lambda su, sr: reasons.append(sr), max_width=_detail_max_width())
+            tok = _DETAIL_WIDTH.set(_detail_max_width())
+            try:
+                got = self._fetch_image(un[1], on_skip=lambda su, sr: reasons.append(sr))
+            finally:
+                _DETAIL_WIDTH.reset(tok)
             return un, got, (reasons[0] if reasons else '사유 미상')
 
         def _flush(chunk):

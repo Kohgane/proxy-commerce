@@ -646,7 +646,7 @@ def translate_page_d3(url: str, *, idx: int, kind: str, item_id: str, seller_id:
     if not lines:
         # Y13-A: 「그릴 줄이 없습니다」는 여기 — OCR이 정말 0상자일 때만
         return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "d3", "ms": int(res.get("ms") or 0),
-                "reason": "그릴 줄이 없습니다 — 글자 0상자(원본 그대로)", "at": datetime.now(timezone.utc).isoformat()}
+                "reason": "그릴 줄이 없습니다 — 번역할 글자가 없습니다(0상자 · 원본 그대로)", "at": datetime.now(timezone.utc).isoformat()}
     raw, why = (raw0, _why0) if raw0 else tc.fetch_image(url)
     if not raw:
         return istore.build_entry(idx, {"ok": False, "vendor": "d3", "error_class": "FetchFailed",

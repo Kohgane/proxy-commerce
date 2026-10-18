@@ -165,7 +165,7 @@ def test_calls_are_serialized_with_an_interval(monkeypatch):
 
     tc._LAST_CALL[0] = 0.0
     with patch.object(tc, "_client", lambda *_a, **_k: _Cli()), \
-         patch.object(tc, "fetch_image", lambda u: (b"img", "")):
+         patch.object(tc, "fetch_image", lambda u: (b"\xff\xd8img", "")):  # Y13-A: 형식 미상 바이트는 안 보낸다 — JPEG 머리
         for _ in range(3):
             tc.translate_image(url="https://img.example/a.jpg")
 
@@ -201,7 +201,7 @@ def test_rate_limit_retries_exactly_once(monkeypatch):
 
     tc._LAST_CALL[0] = 0.0
     with patch.object(tc, "_client", lambda *_a, **_k: _Cli()), \
-         patch.object(tc, "fetch_image", lambda u: (b"img", "")):
+         patch.object(tc, "fetch_image", lambda u: (b"\xff\xd8img", "")):  # Y13-A: 형식 미상 바이트는 안 보낸다 — JPEG 머리
         out = tc.translate_image(url="https://img.example/a.jpg")
     assert out["ok"] is True and calls["n"] == 2
     assert out.get("rate_retried") is True
@@ -226,7 +226,7 @@ def test_non_rate_errors_are_not_retried(monkeypatch):
 
     tc._LAST_CALL[0] = 0.0
     with patch.object(tc, "_client", lambda *_a, **_k: _Cli()), \
-         patch.object(tc, "fetch_image", lambda u: (b"img", "")):
+         patch.object(tc, "fetch_image", lambda u: (b"\xff\xd8img", "")):  # Y13-A: 형식 미상 바이트는 안 보낸다 — JPEG 머리
         out = tc.translate_image(url="https://img.example/a.jpg")
     assert out["ok"] is False and calls["n"] == 1, "과금되는 재시도가 늘었다"
 
