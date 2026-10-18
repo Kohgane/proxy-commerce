@@ -2538,7 +2538,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .hb-todo { list-style: none; margin: 0; padding: 0; }
 .hb-todo-row { display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) auto; gap: 8px; align-items: center;
   padding: 6px 0; border-top: 1px solid var(--border); font-size: .88rem; }
-.hb-todo-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-todo-t { font-weight: 600; }
 .hb-todo-x { color: var(--text-muted); overflow-wrap: anywhere; }
 .hb-todo-go { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--border);
   border-radius: var(--radius-pill); color: var(--teal); text-decoration: none; font-weight: 600; font-size: .82rem; }
@@ -2552,15 +2552,15 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 a.hb-tile:hover { border-color: var(--teal); }
 .hb-tile.is-alert { border-left: 3px solid var(--orange); }
 .hb-tile-k { font-size: .78rem; color: var(--text-muted); }
-.hb-tile-v { font-size: 1.35rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hb-tile-v { font-size: 1.35rem; font-weight: 800; line-height: 1.1; }
 .hb-tile-v small { font-size: .8rem; font-weight: 600; color: var(--text-muted); }
 /* B 마켓별 현황 표 */
-.hb-mtable { width: 100%; border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums; table-layout: fixed; }
+.hb-mtable { width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }
 .hb-mtable th, .hb-mtable td { padding: 6px 4px; border-top: 1px solid var(--border); text-align: right; white-space: nowrap; }
 .hb-mtable thead th { border-top: 0; font-size: .72rem; font-weight: 600; color: var(--text-muted); }
 .hb-mtable th:first-child, .hb-mtable td:first-child { text-align: left; }
 .hb-mtable col.c-name { width: 27%; } .hb-mtable col.c-n { width: 12%; } .hb-mtable col.c-on { width: 14%; } .hb-mtable col.c-t { width: 23%; }
-.hb-mtable tbody th { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.hb-mtable tbody th { font-weight: 600; overflow: hidden; }
 .hb-mname { display: block; }
 .hb-mkt { display: block; font-size: .7rem; font-weight: 400; color: var(--text-muted); }
 .hb-mtable .is-bad { color: var(--danger); font-weight: 700; }
@@ -2576,8 +2576,8 @@ a.hb-tile:hover { border-color: var(--teal); }
 /* D 최근 동작 */
 .hb-recent { list-style: none; margin: 0; padding: 0; font-size: .85rem; }
 .hb-recent li { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 5px 0; border-top: 1px solid var(--border); }
-.hb-recent time { color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; }
+.hb-recent time { color: var(--text-muted); flex: none; }
 .hb-rtext { flex: 1 1 auto; }
-.hb-rtitle { flex: 1 1 100%; font-size: .76rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-rtitle { flex: 1 1 100%; font-size: .76rem; color: var(--text-muted); }
 /* 목록 뱃지 빈 자리(Y12-C) — 미등록 계정 = 빈 점선 테두리로 자리만(고·우·셰·코 순서 고정) */
 .mk-badge.kind-none { background: transparent; border: 1px dashed var(--border); color: var(--text-muted); cursor: default; }

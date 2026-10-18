@@ -7,7 +7,7 @@
                     Neumo=조작 요소 / Glass=오버레이. 넷이 한 요소에 겹치지 않는다.
     데이터는 **기존 산출만**(ops_snapshot) — 새 집계 발명 0. 미연결은 숫자 대신 정직 표기. #}
 {% block content %}
-{#  Y12-C(오너 2026-10-18): Wing·퍼센티 식 밀도 — 390px 기준 2열 타일. 위에서부터
+{#  Y12-C(오너 2026-10-18): 오픈마켓 판매자센터 식 밀도 — 390px 기준 2열 타일. 위에서부터
     A 오늘 할 일(손댈 것을 줄로 · [보기] = 그 상품 드로어) · C 상품 현황 타일 4(누르면 그 필터 목록) · B 마켓별 현황 표 4행 ·
     돌아가는 것(0이면 숨김) · D 최근 동작 10줄(KST) · E 오늘 쓴 것(이미지 번역 · 다듬기).
     주문·매출 타일은 없다 — 운영 DB에 실주문이 없다(빈 약속 타일 금지). 진단 패널은 사이드바 「진단」. #}
@@ -26,7 +26,7 @@
     {% elif a.n %}
     <ul class="hb-todo" data-role="hb-todo">
       {% for t in a.todo or [] %}
-      <li class="hb-todo-row"><span class="hb-todo-t">{{ t.title or '(제목 없음)' }}</span><span class="hb-todo-x">{{ t.text }}</span>
+      <li class="hb-todo-row"><span class="hb-todo-t text-truncate">{{ t.title or '(제목 없음)' }}</span><span class="hb-todo-x">{{ t.text }}</span>
         <a class="hb-todo-go" data-role="hb-todo-go" href="{{ t.url }}">보기</a></li>
       {% endfor %}
       {% if a.more %}<li class="hb-todo-row hb-more"><a href="/seller/collect/history?attn=1&days=3650">나머지 {{ a.more }}줄 — 손댈 것만 보기</a></li>{% endif %}
@@ -53,7 +53,7 @@
     <ol class="hb-recent">
       {% for e in rc %}
       <li data-role="hb-recent-row"><time>{{ e.at }}</time><span class="hb-rtext">{{ e.text }}</span>
-        {% if e.id %}<a class="hb-rtitle" href="/seller/collect/history?open={{ e.id }}">{{ e.title or '(제목 없음)' }}</a>{% endif %}</li>
+        {% if e.id %}<a class="hb-rtitle text-truncate" href="/seller/collect/history?open={{ e.id }}">{{ e.title or '(제목 없음)' }}</a>{% endif %}</li>
       {% endfor %}
     </ol>
     {% else %}<p class="hb-none">기록 없음</p>{% endif %}
@@ -87,7 +87,7 @@
       <tbody>
         {% for r in m.rows or [] %}
         <tr data-role="hb-market-row" data-slot="{{ r.slot }}">
-          <th scope="row"><span class="hb-mname">{{ r.name }}</span><span class="hb-mkt">{{ r.market_ko }}</span></th>
+          <th scope="row"><span class="hb-mname text-truncate">{{ r.name }}</span><span class="hb-mkt">{{ r.market_ko }}</span></th>
           <td>{{ r.sale }}</td><td>{{ r.wait }}</td><td class="{{ 'is-bad' if r.rejected }}">{{ r.rejected }}</td>
           <td class="{{ 'is-off' if r.connected is sameas false }}">{{ '연결' if r.connected else ('미연결' if r.connected is sameas false else '—') }}</td>
           <td class="hb-mtime">{{ r.last_check or '—' }}</td>
