@@ -41,11 +41,29 @@ def _run(name: str, fn: Callable[[], dict]) -> None:
     logger.info("[CRON] job=%s elapsed_ms=%d ok=%s", name, ms, ok)
 
 
+GATE_KEY = "rss:gate"
+GATE_KEEP = 200
+
+
+def _gate_log(name: str, ok: bool, cur_mb: int, lim_mb: int) -> None:
+    """Y13-C 5(오너 2026-10-18 「07:50 큐가 왜 저절로 풀렸나」): 문지기 판정을 남긴다 — {at, job, ok, mb, limit}, 최근 200줄.
+    `rss:recent`(60줄)는 무거운 일만 적어 반나절이면 밀린다 — 거부·통과 시각과 그때 합계 MB가 없어 가설을 숫자로 못 봤다."""
+    try:
+        from src.db import image_translate_queue_pg as st
+        rows = [r for r in (st.state_get(GATE_KEY) or {}).get("rows") or [] if isinstance(r, dict)]
+        rows.append({"at": datetime.now(timezone.utc).isoformat(), "job": str(name)[:40], "ok": bool(ok),
+                     "mb": int(cur_mb), "limit": int(lim_mb)})
+        st.state_set(GATE_KEY, {"rows": rows[-GATE_KEEP:]})
+    except Exception:                                    # noqa: BLE001 — 기록 실패가 잡을 막지 않는다
+        pass
+
+
 def start(name: str, fn: Callable[[], dict]) -> Tuple[bool, dict]:
     """`(시작했나, 상태)` — 이미 도는 중이면 시작하지 않는다. Z10-C: 인스턴스 메모리 합계가 상한(420MB) 이상이어도
     시작하지 않는다(상태 `busy_memory`) — 크론은 다음 주기에 다시 온다."""
     from src.utils import rss as _rss
     ok_mem, cur_mb, lim_mb = _rss.start_ok()
+    _gate_log(name, ok_mem, cur_mb, lim_mb)
     if not ok_mem:
         logger.warning("[CRON] job=%s 시작 거부 — 인스턴스 메모리 %dMB ≥ %dMB", name, cur_mb, lim_mb)
         return False, {"job": name, "state": "refused", "busy_memory": True, "memory_mb": cur_mb, "limit_mb": lim_mb,

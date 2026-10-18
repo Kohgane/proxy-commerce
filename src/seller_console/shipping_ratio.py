@@ -69,7 +69,35 @@ def _texts(pd: dict) -> str:
             parts += [str(v.get("name") if isinstance(v, dict) else v) for v in (o.get("values") or [])]
     for s in pd.get("detail_specs") or []:
         parts.append(json.dumps(s, ensure_ascii=False) if not isinstance(s, str) else s)
+    # Y13-C 3(오너 2026-10-18 피샹리): 사진 글자 — 대표 「尺寸 100x114x74」 · 상세 「左右宽100cm 前后长114cm 总高74cm」
+    parts.append(str(pd.get("photo_text") or ""))
     return " ".join(parts)
+
+
+# Y13-C 3: 「가로·세로·높이」가 이름표와 함께 적힌 치수(상세 사진 규격표 · 상세 글). 단위(cm·mm)가 붙은 것만 —
+#   축마다 가장 큰 값(좌석 깊이 55 · 등받이 폭 80보다 전체 114 · 100). 셋 다 있어야 치수로 쓴다.
+_AXIS = {"w": ("宽", "가로", "폭", "너비", "width", "W"), "l": ("长", "深", "세로", "길이", "깊이", "length", "depth", "D", "L"),
+         "h": ("高", "높이", "height", "H")}
+_LAB_RE = re.compile(r"(宽|长|深|高|가로|세로|길이|깊이|높이|폭|너비|width|length|depth|height)\s*(?:度)?\s*[:：/=]?\s*"
+                     r"(\d{1,3}(?:\.\d+)?)\s*(cm|CM|厘米|公分|mm|MM|毫米)", re.I)
+
+
+def labeled_dims(text: str) -> Optional[Dict[str, Any]]:
+    """`{dims_cm:[가로, 세로, 높이], seen:"宽100·长114·高74"}` 또는 None."""
+    best: Dict[str, float] = {}
+    for m in _LAB_RE.finditer(str(text or "")):
+        lab, val, unit = m.group(1), float(m.group(2)), m.group(3).lower()
+        if unit in ("mm", "毫米"):
+            val = val / 10
+        if not 5 <= val <= 400:                                  # 1-3cm 오차 안내·받침 높이 같은 조각은 뺀다
+            continue
+        ax = next((a for a, names in _AXIS.items() if lab.lower() in (n.lower() for n in names)), "")
+        if ax and val > best.get(ax, 0):
+            best[ax] = val
+    if len(best) < 3:
+        return None
+    dims = [best["w"], best["l"], best["h"]]
+    return {"dims_cm": dims, "seen": f"가로 {dims[0]:g} · 세로 {dims[1]:g} · 높이 {dims[2]:g}cm"}
 
 
 _PKG_KEYS = ("包装体积", "包装尺寸体积", "外箱体积")
@@ -105,14 +133,27 @@ def _read_size(pd: dict) -> Dict[str, Any]:
         if all(v > 0 for v in vals) and (dims is None or vals[0] * vals[1] * vals[2] > dims[0] * dims[1] * dims[2]):
             dims = vals
     kg = max((float(m.group(1)) for m in _KG_RE.finditer(text)), default=0.0)
+    basis = "상품 글·사진에서 읽은 " + ("치수" if dims else "무게")
+    if not dims:
+        lab = labeled_dims(text)
+        if lab:
+            dims, basis = lab["dims_cm"], f"상품 글·사진 규격에서 읽은 치수({lab['seen']})"
     if dims or kg:
-        return {"dims_cm": dims, "weight_kg": kg, "basis": "상품 글에서 읽은 " + ("치수" if dims else "무게")}
-    low = text.lower()
+        return {"dims_cm": dims, "weight_kg": kg, "basis": basis}
+    low = str(_texts_no_photo(pd)).lower()
     for e in rules().get("size_defaults") or []:
         if any(str(k).lower() in low for k in e.get("keywords") or []):
+            if e.get("furniture"):
+                # Y13-C 3(오너 2026-10-18): 가구는 기본 크기로 추정하지 않는다 — 실측이 없으면 「치수 확인 필요」로 막는다
+                return {"dims_cm": None, "weight_kg": 0.0, "basis": "", "need_dims": e["label"]}
             return {"dims_cm": [float(x) for x in e["dims_cm"]], "weight_kg": float(e.get("weight_kg") or 0),
                     "basis": f"크기 표 추정({e['label']} 기본값)"}
     return {"dims_cm": None, "weight_kg": 0.0, "basis": ""}
+
+
+def _texts_no_photo(pd: dict) -> str:
+    """크기 표 키워드는 상품 글에서만 본다(사진 속 「椅」 광고 글자로 상품 종류를 정하지 않는다)."""
+    return _texts({k: v for k, v in (pd or {}).items() if k != "photo_text"})
 
 
 # Z5 후속(오너 2026-10-04 20:30): 요율은 **출발국·발주 경로별** env. 기본값을 지어내지 않는다 —
@@ -263,6 +304,10 @@ def estimate(pd: dict, seller_id: str = "") -> Dict[str, Any]:
         price = 0.0
     fx = _fx(pd.get("currency"))
     if not (size["dims_cm"] or size["weight_kg"] or size["pkg_m3"]):
+        if size.get("need_dims"):
+            return {"state": "need_dims", "need_input": True, "label": size["need_dims"],
+                    "line": (f"치수 확인 필요 — 가구({size['need_dims']})는 기본 크기로 추정하지 않아요. 상품 글·사진 규격에서 "
+                             "가로·세로·높이를 못 찾았어요 → 「무게·크기 직접 넣기」에 넣으면 실측으로 다시 계산해요")}
         return {"state": "unknown", "need_input": True,
                 "line": "부피 미확인 — 무게·가로·세로·높이를 넣으면 계산해요(통과)"}
     origin = origin_of(pd)
@@ -395,6 +440,8 @@ def _three_lines(q: Dict[str, Any]) -> List[str]:
 def hold(pd: dict, seller_id: str = "") -> Optional[Dict[str, str]]:
     """보류 줄(없으면 None). 「그래도 등록」(`ship_ratio_override`)이 있으면 보류하지 않는다."""
     est = estimate(pd, seller_id)
+    if est["state"] == "need_dims":
+        return {"short": "치수 확인 필요", "fix": "ship_dims", "line": est["line"]}
     if est["state"] != "ok" or est["ratio_pct"] <= threshold_pct():
         return None
     if pd.get("ship_ratio_override"):
