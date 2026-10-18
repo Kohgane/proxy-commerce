@@ -1385,6 +1385,9 @@ class UploadDispatcher:
                     r.cautions = list(r.cautions or []) + [_ltc]
             except Exception as exc:                             # noqa: BLE001
                 logger.warning("[사전검증] 선주문 주의 칩 실패: %s", exc)
+            _ppc = str(product_data.get("promo_photo_caution") or "")      # Y13-A 7: 번역본 판촉 글자 — 나가기 전 경고
+            if _ppc and _ppc not in (r.cautions or []):
+                r.cautions = list(r.cautions or []) + [_ppc]
             # Y7-M(오너 2026-10-10): 옵션이 조각별 개별 판매 + 상품명 「세트」 → 「주의」 칩(보류 아님 — 상품명은 셀러 판단)
             try:
                 if base in _KO_OPTION_MARKETS:

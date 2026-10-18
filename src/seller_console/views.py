@@ -4822,6 +4822,9 @@ def _pv_prepare(data: dict, product_data: dict):
                 product_data["ai_detail_blocked"] = True                 # 상세 초안 「되돌리기」 — 다시 만들지 않는다
             # Y9: 상표·IP 검사 재료 — 등록에 나갈 사진의 글자(텐센트 OCR 원문·번역문). 제외된 장은 안 나가므로 뺀다.
             product_data["image_ocr_text"] = _ocr_text_of(_sx)
+            # Y13-A 7: 나가는 번역본에 판촉 글자가 남았으면 「나가기 전 경고」(주의 칩 · 보류 아님)
+            from src.services.image_polish import promo_left_caution as _plc
+            product_data["promo_photo_caution"] = _plc(_sx)
             # Y9: 상세 사진 번역 진행(사전검증 카드 「상세 사진 번역 중 n/28」)
             product_data["detail_translate_progress"] = _detail_translate_progress(str(data["item_id"]), _sx)
             # Y10: 리스크 게이트 — 기억된 「빼고 등록」은 바로 적용(저장) → 저장된 「빼고 등록」을 몸통에도 → 전 위치 검사

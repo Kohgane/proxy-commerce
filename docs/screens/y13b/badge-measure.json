@@ -1,0 +1,35 @@
+{
+ "390": {
+  "visible_title_tail": "플리츠 미니",
+  "overflow": false,
+  "badge_short": [
+   "고",
+   "우",
+   "셰",
+   "코"
+  ],
+  "badge_full": []
+ },
+ "360": {
+  "visible_title_tail": "플리츠 ",
+  "overflow": false,
+  "badge_short": [
+   "고",
+   "우",
+   "셰",
+   "코"
+  ],
+  "badge_full": []
+ },
+ "1280": {
+  "visible_title_tail": "여름 세트, ",
+  "overflow": false,
+  "badge_short": [],
+  "badge_full": [
+   "고가네 승인완료",
+   "우주대행 승인완료",
+   "셰고가 판매중",
+   "고코스모스 등록됨"
+  ]
+ }
+}
