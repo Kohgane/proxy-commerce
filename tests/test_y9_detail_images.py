@@ -180,7 +180,9 @@ def test_3_old_d3_no_draw_record_is_a_translation_failure_not_no_text():
     from src.services import detail_image_plan as P
     ex = _ex()
     rows = {r["no"]: r for r in P.table(ex)}
-    assert rows[3]["use"] == "failed" and "그릴 줄이 없습니다" in rows[3]["reason"] and "글자 없는 사진" not in rows[3]["reason"]
+    # Y13-A(오너 2026-10-18): 「그릴 줄이 없습니다」는 OCR 0상자일 때만 — 옛 D3 기록은 「번역 실패 · 사유」로 보인다
+    assert rows[3]["use"] == "failed" and rows[3]["reason"].startswith("번역 실패 · ") and "글자 없는 사진" not in rows[3]["reason"]
+    assert "그릴 줄이 없습니다" not in rows[3]["reason"]
     pwt = {"idx": 2, "status": "failed", "error_code": "UnsupportedOperation.PictureWithoutText", "error_message": "翻译失败，输入为无文本图片。"}
     assert P.verdict(pwt, "https://img.alicdn.com/x.jpg") == {"use": "original", "reason": "글자 없는 사진 — 원본 그대로",
                                                                "section": P.verdict(pwt, "https://img.alicdn.com/x.jpg")["section"]}

@@ -4992,6 +4992,8 @@ def _pv_prewarm_naver_detail(product_data: dict, markets: list) -> bool:
     스토어마다 그 스토어 키로(등록과 같은 업로더). 실패해도 막지 않는다 — 마켓 검증이 같은 함수로 다시 잰다.
     """
     from .upload_dispatcher import _for_market, naver_detail_verdict
+    from src.uploaders.naver_uploader import _release
+    _release()                                                    # Y13-A: 올리기 전에 놓은 힙부터 돌려준다(시작 바닥을 낮춘다)
     did = False
     for m in markets:
         try:

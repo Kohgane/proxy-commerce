@@ -617,6 +617,13 @@ def translate_page_d3(url: str, *, idx: int, kind: str, item_id: str, seller_id:
     from src.services import image_translate_budget as budget
     from src.services import image_text_precheck as precheck
     now_iso = datetime.now(timezone.utc).isoformat()
+    # Y13-A: 본선(`translate_page_tencent`)과 같은 주소 규칙 — `//` 정리 · 스페이서·작은 아이콘은 보내지 않는다(돈 0)
+    from src.services.detail_image_plan import fix_url as _fix, url_exclusion as _uex
+    url = _fix(url)
+    _ex = _uex(url)
+    if _ex:
+        return {"idx": int(idx), "kind": kind, "status": "excluded", "vendor": "rule", "ms": 0, "at": now_iso,
+                "exclude": _ex, "reason": f"등록에서 뺍니다 — {_ex}"}
     # Z3-2 ① OCR 먼저(Z7: 로컬 RapidOCR → 텐센트 OCR API) — 한자가 없다고 **확신**하면 이미지 번역에 안 보낸다(모르면 예전처럼 보냄).
     raw0, _why0 = tc.fetch_image(url)
     has, seen = precheck.han_text(raw0) if raw0 else (None, "")
@@ -637,8 +644,9 @@ def translate_page_d3(url: str, *, idx: int, kind: str, item_id: str, seller_id:
         return istore.build_entry(idx, res, item_id=item_id, seller_id=seller_id, kind=kind)
     lines = res.get("lines") or []
     if not lines:
+        # Y13-A: 「그릴 줄이 없습니다」는 여기 — OCR이 정말 0상자일 때만
         return {"idx": int(idx), "kind": kind, "status": "skipped", "vendor": "d3", "ms": int(res.get("ms") or 0),
-                "reason": "이미지에 번역할 글자가 없습니다 — 원본을 씁니다", "at": datetime.now(timezone.utc).isoformat()}
+                "reason": "그릴 줄이 없습니다 — 글자 0상자(원본 그대로)", "at": datetime.now(timezone.utc).isoformat()}
     raw, why = (raw0, _why0) if raw0 else tc.fetch_image(url)
     if not raw:
         return istore.build_entry(idx, {"ok": False, "vendor": "d3", "error_class": "FetchFailed",
@@ -651,8 +659,15 @@ def translate_page_d3(url: str, *, idx: int, kind: str, item_id: str, seller_id:
         logger.info("[이미지번역·자동] item=%s %s#%s gen_remove 크레딧 추정 %.3f", item_id, kind, idx, credits)
     if not (pick and pick.get("ok") and pick.get("image_bytes")):
         err = (pick or {}).get("error") or out.get("error") or "렌더 결과가 없습니다"
-        return istore.build_entry(idx, {"ok": False, "vendor": "d3", "error_class": "RenderFailed",
-                                        "error_message": err}, item_id=item_id, seller_id=seller_id, kind=kind)
+        # Y13-A: 줄은 읽었는데(위에서 0상자는 이미 끝났다) 다 빠졌다 — 빠진 사유로 「번역 실패」/「번역 안 함」을 가른다
+        from src.services.detail_image_plan import fail_reason as _fr
+        skipped = [s for s in ((pick or {}).get("skipped") or []) if isinstance(s, dict)][:12]
+        msg = _fr({"error_class": "RenderFailed", "error_message": err, "skipped": skipped})
+        entry = istore.build_entry(idx, {"ok": False, "vendor": "d3",
+                                         "error_class": "TranslateFailed" if msg.startswith("번역 실패") else "RenderSkipped",
+                                         "error_message": msg}, item_id=item_id, seller_id=seller_id, kind=kind)
+        entry["skipped"] = skipped
+        return entry
     rows = out.get("rows") or []
     result = {"ok": True, "vendor": "d3", "ms": int(res.get("ms") or 0),
               "image_b64": base64.b64encode(pick["image_bytes"]).decode("ascii"),

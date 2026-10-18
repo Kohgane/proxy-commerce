@@ -407,7 +407,7 @@ def remote_max_side() -> int:
 
 def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeout: float = 30.0,
                   folder: str = "", public_id: str = "", overwrite: Optional[bool] = None, fmt: str = "",
-                  max_side: Optional[int] = None, eager: Optional[list] = None) -> Dict[str, Any]:
+                  max_side: Optional[int] = None, eager: Optional[list] = None, max_width: int = 0) -> Dict[str, Any]:
     """Z10-B — 원본 **URL을 그대로** Cloudinary에 넘긴다(원격 업로드 — Cloudinary가 직접 받아 간다). 우리 프로세스는
     바이트를 만지지 않는다 → 메모리 0. `source`가 bytes면 그 바이트를 올린다(폴백 — 받은 자리에서 이미 줄인 것).
 
@@ -450,7 +450,9 @@ def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeou
             opts["overwrite"] = bool(overwrite)
         if fmt:
             opts["format"] = fmt
-        if side > 0:
+        if max_width:
+            opts["transformation"] = [{"width": int(max_width), "crop": "limit"}]     # Y13-A: 세로로 긴 장 — 가로만
+        elif side > 0:
             opts["transformation"] = [{"width": side, "height": side, "crop": "limit"}]
         if public_id:
             opts["public_id"] = public_id
@@ -474,15 +476,17 @@ def upload_remote(source: Any, *, label: Optional[Dict[str, str]] = None, timeou
     return out
 
 
-def small_copy(url: str, *, max_side: int = 2000, timeout: float = 20.0) -> tuple:
+def small_copy(url: str, *, max_side: int = 2000, timeout: float = 20.0, max_width: int = 0) -> tuple:
     """Z10-B — 큰 원본(WebP·PNG — 우리 프로세스가 줄여 풀 수 없다)을 **Cloudinary가** 긴 변 `max_side` JPEG로 만들게 하고
     그 작은 사본만 받아 온다 → `(bytes | None, 사유)`. 우리 프로세스는 원본 화소를 풀지 않는다.
 
     실측(오너 픽스처 BLACKHOLES 2~5번 = 4160×4160 WebP): 우리가 WebP → JPEG로 바꾸면 한 장에 **+310MB**(Pillow WebP 디코더가
     원본 RGBA 바이트 66MB + 그 이미지 + 줄이기). 같은 원본은 같은 이름(`conv_<sha1>`)으로 한 번만 만든다(`overwrite=False`)."""
     import hashlib
-    pid = "conv_" + hashlib.sha1(str(url).encode("utf-8")).hexdigest()[:24]
-    r = upload_remote(url, folder="conv", public_id=pid, overwrite=False, fmt="jpg", max_side=max_side, timeout=timeout)
+    # Y13-A: `max_width`면 가로만 묶는다(세로로 긴 상세 장 — 긴 변 상자에 넣으면 글자가 뭉개진다). 이름도 따로(같은 이름이면 옛 사본을 받는다)
+    pid = "conv_" + hashlib.sha1((str(url) + (f"|w{int(max_width)}" if max_width else "")).encode("utf-8")).hexdigest()[:24]
+    r = upload_remote(url, folder="conv", public_id=pid, overwrite=False, fmt="jpg", max_side=max_side, timeout=timeout,
+                      max_width=max_width)
     if not r.get("ok"):
         return None, r.get("error") or "Cloudinary 사본 실패"
     try:

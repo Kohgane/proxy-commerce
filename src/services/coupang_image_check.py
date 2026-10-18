@@ -219,6 +219,8 @@ def _bytes_for(url: str) -> tuple:
         from src.services.image_translate_store import read_translated
         raw = read_translated(m.group(1), int(m.group(2)), kind=m.group(3) or "gallery")
         return (raw, "") if raw else (b"", "번역본 바이트가 없어요")
+    from src.collectors.image_norm import abs_image_url
+    url = abs_image_url(url)                                       # Y13-A: `//cdn…`도 받는다
     if not str(url or "").startswith(("http://", "https://")):
         return b"", "읽을 수 없는 주소예요"
     from src.services.image_translate_tencent import fetch_image

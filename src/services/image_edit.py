@@ -227,8 +227,8 @@ def _load_small(url: str):
     """`(작은 RGB 그림, (W, H))` — 미리보기·색 판정용(긴 변 256px). 못 받으면 `(None, (0, 0))`."""
     try:
         import requests
-        from src.collectors.image_norm import open_small
-        r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        from src.collectors.image_norm import abs_image_url, open_small
+        r = requests.get(abs_image_url(url), timeout=15, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200 or not r.content:
             return None, (0, 0)
         from PIL import Image
@@ -328,7 +328,8 @@ def _ocr_version(url: str) -> Dict:
         return {"ok": False, "why": O.UNOPEN_WHY, "code": "ocr_unopened", "boxes": [], "size": [0, 0]}
     try:
         import requests
-        r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        from src.collectors.image_norm import abs_image_url
+        r = requests.get(abs_image_url(url), timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         raw = r.content if r.status_code == 200 else b""
     except Exception as exc:                                    # noqa: BLE001
         return {"ok": False, "why": f"사진을 받지 못했어요({type(exc).__name__})", "boxes": [], "size": [0, 0]}

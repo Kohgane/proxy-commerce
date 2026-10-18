@@ -32,6 +32,16 @@ _AMZ_HOST_RE = re.compile(r"(m\.media-amazon\.com|images-[a-z]+\.ssl-images-amaz
 TARGET_TOKEN = "_SS1600_"          # 정본 대형본 토큰(오너 지시)
 
 
+def abs_image_url(url: str) -> str:
+    """Y13-A(오너 2026-10-18 피샹리 상세 1번 ValueError) — 이미지 주소 앞뒤 공백·스킴 없는 `//cdn…`을 `https://`로.
+    **모든 이미지 받기 경로가 이 한 함수를 지난다**(#911은 진단 한 곳만 고쳐 새 수집 → 사전검증 경로에서 재발했다).
+    `urllib`은 `//…`에 ValueError(unknown url type), `requests`는 MissingSchema(ValueError 하위)를 던진다."""
+    u = str(url or "").strip()
+    if u.startswith("//"):
+        u = "https:" + u
+    return u
+
+
 def normalize_image_url(url: str) -> str:
     """이미지 URL → 대형본 URL. 아마존이면 사이즈 토큰을 `_SS1600_`으로 치환.
 
@@ -40,7 +50,7 @@ def normalize_image_url(url: str) -> str:
     - 아마존이 아니거나 형식을 못 알아보면 **원본 그대로**(발명 0 — 남의 CDN 규칙을 추측하지 않는다).
     쿼리스트링은 여기서 제거한다(쿠팡이 거부 — 정본).
     """
-    u = str(url or "").strip()
+    u = abs_image_url(url)
     if not u:
         return ""
     u = u.split("?")[0]                       # 정본: 쿼리스트링 제거
@@ -75,6 +85,7 @@ def probe_image_size(url: str, *, fetch_fn=None, timeout: float = 6.0):
         from PIL import Image                      # 지연 import(CI collect-only 안전 — v39 A 선례)
     except Exception:
         return None
+    url = abs_image_url(url)                       # Y13-A
     data = None
     if fetch_fn:
         try:
@@ -261,7 +272,7 @@ def _skip(on_skip, url: str, reason: str):
 
 
 def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: float = 20.0,
-                      allowed_formats=None, on_skip=None):
+                      allowed_formats=None, on_skip=None, max_width: int = 0):
     """외부 이미지 URL → `FetchedImage`(bytes·content_type·ext). 실패/규격미달이면 None.
 
     **소스 CDN에서 받는 다운로드**라 마켓 아웃바운드가 아니다 — 릴레이를 타지 않는다
@@ -301,7 +312,7 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
         need_convert = ext not in allow
         if need_convert or len(body) > _shrink_bytes():
             # Z10-B(오너 픽스처 실측): 줄여 풀 수 없는 큰 장(WebP·PNG)을 우리가 바꾸면 한 장 +310MB — 먼저 Cloudinary에 맡긴다.
-            off = _offload_big(u, body, ext, need_convert, on_skip)
+            off = _offload_big(u, body, ext, need_convert, on_skip, max_width=int(max_width or 0))
             if off is _KEEP_RAW:
                 return _make_part(body, ext) or _skip(on_skip, u, f'메타 생성 실패({ext})')
             if off is _SKIPPED:
@@ -319,12 +330,14 @@ def fetch_image_bytes(url: str, *, min_bytes: int = FETCH_MIN_BYTES, timeout: fl
             logger.info("이미지 형식 변환 %s → %s (%s, %dB): %s",
                         ext, part.ext, part.content_type, len(part.data), u)
             return part
-    if allowed_formats and len(body) > _shrink_bytes():
+    _mw = int(max_width or 0) or _upload_max_width()
+    _wide = bool(max_width) and (image_head(body)[1] or 0) > int(max_width)    # Y13-A: 상세 장은 가로 상한을 넘으면 크기와 무관하게 줄임
+    if allowed_formats and (len(body) > _shrink_bytes() or _wide):
         # Z10(오너 2026-10-10 BLACKHOLES +261MB): 타오바오 원본(크기 꼬리 없는 4,000px+ JPEG·PNG)은 장당 수 MB다 —
         #   네이버 업로드 한 번에 그 바이트가 받은 목록·multipart·릴레이 base64·JSON 문자열로 7~8벌 동시에 뜬다.
         #   픽셀 상한(`IMAGE_UPLOAD_MAX_PIXELS`, 기본 800만 ≈ 2,828px 정사각)을 넘는 큰 장은 받은 자리에서 줄여 다시 담는다
         #   (JPEG은 `draft`로 디코드부터 작게 · 한 번에 한 장). 줄이지 못하면 원본 그대로(막지 않음).
-        small = shrink_image_bytes(body, max_pixels=_upload_max_pixels(), max_width=_upload_max_width())
+        small = shrink_image_bytes(body, max_pixels=_upload_max_pixels(), max_width=_mw)
         if small is not None and len(small) < len(body):
             part = _make_part(small, CONVERT_TARGET_EXT)
             if part is not None:
@@ -340,7 +353,7 @@ _KEEP_RAW = object()
 _SKIPPED = object()
 
 
-def _offload_big(u: str, body: bytes, ext: str, need_convert: bool, on_skip):
+def _offload_big(u: str, body: bytes, ext: str, need_convert: bool, on_skip, max_width: int = 0):
     """큰 원본(JPEG 아님 · 화소 > `decode_max_pixels`)을 **풀지 않고** 다룬다. 해당 없으면 None(평소 경로).
 
     ① Cloudinary가 긴 변 2,000px JPEG로 만든 사본을 받아 쓴다(`image_pipeline.small_copy`).
@@ -352,7 +365,9 @@ def _offload_big(u: str, body: bytes, ext: str, need_convert: bool, on_skip):
         return None
     try:
         from src.media.image_pipeline import small_copy
-        small, why = small_copy(u)
+        # Y13-A: 세로로 긴 상세 장(790×20,000)은 긴 변 2,000px 상자에 넣으면 79×2,000이 된다 — 가로만 묶는다
+        tall = h > 2 * w
+        small, why = small_copy(u, max_width=(max_width or 1000) if tall else 0)
     except Exception as exc:                                      # noqa: BLE001
         small, why = None, f"{type(exc).__name__}"
     if small:

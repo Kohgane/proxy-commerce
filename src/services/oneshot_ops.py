@@ -12,6 +12,10 @@
   가격·갤러리 둘 다 빈 상품)도 — 「손댈 것 · 수집 실패」·「재수집 대기」 요약을 옛 행에도 붙인다
 - `review_status` {item_id, market} — Y12-A(오너 23:31 Y11W-1): 그 상품·그 마켓 **상태만 1회 조회**(쿠팡 GET, 무료)하고
   성공 값만 등록 기록 `review`에 남긴다(막힌 조회는 덮지 않음 — 결정 8). 결과 원문 = `ops:oneshot:last`
+- `prevalidate` {item_id, markets?} — Y13-A(오너 2026-10-18 「두 상품 사전검증 다시 돌려서 결과표」): 그 상품 계정으로
+  화면과 **같은 사전검증 잡**을 띄운다(몸통 = 등록 빌더 `build_product`). 결과는 잡 기록 `prevalidate_job:<id>`(화면이 읽는 그것)
+- `image_probe` {item_id, kind, idx:[…]} — Y13-A: 실제 주소를 서버에서 받아 형식·크기·base64·정규화 결과를 남기고 텐센트 OCR에
+  한 번 보내 응답 코드를 남긴다(장당 OCR 1회 · 최대 6장 · 번역은 안 보냄). `InvalidParameterValue.Data` 재현 로그
 """
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
-OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status")
+OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe")
 
 
 def _now() -> str:
@@ -44,6 +48,10 @@ def _run(row: dict) -> Dict:
         return _attn_backfill()
     if op == "review_status":
         return _review_status(item_id, str(row.get("market") or ""))
+    if op == "prevalidate":
+        return _prevalidate(item_id, [str(m) for m in (row.get("markets") or []) if m])
+    if op == "image_probe":
+        return _image_probe(item_id, str(row.get("kind") or "detail"), [int(i) for i in (row.get("idx") or [])][:6])
     from src.services import ocr_compare_diag as D
     item, uid = D._item(item_id)
     if not item:
@@ -133,3 +141,76 @@ def _review_status(item_id: str, market: str) -> Dict:
             "status_raw": row.get("status_raw"), "comment": str(row.get("comment") or "")[:200],
             "checked_at": row.get("checked_at"), "stale": bool(row.get("stale")),
             "why": str(row.get("stale_note") or row.get("error") or "")[:200], "saved": bool(saved)}
+
+
+PREVALIDATE_MARKETS = ("coupang:gogane", "coupang:woojoo", "smartstore:chezgoga", "smartstore:gocosmos")
+
+
+def _prevalidate(item_id: str, markets: List[str]) -> Dict:
+    """화면 「사전검증」과 같은 잡 — 그 상품 계정 세션으로(자격·마켓 키가 그 계정 것). 잡 id만 돌려준다(결과는 잡 기록)."""
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    if not uid:
+        return {"ok": False, "why": "상품 계정을 알 수 없어요(세션 없이 돌리지 않는다)"}
+    from flask import session
+    from src.order_webhook import app
+    from src.seller_console import views as V
+    from src.seller_console.product_builder import build_product
+    mk = [m for m in (markets or PREVALIDATE_MARKETS) if m in PREVALIDATE_MARKETS]
+    data = {"product": build_product(item, edits={}, seller_id=uid), "markets": mk, "item_id": str(item.get("id") or item_id)}
+    with app.test_request_context("/seller/collect/prevalidate", method="POST"):
+        session["user_id"] = uid
+        dispatcher = V._get_upload_dispatcher()
+        if dispatcher is None:
+            return {"ok": False, "why": "업로드 디스패처를 불러오지 못했어요"}
+        resp = V._pv_start_job(data, mk, dispatcher)
+    body = (resp[0] if isinstance(resp, tuple) else resp).get_json() or {}
+    return {"ok": bool(body.get("job_id")), "job_id": body.get("job_id") or "", "markets": mk,
+            "why": "" if body.get("job_id") else str(body.get("error") or "잡을 띄우지 못했어요")[:160]}
+
+
+def _image_probe(item_id: str, kind: str, idxs: List[int]) -> Dict:
+    """장마다: 저장 주소 → 정리 주소 → 받기(형식·크기·바이트·base64) → 텐센트 입력 정규화 → OCR 1회 응답 코드."""
+    import json
+    from src.collectors.image_norm import abs_image_url, image_head
+    from src.services import ocr_compare_diag as D
+    from src.services import detail_image_plan as P
+    from src.services import image_translate_tencent as tc
+    from src.services import ocr_tencent as O
+    item, _uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        ex = {}
+    src = {"detail": "detail_images", "gallery": "images"}.get(kind, "detail_images")
+    urls = [u for u in (ex.get(src) or []) if isinstance(u, str)]
+    rows = []
+    for i in idxs:
+        if not 0 <= i < len(urls):
+            rows.append({"idx": i, "why": "그 번호의 사진이 없어요"})
+            continue
+        raw_url = urls[i]
+        url = P.fix_url(raw_url)
+        row = {"idx": i, "stored": raw_url[:160], "url": url[:160], "scheme_fixed": abs_image_url(raw_url) != raw_url.strip(),
+               "excluded": P.url_exclusion(url)}
+        data, why = tc.fetch_image(url)
+        if why:
+            row["fetch"] = why
+            rows.append(row)
+            continue
+        fmt, w, h = image_head(data)[:3]
+        row.update(fmt=fmt, w=w, h=h, bytes=len(data), b64=int(len(data) * 4 / 3))
+        norm, info = P.prepare_for_tencent(data)
+        row["prepare"] = {"sent": "원본 그대로" if norm is data else ("안 보냄" if norm is None else "바꿈"),
+                          "note": str(info.get("note") or ""), "bytes": len(norm or b"")}
+        if norm is not None:
+            r = O.read(norm, max_side=O.AS_IS)
+            row["ocr"] = {"ok": bool(r.get("ok")), "code": str(r.get("code") or ""), "why": str(r.get("why") or "")[:160],
+                          "lines": len(r.get("lines") or [])}
+        rows.append(row)
+        data = norm = None
+    return {"ok": True, "kind": kind, "rows": rows}

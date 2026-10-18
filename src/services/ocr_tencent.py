@@ -104,7 +104,11 @@ def shrink(raw: bytes, max_side: int = MAX_SIDE) -> bytes:
     Z10-B(오너 2026-10-11 02:24): 예전엔 `draft`(JPEG 전용) 뒤 `convert("RGB")`를 **원본 크기에서** 했다 — PNG는 draft가
     안 먹어 원본 화소 그대로 풀고 RGB 사본까지 한 벌 더. 이제 `image_norm.open_small`(줄이기 먼저 · 한 장씩)이고,
     서버가 풀면 안 되는 큰 PNG는 **풀지 않고 원본 바이트를 그대로** 보낸다(공급사가 PNG를 받는다 · 한도 안일 때만)."""
-    from src.collectors.image_norm import open_small
+    from src.collectors.image_norm import image_head, open_small
+    _f, _w, _h = image_head(raw)[:3]
+    if _w and _h and min(_w, _h) < 20:
+        # Y13-A(피샹리 상세 24번 s.gif 1×1): 공급사 최소 20px — 보내면 `InvalidParameterValue.Data`(그릴 것도 읽을 것도 없다)
+        raise ValueError(f"너무 작은 사진({_w}×{_h} — 공급사 최소 20px)")
     if max_side == AS_IS:
         if _fits_as_is(raw):
             return bytes(raw)
@@ -157,6 +161,8 @@ def read(raw: bytes, *, max_side: int = 0, lang: str = "") -> Dict:
     try:
         small = shrink(raw, max_side or MAX_SIDE)
     except Exception as exc:                                # noqa: BLE001 — 깨진 바이트
+        if str(exc).startswith("너무 작은 사진"):
+            return _unavailable(str(exc))
         return _unavailable(f"이미지를 열지 못했어요({type(exc).__name__})")
     t0 = time.monotonic()
     _LANG.value = lang or ""
