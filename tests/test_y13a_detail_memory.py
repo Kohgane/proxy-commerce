@@ -112,3 +112,22 @@ def test_peak_one_pass_blackholes_like(tmp_path):
     assert r["kept"] == 3 and r["dropped"] == 0
     assert all(u["bytes"] <= 1536 * 1024 + 700 * 1024 for u in r["uploads"])          # 묶음 상한 + 마지막 한 장
     assert r["peak_delta_mb"] < 60, r
+
+
+def test_start_gate_reclaims_once_before_refusing(monkeypatch):
+    """운영 실측(10-18): 인스턴스 바닥 413~414MB · 시작 상한 420 — 일회성 작업·갱신 큐가 「시작 거부」로 멈췄다.
+    상한 이상이면 gc+malloc_trim 한 번 뒤 다시 잰다(상한 숫자는 그대로)."""
+    from src.utils import rss
+    from src.utils import render_worker as RW
+    monkeypatch.delenv("INSTANCE_MEM_START_MAX_MB", raising=False)
+    trims = []
+    monkeypatch.setattr(RW, "trim", lambda: trims.append(1) or True)
+    vals = iter([421, 405])
+    monkeypatch.setattr(rss, "instance_mb", lambda: next(vals))
+    assert rss.start_ok() == (True, 405, 420) and trims == [1]
+    vals2 = iter([430, 428])
+    monkeypatch.setattr(rss, "instance_mb", lambda: next(vals2))
+    assert rss.start_ok() == (False, 428, 420)
+    monkeypatch.setattr(rss, "instance_mb", lambda: 300)
+    trims.clear()
+    assert rss.start_ok() == (True, 300, 420) and trims == []                # 여유가 있으면 건드리지 않는다

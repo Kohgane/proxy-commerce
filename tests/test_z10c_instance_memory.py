@@ -167,7 +167,7 @@ def test_prevalidate_memory_frees_within_retry_then_runs(monkeypatch):
     monkeypatch.setattr(V, "_pv_job_body", lambda job_id, data, markets, dispatcher: ran.append(job_id) or V._pv_update(job_id, state="done"))
     monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: object())
     monkeypatch.setattr(V, "_PV_MEM_RETRY_SEC", 0.05)
-    vals = iter([433] + [300] * 50)
+    vals = iter([433, 433] + [300] * 50)          # Y13-A: 문지기가 넘으면 gc+malloc_trim 뒤 한 번 더 잰다(그래도 433 → 30초 뒤 300)
     monkeypatch.setattr(rss, "instance_mb", lambda: next(vals))
     c = _client("z10c-pv2")
     d = c.post("/seller/collect/prevalidate", json={"product": {"title": "x", "price": 1}, "markets": ["elevenst"]}).get_json()

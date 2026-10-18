@@ -205,6 +205,17 @@ def start_ok() -> tuple:
     if lim <= 0:
         return True, -1, lim
     cur = instance_mb()
+    if cur >= lim:
+        # Y13-A(운영 실측 10-18: 인스턴스 바닥 413~414MB · 상한 420 — 일회성 작업·갱신 큐·사진 번역 깨우기가 줄줄이 「시작 거부」):
+        #   놓았지만 운영체제에 안 돌려준 힙이 합계에 들어 있다 → gc + malloc_trim 한 번 하고 다시 잰다(상한은 그대로).
+        try:
+            import gc as _gc
+            _gc.collect()
+            from src.utils.render_worker import trim
+            trim()
+        except Exception:                                 # noqa: BLE001
+            pass
+        cur = instance_mb()
     return (cur < 0 or cur < lim), cur, lim
 
 
