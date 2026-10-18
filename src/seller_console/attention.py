@@ -156,6 +156,63 @@ def _suggested(pl: dict) -> List[str]:
             if isinstance(r, dict) and r.get("suggest_erase") and str(r.get("tgt") or "").strip()]
 
 
+def _rep_texts(extra: dict, e: dict) -> List[str]:
+    """원래 대표 사진에 남은 판촉·로고·상표 글자(사진 속 원문 상자 그대로) — 지운 상자는 뺀다. 상자가 없으면 판촉 어휘."""
+    from src.services import image_edit as IE
+    from src.services.image_translate_store import erased_out, promo_of
+    boxes = [b for b in (e.get("boxes") or []) if isinstance(b, dict) and str(b.get("src") or "").strip()]
+    srcs = [str(b["src"]).strip() for b in boxes]
+    logos = IE.logo_names(extra, srcs)
+    title = str((extra or {}).get("title") or "").strip()
+    out: List[str] = []
+    for b in boxes:
+        s = str(b["src"]).strip()
+        if not erased_out(e, s).strip():
+            continue                                             # 사진 편집으로 지운 상자
+        both = " ".join(x for x in (s, str(b.get("tgt") or "")) if x)
+        # 로고 = 브랜드 칸·병음 증명(Y13-A 8) 또는 제목 맨 앞 한자 2~4자가 사진에 그대로 찍힌 상자(피샹리 「菲尚丽家」)
+        is_logo = any(n and n.lower() in s.lower() for n in logos) or (2 <= len(s) <= 4 and title.startswith(s))
+        if is_logo or IE.classify(both, extra) in ("promo", "risk", "brand"):
+            if s not in out:
+                out.append(s)
+    return out or list(promo_of(e))
+
+
+def rep_auto_dropped(extra: dict) -> Optional[Dict]:
+    """Y13-D 1(오너 2026-10-18 피샹리) — **원래 대표**(수집 1번째 사진)가 판촉 글자로 등록에서 자동으로 빠져 대표가 바뀌었나.
+
+    실측: 07:40 번역으로 1번째 장에 판촉 어휘(立减·할인·증정)가 잡혀 T3 「판촉 의심 기본 제외」로 갤러리에서 빠졌고,
+    쿠팡 대표가 2번째 장(책 소품 글자뿐)으로 넘어가 「대표 사진 텍스트 있음」 보류가 **아무도 고르지 않았는데** 사라졌다.
+    로고(菲尚丽家)는 사진에 그대로다 — 오너가 「사진 편집」으로 지우거나 「넘김」(빠진 채로 두기)으로 정할 때까지 「지우기 제안」.
+    오너가 대표를 직접 골랐거나(`rep_image`) 「그래도 넣기」(`promo_include`)·위험 「빼고 등록」이면 None(정한 것)."""
+    ex = extra or {}
+    if str(ex.get("rep_image") or "").strip():
+        return None
+    from src.services.image_translate_store import promo_excluded
+    imgs = [u for u in ex.get("images") or [] if isinstance(u, str) and u.strip()]
+    e = next((x for x in ex.get("images_ko") or [] if isinstance(x, dict) and int(x.get("idx", -1)) == 0), None)
+    if len(imgs) < 2 or not e or e.get("risk_exclude") or not promo_excluded(e):
+        return None                                              # 한 장뿐이면 빼지 않는다(effective_images) — 대표가 안 바뀜
+    texts = _rep_texts(ex, e)
+    sk = e.get("erase_skip") if isinstance(e.get("erase_skip"), dict) else {}
+    skipped = {str(x) for x in sk.get("texts") or []}
+    left = [t for t in texts if t not in skipped]
+    return {"kind": "gallery", "idx": 0, "word": "대표 1번째(원래 대표 · 판촉 글자로 자동으로 빠짐)", "rep_auto": True,
+            "texts": left or texts, "state": "pending" if left else "skipped",
+            "url": str(e.get("url") or "") if e.get("use") else "",
+            "skipped_at": kst(sk.get("at")) if not left else ""}
+
+
+def rep_auto_line(extra: dict) -> str:
+    """사전검증 주의 칩·드로어 줄 — 원래 대표가 자동으로 빠졌고 오너가 아직 안 정했으면 한 줄, 아니면 ""."""
+    r = rep_auto_dropped(extra)
+    if not r or r["state"] != "pending":
+        return ""
+    return ("대표 사진이 자동으로 바뀌었어요 — 원래 대표(1번째)에 판촉·로고 글자(「" + "」·「".join(r["texts"][:3]) + "」"
+            + (f" 외 {len(r['texts']) - 3}" if len(r["texts"]) > 3 else "") + ")가 있어 등록에서 빠졌어요. "
+            "「사진 편집」으로 지우면 대표로 돌아오고, 「넘김」이면 지금 대표(2번째) 그대로")
+
+
 def erase_photos(extra: dict) -> List[Dict]:
     """Y12-B(오너 2026-10-17) — 지우기 제안이 있는 **나가는** 사진 `[{kind, idx, word, texts, state, url}]`.
 
@@ -184,6 +241,13 @@ def erase_photos(extra: dict) -> List[Dict]:
             out.append({"kind": kind, "idx": int(e.get("idx", -1)), "word": f"{_KIND_WORD.get(kind, kind)} {int(e.get('idx', -1)) + 1}번째",
                         "texts": left or texts, "state": state, "url": str(e.get("url") or "") if e.get("use") else "",
                         "skipped_at": kst(sk.get("at")) if state == "skipped" else ""})
+    # Y13-D 1: 원래 대표가 자동으로 빠진 장 — 나가지 않아도 오너가 정할 때까지 제안으로 남긴다(맨 앞)
+    try:
+        rep = rep_auto_dropped(extra)
+    except Exception:                                            # noqa: BLE001 — 제안 줄 실패가 다른 제안을 막지 않는다
+        rep = None
+    if rep and not any(p["kind"] == "gallery" and p["idx"] == 0 for p in out):
+        out.insert(0, rep)
     return out
 
 
@@ -201,7 +265,10 @@ def skip_erase(extra: dict, kind: str, idx: int, by: str = "owner") -> bool:
         pl = e.get("polish") if isinstance(e.get("polish"), dict) else {}
         texts = _suggested(pl)
         if not (texts or int(pl.get("suggest_erase") or 0) > 0):
-            return False
+            rep = rep_auto_dropped(extra) if kind == "gallery" and int(idx) == 0 else None
+            if not rep:
+                return False
+            texts = list(rep["texts"])                           # Y13-D 1: 원래 대표 — 빠진 채로 두기(사진·원본 그대로)
         prev = e.get("erase_skip") if isinstance(e.get("erase_skip"), dict) else {}
         e["erase_skip"] = {"at": datetime.now(timezone.utc).isoformat(), "by": by, "polish_at": pl.get("at") or "",
                            "texts": sorted({*(str(x) for x in prev.get("texts") or []), *texts})}

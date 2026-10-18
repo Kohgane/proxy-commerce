@@ -849,12 +849,15 @@ def promo_left_caution(extra: dict) -> str:
     다듬은 장은 다듬은 글자(되살린 원문 제외), 아니면 번역문. 없으면 빈 문자열."""
     from src.collectors.ko_polish import promo_hits
     hits, pages = [], 0
-    for key in ("images_ko", "detail_images_ko", "sku_images_ko"):
+    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail"), ("sku_images_ko", "sku")):
+        gone = _not_outbound(extra, kind)
         for e in (extra or {}).get(key) or []:
             if not isinstance(e, dict) or e.get("status") != "done" or not e.get("url") or e.get("use") is False:
                 continue
             if e.get("risk_exclude") or e.get("exclude"):
                 continue
+            if int(e.get("idx", -1)) in gone:
+                continue                                         # Y13-D 1: 나가지 않는 장(판촉 의심 자동 제외)은 「나가기 전」이 아니다
             skip = {str(t) for t in ((e.get("erase_skip") or {}).get("texts") or [])}
             pl = e.get("polish") if isinstance(e.get("polish"), dict) else {}
             if pl.get("rows"):
@@ -870,6 +873,27 @@ def promo_left_caution(extra: dict) -> str:
     if not pages:
         return ""
     return f"나가기 전 경고: 번역본 {pages}장에 판촉 글자(「{'」·「'.join(hits[:3])}」) — 지우기 제안을 확인하세요"
+
+
+def _not_outbound(extra: dict, kind: str) -> set:
+    """등록에 안 나가는 장 번호 — 갤러리는 판촉 의심·위험으로 뺀 장, 상세는 판정표 등록 순서 밖. SKU는 빼지 않는다. 못 재면 빈 집합."""
+    if kind == "sku":
+        return set()
+    try:
+        from src.services import image_translate_store as S
+        out = set()
+        ents = {int(x.get("idx", -1)): x for x in (extra or {}).get("images_ko") or [] if isinstance(x, dict)}
+        for p in S.effective_plan(extra, kind=kind):
+            i = int(p.get("idx", -1))
+            if kind == "detail":
+                if "outbound_pos" in p and not int(p.get("outbound_pos") or 0) > 0:
+                    out.add(i)
+            elif p.get("promo_excluded") or (ents.get(i) or {}).get("risk_exclude"):
+                out.add(i)
+        return out
+    except Exception as exc:                                     # noqa: BLE001
+        logger.info("[나가기 전 경고] 등록 여부 판정 실패(나간다고 봄): %s", exc)
+        return set()
 
 
 def guard_row(r: dict, logos, is_rep: bool, can_restore: bool):

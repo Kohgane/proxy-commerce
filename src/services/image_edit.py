@@ -228,13 +228,18 @@ def _load_small(url: str):
     try:
         import requests
         from src.collectors.image_norm import abs_image_url, open_small
+        from src.collectors.image_norm import image_head
         r = requests.get(abs_image_url(url), timeout=15, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200 or not r.content:
             return None, (0, 0)
-        from PIL import Image
-        with Image.open(io.BytesIO(r.content)) as im0:
-            W, H = im0.size
-        im, _f, _w, _h, _why = open_small(r.content, SMALL_SIDE)
+        fmt, W, H = image_head(r.content)                        # 머리말만 — 원본 크기(상자 공간)
+        body = r.content
+        if fmt != "JPEG" and max(W, H) > work_max_side():
+            # Y13-D 3: JPEG 아닌 큰 장은 줄여 풀 수 없다 — 축소 사본으로 색만 잰다(크기는 원본 머리말 그대로)
+            body = work_bytes(url)[0]
+            if not body:
+                return None, (W, H)
+        im, _f, _w, _h, _why = open_small(body, SMALL_SIDE)
         if im is None:
             return None, (W, H)
         return im.convert("RGB"), (W, H)
@@ -321,12 +326,62 @@ def _fetch(url: str) -> bytes:
         return b""
 
 
+def work_max_side() -> int:
+    """Y13-D 3 — 다듬기·사진 편집이 **우리 프로세스에서 푸는** 그림의 긴 변 상한(`IMAGE_WORK_MAX_SIDE`, 기본 2,000 = 텐센트 입력 축소본)."""
+    try:
+        return max(256, int(os.getenv("IMAGE_WORK_MAX_SIDE", "2000") or 2000))
+    except (TypeError, ValueError):
+        return 2000
+
+
+def work_bytes(url: str) -> Tuple[bytes, str]:
+    """Y13-D 3(오너 2026-10-18 18:20 — 5120px 대표 0번 다듬기 중 인스턴스 재시작) — 편집·되살리기·틀 확인에 쓸 그림 `(bytes, 사유)`.
+
+    긴 변이 `work_max_side()` 이하면 받은 그대로. 넘으면 **원본 화소를 풀지 않는다** — 텐센트 입력처럼 Cloudinary가 만든
+    긴 변 2,000 JPEG 사본(`small_copy`)을 받는다(실측: 5120² PNG 되살리기 한 번 +197MB). 사본을 못 받으면 JPEG만 `draft`로
+    줄여 풀고(디코드 단계에서 1/2·1/4), 그 밖은 빈 바이트 + 사유(호출부가 그 단계를 건너뛴다 — 막지 않음)."""
+    raw = _fetch(url)
+    if not raw:
+        return b"", "사진을 받지 못했어요"
+    from src.collectors.image_norm import image_head
+    fmt, w, h = image_head(raw)
+    side = work_max_side()
+    if not (w and h) or max(w, h) <= side:
+        return raw, ""
+    from src.collectors.image_norm import abs_image_url
+    u = abs_image_url(url)
+    why = "우리 주소라 축소 사본을 못 만듦"
+    if str(u or "").startswith(("http://", "https://")):
+        try:
+            from src.media.image_pipeline import small_copy
+            copy, why = small_copy(u, max_side=side)
+        except Exception as exc:                                # noqa: BLE001
+            copy, why = None, type(exc).__name__
+        if copy:
+            logger.info("[사진 편집] 큰 사진 %s %d×%d → Cloudinary 축소 사본 %dB: %s", fmt, w, h, len(copy), u[:80])
+            return copy, ""
+    if fmt == "JPEG":
+        from src.collectors.image_norm import open_small
+        im, _f, _w, _h, w2 = open_small(raw, side)
+        if im is not None:
+            try:
+                buf = io.BytesIO()
+                im.save(buf, "JPEG", quality=92)
+                return buf.getvalue(), ""
+            finally:
+                im.close()
+        why = w2 or why
+    return b"", f"큰 사진({fmt} {w}×{h})을 서버에서 풀지 않아요 — 축소 사본 실패({why})"
+
+
 def _verify_translated(extra: dict, kind: str, idx: int, e: dict) -> bool:
     """옛 번역본 상자(좌표 틀을 확인한 적 없는 것) — 수집 원본↔번역본 차이로 틀을 확인해 고친다. 확인 못 하면 상자를 버린다."""
     from src.services import box_frame as BF
     tu = translated_url(e)
-    orig, trans = _fetch(_original(extra, kind, idx)), _fetch(tu) if tu else b""
-    got = BF.pick(orig, trans, e.get("boxes") or []) if (orig and trans) else {"frame": "unknown", "boxes": [], "scores": {}}
+    # Y13-D 3: 원본(5120px PNG)은 축소 사본으로 — 틀 확인은 작은 흑백 그림으로 하니 크기만 다르면 된다(box_frame이 맞춘다)
+    orig, trans = work_bytes(_original(extra, kind, idx))[0], (work_bytes(tu)[0] if tu else b"")
+    got = (BF.pick(orig, trans, e.get("boxes") or [], space=e.get("box_size")) if (orig and trans)
+           else {"frame": "unknown", "boxes": [], "scores": {}})
     if got["frame"] == "unknown":
         logger.info("[사진 편집] 옛 번역본 상자 틀 확인 못 함 → 버림(빈 벽 상자 방지) idx=%s %s", idx, got.get("scores"))
         e["box_frame"] = "unknown"
@@ -988,9 +1043,10 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
     todo = [o for o in ops or [] if isinstance(o, dict) and o.get("action") in ("erase", "text", "restore") and o.get("id") in by_id]
     if not todo:
         return {"ok": False, "error": (p.get("why") or "지울 상자를 탭해서 골라 주세요") if not p["boxes"] else "지울 상자를 탭해서 골라 주세요"}
-    raw = _fetch(p["url"])
+    # Y13-D 3: 바탕·되살릴 원본 모두 긴 변 2,000 안쪽(큰 장은 Cloudinary 축소 사본) — 원본 5120px을 Pillow·cv2로 풀지 않는다
+    raw, raw_why = work_bytes(p["url"])
     if not raw:
-        return {"ok": False, "error": "편집할 사진을 받지 못했어요 — 잠시 뒤 다시 해 주세요"}
+        return {"ok": False, "error": "편집할 사진을 받지 못했어요 — " + (raw_why or "잠시 뒤 다시 해 주세요")}
     from src.db import image_translate_queue_pg as q
     took, today = q.take_start(_day_key(), daily_cap())          # 한도는 실제로 그릴 때만 센다
     if not took:
@@ -1002,15 +1058,15 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
     if restore:
         _e0 = _entry(extra, kind, idx) or {}
         if _e0.get("box_frame") == "identity":                  # 틀이 같은 장만 — 좌표가 다르면 엉뚱한 자리를 붙인다
-            orig_raw = _fetch(_original(extra, kind, idx))
+            orig_raw, _ow = work_bytes(_original(extra, kind, idx))
+            if not orig_raw:
+                logger.info("[사진 편집] 원본 되살리기 건너뜀 %s#%s: %s", kind, idx, _ow)
         if not orig_raw:
             restore = []                                         # 원본을 못 받았다 — 그 상자는 텐센트 그대로
     W = p["size"][0]
-    try:
-        from PIL import Image
-        with Image.open(io.BytesIO(raw)) as im0:
-            RW = im0.size[0]
-    except Exception:                                           # noqa: BLE001
+    from src.collectors.image_norm import image_head
+    RW = image_head(raw)[1]                                      # 머리말만(풀지 않음) — 축소 사본이면 그 크기로 좌표를 맞춘다
+    if not RW:
         return {"ok": False, "error": "편집할 사진을 열지 못했어요"}
     k = (RW / W) if W else 1.0                                 # 상자 공간 → 바탕 사진
     try:

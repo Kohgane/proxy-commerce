@@ -18,13 +18,21 @@ MIRROR_EXIF = {2, 4, 5, 7}
 
 def _gray(raw: bytes):
     from PIL import Image
-    im = Image.open(io.BytesIO(raw))
     exif = None
+    with Image.open(io.BytesIO(raw)) as im:                      # 머리말·EXIF만 — 화소는 안 푼다
+        try:
+            exif = int(im.getexif().get(274) or 0) or None
+        except Exception:
+            exif = None
+    # Y13-D 3: 줄이기 먼저(`open_small` — JPEG draft · 큰 PNG·WebP는 풀지 않고 「판정 못 함」) — 원본 5120px을 통째로 풀지 않는다
+    from src.collectors.image_norm import open_small
+    small, _f, _w, _h, why = open_small(raw, SIZE * 4)
+    if small is None:
+        raise ValueError(why or "그림을 열지 못했어요")
     try:
-        exif = int(im.getexif().get(274) or 0) or None
-    except Exception:
-        exif = None
-    return im.convert("L").resize((SIZE, SIZE)), exif
+        return small.convert("L").resize((SIZE, SIZE)), exif
+    finally:
+        small.close()
 
 
 def _diff(a, b) -> float:

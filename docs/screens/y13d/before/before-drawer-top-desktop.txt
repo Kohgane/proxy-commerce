@@ -1,0 +1,3 @@
+[pv-ready] 등록 준비 완료 — 사전검증 쿠팡 2 · 스마트스토어 2 통과 (2026-10-19 04:44 KST) / 마켓 등록
+[pv-ready-pending] (없음)
+[erase-suggest] (없음)
