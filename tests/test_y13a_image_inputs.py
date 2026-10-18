@@ -205,3 +205,10 @@ def test_d3_zero_boxes_is_the_only_no_draw_line(monkeypatch):
     out = A.translate_page_d3(FISH_1, idx=0, kind="detail", item_id="i", seller_id="s")
     assert got[0].startswith("https://img.alicdn.com/") and out["status"] == "skipped"
     assert out["reason"] == "그릴 줄이 없습니다 — 글자 0상자(원본 그대로)"
+
+
+def test_old_protocol_relative_fetch_failure_says_it_is_fixed():
+    from src.services.detail_image_plan import verdict
+    e = {"status": "failed", "error_class": "FetchFailed", "error_message": "이미지를 내려받지 못했습니다(ValueError)"}
+    v = verdict(e, FISH_1)
+    assert v["use"] == "failed" and "주소 앞이 「//」" in v["reason"] and "다시 번역" in v["reason"]

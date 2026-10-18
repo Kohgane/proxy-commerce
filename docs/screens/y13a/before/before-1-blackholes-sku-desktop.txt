@@ -1,0 +1,5 @@
+SKU 2개 출처 기록 없음
+조합	원가	참고가	재고
+【BLACKHOLES】 / Yellow light	69.90 CNY	49.90	200
+【BLACKHOLES】 / White light	69.90 CNY	49.90	200
+원가 = 할인 전 가격(优惠前) · 참고가 = 플랫폼 보조금 뒤(平台加补后, 원가 계산에 쓰지 않음)

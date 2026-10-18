@@ -144,7 +144,7 @@ def honest_skip_reason(e: dict) -> str:
 _TRANSLATE_FAIL_HINTS = ("번역 실패", "번역 결과가 원문과 같습니다", "번역기가 빈 문자열", "번역기")
 
 
-def fail_reason(e: dict) -> str:
+def fail_reason(e: dict, orig_url: str = "") -> str:
     """Y13-A(오너 2026-10-18 피샹리) — 실패한 장의 사유 한 줄. 「그릴 줄이 없습니다」는 **OCR이 정말 0상자일 때만** 쓴다.
 
     옛 D3 `RenderFailed`(「그릴 줄이 없습니다(원본 그대로)」)는 글자 줄을 **읽고도** 번역·그리기에서 다 빠진 경우였다(0상자면
@@ -163,6 +163,9 @@ def fail_reason(e: dict) -> str:
         return "번역 실패 · 읽은 글자 줄을 그리지 못했어요(옛 기록 — 「다시 번역」하면 텐센트로 다시 봅니다)"
     if msg.startswith("번역 실패") or msg.startswith("번역 안 함"):
         return msg[:120]
+    if cls == "FetchFailed" and "(ValueError" in msg and str(orig_url or "").strip().startswith("//"):
+        # Y13-A: 피샹리 상세 1번 — 스킴 없는 `//cdn…` 주소를 urllib이 못 열었다(ValueError). 받기 경로는 고쳤다(abs_image_url)
+        return "번역 실패 · 주소 앞이 「//」라 열지 못했어요(옛 기록 — 이제 열립니다, 「다시 번역」하면 받습니다)"
     return f"번역 실패 · {(msg or cls or '사유 미상')[:110]}"
 
 
@@ -186,7 +189,7 @@ def verdict(e: dict, orig_url: str) -> Dict[str, str]:
         return {"use": "original", "reason": "글자 없는 사진 — 원본 그대로", "section": sec}
     if st in ("queued", "running", ""):
         return {"use": "pending" if st else "original", "reason": "번역 대기" if st else "아직 번역 안 함 — 원본", "section": sec}
-    return {"use": "failed", "reason": fail_reason(e) + " — 원본으로", "section": sec}
+    return {"use": "failed", "reason": fail_reason(e, orig_url) + " — 원본으로", "section": sec}
 
 
 def arrange(pairs: List[Tuple[int, str]], by_idx: Dict[int, dict], originals: List[str],

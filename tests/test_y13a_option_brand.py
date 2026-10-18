@@ -144,3 +144,23 @@ def test_oneshot_image_probe_records_format_and_ocr_code(monkeypatch):
     assert r0["prepare"]["sent"] == "바꿈" and r0["ocr"]["ok"] and r0["ocr"]["lines"] == 1
     assert r1["excluded"].startswith("빈 칸 이미지") and r1["prepare"]["sent"] == "안 보냄" and "ocr" not in r1
     S._in_memory.clear()
+
+
+def test_drawer_sku_table_shows_outbound_values(monkeypatch):
+    """옵션 탭 SKU 조합표 = 나가는 값(브랜드 조각 뺀 「옐로 라이트」) + 뺀 브랜드 한 줄. 원문은 「원문 보기」 줄에 그대로."""
+    from src.seller_console import collect_history_store as S
+    monkeypatch.setattr(S, "_pg_backend", lambda: None)
+    S._in_memory.clear()
+    iid = S.append(source="share", url="https://item.taobao.com/item.htm?id=1077964821879", seller_id="u-y13a-d",
+                   title=BLACKHOLES["title"], price="69.90", currency="CNY", extra=dict(BLACKHOLES))
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s.update(user_id="u-y13a-d", user_email="u-y13a-d@example.com", user_role="seller")
+    html = c.get(f"/seller/collect/preview/{iid}?drawer=1").get_data(as_text=True)
+    tbl = html[html.index('data-role="sku-table"'):]
+    tbl = tbl[:tbl.index("</table>")]
+    assert '<span data-role="sku-ko">옐로 라이트</span>' in tbl and '<span data-role="sku-ko">화이트 라이트</span>' in tbl
+    assert 'data-role="sku-brand-removed">브랜드 「BLACKHOLES」는 옵션 값에서 뺐어요' in tbl
+    assert "원문 — 【BLACKHOLES】 / Yellow light" in tbl
+    S._in_memory.clear()
