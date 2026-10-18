@@ -48,7 +48,7 @@
           {% else %}<span class="ers-n" data-role="erase-left-none">남은 제안 없음</span>{% endif %}
         </div>
         {% if _ep_left %}
-        <p class="ers-note">AI가 지우자고 한 글자예요. 지우려면 「사진 편집」, 그대로 두려면 「넘김」 — 넘겨도 사진은 그대로예요.</p>
+        <p class="ers-note">{% if _ep_left|selectattr('rep_auto')|list %}판촉·로고 글자가 남은 사진이에요{% if _ep_left|rejectattr('rep_auto')|list %}(그 밖은 AI가 지우자고 한 글자){% endif %}{% else %}AI가 지우자고 한 글자예요{% endif %}. 지우려면 「사진 편집」, 그대로 두려면 「넘김」 — 넘겨도 사진은 그대로예요.</p>
         <ul class="ers-list">
           {% for p in _ep_left %}
           <li class="ers-row" data-role="erase-row" data-kind="{{ p.kind }}" data-idx="{{ p.idx }}">
@@ -131,7 +131,13 @@
       </div>
       {% endif %}
       {# Y13-C 4(오너 2026-10-18): 사전검증이 고른 마켓을 전부 통과했으면 — 오너는 등록 버튼만. 편집 저장·다음 사전검증 보류면 사라진다 #}
-      {% if pv_ready %}
+      {# Y13-D 1: 마켓은 다 통과했어도 오너가 정할 것(자동으로 빠진 원래 대표)이 남았으면 「준비 완료」 대신 이 줄 — 위 「지우기 제안」에서 정한다 #}
+      {% if pv_ready and pv_ready.pending %}
+      <div class="pc-status pc-status-warning mb-2" data-role="pv-ready-pending">
+        <i class="bi bi-hand-index"></i> <b>등록 전 확인 1건</b> — 사전검증 {{ pv_ready.line }} 통과{% if pv_ready.at %} ({{ pv_ready.at|kst }}){% endif %}.
+        {{ pv_ready.pending[0] }} — 위 「지우기 제안」에서 정하면 「등록 준비 완료」가 떠요.
+      </div>
+      {% elif pv_ready %}
       <div class="pc-status pc-status-success d-flex flex-wrap align-items-center gap-2 mb-2" data-role="pv-ready">
         <span><i class="bi bi-check2-circle"></i> <b>등록 준비 완료</b> — 사전검증 {{ pv_ready.line }} 통과{% if pv_ready.at %} ({{ pv_ready.at|kst }}){% endif %}</span>
         <button type="button" class="btn btn-sm btn-cta ms-auto" data-role="pv-ready-register" onclick="openUploadModal()"><i class="bi bi-box-arrow-up-right"></i> 마켓 등록</button>

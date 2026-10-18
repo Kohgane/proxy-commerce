@@ -4826,6 +4826,9 @@ def _pv_prepare(data: dict, product_data: dict):
             # Y13-A 7: 나가는 번역본에 판촉 글자가 남았으면 「나가기 전 경고」(주의 칩 · 보류 아님)
             from src.services.image_polish import promo_left_caution as _plc
             product_data["promo_photo_caution"] = _plc(_sx)
+            # Y13-D 1: 원래 대표(1번째)가 판촉 글자로 자동으로 빠졌는데 오너가 아직 안 정함 — 주의 칩(보류 아님)
+            from .attention import rep_auto_line as _ral
+            product_data["rep_auto_caution"] = _ral(_sx)
             # Y9: 상세 사진 번역 진행(사전검증 카드 「상세 사진 번역 중 n/28」)
             product_data["detail_translate_progress"] = _detail_translate_progress(str(data["item_id"]), _sx)
             # Y10: 리스크 게이트 — 기억된 「빼고 등록」은 바로 적용(저장) → 저장된 「빼고 등록」을 몸통에도 → 전 위치 검사
@@ -5650,9 +5653,16 @@ def _pv_mark_ready(data: dict, markets: list, cur: dict, job_id: str) -> None:
     ok = all(isinstance(res.get(m), dict) and res[m].get("ok") for m in markets)
     rec = {"ok": bool(ok), "markets": list(markets), "at": datetime.now(timezone.utc).isoformat(), "job": job_id,
            "held": [m for m in markets if not (isinstance(res.get(m), dict) and res[m].get("ok"))]}
+
+    def _put(fresh):
+        # Y13-D 1(오너 2026-10-18 피샹리): 원래 대표가 자동으로 빠졌는데 오너가 아직 안 정했으면 「준비 완료」가 아니다 —
+        #   마켓은 다 통과(ok)해도 `pending`에 그 줄. 「사진 편집」·「넘김」으로 정하면 드로어가 바로 「준비 완료」(pv_ready_view가 다시 잰다)
+        from .attention import rep_auto_line
+        line = rep_auto_line(fresh)
+        fresh["pv_ready"] = dict(rec, pending=[line] if line else [])
     try:
         from . import collect_history_store as _chs
-        _chs.merge_extra(iid, lambda fresh: fresh.__setitem__("pv_ready", rec), seller_ids=_seller_identities())
+        _chs.merge_extra(iid, _put, seller_ids=_seller_identities())
     except Exception as exc:                                     # noqa: BLE001 — 표시용 칸 — 잡 결과는 그대로
         logger.warning("[사전검증 잡] %s 등록 준비 표시 저장 실패: %s", job_id[:8], exc)
 
@@ -5666,7 +5676,13 @@ def pv_ready_view(extra: dict) -> dict:
     c = Counter(str(m).split(":")[0] for m in r.get("markets") or [])
     names = {"coupang": "쿠팡", "smartstore": "스마트스토어", "elevenst": "11번가", "shopify": "Shopify", "woocommerce": "WooCommerce"}
     parts = [f"{names.get(k, k)} {n}" if n > 1 else names.get(k, k) for k, n in c.items()]
-    return {"line": " · ".join(parts), "at": r.get("at") or "", "n": len(r.get("markets") or [])}
+    # Y13-D 1: 오너가 정할 것(자동으로 빠진 원래 대표)이 남았으면 「준비 완료」 대신 「등록 전 확인」 — 지금 extra로 다시 잰다
+    try:
+        from .attention import rep_auto_line
+        pending = [rep_auto_line(extra)] if rep_auto_line(extra) else []
+    except Exception:                                            # noqa: BLE001 — 못 재면 기록된 값
+        pending = [p for p in r.get("pending") or [] if p]
+    return {"line": " · ".join(parts), "at": r.get("at") or "", "n": len(r.get("markets") or []), "pending": pending}
 
 
 @bp.get("/collect/prevalidate/job/<job_id>")

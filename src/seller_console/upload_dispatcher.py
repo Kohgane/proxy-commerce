@@ -1437,6 +1437,9 @@ class UploadDispatcher:
             _ppc = str(product_data.get("promo_photo_caution") or "")      # Y13-A 7: 번역본 판촉 글자 — 나가기 전 경고
             if _ppc and _ppc not in (r.cautions or []):
                 r.cautions = list(r.cautions or []) + [_ppc]
+            _rac = str(product_data.get("rep_auto_caution") or "")        # Y13-D 1: 원래 대표 자동 제외 — 오너가 정할 것
+            if _rac and _rac not in (r.cautions or []):
+                r.cautions = list(r.cautions or []) + [_rac]
             # Y7-M(오너 2026-10-10): 옵션이 조각별 개별 판매 + 상품명 「세트」 → 「주의」 칩(보류 아님 — 상품명은 셀러 판단)
             try:
                 if base in _KO_OPTION_MARKETS:

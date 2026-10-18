@@ -22,6 +22,10 @@
 - `retranslate` {item_id, pages:[[kind, idx], …]?} — Y13-C 1(오너 2026-10-18 「다시 번역 큐 투입 — 오너 안 누른다」): 화면 「다시 번역」과
   **같은 계획**(`translate_plan(retry=True)`)에서 `pages`에 적힌 장만 줄에 넣는다(없으면 계획 전부). 계획이 빼는 장(스페이서·아이콘·
   중복·상한)은 넣지 않고 사유를 남긴다 — 결과 = 접수·건너뜀·이미 대기
+- `owner_decision` {item_id, rep:{candidates:[idx…], prefer}, strip:[라벨…], pixels:"restore"} — Y13-D 2(오너 2026-10-18 BLACKHOLES
+  「권고안 채택」): 화면 버튼과 **같은 함수**로 오너 결정을 적용한다 — 대표 사진(후보 장마다 텐센트 OCR 상자 수를 재서 0상자 장 ·
+  여럿이면 `prefer`)=「이 장을 대표로」, 위험 「빼고 등록」=`risk_gate.decide(strip)`(`pixels=restore`: 음차 상자만 원본 복원 ·
+  원문에 상표가 남는 장은 사진째 뺌). 저장 뒤 같은 계정으로 사전검증 잡을 띄운다. 수집 원본(`images`·`skus`)은 손대지 않는다
 """
 from __future__ import annotations
 
@@ -34,7 +38,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
-       "retranslate")
+       "retranslate", "owner_decision")
 
 
 def _now() -> str:
@@ -62,6 +66,10 @@ def _run(row: dict) -> Dict:
     if op == "retranslate":
         return _retranslate(item_id, [(str(p[0]), int(p[1])) for p in (row.get("pages") or [])
                                       if isinstance(p, (list, tuple)) and len(p) == 2][:40])
+    if op == "owner_decision":
+        return _owner_decision(item_id, row.get("rep") if isinstance(row.get("rep"), dict) else {},
+                               [str(x) for x in (row.get("strip") or []) if x][:5], str(row.get("pixels") or ""),
+                               [str(m) for m in (row.get("markets") or []) if m])
     if op == "image_probe":
         return _image_probe(item_id, str(row.get("kind") or "detail"), [int(i) for i in (row.get("idx") or [])][:6])
     from src.services import ocr_compare_diag as D
@@ -294,3 +302,74 @@ def _retranslate(item_id: str, pages: List[tuple]) -> Dict:
     rows = [{"kind": k, "idx": i, "sent": (k, i) in set(send), "why": "" if (k, i) in set(send) else why.get((k, i), "계획 밖")}
             for k, i in (sorted(want) if want else send)]
     return {"ok": True, "accepted": new + again, "waiting": max(0, len(send) - new - again), "rows": rows}
+
+
+def _ocr_box_count(url: str):
+    """그 장의 텐센트 OCR 글자 상자 수 — `(n | None, 사유)`. 큰 장은 축소 사본으로 보낸다(Y13-D 3 — 원본을 풀지 않는다)."""
+    from src.services import image_edit as IE
+    from src.services import ocr_tencent as O
+    raw, why = IE.work_bytes(url)
+    if not raw:
+        return None, why or "사진을 받지 못했어요"
+    got = O.read_boxes(raw)
+    if not got.get("ok"):
+        return None, str(got.get("why") or "OCR 실패")[:120]
+    return len(got.get("boxes") or []), ""
+
+
+def pick_rep(counts: Dict[int, object], prefer: int = -1) -> int:
+    """0상자 장 중에서 — `prefer`가 그 안에 있으면 그것, 아니면 앞 번호. 0상자 장이 없으면 -1(대표를 바꾸지 않는다)."""
+    zero = [i for i, n in sorted(counts.items()) if n == 0]
+    if not zero:
+        return -1
+    return prefer if prefer in zero else zero[0]
+
+
+def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, markets: List[str]) -> Dict:
+    import json
+    from src.services import ocr_compare_diag as D
+    from src.services import risk_gate as R
+    from src.seller_console import collect_history_store as store
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    if not uid:
+        return {"ok": False, "why": "상품 계정을 알 수 없어요"}
+    iid = str(item.get("id") or item_id)
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    out: Dict = {"ok": True}
+    originals = [u for u in ex.get("images") or [] if u]
+    if rep:
+        cands = [int(i) for i in rep.get("candidates") or [] if 0 <= int(i) < len(originals)][:6]
+        counts, whys = {}, {}
+        for i in cands:
+            n, why = _ocr_box_count(originals[i])
+            counts[i] = n
+            if why:
+                whys[i] = why
+        pick = pick_rep(counts, int(rep.get("prefer", -1)))
+        if pick > 0:
+            ex["rep_image"] = originals[pick]            # 「이 장을 대표로」와 같은 칸(원본 주소)
+        elif pick == 0:
+            ex.pop("rep_image", None)
+        out["rep"] = {"counts": {str(k): v for k, v in counts.items()}, "why": {str(k): v for k, v in whys.items()},
+                      "picked": pick, "rule": "0상자 장 · 여럿이면 지정 장(prefer)"}
+    done = []
+    if strip:
+        sc = R.scan(ex)
+        for lab in strip:
+            h = next((x for x in sc["hits"] if x["label"] == lab or x["key"] == lab), None)
+            if h is None:
+                done.append({"label": lab, "ok": False, "why": "지금 위험 항목에 없음"})
+                continue
+            res = R.decide(ex, h["key"], "strip", by=uid, pixels=pixels)
+            done.append({"label": h["label"], "ok": bool(res.get("ok")), "why": res.get("error") or "",
+                         "images": R.strip_image_line(ex, h), "where": R.where_line(h)})
+        out["strip"] = done
+    ex.pop("pv_ready", None)                             # 바꿨으니 지난 「준비 완료」는 낡았다 — 아래 사전검증이 다시 적는다
+    ok = bool(store.update(iid, seller_ids={uid}, extra_json=json.dumps(ex, ensure_ascii=False)))
+    out["saved"] = ok
+    if not ok:
+        return dict(out, ok=False, why="저장하지 못했어요")
+    out["prevalidate"] = _prevalidate(iid, markets)
+    return out

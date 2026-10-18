@@ -40,11 +40,13 @@ def to_original(box: Dict, W: int, H: int, frame: str) -> Dict:
 
 
 def _gray_small(raw: bytes, size: Optional[Tuple[int, int]] = None):
-    from PIL import Image
-    im = Image.open(io.BytesIO(raw))
-    W, H = im.size
-    im.draft("L", (SMALL_SIDE, SMALL_SIDE))
-    g = im.convert("L")
+    # Y13-D 3: `draft`는 JPEG 전용 — PNG·WebP 원본(5120px)은 통째로 풀렸다. 줄이기 먼저(`open_small` 가드 · 한 장씩)
+    from src.collectors.image_norm import open_small
+    small, _f, W, H, why = open_small(raw, SMALL_SIDE * 2)
+    if small is None:
+        raise ValueError(why or "그림을 열지 못했어요")
+    g = small.convert("L")
+    small.close()
     sw = SMALL_SIDE if W >= H else max(1, int(SMALL_SIDE * W / H))
     sh = SMALL_SIDE if H > W else max(1, int(SMALL_SIDE * H / W))
     g = g.resize(size or (sw, sh))
@@ -68,13 +70,16 @@ def _diff_in(a, b, box: Dict, W: int, H: int) -> Tuple[float, int]:
     return (tot / n if n else 0.0), n
 
 
-def score(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], frames=FRAMES) -> Dict:
-    """틀마다 상자 안 원본↔번역본 차이(화소 가중 평균). `{frame: diff}` + `size`. 못 열면 `{}`."""
+def score(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], frames=FRAMES, space=None) -> Dict:
+    """틀마다 상자 안 원본↔번역본 차이(화소 가중 평균). `{frame: diff}` + `size`. 못 열면 `{}`.
+    `space` = 상자 좌표 공간(번역 기록의 `box_size`) — 주면 그 크기로 잰다(Y13-D 3: 원본이 축소 사본이어도 좌표가 맞는다)."""
     try:
         a, (W, H) = _gray_small(orig_raw)
         b, (W2, H2) = _gray_small(trans_raw, size=a.size)
     except Exception:                                          # noqa: BLE001
         return {}
+    if space and len(space) >= 2 and int(space[0] or 0) > 0 and int(space[1] or 0) > 0:
+        W, H = int(space[0]), int(space[1])
     out = {"size": [W, H]}
     for f in frames:
         tot = n = 0.0
@@ -95,7 +100,7 @@ def _near_90(angle) -> bool:
     return min(abs(a - 90), abs(a - 270)) <= 20
 
 
-def pick(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], angle=None) -> Dict:
+def pick(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], angle=None, space=None) -> Dict:
     """`{frame, boxes(원본 좌표), scores, why}` — frame: identity|rot180|rot90a|rot90b|unknown.
 
     고르는 법: 그대로 틀이 뚜렷하면(≥ MIN_DIFF) 그대로. 아니면 돌린 틀 중 가장 큰 것이 뚜렷하고 그대로의 `WIN_RATIO`배 이상이면 그것.
@@ -103,7 +108,7 @@ def pick(orig_raw: bytes, trans_raw: bytes, boxes: List[Dict], angle=None) -> Di
     boxes = [b for b in boxes or [] if isinstance(b, dict) and int(b.get("w") or 0) > 0 and int(b.get("h") or 0) > 0]
     if not boxes:
         return {"frame": "identity", "boxes": [], "scores": {}, "why": ""}
-    sc = score(orig_raw, trans_raw, boxes)
+    sc = score(orig_raw, trans_raw, boxes, space=space)
     if not sc:
         return {"frame": "unknown", "boxes": [], "scores": {}, "why": "원본·번역본을 열지 못해 상자 자리를 확인 못 함"}
     W, H = sc["size"]

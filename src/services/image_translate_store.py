@@ -472,7 +472,14 @@ def sku_image_map(extra: dict, *, item_id: str = "") -> dict:
     if not originals:
         return {}
     eff = effective_images(extra, kind="sku", originals=originals, item_id=item_id)
-    return {o: e for o, e in zip(originals, eff) if e and e != o}
+    out = {o: e for o, e in zip(originals, eff) if e and e != o}
+    # Y13-D 2(오너 「옵션에서 Interstellar 전부 제거」): 위험 「빼고 등록」으로 뺀 옵션 사진은 **사진 없음**("") — 그 SKU는
+    #   상품 사진(대표부터)을 쓴다(쿠팡 옵션 이미지 = SKU 사진 → 상품 사진 순). 원본 주소로 되돌아가 상표가 나가지 않게.
+    by_idx = {int(x.get("idx", -1)): x for x in (extra or {}).get("sku_images_ko") or [] if isinstance(x, dict)}
+    for i, o in enumerate(originals):
+        if (by_idx.get(i) or {}).get("risk_exclude"):
+            out[o] = ""
+    return out
 
 
 def align(extra: dict, kind: str, originals=None) -> tuple:

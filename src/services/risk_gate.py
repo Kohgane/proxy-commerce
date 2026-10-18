@@ -164,7 +164,8 @@ def _images(extra: dict, *, props: Optional[list] = None):
     originals = [u for u in ((extra or {}).get("detail_images") or []) if u]
     known = [] if off else PT.echo_texts(extra)
     out = []
-    for key, kind, lab in (("images_ko", "gallery", "사진"), ("detail_images_ko", "detail", "상세")):
+    # Y13-D 2(오너 2026-10-18 BLACKHOLES): 옵션(SKU) 사진도 나간다(쿠팡 옵션 대표) — 영화 포스터 「INTERSTELLAR」가 검사 밖이었다
+    for key, kind, lab in (("images_ko", "gallery", "사진"), ("detail_images_ko", "detail", "상세"), ("sku_images_ko", "sku", "옵션 사진")):
         for e in (extra or {}).get(key) or []:
             if not (isinstance(e, dict) and e.get("idx") is not None) or e.get("risk_exclude"):   # 이미 뺀 장은 안 센다
                 continue
@@ -467,9 +468,11 @@ def _strip(text: str, names, case=False) -> str:
     return re.sub(r"[ \t]{2,}", " ", s).strip()
 
 
-def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False) -> dict:
+def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str = "") -> dict:
     """「빼고 등록」 — 그 낱말을 상품명·검색어·옵션·본문·참수에서 지우고, 걸린 사진은 등록에서 뺀다(사유: 위험 라벨).
-    `erase_pixels`(사람이 누른 「빼고 등록」만) — 사진째 빼는 대신 그 낱말 상자만 지운 편집본(Y11-J6). 자동 적용은 픽셀을 안 바꾼다."""
+    `erase_pixels`(사람이 누른 「빼고 등록」만) — 사진째 빼는 대신 그 낱말 상자만 지운 편집본(Y11-J6). 자동 적용은 픽셀을 안 바꾼다.
+    `pixels="restore"`(Y13-D 2 오너 결정) — 지우지 않고 **음차 상자만 원본 픽셀로 되살린다**. 원문 상자 자체가 그 낱말
+    (영문 「INTERSTELLAR」)이면 되살려도 사진에 상표가 남으니 그 장은 사진째 뺀다."""
     ex = extra
     names, case = h.get("names") or [], bool(h.get("case"))
     for k in ("title_ko", "coupang_name", "title", "description", "description_ko"):
@@ -483,6 +486,9 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False) -> dict:
             for k in ("values_ko", "values"):
                 if isinstance(o.get(k), list):
                     o[k] = [_strip(v, names, case) or v for v in o[k]]
+    if isinstance(ex.get("option_value_overrides"), dict):       # Y13-D 2: 옵션 탭·AI 축약으로 정한 값도 나간다
+        ex["option_value_overrides"] = {k: (_strip(v, names, case) or v) if isinstance(v, str) else v
+                                        for k, v in ex["option_value_overrides"].items()}
     if isinstance(ex.get("detail_specs"), list):
         specs = []
         for kv in ex["detail_specs"]:
@@ -495,11 +501,14 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False) -> dict:
         ex["detail_auto"]["text"] = _strip(ex["detail_auto"]["text"], names, case)
     want = {(i["kind"], int(i["idx"])) for i in h.get("images") or []}
     label = f"위험 — {h['cat']}({', '.join(h['found'][:2])})"
-    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
+    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail"), ("sku_images_ko", "sku")):
         for e in ex.get(key) or []:
             if isinstance(e, dict) and (kind, int(e.get("idx", -1))) in want:
                 if _whole_prop(e) and not _prop_off(ex):
                     continue                     # Y11-O: 소품뿐인 사진은 절대 빼지 않는다(상표가 걸려도 「참고」 — 오너 2026-10-15)
+                if pixels == "restore":
+                    _restore_or_exclude(ex, kind, e, names, case, label)
+                    continue
                 # Y11-J6(오너 2026-10-14): 사진째 빼지 않고 **그 낱말이 든 글자 상자만 지운다**(빈칸 렌더 = 새 편집본).
                 #   오너가 「빼고 등록」을 누른 것이 곧 사람 지시다(자동 픽셀 변경 아님 — Y11-E). 상자를 못 찾거나 편집을 못 쓰면
                 #   예전처럼 사진째 뺀다(사유에 왜 못 지웠는지).
@@ -514,6 +523,41 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False) -> dict:
                 else:
                     e["risk_exclude"] = f"{label} — 사진째 뺌({er.get('why') or '상자를 지우지 못함'})"
     return ex
+
+
+def _restore_or_exclude(ex: dict, kind: str, e: dict, names, case: bool, label: str) -> None:
+    """Y13-D 2(오너 「인터스텔라 음차 상자만 원본 픽셀 복원 — 지우기 아님. 영문 Interstellar가 사진에 남으면 그 장은 뺀다」).
+
+    상자마다 원문(`src`)·번역문(`tgt`)을 본다. 원문이 그 낱말이면(되살려도 상표가 그대로) → 사진째 뺀다(픽셀 0 · 렌더 0).
+    번역문에만 있으면(음차) → 그 상자만 원본 픽셀로 되살린 편집본. 상자를 못 읽거나 편집을 못 쓰면 사진째 뺀다(사유)."""
+    idx = int(e.get("idx", -1))
+    try:
+        from src.services import image_edit as IE
+        p = IE.plan(ex, kind, idx, fetch=False)                  # 저장된 상자만 — 판정에 사진을 받지 않는다(그리기는 apply가)
+    except Exception as exc:                                     # noqa: BLE001
+        e["risk_exclude"] = f"{label} — 사진째 뺌(글자 상자를 읽지 못함 {type(exc).__name__})"
+        return
+    boxes = p.get("boxes") or []
+    src_hit = [b for b in boxes if _find(str(b.get("src") or ""), names, case)]
+    tgt_only = [b for b in boxes if not _find(str(b.get("src") or ""), names, case) and _find(str(b.get("tgt") or ""), names, case)]
+    if src_hit:
+        e["risk_exclude"] = (f"{label} — 사진째 뺌(원문 글자에 상표가 그대로: "
+                             f"「{'」·「'.join(dict.fromkeys(str(b.get('src')) for b in src_hit[:3]))}」 — 되살려도 남음)")
+        return
+    if not tgt_only:
+        e["risk_exclude"] = f"{label} — 사진째 뺌(그 낱말이 든 글자 상자를 못 찾음)"
+        return
+    try:
+        res = IE.apply(ex, kind, idx, [{"id": b["id"], "action": "restore"} for b in tgt_only], by="risk")
+    except Exception as exc:                                     # noqa: BLE001
+        res = {"ok": False, "error": type(exc).__name__}
+    if not res.get("ok"):
+        e["risk_exclude"] = f"{label} — 사진째 뺌(원본 되살리기 실패: {str(res.get('error') or '')[:60]})"
+        return
+    e.pop("risk_exclude", None)
+    e["risk_erase"] = {"edit": int(str(res.get("version") or "edit:0").split(":")[-1]), "how": "restore",
+                       "erased": [str(b.get("tgt")) for b in tgt_only if b.get("tgt")], "label": label,
+                       "at": datetime.now(timezone.utc).isoformat(), "pending": bool(res.get("pending"))}
 
 
 def _prop_off(ex: dict) -> bool:
@@ -557,19 +601,24 @@ def strip_image_line(ex: dict, h: Optional[dict]) -> str:
     want = {(i["kind"], int(i["idx"])) for i in (h or {}).get("images") or []}
     if not want:
         return ""
-    erased = pending = 0
+    erased = pending = restored = 0
     dropped = []
-    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail")):
+    for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail"), ("sku_images_ko", "sku")):
         for e in ex.get(key) or []:
             if not (isinstance(e, dict) and (kind, int(e.get("idx", -1))) in want):
                 continue
             if e.get("risk_erase"):
-                erased += 1
+                if e["risk_erase"].get("how") == "restore":
+                    restored += 1
+                else:
+                    erased += 1
                 pending += bool(e["risk_erase"].get("pending"))
             elif e.get("risk_exclude"):
                 m = re.search(r"사진째 뺌\((.+)\)$", str(e["risk_exclude"]))
                 dropped.append(m.group(1) if m else "")
     parts = []
+    if restored:
+        parts.append(f"음차 상자만 원본 복원 {restored}")
     if erased:
         parts.append(f"글자 상자만 지움 {erased}" + (f"(만드는 중 {pending})" if pending else ""))
     if dropped:
@@ -614,7 +663,7 @@ def _risk_erased(e: dict) -> list:
     return []
 
 
-def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = "") -> dict:
+def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = "", pixels: str = "") -> dict:
     """`action` = strip(빼고 등록) · allow(그래도 등록, 차단 등급엔 없음) · skip(등록 안 함) · reset(결정 지우기). 결과 `{ok, error?, hit}`."""
     ex = extra
     now = datetime.now(timezone.utc).isoformat()
@@ -636,7 +685,7 @@ def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = ""
     changed = True
     if action == "strip":
         before = json.dumps(ex, ensure_ascii=False, sort_keys=True, default=str)
-        strip_extra(ex, h, erase_pixels=True)
+        strip_extra(ex, h, erase_pixels=True, pixels=pixels)
         changed = json.dumps(ex, ensure_ascii=False, sort_keys=True, default=str) != before
     dec = ex.setdefault("risk_decisions", {})
     dec[key] = {"action": action, "at": now, "by": by, "found": h["found"][:6], "label": h["label"], "cat": h["cat"],
