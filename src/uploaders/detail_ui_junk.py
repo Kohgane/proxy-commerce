@@ -69,6 +69,38 @@ def is_junk(text: str) -> bool:
     return judge(text)["junk"]
 
 
+def drop_shop_ui_lines(text: str) -> Dict:
+    """Y13-B(BLACKHOLES 2호 런북 대조) — 섹션(「■ …」 머리로 나뉜 덩어리) 안의 가게 UI **줄**만 뺀다 → `{text, removed}`.
+
+    실측: 상세 초안 「■ 원문 상세」 = 「沉默流浪汉 / 平均2天内发货」(가게 이름 + 발송 UI). 본문 전체 판정(`is_junk`)은 초안의
+    다른 섹션 때문에 안 걸리고, 이름 조각 허용은 UI 조각 2개부터라 한 줄짜리 UI 옆 가게 이름이 살아 번역돼 나갔다
+    (「침묵의 방랑자 / 평균 2일 이내 발송」 — 해외 배송인데 2일 발송 약속).
+    규칙: 섹션 안 UI 조각 줄(`is_ui_unit`)은 뺀다 · 뺀 뒤 그 섹션에 남은 줄이 **이름 모양 한 줄**(≤12자·숫자 없음)뿐이면 그것도.
+    우리가 쓴 줄(「·」 글머리 · 「■」 머리)은 건드리지 않는다 — 안내 문구 「…발송됩니다」를 UI로 읽지 않게."""
+    t = table()
+    cap = int(t.get("name_line_max_chars") or 12)
+    lines = str(text or "").replace("\r", "").split("\n")
+    sections: List[List[int]] = [[]]
+    for i, ln in enumerate(lines):
+        if ln.strip().startswith("■"):
+            sections.append([])
+        sections[-1].append(i)
+    drop = set()
+    for sec in sections:
+        body = [i for i in sec if lines[i].strip() and not lines[i].strip().startswith(("■", "·"))]
+        ui = [i for i in body if len(lines[i].strip()) <= 40 and is_ui_unit(lines[i])]
+        if not ui:
+            continue
+        drop.update(ui)
+        rest = [i for i in body if i not in ui]
+        if len(rest) == 1 and len(lines[rest[0]].strip()) <= cap and not re.search(r"\d", lines[rest[0]]) \
+                and not [i for i in sec if lines[i].strip().startswith("·")]:
+            drop.add(rest[0])
+    if not drop:
+        return {"text": str(text or ""), "removed": 0}
+    return {"text": "\n".join(ln for i, ln in enumerate(lines) if i not in drop), "removed": len(drop)}
+
+
 def desc_is_junk(pd: Dict) -> bool:
     """상품 데이터의 상세설명(편집본·번역본) 중 실려 나갈 값이 UI 쓰레기인가 — 둘 중 비지 않은 것 전부가 쓰레기여야 참."""
     vals = [str(pd.get(k) or "").strip() for k in ("description", "description_ko")]

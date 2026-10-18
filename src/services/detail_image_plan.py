@@ -239,12 +239,36 @@ def _fmt(raw: bytes) -> str:
 TENCENT_MIN_SIDE = 20             # Y13-A: 공급사 최소 변(이보다 작으면 `InvalidParameterValue.Data` — 스페이서 s.gif 1×1 실측)
 
 
-def prepare_for_tencent(raw: bytes, *, force: bool = False) -> Tuple[Optional[bytes], dict]:
+def prepare_for_tencent(raw: bytes, *, force: bool = False, url: str = "") -> Tuple[Optional[bytes], dict]:
     """원본 바이트 → 텐센트가 받는 JPEG/PNG(긴 변 ≤ 4096 · ≤ 4MB). `(bytes | None, {fmt, w, h, converted, note})`.
 
     JPEG·PNG가 이미 한도 안이면 그대로(다시 인코딩하지 않는다 — 화질 손실 0). webp·gif(첫 프레임)·그 밖은 JPEG로.
     디코드는 `open_small` 가드를 지난다(JPEG 아닌 1200만 화소 초과는 풀지 않음 — Z10-B).
+    그 가드에 걸리고 `url`이 있으면 **Cloudinary 축소 사본**(`small_copy`, 긴 변 2,000 JPEG — 우리는 원본 화소를 풀지 않는다)으로
+    다시 맞춘다 — Y13-B(BLACKHOLES 대표 사진 5장 = 4160×4160 WebP · 5120×5120 PNG가 10-14부터 「디코드 상한」으로 번역 0).
     """
+    out, info = _prepare_bytes(raw, force=force)
+    if out is None and info.get("over_cap") and url:
+        try:
+            from src.collectors.image_norm import abs_image_url
+            from src.media.image_pipeline import small_copy
+            copy, why = small_copy(abs_image_url(url), max_side=2000)
+        except Exception as exc:                                   # noqa: BLE001
+            copy, why = None, f"{type(exc).__name__}"
+        if copy:
+            out2, info2 = _prepare_bytes(copy)
+            if out2 is not None:
+                info2["note"] = (f"{info.get('fmt') or '이미지'} {info.get('w')}×{info.get('h')} → Cloudinary 축소 사본 "
+                                 f"{info2.get('w')}×{info2.get('h')}" + (f" · {info2['note']}" if info2.get("note") else ""))
+                info2.update(converted=True, via="cloudinary")
+                return out2, info2
+            info["note"] += f" · 축소 사본도 못 맞춤({info2.get('note') or '사유 불명'})"
+        else:
+            info["note"] += f" · 축소 사본 실패({why})"
+    return out, info
+
+
+def _prepare_bytes(raw: bytes, *, force: bool = False) -> Tuple[Optional[bytes], dict]:
     info = {"fmt": _fmt(raw), "w": 0, "h": 0, "converted": False, "note": ""}
     if not raw:
         info["note"] = "빈 이미지"
@@ -270,6 +294,7 @@ def prepare_for_tencent(raw: bytes, *, force: bool = False) -> Tuple[Optional[by
     info.update(w=w or info["w"], h=h or info["h"])
     if im is None:
         info["note"] = why or "이미지를 풀지 못했어요"
+        info["over_cap"] = "디코드 상한" in str(why or "")
         return None, info
     try:
         for q in (90, 82, 72, 60):

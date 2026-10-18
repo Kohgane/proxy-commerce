@@ -209,7 +209,7 @@ def _image_probe(item_id: str, kind: str, idxs: List[int]) -> Dict:
             continue
         fmt, w, h = image_head(data)[:3]
         row.update(fmt=fmt, w=w, h=h, bytes=len(data), b64=int(len(data) * 4 / 3))
-        norm, info = P.prepare_for_tencent(data)
+        norm, info = P.prepare_for_tencent(data, url=url)
         row["prepare"] = {"sent": "원본 그대로" if norm is data else ("안 보냄" if norm is None else "바꿈"),
                           "note": str(info.get("note") or ""), "bytes": len(norm or b"")}
         if norm is not None:

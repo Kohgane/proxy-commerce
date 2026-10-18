@@ -848,6 +848,13 @@ def strip_brand_value(value: str, tokens) -> str:
     return re.sub(r"\s{2,}", " ", s).strip(" -_/·,")
 
 
+def outbound_option_value(value: str, tokens) -> str:
+    """Y13-B — 나가는 옵션 값 한 칸: 브랜드 조각 빼기 → 남은 라틴은 표에 다 있으면 한국어 표기. 다 빠지면 빈 문자열.
+    옵션 값·상세 초안의 옵션 요약 줄(「· 색상은 … 2가지 중에서 고를 수 있어요.」)이 같은 함수를 쓴다."""
+    s = strip_brand_value(value, tokens)
+    return (latin_option_ko(s) or s) if s else ""
+
+
 def latin_option_ko(value: str) -> str:
     """라틴 옵션 값 → 한국어 표기(「Yellow light」 → 「옐로 라이트」). 낱말이 **전부** 표(`en_option_words`)에 있을 때만 —
     하나라도 모르면 빈 문자열(원문 그대로 둔다 · 모델명을 지어 옮기지 않는다)."""

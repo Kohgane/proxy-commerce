@@ -412,7 +412,7 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
     #   이미 한도 안의 JPEG·PNG는 그대로(다시 굽지 않음). 줄 상자 좌표는 **보낸 그림** 기준 → `sent_size`.
     try:
         from src.services.detail_image_plan import prepare_for_tencent
-        norm, info = prepare_for_tencent(data)
+        norm, info = prepare_for_tencent(data, url=url or "")   # Y13-B: 디코드 상한 → Cloudinary 축소 사본
     except Exception as exc:                                   # noqa: BLE001
         norm, info = None, {"note": f"정규화 실패({type(exc).__name__})"}
     if norm is None and str(info.get("fmt") or "") in ("WEBP", "GIF"):

@@ -563,7 +563,7 @@ def translate_page_tencent(url: str, *, idx: int, kind: str, item_id: str, selle
         return istore.build_entry(idx, {"ok": False, "vendor": "tencent", "error_class": "FetchFailed", "error_message": why,
                                         "hint": "원본 주소가 아직 열려 있는지 확인하세요."},
                                   item_id=item_id, seller_id=seller_id, kind=kind)
-    data, info = dip.prepare_for_tencent(raw)
+    data, info = dip.prepare_for_tencent(raw, url=u)
     del raw
     if data is None:
         return istore.build_entry(idx, {"ok": False, "vendor": "tencent", "error_class": "ConvertFailed",

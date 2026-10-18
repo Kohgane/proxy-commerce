@@ -11307,6 +11307,10 @@ def collect_preview_by_id(item_id: str):
     try:                                            # S2: 마켓 전송 미리보기 = 등록이 보내는 그 함수
         from src.collectors import ko_polish as _kp_s2
         _d_src = str((extra or {}).get("description_ko") or (extra or {}).get("description") or "")
+        # Y13-B: 등록과 같은 정리 — 가게 UI 줄 · 옵션 요약 줄의 브랜드 조각·라틴 값(`apply_outbound_text`와 같은 두 함수)
+        from src.uploaders.detail_ui_junk import drop_shop_ui_lines as _dsu_p
+        from .upload_dispatcher import fix_option_summary_lines as _fos_p
+        _d_src = _fos_p(_dsu_p(_d_src)["text"], _kp_s2.brand_tokens(extra or {}))
         market_desc_preview = market_description(_d_src)
         market_desc_dropped = _kp_s2.drop_detail_lines(_d_src)[1]
     except Exception:

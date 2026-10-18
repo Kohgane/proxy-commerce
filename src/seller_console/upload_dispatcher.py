@@ -261,6 +261,38 @@ def drop_brand_option_slots(pd: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def fix_option_summary_lines(text: str, tokens) -> str:
+    """Y13-B(BLACKHOLES 2호 런북 대조) — 상세 초안의 옵션 요약 줄을 옵션 값과 **같은 규칙**(`outbound_option_value`)으로.
+
+    실측: 10-10 초안 「· 사이즈는 【BLACKHOLES】 한 가지예요. · 색상은 Yellow light, White light 2가지 중에서 고를 수 있어요.」 —
+    옵션 값에서는 브랜드를 빼고 라틴을 옮기는데(Y13-A 1) 상세 글은 옛 값 그대로 나갔다. 값이 다 빠진 줄은 뺀다. 저장 글은 그대로."""
+    import re as _re
+    from src.collectors.ko_polish import outbound_option_value as _ov
+    one = _re.compile(r"^(\s*·\s*)(.+?)[은는]\s+(.+?)\s+한 가지예요\.\s*$")
+    many = _re.compile(r"^(\s*·\s*)(.+?)[은는]\s+(.+?)(\s+외)?\s+\d+가지 중에서 고를 수 있어요\.\s*$")
+    out = []
+    for ln in str(text or "").split("\n"):
+        m = one.match(ln) or many.match(ln)
+        if not m:
+            out.append(ln)
+            continue
+        from src.seller_console.ai.translator import _josa
+        name, more = m.group(2), (m.group(4) if m.re is many else None)
+        vals = []
+        for v in (m.group(3).split(", ") if m.re is many else [m.group(3)]):
+            nv = _ov(v.strip(), tokens)
+            if nv and nv not in vals:
+                vals.append(nv)
+        if not vals:
+            continue                                            # 브랜드 조각뿐인 줄(「사이즈는 【BLACKHOLES】 한 가지예요」)
+        if len(vals) == 1 and not more:
+            out.append(f"{m.group(1)}{name}{_josa(name, '은', '는')} {vals[0]} 한 가지예요.")
+        else:
+            out.append(f"{m.group(1)}{name}{_josa(name, '은', '는')} {', '.join(vals)}{more or ''} "
+                       f"{len(vals)}가지 중에서 고를 수 있어요.")
+    return "\n".join(out)
+
+
 def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
     """**마켓에 나갈 글자**(상세·검색어) — 등록 빌더와 사전검증이 같은 함수를 쓴다(X2: 사전검증만 원문을 봤다).
 
@@ -271,6 +303,20 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
     pd.setdefault("_desc_src", str(pd.get("description") or ""))
     try:
         _src = _market_desc_source(pd)
+        # Y13-B: 번역 **전에** — 가게 UI 줄(발송·평점)과 그 옆 가게 이름 한 줄 · 옵션 요약 줄의 브랜드 조각·라틴 값
+        try:
+            from src.collectors.ko_polish import brand_tokens as _bt
+            from src.uploaders.detail_ui_junk import drop_shop_ui_lines as _dsu
+            _su = _dsu(str(_src or ""))
+            if _su["removed"]:
+                pd["detail_shop_ui_removed"] = _su["removed"]
+            _src = fix_option_summary_lines(_su["text"], _bt(pd))
+            # 자동 초안(네이버가 셀러 글 대신 싣는 것 · 「초안이 그대로 돌아온 글」 판정의 짝)도 같은 정리 — 사본에만
+            _a = pd.get("detail_auto")
+            if isinstance(_a, dict) and str(_a.get("text") or "").strip():
+                pd["detail_auto"] = {**_a, "text": fix_option_summary_lines(_dsu(str(_a["text"]))["text"], _bt(pd))}
+        except Exception as exc:                                     # noqa: BLE001
+            logger.warning("[등록] 상세 가게 줄·옵션 요약 정리 실패(그대로): %s", exc)
         # Y11-P(오너 2026-10-15): 타오바오 페이지 탭 라벨·남의 구매평·문답 블록을 빼고, 그래도 남은 한자 줄은 **등록 직전에**
         #   텐센트 텍스트 번역으로 옮긴다(예전엔 한자 줄을 통째로 버렸다 — 규격표까지). 병기본의 원문(구분선 아래)은 옮기지 않는다.
         try:

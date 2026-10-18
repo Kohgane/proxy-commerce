@@ -152,3 +152,100 @@ def test_polish_panel_shows_kept_original_and_reason():
     src = Path("src/seller_console/templates/_image_edit.html").read_text(encoding="utf-8")
     assert 'data-role="kie-polish-logo"' in src and "r.from === 'restore'" in src
     assert "esc(r.why || 'AI 지우기 제안')" in src
+
+
+# ── 같은 유형(3번 텐센트 입력) — 디코드 상한 넘는 WebP/PNG는 Cloudinary 축소 사본으로 ─────────────────────────────
+def _pic(fmt, w, h):
+    import io
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (w, h), (30, 30, 200)).save(b, fmt)
+    return b.getvalue()
+
+
+BH_0 = "https://img.alicdn.com/imgextra/i1/2207/O1CN01bh0_!!2207.png"
+
+
+def test_over_cap_webp_goes_through_cloudinary_small_copy(monkeypatch):
+    """BLACKHOLES 대표 5장(4160×4160 WebP · 5120×5120 PNG) = 10-14부터 「서버 디코드 상한 12M」 ConvertFailed — 번역 0.
+    상한(시험에선 1M로 낮춤)을 넘으면 우리가 풀지 않고 Cloudinary가 줄인 JPEG 사본을 받아 보낸다."""
+    from src.collectors import image_norm as N
+    from src.media import image_pipeline as IP
+    from src.services.detail_image_plan import prepare_for_tencent
+    monkeypatch.setattr(N, "decode_max_pixels", lambda: 1_000_000)
+    asked = []
+    monkeypatch.setattr(IP, "small_copy", lambda url, **k: asked.append((url, k)) or (_pic("JPEG", 800, 800), ""))
+    big = _pic("WEBP", 1200, 1200)
+    out, info = prepare_for_tencent(big)                                     # 주소 없이 → 예전처럼 사유만
+    assert out is None and "디코드 상한" in info["note"] and asked == []
+    out, info = prepare_for_tencent(big, url="//img.alicdn.com/imgextra/x.webp")
+    assert out[:2] == b"\xff\xd8" and info["via"] == "cloudinary" and "Cloudinary 축소 사본 800×800" in info["note"]
+    assert asked[0][0] == "https://img.alicdn.com/imgextra/x.webp" and asked[0][1]["max_side"] == 2000
+    monkeypatch.setattr(IP, "small_copy", lambda url, **k: (None, "Cloudinary 자격 미설정"))
+    out, info = prepare_for_tencent(big, url=BH_0)
+    assert out is None and "축소 사본 실패(Cloudinary 자격 미설정)" in info["note"]     # 정직: 못 했으면 못 했다
+
+
+def test_translate_image_passes_url_for_small_copy(monkeypatch):
+    from src.collectors import image_norm as N
+    from src.media import image_pipeline as IP
+    from src.services import image_translate_tencent as tc
+    monkeypatch.setenv("TENCENT_SECRET_ID", "id")
+    monkeypatch.setenv("TENCENT_SECRET_KEY", "key")
+    monkeypatch.setattr(N, "decode_max_pixels", lambda: 1_000_000)
+    monkeypatch.setattr(IP, "small_copy", lambda url, **k: (_pic("JPEG", 900, 900), ""))
+    sent = []
+
+    class _R:
+        Data = "aW1n"
+        Source, Target, SourceText, TargetText = "zh", "ko", "原文", "원문"
+        TransDetails, RequestId, Angle = [], "req-1", 0
+
+    class _Cli:
+        def ImageTranslateLLM(self, req):
+            sent.append(len(req._serialize().get("Data") or ""))
+            return _R()
+    monkeypatch.setattr(tc, "_client", lambda *_a, **_k: _Cli())
+    monkeypatch.setattr(tc, "fetch_image", lambda u: (_pic("WEBP", 1200, 1200), ""))
+    out = tc.translate_image(url=BH_0)
+    assert out["ok"] and len(sent) == 1 and "Cloudinary 축소 사본" in out.get("converted", "")
+
+
+# ── 같은 유형(1번 옵션 값 브랜드) — 상세 초안의 옵션 요약 줄 · 가게 UI 줄(BLACKHOLES 저장 초안 10-10 실측) ──────────
+BH_DRAFT = ("BLACKHOLES 블랙홀 미니 벽등, 영화 굿즈, 장식 모델, 피규어, 우주\n\n■ 옵션·상세\n"
+            "· 사이즈는 【BLACKHOLES】 한 가지예요.\n· 색상은 Yellow light, White light 2가지 중에서 고를 수 있어요.\n\n"
+            "■ 원문 상세\n沉默流浪汉\n平均2天内发货\n\n■ 배송·구매대행 안내\n"
+            "· 해외 구매대행 상품으로, 주문 후 현지 배송·통관을 거쳐 발송됩니다.\n· 교환·반품은 판매 마켓과 구매대행 정책을 따릅니다.")
+
+
+def test_shop_ui_line_and_its_name_dropped_per_section():
+    from src.uploaders.detail_ui_junk import drop_shop_ui_lines
+    got = drop_shop_ui_lines(BH_DRAFT)
+    assert got["removed"] == 2 and "沉默流浪汉" not in got["text"] and "平均2天内发货" not in got["text"]
+    assert "거쳐 발송됩니다" in got["text"]                                   # 우리 안내(「·」 글머리)는 그대로
+    body = "■ 원문 상세\n实木框架 高密度海绵\n坐感舒适\n平均2天内发货"
+    kept = drop_shop_ui_lines(body)["text"]
+    assert "实木框架 高密度海绵" in kept and "坐感舒适" in kept and "发货" not in kept   # 본문 두 줄은 이름 조각으로 안 본다
+
+
+def test_option_summary_lines_follow_option_value_rule():
+    from src.seller_console.upload_dispatcher import fix_option_summary_lines
+    out = fix_option_summary_lines(BH_DRAFT, ["BLACKHOLES"])
+    assert "【BLACKHOLES】" not in out and "사이즈는" not in out
+    assert "· 색상은 옐로 라이트, 화이트 라이트 2가지 중에서 고를 수 있어요." in out
+    assert fix_option_summary_lines("· 모델은 Proprietary 20 한 가지예요.", []) == "· 모델은 Proprietary 20 한 가지예요."
+
+
+def test_outbound_description_and_auto_draft_cleaned_same_way(monkeypatch):
+    """나가는 상세(쿠팡) · 네이버 자동 초안 모두 — 가게 줄 0 · 브랜드 조각 0 · 라틴 표기. 저장값은 그대로."""
+    from src.seller_console.upload_dispatcher import apply_outbound_text
+    from src.uploaders import detail_translate as DT
+    monkeypatch.setattr(DT, "outbound", lambda t: {"text": t, "translated": 0, "failed": 0, "why": "", "page_ui_removed": 0})
+    pd = {"title": "BLACKHOLES 블랙홀 미니 벽등", "title_en": "【BLACKHOLES】黑洞小夜灯", "description": BH_DRAFT,
+          "detail_auto": {"text": BH_DRAFT, "v": 2}}
+    out = apply_outbound_text(pd)
+    for txt in (out["description"], out["detail_auto"]["text"]):
+        assert "沉默" not in txt and "发货" not in txt and "【BLACKHOLES】" not in txt and "옐로 라이트" in txt
+    assert pd["description"] == BH_DRAFT and pd["detail_auto"]["text"] == BH_DRAFT
+    from src.uploaders.naver_detail import _is_auto_echo
+    assert _is_auto_echo(out, out["description"])                          # 초안이 그대로 돌아온 글 판정은 그대로
