@@ -577,16 +577,17 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
     _is_rep = kind == "gallery" and int(idx) == 0
     _can_restore = restorable(e)
     for r in pr["rows"]:
+        if tiny_latin(by_id.get(r["id"]) or {}, e.get("box_size")) and restorable(e):
+            # Y11-W: 사진 높이 1.5% 미만 라틴 장식 글자(서명 낙서 위 이탈리아어) — 번역하지 않는다. 텐센트가 칠한 자리를 원본으로 되살린다
+            #   (판촉 낱말 「Sale」이 섞여도 장식 글자가 먼저 — Y13-B)
+            r["why"], r["from"], r["ko"], r["suggest_erase"] = "작은 장식 글자 — 원본 되살림", "restore", r["src"], ""
+            ops.append({"id": r["id"], "action": "restore"})
+            continue
         handled = guard_row(r, _logos, _is_rep, _can_restore)
         if handled is not None:
             if handled.get("op"):
                 ops.append(handled["op"])
             suggest += int(bool(handled.get("suggest")))
-            continue
-        if tiny_latin(by_id.get(r["id"]) or {}, e.get("box_size")) and restorable(e):
-            # Y11-W: 사진 높이 1.5% 미만 라틴 장식 글자(서명 낙서 위 이탈리아어) — 번역하지 않는다. 텐센트가 칠한 자리를 원본으로 되살린다
-            r["why"], r["from"], r["ko"], r["suggest_erase"] = "작은 장식 글자 — 원본 되살림", "restore", r["src"], ""
-            ops.append({"id": r["id"], "action": "restore"})
             continue
         if r["ko"] == "" and r["tgt"]:
             # Y11-N(오너): 다듬기는 지우지 않는다 — AI 「빈칸」은 지우기 **제안**으로만 남기고 텐센트 글자 그대로(픽셀 0).
@@ -857,7 +858,9 @@ def promo_left_caution(extra: dict) -> str:
             skip = {str(t) for t in ((e.get("erase_skip") or {}).get("texts") or [])}
             pl = e.get("polish") if isinstance(e.get("polish"), dict) else {}
             if pl.get("rows"):
-                texts = [str(r.get("ko") or "") for r in pl["rows"] if isinstance(r, dict) and r.get("from") != "restore"]
+                # 되살린 원문은 빼되, 판촉이라 되살린 상자(지우기 제안 · 아직 안 지움)는 원문 글자로 센다 — 사진에 남아 있다
+                texts = [str(r.get("ko") or "") for r in pl["rows"] if isinstance(r, dict)
+                         and (r.get("from") != "restore" or (r.get("suggest_erase") and not r.get("brand_logo")))]
             else:
                 texts = str(e.get("target_text") or "").split("\n")
             got = promo_hits(" ".join(t for t in texts if t and t not in skip))

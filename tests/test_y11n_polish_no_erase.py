@@ -72,10 +72,12 @@ def test_polish_never_erases_blank_answer_is_a_suggestion(monkeypatch):
     applied = []
     monkeypatch.setattr(IE, "apply", lambda extra, kind, idx, ops, by="user", small=None: applied.append(ops) or {"ok": True, "version": "edit:1"})
     r = P.polish_entry(ex, "gallery", 0)
-    assert applied == [[{"id": "t1", "action": "text", "text": "부드럽고 탄탄한 쿠션감"}]]       # 지우기 op 0
+    # Y13-A 7(오너 2026-10-18 16:37): 판촉 상자는 번역 안 함 — 원본 픽셀로 되돌리고 지우기 제안(지우기 op는 여전히 0)
+    assert applied == [[{"id": "t0", "action": "restore"}, {"id": "t1", "action": "text", "text": "부드럽고 탄탄한 쿠션감"}]]
+    assert not any(o["action"] == "erase" for o in applied[0])
     assert r["suggest_erase"] == 1
     row = ex["images_ko"][0]["polish"]["rows"][0]
-    assert row["suggest_erase"] and row["ko"] == "88VIP 전용 소비 쿠폰" and row["from"] == "tencent"
+    assert row["suggest_erase"] and row["ko"] == "88VIP专属消费券" and row["from"] == "restore" and "판촉" in row["why"]
     assert [x["tgt"] for x in IE._polish_view(ex["images_ko"][0])["rows"] if x.get("suggest_erase")] == ["88VIP 전용 소비 쿠폰"]
     assert "AI 지우기 제안 1(편집기에서 탭해야 지움)" in P.item_detail("x", ex)
 
@@ -99,9 +101,15 @@ def test_old_erased_coupon_is_restored_from_translated_with_cache(monkeypatch):
     e = ex["detail_images_ko"][0]
     assert seen == [] and r["calls"] == 0 and e["polish"]["outbound"] is False and e["polish"]["reask_old"] == 0
     assert not any(o["action"] == "erase" for o in applied[0])
-    # Y11-W: 16상자 중 사진 높이 1.5% 미만 라틴 장식 글자 2개(「Sale fory」·「stare a casa…」)는 원본 픽셀로 되살린다(지우기 제안 아님)
-    assert r["suggest_erase"] == 14
-    assert sum(1 for o in applied[0] if o["action"] == "restore") == 2
+    # Y11-W: 사진 높이 1.5% 미만 라틴 장식 글자 2개(「Sale fory」·「stare a casa…」)는 원본 픽셀로 되살린다(지우기 제안 아님 —
+    #   판촉 낱말 「Sale」이 섞여도 장식 글자가 먼저). Y13-A 7: 판촉 상자는 번역 안 함 — 원본으로 되돌리고 지우기 제안.
+    rows = e["polish"]["rows"]
+    deco = [x for x in rows if x.get("why") == "작은 장식 글자 — 원본 되살림"]
+    promo = [x for x in rows if "판촉 문구" in str(x.get("why") or "")]
+    assert len(deco) == 2 and not any(x.get("suggest_erase") for x in deco)
+    assert promo and all(x["from"] == "restore" and x["ko"] == x["src"] and x["suggest_erase"] for x in promo)
+    assert r["suggest_erase"] == sum(1 for x in rows if x.get("suggest_erase"))
+    assert sum(1 for o in applied[0] if o["action"] == "restore") == len(deco) + len(promo)
     assert [v["key"] for v in IE.versions(ex, "detail", 3)] == ["original", "translated"]   # 지운 버전은 빠지고 번역본(텐센트)
     assert IE.current_key(e) == "translated" and e["polish_rerender"][0]["dropped"] == ["edit:1"]
 
