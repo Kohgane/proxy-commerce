@@ -144,3 +144,11 @@ def test_pleats_row_390_badge_is_she_and_title_cut_is_not_se():
         b.close()
     assert got["shorts"] == ["고", "우", "셰", "코"]
     assert not got["tail"].rstrip().endswith("세"), got
+
+
+def test_polish_panel_shows_kept_original_and_reason():
+    """편집기 「다듬기」 줄 — 로고·판촉 상자는 되살린 원문 + 사유(빈 「AI 「」 버림」 괄호 금지)."""
+    from pathlib import Path
+    src = Path("src/seller_console/templates/_image_edit.html").read_text(encoding="utf-8")
+    assert 'data-role="kie-polish-logo"' in src and "r.from === 'restore'" in src
+    assert "esc(r.why || 'AI 지우기 제안')" in src

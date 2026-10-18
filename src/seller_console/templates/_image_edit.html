@@ -77,7 +77,10 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
       h += '<div class="kie-confirm" data-role="kie-polish"><b>다듬기</b>' + (p.polish.why ? ' — ' + esc(p.polish.why) : '') + '<ul class="mb-0 ps-3">' +
         p.polish.rows.map(function (r) {
           // Y11-N: 다듬기는 지우지 않는다 — AI 「빈칸」은 제안으로만(지우려면 그 상자를 탭해 「지우기」 적용)
-          if (r.suggest_erase) return '<li data-role="kie-polish-suggest">' + esc(r.tgt) + ' → <i>(AI 지우기 제안)</i></li>';
+          // Y13-A 8: 브랜드 로고 — 음차 대신 원문 그대로(상표 참고) · 7: 판촉 — 번역 안 함 · 지우기 제안(사유를 그대로)
+          var kept = r.from === 'restore' ? '「' + esc(r.src) + '」 ' : '';
+          if (r.brand_logo) return '<li data-role="kie-polish-logo">' + esc(r.tgt) + ' → ' + kept + '<span class="kgp-risk-sub">(' + esc(r.why) + ')</span></li>';
+          if (r.suggest_erase) return '<li data-role="kie-polish-suggest">' + esc(r.tgt) + ' → ' + kept + '<i>(' + esc(r.why || 'AI 지우기 제안') + ')</i></li>';
           return '<li data-role="kie-polish-row">' + esc(r.tgt || '(빈칸)') + ' → ' + (r.ko === '' ? '<i>지움</i>' : esc(r.ko)) +
             (r.why ? ' <span class="kgp-risk-sub">(AI 「' + esc(r.ai) + '」 버림: ' + esc(r.why) + ')</span>' : '') + '</li>'; }).join('') + '</ul></div>';
     }
