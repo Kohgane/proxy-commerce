@@ -220,8 +220,19 @@ def test_fishangli_ship_ratio_is_against_sell_price_and_passes(monkeypatch):
     assert h["short"] == "운임 94,500원 · 판매가 대비 16% (LCL 추정)" and "(기준 15%)" in h["line"]
 
 
-def test_dispatcher_precheck_passes_market_to_ship_hold():
-    """사전검증 보류 판정이 그 마켓 판매가로 비율을 잰다 — 호출부가 마켓을 넘긴다(같은 함수 · 마켓별 수수료)."""
-    from pathlib import Path
-    src = Path("src/seller_console/upload_dispatcher.py").read_text(encoding="utf-8")
-    assert '_ship_hold(pd, str(pd.get("seller_id") or ""), market)' in src
+def test_dispatcher_precheck_passes_market_to_ship_hold(monkeypatch):
+    """사전검증 보류 판정이 그 마켓 판매가로 비율을 잰다 — 호출부가 마켓을 넘긴다(같은 함수 · 마켓별 수수료). 행동으로 잰다."""
+    from src.seller_console import shipping_ratio as R
+    from src.seller_console.upload_dispatcher import UploadDispatcher
+    seen = []
+    monkeypatch.setattr(R, "hold", lambda pd, seller_id="", market="": seen.append(market) or None)
+    UploadDispatcher.readiness_holds(dict(SOFA, photo_text=FISH_D6), "smartstore")
+    UploadDispatcher.readiness_holds(dict(SOFA, photo_text=FISH_D6), "coupang")
+    assert seen == ["smartstore", "coupang"]
+
+
+def test_furniture_gate_only_where_freight_is_measurable():
+    """출발국 요율이 없는 상품(주소 없음)은 운임을 못 잰다 — 가구 치수 게이트도 걸지 않는다(예전처럼 통과)."""
+    from src.seller_console import shipping_ratio as R
+    assert R.hold({"title": "라운지 의자", "price": "6995"}) is None
+    assert R.hold(dict(SOFA, photo_text=""))["fix"] == "ship_dims"

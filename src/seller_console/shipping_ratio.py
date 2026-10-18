@@ -320,7 +320,8 @@ def estimate(pd: dict, seller_id: str = "", market: str = "") -> Dict[str, Any]:
         price = 0.0
     fx = _fx(pd.get("currency"))
     if not (size["dims_cm"] or size["weight_kg"] or size["pkg_m3"]):
-        if size.get("need_dims"):
+        # 가구 치수 게이트는 운임을 잴 수 있는 출발국(중국·미국)에서만 — 출발국 요율이 없으면 예전처럼 통과
+        if size.get("need_dims") and origin_of(pd) in ("cn", "us"):
             return {"state": "need_dims", "need_input": True, "label": size["need_dims"],
                     "line": (f"치수 확인 필요 — 가구({size['need_dims']})는 기본 크기로 추정하지 않아요. 상품 글·사진 규격에서 "
                              "가로·세로·높이를 못 찾았어요 → 「무게·크기 직접 넣기」에 넣으면 실측으로 다시 계산해요")}
