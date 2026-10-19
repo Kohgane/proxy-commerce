@@ -106,3 +106,14 @@ def test_small_copy_asks_cloudinary_for_q85(monkeypatch):
     pid85 = seen["public_id"]
     IPL.small_copy("https://img.example/big.webp")
     assert seen["quality"] == 0 and seen["public_id"] != pid85      # 품질이 바뀌면 다른 사본 이름
+
+
+def test_upload_product_413_is_held_with_non_retry_code():
+    from src.seller_console.upload_dispatcher import RETRYABLE_CODES
+    up = _up()
+    up.image_upload_enabled = True
+    up.upload_images = lambda urls: {"ok": False, "urls": [], "too_large": True, "skipped": [],
+                                     "reason": "사진 용량 초과 · 1번"}
+    out = up.upload_product({"sku": "s", "images": ["https://img.example/a.jpg"]})
+    assert out["held"] and out["reason_code"] == "naver_image_too_large"
+    assert out["reason_code"] not in RETRYABLE_CODES             # 같은 몸통은 같은 답 — 재시도 버튼 없음

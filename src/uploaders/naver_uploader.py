@@ -320,8 +320,11 @@ class NaverSmartStoreUploader(BaseUploader):
             if self.image_upload_enabled and product.get('images'):
                 shot = self.upload_images(product.get('images'))
                 if not shot['ok']:
-                    return {'success': False, 'held': True, 'sku': product.get('sku', ''),
-                            'error': f"이미지 업로드 실패 — 등록 중단: {shot['reason']}"}
+                    out = {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                           'error': f"이미지 업로드 실패 — 등록 중단: {shot['reason']}"}
+                    if shot.get('too_large'):
+                        out['reason_code'] = 'naver_image_too_large'     # Y13-F F2: 같은 몸통은 같은 답 — 재시도 버튼 없음
+                    return out
                 if shot['skipped']:
                     logger.info('이미지 %d장 스킵 sku=%s — %s', len(shot['skipped']),
                                 product.get('sku', ''),
