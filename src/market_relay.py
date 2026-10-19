@@ -121,6 +121,12 @@ class RelayError(requests.exceptions.RequestException):
     """
 
 
+class RelayTooLarge(RelayError):
+    """Y13-F F2 — 릴레이(nginx `client_max_body_size`)가 413으로 끊었다. 같은 몸통은 몇 번을 보내도 같은 답 → 재시도 금지."""
+
+    no_retry = True
+
+
 def api_relay_url() -> str:
     return (os.getenv("MARKET_API_RELAY_URL") or "").strip().rstrip("/")
 
@@ -252,6 +258,8 @@ def _api_relay_send(method, url, headers, json_body, data, timeout):
         )
     except requests.exceptions.RequestException as exc:
         raise RelayError(f"릴레이 오류: 릴레이에 닿지 못했습니다 ({exc})") from exc
+    if r.status_code == 413:
+        raise RelayTooLarge(f"릴레이 오류: 릴레이가 HTTP 413(몸통 너무 큼 · 봉투 {len(payload['body_b64']):,}B)")
     if r.status_code != 200:
         raise RelayError(f"릴레이 오류: 릴레이가 HTTP {r.status_code}")
     try:
@@ -442,5 +450,7 @@ def relay_request(method, url, *, headers=None, json=None, data=None, params=Non
     try:
         return throttled_request(_send, market=_m, key=key or "",
                                  retries=max(0, int(_plan["attempts"]) - 1))
+    except RelayTooLarge:
+        raise                                 # Y13-F F2: 413은 기다린 횟수 문장이 아니라 그 자체가 사유(1회 · 대기 0)
     except RelayError as exc:
         raise RelayError(f"{exc} — {_plan['sentence']}") from exc

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 
-from src.market_relay import RelayError, relay_request
+from src.market_relay import RelayError, RelayTooLarge, relay_request
 
 from .base_uploader import BaseUploader
 
@@ -918,6 +918,10 @@ class NaverSmartStoreUploader(BaseUploader):
                 continue
             stat['fetched'] += 1
             stat['bytes'] += _nbytes(got)
+            # Y13-F F2: 넣기 **전에** 잰다 — 넣고 나서 재면 묶음이 상한을 한 장만큼 넘겨 나간다(릴레이 413의 뿌리)
+            if chunk and chunk_bytes + _nbytes(got) > chunk_cap:
+                _flush(chunk)
+                chunk_bytes = 0
             chunk.append((u, n, got))
             chunk_bytes += _nbytes(got)
             got = None
@@ -969,8 +973,8 @@ class NaverSmartStoreUploader(BaseUploader):
         응답 `images[].url`. **릴레이 경유**(IP 게이트 — 직결 시 GW.IP_NOT_ALLOWED).
         반환 {ok, urls, skipped, reason}. 조용한 실패 금지 — 오류 본문 200자까지 사유에 담는다.
         """
-        cleaned, skipped = [], []
-        for u in (urls or [])[:self.IMAGE_MAX_COUNT]:
+        cleaned, nos, skipped = [], [], []
+        for no, u in enumerate((urls or [])[:self.IMAGE_MAX_COUNT], 1):
             n = self.normalize_source_url(u)
             if not n:
                 skipped.append({'url': str(u or ''), 'reason': 'URL 정규화 실패'})
@@ -982,6 +986,7 @@ class NaverSmartStoreUploader(BaseUploader):
                     skipped.append({'url': n, 'reason': '사유 미상'})
                 continue
             cleaned.append(got)
+            nos.append(no)
         if skipped:
             logger.info('이미지 %d장 스킵 — %s', len(skipped),
                         '; '.join(f"{s['reason']}({s['url'][-48:]})" for s in skipped))
@@ -990,11 +995,33 @@ class NaverSmartStoreUploader(BaseUploader):
                     'reason': ('업로드할 이미지 0장 — '
                                + '; '.join(s['reason'] for s in skipped[:3]))}
 
-        up = self._upload_parts(cleaned)
-        return {**up, 'skipped': skipped}
+        # Y13-F F2(오너 2026-10-19 BLACKHOLES 셰고가·고코스모스): 대표 4장을 **한 요청**으로 3,633,210B → 릴레이 base64 봉투가
+        #   nginx 상한(4m)을 넘어 413 × 3회. 상세(`cdn_map`)와 같은 바이트 상한(`IMAGE_UPLOAD_CHUNK_BYTES`)으로 나눠 올린다 —
+        #   응답 순서대로 이어 붙이므로 대표(1번)는 그대로 1번이다.
+        cap, out_urls, part, part_nos, part_bytes = _chunk_bytes(), [], [], [], 0
+        groups = []
+        for got, no in zip(cleaned, nos):
+            if part and part_bytes + _nbytes(got) > cap:
+                groups.append((part, part_nos))
+                part, part_nos, part_bytes = [], [], 0
+            part.append(got)
+            part_nos.append(no)
+            part_bytes += _nbytes(got)
+        if part:
+            groups.append((part, part_nos))
+        for g, g_nos in groups:
+            up = self._upload_parts(g, nos=g_nos)
+            if not up.get('ok') or len(up.get('urls') or []) != len(g):
+                if up.get('ok'):
+                    up = {**up, 'ok': False, 'reason': f"업로드 응답 장 수 불일치(보냄 {len(g)} · 받음 {len(up.get('urls') or [])})"}
+                return {**up, 'urls': out_urls + list(up.get('urls') or []), 'skipped': skipped}
+            out_urls.extend(up['urls'])
+        return {'ok': True, 'urls': out_urls, 'reason': '', 'skipped': skipped, 'requests': len(groups)}
 
-    def _upload_parts(self, cleaned) -> dict:
-        """받아 둔 이미지(`FetchedImage`) 목록 → 네이버 CDN 업로드 한 번. 반환 {ok, urls, reason} — urls는 **보낸 순서 그대로**."""
+    def _upload_parts(self, cleaned, nos=None) -> dict:
+        """받아 둔 이미지(`FetchedImage`) 목록 → 네이버 CDN 업로드 한 번. 반환 {ok, urls, reason} — urls는 **보낸 순서 그대로**.
+
+        `nos` = 그 장들의 번호(1부터 · 사유 문장용). 릴레이 413이면 **즉시** 끝낸다(재시도·대기 0) — 「사진 용량 초과 · 장 번호」."""
         token = self._get_access_token()
         if not token:
             # 원문이 범인을 지목한다(invalid_client·GW.IP_NOT_ALLOWED·서명 오류 등) — 그대로 올린다.
@@ -1037,6 +1064,13 @@ class NaverSmartStoreUploader(BaseUploader):
                             'reason': f'네이버 응답에 이미지 URL 없음: {str(data)[:200]}'}
                 logger.info('네이버 이미지 업로드 성공 %d장(%dB 전송)', len(out), payload_bytes)
                 return {'ok': True, 'urls': out, 'reason': ''}
+            except RelayTooLarge as exc:
+                nos = list(nos or range(1, len(cleaned) + 1))
+                each = ' · '.join(f'{no}번 {len(p.data):,}B' for no, p in zip(nos, cleaned))
+                logger.warning('이미지 업로드 413 — 장 %s · 전송 %dB: %s', nos, payload_bytes, exc)
+                return {'ok': False, 'urls': [], 'too_large': True, 'nos': nos,
+                        'reason': (f"사진 용량 초과 · {', '.join(f'{n}번' for n in nos)} — 릴레이가 한 번에 받는 크기를 넘었어요"
+                                   f"(한 번에 {payload_bytes:,}B: {each})")}
             except requests.exceptions.HTTPError as exc:
                 status = getattr(exc.response, 'status_code', None)
                 last = self._fail_detail('image_upload', att + 1, exc=exc, status=status,

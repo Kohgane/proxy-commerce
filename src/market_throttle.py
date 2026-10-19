@@ -100,6 +100,8 @@ def throttled_request(do_request, *, market: str, key: str = "", retries: int = 
             resp = do_request()
         except Exception as exc:   # noqa: BLE001 — 네트워크 오류도 재시도 대상
             last = exc
+            if getattr(exc, "no_retry", False):    # Y13-F F2: 릴레이 413 — 같은 몸통은 같은 답(재시도·대기 0)
+                raise
             if attempt < retries:
                 _stats[sk]["retries"] += 1
                 logger.warning("마켓 %s 재시도 %d/%d (예외: %s)", market, attempt + 1, retries, exc)
