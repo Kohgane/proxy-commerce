@@ -59,7 +59,7 @@ def cdn(monkeypatch):
                 return None
         return url
 
-    def parts(self, ps):
+    def parts(self, ps, nos=None):
         box["uploaded"] += list(ps)
         return {"ok": True, "reason": "", "urls": ["https://shop-phinf.pstatic.net/" + p.rsplit("/", 1)[-1] for p in ps]}
     monkeypatch.setattr(SS, "_fetch_image", fetch)

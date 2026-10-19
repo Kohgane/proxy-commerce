@@ -49,8 +49,9 @@ def test_cdn_map_fetches_one_at_a_time_and_uploads_in_small_chunks(monkeypatch):
     out = SS(account=None).cdn_map([f"https://img.alicdn.com/{i}.jpg" for i in range(7)])
     assert len(out["mapping"]) == 7 and not out["dropped"]
     assert live["max"] == 1                                                        # 한 장씩 받는다
-    assert all(b <= 4 * 1024 * 1024 + 16 for _n, b in held_at_upload)              # 묶음 상한(3MB) + 마지막 한 장
-    assert [n for n, _b in held_at_upload] == [2, 2, 2, 1]
+    # Y13-F F2(오너 2026-10-19 릴레이 413): 넣기 **전에** 잰다 — 묶음이 상한(3MB)을 넘지 않는다(예전엔 한 장만큼 넘겨 나갔다)
+    assert all(b <= 3 * 1024 * 1024 for _n, b in held_at_upload)
+    assert [n for n, _b in held_at_upload] == [1] * 7
 
 
 def test_big_original_is_shrunk_on_fetch_for_naver_only(monkeypatch):
