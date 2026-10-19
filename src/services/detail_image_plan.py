@@ -127,9 +127,16 @@ def entry_text(e: dict) -> str:
     t = " ".join(str(e.get(k) or "") for k in ("source_text", "target_text", "ocr_text"))
     try:                                          # Y11: 편집본에서 지운 상자 글자는 빼고(판촉·상표 판정이 편집본 기준)
         from src.services.image_translate_store import erased_out
-        return erased_out(e, t)
+        t = erased_out(e, t)
     except Exception:                             # noqa: BLE001
         return t
+    # Y13-D 2(운영 BLACKHOLES 옵션 사진 0번): 다듬기·사진 편집이 **그려 넣은 글자**도 사진에 있다 — 덮은 상자(erased)만 빼면
+    #   「INTERSTELLAR → 인터스텔라」처럼 다시 그린 상표가 검사에서 사라졌다. 지금 나가는 편집본의 글자 넣기(text) 값을 더한다.
+    ed = e.get("edit") if isinstance(e.get("edit"), dict) else None
+    if ed and e.get("use", True) and str(e.get("url") or "") == str(ed.get("url") or ""):
+        drawn = [str(o.get("text") or "") for o in ed.get("ops") or [] if isinstance(o, dict) and o.get("action") == "text"]
+        t = " ".join([t] + [d for d in drawn if d.strip()])
+    return t
 
 
 def photo_text(extra: dict) -> str:
