@@ -69,7 +69,8 @@ def test_collect_translation_keeps_brand_out_of_translator(monkeypatch):
     monkeypatch.setattr(T.AITranslator, "translate_product", fake)
     out = ext._translate_payload({"title": "懒小姐懒人沙发现货", "description": "", "brand": "懒小姐"})
     assert sent == ["懒人沙发"]                                                     # 브랜드·판촉어 뺀 원문
-    assert out["title_ko"] == "LANXIAOJIE 빈백 소파" and out["brand_romanized"]["latin"] == "LANXIAOJIE"
+    # Y13-F W1(오너 2026-10-19): 懒人沙发 = 1인용 소파(빈백은 豆袋·懒人豆袋만)
+    assert out["title_ko"] == "LANXIAOJIE 1인용 소파" and out["brand_romanized"]["latin"] == "LANXIAOJIE"
 
 
 def test_brand_badge_on_drawer_and_phone_card():
@@ -165,7 +166,7 @@ def test_daily_cap_counts_values_and_waits_until_kst_midnight(monkeypatch):
     assert s["today"] == 3 and s["cap"] == 3 and s["queued"] == 1 and s["waiting_cap"]
     assert calls["title"] == 1 and calls["values"] == 2                           # 상품명 1 + 값 2 = 3
     ex = _extra(iid)
-    assert ex["title_ko"] == "빈백 소파" and ex["options"][0]["values_ko"][:2] == ["번역0", "번역1"]
+    assert ex["title_ko"] == "1인용 소파" and ex["options"][0]["values_ko"][:2] == ["번역0", "번역1"]
     # 다음 날(KST) — 남은 3개가 간다
     from datetime import datetime, timedelta, timezone
     monkeypatch.setattr(oa, "_day_key", lambda now=None: "optko_auto:day:" +

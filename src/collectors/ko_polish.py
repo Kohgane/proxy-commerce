@@ -298,7 +298,7 @@ def polish_ko(text: str, *, hits: dict | None = None, src: str = "") -> str:
         s, n = re.subn(p, " ", s)
         if n and hits is not None:
             hits.setdefault("delete", []).append(f"가격문구×{n}")
-    # 번역기 직역 바로잡기(懒人沙发 → 「게으른 사람 소파」 → 빈백 소파) — 긴 것부터
+    # 번역기 직역 바로잡기(懒人沙发 → 「게으른 사람 소파」 → 1인용 소파 · Y13-F W1: 빈백은 豆袋·懒人豆袋만) — 긴 것부터
     _targets = set()
     for wrong, ko in sorted(r.get("replace_ko") or [], key=lambda x: len(x[0]), reverse=True):
         if wrong and wrong in s:
@@ -307,6 +307,11 @@ def polish_ko(text: str, *, hits: dict | None = None, src: str = "") -> str:
             if hits is not None:
                 hits.setdefault("replace", []).append(f"{wrong}→{ko}")
     # T2: 바로잡은 말이 한 제목에 두 번 생기면(「빈백 소파 … 빈백 소파 의자」) 첫 번째만 남긴다.
+    for ko in _targets:
+        # Y13-F W1: 바로잡은 말의 첫 낱말이 바로 앞 낱말과 같으면 하나로(「1인용 게으른 소파」 → 「1인용 1인용 소파」 → 「1인용 소파」)
+        _w0 = ko.split()[0] if ko and ko.split() else ""
+        if _w0 and re.search("[가-힣]", _w0):
+            s = re.sub(rf"(?<!\S){re.escape(_w0)}\s+{re.escape(_w0)}(?=[\s,]|$)", _w0, s)
     for ko in _targets:
         # 한글로 바로잡은 말만(영문 브랜드 「SPORTLINK(SPORTLINK)는」의 괄호 표기는 쿠팡명 규칙이 읽는다 — 건드리지 않음)
         if ko and re.search("[가-힣]", ko) and s.count(ko) > 1:

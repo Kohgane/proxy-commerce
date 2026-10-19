@@ -68,7 +68,8 @@ def test_title_polish_before_and_after_translation():
     # T3(오너 2026-10-02): Eames(임스)는 가구 레플리카 상표 — 상품명에서 지우고 등록은 「상표 위험」으로 보류.
     assert "재고 있음" not in out and out.endswith("1인 의자") and "임스" not in out and "Eames" not in out
     # T2(오너 2026-10-02): 「게으른 아가씨」도 빈백 소파로 — 같은 말이 두 번 생기면 하나만.
-    assert kp.polish_ko("게으른 아가씨 인기템, 게으른 사람들을 위한 소파") == "빈백 소파"
+    # Y13-F W1(오너 2026-10-19): 「게으른 사람들을 위한 소파」(懒人沙发 직역)는 1인용 소파 — 빈백은 豆袋·懒人豆袋만
+    assert kp.polish_ko("게으른 아가씨 인기템, 게으른 사람들을 위한 소파") == "빈백 소파, 1인용 소파"
     assert kp.polish_ko("수행 방패(SPORTLINK)는 애플 워치 충전 거치대").startswith("SPORTLINK")
 
 
