@@ -45,9 +45,9 @@ def test_relay_413_raises_too_large(monkeypatch):
     monkeypatch.setattr(R, "api_relay_url", lambda: "https://relay.example/mkt.php")
     monkeypatch.setattr(R, "_api_relay_key", lambda: "k")
     with patch.object(R.requests, "post", return_value=r):
-        with pytest.raises(RelayTooLarge) as ei:
+        with pytest.raises(R.RelayTooLarge) as ei:              # 모듈에서 집는다(다른 테스트가 market_relay를 reload하면 클래스가 둘)
             R._api_relay_send("POST", "https://api.commerce.naver.com/x", {}, None, b"abc", 10)
-    assert isinstance(ei.value, RelayError) and "413" in str(ei.value)
+    assert isinstance(ei.value, R.RelayError) and "413" in str(ei.value)
 
 
 def test_upload_parts_413_stops_at_once_with_photo_numbers():

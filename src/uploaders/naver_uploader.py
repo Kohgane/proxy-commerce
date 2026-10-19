@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 
-from src.market_relay import RelayError, RelayTooLarge, relay_request
+from src.market_relay import RelayError, relay_request
 
 from .base_uploader import BaseUploader
 
@@ -1067,13 +1067,6 @@ class NaverSmartStoreUploader(BaseUploader):
                             'reason': f'네이버 응답에 이미지 URL 없음: {str(data)[:200]}'}
                 logger.info('네이버 이미지 업로드 성공 %d장(%dB 전송)', len(out), payload_bytes)
                 return {'ok': True, 'urls': out, 'reason': ''}
-            except RelayTooLarge as exc:
-                nos = list(nos or range(1, len(cleaned) + 1))
-                each = ' · '.join(f'{no}번 {len(p.data):,}B' for no, p in zip(nos, cleaned))
-                logger.warning('이미지 업로드 413 — 장 %s · 전송 %dB: %s', nos, payload_bytes, exc)
-                return {'ok': False, 'urls': [], 'too_large': True, 'nos': nos,
-                        'reason': (f"사진 용량 초과 · {', '.join(f'{n}번' for n in nos)} — 릴레이가 한 번에 받는 크기를 넘었어요"
-                                   f"(한 번에 {payload_bytes:,}B: {each})")}
             except requests.exceptions.HTTPError as exc:
                 status = getattr(exc.response, 'status_code', None)
                 last = self._fail_detail('image_upload', att + 1, exc=exc, status=status,
@@ -1084,6 +1077,13 @@ class NaverSmartStoreUploader(BaseUploader):
                     break
                 time.sleep(3 * (att + 1))
             except Exception as exc:
+                if getattr(exc, 'no_retry', False):              # Y13-F F2: 릴레이 413(`RelayTooLarge`) — 같은 몸통은 같은 답
+                    nos = list(nos or range(1, len(cleaned) + 1))
+                    each = ' · '.join(f'{no}번 {len(p.data):,}B' for no, p in zip(nos, cleaned))
+                    logger.warning('이미지 업로드 413 — 장 %s · 전송 %dB: %s', nos, payload_bytes, exc)
+                    return {'ok': False, 'urls': [], 'too_large': True, 'nos': nos,
+                            'reason': (f"사진 용량 초과 · {', '.join(f'{n}번' for n in nos)} — 릴레이가 한 번에 받는 크기를 넘었어요"
+                                       f"(한 번에 {payload_bytes:,}B: {each})")}
                 last = self._fail_detail('image_upload', att + 1, exc=exc)
                 logger.warning('이미지 업로드 실패 — %s', last)
                 time.sleep(3 * (att + 1))
