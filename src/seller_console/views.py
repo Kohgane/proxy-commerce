@@ -5031,7 +5031,36 @@ def _pv_needs_auto_text(product_data: dict, markets: list) -> bool:
     if render_detail_blocks_html(product_data.get("detail_blocks"), "smartstore") or _nd._text_of(product_data):
         return False
     a = _nd.auto_of(product_data)
-    return not a or int(a.get("v") or 1) < DRAFT_VERSION
+    return not a or int(a.get("v") or 1) < DRAFT_VERSION or _pv_stub_rebuild(a)
+
+
+#: Y13-F F4 — 기본 문장(stub) 초안을 다시 만들기 전 기다릴 시간(AI가 실제로 시도했다가 실패한 경우만 · 호출 폭주 방지).
+_PV_STUB_RETRY_HOURS = 6
+
+
+def _pv_stub_rebuild(a: dict) -> bool:
+    """Y13-F F4(오너 2026-10-19 BLACKHOLES 셰고가·고코스모스 「AI 초안 대신 기본 문장 — OpenAI 크레딧 없음」):
+    저장된 초안이 **기본 문장**(provider stub)인데 지금은 AI(Anthropic 우선 · OpenAI 다음)가 준비돼 있으면 다시 만든다.
+
+    실측: 그 초안은 10-10(Y8 Anthropic 우선 전) OpenAI 단독 시절에 만들어졌고, 형식 버전은 최신이라 다시 만들지 않았다.
+    Anthropic을 이미 시도했다가 실패한 기본 문장이면 `_PV_STUB_RETRY_HOURS`가 지난 뒤에만(사전검증마다 호출하지 않는다)."""
+    if str(a.get("provider") or "stub") != "stub":
+        return False
+    try:
+        from src.ai import llm as _llm
+        from src.utils.env import env_present
+        anth = bool(_llm.anthropic_ready())
+        if not (anth or env_present("OPENAI_API_KEY")):
+            return False
+    except Exception:                                            # noqa: BLE001
+        return False
+    if anth and not str(a.get("draft_code_anthropic") or "").strip() and a.get("draft_status") != "anthropic_error":
+        return True                                              # Anthropic 시도 없이 만든 기본 문장(Y8 전) — 지금은 Anthropic이 있다
+    try:
+        at = datetime.fromisoformat(str(a.get("at") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return (datetime.now(timezone.utc) - at).total_seconds() >= _PV_STUB_RETRY_HOURS * 3600
 
 
 def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = False) -> tuple:
