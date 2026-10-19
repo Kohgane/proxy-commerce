@@ -663,8 +663,13 @@ def _risk_erased(e: dict) -> list:
     return []
 
 
-def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = "", pixels: str = "") -> dict:
-    """`action` = strip(빼고 등록) · allow(그래도 등록, 차단 등급엔 없음) · skip(등록 안 함) · reset(결정 지우기). 결과 `{ok, error?, hit}`."""
+def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = "", pixels: str = "restore") -> dict:
+    """`action` = strip(빼고 등록) · allow(그래도 등록, 차단 등급엔 없음) · skip(등록 안 함) · reset(결정 지우기). 결과 `{ok, error?, hit}`.
+
+    Y13-F(Y13-E 이월 1, 오너 2026-10-19): 「빼고 등록」 버튼 기본 = `pixels="restore"` — 음차 상자는 원본 픽셀로 되살리고, 원문에
+    그 상표가 남는 장은 사진째 뺀다(BLACKHOLES 결정과 같은 길). 옛 「그 낱말 상자만 지우기」(Y11-J6)는 `pixels="erase"`."""
+    if pixels == "erase":
+        pixels = ""
     ex = extra
     now = datetime.now(timezone.utc).isoformat()
     if action == "skip":

@@ -136,14 +136,19 @@ def test_restore_mode_restores_transliteration_only_boxes():
     assert not e.get("risk_exclude") and e["risk_erase"]["how"] == "restore" and e["risk_erase"]["erased"] == ["인터스텔라"]
 
 
-def test_default_button_still_erases_y11j6_unchanged(monkeypatch):
-    """화면 「빼고 등록」 기본값(Y11-J6 지우기)은 그대로 — 복원은 오너가 고른 이번 결정에만."""
+def test_default_button_now_restores_like_the_owner_decision(monkeypatch):
+    """Y13-F(Y13-E 이월 1, 오너 2026-10-19): 화면 「빼고 등록」 기본값도 복원(음차 상자 원본 픽셀 · 상표가 남으면 그 장 뺌).
+    예전 기본(Y11-J6 상자 지우기)은 `pixels="erase"`로만."""
     from src.services import risk_gate as R
-    seen = []
-    monkeypatch.setattr(R, "_erase_hit", lambda ex, kind, idx, names, case: seen.append((kind, idx)) or {"ok": False, "why": "x"})
+    erased, restored = [], []
+    monkeypatch.setattr(R, "_erase_hit", lambda ex, kind, idx, names, case: erased.append((kind, idx)) or {"ok": False, "why": "x"})
+    monkeypatch.setattr(R, "_restore_or_exclude", lambda ex, kind, e, names, case, label: restored.append((kind, int(e["idx"]))))
     ex = _bh()
     R.decide(ex, _hit(ex)["key"], "strip", by="owner")
-    assert ("gallery", 0) in seen and ("sku", 0) in seen
+    assert erased == [] and ("gallery", 0) in restored and ("sku", 0) in restored
+    ex = _bh()
+    R.decide(ex, _hit(ex)["key"], "strip", by="owner", pixels="erase")
+    assert ("gallery", 0) in erased
 
 
 def test_pick_rep_rule():

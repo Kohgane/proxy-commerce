@@ -188,7 +188,8 @@ def test_strip_erases_only_matching_boxes(monkeypatch):
                                        {"id": "t1", "src": "休闲椅", "tgt": "라운지 의자"}])
     ex = _ex_with_eames()
     h = next(x for x in R.scan(ex)["hits"] if x["label"] == "임스")
-    assert R.decide(ex, h["key"], "strip", by="owner")["ok"]
+    # Y13-F(Y13-E 이월 1): 버튼 기본은 복원 — 상자 지우기(Y11-J6)는 명시 `pixels="erase"`일 때만
+    assert R.decide(ex, h["key"], "strip", by="owner", pixels="erase")["ok"]
     e = ex["images_ko"][0]
     assert applied == [("gallery", 0, ["t0"], "risk")]           # 낱말 든 상자만 · 편집 주체 risk
     assert not e.get("risk_exclude") and e["risk_erase"]["edit"] == 1
