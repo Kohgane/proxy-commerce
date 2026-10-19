@@ -147,10 +147,10 @@ def carry_add(item_id: str, market: str, uid: str, parsed: Optional[Dict] = None
     now = datetime.now(timezone.utc)
     hit = next((r for r in rows if r.get("item_id") == item_id and r.get("market") == market), None)
     if hit:
-        hit.update(day=today(now), at=now.isoformat(), quota=parsed or hit.get("quota"))
+        hit.update(day=today(now), at=now.isoformat(), quota=parsed or hit.get("quota"), state="queued")
     else:
         rows.append({"item_id": str(item_id), "market": str(market), "uid": str(uid or ""), "day": today(now),
-                     "at": now.isoformat(), "tries": 0, "quota": parsed or {}})
+                     "at": now.isoformat(), "tries": 0, "quota": parsed or {}, "state": "queued"})
     st.state_set(CARRY_KEY, dict(cur, rows=rows))
     return hit is None
 
@@ -162,11 +162,15 @@ def carry_due(now: Optional[datetime] = None) -> List[Dict]:
     if (k.hour, k.minute) < CARRY_AFTER:
         return []
     d = k.strftime("%Y-%m-%d")
-    return [r for r in carry_rows() if str(r.get("day") or "") < d]
+    return [r for r in carry_rows() if r.get("state", "queued") == "queued" and str(r.get("day") or "") < d]
 
 
 def carry_done(item_id: str, market: str, result: Dict) -> None:
-    """한 줄 처리 결과 — 성공·다른 사유면 빼고(결과는 `last`에), 또 한도면 오늘 날짜로 다시 남긴다."""
+    """성공만 제거한다. 한도는 다음 날로, 그 밖의 실패·응답 유실은 확인 대기로 보존한다.
+
+    응답 유실 뒤 재전송하면 중복 상품이 생길 수 있다. 확인 대기는 자동으로 다시 보내지 않으며,
+    원인 해결 후 명시적인 등록 요청이 다시 한도에 걸렸을 때 carry_add가 다시 줄에 세운다.
+    """
     st = _st()
     cur = st.state_get(CARRY_KEY) or {}
     rows = [r for r in cur.get("rows") or [] if isinstance(r, dict)]
@@ -176,6 +180,10 @@ def carry_done(item_id: str, market: str, result: Dict) -> None:
             r = dict(r, tries=int(r.get("tries") or 0) + 1, last=result, last_at=datetime.now(timezone.utc).isoformat())
             if result.get("error_code") == CODE:
                 r["day"] = today()
+                r["state"] = "queued"
+                keep.append(r)
+            elif not result.get("success"):
+                r["state"] = "needs_review"
                 keep.append(r)
             continue
         keep.append(r)

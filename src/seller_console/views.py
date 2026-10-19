@@ -3113,16 +3113,20 @@ def collect_upload():
 
 def _carry_option_quota(item_id, result_dict) -> None:
     """Y13-F F1 — 쿠팡 일일 옵션 한도로 거부된 마켓은 이월 줄에 넣는다(KST 00:10 이후 같은 등록을 다시 보낸다)."""
-    if not item_id:
-        return
-    try:
-        from src.services import coupang_option_quota as _coq
-        for r in (result_dict or {}).get("results") or []:
-            if isinstance(r, dict) and r.get("error_code") == _coq.CODE:
+    from src.services import coupang_option_quota as _coq
+    for r in (result_dict or {}).get("results") or []:
+        if isinstance(r, dict) and r.get("error_code") == _coq.CODE:
+            r.pop("carry", None)
+            r["message"] = "쿠팡 일일 옵션 한도 — 오늘은 등록할 수 없어요"
+            try:
+                if not item_id:
+                    raise ValueError("이월할 상품 기록이 없음")
                 _coq.carry_add(str(item_id), str(r.get("market") or ""), _seller_id())
                 r["carry"] = "내일 KST 00:10 이후 자동 재시도 줄에 넣었어요"
-    except Exception as exc:                                     # noqa: BLE001 — 이월 실패가 결과 응답을 막지 않는다
-        logger.warning("[쿠팡 옵션 한도] 이월 기록 실패 item=%s: %s", item_id, exc)
+                r["message"] = "쿠팡 일일 옵션 한도 — 내일 자동 재시도(KST 00:10 이후)"
+            except Exception as exc:                             # noqa: BLE001 — 다른 마켓 결과는 그대로 돌려준다
+                r["hint"] = "자동 재시도 대기를 저장하지 못했어요. 다음 날 등록 상태를 확인한 뒤 다시 등록해 주세요."
+                logger.warning("[쿠팡 옵션 한도] 이월 기록 실패 item=%s: %s", item_id, exc)
 
 
 def _already_registered(item, markets) -> list:

@@ -195,9 +195,14 @@ def register(item_id: str, markets: List[str]) -> Dict:
     r, code = (resp if isinstance(resp, tuple) else (resp, 200))
     js = r.get_json() or {}
     rows = [{k: x.get(k) for k in ("market", "success", "message", "error_code", "external_product_id", "channel_product_no")}
-            for x in ((js.get("result") or {}).get("results") or [])]
-    return {"ok": bool(js.get("ok")) and all(x.get("success") for x in rows), "status": code, "markets": mk, "rows": rows,
-            "why": "" if js.get("ok") else str(js.get("error") or "")[:300]}
+            for x in ((js.get("result") or {}).get("results") or []) if isinstance(x, dict)]
+    # 빈 배열의 all()은 True다. 요청한 마켓마다 정확히 한 응답이 있어야 성공이라고 말한다.
+    complete = len(rows) == len(mk) and sorted(str(x.get("market") or "") for x in rows) == sorted(mk)
+    ok = bool(js.get("ok")) and complete and all(x.get("success") is True for x in rows)
+    why = str(js.get("error") or "")[:300]
+    if not complete and not why:
+        why = "등록 결과가 빠져 있어 완료를 확인하지 못했어요"
+    return {"ok": ok, "status": code, "markets": mk, "rows": rows, "why": why}
 
 
 def carry_drain(now=None) -> Dict:
@@ -211,8 +216,10 @@ def carry_drain(now=None) -> Dict:
         except Exception as exc:                                 # noqa: BLE001
             res = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}", "rows": []}
         row = next((x for x in res.get("rows") or [] if x.get("market") == r["market"]), {})
-        Q.carry_done(r["item_id"], r["market"], {"success": bool(row.get("success")), "error_code": row.get("error_code") or "",
-                                                 "message": row.get("message") or res.get("why") or ""})
+        Q.carry_done(r["item_id"], r["market"], {
+            "success": bool(res.get("ok")) and row.get("success") is True,
+            "error_code": row.get("error_code") or ("" if res.get("ok") else "carry_unconfirmed"),
+            "message": row.get("message") or res.get("why") or "등록 결과를 확인하지 못했어요"})
         out.append({"item_id": r["item_id"], "market": r["market"], "result": res})
         logger.info("[쿠팡 옵션 이월] item=%s market=%s ok=%s why=%s", r["item_id"][:8], r["market"], res.get("ok"),
                     str(res.get("why") or row.get("message") or "")[:120])
