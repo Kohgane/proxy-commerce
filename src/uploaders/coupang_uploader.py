@@ -379,8 +379,9 @@ class CoupangUploader(BaseUploader):
                 self._log_attr_block(product.get('sku', ''), payload,
                                      outcome='fail', detail=str(result['error']))
                 from src.uploaders.coupang_options import error_lines
-                return {'success': False, 'error': result['error'], 'sku': product.get('sku', ''),
-                        'error_lines': error_lines(result.get('error_body') or ''), 'detail_image': img_check}
+                out = {'success': False, 'error': result['error'], 'sku': product.get('sku', ''),
+                       'error_lines': error_lines(result.get('error_body') or ''), 'detail_image': img_check}
+                return self._quota_tag(out, result.get('error_body') or result['error'])
             # 쿠팡 응답의 data는 sellerProductId(숫자) 또는 {"sellerProductId": ...} 또는 null일 수 있다.
             data = result.get('data')
             if isinstance(data, dict):
@@ -396,8 +397,8 @@ class CoupangUploader(BaseUploader):
                 self._log_attr_block(product.get('sku', ''), payload, outcome='fail',
                                      detail=f'code={code} message={msg}')
                 from src.uploaders.coupang_options import error_lines
-                return {'success': False, 'error': f'쿠팡 등록 거부: {msg}', 'sku': product.get('sku', ''),
-                        'error_lines': error_lines(result)}
+                return self._quota_tag({'success': False, 'error': f'쿠팡 등록 거부: {msg}', 'sku': product.get('sku', ''),
+                                        'error_lines': error_lines(result)}, msg)
             # 성공분도 남긴다 — 다음 실패의 **대조 정본**(통과한 attributes가 어떤 모양이었나).
             self._log_attr_block(product.get('sku', ''), payload, outcome='ok',
                                  detail=f'sellerProductId={product_id}')
@@ -730,12 +731,14 @@ class CoupangUploader(BaseUploader):
         # M8: 쿠팡이 **답을 했는지**(HTTP 상태·본문 원문)를 같이 돌려준다 — 거부(4xx)는 마켓의 답, 응답 없음은 우리 쪽 장애
         status = (getattr(self, 'last_sign', None) or {}).get('status')
         if not isinstance(res, dict) or 'error' in res:
-            return {'success': False, 'error': (res or {}).get('error') if isinstance(res, dict) else '응답 없음',
-                    'market_status': status, 'body': (res or {}).get('error_body', '') if isinstance(res, dict) else '', **extra}
+            out = {'success': False, 'error': (res or {}).get('error') if isinstance(res, dict) else '응답 없음',
+                   'market_status': status, 'body': (res or {}).get('error_body', '') if isinstance(res, dict) else '', **extra}
+            return self._quota_tag(out, out['body'] or out['error'])
         code = str(res.get('code') or '').upper()
         if code and code not in ('SUCCESS', '200', 'OK'):
-            return {'success': False, 'error': f"쿠팡 수정 거부: {res.get('message') or code}",
-                    'market_status': status, 'body': json.dumps(res, ensure_ascii=False)[:8000], **extra}
+            return self._quota_tag({'success': False, 'error': f"쿠팡 수정 거부: {res.get('message') or code}",
+                                    'market_status': status, 'body': json.dumps(res, ensure_ascii=False)[:8000], **extra},
+                                   res.get('message') or '')
         return {'success': True, 'market_status': status, 'body': json.dumps(res, ensure_ascii=False)[:2000], **extra}
 
     def request_approval(self, seller_product_id: str) -> dict:
@@ -1127,6 +1130,14 @@ class CoupangUploader(BaseUploader):
                                  + ' — 한국어로 옮긴 뒤 등록합니다(원문을 대신 보내지 않음)')
             except Exception as exc:                  # 계측이 사전검증을 죽이지 않게(몸통 조립 실패는 등록에서 다시 드러난다)
                 logger.warning('[precheck] 전송 칸 언어 검사 실패: %s', exc)
+        # Y13-F F1: 오늘 이 판매자 계정의 구매옵션 사용(브릿지분) — 한도는 계정 공용(브릿지 밖 요청도 같이 센다).
+        try:
+            from src.services import coupang_option_quota as _coq
+            _n = len(out.get('items_plan') or []) or 1
+            out['option_quota'] = _coq.usage(str(self.vendor_id or ''))
+            notes.append(_coq.caution(str(self.vendor_id or ''), _n))
+        except Exception as exc:                      # 안내 한 줄이라 검증을 막지 않는다
+            logger.warning('[precheck] 쿠팡 옵션 사용 줄 실패: %s', exc)
         out['ok'] = not holds
         return out
 
@@ -1825,6 +1836,29 @@ class CoupangUploader(BaseUploader):
         except Exception:
             return ''
 
+    def _quota_tag(self, out: dict, text) -> dict:
+        """Y13-F F1 — 「오늘 등록할 수 있는 구매옵션 개수(5000) 초과」면 사유 코드를 달고 쿠팡이 알려 준 수를 남긴다."""
+        from src.services import coupang_option_quota as oq
+        parsed = oq.parse(text) or oq.parse(out.get('error'))
+        if parsed:
+            oq.observe(parsed.get('vendor') or str(self.vendor_id or ''), parsed)
+            out.update(reason_code=oq.CODE, quota=parsed)
+        return out
+
+    def _count_options(self, method: str, path: str, data, status: int, text: str = '') -> None:
+        """Y13-F F1 — 브릿지가 쿠팡에 보낸 구매옵션(items) 수(등록 POST · 수정 PUT · 상세 갱신 큐). 한도 거부 응답은 안 센다."""
+        m = method.upper()
+        if m not in ('POST', 'PUT') or not path.rstrip('/').endswith('/marketplace/seller-products'):
+            return
+        items = (data or {}).get('items') if isinstance(data, dict) else None
+        if not isinstance(items, list) or not items:
+            return
+        from src.services import coupang_option_quota as oq
+        if oq.parse(text):
+            return
+        kind = 'post' if m == 'POST' else (getattr(self, 'count_kind', '') or 'put')
+        oq.count(str(self.vendor_id or ''), len(items), kind)
+
     def _api_request(self, method: str, path: str, data: dict = None) -> dict:
         """Coupang Wing API에 요청을 전송한다.
 
@@ -1881,6 +1915,11 @@ class CoupangUploader(BaseUploader):
                 resp = relay_request(method, url, headers=headers, timeout=30,
                                      market="coupang", key=str(self.vendor_id or ""), **_kw)
                 self.last_sign['status'] = resp.status_code
+                if resp.status_code < 500 and resp.status_code not in (401, 429):
+                    try:
+                        self._count_options(method, path, data, resp.status_code, self._resp_body(resp, limit=4000))
+                    except Exception as exc:                     # noqa: BLE001 — 세는 일은 전송을 막지 않는다
+                        logger.warning('쿠팡 옵션 수 기록 실패: %s', exc)
                 if resp.status_code == 429:
                     last = self._fail_detail(stage, attempt + 1, status=429,
                                              body=self._resp_body(resp))

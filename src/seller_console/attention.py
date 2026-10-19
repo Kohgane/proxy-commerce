@@ -150,10 +150,22 @@ _KIND_OF = {"images_ko": "gallery", "detail_images_ko": "detail", "sku_images_ko
 _KIND_WORD = {"gallery": "대표·추가", "detail": "상세", "sku": "옵션 사진"}
 
 
-def _suggested(pl: dict) -> List[str]:
-    """다듬기 기록에서 AI가 「지우기 제안」한 상자의 글자(텐센트 글자 · 빈 글자는 뺀다)."""
-    return [str(r.get("tgt") or "") for r in pl.get("rows") or []
-            if isinstance(r, dict) and r.get("suggest_erase") and str(r.get("tgt") or "").strip()]
+def _suggested(pl: dict, e: Optional[dict] = None) -> List[str]:
+    """다듬기 기록에서 AI가 「지우기 제안」한 상자의 글자(텐센트 글자 · 빈 글자는 뺀다).
+    Y13-F U2: 기호·밑줄뿐인 상자와 작은 소품 글자 상자는 뺀다(이미 적힌 옛 제안도 — `image_polish.junk_suggestion`)."""
+    from src.services.image_polish import junk_suggestion
+    boxes = (e or {}).get("boxes") if isinstance((e or {}).get("boxes"), list) else []
+    size = (e or {}).get("box_size")
+    out = []
+    for r in pl.get("rows") or []:
+        if not (isinstance(r, dict) and r.get("suggest_erase") and str(r.get("tgt") or "").strip()):
+            continue
+        rid = str(r.get("id") or "")
+        box = boxes[int(rid[1:])] if rid[:1] == "t" and rid[1:].isdigit() and int(rid[1:]) < len(boxes) else None
+        if junk_suggestion(r, box, size):
+            continue
+        out.append(str(r.get("tgt") or ""))
+    return out
 
 
 def _rep_texts(extra: dict, e: dict) -> List[str]:
@@ -213,6 +225,21 @@ def rep_auto_line(extra: dict) -> str:
             "「사진 편집」으로 지우면 대표로 돌아오고, 「넘김」이면 지금 대표(2번째) 그대로")
 
 
+def _junk_flags(pl: dict, e: dict) -> List[bool]:
+    """제안 상자마다 쓰레기인가 — 상자가 하나도 없으면 [False](옛 기록: 장 수만 남은 제안은 그대로 둔다)."""
+    from src.services.image_polish import junk_suggestion
+    boxes = e.get("boxes") if isinstance(e.get("boxes"), list) else []
+    rows = [r for r in pl.get("rows") or [] if isinstance(r, dict) and r.get("suggest_erase")]
+    if not rows:
+        return [False]
+    out = []
+    for r in rows:
+        rid = str(r.get("id") or "")
+        box = boxes[int(rid[1:])] if rid[:1] == "t" and rid[1:].isdigit() and int(rid[1:]) < len(boxes) else None
+        out.append(bool(junk_suggestion(r, box, e.get("box_size"))))
+    return out
+
+
 def erase_photos(extra: dict) -> List[Dict]:
     """Y12-B(오너 2026-10-17) — 지우기 제안이 있는 **나가는** 사진 `[{kind, idx, word, texts, state, url}]`.
 
@@ -225,7 +252,9 @@ def erase_photos(extra: dict) -> List[Dict]:
             pl = e.get("polish") if isinstance(e, dict) else None
             if not (isinstance(pl, dict) and int(pl.get("suggest_erase") or 0) > 0 and pl.get("outbound", True)):
                 continue
-            texts = _suggested(pl)
+            texts = _suggested(pl, e)
+            if not texts and all(junk for junk in _junk_flags(pl, e)):
+                continue                                         # Y13-F U2: 제안이 전부 쓰레기 상자 — 줄을 만들지 않는다
             sk = e.get("erase_skip") if isinstance(e.get("erase_skip"), dict) else {}
             if not texts:
                 # 상자 줄 없이 장 수만 남은 기록 — 글자로 못 맞추니 그 다듬기 실행(`polish.at`)째로 넘김을 맞춘다
@@ -263,7 +292,7 @@ def skip_erase(extra: dict, kind: str, idx: int, by: str = "owner") -> bool:
         if not (isinstance(e, dict) and int(e.get("idx", -1)) == int(idx)):
             continue
         pl = e.get("polish") if isinstance(e.get("polish"), dict) else {}
-        texts = _suggested(pl)
+        texts = _suggested(pl, e)
         if not (texts or int(pl.get("suggest_erase") or 0) > 0):
             rep = rep_auto_dropped(extra) if kind == "gallery" and int(idx) == 0 else None
             if not rep:

@@ -217,6 +217,16 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                     result["naver_detail_kick"] = bool(_started)
             except Exception as exc:               # noqa: BLE001 — 네이버 큐 깨우기 실패가 번역 틱을 막지 않는다
                 logger.warning("네이버 본문 갱신 큐 깨우기 실패(틱은 계속): %s", exc)
+            # Y13-F F1: 쿠팡 일일 옵션 한도 이월 — KST 00:10 이후에만 줄이 나온다(같은 등록 입구로 한 줄씩).
+            try:
+                from src.services import coupang_option_quota as _coq
+                if _coq.carry_due():
+                    from src.services import oneshot_ops as _one
+                    from src.utils import bg_job as _bg
+                    _started, _st = _bg.start("coupang-option-carry", _one.carry_drain)
+                    result["option_carry_kick"] = bool(_started)
+            except Exception as exc:               # noqa: BLE001 — 이월 깨우기 실패가 번역 틱을 막지 않는다
+                logger.warning("쿠팡 옵션 이월 깨우기 실패(틱은 계속): %s", exc)
             # Y11X(오너 2026-10-17): 한 장짜리 일회성 작업(이 장만 다시 다듬기 · 이 장만 OCR 다시 판정) — 줄이 있을 때만.
             try:
                 from src.services import oneshot_ops as _one

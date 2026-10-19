@@ -3103,11 +3103,26 @@ def collect_upload():
         rd = result.to_dict()
         # v44-1: 서버가 성공 확인한 마켓만 항목에 영속 저장 → 목록에 '등록됨' 뱃지 영구 표시(가짜 성공 0).
         _persist_upload_status(data.get("item_id"), rd)
+        _carry_option_quota(data.get("item_id"), rd)
         return jsonify({"ok": True, "result": rd})
     except Exception as exc:
         # v11 P0: 가짜 일반 실패 금지 — 실제 사유를 패스스루로 노출.
         logger.warning("업로드 디스패처 오류: %s", exc)
         return jsonify({"ok": False, "error": f"업로드 중 오류: {exc}"}), 500
+
+
+def _carry_option_quota(item_id, result_dict) -> None:
+    """Y13-F F1 — 쿠팡 일일 옵션 한도로 거부된 마켓은 이월 줄에 넣는다(KST 00:10 이후 같은 등록을 다시 보낸다)."""
+    if not item_id:
+        return
+    try:
+        from src.services import coupang_option_quota as _coq
+        for r in (result_dict or {}).get("results") or []:
+            if isinstance(r, dict) and r.get("error_code") == _coq.CODE:
+                _coq.carry_add(str(item_id), str(r.get("market") or ""), _seller_id())
+                r["carry"] = "내일 KST 00:10 이후 자동 재시도 줄에 넣었어요"
+    except Exception as exc:                                     # noqa: BLE001 — 이월 실패가 결과 응답을 막지 않는다
+        logger.warning("[쿠팡 옵션 한도] 이월 기록 실패 item=%s: %s", item_id, exc)
 
 
 def _already_registered(item, markets) -> list:
@@ -5851,8 +5866,9 @@ def collect_erase_suggest_skip(item_id: str):
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
     left = sum(1 for p in erase_photos(ex) if p["state"] == "pending")
+    total = sum(1 for p in erase_photos(ex) if p["state"] == "skipped")
     logger.info("[지우기 제안] 넘김 item=%s %s장 · 남은 제안 %s장", item_id, len(done), left)
-    return jsonify({"ok": True, "skipped": len(done), "left": left,
+    return jsonify({"ok": True, "skipped": len(done), "left": left, "skipped_total": total,
                     "message": f"{len(done)}장 넘겼어요" + (f" — 남은 제안 {left}장" if left else " — 남은 제안 없음")})
 
 
