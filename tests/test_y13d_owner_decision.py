@@ -174,3 +174,47 @@ def test_owner_decision_op_applies_both_and_starts_precheck(monkeypatch):
     assert ex["risk_decisions"]["tm:인터스텔라"]["action"] == "strip"
     from src.services import image_translate_store as its
     assert its.effective_images(ex, originals=ex["images"])[0] == IMGS[1]
+
+
+def _polished_sku0(ex):
+    """운영 10-19 01:20 그대로: 옵션 사진 0번의 지금 버전 = 다듬은 편집본(edit:1). 덮은 상자 목록(erased)에 INTERSTELLAR·인터스텔러가
+    있고, 그 자리에 다듬기가 「인터스텔라」를 다시 그렸다(ops text) — 예전 검사는 erased만 빼고 그린 글자는 안 봐서 놓쳤다."""
+    k0 = ex["sku_images_ko"][0]
+    ed = {"n": 1, "by": "polish", "url": "https://res.cloudinary.com/x/edit/k0e1.jpg", "base_key": "translated",
+          "ops": [{"id": "t1", "text": "인터스텔라", "action": "text"}, {"id": "t2", "text": "크리스토퍼 놀란 영화", "action": "text"},
+                  {"id": "t3", "text": "인터스텔라", "action": "text"}],
+          "erased": ["INTERSTELLAR", "인터스텔러", "A CHRISTOPHER NOLAN FILM", "크리스토퍼 노란 영화", "INTERSTELLAR", "인터스텔라럴"]}
+    k0.update(edit=ed, edits=[ed], url=ed["url"], current="edit:1",
+              vboxes={"edit:1": {"img": ed["url"], "size": [2560, 2560], "source": "polish",
+                                 "boxes": [dict(b, tgt=("인터스텔라" if b["src"] == "INTERSTELLAR" else b["tgt"])) for b in k0["boxes"]]}})
+    return ex
+
+
+def test_polished_option_photo_with_redrawn_mark_is_caught_and_dropped():
+    from src.services import risk_gate as R
+    from src.services.detail_image_plan import entry_text
+    ex = _polished_sku0(_bh())
+    assert "인터스텔라" in entry_text(ex["sku_images_ko"][0])                       # 그려 넣은 글자도 사진 글자
+    h = _hit(ex)
+    assert ("sku", 0) in {(i["kind"], int(i["idx"])) for i in h["images"]}
+    R.decide(ex, h["key"], "strip", by="owner", pixels="restore")
+    assert "원문 글자에 상표가 그대로" in ex["sku_images_ko"][0]["risk_exclude"]
+    assert not any(x["label"] == "인터스텔라" for x in R.scan(ex)["hits"])
+
+
+def test_owner_decision_rerun_after_earlier_strip_catches_the_option_photo(monkeypatch):
+    """운영처럼 앞 실행이 갤러리 0번만 뺐고 결정(strip)이 이미 있다 — 다시 돌리면 옵션 사진도 뺀다(대표는 건드리지 않음)."""
+    from src.services import oneshot_ops as OO
+    from src.services import risk_gate as R
+    ex = _polished_sku0(_bh())
+    ex["rep_image"] = IMGS[2]
+    h0 = _hit(ex)
+    R.strip_extra(ex, dict(h0, images=[i for i in h0["images"] if i["kind"] == "gallery"]), pixels="restore")
+    ex["risk_decisions"] = {h0["key"]: {"action": "strip", "label": h0["label"], "names": h0["names"], "cat": h0["cat"]}}
+    iid = S.append(source="share", url="https://item.taobao.com/item.htm?id=1", seller_id="u-bh", title="블랙홀 벽등",
+                   price="69.9", currency="CNY", extra=ex)
+    monkeypatch.setattr(OO, "_prevalidate", lambda item_id, markets: {"ok": True, "job_id": "j2", "markets": markets})
+    out = OO._run({"op": "owner_decision", "item_id": iid, "strip": ["인터스텔라"], "pixels": "restore"})
+    assert out["ok"] and "rep" not in out and out["strip"][0]["ok"]
+    got = json.loads(S.get(iid, seller_ids={"u-bh"})["extra_json"])
+    assert got["rep_image"] == IMGS[2] and got["sku_images_ko"][0]["risk_exclude"] and got["images_ko"][0]["risk_exclude"]
