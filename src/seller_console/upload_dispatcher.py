@@ -1904,6 +1904,13 @@ class UploadDispatcher:
                                            message=f"판매가를 정하지 못해 등록하지 않습니다 — {_why}",
                                            hint="원가·통화·환율을 확인하세요.")
 
+        # Y13-F F3: 11번가 판매방식 코드 — 「도달 398ms」만 보고 통과시킨 뒤 등록에서 500이 났다. 거부 확인된 값이면 보류.
+        if market == "elevenst":
+            from src.uploaders.elevenst_uploader import sell_method_hold as _smh
+            _h = _smh()
+            if _h:
+                return PrevalidationResult(market=market, ok=False, error_code="elevenst_sell_method", message=_h,
+                                           hint="판매방식 코드를 11번가가 받는 값으로 바꾼 뒤 다시 검증하세요.")
         # F35-2: **등록 직전에 한 번** 두드려 본다 — 「키가 있다」를 「닿는다」로 읽지 않는다.
         if market in ("woocommerce", "elevenst", "shopify"):
             reach = market_reach(market)
