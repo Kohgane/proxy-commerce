@@ -3116,6 +3116,7 @@ def collect_upload():
         # v44-1: 서버가 성공 확인한 마켓만 항목에 영속 저장 → 목록에 '등록됨' 뱃지 영구 표시(가짜 성공 0).
         _persist_upload_status(data.get("item_id"), rd)
         _carry_option_quota(data.get("item_id"), rd)
+        _queue_register_report(data.get("item_id"), rd)
         return jsonify({"ok": True, "result": rd})
     except Exception as exc:
         # v11 P0: 가짜 일반 실패 금지 — 실제 사유를 패스스루로 노출.
@@ -3157,6 +3158,19 @@ def _already_registered(item, markets) -> list:
             out.append({"market": r["market"], "chip": r["chip"], "shown_no": r.get("shown_no") or r.get("product_id") or "",
                         "date": str(r.get("at") or "")[:10]})
     return out
+
+
+def _queue_register_report(item_id, result_dict) -> None:
+    """Y14-g(오너 10-20 「등록 버튼 뒤 즉시 등록 뒤 표」) — 등록에 성공한 마켓이 있으면 다음 틱(10분)에 등록 뒤 표(읽기만) 줄을 건다.
+    기록 실패가 등록을 막지 않는다."""
+    try:
+        ok = sorted({str(r.get("market")) for r in (result_dict or {}).get("results") or []
+                     if isinstance(r, dict) and r.get("success") and r.get("market")})
+        if item_id and ok:
+            from src.services import oneshot_ops as _oo
+            _oo.enqueue({"op": "register_report", "item_id": str(item_id), "markets": ok})
+    except Exception as exc:                                       # noqa: BLE001
+        logger.warning("[등록 뒤 표] 줄 걸기 실패(등록은 그대로): %s", exc)
 
 
 def _persist_upload_status(item_id, result_dict) -> None:

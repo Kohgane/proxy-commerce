@@ -43,7 +43,7 @@ PER_TICK = 5
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe")
+       "thumb_probe", "coupang_relist", "register_report")
 
 
 def _now() -> str:
@@ -85,6 +85,10 @@ def _run(row: dict) -> Dict:
         return _relist_fix(item_id, row)
     if op == "register":
         return register(item_id, [str(m) for m in (row.get("markets") or []) if m])
+    if op == "coupang_relist":
+        return _coupang_relist(item_id, str(row.get("step") or "plan"), [str(m) for m in (row.get("markets") or []) if m])
+    if op == "register_report":
+        return register_report(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "image_probe":
         return _image_probe(item_id, str(row.get("kind") or "detail"), [int(i) for i in (row.get("idx") or [])][:6])
     if op == "thumb_probe":
@@ -110,6 +114,17 @@ def _run(row: dict) -> Dict:
     st.state_set(D.item_key(item_id), res)
     return {"ok": not res.get("error"), "count": res.get("count"), "line": D.line(res), "at": res.get("at"),
             "pages": [{k: p.get(k) for k in ("no", "idx", "verdict", "why", "url")} for p in res.get("pages") or []]}
+
+
+def enqueue(row: dict) -> bool:
+    """줄 하나를 **덧붙인다**(덮어쓰지 않음) — 같은 op·상품·마켓 줄이 이미 있으면 안 넣는다."""
+    from src.db import image_translate_queue_pg as st
+    rows = queue_rows()
+    key = (str(row.get("op")), str(row.get("item_id")), tuple(sorted(row.get("markets") or [])))
+    if any((str(r.get("op")), str(r.get("item_id")), tuple(sorted(r.get("markets") or []))) == key for r in rows):
+        return False
+    st.state_set(QUEUE_KEY, {"rows": rows + [dict(row, queued_at=_now())]})
+    return True
 
 
 def drain() -> Dict:
@@ -186,10 +201,11 @@ PREVALIDATE_MARKETS = ("coupang:gogane", "coupang:woojoo", "smartstore:chezgoga"
 REGISTER_MARKETS = PREVALIDATE_MARKETS + ("elevenst",)
 
 
-def register(item_id: str, markets: List[str]) -> Dict:
+def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = False) -> Dict:
     """화면 「마켓 등록」과 **같은 입구**(`collect_upload`) — 그 상품 계정 세션으로. 중복·위험·도달성 게이트도 그대로 지난다.
 
     확인 플래그(`confirm_duplicate`·`confirm_warn`)는 **붙이지 않는다** — 막히면 그 답(409 원문)을 그대로 돌려준다.
+    Y14-f: 카테고리 바꾸기용 새로 등록(`coupang_relist` register 단계)만 `confirm_duplicate=True` — 옛 번호를 먼저 적은 뒤에.
     """
     from src.services import ocr_compare_diag as D
     item, uid = D._item(item_id)
@@ -205,6 +221,8 @@ def register(item_id: str, markets: List[str]) -> Dict:
     from src.seller_console import views as V
     from src.seller_console.product_builder import build_product
     body = {"product": build_product(item, edits={}, seller_id=uid), "markets": mk, "item_id": str(item.get("id") or item_id)}
+    if confirm_duplicate:
+        body["confirm_duplicate"] = True
     with app.test_request_context("/seller/collect/upload", method="POST", json=body):
         session["user_id"] = uid
         resp = V.collect_upload()
@@ -219,6 +237,87 @@ def register(item_id: str, markets: List[str]) -> Dict:
     if not complete and not why:
         why = "등록 결과가 빠져 있어 완료를 확인하지 못했어요"
     return {"ok": ok, "status": code, "markets": mk, "rows": rows, "why": why}
+
+
+def _sent_excluded(ex: dict, sent_urls: set) -> List[str]:
+    """런북 9 — 「등록에서 뺀」 장(제외·판촉)의 주소가 보낸 사진에 끼었나."""
+    bad = set()
+    for k in ("images_ko", "detail_images_ko", "sku_images_ko"):
+        for e in ex.get(k) or []:
+            if isinstance(e, dict) and (str(e.get("status") or "") == "excluded" or e.get("use") is False):
+                for f in ("url", "src", "orig"):
+                    if e.get(f):
+                        bad.add(str(e[f]))
+    return sorted(bad & sent_urls)[:6]
+
+
+def register_report(item_id: str, markets: List[str], make_up=None) -> Dict:
+    """Y14-g — **등록 뒤 표**(읽기만, 런북 9·11·14): 마켓마다 상품번호(네이버는 채널 번호) · 상태(쿠팡 조회) · 보낸 판매가 ·
+    쿠팡 정가 = 판매가 × (1+표시 할인율) 대조 · 상품명 · 카테고리(보낸 값 vs 조회 원문) · 상세 글자 수 · 보낸 사진 수 ·
+    뺀 장이 끼었나 · 등록 기록 price/sent가 비지 않았나. 등록 성공 직후 줄로 들어온다(`views._queue_register_report`)."""
+    from src.services import coupang_detail_refresh as CDR
+    from src.services import ocr_compare_diag as D
+    from src.seller_console import listing_status as MS
+    from src.uploaders.coupang_uploader import CoupangUploader as CU
+    item, _uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        ex = {}
+    make_up = make_up or CDR._uploader
+    raw = {(str(u.get("market")), str(u.get("product_id") or "")): u for u in ex.get("uploaded") or [] if isinstance(u, dict)}
+    rows = []
+    for rec in MS.records(ex):
+        m = rec["market"]
+        if markets and m not in markets:
+            continue
+        u = raw.get((m, rec["product_id"])) or {}
+        sent = u.get("sent") if isinstance(u.get("sent"), dict) else {}
+        si = sent.get("sent_images") if isinstance(sent.get("sent_images"), dict) else {}
+        urls = {str(x.get("url")) for x in si.get("images") or [] if isinstance(x, dict) and x.get("url")}
+        r = {"market": m, "no": rec["shown_no"], "at": rec["at"], "sent_name": sent.get("name") or "",
+             "sale_price": sent.get("sale_price"), "sent_category": str(sent.get("category") or ""),
+             "detail_chars": sent.get("detail_chars"), "images_sent": si.get("n"),
+             "excluded_sent": _sent_excluded(ex, urls), "price_record": bool(u.get("price")), "sent_record": bool(sent)}
+        if m.startswith("coupang"):
+            try:
+                live = make_up(rec["account"]).get_product(rec["product_id"])
+            except Exception as exc:                             # noqa: BLE001
+                live = {"error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+            if "error" in live:
+                r["status"] = f"조회 실패 — {str(live['error'])[:120]}"
+            else:
+                it = next((x for x in live.get("items") or [] if isinstance(x, dict)), {})
+                want = CU.list_price(it.get("salePrice"))
+                r.update(status=str(live.get("statusName") or ""), live_name=str(live.get("sellerProductName") or ""),
+                         live_category=str(live.get("displayCategoryCode") or ""), live_sale=it.get("salePrice"),
+                         live_list=it.get("originalPrice"), list_ok=bool(want) and it.get("originalPrice") == want,
+                         category_match=str(live.get("displayCategoryCode") or "") == r["sent_category"])
+        else:
+            r["status"] = rec.get("state_label") or ""
+        rows.append(r)
+    return {"ok": bool(rows), "rows": rows, "why": "" if rows else "등록 기록이 없어요"}
+
+
+def _coupang_relist(item_id: str, step: str, markets: List[str]) -> Dict:
+    """Y14-f — 쿠팡 카테고리 바꾸기(새로 등록 → 승인 → 옛 상품 판매중지). `step` = plan(읽기만) | register | stop_old."""
+    from src.seller_console import collect_history_store as store
+    from src.services import coupang_relist as CR
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    iid = str(item.get("id") or item_id)
+    save = lambda fn: store.merge_extra(iid, fn, seller_ids={uid} if uid else None)     # noqa: E731
+    if step == "plan":
+        return CR.plan(item, markets)
+    if step == "register":
+        return CR.register(item, markets, save=save)
+    if step == "stop_old":
+        return CR.stop_old(item, markets, save=save)
+    return {"ok": False, "why": f"모르는 단계({step[:20]})"}
 
 
 def carry_drain(now=None) -> Dict:

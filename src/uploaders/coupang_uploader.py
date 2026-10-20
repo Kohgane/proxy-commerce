@@ -609,6 +609,28 @@ class CoupangUploader(BaseUploader):
         data = res.get('data')
         return data if isinstance(data, dict) else {'error': '응답에 상품 정보가 없습니다'}
 
+    VENDOR_ITEM_PATH = '/v2/providers/seller_api/apis/api/v1/marketplace/vendor-items/{vid}'
+
+    def stop_sale(self, vendor_item_id: str) -> dict:
+        """Y14-f — 옵션(vendorItemId) 판매중지 `PUT …/vendor-items/{vid}/sales/stop`. 되돌리기는 `sales/resume`.
+        경로는 운영에서 쓰던 그대로(볼트 `scripts/srv/stop_sids.py`·`ipr_stop.py`·`dup_src_stop.py`, 10-05 실사용). 지우지 않는다."""
+        vid = str(vendor_item_id or '').strip()
+        if not vid.isdigit():
+            return {'ok': False, 'error': '옵션 번호 없음'}
+        res = self._api_request('PUT', self.VENDOR_ITEM_PATH.format(vid=vid) + '/sales/stop')
+        ok = isinstance(res, dict) and 'error' not in res and str(res.get('code') or '').upper() not in ('ERROR',)
+        return {'ok': ok, 'error': '' if ok else str((res or {}).get('error') or (res or {}).get('message') or res)[:300]}
+
+    def on_sale(self, vendor_item_id: str):
+        """옵션이 지금 판매중인가 — `GET …/vendor-items/{vid}/inventories` 의 `data.onSale`(모르면 None)."""
+        vid = str(vendor_item_id or '').strip()
+        if not vid.isdigit():
+            return None
+        res = self._api_request('GET', self.VENDOR_ITEM_PATH.format(vid=vid) + '/inventories')
+        if not isinstance(res, dict) or 'error' in res:
+            return None
+        return (res.get('data') or {}).get('onSale') if isinstance(res.get('data'), dict) else None
+
     def review_status(self, seller_product_id: str) -> dict:
         """`{state, label, status_raw, comment, product_id, link, wing_url, name, search_tags, foreign, error}`.
 
