@@ -103,6 +103,8 @@ def run(item: Dict, markets: List[str], *, name: str, coupang_category: str = ""
             fresh["coupang_name"] = name
             if naver_category:
                 fresh["naver_category_id"] = str(naver_category)
+            if coupang_category:
+                fresh["coupang_category_id"] = str(coupang_category)     # Y13-H: 빠져서 고가네 새 등록이 77903으로 갔다
             for u in fresh.get("uploaded") or []:
                 if isinstance(u, dict) and u.get("market") in out:
                     u["relist_fix"] = {**out[u["market"]], "name": name, "coupang_category": coupang_category,

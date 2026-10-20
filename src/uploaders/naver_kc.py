@@ -115,3 +115,20 @@ def hold(payload: Dict, required: Optional[bool]) -> Optional[Dict[str, str]]:
     return {"code": CODE,
             "line": "네이버 KC 인증 대상 카테고리예요 — KC 특례(해외구매대행) 칸이 비어 있어 보내지 않았어요. "
                     "받은 KC 인증 번호가 있으면 넣고, 없으면 해외구매대행 특례로 보내요"}
+
+
+def notice_html() -> str:
+    """Y13-H — KC 특례로 보내는 상품 본문 맨 위 구매대행 고지(문구 = `notice_texts.KC_AGENT_LINES`, 법 제36조 · 국표원 안내)."""
+    import html as _h
+    from src.seller_console.notice_texts import KC_AGENT_LINES
+    return '<div class="kgp-agent-notice">' + "".join("<p>" + _h.escape(x) + "</p>" for x in KC_AGENT_LINES) + "</div>"
+
+
+def with_notice(html: str) -> str:
+    """본문에 고지가 없으면 맨 위에 붙인다(이미 있으면 그대로 — 두 번 안 붙는다)."""
+    from src.seller_console.notice_texts import KC_AGENT_LINES, PURCHASE_AGENT_NOTICE
+    import html as _h
+    cur = str(html or "")
+    if PURCHASE_AGENT_NOTICE in cur or all(_h.escape(x) in cur or x in cur for x in KC_AGENT_LINES):
+        return cur
+    return notice_html() + cur

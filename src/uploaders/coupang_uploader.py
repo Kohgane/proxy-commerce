@@ -38,7 +38,7 @@ def tag_meta_absent(line: str, cat: str, src: str, pwhy: str = '') -> str:
     """Z9 — 「메타 속성에 없어」 줄에 **어느 카테고리를 · 어디서 받아** 쟀는지 단다(같은 데이터가 다시 확인에 통과한 근거)."""
     if '메타 속성에 없어' not in str(line or '') or not cat:
         return line
-    how = '쿠팡 예측' if src == 'predict' else '상품명 규칙(쿠팡 예측 바로잡음)' if src == 'rule' else (f'저장된 값 — 예측 못 받음: {pwhy[:80]}' if src == 'saved' else src or '출처 모름')
+    how = '쿠팡 예측' if src == 'predict' else '상품명 규칙(쿠팡 예측 바로잡음)' if src == 'rule' else '오너가 정한 카테고리' if src == 'owner' else (f'저장된 값 — 예측 못 받음: {pwhy[:80]}' if src == 'saved' else src or '출처 모름')
     return f'{line} (쿠팡 카테고리 {cat} · {how})'
 
 
@@ -510,6 +510,7 @@ class CoupangUploader(BaseUploader):
             'option_name_overrides': collected.get('option_name_overrides') or {},
             'coupang_option_names': collected.get('coupang_option_names') or {},          # Y7-I
             'coupang_category_no_override': bool(collected.get('coupang_category_no_override')),   # Y11O-1 되돌림
+            'coupang_category_id': str(collected.get('coupang_category_id') or '').strip(),        # Y13-H 오너 지정
             'tags': collected.get('tags', []),
             'lead_time_days': int(collected.get('lead_time_days') or 0),        # Y7-O: 선주문 출고소요일(0이면 정본 7일)
             'shipping_fee': 0,
@@ -867,6 +868,10 @@ class CoupangUploader(BaseUploader):
         01:21 KST 쿠팡 SKU 칸이 「옵션 패션의류/잡화 사이즈가 이 카테고리 메타 속성에 없어」 → 다시 확인 「통과」(같은 데이터).
         어느 카테고리로 쟀는지 남지 않아 근거를 못 댔다 — 이제 줄마다 카테고리·출처를 단다.
         """
+        # Y13-H(10-20 피샹리 고가네): 오너가 「등록본 고치기」로 정한 카테고리가 있으면 예측보다 먼저(다음 계정 등록도 같게).
+        pin = str((product or {}).get('coupang_category_id', '') or '').strip() if isinstance(product, dict) else ''
+        if pin.isdigit():
+            return pin, 'owner', ''
         title = str((product or {}).get('title', '') or '') if isinstance(product, dict) else ''
         cid = self.predict_category(title)
         if cid:
