@@ -613,6 +613,18 @@ def learned(scope: str, title: str) -> str:
     return ""
 
 
+#: Y14-4(10-20 리브러쉬 구강스프레이 → 네이버 「패션잡화>패션소품>키링」): 상품명의 **증정품**이 카테고리 낱말로 잡혔다
+#:   (「… 더블기획 15ml 3종 택1 (과일키링 증정)」). 카테고리를 고를 때만 증정·사은품 묶음을 뺀다(상품명 자체는 그대로).
+_GIFT_GROUP = re.compile(r"[\(\[（【][^\)\]）】]*(?:증정|사은품|선물|덤|赠|送|gift)[^\)\]）】]*[\)\]）】]", re.I)
+_GIFT_WORD = re.compile(r"[\w·+&]+\s*(?:증정|사은품\s*증정|무료\s*증정)", re.I)
+
+
+def strip_gift(title: str) -> str:
+    t = _GIFT_GROUP.sub(" ", str(title or ""))
+    t = _GIFT_WORD.sub(" ", t)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
 def pick(product: dict) -> Tuple[str, str]:
     """`(leafCategoryId, 출처)` — 출처: manual(오너 지정) · learned(오너가 고른 기록) · pattern(정본 사전 매칭) ·
     coupang(쿠팡 예측 다리) · ""(못 정함). 등록·사전검증·카드가 **이 한 함수**로 정한다."""
@@ -626,11 +638,11 @@ def pick(product: dict) -> Tuple[str, str]:
         if fx and str(fx.get("after") or "") == manual:
             return manual, ("map" if fx.get("provider") == "map" else "ai")
         return manual, "manual"
-    title = p.get("title_ko") or p.get("title") or ""
+    title = strip_gift(p.get("title_ko") or p.get("title") or "")
     hit = learned(scope_for(p), title)
     if hit:
         return hit, "learned"
-    hit = SS.match_category(p.get("title") or p.get("title_ko") or "")
+    hit = SS.match_category(strip_gift(p.get("title") or p.get("title_ko") or ""))
     if hit:
         return hit, "pattern"
     if p.get("naver_category_no_auto"):

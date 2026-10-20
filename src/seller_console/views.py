@@ -2962,6 +2962,18 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
     return product_data, _warn_pages, _rc
 
 
+#: Y14-2 — 끝나면 힙을 돌려줄 무거운 요청(마켓 등록 = 사진 받기·축소·업로드 · 본문 다시 보내기)
+_RELEASE_AFTER = {"seller_console.collect_upload", "seller_console.collect_naver_resend_detail"}
+
+
+@bp.after_request
+def _release_after_heavy(resp):
+    if request.endpoint in _RELEASE_AFTER:
+        from src.utils import rss as _rss_rel
+        _rss_rel.release(str(request.endpoint).rsplit(".", 1)[-1])
+    return resp
+
+
 @bp.post("/collect/upload")
 def collect_upload():
     """마켓 업로드 트리거 (JSON).
@@ -5688,6 +5700,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
         # Z9: 잡 한 줄 — 요청 로그(slow_request)는 202로 이미 찍혀 이 시간이 어디에도 안 남는다.
         logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
                     json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
+        _rss.release("prevalidate")                              # Y14-2: 잡이 잡은 사진·응답 힙을 돌려준다(기록·한 줄을 남긴 뒤)
 
 
 def _pv_mark_ready(data: dict, markets: list, cur: dict, job_id: str) -> None:

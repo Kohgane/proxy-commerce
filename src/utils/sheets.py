@@ -1,9 +1,26 @@
+from __future__ import annotations
+
+import importlib
 import logging
 import os
 from typing import Any, Dict, List, Optional
 
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+
+class _LazyModule:
+    """Y14-2(오너 2026-10-20 「413MB 상시 점유」): gspread·oauth2client는 부팅 때 싣지 않는다 — 시트를 실제로 쓰는 순간에만.
+    부팅 import 체인(`inventory_sync` → 여기)에서 RSS +34MB(로컬 실측). 속성을 처음 읽을 때 진짜 모듈을 불러 그대로 돌려준다."""
+
+    def __init__(self, name: str):
+        self._name, self._mod = name, None
+
+    def __getattr__(self, attr):
+        if self._mod is None:
+            self._mod = importlib.import_module(self._name)
+        return getattr(self._mod, attr)
+
+
+gspread = _LazyModule("gspread")
+_sa = _LazyModule("oauth2client.service_account")
 
 from .google_credentials import GoogleCredentialsLoader, CredentialsLoadError
 
@@ -33,7 +50,7 @@ def get_credentials_source() -> Optional[str]:
 
 def _service_account():
     data = get_credentials_dict()
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(data, SCOPES)
+    creds = _sa.ServiceAccountCredentials.from_json_keyfile_dict(data, SCOPES)
     client = gspread.authorize(creds)
     return client
 
@@ -207,7 +224,7 @@ def diagnose_sheets_connection() -> Dict[str, Any]:
 
     # 서비스 계정 인증
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(data, SCOPES)
+        creds = _sa.ServiceAccountCredentials.from_json_keyfile_dict(data, SCOPES)
         client = gspread.authorize(creds)
     except Exception as exc:
         return {

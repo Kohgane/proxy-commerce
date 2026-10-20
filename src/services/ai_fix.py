@@ -87,7 +87,8 @@ def blocked(ex: dict) -> Dict[str, str]:
 
 #: Y13-C 2: 축약 검사를 고친 시각 — 그 전에 「단어 중간 절단·지킬 말 빠짐」으로 버린 축약은 하루를 기다리지 않고 다시 묻는다
 #   (예전 검사가 맞는 답을 버렸다 — 같은 돈을 또 쓰는 게 아니라 그때 버린 답을 새 검사로 받는 것).
-SHORT_GUARD_SINCE = datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)
+#   Y14-4: 색상 지킴 규칙을 다시 고쳤다(숫자 든 첫 낱말은 색상 아님) — 그 전에 버린 축약도 다시 묻는다.
+SHORT_GUARD_SINCE = datetime(2026, 10, 20, 16, 5, tzinfo=timezone.utc)
 
 
 def _recently_tried(ex: dict, key: str) -> bool:
@@ -231,6 +232,8 @@ def long_option_values(pd: dict, cap: int = 0) -> List[dict]:
 
 
 _SHORT_KEEP = ("풀가죽", "반가죽", "발받침", "오토만", "스툴", "세트")
+_SHORT_COLORS = frozenset(("블랙", "화이트", "검정", "흰", "흰색", "그레이", "회색", "베이지", "아이보리", "핑크", "레드", "빨강", "블루", "파랑",
+                           "네이비", "그린", "초록", "카키", "브라운", "갈색", "실버", "골드", "옐로", "노랑", "퍼플", "보라", "오렌지", "민트"))
 
 
 def _words(s: str) -> List[str]:
@@ -266,8 +269,17 @@ def short_guard(ko: str, short: str) -> str:
         return f"단어 중간 절단({', '.join(cut[:3])})"
     flat = re.sub(r"\s+", "", short)
     lost = [k for k in _SHORT_KEEP if k in ko and k not in flat]
-    if ow and ow[0] not in flat and _stem(ow[0]) not in flat:
-        lost.insert(0, f"색상 「{ow[0]}」")
+    # Y14-4(10-20 3-in-1 맥세이프 거치대): 「첫 낱말 = 색상」 가정이 「3-in-1 블랙 휴대폰 이어폰 거치대(내장 충전기)」의 「3-in-1」을
+    #   색상으로 지키라고 해 좋은 축약(블랙 포함)까지 버렸다. 숫자가 든 첫 낱말(3-in-1·15W·1.8m)은 색상이 아니다 —
+    #   대신 값 안의 흔한 색 낱말(블랙·화이트…)은 어디 있든 지킨다.
+    colors = [w for w in ow if _stem(w) in _SHORT_COLORS or w in _SHORT_COLORS]
+    first = ow[0] if ow else ""
+    if first and not re.search(r"\d", first) and first not in colors:
+        colors.insert(0, first)
+    for c in colors:
+        if c not in flat and _stem(c) not in flat:
+            lost.insert(0, f"색상 「{c}」")
+            break
     if lost:
         return f"지킬 말 빠짐({', '.join(lost[:3])})"
     return ""

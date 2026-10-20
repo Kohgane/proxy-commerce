@@ -225,10 +225,21 @@ def test_admin_table_ranks_coupang_leaves_and_flags_unmapped(cat, monkeypatch):
 def test_render_worker_first_calls_never_start_two_workers(monkeypatch):
     """`_ensure`가 잠금 밖에서 start하면 그 사이 다른 호출이 워커를 하나 더 만들었다(고치기 전 150라운드 중 48라운드 동시 2장).
     라운드마다 새 큐·상태로 「첫 호출 8건 동시」를 만든다 — 워커는 시작할 때 받은 큐만 먹으니 앞 라운드 워커가 끼어들지 않는다."""
+    import contextlib
     import queue
     import threading
     import time
+    import types
     from src.utils import render_worker as RW
+    from src.utils import rss as _rss
+    from src.utils import rss_sampler as _smp
+    # Y14-3(오너 2026-10-20): 전체 스위트에서 122초 — 장마다 도는 정리(gc.collect·malloc_trim·PSS 읽기·200ms 샘플러·DB 기록)가
+    #   큰 힙에서 느렸다. 이 계약은 「워커가 하나뿐인가」만 본다 — 정리 단계는 가짜로 바꾸고 잠금·큐·스레드는 진짜로 둔다.
+    monkeypatch.setattr(RW, "gc", types.SimpleNamespace(collect=lambda: 0))
+    monkeypatch.setattr(RW, "trim", lambda: False)
+    monkeypatch.setattr(RW, "record", lambda *a, **k: None)
+    monkeypatch.setattr(_rss, "instance_mb", lambda: 0)
+    monkeypatch.setattr(_smp, "watch", lambda *a, **k: contextlib.nullcontext({}))
     bad = 0
     for _ in range(20):
         monkeypatch.setattr(RW, "_Q", queue.Queue())
