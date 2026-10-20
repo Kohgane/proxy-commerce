@@ -34,6 +34,24 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.11st.co.kr/rest"
 
+#: Y13-F F3(오너 2026-10-19 13:34 KST BLACKHOLES): `selMthdCd` 02로 보냈더니 11번가가 HTTP 500
+#:   「상품등록실패 : API로 이용할 수 없는 판매방식 입니다.0500」. 02는 09-20 첫 구현부터 박혀 있던 값이다.
+#:   11번가가 **거부한 것으로 확인된 값**만 여기에 둔다(문서 대조 전 추측으로 늘리지 않는다).
+SELL_METHOD_REJECTED = {"02": "11번가가 「API로 이용할 수 없는 판매방식 입니다」(HTTP 500 · 2026-10-19)로 거부한 값"}
+
+
+def sell_method() -> str:
+    """보낼 판매방식 코드 — `ELEVENST_SELL_METHOD`(기본 01 = 고정가 판매)."""
+    v = (os.getenv("ELEVENST_SELL_METHOD") or "01").strip()
+    return v if v.isdigit() and len(v) == 2 else "01"
+
+
+def sell_method_hold() -> str:
+    """사전검증·등록 공통 — 거부 확인된 판매방식이면 그 사유 한 줄(아니면 빈 문자열)."""
+    v = sell_method()
+    why = SELL_METHOD_REJECTED.get(v)
+    return f"11번가 판매방식 코드 {v} — {why}. 등록하지 않았어요." if why else ""
+
 
 class ElevenStUploader(BaseUploader):
     """11번가 OpenAPI 상품 업로더."""
@@ -79,8 +97,13 @@ class ElevenStUploader(BaseUploader):
         """
         if not self.api_key:
             return {"success": False, "error": "Missing ELEVENST_API_KEY", "sku": product.get("sku", "")}
+        _hold = sell_method_hold()
+        if _hold:
+            return {"success": False, "held": True, "error": _hold, "sku": product.get("sku", "")}
         try:
             xml_body = self._build_product_xml(product)
+            # Y13-F F3: 무엇을 보냈는지 판매방식·유형·원산지 칸을 그대로 남긴다(다음 500을 원문으로 대조)
+            logger.info("[11번가] 등록 XML 머리: %s", xml_body[:400])
             from src.market_throttle import throttled_request
             resp = throttled_request(
                 lambda: relay_request("POST", f"{_BASE_URL}/prodservices/product",
@@ -210,7 +233,7 @@ class ElevenStUploader(BaseUploader):
         return (
             "<?xml version='1.0' encoding='UTF-8'?>"
             "<Product>"
-            "<selMthdCd>02</selMthdCd>"
+            f"<selMthdCd>{sell_method()}</selMthdCd>"
             f"<dispCtgrNo>{category_id}</dispCtgrNo>"
             "<prdTypCd>01</prdTypCd>"
             f"<prdNm>{title}</prdNm>"

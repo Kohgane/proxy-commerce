@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
-       "retranslate", "owner_decision")
+       "retranslate", "owner_decision", "register")
 
 
 def _now() -> str:
@@ -70,6 +70,8 @@ def _run(row: dict) -> Dict:
         return _owner_decision(item_id, row.get("rep") if isinstance(row.get("rep"), dict) else {},
                                [str(x) for x in (row.get("strip") or []) if x][:5], str(row.get("pixels") or ""),
                                [str(m) for m in (row.get("markets") or []) if m])
+    if op == "register":
+        return register(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "image_probe":
         return _image_probe(item_id, str(row.get("kind") or "detail"), [int(i) for i in (row.get("idx") or [])][:6])
     from src.services import ocr_compare_diag as D
@@ -164,6 +166,64 @@ def _review_status(item_id: str, market: str) -> Dict:
 
 
 PREVALIDATE_MARKETS = ("coupang:gogane", "coupang:woojoo", "smartstore:chezgoga", "smartstore:gocosmos")
+#: Y13-F — 다시 등록 가능한 마켓(오너가 고른 줄·이월 줄만 — 화면 등록과 같은 입구 `collect_upload`)
+REGISTER_MARKETS = PREVALIDATE_MARKETS + ("elevenst",)
+
+
+def register(item_id: str, markets: List[str]) -> Dict:
+    """화면 「마켓 등록」과 **같은 입구**(`collect_upload`) — 그 상품 계정 세션으로. 중복·위험·도달성 게이트도 그대로 지난다.
+
+    확인 플래그(`confirm_duplicate`·`confirm_warn`)는 **붙이지 않는다** — 막히면 그 답(409 원문)을 그대로 돌려준다.
+    """
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    if not uid:
+        return {"ok": False, "why": "상품 계정을 알 수 없어요(세션 없이 돌리지 않는다)"}
+    mk = [m for m in markets if m in REGISTER_MARKETS]
+    if not mk:
+        return {"ok": False, "why": "보낼 마켓이 없어요"}
+    from flask import session
+    from src.order_webhook import app
+    from src.seller_console import views as V
+    from src.seller_console.product_builder import build_product
+    body = {"product": build_product(item, edits={}, seller_id=uid), "markets": mk, "item_id": str(item.get("id") or item_id)}
+    with app.test_request_context("/seller/collect/upload", method="POST", json=body):
+        session["user_id"] = uid
+        resp = V.collect_upload()
+    r, code = (resp if isinstance(resp, tuple) else (resp, 200))
+    js = r.get_json() or {}
+    rows = [{k: x.get(k) for k in ("market", "success", "message", "error_code", "external_product_id", "channel_product_no")}
+            for x in ((js.get("result") or {}).get("results") or []) if isinstance(x, dict)]
+    # 빈 배열의 all()은 True다. 요청한 마켓마다 정확히 한 응답이 있어야 성공이라고 말한다.
+    complete = len(rows) == len(mk) and sorted(str(x.get("market") or "") for x in rows) == sorted(mk)
+    ok = bool(js.get("ok")) and complete and all(x.get("success") is True for x in rows)
+    why = str(js.get("error") or "")[:300]
+    if not complete and not why:
+        why = "등록 결과가 빠져 있어 완료를 확인하지 못했어요"
+    return {"ok": ok, "status": code, "markets": mk, "rows": rows, "why": why}
+
+
+def carry_drain(now=None) -> Dict:
+    """Y13-F F1 — 쿠팡 일일 옵션 한도 이월 줄: KST 00:10이 지나면 **한 줄씩** 같은 입구로 다시 등록, 결과는 이월 기록 `log`."""
+    from src.services import coupang_option_quota as Q
+    due = Q.carry_due(now)
+    out = []
+    for r in due[:3]:
+        try:
+            res = register(r["item_id"], [r["market"]])
+        except Exception as exc:                                 # noqa: BLE001
+            res = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}", "rows": []}
+        row = next((x for x in res.get("rows") or [] if x.get("market") == r["market"]), {})
+        Q.carry_done(r["item_id"], r["market"], {
+            "success": bool(res.get("ok")) and row.get("success") is True,
+            "error_code": row.get("error_code") or ("" if res.get("ok") else "carry_unconfirmed"),
+            "message": row.get("message") or res.get("why") or "등록 결과를 확인하지 못했어요"})
+        out.append({"item_id": r["item_id"], "market": r["market"], "result": res})
+        logger.info("[쿠팡 옵션 이월] item=%s market=%s ok=%s why=%s", r["item_id"][:8], r["market"], res.get("ok"),
+                    str(res.get("why") or row.get("message") or "")[:120])
+    return {"picked": len(out), "rows": out}
 
 
 def _prevalidate(item_id: str, markets: List[str]) -> Dict:

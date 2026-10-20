@@ -3103,11 +3103,30 @@ def collect_upload():
         rd = result.to_dict()
         # v44-1: 서버가 성공 확인한 마켓만 항목에 영속 저장 → 목록에 '등록됨' 뱃지 영구 표시(가짜 성공 0).
         _persist_upload_status(data.get("item_id"), rd)
+        _carry_option_quota(data.get("item_id"), rd)
         return jsonify({"ok": True, "result": rd})
     except Exception as exc:
         # v11 P0: 가짜 일반 실패 금지 — 실제 사유를 패스스루로 노출.
         logger.warning("업로드 디스패처 오류: %s", exc)
         return jsonify({"ok": False, "error": f"업로드 중 오류: {exc}"}), 500
+
+
+def _carry_option_quota(item_id, result_dict) -> None:
+    """Y13-F F1 — 쿠팡 일일 옵션 한도로 거부된 마켓은 이월 줄에 넣는다(KST 00:10 이후 같은 등록을 다시 보낸다)."""
+    from src.services import coupang_option_quota as _coq
+    for r in (result_dict or {}).get("results") or []:
+        if isinstance(r, dict) and r.get("error_code") == _coq.CODE:
+            r.pop("carry", None)
+            r["message"] = "쿠팡 일일 옵션 한도 — 오늘은 등록할 수 없어요"
+            try:
+                if not item_id:
+                    raise ValueError("이월할 상품 기록이 없음")
+                _coq.carry_add(str(item_id), str(r.get("market") or ""), _seller_id())
+                r["carry"] = "내일 KST 00:10 이후 자동 재시도 줄에 넣었어요"
+                r["message"] = "쿠팡 일일 옵션 한도 — 내일 자동 재시도(KST 00:10 이후)"
+            except Exception as exc:                             # noqa: BLE001 — 다른 마켓 결과는 그대로 돌려준다
+                r["hint"] = "자동 재시도 대기를 저장하지 못했어요. 다음 날 등록 상태를 확인한 뒤 다시 등록해 주세요."
+                logger.warning("[쿠팡 옵션 한도] 이월 기록 실패 item=%s: %s", item_id, exc)
 
 
 def _already_registered(item, markets) -> list:
@@ -5016,7 +5035,36 @@ def _pv_needs_auto_text(product_data: dict, markets: list) -> bool:
     if render_detail_blocks_html(product_data.get("detail_blocks"), "smartstore") or _nd._text_of(product_data):
         return False
     a = _nd.auto_of(product_data)
-    return not a or int(a.get("v") or 1) < DRAFT_VERSION
+    return not a or int(a.get("v") or 1) < DRAFT_VERSION or _pv_stub_rebuild(a)
+
+
+#: Y13-F F4 — 기본 문장(stub) 초안을 다시 만들기 전 기다릴 시간(AI가 실제로 시도했다가 실패한 경우만 · 호출 폭주 방지).
+_PV_STUB_RETRY_HOURS = 6
+
+
+def _pv_stub_rebuild(a: dict) -> bool:
+    """Y13-F F4(오너 2026-10-19 BLACKHOLES 셰고가·고코스모스 「AI 초안 대신 기본 문장 — OpenAI 크레딧 없음」):
+    저장된 초안이 **기본 문장**(provider stub)인데 지금은 AI(Anthropic 우선 · OpenAI 다음)가 준비돼 있으면 다시 만든다.
+
+    실측: 그 초안은 10-10(Y8 Anthropic 우선 전) OpenAI 단독 시절에 만들어졌고, 형식 버전은 최신이라 다시 만들지 않았다.
+    Anthropic을 이미 시도했다가 실패한 기본 문장이면 `_PV_STUB_RETRY_HOURS`가 지난 뒤에만(사전검증마다 호출하지 않는다)."""
+    if str(a.get("provider") or "stub") != "stub":
+        return False
+    try:
+        from src.ai import llm as _llm
+        from src.utils.env import env_present
+        anth = bool(_llm.anthropic_ready())
+        if not (anth or env_present("OPENAI_API_KEY")):
+            return False
+    except Exception:                                            # noqa: BLE001
+        return False
+    if anth and not str(a.get("draft_code_anthropic") or "").strip() and a.get("draft_status") != "anthropic_error":
+        return True                                              # Anthropic 시도 없이 만든 기본 문장(Y8 전) — 지금은 Anthropic이 있다
+    try:
+        at = datetime.fromisoformat(str(a.get("at") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return (datetime.now(timezone.utc) - at).total_seconds() >= _PV_STUB_RETRY_HOURS * 3600
 
 
 def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = False) -> tuple:
@@ -5851,8 +5899,9 @@ def collect_erase_suggest_skip(item_id: str):
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
     left = sum(1 for p in erase_photos(ex) if p["state"] == "pending")
+    total = sum(1 for p in erase_photos(ex) if p["state"] == "skipped")
     logger.info("[지우기 제안] 넘김 item=%s %s장 · 남은 제안 %s장", item_id, len(done), left)
-    return jsonify({"ok": True, "skipped": len(done), "left": left,
+    return jsonify({"ok": True, "skipped": len(done), "left": left, "skipped_total": total,
                     "message": f"{len(done)}장 넘겼어요" + (f" — 남은 제안 {left}장" if left else " — 남은 제안 없음")})
 
 

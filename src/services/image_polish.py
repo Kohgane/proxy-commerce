@@ -592,8 +592,13 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
         if r["ko"] == "" and r["tgt"]:
             # Y11-N(오너): 다듬기는 지우지 않는다 — AI 「빈칸」은 지우기 **제안**으로만 남기고 텐센트 글자 그대로(픽셀 0).
             #   지우는 건 사람이 편집기에서 그 상자를 탭해 적용할 때만(자동 경로·백필 경로 둘 다 이 함수).
-            r["ko"], r["from"], r["suggest_erase"] = r["tgt"], "tencent", True
-            suggest += 1
+            r["ko"], r["from"] = r["tgt"], "tencent"
+            jw = junk_suggestion(r, by_id.get(r["id"]), e.get("box_size"))
+            if jw:
+                r["why"] = f"지우기 제안 안 함 — {jw}"               # Y13-F U2: 기호·밑줄·작은 소품 글자는 제안하지 않는다
+            else:
+                r["suggest_erase"] = True
+                suggest += 1
             continue
         _b = by_id.get(r["id"]) or {"tgt": r["tgt"]}
         if r["ko"] == r["tgt"]:
@@ -894,6 +899,33 @@ def _not_outbound(extra: dict, kind: str) -> set:
     except Exception as exc:                                     # noqa: BLE001
         logger.info("[나가기 전 경고] 등록 여부 판정 실패(나간다고 봄): %s", exc)
         return set()
+
+
+_LETTER = re.compile(r"[0-9A-Za-z가-힣\u3040-\u30ff\u4e00-\u9fff]")
+
+
+def junk_suggestion(r: dict, box: Optional[dict] = None, size=None) -> str:
+    """Y13-F U2(오너 10-19 피샹리 「- · __ · ____」 · 「아스 오그 드 · 블로 피카소」) — 지우기 제안에 올리면 안 되는 상자면 사유, 아니면 "".
+    글자가 없는 상자(기호·밑줄·줄표뿐) · 사진의 0.5% 미만 작은 상자(책등·표지 등 소품 글자 — 번역 상자엔 확신·기울기가 없어
+    10-14 소품 규칙이 못 잡는다). 판촉 어휘·브랜드 로고 상자는 작아도 제안으로 둔다(진짜 반려 사유)."""
+    t = " ".join(str(r.get(k) or "") for k in ("src", "tgt"))
+    if not _LETTER.search(t):
+        return "글자 없는 상자(기호·밑줄)"
+    if r.get("brand_logo"):
+        return ""
+    try:
+        from src.collectors.ko_polish import promo_hits
+        if promo_hits(t):
+            return ""
+    except Exception:                                            # noqa: BLE001
+        pass
+    W, H = (size or [0, 0])[:2] if size else (0, 0)
+    if box and W and H:
+        from src.services import prop_text as PT
+        area = max(0, int(box.get("w") or 0)) * max(0, int(box.get("h") or 0)) / float(W * H)
+        if area < PT.MAX_AREA:
+            return "작은 소품 글자"
+    return ""
 
 
 def guard_row(r: dict, logos, is_rep: bool, can_restore: bool):

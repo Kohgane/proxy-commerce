@@ -43,15 +43,15 @@
       <div class="kgp-inset mb-3 ers" data-role="erase-suggest" data-item="{{ item.id }}">
         <div class="ers-head">
           <strong>지우기 제안</strong>
-          {% if _ep_left %}<span class="ers-n" data-role="erase-left-n">{{ _ep_left|length }}장</span>
-          <button type="button" class="btn btn-sm btn-ghost ers-all" data-role="erase-skip-all">전부 넘김</button>
-          {% else %}<span class="ers-n" data-role="erase-left-none">남은 제안 없음</span>{% endif %}
+          {# Y12-D: 머리 줄 = 「n장 · 넘긴 제안 m」 — 남은 게 없으면 「0장」에 「전부 넘김」은 꺼 둔다(넘긴 뒤 화면도 같은 모양으로 바로 바뀐다) #}
+          <span class="ers-n" data-role="erase-left-n">{{ _ep_left|length }}장{% if _ep_skip %} · 넘긴 제안 {{ _ep_skip|length }}{% endif %}</span>
+          <button type="button" class="btn btn-sm btn-ghost ers-all" data-role="erase-skip-all"{% if not _ep_left %} disabled{% endif %}>전부 넘김</button>
         </div>
         {% if _ep_left %}
-        <p class="ers-note">{% if _ep_left|selectattr('rep_auto')|list %}판촉·로고 글자가 남은 사진이에요{% if _ep_left|rejectattr('rep_auto')|list %}(그 밖은 AI가 지우자고 한 글자){% endif %}{% else %}AI가 지우자고 한 글자예요{% endif %}. 지우려면 「사진 편집」, 그대로 두려면 「넘김」 — 넘겨도 사진은 그대로예요.</p>
-        <ul class="ers-list">
+        <p class="ers-note" data-role="erase-note">{% if _ep_left|selectattr('rep_auto')|list %}판촉·로고 글자가 남은 사진이에요{% if _ep_left|rejectattr('rep_auto')|list %}(그 밖은 AI가 지우자고 한 글자){% endif %}{% else %}AI가 지우자고 한 글자예요{% endif %}. 지우려면 「사진 편집」, 그대로 두려면 「넘김」 — 넘겨도 사진은 그대로예요.</p>
+        <ul class="ers-list" data-role="erase-left-list">
           {% for p in _ep_left %}
-          <li class="ers-row" data-role="erase-row" data-kind="{{ p.kind }}" data-idx="{{ p.idx }}">
+          <li class="ers-row" data-role="erase-row" data-kind="{{ p.kind }}" data-idx="{{ p.idx }}"{% if p.rep_auto %} data-rep-auto="1"{% endif %}>
             {% if p.thumb %}<img class="ers-thumb" src="{{ p.thumb }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">{% endif %}
             <span class="ers-what"><b>{{ p.word }}</b> {{ p.texts[:3]|join(' · ') }}{% if p.texts|length > 3 %} 외 {{ p.texts|length - 3 }}{% endif %}</span>
             <span class="ers-acts">
@@ -88,11 +88,46 @@
                 {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
             .then(function (r) { return r.json().catch(function () { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }); })
             .then(function (d) {
-              if (d.ok) { toast(d.message, 'success'); location.reload(); return; }
+              if (d.ok) { toast(d.message, 'success'); moved(payload, btn, d); return; }
               toast(d.error || '넘기지 못했어요', 'danger');
               if (btn) { btn.disabled = false; btn.textContent = payload.all ? '전부 넘김' : '넘김'; }
             })
             .catch(function () { toast('넘기지 못했어요 — 잠시 뒤 다시 눌러 주세요', 'danger'); if (btn) { btn.disabled = false; btn.textContent = payload.all ? '전부 넘김' : '넘김'; } });
+        }
+        // Y12-D(오너 15:28): 넘긴 뒤 **새로고침 없이** 이 블록만 바꾼다 — 넘긴 줄은 「넘긴 제안」 접힘으로 옮기고,
+        //   머리 줄은 서버가 센 수(「0장 · 넘긴 제안 8」), 남은 게 없으면 「전부 넘김」을 끈다. 목록(부모 창)엔 저장됐다고 알린다.
+        function moved(payload, btn, d) {
+          var rows = payload.all ? [].slice.call(box.querySelectorAll('[data-role=erase-row]')) : (btn && btn.closest('.ers-row') ? [btn.closest('.ers-row')] : []);
+          // Y13-D 1: 자동으로 빠진 원래 대표를 넘기면 「등록 전 확인」이 「등록 준비 완료」로 바뀐다 — 그 줄은 서버가 다시 재니 새로 그린다
+          if (document.querySelector('[data-role=pv-ready-pending]') && rows.some(function (r) { return r.getAttribute('data-rep-auto'); })) {
+            location.reload(); return;
+          }
+          var det = box.querySelector('[data-role=erase-skipped]');
+          if (!det) {
+            det = document.createElement('details');
+            det.className = 'ers-skipped'; det.setAttribute('data-role', 'erase-skipped');
+            det.innerHTML = '<summary></summary><ul class="ers-list"></ul>';
+            box.appendChild(det);
+          }
+          var ul = det.querySelector('ul');
+          rows.forEach(function (r) {
+            r.setAttribute('data-role', 'erase-skipped-row');
+            var sb = r.querySelector('[data-role=erase-skip]');
+            if (sb) sb.remove();
+            var w = r.querySelector('.ers-what');
+            if (w) w.appendChild(document.createTextNode(' · 방금 넘김'));
+            ul.appendChild(r);
+          });
+          var left = +d.left || 0, total = +d.skipped_total || ul.children.length;
+          det.querySelector('summary').textContent = '넘긴 제안 ' + total;
+          var n = box.querySelector('[data-role=erase-left-n]');
+          if (n) n.textContent = left + '장 · 넘긴 제안 ' + total;
+          var all = box.querySelector('[data-role=erase-skip-all]');
+          if (all) { all.textContent = '전부 넘김'; all.disabled = left === 0; }
+          if (left === 0) {
+            ['erase-note', 'erase-left-list'].forEach(function (k) { var e = box.querySelector('[data-role=' + k + ']'); if (e) e.remove(); });
+          }
+          try { parent.postMessage({kgp: 'preview-saved'}, location.origin); } catch (e) {}
         }
         box.addEventListener('click', function (ev) {
           var b = ev.target.closest('button[data-role]');

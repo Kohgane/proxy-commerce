@@ -313,6 +313,18 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                             "tries": int((sync.get(u["market"]) or {}).get("tries") or 0)})
                 out.append(row)
                 continue
+            # Y13-F F1: 상세 갱신 PUT도 쿠팡 일일 구매옵션 한도(판매자 공용)를 먹는다 — 오늘 한도를 다 썼거나
+            #   갱신분이 하루 상한(REFRESH_DAILY_ITEMS)을 넘으면 보내지 않고 줄에 남긴다(내일 같은 자리에서 막히지 않게).
+            from src.services import coupang_option_quota as _coq
+            _block = _coq.refresh_block(str(getattr(up, "vendor_id", "") or ""))
+            if _block:
+                row.update(state="option_quota", error=_block)
+                _queue_put({"item_id": item_id, "market": u["market"], "sid": u["sid"], "account": u["account"],
+                            "seller_id": seller_id, "reason": "쿠팡 옵션 한도", "raw": _block, "at": _now(),
+                            "tries": int((sync.get(u["market"]) or {}).get("tries") or 0)})
+                out.append(row)
+                continue
+            up.count_kind = "refresh"
             live = up.get_product(u["sid"])
             if "error" in live:
                 row.update(error=f"쿠팡 상품 조회 실패 — {live['error']}")

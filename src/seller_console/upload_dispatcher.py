@@ -1904,6 +1904,13 @@ class UploadDispatcher:
                                            message=f"판매가를 정하지 못해 등록하지 않습니다 — {_why}",
                                            hint="원가·통화·환율을 확인하세요.")
 
+        # Y13-F F3: 11번가 판매방식 코드 — 「도달 398ms」만 보고 통과시킨 뒤 등록에서 500이 났다. 거부 확인된 값이면 보류.
+        if market == "elevenst":
+            from src.uploaders.elevenst_uploader import sell_method_hold as _smh
+            _h = _smh()
+            if _h:
+                return PrevalidationResult(market=market, ok=False, error_code="elevenst_sell_method", message=_h,
+                                           hint="판매방식 코드를 11번가가 받는 값으로 바꾼 뒤 다시 검증하세요.")
         # F35-2: **등록 직전에 한 번** 두드려 본다 — 「키가 있다」를 「닿는다」로 읽지 않는다.
         if market in ("woocommerce", "elevenst", "shopify"):
             reach = market_reach(market)
@@ -2390,6 +2397,14 @@ class UploadDispatcher:
             # F48-c — 거부 문장을 **한 줄씩** 화면에. 보류(전송 전)와 거부(전송 후)를 가른다.
             lines = list(getattr(exc, "lines", []) or [])
             held = bool(getattr(exc, "held", False))
+            # Y13-F F1 — 「오늘 등록할 수 있는 구매옵션 개수(5000) 초과」 = 판매자 계정 공용 일일 한도.
+            #   같은 날 다시 눌러도 같은 답 → 재시도 안 보임(RETRYABLE_CODES 밖) · KST 00:10 이후 이월 큐가 다시 보낸다.
+            from src.services import coupang_option_quota as _coq
+            if str(getattr(exc, "reason_code", "") or "") == _coq.CODE:
+                return UploadResult(
+                    market="coupang", success=False, error_code=_coq.CODE, details=lines,
+                    message="쿠팡 일일 옵션 한도 — 내일 자동 재시도(KST 00:10 이후)",
+                    hint="쿠팡은 판매자 계정 하나에 하루 구매옵션 5,000개까지 받아요. 오늘은 다시 눌러도 같은 답이에요.")
             return UploadResult(
                 market="coupang",
                 success=False,
