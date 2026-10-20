@@ -877,6 +877,19 @@ class CoupangUploader(BaseUploader):
         title = strip_gift(title) or title                  # Y14-4: 증정품(「(과일키링 증정)」)이 예측을 끌지 않게 — 카테고리 재료에서만 뺀다
         cid = self.predict_category(title)
         if cid:
+            # Y14 R2: 예측이 도서인데 상품명에 책 낱말이 없으면 버린다(리브러쉬 구강스프레이 → 「도서>…건강에세이」 52046)
+            from src.uploaders.naver_categories import is_book_guess
+            try:
+                from src.uploaders.coupang_categories import path_of
+                _path = path_of(str(cid))
+            except Exception:
+                _path = ''
+            _leaf = str(((getattr(self, '_predict_cache', None) or {}).get((title.strip(), '')) or {}).get('name') or '')
+            if is_book_guess(_path, _leaf, title):
+                logger.warning('쿠팡 카테고리 예측 %s(%s) — 상품명에 책 낱말 없음, 쓰지 않음', cid, _path or _leaf)
+                saved = str((product or {}).get('category_id', '') or '') if isinstance(product, dict) else ''
+                return saved, ('saved' if saved else ''), f'쿠팡 예측이 「{_path or _leaf}」인데 상품명에 책 낱말이 없어요'
+        if cid:
             # Y11O-1(오너): 상품명 리클라이너·라운지·안락·오토만 + 의자류 예측 → 안락의자(되돌리면 규칙 끔)
             from src.uploaders.category_rules import coupang_fix
             fx = coupang_fix(product if isinstance(product, dict) else {}, cid)
