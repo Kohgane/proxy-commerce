@@ -546,7 +546,7 @@ def coupang_inspect(item_id: str, markets: List[str], make_up=None) -> Dict:
                          "emptyBarcode": it.get("emptyBarcode"), "emptyBarcodeReason": it.get("emptyBarcodeReason"),
                          "modelNo": it.get("modelNo"),
                          "attributes": [[str(a.get("attributeTypeName") or ""), str(a.get("attributeValueName") or "")]
-                                        for a in it.get("attributes") or [] if isinstance(a, dict)][:8]}
+                                        for a in it.get("attributes") or [] if isinstance(a, dict)][:40]}
                         for it in (data.get("items") or [])[:12] if isinstance(it, dict)])
         rows.append(r)
     return {"ok": bool(rows) and not any(r.get("error") for r in rows), "rows": rows,

@@ -144,6 +144,10 @@ def record_run(name: str, n: int = 0, note: str = "") -> None:
         st.state_set(_RUNS_KEY, runs)
     except Exception as exc:
         logger.debug("[워커] 실행 기록 실패(%s): %s", name, exc)
+    # Y14-2: 회차가 끝난 자리 — 이번 회차가 잡은 힙(사진 디코드·응답 본문)을 운영체제에 돌려준다(다음 회차까지 상시 점유 방지)
+    if int(n or 0) > 0:
+        from src.utils import rss as _rss
+        _rss.release("worker:" + name)
 
 
 def snapshot() -> dict:
