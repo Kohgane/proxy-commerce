@@ -266,3 +266,38 @@ def test_disconnected_pc_with_refetch_waiting_is_todo():
     HB.beat(uid, "1.5.167", "beat")
     assert not any(t["kind"] == "collector_off" for t in H.build({uid})["attention"]["todo"])
     st.reset_for_tests()
+
+
+def test_oneshot_drain_keeps_rows_beyond_five(monkeypatch):
+    """10-20 13:30 실측: 7줄 → 앞 5줄만 돌고 2줄이 사라졌다. 나머지는 다음 틱으로 남는다."""
+    from src.db import image_translate_queue_pg as st
+    from src.services import oneshot_ops as O
+    st.reset_for_tests()
+    ran = []
+    monkeypatch.setattr(O, "_run", lambda r: ran.append(r["item_id"]) or {"ok": True})
+    st.state_set(O.QUEUE_KEY, {"rows": [{"op": "review_status", "item_id": str(i)} for i in range(7)]})
+    assert O.drain()["picked"] == 5 and ran == ["0", "1", "2", "3", "4"]
+    assert [r["item_id"] for r in O.queue_rows()] == ["5", "6"]
+    O.drain()
+    assert ran[-2:] == ["5", "6"] and O.queue_rows() == []
+    st.reset_for_tests()
+
+
+def test_thumb_probe_reports_status_without_writing(monkeypatch):
+    from src.services import oneshot_ops as O
+    from src.services import ocr_compare_diag as D
+    import requests
+    item = {"id": "t", "image_url": "https://img.example/a.jpg", "extra_json": json.dumps({"images": ["https://img.example/a.jpg", "https://img.example/b.jpg"]})}
+    monkeypatch.setattr(D, "_item", lambda iid: (item, "u"))
+
+    class _R:
+        def __init__(self, code):
+            self.status_code, self.headers = code, {"Content-Type": "image/jpeg", "Content-Length": "10"}
+
+        def close(self):
+            pass
+    monkeypatch.setattr(requests, "get", lambda u, **k: _R(200 if u.endswith("a.jpg") else 404))
+    out = O._run({"op": "thumb_probe", "item_id": "t"})
+    assert out["ok"] and [r["status"] for r in out["rows"]] == [200, 404] and out["why"] == "일부 실패"
+    monkeypatch.setattr(D, "_item", lambda iid: (dict(item, image_url=""), "u"))
+    assert O._run({"op": "thumb_probe", "item_id": "t"})["why"] == "대표 사진 주소 없음"

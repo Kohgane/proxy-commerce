@@ -39,6 +39,7 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ops:oneshot:queue"
+PER_TICK = 5
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
@@ -117,9 +118,10 @@ def drain() -> Dict:
     rows = queue_rows()
     if not rows:
         return {"picked": 0, "rows": []}
-    st.state_set(QUEUE_KEY, {"rows": []})
+    # 한 틱에 5줄 — 나머지는 줄에 **남긴다**(10-20 13:30 실측: 7줄 넣었더니 앞 5줄만 돌고 2줄이 조용히 사라졌다)
+    st.state_set(QUEUE_KEY, {"rows": rows[PER_TICK:]})
     out = []
-    for r in rows[:5]:
+    for r in rows[:PER_TICK]:
         try:
             res = _run(r)
         except Exception as exc:                                 # noqa: BLE001 — 한 줄 실패가 다른 줄을 막지 않는다
@@ -273,11 +275,6 @@ def _image_probe(item_id: str, kind: str, idxs: List[int]) -> Dict:
     from src.services import detail_image_plan as P
     from src.services import image_translate_tencent as tc
     from src.services import ocr_tencent as O
-def _thumb_probe(item_id: str) -> Dict:
-    """대표 사진(목록 썸네일) + 갤러리 앞 2장을 리퍼러 없이 받아 본다 — 「주소 없음 / 만료(404) / 차단(403) / 너무 큼」을 사실로 가른다."""
-    import json
-    import requests
-    from src.services import ocr_compare_diag as D
     item, _uid = D._item(item_id)
     if not item:
         return {"ok": False, "why": "상품을 찾지 못했어요"}
@@ -313,6 +310,37 @@ def _thumb_probe(item_id: str) -> Dict:
         rows.append(row)
         data = norm = None
     return {"ok": True, "kind": kind, "rows": rows}
+
+
+def _thumb_probe(item_id: str) -> Dict:
+    """대표 사진(목록 썸네일) + 갤러리 앞 2장을 리퍼러 없이 받아 본다 — 「주소 없음 / 만료(404) / 차단(403) / 너무 큼」을 사실로 가른다."""
+    import json
+    import requests
+    from src.services import ocr_compare_diag as D
+    item, _uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        ex = {}
+    rep = str(item.get("image_url") or "").strip()
+    urls = [rep] + [str(u).strip() for u in (ex.get("images") or []) if str(u or "").strip() and str(u).strip() != rep][:2]
+    if not rep:
+        return {"ok": True, "why": "대표 사진 주소 없음", "rows": []}
+    rows = []
+    for u in [x for x in urls if x]:
+        try:
+            r = requests.get(u, timeout=15, stream=True, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*"})
+            size = int(r.headers.get("Content-Length") or 0)
+            rows.append({"url": u[:200], "status": r.status_code, "type": str(r.headers.get("Content-Type") or "")[:40],
+                         "bytes": size})
+            r.close()
+        except Exception as exc:                                 # noqa: BLE001 — 한 장 실패가 다른 장을 막지 않는다
+            rows.append({"url": u[:200], "status": 0, "why": f"{type(exc).__name__}: {str(exc)[:120]}"})
+    bad = [x for x in rows if x.get("status") != 200]
+    return {"ok": True, "why": "대표 사진 받기 실패" if rows and rows[0].get("status") != 200 else ("일부 실패" if bad else "모두 받음"),
+            "rows": rows}
 
 
 def _carry_requeue(item_ids: List[str]) -> Dict:
@@ -547,20 +575,3 @@ def _naver_resend(item_id: str, markets: List[str]) -> Dict:
         rows.append({"market": m, "ok": bool(js.get("ok")), "status": code, "images": js.get("images"),
                      "text_chars": js.get("text_chars"), "error": str(js.get("error") or "")[:300]})
     return {"ok": bool(rows) and all(x["ok"] for x in rows), "rows": rows, "why": "" if rows else "네이버 마켓이 없어요"}
-    rep = str(item.get("image_url") or "").strip()
-    urls = [rep] + [str(u).strip() for u in (ex.get("images") or []) if str(u or "").strip() and str(u).strip() != rep][:2]
-    if not rep:
-        return {"ok": True, "why": "대표 사진 주소 없음", "rows": []}
-    rows = []
-    for u in [x for x in urls if x]:
-        try:
-            r = requests.get(u, timeout=15, stream=True, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*"})
-            size = int(r.headers.get("Content-Length") or 0)
-            rows.append({"url": u[:200], "status": r.status_code, "type": str(r.headers.get("Content-Type") or "")[:40],
-                         "bytes": size})
-            r.close()
-        except Exception as exc:                                 # noqa: BLE001 — 한 장 실패가 다른 장을 막지 않는다
-            rows.append({"url": u[:200], "status": 0, "why": f"{type(exc).__name__}: {str(exc)[:120]}"})
-    bad = [x for x in rows if x.get("status") != 200]
-    return {"ok": True, "why": "대표 사진 받기 실패" if rows and rows[0].get("status") != 200 else ("일부 실패" if bad else "모두 받음"),
-            "rows": rows}
