@@ -444,7 +444,7 @@ async function _kgpPollPending(reason) {
   let items = [];
   try {
     const r = await fetch(`${settings.serverUrl}/api/v1/collect/enrich/pending?limit=25`, {
-      headers: { "Authorization": `Bearer ${settings.token}` },
+      headers: { "Authorization": `Bearer ${settings.token}`, "X-KGP-Ext-Version": _kgpExtVersion() },
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d || !d.ok) return { ok: false, error: "대기 목록 조회 실패 HTTP " + r.status };
@@ -478,12 +478,42 @@ try {
   }
 } catch (e) { /* alarms 미가용 환경은 탭 열림만으로 돈다 */ }
 
+// Y12-D 7: heartbeat — 콘솔 탭이 열려 있으면 1분마다 「살아 있다」 + 버전을 서버에 적는다(대시보드 「PC 수집기 · 연결 HH:MM」).
+//   탭이 없으면 보내지 않는다(PC는 켜져 있어도 재수집은 콘솔 탭이 있어야 돈다 — 그 사실을 그대로 보여 준다).
+const KGP_BEAT_ALARM = "kgpBeat";
+function _kgpExtVersion() {
+  try { return String((chrome.runtime.getManifest() || {}).version || ""); } catch (e) { return ""; }
+}
+async function _kgpBeat() {
+  const settings = await getSettings();
+  if (!settings.token || !settings.serverUrl) return;
+  let open = false;
+  try {
+    const tabs = await chrome.tabs.query({});
+    open = (tabs || []).some((t) => t && _kgpIsConsoleUrl(t.url, settings.serverUrl));
+  } catch (e) { return; }
+  if (!open) return;
+  try {
+    await fetch(`${settings.serverUrl}/api/v1/collect/ext/beat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.token}`, "X-KGP-Ext-Version": _kgpExtVersion() },
+      body: JSON.stringify({ version: _kgpExtVersion() }),
+    });
+  } catch (e) { /* 신호 실패는 조용히 — 다음 분에 다시 */ }
+}
+try {
+  if (chrome.alarms && chrome.alarms.create) {
+    chrome.alarms.create(KGP_BEAT_ALARM, { periodInMinutes: 1 });
+    chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === KGP_BEAT_ALARM) _kgpBeat(); });
+  }
+} catch (e) { /* noop */ }
+
 // 콘솔 탭이 열리면 즉시 한 번 — 오너가 화면을 열어 둔 그 순간이 가장 좋은 시점이다.
 try {
   chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     if (!info || info.status !== "complete" || !tab || !tab.url) return;
     const settings = await getSettings();
-    if (_kgpIsConsoleUrl(tab.url, settings.serverUrl)) _kgpPollPending("콘솔 탭 열림");
+    if (_kgpIsConsoleUrl(tab.url, settings.serverUrl)) { _kgpPollPending("콘솔 탭 열림"); _kgpBeat(); }
   });
 } catch (e) { /* noop */ }
 

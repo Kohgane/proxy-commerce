@@ -343,7 +343,11 @@ def collect_fail(extra: dict, title: str = "") -> Optional[Dict]:
             return None
         why = ("하루 한도 — 한도가 풀리면 서버가 자동으로" if str(ae.get("kind") or "") in _CARRY_KINDS
                else "PC 고가수집기가 켜지면 차례로 엽니다")
-        return {"phase": "waiting", "text": "재수집 대기", "why": f"{why} · 시도 {att}/{cap}"}
+        # Y12-D: 마지막으로 무엇이라도 움직인 시각(자동 수집 실패 · 보강 실패 · 재보강 요청 중 가장 늦은 것) — 「n일째」의 기준
+        ef = ex.get("enrich_fail") if isinstance(ex.get("enrich_fail"), dict) else {}
+        moved = [d for d in (_ts(ae.get("at")), _ts(ef.get("at")), _ts(ex.get("enrich_requeued_at"))) if d]
+        return {"phase": "waiting", "text": "재수집 대기", "why": f"{why} · 시도 {att}/{cap}",
+                "since": max(moved).astimezone(timezone.utc).isoformat() if moved else ""}
     if compute_collect_status(ex, title)["status"] == "실패":
         return {"phase": "exhausted", "text": "수집 실패 · 가격·갤러리를 못 읽었어요",
                 "why": "자동 재수집이 없어요 — 「원본에서 다시 수집」"}
@@ -358,9 +362,12 @@ def _title_marks(extra: dict, title: str = "") -> List[str]:
         return []
 
 
-def summarize(extra: dict, title: str = "") -> Dict:
-    """저장 때 남기는 작은 요약 `extra.attn` — 목록·대시보드는 이것만 읽는다(무거운 사진 기록은 저장 때 한 번)."""
+def summarize(extra: dict, title: str = "", collected_at: str = "") -> Dict:
+    """저장 때 남기는 작은 요약 `extra.attn` — 목록·대시보드는 이것만 읽는다(무거운 사진 기록은 저장 때 한 번).
+    Y12-D: 버린 상품(`discarded`)은 요약이 없다 — 손댈 것에서 빠진다."""
     from .listing_status import records
+    if discarded(extra):
+        return {"erase": 0, "check": []}
     registered = bool(records(extra))
     out = {"erase": erase_suggestions(extra),
            # 「확인 필요」 원문 줄(상표 이름) — 아직 안 올린 상품만(올린 상품은 등록 때 이미 넘었다)
@@ -368,6 +375,8 @@ def summarize(extra: dict, title: str = "") -> Dict:
     cf = collect_fail(extra, title)                              # Y12-B: 수집 실패 — 소진은 손댈 것, 예정은 재수집 대기
     if cf:
         out["fail" if cf["phase"] == "exhausted" else "refetch"] = cf["text"] + " · " + cf["why"]
+        if cf["phase"] == "waiting":                             # Y12-D: 「n일째」 기준 — 움직인 기록이 없으면 수집 시각
+            out["refetch_since"] = cf.get("since") or (_ts(collected_at).isoformat() if _ts(collected_at) else "")
     return out
 
 
@@ -376,13 +385,49 @@ def _has(attn: Dict) -> bool:
     return bool(int(a.get("erase") or 0) or a.get("check") or a.get("fail") or a.get("refetch"))
 
 
+# ── Y12-D(오너 2026-10-18): 재수집 대기가 오래 안 움직이면 「돌아가는 것」이 아니다 ────────────────────────────
+#: 이 날 수를 넘게 아무 진행이 없으면 손댈 것 「수집기 안 돎 — PC에서 콘솔 탭 열기」(반례: 3주째 안 움직이는 걸 돌아간다고 부르지 않는다)
+REFETCH_STALE_DAYS = 7
+
+
+def refetch_days(attn: Dict, now: Optional[datetime] = None) -> Optional[int]:
+    """재수집 대기 「n일째」(기준 = 마지막으로 움직인 시각 · 첫날 = 1일째). 대기가 아니거나 기준이 없으면 None."""
+    a = attn or {}
+    d = _ts(a.get("refetch_since")) if a.get("refetch") else None
+    if not d:
+        return None
+    return max(0, ((now or datetime.now(timezone.utc)) - d).days) + 1
+
+
+def refetch_stale(attn: Dict, now: Optional[datetime] = None) -> bool:
+    n = refetch_days(attn, now)
+    return n is not None and n > REFETCH_STALE_DAYS
+
+
+def refetch_cutoff(now: Optional[datetime] = None) -> str:
+    """SQL·목록 필터용 — `refetch_since`가 이 값보다 이르면 「수집기 안 돎」(ISO 문자열 비교 · 같은 UTC 형식)."""
+    return ((now or datetime.now(timezone.utc)) - timedelta(days=REFETCH_STALE_DAYS)).astimezone(timezone.utc).isoformat()
+
+
+def is_attn(attn_n, attn: Dict, now: Optional[datetime] = None) -> bool:
+    """「손댈 것」에 드는가 — 저장 때 센 수(`attn_n`) + 저장 뒤에 낡은 재수집 대기(날이 지나 바뀌는 판정이라 읽을 때 잰다)."""
+    return bool(int(attn_n or 0)) or refetch_stale(attn, now)
+
+
+def discarded(extra: dict) -> bool:
+    """Y12-D 「버리기」 — 목록에서 숨긴 상품(DB 삭제 아님 · 드로어에서 되살리기)."""
+    return isinstance((extra or {}).get("discarded"), dict)
+
+
 def items(extra: dict, title: str = "", *, fresh: bool = False) -> List[Dict]:
-    """손댈 것 `[{kind, market, text}]` — kind = rejected · send_fail · owner.
+    """손댈 것 `[{kind, market, text}]` — kind = rejected · send_fail · collect_fail · collector_down · owner.
     오너 확인 대기(지우기 제안·「확인 필요」)는 저장 때 남긴 요약 `extra.attn`을 읽는다(목록·대시보드는 사진 기록 없이 읽는다 —
     요약이 없으면 없음). `fresh=True`면 그 자리에서 다시 잰다(저장·백필)."""
     from .listing_status import records, send_failed, state_word
     ex = extra or {}
     out: List[Dict] = []
+    if discarded(ex):                                            # Y12-D: 버린 상품은 손댈 것에서 빠진다
+        return out
     for r in records(ex):
         rv = r.get("review") or {}
         if str(rv.get("state") or "") == "rejected":
@@ -395,6 +440,9 @@ def items(extra: dict, title: str = "", *, fresh: bool = False) -> List[Dict]:
     attn = summarize(ex, title) if fresh else (ex.get("attn") if isinstance(ex.get("attn"), dict) else {})
     if attn.get("fail"):                                         # Y12-B: 재수집 소진 · 자동 재수집 없음 — 오너가 눌러야 풀린다
         out.append({"kind": "collect_fail", "market": "", "text": str(attn["fail"])})
+    if refetch_stale(attn):                                      # Y12-D: 7일 넘게 안 움직인 재수집 대기 — 돌아가는 게 아니다
+        out.append({"kind": "collector_down", "market": "",
+                    "text": f"수집기 안 돎 — PC에서 콘솔 탭 열기 · 재수집 대기 {refetch_days(attn)}일째"})
     if int(attn.get("erase") or 0):
         out.append({"kind": "owner", "market": "", "text": f"지우기 제안 사진 {int(attn['erase'])}장"})
     rs = ex.get("risk_skip") if isinstance(ex.get("risk_skip"), dict) else None
@@ -409,7 +457,7 @@ def stamp(extra: dict, title: str = "", collected_at: str = "") -> Dict:
     """저장 직전: `extra.attn`을 새로 쓰고 열 값 `{last_action_at, attn_n}`을 돌려준다."""
     if not isinstance(extra, dict):
         return {}
-    attn = summarize(extra, title)
+    attn = summarize(extra, title, collected_at)
     if _has(attn):                                               # 남길 게 있을 때만 — 빈 요약으로 extra를 늘리지 않는다
         extra["attn"] = attn
     else:

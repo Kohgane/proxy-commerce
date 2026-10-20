@@ -70,11 +70,11 @@ def _when(d: Optional[datetime], now: Optional[datetime] = None) -> str:
 
 # ── A. 오늘 할 일 ────────────────────────────────────────────────────────────────────────────────────
 def _attention(seller_ids, rows: Optional[List[Dict]] = None) -> Dict:
-    from .attention import check_note, items as attn_items
+    from .attention import check_note, is_attn, items as attn_items
     rows = _rows(seller_ids) if rows is None else rows
     groups: Dict[str, Dict] = {}
     products, todo = [], []
-    hot = sorted((r for r in rows if r.get("attn_n")),
+    hot = sorted((r for r in rows if is_attn(r.get("attn_n"), (r.get("extra") or {}).get("attn"))),
                  key=lambda r: str(r.get("last_action_at") or r.get("collected_at") or ""), reverse=True)
     for r in hot:
         its = attn_items(r.get("extra") or {}, r.get("title") or "")
@@ -83,8 +83,9 @@ def _attention(seller_ids, rows: Optional[List[Dict]] = None) -> Dict:
         title = _title(r)
         lines = [i["text"] + (f" · {i['note']}" if i.get("note") else "") for i in its]
         products.append({"id": r.get("id"), "title": title, "lines": lines})
-        for ln in lines:
-            todo.append({"id": r.get("id"), "title": title, "text": ln, "url": f"/seller/collect/history?open={r.get('id')}"})
+        for i, ln in zip(its, lines):                           # Y12-D: 줄마다 종류 — 수집 실패·수집기 안 돎 줄엔 「다시 수집」·「버리기」
+            todo.append({"id": r.get("id"), "title": title, "text": ln, "kind": i["kind"],
+                         "url": f"/seller/collect/history?open={r.get('id')}"})
         for i in its:
             if i["kind"] == "rejected":
                 key, label = f"rejected:{i['market']}", i["text"]
@@ -92,6 +93,8 @@ def _attention(seller_ids, rows: Optional[List[Dict]] = None) -> Dict:
                 key, label = f"send_fail:{i['market']}", i["text"]
             elif i["kind"] == "collect_fail":
                 key, label = "collect_fail", "수집 실패"
+            elif i["kind"] == "collector_down":
+                key, label = "collector_down", "수집기 안 돎"
             else:
                 key, label = "owner", "오너 확인 대기"
             g = groups.setdefault(key, {"label": label, "n": 0, "kind": i["kind"]})
@@ -102,10 +105,10 @@ def _attention(seller_ids, rows: Optional[List[Dict]] = None) -> Dict:
         line = label + (f" · {r['kind_word']}" if r.get("kind_word") else "") + f" · {check_note(r.get('checked_at'))}"
         title = str(r.get("title") or r.get("product_id") or "")[:60]
         products.append({"id": "", "title": title, "lines": [line]})
-        todo.append({"id": "", "title": title, "text": line, "url": "/seller/diagnostics"})
+        todo.append({"id": "", "title": title, "text": line, "kind": "rejected", "url": "/seller/diagnostics"})
         g = groups.setdefault(f"rejected:ledger:{r.get('account')}", {"label": label, "n": 0, "kind": "rejected"})
         g["n"] += 1
-    order = {"rejected": 0, "send_fail": 1, "collect_fail": 2, "owner": 3}
+    order = {"rejected": 0, "send_fail": 1, "collect_fail": 2, "collector_down": 3, "owner": 4}
     return {"n": len(products), "groups": sorted(groups.values(), key=lambda g: (order.get(g["kind"], 9), g["label"])),
             "products": products[:TODO_N], "todo": todo[:TODO_N], "more": max(0, len(todo) - TODO_N), "capped": False}
 
@@ -173,12 +176,33 @@ def _markets(rows: List[Dict]) -> Dict:
     return {"rows": out, "last_check": _when(latest)}
 
 
+def in_market_cell(item: Dict, slot: str, bucket: str = "") -> bool:
+    """Y12-D 5 — 이 상품이 B 표의 그 칸(자리·판매중/승인대기/반려)에 세어졌나. 표와 **같은 판정**(`_bucket`)을 쓴다.
+    `bucket` 비면 그 자리에 등록 기록만 있으면 참. 등록 대장(복제 등록분)은 수집 목록 밖이라 목록에 안 나온다."""
+    import json as _json
+    from .listing_status import records, slot_of
+    ex = item.get("extra") if isinstance(item.get("extra"), dict) else None
+    if ex is None:
+        try:
+            ex = _json.loads(item.get("extra_json") or "{}") or {}
+        except Exception:                                        # noqa: BLE001
+            return False
+    for rec in records(ex):
+        if slot_of(rec["market"]) != slot:
+            continue
+        b = _bucket((rec.get("review") or {}).get("state"))
+        if b and (not bucket or b == bucket):
+            return True
+    return False
+
+
 # ── C. 상품 현황 ────────────────────────────────────────────────────────────────────────────────────
 def _products(rows: List[Dict]) -> Dict:
     from .listing_status import records
     reg = sum(1 for r in rows if records(r.get("extra") or {}))
+    from .attention import is_attn
     return {"collected": len(rows), "registered": reg, "unregistered": len(rows) - reg,
-            "attn": sum(1 for r in rows if r.get("attn_n"))}
+            "attn": sum(1 for r in rows if is_attn(r.get("attn_n"), (r.get("extra") or {}).get("attn")))}
 
 
 # ── D. 최근 동작 ────────────────────────────────────────────────────────────────────────────────────
@@ -219,11 +243,28 @@ def _running(seller_ids=None, rows: Optional[List[Dict]] = None) -> Dict:
     c = q.counts() or {}
     waiting = int(c.get("queued") or 0) + int(c.get("running") or 0)
     # Y12-B: 자동 재수집이 예정된 수집 실패 — 손댈 것이 아니라 여기(오너가 누를 일이 없다)
+    # Y12-D: 「n일째」(가장 오래 안 움직인 것) · 7일 넘은 것은 여기서 빠져 손댈 것 「수집기 안 돎」으로 간다
+    from .attention import refetch_days, refetch_stale
     rows = _rows(seller_ids) if rows is None else rows
-    refetch = sum(1 for r in rows if isinstance((r.get("extra") or {}).get("attn"), dict) and r["extra"]["attn"].get("refetch"))
+    live = [a for a in ((r.get("extra") or {}).get("attn") for r in rows)
+            if isinstance(a, dict) and a.get("refetch") and not refetch_stale(a)]
+    refetch = len(live)
+    oldest = max((refetch_days(a) or 0 for a in live), default=0)
+    refetch_line = f"재수집 대기 {refetch}건" + (f" · {oldest}일째" if oldest else "")
     lines = [x for x in ((f"보내는 중 {sending}건", sending), (f"다듬는 중 {polishing}건", polishing),
-                         (f"번역 대기 {waiting}장", waiting), (f"재수집 대기 {refetch}건", refetch)) if x[1]]
-    return {"n": sending + polishing + waiting + refetch, "lines": [x[0] for x in lines]}
+                         (f"번역 대기 {waiting}장", waiting), (refetch_line, refetch)) if x[1]]
+    # Y12-D 7: PC 수집기(확장) 신호 — 재수집은 PC 브라우저만 할 수 있다. 신호를 한 번이라도 받았거나 재수집 대기가 있으면 한 줄.
+    pc = {}
+    try:
+        from src.services import ext_heartbeat as _hb
+        pc = _hb.status(seller_ids or [])
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[대시보드] PC 수집기 신호 읽기 실패: %s", exc)
+    out_lines = [x[0] for x in lines]
+    if pc and (pc.get("seen") or refetch):
+        out_lines.append(pc["line"])
+    return {"n": sending + polishing + waiting + refetch, "lines": out_lines, "refetch": refetch, "pc": pc,
+            "show": bool(out_lines)}
 
 
 def _today() -> Dict:
@@ -252,6 +293,16 @@ def build(seller_ids) -> Dict:
         except Exception as exc:                                 # noqa: BLE001 — 한 묶음 실패가 다른 묶음을 막지 않는다
             logger.warning("[대시보드] %s 묶음 실패: %s", key, exc)
             out[key] = {"error": "확인 못 함"}
+    # Y12-D 7: 끊긴 채 재수집 대기가 있으면 손댈 것 — 재수집은 PC 콘솔 탭이 열려 있어야 돈다.
+    #   신호를 한 번도 못 받았으면(배포 전·확장 1.5.151 미만) 끊김이라 단정하지 않고 「돌아가는 것」에 「신호 기록 없음」만.
+    run, at = out.get("running") or {}, out.get("attention")
+    pc = (run.get("pc") or {}) if isinstance(run, dict) else {}
+    if isinstance(at, dict) and not at.get("error") and run.get("refetch") and pc.get("seen") and pc.get("connected") is False:
+        line = f"PC에서 콘솔 탭 열기 — 재수집 대기 {run['refetch']}건 · {pc['line'].split('· ', 1)[-1]}"
+        at.setdefault("todo", []).insert(0, {"id": "", "title": "PC 수집기", "text": line, "kind": "collector_off",
+                                             "url": "/seller/extension"})
+        at.setdefault("groups", []).insert(0, {"label": "PC 수집기 끊김", "n": 1, "kind": "collector_off"})
+        at["n"] = int(at.get("n") or 0) + 1
     mk = out.get("markets")
     out["last_check"] = mk.get("last_check", "") if isinstance(mk, dict) else ""
     return out

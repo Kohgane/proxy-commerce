@@ -2095,8 +2095,10 @@ def _ncat_table_titles(limit: int = 1000) -> list:
     rows = []
     if pg.pg_enabled():
         with pg.query() as cur:
+            from src.utils.test_accounts import NOT_TEST_SQL             # Y12-D: 시험 계정은 운영 표에서 뺀다
             cur.execute("SELECT coalesce(nullif(extra_json->>'title_ko',''), title) t, count(*) "
-                        "FROM collect_history WHERE deleted_at IS NULL GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT %s", (limit,))
+                        "FROM collect_history WHERE deleted_at IS NULL AND " + NOT_TEST_SQL
+                        + " GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT %s", (limit,))
             rows = [(str(t or ""), int(n)) for t, n in cur.fetchall() if str(t or "").strip()]
     else:
         from src.seller_console import collect_history_store as chs

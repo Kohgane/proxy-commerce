@@ -27,6 +27,35 @@
       {# Y11-K(오너 2026-10-14): 사람이 상품 ID를 찾을 필요가 없게 — 상품번호(SKU) 옆에 전체 ID + 복사. #}
       {# Y12-A: 목록 줄에서 뺀 표시는 여기 한 줄 · 상품번호·ID는 「자세히」 안 #}
       {% if item_flags %}<p class="small mb-2" data-role="item-flags">{{ item_flags|join(' · ') }}</p>{% endif %}
+      {# Y12-D(오너 2026-10-18): 버린 상품(목록에서 숨김 · DB 삭제 아님) → 「되살리기」 · 수집 실패·수집기 안 돎 → 「버리기」 #}
+      {% set _ds = discard_state or {} %}
+      {% if _ds.discarded or _ds.can_discard %}
+      <p class="small mb-2 d-flex align-items-center gap-2 flex-wrap" data-role="discard-line">
+        {% if _ds.discarded %}<span data-role="discarded-note">버린 상품 · {{ _ds.at }} — 목록·대시보드에 안 보여요</span>
+        <button type="button" class="btn btn-sm btn-ghost" data-role="discard-btn" data-restore="1">되살리기</button>
+        {% else %}<button type="button" class="btn btn-sm btn-ghost" data-role="discard-btn" data-restore="">버리기</button>
+        <span class="text-muted">목록에서 숨겨요(지우지 않음 · 되살리기 가능)</span>{% endif %}
+      </p>
+      <script>
+      (function () {
+        var b = document.querySelector('[data-role=discard-btn]');
+        if (!b) return;
+        b.addEventListener('click', function () {
+          var restore = !!b.getAttribute('data-restore'), label = b.textContent;
+          b.disabled = true;
+          fetch('/seller/collect/' + encodeURIComponent({{ item.id|tojson }}) + '/discard',
+                {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({restore: restore})})
+            .then(function (r) { return r.json().catch(function () { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }); })
+            .then(function (d) {
+              if (window.pcToast) window.pcToast(d.ok ? d.message : (d.error || '처리하지 못했어요'), d.ok ? 'success' : 'danger');
+              if (d.ok) { try { parent.postMessage({kgp: 'preview-saved'}, location.origin); } catch (e) {} location.reload(); return; }
+              b.disabled = false; b.textContent = label;
+            })
+            .catch(function () { b.disabled = false; b.textContent = label; });
+        });
+      })();
+      </script>
+      {% endif %}
       <details class="small text-muted mb-2" data-role="item-id-more"><summary>자세히</summary>
       <p class="small text-muted mb-2 kgp-id-line" data-role="item-id-line">
         {% if item_sku %}상품번호(SKU) <strong data-role="item-sku">{{ item_sku }}</strong> · {% endif %}ID

@@ -92,7 +92,9 @@ def test_collect_history_shows_thumbnails_and_bulk_select_all(client):
     html = resp.get_data(as_text=True)
     # 속도 ② 페이로드 다이어트: 목록은 대표 썸네일 1장만(갤러리 5장은 편집 드로어에서).
     assert "https://i/rep.jpg" in html                               # 대표 1장
-    assert "https://i/2.jpg" not in html and "https://i/3.jpg" not in html  # 목록엔 추가 썸네일 미노출
+    # Y12-D 추가 4: 대표를 못 받으면 대신 띄울 갤러리 **1장**만 `data-alts`에(그림으로 그리지 않는다 — 다이어트 유지)
+    assert 'src="https://i/2.jpg"' not in html and "https://i/3.jpg" not in html  # 목록엔 추가 썸네일 미노출
+    assert 'data-alts="https://i/2.jpg"' in html
     assert "toggleAllBulkMarkets" in html                            # 모달 전체 선택
 
 

@@ -555,6 +555,18 @@ def extension_rules():
     return jsonify({"ok": True, **got})
 
 
+@extension_bp.post("/ext/beat")
+def collect_ext_beat():
+    """Y12-D 7 — 확장 heartbeat: 콘솔 탭이 열려 있으면 1분마다 `{version}`. 응답 `{ok, stale_min}`."""
+    user = _require_token(scopes=["collect.write"])
+    if not user:
+        return jsonify({"ok": False, "error": auth_failure_reason()}), 401
+    from src.services import ext_heartbeat as _hb
+    body = request.get_json(silent=True) or {}
+    _hb.beat(str(user.get("user_id") or ""), body.get("version") or request.headers.get("X-KGP-Ext-Version", ""), "beat")
+    return jsonify({"ok": True, "stale_min": _hb.stale_min()})
+
+
 @extension_bp.get("/enrich/pending")
 def collect_enrich_pending():
     """C-T4': **보강 대기 목록** — 확장이 "무엇을 열어야 하는지" 묻는 곳.
@@ -570,6 +582,9 @@ def collect_enrich_pending():
     if not user:
         return jsonify({"ok": False, "error": auth_failure_reason()}), 401
     seller_id_val = str(user.get("user_id") or "")
+    # Y12-D 7: 보강 대기 폴링도 「PC 수집기가 살아 있다」는 신호(1.5.151~ — 버전 머리는 1.5.167~부터 실린다)
+    from src.services import ext_heartbeat as _hb
+    _hb.beat(seller_id_val, request.headers.get("X-KGP-Ext-Version", ""), "poll")
     ids = {seller_id_val} if seller_id_val else set()
     try:
         from src.auth.user_store import get_store as _gs
