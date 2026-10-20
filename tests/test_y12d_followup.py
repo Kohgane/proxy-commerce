@@ -301,3 +301,30 @@ def test_thumb_probe_reports_status_without_writing(monkeypatch):
     assert out["ok"] and [r["status"] for r in out["rows"]] == [200, 404] and out["why"] == "일부 실패"
     monkeypatch.setattr(D, "_item", lambda iid: (dict(item, image_url=""), "u"))
     assert O._run({"op": "thumb_probe", "item_id": "t"})["why"] == "대표 사진 주소 없음"
+
+
+@pytest.mark.parametrize("version_changed,expect", [(False, 0), (True, 2)])
+def test_editor_get_resends_only_when_outbound_version_changes(monkeypatch, version_changed, expect):
+    """Y12-D 추가 1 — 15:28 「전부 넘김」 뒤 15:30 쿠팡·네이버 재전송: 편집기를 **열기(GET)만** 해도 OCR 상자 기록을 저장하며
+    마켓 갱신 줄을 걸었다. 이제 나가는 버전(`current_key`)이 바뀐 때만 다시 보낸다."""
+    from src.services import image_edit as IE
+    from src.services import naver_detail_refresh as NDR
+    from src.services import coupang_detail_refresh as CDR
+    uid = "u-y12d-ed"
+    iid = _add(uid, {"detail_images_ko": [{"idx": 0, "kind": "detail", "status": "done", "url": "https://img.example/0.jpg"}]},
+               url="https://item.taobao.com/item.htm?id=81")
+    sent = []
+    monkeypatch.setattr(NDR, "enqueue_item", lambda *a, **k: sent.append("naver"))
+    monkeypatch.setattr(CDR, "enqueue_item", lambda *a, **k: sent.append("coupang"))
+    monkeypatch.setattr(IE, "drop_legacy_edits", lambda ex: [])
+    keys = iter(["v1", "v2" if version_changed else "v1"])
+    monkeypatch.setattr(IE, "current_key", lambda e: next(keys))
+
+    def refresh(ex, kind, idx):
+        IE._entry(ex, kind, idx)["vboxes"] = [{"id": "t0"}]           # OCR로 새로 읽은 상자 — 기록은 바뀐다
+        return True
+    monkeypatch.setattr(IE, "refresh_pending", refresh)
+    monkeypatch.setattr(IE, "plan", lambda ex, kind, idx, **k: {"boxes": []})
+    monkeypatch.setattr(IE, "_original", lambda ex, kind, idx: "")
+    r = _client(uid).get(f"/seller/collect/{iid}/image-edit/detail/0")
+    assert r.status_code == 200 and len(sent) == expect
