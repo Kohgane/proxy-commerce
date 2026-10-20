@@ -157,17 +157,21 @@ def _attn_of(row: dict) -> dict:
 def list_items(
     *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
     seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0, lean: bool = False,
-    order: str = "created", attn_only: bool = False, refetch_only: bool = False,
+    order: str = "created", attn_only: bool = False, refetch_only: bool = False, discarded: Optional[bool] = None,
 ) -> list[dict]:
     """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만. lean=True면 대형 컬럼 제외(속도).
     Y12-A: `order="action"` = 마지막 동작 최신순(기간도 마지막 동작 기준) · `attn_only` = 「손댈 것만」.
-    Y12-B: `refetch_only` = 「재수집 대기」(자동 재수집이 예정된 수집 실패 — 요약 `attn.refetch`)."""
+    Y12-B: `refetch_only` = 「재수집 대기」(자동 재수집이 예정된 수집 실패 — 요약 `attn.refetch`).
+    Y12-D: 7일 넘게 안 움직인 재수집 대기는 「손댈 것」(읽을 때 잰다) · `discarded` None 거르지 않음/False 버린 것 숨김/True 버린 것만 ·
+    셀러를 안 정한 전체 조회는 시험 계정(QA-TEST·dev)을 뺀다."""
     _b = _pg_backend()
     if _b:
         return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id,
                              seller_ids=seller_ids, limit=limit, offset=offset, lean=lean, order=order, attn_only=attn_only,
-                             refetch_only=refetch_only)
+                             refetch_only=refetch_only, discarded=discarded)
 
+    from .attention import is_attn, refetch_stale
+    from src.utils.test_accounts import is_test_account
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
     def _key(row):
@@ -176,9 +180,12 @@ def list_items(
     for row in _in_memory:
         if _key(row) < cutoff:
             continue
-        if attn_only and not int(row.get("attn_n") or 0):
+        _a = _attn_of(row)
+        if attn_only and not is_attn(row.get("attn_n"), _a):
             continue
-        if refetch_only and not _attn_of(row).get("refetch"):
+        if refetch_only and not (_a.get("refetch") and not refetch_stale(_a)):
+            continue
+        if discarded is not None and _is_discarded(row) != discarded:
             continue
         if domain and row.get("domain", "") != domain:
             continue
@@ -189,6 +196,8 @@ def list_items(
             if _rsid not in seller_ids:
                 continue
         elif seller_id is not None and _rsid != str(seller_id):
+            continue
+        elif seller_id is None and is_test_account(_rsid):      # Y12-D: 전체 조회는 시험 계정 제외
             continue
         result.append(dict(row))
     result.sort(key=_key, reverse=True)
@@ -224,12 +233,22 @@ def list_items(
 
 
 def count_items(*, days: int = 30, seller_ids: Optional[set] = None, order: str = "action", attn_only: bool = False,
-                refetch_only: bool = False) -> int:
+                refetch_only: bool = False, discarded: Optional[bool] = None) -> int:
     """Y12-A — 목록 기본 뷰(마지막 동작 기준 기간 · 손댈 것만)의 전체 건수(페이지 수 계산용). Y12-B: 재수집 대기 건수."""
     _b = _pg_backend()
     if _b:
-        return _b.count_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only, refetch_only=refetch_only)
-    return len(list_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only, refetch_only=refetch_only))
+        return _b.count_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only, refetch_only=refetch_only,
+                              discarded=discarded)
+    return len(list_items(days=days, seller_ids=seller_ids, order=order, attn_only=attn_only, refetch_only=refetch_only,
+                          discarded=discarded))
+
+
+def _is_discarded(row: dict) -> bool:
+    import json as _json
+    try:
+        return isinstance((_json.loads(row.get("extra_json") or "{}") or {}).get("discarded"), dict)
+    except Exception:
+        return False
 
 
 def get(item_id: str, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> Optional[dict]:
@@ -478,13 +497,18 @@ def dashboard_rows(*, seller_ids: Optional[set] = None) -> list:
         return _b.dashboard_rows(seller_ids=seller_ids)
     import json as _json
     out = []
+    from src.utils.test_accounts import is_test_account
     for row in _in_memory:
         if seller_ids is not None and str(row.get("seller_id", "") or "") not in seller_ids:
+            continue
+        if seller_ids is None and is_test_account(row.get("seller_id")):
             continue
         try:
             ex = _json.loads(row.get("extra_json") or "{}") or {}
         except Exception:
             ex = {}
+        if isinstance(ex.get("discarded"), dict):                 # Y12-D: 버린 상품은 안 센다(PG와 같은 규칙)
+            continue
         ats = [e["polish"]["at"] for k in ("images_ko", "detail_images_ko", "sku_images_ko") for e in ex.get(k) or []
                if isinstance(e, dict) and isinstance(e.get("polish"), dict) and e["polish"].get("at") and e["polish"].get("version")]
         small = {k: ex.get(k) for k in ("title_ko", "uploaded", "coupang_detail_sync", "attn", "risk_skip")}

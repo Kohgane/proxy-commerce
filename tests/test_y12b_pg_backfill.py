@@ -74,3 +74,37 @@ def test_pg_dashboard_rows_small_columns_and_ledger_account_counts():
     with pg.tx() as cur:
         cur.execute("DELETE FROM market_registrations WHERE product_id IN ('y12c-a', 'y12c-b')")
         cur.execute("DELETE FROM collect_history WHERE user_id=%s", [uid])
+
+
+@pytest.mark.skipif(not _has_pg, reason="로컬 PostgreSQL(DATABASE_URL) 설정 시만")
+def test_pg_y12d_stale_refetch_discarded_and_test_accounts():
+    """Y12-D — PG 경로: 7일 넘은 재수집 대기는 「손댈 것만」에 들고 「재수집 대기」에서 빠진다(읽을 때 잰다) ·
+    버린 상품 숨김/만 보기 · 셀러 안 정한 전체 조회는 시험 계정(QA-TEST·dev) 제외 · 백필 후보도 시험 계정 제외."""
+    import json
+    from datetime import datetime, timedelta, timezone
+    from src.db import pg
+    from src.db import collect_history_pg as P
+    pg.reset_state(); pg.init_schema()
+    uid = "u-y12d-pg"
+    ago = lambda d: (datetime.now(timezone.utc) - timedelta(days=d)).isoformat()
+    wait = lambda d: {"mode": "share", "enrich_state": "pending", "gate_ready": True, "price": "1",
+                      "auto_enrich": {"state": "manual", "kind": "provider_fail", "at": ago(d)}}
+    old = _add(uid, wait(21), url="https://item.taobao.com/item.htm?id=911")
+    new = _add(uid, wait(2), url="https://item.taobao.com/item.htm?id=912")
+    gone = _add(uid, {"title": "버릴 것"}, url="https://item.taobao.com/item.htm?id=913")
+    qa = _add("QA-TEST-y12d", {"title": "qa"}, url="https://qa.example/y12d")
+    with pg.tx() as cur:
+        cur.execute("UPDATE collect_history SET extra_json = jsonb_set(extra_json, '{discarded}', %s::jsonb) WHERE id::text=%s",
+                    [json.dumps({"at": ago(0)}), gone])
+    attn = {r["id"] for r in P.list_items(days=3650, seller_ids={uid}, attn_only=True)}
+    assert old in attn and new not in attn
+    assert {r["id"] for r in P.list_items(days=3650, seller_ids={uid}, refetch_only=True)} == {new}
+    assert P.count_items(days=3650, seller_ids={uid}, refetch_only=True) == 1
+    assert gone not in {r["id"] for r in P.list_items(days=3650, seller_ids={uid}, discarded=False)}
+    assert {r["id"] for r in P.list_items(days=3650, seller_ids={uid}, discarded=True)} == {gone}
+    assert gone not in {r["id"] for r in P.dashboard_rows(seller_ids={uid})}
+    assert qa not in {r["id"] for r in P.list_items(days=3650, limit=5000)}
+    assert qa in {r["id"] for r in P.list_items(days=3650, seller_ids={"QA-TEST-y12d"})}
+    assert qa not in {i for i, _u in P.ids_for_attention_backfill(limit=5000)}
+    with pg.tx() as cur:
+        cur.execute("DELETE FROM collect_history WHERE user_id IN (%s, %s)", [uid, "QA-TEST-y12d"])

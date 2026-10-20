@@ -94,12 +94,33 @@ def _shape(t) -> dict:
 
 
 def _scope(seller_id, seller_ids):
-    """(sql, params) — user_id 스코프 필터. None이면 전체."""
+    """(sql, params) — user_id 스코프 필터. None이면 전체 — Y12-D: 단 시험 계정(QA-TEST·dev)은 전체 집계에서 뺀다."""
     if seller_ids is not None:
         return "user_id = ANY(%s)", [list(seller_ids)]
     if seller_id is not None:
         return "user_id = %s", [str(seller_id)]
-    return "TRUE", []
+    from src.utils.test_accounts import NOT_TEST_SQL
+    return NOT_TEST_SQL, []
+
+
+def _flag_sql(attn_only=False, refetch_only=False, discarded=None):
+    """Y12-B·D 목록 조건 `(sql, args)` — 「손댈 것만」은 저장 때 센 수 + 저장 뒤에 낡은 재수집 대기(7일 · 읽을 때 잰다),
+    「재수집 대기」는 아직 낡지 않은 것만, `discarded` None = 거르지 않음 · False = 버린 것 숨김 · True = 버린 것만."""
+    from src.seller_console.attention import refetch_cutoff
+    sql, args = "", []
+    stale = ("(extra_json->'attn' ? 'refetch' AND COALESCE(extra_json->'attn'->>'refetch_since', '') <> '' "
+             "AND extra_json->'attn'->>'refetch_since' < %s)")
+    if attn_only:
+        sql += f" AND (attn_n > 0 OR {stale})"
+        args.append(refetch_cutoff())
+    if refetch_only:
+        sql += f" AND extra_json->'attn' ? 'refetch' AND NOT {stale}"
+        args.append(refetch_cutoff())
+    if discarded is False:
+        sql += " AND NOT (extra_json ? 'discarded')"
+    elif discarded is True:
+        sql += " AND extra_json ? 'discarded'"
+    return sql, args
 
 
 def _product_key(url: str):
@@ -163,7 +184,7 @@ _ACTION_AT = "COALESCE(last_action_at, created_at)"
 
 def list_items(*, domain: str = "", source: str = "", days: int = 30,
                seller_id=None, seller_ids=None, limit=None, offset=0, lean=False, order="created", attn_only=False,
-               refetch_only=False) -> list:
+               refetch_only=False, discarded=None) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)
     _cols = _SELECT_LEAN if lean else _SELECT      # 속도: 목록은 대형 컬럼 제외한 축약 projection
@@ -173,10 +194,9 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
     sql = (f"SELECT {_cols}{_tot} FROM collect_history WHERE deleted_at IS NULL "
            f"AND {_at} >= %s AND {sc}")
     args = [cutoff] + params
-    if attn_only:
-        sql += " AND attn_n > 0"
-    if refetch_only:                                      # Y12-B: 「재수집 대기」(자동 재수집 예정 수집 실패)
-        sql += " AND extra_json->'attn' ? 'refetch'"
+    _fs, _fa = _flag_sql(attn_only, refetch_only, discarded)   # Y12-B·D: 손댈 것만 · 재수집 대기 · 버린 상품
+    sql += _fs
+    args += _fa
     if domain:
         sql += " AND domain = %s"; args.append(domain)
     if source:
@@ -198,17 +218,16 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
     return out
 
 
-def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=False, refetch_only=False) -> int:
+def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=False, refetch_only=False,
+                discarded=None) -> int:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(None, seller_ids)
     _at = _ACTION_AT if order == "action" else "created_at"
     sql = f"SELECT count(*) FROM collect_history WHERE deleted_at IS NULL AND {_at} >= %s AND {sc}"
-    if attn_only:
-        sql += " AND attn_n > 0"
-    if refetch_only:
-        sql += " AND extra_json->'attn' ? 'refetch'"
+    _fs, _fa = _flag_sql(attn_only, refetch_only, discarded)
+    sql += _fs
     with pg.query() as cur:
-        cur.execute(sql, [cutoff] + params)
+        cur.execute(sql, [cutoff] + params + _fa)
         return int((cur.fetchone() or (0,))[0] or 0)
 
 
@@ -229,7 +248,7 @@ def dashboard_rows(*, seller_ids=None) -> list:
            "'risk_skip', extra_json->'risk_skip', "
            f"'_polish_ats', (SELECT COALESCE(jsonb_agg(e->'polish'->>'at'), '[]'::jsonb) FROM jsonb_array_elements({_KO_ARR}) e "
            "WHERE jsonb_typeof(e->'polish')='object' AND e->'polish' ? 'at' AND e->'polish' ? 'version')) "
-           f"FROM collect_history WHERE deleted_at IS NULL AND {sc}")
+           f"FROM collect_history WHERE deleted_at IS NULL AND NOT (extra_json ? 'discarded') AND {sc}")   # Y12-D: 버린 상품은 안 센다
     with pg.query() as cur:
         cur.execute(sql, params)
         rows = cur.fetchall()
@@ -247,7 +266,8 @@ def ids_for_attention_backfill(limit: int = 500) -> list:
     """Y12-A 일회성 — 목록 정렬·「손댈 것」 열이 아직 비었고 등록 기록·등록 보류가 있는 상품 id(전 셀러).
     Y12-B: + 수집 실패 후보(이미 채운 행도 — 요약에 실패 칸이 새로 생겼다): 보강 대기·막힘 · 보강 축 없이 가격·갤러리 둘 다 빈 행."""
     with pg.query() as cur:
-        cur.execute("SELECT id::text, user_id FROM collect_history WHERE deleted_at IS NULL AND ("
+        from src.utils.test_accounts import NOT_TEST_SQL
+        cur.execute("SELECT id::text, user_id FROM collect_history WHERE deleted_at IS NULL AND " + NOT_TEST_SQL + " AND ("
                     "(last_action_at IS NULL AND (extra_json ? 'uploaded' OR extra_json ? 'risk_skip')) "
                     "OR extra_json->>'enrich_state' IN ('pending', 'blocked') "
                     "OR (NOT (extra_json ? 'enrich_state') AND COALESCE(extra_json->>'price', '') IN ('', '0', '0.0', '0.00') "

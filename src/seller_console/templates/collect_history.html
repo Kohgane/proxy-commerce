@@ -25,12 +25,18 @@
     <a class="mk-attn-toggle{% if filters.attn %} is-on{% endif %}" data-role="attn-filter"
        href="{{ '/seller/collect/history' if filters.attn else '/seller/collect/history?attn=1' }}"{% if filters.attn %} aria-current="page"{% endif %}>손댈 것만</a>
   </div>
+  {# Y12-D(오너 2026-10-18): 「버리기」 한 상품은 목록에서 숨는다(DB 삭제 아님) — 여기서 모아 보고 드로어에서 되살린다 #}
+  {% if filters.discarded %}
+  <p class="pc-status pc-status-info small mb-2" data-role="discarded-banner">버린 상품만 보는 중 — 상품을 열어 「되살리기」를 누르면 목록으로 돌아와요.
+    <a href="/seller/collect/history">전체 목록으로</a></p>
+  {% endif %}
   <details class="op-card ch-filter-box" data-role="ch-filter-box"{% if filters.domain or filters.source or filters.status or filters.group or filters.reg or (filters.sort and filters.sort != 'action') %} open{% endif %}>
     <summary class="op-card-head">
       <span class="rp-step-eyebrow">필터</span>
       <span class="op-tile-sub ms-auto">최근 {{ filters.days }}일 기준</span>
     </summary>
     <div class="op-card-body">
+      <p class="small mb-2"><a href="/seller/collect/history?discarded=1&days=3650" data-role="discarded-link">버린 상품 보기</a></p>
       <nav class="mk-filter mk-filter-row mb-2" data-role="mk-filter" aria-label="등록 여부">
         {% for k, lab in (('', '전체'), ('none', '미등록만'), ('done', '등록됨만')) %}
         <a href="{{ (reg_urls or {}).get(k, '?reg=' ~ k) }}" class="{{ 'is-on' if (filters.reg or '') == k }}" data-reg="{{ k or 'all' }}"{% if (filters.reg or '') == k %} aria-current="page"{% endif %}>{{ lab }}</a>
@@ -157,6 +163,7 @@
   {% endif %}
 
   <!-- 목록 -->
+{% if mk_label %}<nav class="mk-filter mk-filter-row" data-role="mk-cell-filter" aria-label="마켓 칸"><span class="pc-badge">{{ mk_label }}</span><a href="/seller/collect/history" class="btn btn-ghost btn-sm">전체 보기</a></nav>{% endif %}
   {% if items %}
   <section class="op-card ch-card-table">
     <div class="op-card-head ch-list-head">
@@ -265,7 +272,7 @@
     </nav>
     {% endif %}
     <div class="op-card-body console-empty-state py-5">
-    {% if filters.q or filters.domain or filters.source or filters.status or filters.group or filters.reg %}
+    {% if filters.q or filters.domain or filters.source or filters.status or filters.group or filters.reg or filters.mk %}
     <div class="pc-empty-title">조건에 맞는 수집 항목이 없어요</div>
     <p class="pc-empty-sub">필터를 바꾸거나 초기화하면 전체 수집 이력을 다시 볼 수 있어요.</p>
     <div class="console-empty-state-actions">

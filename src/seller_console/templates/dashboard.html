@@ -26,8 +26,14 @@
     {% elif a.n %}
     <ul class="hb-todo" data-role="hb-todo">
       {% for t in a.todo or [] %}
-      <li class="hb-todo-row"><span class="hb-todo-t text-truncate">{{ t.title or '(제목 없음)' }}</span><span class="hb-todo-x">{{ t.text }}</span>
-        <a class="hb-todo-go" data-role="hb-todo-go" href="{{ t.url }}">보기</a></li>
+      <li class="hb-todo-row" data-kind="{{ t.kind }}"><span class="hb-todo-t text-truncate">{{ t.title or '(제목 없음)' }}</span><span class="hb-todo-x">{{ t.text }}</span>
+        <span class="hb-todo-acts">
+          {# Y12-D: 수집 실패 = 「다시 수집」(보강 큐 재투입 · 시도 상한 리셋) · 「버리기」(목록에서 숨김 · 되살리기 가능).
+             수집기 안 돎 = 「버리기」만(다시 넣으면 「n일째」만 0이 되고 PC 수집기는 여전히 안 돈다). #}
+          {% if t.kind == 'collect_fail' %}<button type="button" class="hb-todo-go" data-role="hb-recollect" data-id="{{ t.id }}">다시 수집</button>{% endif %}
+          {% if t.kind in ('collect_fail', 'collector_down') %}<button type="button" class="hb-todo-go" data-role="hb-discard" data-id="{{ t.id }}">버리기</button>{% endif %}
+          <a class="hb-todo-go" data-role="hb-todo-go" href="{{ t.url }}">보기</a>
+        </span></li>
       {% endfor %}
       {% if a.more %}<li class="hb-todo-row hb-more"><a href="/seller/collect/history?attn=1&days=3650">나머지 {{ a.more }}줄 — 손댈 것만 보기</a></li>{% endif %}
     </ul>
@@ -37,7 +43,7 @@
   </section>
 
   {% set r = h.running or {} %}
-  {% if r.n or r.error %}
+  {% if r.n or r.error or r.show %}
   <section class="hb-card hb-r" data-role="hb-running">
     <div class="hb-sum"><span class="hb-title">돌아가는 것</span>
       {% if r.error %}<span class="hb-num hb-num-muted">{{ r.error }}</span>{% else %}<span class="hb-num">{{ r.n }}</span>{% endif %}</div>
@@ -88,7 +94,10 @@
         {% for r in m.rows or [] %}
         <tr data-role="hb-market-row" data-slot="{{ r.slot }}">
           <th scope="row"><span class="hb-mname text-truncate">{{ r.name }}</span><span class="hb-mkt">{{ r.market_ko }}</span></th>
-          <td>{{ r.sale }}</td><td>{{ r.wait }}</td><td class="{{ 'is-bad' if r.rejected }}">{{ r.rejected }}</td>
+          {# Y12-D 5: 숫자를 누르면 그 칸의 상품 목록(0이면 링크 없음) #}
+          {% for col, n in (('sale', r.sale), ('wait', r.wait), ('rejected', r.rejected)) %}
+          <td class="{{ 'is-bad' if col == 'rejected' and n }}">{% if n %}<a class="hb-mcell" data-role="hb-mcell" href="/seller/collect/history?mk={{ r.slot|urlencode }}&amp;mst={{ col }}&amp;days=3650">{{ n }}</a>{% else %}{{ n }}{% endif %}</td>
+          {% endfor %}
           <td class="{{ 'is-off' if r.connected is sameas false }}">{{ '연결' if r.connected else ('미연결' if r.connected is sameas false else '—') }}</td>
           <td class="hb-mtime">{{ r.last_check or '—' }}</td>
         </tr>
@@ -111,4 +120,25 @@
   </section>
   </div>
 </div>
+<script>
+(function () {
+  var box = document.querySelector('[data-role=hb-todo]');
+  if (!box) return;
+  function toast(m, t) { if (window.pcToast) window.pcToast(m, t || 'info'); }
+  box.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-role=hb-recollect], button[data-role=hb-discard]');
+    if (!b) return;
+    var id = b.getAttribute('data-id'), re = b.getAttribute('data-role') === 'hb-recollect', label = b.textContent;
+    b.disabled = true; b.textContent = re ? '넣는 중…' : '버리는 중…';
+    fetch('/seller/collect/' + encodeURIComponent(id) + (re ? '/recollect' : '/discard'),
+          {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(re ? {mode: 'queue'} : {})})
+      .then(function (r) { return r.json().catch(function () { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }); })
+      .then(function (d) {
+        if (d.ok) { toast(d.message || '처리했어요', 'success'); location.reload(); return; }
+        toast(d.error || '처리하지 못했어요', 'danger'); b.disabled = false; b.textContent = label;
+      })
+      .catch(function () { toast('처리하지 못했어요 — 잠시 뒤 다시 눌러 주세요', 'danger'); b.disabled = false; b.textContent = label; });
+  });
+})();
+</script>
 {% endblock %}

@@ -11,8 +11,11 @@
     <a href="javascript:void(0)" class="kgp-open-drawer d-inline-flex" role="button" aria-label="{{ _t }} 열기"
        data-id="{{ it.id }}" data-url="{{ it.url }}" data-title="{{ _t }}">
     {% if it.thumbs %}
+      {# Y12-D(오너 15:32 리브러쉬·BLACKHOLES 빈칸): 대표 사진을 못 받으면 갤러리 다음 장으로 — 다 실패하면 빈칸 대신 「사진 못 불러옴」 표시 #}
       <img src="{{ it.thumbs[0] }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
-           width="44" height="44" class="ch-thumb ch-thumb-lg" onerror="this.style.display='none'">
+           width="44" height="44" class="ch-thumb ch-thumb-lg" data-role="ch-thumb" data-alts="{{ it.thumb_alts|default([])|join(' ') }}"
+           onerror="var a=(this.getAttribute('data-alts')||'').split(' ').filter(Boolean);if(a.length){this.setAttribute('data-alts',a.slice(1).join(' '));this.src=a[0];}else{this.style.display='none';var n=this.nextElementSibling;if(n)n.hidden=false;}">
+      <span class="d-inline-flex align-items-center justify-content-center text-muted ch-thumb-none" data-role="ch-thumb-failed" title="사진을 불러오지 못했어요" aria-label="사진을 불러오지 못했어요" hidden><i class="bi bi-image"></i></span>
     {% else %}
       <span class="d-inline-flex align-items-center justify-content-center text-muted ch-thumb-none" aria-label="이미지 없음"><i class="bi bi-image"></i></span>
     {% endif %}

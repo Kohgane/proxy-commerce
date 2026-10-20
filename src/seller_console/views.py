@@ -5777,10 +5777,12 @@ def _image_edit_item(item_id: str):
         return item, {}
 
 
-def _image_edit_save(item_id: str, ex: dict) -> bool:
+def _image_edit_save(item_id: str, ex: dict, resend: bool = True) -> bool:
+    """`resend=False` = 나가는 사진은 그대로인 저장(상자·OCR 기록만) — 마켓 갱신 줄을 안 건다(Y12-D: 편집기를 열기만 해도
+    쿠팡·네이버로 다시 보내던 길을 막는다)."""
     from . import collect_history_store
     ok = bool(collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
-    if ok:
+    if ok and resend:
         # Y11-V: 사진 편집·버전 고르기로 나갈 사진이 바뀌었다 — 네이버 등록본 본문 다시 보내기 줄(크론 · 판매중일 때만 · 같은 본문 1회)
         from src.services import naver_detail_refresh as _ndr
         _ndr.enqueue_item(item_id, ex, _seller_id())
@@ -5819,10 +5821,12 @@ def collect_image_edit(item_id: str, kind: str, idx: int):
         _image_edit_save(item_id, ex)                            # Y11-B: 색 덩어리 편집본은 열자마자 되돌린다
     if request.method == "GET":
         before = json.dumps(_ie._entry(ex, kind, idx) or {}, sort_keys=True, ensure_ascii=False)
+        cur_before = _ie.current_key(_ie._entry(ex, kind, idx))
         _ie.refresh_pending(ex, kind, idx)                       # Y11-G: 만드는 중이던 편집본이 다 됐으면 칩을 켠다
         p = _ie.plan(ex, kind, idx)
         if json.dumps(_ie._entry(ex, kind, idx) or {}, sort_keys=True, ensure_ascii=False) != before:
-            _image_edit_save(item_id, ex)                         # OCR로 새로 읽은 상자 · 틀을 바로잡은 상자 — 다음엔 다시 안 부른다
+            # OCR로 새로 읽은 상자 · 틀을 바로잡은 상자 — 다음엔 다시 안 부른다. 마켓엔 나가는 버전이 바뀐 때만 다시 보낸다
+            _image_edit_save(item_id, ex, resend=_ie.current_key(_ie._entry(ex, kind, idx)) != cur_before)
         return jsonify(dict(p, ok=True, kind=kind, idx=idx, orig=_ie._original(ex, kind, idx)))
     body = request.get_json(force=True, silent=True) or {}
     ops = [o for o in (body.get("ops") or []) if isinstance(o, dict)][:40]
@@ -5903,6 +5907,30 @@ def collect_erase_suggest_skip(item_id: str):
     logger.info("[지우기 제안] 넘김 item=%s %s장 · 남은 제안 %s장", item_id, len(done), left)
     return jsonify({"ok": True, "skipped": len(done), "left": left, "skipped_total": total,
                     "message": f"{len(done)}장 넘겼어요" + (f" — 남은 제안 {left}장" if left else " — 남은 제안 없음")})
+
+
+@bp.post("/collect/<item_id>/discard")
+def collect_item_discard(item_id: str):
+    """Y12-D(오너 2026-10-18) 「버리기」 — 수집 실패 상품을 목록·대시보드에서 숨긴다(`extra.discarded` 기록만 · DB 삭제 아님).
+    `{restore: true}` = 「되살리기」(기록을 지운다). 버리면 손댈 것에서 빠진다(저장 때 요약을 다시 잰다)."""
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    restore = bool((request.get_json(force=True, silent=True) or {}).get("restore"))
+    if restore and not isinstance(ex.get("discarded"), dict):
+        return jsonify({"ok": False, "error": "버린 상품이 아니에요."}), 409
+    if not restore and isinstance(ex.get("discarded"), dict):
+        return jsonify({"ok": False, "error": "이미 버린 상품이에요."}), 409
+    if restore:
+        ex.pop("discarded", None)
+    else:
+        ex["discarded"] = {"at": datetime.now(timezone.utc).isoformat(), "by": _seller_id()}
+    from . import collect_history_store
+    if not collect_history_store.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
+        return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
+    logger.info("[수집 상품] %s item=%s", "되살림" if restore else "버림", item_id)
+    return jsonify({"ok": True, "discarded": not restore,
+                    "message": "목록으로 되살렸어요" if restore else "버렸어요 — 「버린 상품 보기」에서 되살릴 수 있어요"})
 
 
 @bp.post("/collect/<item_id>/image-edit/<kind>/<int:idx>/translate")
@@ -10704,6 +10732,23 @@ def discovery_keywords_remove():
 # Phase 135.2: /seller/collect/history + /seller/collect/preview/<id>
 # ---------------------------------------------------------------------------
 
+def _discard_state(item, extra) -> dict:
+    """Y12-D 드로어 「버리기」·「되살리기」 — `{discarded, at, can_discard}`. 버릴 수 있는 건 수집 실패·수집기 안 돎 상품."""
+    try:
+        from .attention import collect_fail, kst, refetch_stale, summarize
+        ex = extra if isinstance(extra, dict) else {}
+        d = ex.get("discarded") if isinstance(ex.get("discarded"), dict) else None
+        if d:
+            return {"discarded": True, "at": kst(d.get("at")), "can_discard": False}
+        cf = collect_fail(ex, str(item.get("title") or ""))
+        stale = bool(cf and cf["phase"] == "waiting" and refetch_stale(summarize(ex, str(item.get("title") or ""),
+                                                                             str(item.get("collected_at") or ""))))
+        return {"discarded": False, "at": "", "can_discard": bool(cf and (cf["phase"] == "exhausted" or stale))}
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[드로어] 버리기 상태 실패: %s", exc)
+        return {"discarded": False, "at": "", "can_discard": False}
+
+
 def _erase_photos_view(extra) -> list:
     """Y12-B — 드로어 「지우기 제안」 줄: 남은 제안(사진별 「사진 편집」·「넘김」) + 넘긴 제안(접힘). 썸네일 = 나가는 사진(없으면 수집 원본)."""
     try:
@@ -10768,10 +10813,12 @@ def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
     if it.get("risk_skip"):
         out.append("등록 보류 · " + str(it["risk_skip"]))
     try:                                                         # Y12-B: 자동 재수집 예정이면 그 사실도(오너가 누를 일 없음)
-        from .attention import collect_fail
-        cf = collect_fail(extra if isinstance(extra, dict) else {}, str(item.get("title") or ""))
-        if cf and cf["phase"] == "waiting":
-            out.append(cf["text"] + " · " + cf["why"])
+        from .attention import collect_fail, refetch_days, summarize
+        _ex = extra if isinstance(extra, dict) else {}
+        cf = collect_fail(_ex, str(item.get("title") or ""))
+        if cf and cf["phase"] == "waiting":                      # Y12-D: 「n일째」(마지막으로 움직인 날부터)
+            n = refetch_days(summarize(_ex, str(item.get("title") or ""), str(item.get("collected_at") or "")))
+            out.append(cf["text"] + " · " + cf["why"] + (f" · {n}일째" if n else ""))
     except Exception as exc:                                     # noqa: BLE001
         logger.debug("[드로어] 재수집 대기 판정 실패: %s", exc)
     return out
@@ -10795,6 +10842,9 @@ def _shape_collect_items(items, current_lang):
                     rep = u
                     break
         it["thumbs"] = [rep] if rep else []           # 목록=대표 1장
+        _imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
+        it["thumb_alts"] = [u for u in (str(x or "").strip() for x in _imgs)
+                            if u and u != rep and " " not in u][:3]   # Y12-D: 대표를 못 받으면 차례로 시도할 갤러리 장
         _tko = (str(ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
         _ten = str(ex.get("title_en") or ex.get("title") or it.get("title") or "").strip()
         _translated = bool(_tko) and bool(_ten) and _tko != _ten
@@ -10954,6 +11004,13 @@ def collect_history():
         reg_f = ""
     sort = (request.args.get("sort") or "action").strip()        # Y12-A: 기본 = 마지막 동작 최신순
     attn_f = request.args.get("attn", "").strip() == "1"           # Y12-A: 「손댈 것만」
+    # Y12-D 5(오너 15:32): 대시보드 「마켓별 현황」 칸 → 그 칸의 상품만(자리 `mk` = coupang:gogane… · 칸 `mst` = sale|wait|rejected)
+    from .home_bundles import MARKET_ROWS as _MKR
+    mk_f = request.args.get("mk", "").strip()
+    mk_f = mk_f if mk_f in {r[0] for r in _MKR} else ""
+    mst_f = request.args.get("mst", "").strip()
+    mst_f = mst_f if (mk_f and mst_f in ("sale", "wait", "rejected")) else ""
+    disc_f = request.args.get("discarded", "").strip() == "1"      # Y12-D: 버린 상품만(기본은 숨김 — 드로어에서 되살리기)
     per_page = request.args.get("per_page", 50, type=int)
     if per_page not in (20, 50, 100):
         per_page = 50
@@ -10965,7 +11022,7 @@ def collect_history():
     # 속도: 기본 뷰(최신순·필터 없음)는 목록을 SQL LIMIT/OFFSET로 그 페이지만 가져온다
     #   (전체 스캔 회피 — 상품 많아도 첫 페이지 비용 고정). 필터/타 정렬은 기존 전체 로드 경로.
     _sql_page = (sort in ("newest", "action") and not q and not status_f and not group_f and not domain and not source
-                 and not hygiene_f and not reg_f)
+                 and not hygiene_f and not reg_f and not mk_f)
     _order = "action" if sort == "action" else "created"
 
     items = []
@@ -10981,10 +11038,10 @@ def collect_history():
         _use_lean = not group_f
         if _sql_page:
             items = list_items(days=days, seller_ids=_ids, limit=per_page, offset=offset, lean=True,
-                               order=_order, attn_only=attn_f)
+                               order=_order, attn_only=attn_f, discarded=disc_f)
         else:
             items = list_items(domain=domain, source=source, days=days, seller_ids=_ids, lean=_use_lean,
-                               order=_order, attn_only=attn_f)
+                               order=_order, attn_only=attn_f, discarded=disc_f)
         # 속도: 무한스크롤 조각(fmt=rows)은 행만 렌더 → summary·도메인 스캔 2회 전부 생략(1쿼리).
         if fmt != "rows":
             summ = summary(days=days, seller_ids=_ids)
@@ -11001,7 +11058,8 @@ def collect_history():
         elif _order == "action" or attn_f:                   # Y12-A: 마지막 동작 기준 기간·손댈 것만은 건수가 다르다
             try:
                 from .collect_history_store import count_items as _cnt
-                total_filtered = _cnt(days=days, seller_ids=_seller_identities(), order=_order, attn_only=attn_f)
+                total_filtered = _cnt(days=days, seller_ids=_seller_identities(), order=_order, attn_only=attn_f,
+                                      discarded=disc_f)
             except Exception as exc:                          # noqa: BLE001
                 logger.warning("목록 건수 실패: %s", exc)
         fastscroll = False
@@ -11043,6 +11101,10 @@ def collect_history():
                 except Exception:
                     return False
             items = [it for it in items if _registered(it) == (reg_f == "done")]
+
+        if mk_f:
+            from .home_bundles import in_market_cell as _in_cell
+            items = [it for it in items if _in_cell(it, mk_f, mst_f)]
 
         # 검색(제목/도메인/URL 부분일치)
         if q:
@@ -11139,7 +11201,10 @@ def collect_history():
         fs_buckets=fs_buckets,
         filters={"domain": domain, "source": source, "days": days,
                  "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page,
-                 "hygiene": hygiene_f, "reg": reg_f, "attn": attn_f},
+                 "hygiene": hygiene_f, "reg": reg_f, "attn": attn_f, "discarded": disc_f, "mk": mk_f, "mst": mst_f},
+        mk_label=(" · ".join(x for x in (next((f"{r[1]} {r[2]}" for r in _MKR if r[0] == mk_f), ""),
+                                          {"sale": "판매중", "wait": "승인대기", "rejected": "반려"}.get(mst_f, "")) if x)
+                  if mk_f else ""),
         hygiene_mode=(hygiene_f == "cleanup"),
         # M7: 「미등록만 · 등록됨만」 — 다른 필터는 그대로 두고 reg만 바꾼 주소(페이지는 1로)
         reg_urls={k: url_for(request.endpoint, **{**{kk: vv for kk, vv in request.args.items() if kk not in ("reg", "page", "offset")},
@@ -11467,6 +11532,7 @@ def collect_preview_by_id(item_id: str):
         detail_auto_active=detail_auto_active, desc_ui_note=desc_ui_note, option_name_hints=option_name_hints,
         pv_ready=pv_ready_view(extra if isinstance(extra, dict) else {}),
         market_records=_market_records(extra), item_flags=_row_flags(item, extra), erase_photos=_erase_photos_view(extra),
+        discard_state=_discard_state(item, extra),
         default_margin_pct=__import__("src.price", fromlist=["target_margin_pct"]).target_margin_pct(extra if isinstance(extra, dict) else {}),
         opt_view=opt_view, sku_ko=sku_ko, sku_brand_removed=sku_brand_removed, orig_title_shown=orig_title_shown, orig_title_marks=orig_title_marks, ship_est=ship_est,
         field_src=field_src,

@@ -1278,6 +1278,7 @@ body.kgp-editor.console-body { background: var(--surface) !important; }
   width: 52px; height: 52px; border-radius: var(--radius); font-size: 1.1rem;
   background: color-mix(in srgb, var(--ink) 4%, transparent);
 }
+.ch-thumb-none[hidden] { display: none !important; }   /* Y12-D: 대표·갤러리 다 못 받은 뒤에만 보인다(.d-inline-flex보다 우선) */
 .ch-cell-title { max-width: 360px; }
 .ch-url-pill {
   max-width: 220px; font-size: .7rem; line-height: 1.5; padding: 1px 8px; border-radius: 999px;
@@ -2542,6 +2543,8 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 .hb-todo-x { color: var(--text-muted); overflow-wrap: anywhere; }
 .hb-todo-go { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--border);
   border-radius: var(--radius-pill); color: var(--teal); text-decoration: none; font-weight: 600; font-size: .82rem; }
+.hb-todo-acts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+button.hb-todo-go { background: transparent; cursor: pointer; }
 .hb-todo-go:focus-visible, .hb-tile:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .hb-more { display: block; }
 /* C·E 타일 — 2열(390) · 4열(데스크톱 C) */
@@ -2560,6 +2563,7 @@ a.hb-tile:hover { border-color: var(--teal); }
 .hb-mtable thead th { border-top: 0; font-size: .72rem; font-weight: 600; color: var(--text-muted); }
 .hb-mtable th:first-child, .hb-mtable td:first-child { text-align: left; }
 .hb-mtable col.c-name { width: 27%; } .hb-mtable col.c-n { width: 12%; } .hb-mtable col.c-on { width: 14%; } .hb-mtable col.c-t { width: 23%; }
+.hb-mcell { display: block; padding: 4px 0; color: var(--teal); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }  /* Y12-D 5: 칸 → 그 칸의 상품 목록 */
 .hb-mtable tbody th { font-weight: 600; overflow: hidden; }
 .hb-mname { display: block; }
 .hb-mkt { display: block; font-size: .7rem; font-weight: 400; color: var(--text-muted); }

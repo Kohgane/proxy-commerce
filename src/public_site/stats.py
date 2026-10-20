@@ -21,10 +21,12 @@ def _collected() -> Optional[int]:
     if pg_enabled():
         from src.db import pg
         with pg.query() as cur:
-            cur.execute("SELECT count(*) FROM collect_history WHERE deleted_at IS NULL")
+            from src.utils.test_accounts import NOT_TEST_SQL                 # Y12-D: 시험 계정(QA-TEST·dev)은 안 센다
+            cur.execute("SELECT count(*) FROM collect_history WHERE deleted_at IS NULL AND " + NOT_TEST_SQL)
             return int(cur.fetchone()[0])
     from src.seller_console import collect_history_store as S
-    return sum(1 for r in S._in_memory if not r.get("deleted_at"))
+    from src.utils.test_accounts import is_test_account
+    return sum(1 for r in S._in_memory if not r.get("deleted_at") and not is_test_account(r.get("seller_id")))
 
 
 def _registered() -> Optional[int]:

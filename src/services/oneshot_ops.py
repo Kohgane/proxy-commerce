@@ -26,6 +26,8 @@
   「권고안 채택」): 화면 버튼과 **같은 함수**로 오너 결정을 적용한다 — 대표 사진(후보 장마다 텐센트 OCR 상자 수를 재서 0상자 장 ·
   여럿이면 `prefer`)=「이 장을 대표로」, 위험 「빼고 등록」=`risk_gate.decide(strip)`(`pixels=restore`: 음차 상자만 원본 복원 ·
   원문에 상표가 남는 장은 사진째 뺌). 저장 뒤 같은 계정으로 사전검증 잡을 띄운다. 수집 원본(`images`·`skus`)은 손대지 않는다
+- `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
+  (리퍼러 없이 = 목록 `<img referrerpolicy=no-referrer>`와 같은 조건). 상태 코드·형식·크기만 남긴다 — 기록은 바꾸지 않는다
 """
 from __future__ import annotations
 
@@ -39,7 +41,8 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
-       "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect")
+       "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
+       "thumb_probe")
 
 
 def _now() -> str:
@@ -83,6 +86,8 @@ def _run(row: dict) -> Dict:
         return register(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "image_probe":
         return _image_probe(item_id, str(row.get("kind") or "detail"), [int(i) for i in (row.get("idx") or [])][:6])
+    if op == "thumb_probe":
+        return _thumb_probe(item_id)
     from src.services import ocr_compare_diag as D
     item, uid = D._item(item_id)
     if not item:
@@ -138,8 +143,8 @@ def _attn_backfill() -> Dict:
             ex = json.loads(row.get("extra_json") or "{}") or {}
         except Exception:                                        # noqa: BLE001
             continue
-        attn = summarize(ex, row.get("title") or "")
-        n = len(attn_items(ex, row.get("title") or "", fresh=True))
+        attn = summarize(ex, row.get("title") or "", row.get("collected_at") or "")
+        n = len(attn_items(dict(ex, attn=attn), row.get("title") or ""))   # 적는 요약과 같은 것으로 센다(Y12-D: 수집 시각 기준 포함)
         la = last_action(ex, row.get("collected_at") or "")
         if chp.set_attention(item_id, la["at"] or row.get("collected_at"), n, attn if _has(attn) else None):
             done += 1
@@ -268,6 +273,11 @@ def _image_probe(item_id: str, kind: str, idxs: List[int]) -> Dict:
     from src.services import detail_image_plan as P
     from src.services import image_translate_tencent as tc
     from src.services import ocr_tencent as O
+def _thumb_probe(item_id: str) -> Dict:
+    """대표 사진(목록 썸네일) + 갤러리 앞 2장을 리퍼러 없이 받아 본다 — 「주소 없음 / 만료(404) / 차단(403) / 너무 큼」을 사실로 가른다."""
+    import json
+    import requests
+    from src.services import ocr_compare_diag as D
     item, _uid = D._item(item_id)
     if not item:
         return {"ok": False, "why": "상품을 찾지 못했어요"}
@@ -537,3 +547,20 @@ def _naver_resend(item_id: str, markets: List[str]) -> Dict:
         rows.append({"market": m, "ok": bool(js.get("ok")), "status": code, "images": js.get("images"),
                      "text_chars": js.get("text_chars"), "error": str(js.get("error") or "")[:300]})
     return {"ok": bool(rows) and all(x["ok"] for x in rows), "rows": rows, "why": "" if rows else "네이버 마켓이 없어요"}
+    rep = str(item.get("image_url") or "").strip()
+    urls = [rep] + [str(u).strip() for u in (ex.get("images") or []) if str(u or "").strip() and str(u).strip() != rep][:2]
+    if not rep:
+        return {"ok": True, "why": "대표 사진 주소 없음", "rows": []}
+    rows = []
+    for u in [x for x in urls if x]:
+        try:
+            r = requests.get(u, timeout=15, stream=True, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*"})
+            size = int(r.headers.get("Content-Length") or 0)
+            rows.append({"url": u[:200], "status": r.status_code, "type": str(r.headers.get("Content-Type") or "")[:40],
+                         "bytes": size})
+            r.close()
+        except Exception as exc:                                 # noqa: BLE001 — 한 장 실패가 다른 장을 막지 않는다
+            rows.append({"url": u[:200], "status": 0, "why": f"{type(exc).__name__}: {str(exc)[:120]}"})
+    bad = [x for x in rows if x.get("status") != 200]
+    return {"ok": True, "why": "대표 사진 받기 실패" if rows and rows[0].get("status") != 200 else ("일부 실패" if bad else "모두 받음"),
+            "rows": rows}
