@@ -8,6 +8,7 @@ Phase 190: prevalidate(), external_product_id/url, error_code/hint 추가.
 from __future__ import annotations
 
 import html as _html
+import json
 import logging
 import os
 import re
@@ -189,7 +190,7 @@ def _market_desc_source(pd: Dict[str, Any]) -> str:
 def build_dispatch_payload(product_data: Dict[str, Any],
                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """S2: 아래 빌더 결과에 **마켓 상세 규칙**(한국어만·가게 줄 뺌)을 얹는다 — 단건·일괄·재등록 세 경로 공통."""
-    pd = apply_outbound_text(_build_dispatch_payload(product_data, item))
+    pd = apply_outbound_text(swap_stub_description(_build_dispatch_payload(product_data, item), item))
     # Y1: 가게 아이콘·추적 픽셀은 마켓에 상세 이미지로 보내지 않는다(저장값은 그대로).
     try:
         from src.collectors.collect_status import real_detail_images
@@ -198,6 +199,37 @@ def build_dispatch_payload(product_data: Dict[str, Any],
     except Exception as exc:
         logger.warning("[등록] 상세 이미지 정리 실패(빌더 값 그대로): %s", exc)
     return apply_outbound_options(pd)
+
+
+#: Y13-G 4 — 구조형 기본 문장(`ai.translator._structured_draft`)의 고정 안내 줄. 이 줄이 있으면 그 글은 셀러가 쓴 글이 아니라
+#:   AI가 없을 때 만든 기본 문장이다(10-10 BLACKHOLES: 「AI 초안 생성」이 OpenAI 크레딧 부족으로 이 글을 설명 칸에 저장).
+STUB_MARK = "· 해외 구매대행 상품으로, 주문 후 현지 배송·통관을 거쳐 발송됩니다."
+
+
+def is_stub_description(text: str) -> bool:
+    t = str(text or "")
+    return STUB_MARK in t and "■ 배송·구매대행 안내" in t
+
+
+def swap_stub_description(pd: Dict[str, Any], item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Y13-G 4(오너 2026-10-20) — 설명 칸이 **기본 문장**이고 AI 초안(Anthropic·OpenAI)이 있으면 마켓엔 AI 초안을 싣는다.
+    셀러가 손으로 쓴 글(고정 안내 줄 없음)은 그대로. 저장값은 바꾸지 않는다(나가는 값만 — 쿠팡·네이버 공통 빌더)."""
+    out = dict(pd or {})
+    if not any(is_stub_description(out.get(k)) for k in ("description", "description_ko")):
+        return out
+    a = out.get("detail_auto")
+    if not isinstance(a, dict) and item:
+        try:
+            a = (json.loads(item.get("extra_json") or "{}") or {}).get("detail_auto")
+        except Exception:                                        # noqa: BLE001
+            a = None
+    if not (isinstance(a, dict) and str(a.get("provider") or "") in ("anthropic", "openai") and str(a.get("text") or "").strip()):
+        return out
+    for k in ("description", "description_ko"):
+        if is_stub_description(out.get(k)):
+            out[k] = str(a["text"]).strip()
+    out["description_from_ai_draft"] = str(a.get("provider") or "")
+    return out
 
 
 def apply_outbound_options(pd: Dict[str, Any]) -> Dict[str, Any]:
@@ -1076,10 +1108,14 @@ def naver_payload_holds(pd: Dict[str, Any], iid: str = "", market: str = "smarts
         prepared = up.prepare_product(to_collected(payload))
         body = up._build_product_payload({**prepared, "_option_plan": {}})
         miss = _nr.missing(body, skip=_NAVER_COVERED)
+        from src.uploaders import naver_kc as _kc
+        _kch = _kc.hold(body, getattr(up, "last_kc_required", None))   # Y13-G 1: KC 대상인데 특례 칸이 비면 보류
     except Exception as exc:                                     # noqa: BLE001 — 판정 못 하면 막지 않는다(등록이 같은 조립)
         logger.info("[사전검증] 네이버 필수 칸 표 건너뜀: %s", exc)
         return []
     out = []
+    if _kch:
+        out.append({"short": "네이버 KC 인증", "fix": "naver_kc", "code": _kch["code"], "line": _kch["line"]})
     _fields = {m["field"] for m in miss}
     for m in miss:
         f = m["field"]

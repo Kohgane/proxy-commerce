@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
-       "retranslate", "owner_decision", "register")
+       "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh")
 
 
 def _now() -> str:
@@ -70,6 +70,10 @@ def _run(row: dict) -> Dict:
         return _owner_decision(item_id, row.get("rep") if isinstance(row.get("rep"), dict) else {},
                                [str(x) for x in (row.get("strip") or []) if x][:5], str(row.get("pixels") or ""),
                                [str(m) for m in (row.get("markets") or []) if m])
+    if op == "coupang_refresh":
+        return _coupang_refresh(item_id, [str(m) for m in (row.get("markets") or []) if m])
+    if op == "relist_fix":
+        return _relist_fix(item_id, row)
     if op == "register":
         return register(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "image_probe":
@@ -433,3 +437,34 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
         return dict(out, ok=False, why="저장하지 못했어요")
     out["prevalidate"] = _prevalidate(iid, markets)
     return out
+
+
+def _relist_fix(item_id: str, row: dict) -> Dict:
+    """Y13-G 3 — 등록본 상품명·카테고리 한 번에 고치기(`relist_fix`). 결과는 등록 기록 `uploaded[].relist_fix`."""
+    from src.seller_console import collect_history_store as store
+    from src.services import ocr_compare_diag as D
+    from src.services import relist_fix as RF
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    iid = str(item.get("id") or item_id)
+    name = str(row.get("name") or "").strip()
+    if not name:
+        return {"ok": False, "why": "새 상품명이 없어요"}
+    return RF.run(item, [str(m) for m in (row.get("markets") or []) if m], name=name,
+                  coupang_category=str(row.get("coupang_category") or ""), naver_category=str(row.get("naver_category") or ""),
+                  save=lambda fn: store.merge_extra(iid, fn, seller_ids={uid} if uid else None))
+
+
+def _coupang_refresh(item_id: str, markets: List[str]) -> Dict:
+    """Y13-G 4 — 쿠팡 등록본 상세 다시 보내기(화면 「지금 갱신」과 같은 함수 `refresh_item` — 승인필요 PUT = 재심사)."""
+    from src.services import coupang_detail_refresh as CDR
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    iid = str(item.get("id") or item_id)
+    rows = CDR.refresh_item(item, seller_id=uid, markets=markets or None, save=CDR.store_save(iid, {uid} if uid else None))
+    return {"ok": bool(rows) and all(r.get("ok") for r in rows),
+            "rows": [{k: r.get(k) for k in ("market", "sid", "sent", "ok", "state", "error", "market_status")} for r in rows],
+            "why": "" if rows else "쿠팡 등록 기록이 없어요"}

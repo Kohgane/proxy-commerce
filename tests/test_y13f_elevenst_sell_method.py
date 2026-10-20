@@ -44,3 +44,13 @@ def test_precheck_holds_on_rejected_sell_method(monkeypatch):
     monkeypatch.setenv("ELEVENST_SELL_METHOD", "01")
     r2 = D.UploadDispatcher()._prevalidate_market(pd, "elevenst")
     assert r2.error_code != "elevenst_sell_method"
+
+
+def test_blank_brand_defaults_to_gita():
+    """Y13-G 2(오너 2026-10-20) — 11번가 500 「브랜드코드가 없습니다 — brand 명 필수」 → 빈 브랜드는 「기타」."""
+    up = E.ElevenStUploader.__new__(E.ElevenStUploader)
+    up.default_category = "1"
+    prepared = up.prepare_product({"title_ko": "블랙홀 벽등", "sell_price_krw": 30000, "brand": ""})
+    assert prepared["brand"] == "기타"
+    assert "<brand>기타</brand>" in _xml(brand="")
+    assert "<brand>BLACKHOLES</brand>" in _xml(brand="BLACKHOLES")

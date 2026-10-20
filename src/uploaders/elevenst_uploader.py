@@ -40,6 +40,10 @@ _BASE_URL = "https://api.11st.co.kr/rest"
 SELL_METHOD_REJECTED = {"02": "11번가가 「API로 이용할 수 없는 판매방식 입니다」(HTTP 500 · 2026-10-19)로 거부한 값"}
 
 
+#: Y13-G 2 — 브랜드 칸이 빈 상품의 11번가 브랜드 이름(오너 결정)
+DEFAULT_BRAND = "기타"
+
+
 def sell_method() -> str:
     """보낼 판매방식 코드 — `ELEVENST_SELL_METHOD`(기본 01 = 고정가 판매)."""
     v = (os.getenv("ELEVENST_SELL_METHOD") or "01").strip()
@@ -209,7 +213,9 @@ class ElevenStUploader(BaseUploader):
             "price": price,
             "images": images,
             "category_id": category_id,
-            "brand": collected.get("brand", ""),
+            # Y13-G 2(오너 2026-10-20): 11번가는 브랜드 코드가 없으면 브랜드 이름이 필수(500 「브랜드코드가 없습니다」) —
+            #   빈 상품은 「기타」(오너 결정 · 지어 낸 브랜드 아님)
+            "brand": str(collected.get("brand") or "").strip() or DEFAULT_BRAND,
             "stock": 999,
         }
 
@@ -225,7 +231,7 @@ class ElevenStUploader(BaseUploader):
             for i, url in enumerate(images[:4], start=1)
         )
         title = escape(str(product.get("title", "")))
-        brand = escape(str(product.get("brand", "")))
+        brand = escape(str(product.get("brand") or "").strip() or DEFAULT_BRAND)
         detail = escape(str(product.get("description_html", "")) or title)
         category_id = escape(str(product.get("category_id", self.default_category)))
         price = int(product.get("price", 0) or 0)
