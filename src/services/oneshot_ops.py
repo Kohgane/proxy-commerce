@@ -496,6 +496,7 @@ def _relist_fix(item_id: str, row: dict) -> Dict:
         return {"ok": False, "why": "새 상품명이 없어요"}
     return RF.run(item, [str(m) for m in (row.get("markets") or []) if m], name=name,
                   coupang_category=str(row.get("coupang_category") or ""), naver_category=str(row.get("naver_category") or ""),
+                  detail_markets=[str(m) for m in (row.get("detail_markets") or []) if m],
                   save=lambda fn: store.merge_extra(iid, fn, seller_ids={uid} if uid else None))
 
 

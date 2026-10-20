@@ -53,3 +53,23 @@ def test_heavy_request_releases_after(monkeypatch):
     c.post("/seller/collect/upload", json={"product": {}, "markets": []})
     c.get("/seller/")
     assert calls == ["collect_upload"]                             # 등록 요청 뒤에만(대시보드는 아님)
+
+
+def test_every_tick_logs_idle_instance_mb(monkeypatch):
+    """Y14-e — 문지기 기록(`rss:gate`)은 백그라운드 일을 시작할 때만 남았다 → 틱마다 드레인 전에 한 줄(job=tick-idle)."""
+    import src.seller_console.translate_worker as TW
+    import src.pricing.cron as CRON
+    from src.utils import bg_job, rss
+    rows = []
+    monkeypatch.setattr(bg_job, "_gate_log", lambda name, ok, cur, lim: rows.append((name, ok, cur, lim)))
+    monkeypatch.setattr(rss, "start_ok", lambda: (True, 233, 420))
+    order = []
+    monkeypatch.setattr(TW, "drain_once", lambda limit=10, time_budget_sec=None:
+                        order.append("drain") or {"ok": True, "processed": 0, "remaining": 0})
+    monkeypatch.setattr(CRON, "_run_pilot_finish_tick", lambda chunk=3, time_budget_sec=None: {})
+    from src.services import workers as W
+    monkeypatch.setattr(W, "lease", lambda *a, **k: True)
+    from src.order_webhook import app
+    CRON._tick_lock.acquire(blocking=False)
+    CRON._run_full_tick(app, limit=1, pilot_chunk=1, tick_budget=30.0)
+    assert rows and rows[0] == ("tick-idle", True, 233, 420) and order == ["drain"]

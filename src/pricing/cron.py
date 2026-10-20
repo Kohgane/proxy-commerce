@@ -180,6 +180,14 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
             logger.info("틱 건너뜀: 다른 서비스가 리스 보유(translate-pilot-tick)")
             return result
         with app.app_context():
+            # Y14-e(오너 10-20 「배포 뒤 틱 값 6개」): 문지기 기록은 백그라운드 일을 시작할 때만 남아 **일 없는 틱의 유휴값**이 없었다 —
+            #   틱마다 맨 앞(드레인 전)에 인스턴스 합계를 한 줄(`rss:gate` job=tick-idle · 최근 200줄 그대로).
+            try:
+                from src.utils import bg_job as _bgi, rss as _rssi
+                _okm, _cur, _lim = _rssi.start_ok()
+                _bgi._gate_log("tick-idle", _okm, _cur, _lim)
+            except Exception:                      # noqa: BLE001 — 기록 실패가 틱을 막지 않는다
+                pass
             drain_budget = max(4.0, min(_drain_share_sec(), tick_budget - _PILOT_MIN_SEC))
             try:
                 from src.seller_console.translate_worker import drain_once

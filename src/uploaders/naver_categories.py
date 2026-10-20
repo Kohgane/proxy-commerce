@@ -362,6 +362,7 @@ def _predict_input(p: dict) -> Tuple[str, str]:
     설명은 한자·가나가 섞이면 뺀다(번역 전 원문 잡음)."""
     name = (str(p.get("title_ko") or "").strip()
             or re.sub(r"^\s*\[[^\]]*\]\s*", "", str(p.get("title") or "")).strip())
+    name = strip_gift(name) or name                # Y14 R2: 쿠팡 등록(`category_for`)과 같은 재료 — 증정품이 예측을 끌지 않게
     raw = str(p.get("description_ko") or p.get("description") or p.get("description_html") or "")
     desc = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw)).strip()[:300]
     if _HANJA_KANA.search(desc):
@@ -411,6 +412,8 @@ def coupang_guess(p: dict) -> dict:
         path = path_of(r.get("id", ""))
     except Exception:
         path = ""
+    if is_book_guess(path, r["name"], name):
+        return {"id": "", "name": "", "path": "", "why": f"쿠팡 예측이 「{path or r['name']}」인데 상품명에 책 낱말이 없어 쓰지 않아요"}
     out = {"id": r.get("id", ""), "name": r["name"], "path": path, "why": ""}
     # Y11O-1(오너): 상품명 리클라이너·라운지·안락·오토만 + 의자류 예측 → 쿠팡 안락의자(쿠팡 등록과 같은 규칙)
     from src.uploaders.category_rules import coupang_fix
@@ -617,6 +620,18 @@ def learned(scope: str, title: str) -> str:
 #:   (「… 더블기획 15ml 3종 택1 (과일키링 증정)」). 카테고리를 고를 때만 증정·사은품 묶음을 뺀다(상품명 자체는 그대로).
 _GIFT_GROUP = re.compile(r"[\(\[（【][^\)\]）】]*(?:증정|사은품|선물|덤|赠|送|gift)[^\)\]）】]*[\)\]）】]", re.I)
 _GIFT_WORD = re.compile(r"[\w·+&]+\s*(?:증정|사은품\s*증정|무료\s*증정)", re.I)
+
+
+_BOOK_SIGNAL = re.compile(r"책|도서|에세이|소설|만화|코믹스|그림책|잡지|매거진|교재|문제집|수험서|참고서|ISBN|저자|지음|옮김|출판|단행본|전집|"
+                          r"\bbook\b|\bnovel\b|\bmagazine\b", re.I)
+
+
+def is_book_guess(path: str, leaf: str, title: str) -> bool:
+    """Y14 R2(리브러쉬 구강스프레이 → 쿠팡 예측 「도서>국내도서>건강 취미>건강에세이/건강기타」) — 예측이 도서인데
+    상품명에 책 낱말이 하나도 없으면 참(그 예측은 버린다). 경로를 모르면 리프 이름에 「도서」가 든 경우만 본다."""
+    p = str(path or "").strip()
+    book = p.startswith("도서") if p else "도서" in str(leaf or "")
+    return book and not _BOOK_SIGNAL.search(str(title or ""))
 
 
 def strip_gift(title: str) -> str:

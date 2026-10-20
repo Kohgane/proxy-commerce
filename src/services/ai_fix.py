@@ -33,7 +33,8 @@ MAX_CALLS = 6
 RETRY_AFTER = timedelta(hours=24)          # 검사에 떨어진 항목은 하루 동안 다시 묻지 않는다(같은 돈을 또 쓰지 않게)
 
 KIND_LABEL = {"option_value": "옵션값", "option_short": "옵션값 축약", "naver_category": "카테고리", "coupang_category": "쿠팡 카테고리", "title": "상품명", "detail": "상세",
-              "notice": "고시정보", "coupang_attr": "쿠팡 필수옵션", "coupang_axis": "쿠팡 옵션 속성"}
+              "notice": "고시정보", "coupang_attr": "쿠팡 필수옵션", "coupang_axis": "쿠팡 옵션 속성",
+              "option_short_rule": "옵션값 축약(규칙)"}
 _KANA = re.compile(r"[぀-ヿ]")
 _HAN = re.compile(r"[㐀-鿿豈-﫿]")
 _MAX_VALUE = 25
@@ -159,9 +160,18 @@ def plan(pd: dict, ex: dict, results) -> List[dict]:
     mk = [m for m in _held(results, fix="option_short") if _is_ko(m)]
     if mk:
         drop_stale_short(ex, pd)
-        rows = [r for r in long_option_values(pd) if not _skip(ex, "option_short:" + r["src"])]
+        longs = long_option_values(pd)
+        rows = [r for r in longs if not _skip(ex, "option_short:" + r["src"])]
         if rows:
             tasks.append({"kind": "option_short", "markets": sorted(set(mk)), "rows": rows[:30],
+                          "siblings": all_option_values(pd)[:60]})
+        # Y14-d(10-20 3-in-1 맥세이프): AI 축약이 검사에서 떨어져(최근 시도) 하루 동안 다시 안 묻는 값 → 규칙 축약(`ko_polish.shorten`
+        #   — AI 호출 없음). 같은 검사(절단·지킬 말·숫자·영문·형제 값)를 통과할 때만. 규칙도 떨어지면 하루 동안 다시 안 함.
+        rule = [r for r in longs if _recently_tried(ex, "option_short:" + r["src"])
+                and not _skip(ex, "option_short_rule:" + r["src"])
+                and "option_short:" + r["src"] not in blocked(ex) and "option_short:" + r["src"] not in fixes_of(ex)]
+        if rule:
+            tasks.append({"kind": "option_short_rule", "markets": sorted(set(mk)), "rows": rule[:30],
                           "siblings": all_option_values(pd)[:60]})
     # b 네이버 카테고리
     mk = _held(results, fix="naver_category")
@@ -254,6 +264,20 @@ def _stem(w: str) -> str:
 
 def _stem_of_word(w: str, words: List[str]) -> bool:
     return len(w) >= 2 and any(o != w and _stem(o) == w for o in words)
+
+
+def rule_short(ko: str, taken, cap: int = 0) -> Tuple[str, str]:
+    """Y14-d — 규칙 축약(`ko_polish.shorten`, AI 호출 없음) → `(값, 버린 이유)`. AI 축약과 **같은 검사**를 통과해야 "" 이유."""
+    from src.collectors.ko_polish import shorten
+    from src.uploaders.coupang_options import lost_tokens
+    from src.uploaders.naver_options import OPTION_NAME_MAX
+    cap = cap or OPTION_NAME_MAX
+    s = str(shorten(ko, cap) or "").strip()
+    lost = lost_tokens(ko, s) if s else []
+    why = ("규칙 축약 실패" if not s or s == ko else "") or guard(s) or (f"{cap}자 초과" if len(s) > cap else "") \
+        or ("다른 옵션 값과 같아짐" if s in (taken or set()) else "") or short_guard(ko, s) \
+        or ("지금 값의 숫자·영문 빠짐(" + ", ".join(lost) + ")" if lost else "")
+    return s, why
 
 
 def short_guard(ko: str, short: str) -> str:
@@ -490,6 +514,7 @@ def _apply(task: dict, ans: dict, pd: dict, ex: dict, meta: dict) -> List[str]:
             if why:
                 _tried(ex, key, why)
                 task.setdefault("_rejected", []).append(f"{r['ko']} → {short or '(빈 답)'}: {why}")
+                task.setdefault("_rejected_rows", []).append(r)       # Y14-d: `run_round`가 이 값만 규칙 축약으로 다시
                 continue
             taken.add(short)
             before = ov.get(r["src"], "")
@@ -562,10 +587,43 @@ def _apply(task: dict, ans: dict, pd: dict, ex: dict, meta: dict) -> List[str]:
     return done
 
 
+def _apply_rule_short(task: dict, pd: dict, ex: dict) -> List[str]:
+    from src.uploaders.naver_options import OPTION_NAME_MAX as _cap
+    ov = dict(ex.get("option_value_overrides") or {}) if isinstance(ex.get("option_value_overrides"), dict) else {}
+    taken = {str(x).strip() for x in (task.get("siblings") or [])} - {r["ko"] for r in task["rows"]}
+    done: List[str] = []
+    for r in task["rows"]:
+        s, why = rule_short(r["ko"], taken, _cap)
+        if why:
+            _tried(ex, "option_short_rule:" + r["src"], why)
+            task.setdefault("_rejected", []).append(f"{r['ko']} → {s or '(빈 답)'}: {why}")
+            continue
+        key = "option_short:" + r["src"]
+        taken.add(s)
+        before = ov.get(r["src"], "")
+        ov[r["src"]] = s
+        _mark(ex, key, "option_short", f"{r['ko']} → {s}", before, s,
+              f"{len(r['ko'])}자 → {len(s)}자 · 규칙 축약(AI 안: {str((ex.get('ai_fix_rejects') or {}).get(key) or '')[:60]})",
+              {"provider": "rule", "model": ""})
+        done.append(key)
+    if done:
+        ex["option_value_overrides"] = ov
+        pd["option_value_overrides"] = dict(ov)
+    return done
+
+
 def run_round(pd: dict, ex: dict, results, *, calls_left: int) -> Dict[str, Any]:
     """한 회전 — 일마다 AI 한 번(남은 호출 안에서). `{calls, usd, applied:[key], markets:[재검증할 마켓], log:[...]}`."""
     out = {"calls": 0, "usd": 0.0, "applied": [], "markets": [], "log": [], "providers": []}
     for task in plan(pd, ex, results):
+        if task["kind"] == "option_short_rule":                 # Y14-d: AI 호출 없음 — 호출 상한에 안 센다
+            keys = _apply_rule_short(task, pd, ex)
+            out["log"].append(f"{KIND_LABEL[task['kind']]}: {len(keys)}개 적용"
+                              + (f" · 버림 {len(task['_rejected'])}개({task['_rejected'][0][:90]})" if task.get("_rejected") else ""))
+            if keys:
+                out["applied"] += keys
+                out["markets"] += [m for m in task["markets"] if m not in out["markets"]]
+            continue
         if out["calls"] >= calls_left:
             out["log"].append(f"{KIND_LABEL[task['kind']]}: 호출 상한(상품당 {MAX_CALLS}회)에 걸려 건너뜀")
             break
@@ -583,6 +641,14 @@ def run_round(pd: dict, ex: dict, results, *, calls_left: int) -> Dict[str, Any]
         keys = _apply(task, r["json"], pd, ex, {"provider": r.get("provider"), "model": r.get("model")})
         out["log"].append(f"{KIND_LABEL[task['kind']]}: {len(keys)}개 적용"
                           + (f" · 검사에서 버림 {len(task['_rejected'])}개({task['_rejected'][0][:90]})" if task.get("_rejected") else ""))
+        if task["kind"] == "option_short" and task.get("_rejected_rows"):
+            # Y14-d: AI 안이 떨어진 값은 같은 회전에서 규칙 축약(AI 호출 없음 · 같은 검사)
+            rt = {"kind": "option_short_rule", "markets": task["markets"], "rows": task["_rejected_rows"],
+                  "siblings": task.get("siblings") or []}
+            rk = _apply_rule_short(rt, pd, ex)
+            out["log"].append(f"{KIND_LABEL['option_short_rule']}: {len(rk)}개 적용"
+                              + (f" · 버림 {len(rt['_rejected'])}개({rt['_rejected'][0][:90]})" if rt.get("_rejected") else ""))
+            keys = keys + rk
         if keys:
             out["applied"] += keys
             out["markets"] += [m for m in task["markets"] if m not in out["markets"]]

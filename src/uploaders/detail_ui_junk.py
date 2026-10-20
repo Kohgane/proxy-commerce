@@ -47,11 +47,38 @@ def is_ui_unit(unit: str) -> bool:
     return any(tok.lower() in low for toks in (t.get("tokens") or {}).values() for tok in toks)
 
 
+def is_policy_line(line: str) -> bool:
+    """Y14 — 줄 하나가 쇼핑몰 배송비·교환·반품·증정·회원 적립 안내인가(표 `policy`)."""
+    p = table().get("policy") or {}
+    s = str(line or "").strip()
+    if not s:
+        return False
+    if p.get("tier_re") and re.match(p["tier_re"], s):
+        return True
+    return any(tok in s for tok in p.get("tokens") or [])
+
+
+def policy_judge(text: str) -> Dict:
+    """`{junk, lines, policy}` — 본문이 쇼핑몰 안내 줄뿐인가. 우리 줄(「■」 머리·「구매대행」)은 세지 않는다."""
+    p = table().get("policy") or {}
+    lines = [ln.strip() for ln in str(text or "").replace("\r", "").split("\n") if ln.strip()]
+    lines = [ln for ln in lines if not ln.startswith("■") and "구매대행" not in ln]
+    hit = [ln for ln in lines if is_policy_line(ln)]
+    junk = bool(lines) and len(hit) >= int(p.get("min_lines") or 3) \
+        and len(hit) >= float(p.get("ratio") or 0.7) * len(lines)
+    return {"junk": junk, "lines": lines, "policy": hit}
+
+
 def judge(text: str) -> Dict:
-    """`{junk, units, ui, name}` — `junk`=본문 전체를 비어 있음으로 볼지(c). `ui`=걸린 조각, `name`=허용한 이름 조각."""
+    """`{junk, units, ui, name}` — `junk`=본문 전체를 비어 있음으로 볼지(c). `ui`=걸린 조각, `name`=허용한 이름 조각.
+    Y14: 쇼핑몰 배송·적립 안내뿐인 본문(`policy_judge`)도 비어 있음 — 줄 수 상한(`max_lines`) 앞에서 본다."""
     t = table()
     units = _units(text)
     out = {"junk": False, "units": units, "ui": [], "name": ""}
+    pj = policy_judge(text)
+    if pj["junk"]:
+        out["junk"], out["ui"] = True, pj["policy"]
+        return out
     if not units or len(units) > int(t.get("max_lines") or 5):
         return out
     ui = [u for u in units if is_ui_unit(u)]
@@ -115,7 +142,10 @@ def note(pd: Dict) -> str:
     pd = pd or {}
     if not (pd.get("desc_ui_dropped") or desc_is_junk(pd)):
         return ""
-    return f"상세설명: 화면 읽기 → {REASON}(가게 이름·평점·발송·만족도) — 상세 자동 초안으로 채웁니다"
+    vals = [str(pd.get(k) or "") for k in ("description", "description_ko", "_desc_src")]
+    what = "쇼핑몰 배송·교환·적립 안내" if any(policy_judge(v)["junk"] for v in vals if v.strip()) \
+        else "가게 이름·평점·발송·만족도"
+    return f"상세설명: 화면 읽기 → {REASON}({what}) — 상세 자동 초안으로 채웁니다"
 
 
 # ── Y11-P(오너 2026-10-15) — 페이지 탭 라벨 · 남의 글 블록(구매평·문답) ─────────────────────────────────
