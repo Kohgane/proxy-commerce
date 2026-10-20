@@ -29,6 +29,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
-       "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend")
+       "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect")
 
 
 def _now() -> str:
@@ -74,6 +75,8 @@ def _run(row: dict) -> Dict:
         return _naver_resend(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_refresh":
         return _coupang_refresh(item_id, [str(m) for m in (row.get("markets") or []) if m])
+    if op == "coupang_inspect":
+        return coupang_inspect(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "relist_fix":
         return _relist_fix(item_id, row)
     if op == "register":
@@ -469,6 +472,46 @@ def _coupang_refresh(item_id: str, markets: List[str]) -> Dict:
     rows = CDR.refresh_item(item, seller_id=uid, markets=markets or None, save=CDR.store_save(iid, {uid} if uid else None))
     return {"ok": bool(rows) and all(r.get("ok") for r in rows),
             "rows": [{k: r.get(k) for k in ("market", "sid", "sent", "ok", "state", "error", "market_status")} for r in rows],
+            "why": "" if rows else "쿠팡 등록 기록이 없어요"}
+
+
+def coupang_inspect(item_id: str, markets: List[str], make_up=None) -> Dict:
+    """Y13-H 2 — **읽기만**: 쿠팡 등록본 조회 원문에서 정가·판매가·상품명·카테고리·브랜드와 옵션의 바코드·속성 칸.
+    GTIN 경고(「GTIN 속성이 유효하지 않습니다」 — 수정 PUT 응답 SUCCESS에 붙음)가 어느 칸에서 나는지 보려고. 아무것도 안 바꾼다."""
+    from src.services import coupang_detail_refresh as CDR
+    from src.services import ocr_compare_diag as D
+    item, _uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        ex = {}
+    make_up = make_up or CDR._uploader
+    rows = []
+    for u in CDR.coupang_uploads(ex):
+        if markets and u["market"] not in markets:
+            continue
+        r = {"market": u["market"], "sid": u["sid"]}
+        try:
+            data = make_up(u["account"]).get_product(u["sid"])
+        except Exception as exc:                                 # noqa: BLE001
+            data = {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+        if not isinstance(data, dict) or data.get("error"):
+            r["error"] = str((data or {}).get("error") if isinstance(data, dict) else data)[:300]
+            rows.append(r)
+            continue
+        r.update(name=str(data.get("sellerProductName") or ""), category=str(data.get("displayCategoryCode") or ""),
+                 brand=str(data.get("brand") or ""), status=str(data.get("statusName") or ""),
+                 items=[{"name": str(it.get("itemName") or "")[:40], "originalPrice": it.get("originalPrice"),
+                         "salePrice": it.get("salePrice"), "barcode": it.get("barcode"),
+                         "emptyBarcode": it.get("emptyBarcode"), "emptyBarcodeReason": it.get("emptyBarcodeReason"),
+                         "modelNo": it.get("modelNo"),
+                         "attributes": [[str(a.get("attributeTypeName") or ""), str(a.get("attributeValueName") or "")]
+                                        for a in it.get("attributes") or [] if isinstance(a, dict)][:8]}
+                        for it in (data.get("items") or [])[:12] if isinstance(it, dict)])
+        rows.append(r)
+    return {"ok": bool(rows) and not any(r.get("error") for r in rows), "rows": rows,
             "why": "" if rows else "쿠팡 등록 기록이 없어요"}
 
 

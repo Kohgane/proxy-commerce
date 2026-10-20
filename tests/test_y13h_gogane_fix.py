@@ -66,3 +66,26 @@ def test_relist_fix_saves_coupang_category_for_next_registrations(monkeypatch):
                                                                "account": "woojoo"}]})}
     RF.run(item, ["coupang:woojoo"], name="새 이름", coupang_category="77914", save=save)
     assert saved["coupang_category_id"] == "77914" and saved["coupang_name"] == "새 이름"
+
+
+def test_coupang_inspect_reads_only(monkeypatch):
+    from src.services import oneshot_ops as O
+    from src.services import ocr_compare_diag as D
+    ex = {"uploaded": [{"market": "coupang:gogane", "account": "gogane", "product_id": "16421222858"}]}
+    monkeypatch.setattr(D, "_item", lambda iid: ({"id": iid, "extra_json": json.dumps(ex)}, "u"))
+    calls = []
+
+    class _Up:
+        def get_product(self, sid):
+            calls.append(sid)
+            return {"sellerProductName": "1인 회전 라운지 소파", "displayCategoryCode": 77903, "brand": "",
+                    "items": [{"itemName": "아이보리", "originalPrice": 677300, "salePrice": 588900, "emptyBarcode": True,
+                               "attributes": [{"attributeTypeName": "수량", "attributeValueName": "1개"}]}]}
+
+        def modify_product(self, body):                          # 부르면 안 된다
+            raise AssertionError("읽기 전용")
+    out = O.coupang_inspect("i", [], make_up=lambda a: _Up())
+    assert out["ok"] and calls == ["16421222858"]
+    it = out["rows"][0]["items"][0]
+    assert out["rows"][0]["category"] == "77903" and it["originalPrice"] == 677300 and it["attributes"] == [["수량", "1개"]]
+    assert "coupang_inspect" in O.OPS
