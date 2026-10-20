@@ -113,6 +113,8 @@ def to_collected(product_data: Dict[str, Any]) -> Dict[str, Any]:
         "coupang_brand_pos": str(pd.get("coupang_brand_pos") or "").strip(),
         # Y7-B — 네이버 리프 카테고리(오너 지정)와 수집 행 번호(「카테고리 지정 →」 링크). 떨어지면 정본 매칭만 남는다.
         "naver_category_id": str(pd.get("naver_category_id") or "").strip(),
+        # Y13-H — 오너가 정한 쿠팡 카테고리(「등록본 고치기」). 떨어지면 다음 계정 등록이 예측값(옛 카테고리)으로 간다.
+        "coupang_category_id": str(pd.get("coupang_category_id") or "").strip(),
         # Y7-F — 셀러가 정한 최소구매수량(2 이상일 때만 네이버에 실림). 없으면 칸 자체를 안 보낸다.
         "min_purchase_quantity": pd.get("min_purchase_quantity") or 0,
         "item_id": str(pd.get("item_id") or "").strip(),

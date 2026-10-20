@@ -83,6 +83,8 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "rep_image_override": ex.get("rep_image_override") or None,
         # Y7-B: 오너가 지정한 네이버 리프 카테고리(없으면 정본 사전 매칭 — 못 정하면 보류)
         "naver_category_id": str(ex.get("naver_category_id") or ""),
+        # Y13-H: 오너가 정한 쿠팡 카테고리(「등록본 고치기」가 저장) — 다음 등록(다른 계정)도 예측 대신 이것
+        "coupang_category_id": str(ex.get("coupang_category_id") or ""),
         # Y11-P: 네이버 가격대별 분할 등록 — 오너가 확인한 묶음(서명이 지금 계산과 같을 때만 나눈다)
         "naver_split_ok": ex.get("naver_split_ok") if isinstance(ex.get("naver_split_ok"), dict) else None,
         "item_id": str(it.get("id") or ""),

@@ -4830,7 +4830,7 @@ def _pv_prepare(data: dict, product_data: dict):
             if _lts:
                 product_data["option_lead_time"] = _lts
             for _k in ("ship_ratio_override", "ship_mode", "ship_input", "option_translate_diag", "rep_image_override", "option_split", "options_src",
-                       "voltage_split", "voltage_override", "naver_category_id", "lead_time_override", "option_leadtime",
+                       "voltage_split", "voltage_override", "naver_category_id", "coupang_category_id", "lead_time_override", "option_leadtime",
                        "naver_split_ok"):
                 if _sx.get(_k):
                     product_data[_k] = _sx[_k]

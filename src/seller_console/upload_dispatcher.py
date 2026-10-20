@@ -191,6 +191,15 @@ def build_dispatch_payload(product_data: Dict[str, Any],
                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """S2: 아래 빌더 결과에 **마켓 상세 규칙**(한국어만·가게 줄 뺌)을 얹는다 — 단건·일괄·재등록 세 경로 공통."""
     pd = apply_outbound_text(swap_stub_description(_build_dispatch_payload(product_data, item), item))
+    # Y13-H — 쿠팡 빈 설명 대체(`fill_empty_description`, 쿠팡 입력 정리 `prepared_input`에서)의 재료: 저장된 자동 초안.
+    #   화면 등록은 몸통에 `detail_auto`를 싣지만 갱신·고치기 경로(`build_product`만)는 안 싣는다 — 사본 칸에만 둔다.
+    if not isinstance(pd.get("detail_auto"), dict) and item:
+        try:
+            _sa = (json.loads(item.get("extra_json") or "{}") or {}).get("detail_auto")
+            if isinstance(_sa, dict):
+                pd["_detail_auto_saved"] = _sa
+        except Exception:                                        # noqa: BLE001
+            pass
     # Y1: 가게 아이콘·추적 픽셀은 마켓에 상세 이미지로 보내지 않는다(저장값은 그대로).
     try:
         from src.collectors.collect_status import real_detail_images
@@ -229,6 +238,38 @@ def swap_stub_description(pd: Dict[str, Any], item: Optional[Dict[str, Any]] = N
         if is_stub_description(out.get(k)):
             out[k] = str(a["text"]).strip()
     out["description_from_ai_draft"] = str(a.get("provider") or "")
+    return out
+
+
+def fill_empty_description(pd: Dict[str, Any], item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Y13-H(10-20 피샹리 고가네 16421222858) — **쿠팡**: 마켓 규칙(가게 줄·한자 줄 뺌)을 지나고 설명이 비면 자동 초안을 싣는다.
+    네이버는 자기 빌더가 초안을 따로 싣는다(`naver_detail.auto_of`) — 여기서 칸을 채우면 그 판정이 어긋나 쿠팡 입력에서만 부른다.
+
+    설명 칸이 가게 배너(「菲尚丽家旗舰店 / 好评率98%…」)뿐이라 다 빠졌는데, 쿠팡은 자동 초안을 따로 보지 않아(네이버만
+    `naver_detail.auto_of`) **상품명 한 줄**(26자)이 상세로 나갔다. 화면 등록은 편집 화면이 초안을 칸에 채워 보내 안 드러났다.
+    셀러 글이 남아 있으면 그대로. 꾸민 블록·HTML 본문이 있으면 손대지 않는다. 저장값은 그대로(나가는 값만)."""
+    import re as _re
+    from . import notice_texts as _nt
+    out = dict(pd or {})
+    cur = str(out.get("description") or "")
+    # 국내 마켓 필터가 먼저 붙인 고지(구매대행·플러그·전압)는 셀러 글이 아니다 — 그것만 남았으면 빈 설명으로 본다
+    rest = cur
+    for ln in ((_nt.PURCHASE_AGENT_NOTICE, _nt.PLUG_CN_TITLE, _nt.VOLTAGE_TITLE) + tuple(_nt.KC_AGENT_LINES)
+               + tuple(_nt.PLUG_CN_LINES) + tuple(_nt.VOLTAGE_LINES)):
+        rest = rest.replace(ln, "")
+    if _re.search("[가-힣]", rest) or str(out.get("description_html") or "").strip() or out.get("detail_blocks"):
+        return out
+    a = out.get("detail_auto") if isinstance(out.get("detail_auto"), dict) else out.get("_detail_auto_saved")
+    if not isinstance(a, dict) and item:
+        try:
+            a = (json.loads(item.get("extra_json") or "{}") or {}).get("detail_auto")
+        except Exception:                                        # noqa: BLE001
+            a = None
+    txt = market_description(str((a or {}).get("text") or "")) if isinstance(a, dict) else ""
+    if not _re.search("[가-힣]", txt):
+        return out
+    out["description"] = (cur.rstrip() + "\n\n" + txt) if cur.strip() else txt
+    out["description_from_ai_draft"] = str(a.get("provider") or "draft")
     return out
 
 
