@@ -22,6 +22,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 셀러 콘솔 인증 강제는 운영 기본 ON(SELLER_CONSOLE_AUTH 미설정 시 "1"). 단 테스트는
 # 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+# Y14: 잡 스레드 끝의 gc+malloc_trim(`rss.release`)이 큰 테스트 힙에서 GIL을 1초 넘게 쥐어 벽시계 계약을 깼다 — 테스트에선 끈다
+#   (`release` 자체 계약은 tests/test_y14_memory.py가 켜고 잰다).
+os.environ.setdefault("RSS_RELEASE", "0")
 # Z8: 대시보드 API는 키가 비면 닫힌다(fail-closed). 테스트 레인만 명시적으로 연다 — 운영(APP_ENV=production)은 무시.
 os.environ.setdefault("DASHBOARD_API_OPEN", "1")
 # M5 후속: 진단의 img.alicdn.com HEAD(네트워크)는 테스트 레인에서 끈다.
