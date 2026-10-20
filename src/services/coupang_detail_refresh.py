@@ -333,6 +333,8 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
                 row["state"] = raw_state
                 body = json.loads(json.dumps(live))
                 row["patched"] = patch_items(body, tg)                   # 상세 + 옵션 사진 + 정가(Y11-U)
+                from src.uploaders.coupang_uploader import CoupangUploader as _CU
+                row["patched"]["dropped_barcode"] = _CU.strip_empty_barcode_attrs(body)   # Y14: 빈 GTIN·MPN 칸은 안 돌려보냄
                 body["requested"] = True
                 res = up.modify_product(body)
                 row["sent"] = True

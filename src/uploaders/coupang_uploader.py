@@ -711,7 +711,8 @@ class CoupangUploader(BaseUploader):
                         changes.append({'field': '검색어', 'before': ', '.join(before), 'after': ', '.join(tags)})
                     it['searchTags'] = tags
         body['requested'] = True                      # 수정은 승인필요 API — 고친 뒤 다시 심사를 받는다
-        return {'body': body, 'changes': changes}
+        dropped = CoupangUploader.strip_empty_barcode_attrs(body)  # Y14: 조회 원문의 빈 GTIN·MPN 칸은 돌려보내지 않는다(바뀜 목록엔 안 넣음)
+        return {'body': body, 'changes': changes, 'dropped_barcode': dropped}
 
     def modify_product(self, body: dict) -> dict:
         """상품 수정(승인필요) `PUT …/seller-products` — 몸통은 **조회 원문에 고칠 칸만 바꾼 것**(sellerProductId 포함).
@@ -1487,6 +1488,46 @@ class CoupangUploader(BaseUploader):
     ATTR_VALUE_MAX = 30                                  # U3: 쿠팡 문서 한도 30자(오너 실측 10-01) — 값은 계획 단계에서 이미 30자 안(자르는 일 없음)
     ATTR_NAME_MAX = 25                                   # 쿠팡 문서 attributeTypeName 「max length: 25 characters」
     ATTR_FALLBACK = ({'attributeTypeName': '수량', 'attributeValueName': '1'},)
+    #: Y14(오너 10-20) — 바코드 계열 속성(등록은 안 보냄 · 수정 PUT은 조회 원문의 **빈** 칸을 뺀다). 쿠팡 조회 원문엔
+    #:   「Global Trade Item Number」·「Manufacturer Part Number」·「Parent Manufacturer Part Number」 빈 칸이 붙어 오고,
+    #:   그대로 돌려보낸 수정 PUT이 「GTIN 속성이 유효하지 않습니다」 경고를 받았다(BLACKHOLES·피샹리). 예전 필터는 「gtin」 낱말만 봤다.
+    BARCODE_ATTR_RE = re.compile(r'gtin|global\s*trade\s*item|manufacturer\s*part\s*number|\bmpn\b|바코드', re.I)
+
+    @classmethod
+    def is_barcode_attr(cls, name) -> bool:
+        return bool(cls.BARCODE_ATTR_RE.search(str(name or '')))
+
+    @classmethod
+    def strip_empty_barcode_attrs(cls, body: dict) -> int:
+        """수정 몸통 `items[].attributes`에서 값이 빈 바코드 계열 칸을 뺀다 → 뺀 칸 수(값이 있는 칸은 그대로)."""
+        n = 0
+        for it in (body or {}).get('items') or []:
+            attrs = it.get('attributes')
+            if not isinstance(attrs, list):
+                continue
+            keep = [a for a in attrs if not (isinstance(a, dict) and cls.is_barcode_attr(a.get('attributeTypeName'))
+                                             and not str(a.get('attributeValueName') or '').strip())]
+            n += len(attrs) - len(keep)
+            it['attributes'] = keep
+        return n
+
+    def reshape_attrs_for_category(self, body: dict, schema: list, name: str = '') -> dict:
+        """Y14(피샹리 77903→77914 · Y13-G PUT은 SUCCESS인데 카테고리만 그대로) — 카테고리를 바꾸는 수정 몸통의 옵션 속성을
+        **새 카테고리 메타**에 맞춘다(등록 `build_attrs`와 같은 정제). 값 있는 칸은 메타에 있거나 노출(EXPOSED) 옵션이면 남기고,
+        새 메타에 없는 **빈** 칸은 빼고, 새 메타 필수 칸은 `attr_safe`가 채운다. 메타를 못 받았으면 손대지 않는다.
+        → `{"before": 칸 수, "after": 칸 수}`(첫 품목 기준)."""
+        if not schema:
+            return {}
+        names = {str(s.get('attributeTypeName') or '').strip() for s in schema}
+        out = {}
+        for i, it in enumerate((body or {}).get('items') or []):
+            attrs = [a for a in (it.get('attributes') or []) if isinstance(a, dict)]
+            keep = [a for a in attrs if str(a.get('attributeValueName') or '').strip()
+                    and (str(a.get('attributeTypeName') or '').strip() in names or str(a.get('exposed') or '') == 'EXPOSED')]
+            it['attributes'] = self.build_attrs({'title': name or body.get('sellerProductName') or '', 'attributes': keep}, schema)
+            if i == 0:
+                out = {'before': len(attrs), 'after': len(it['attributes'])}
+        return out
 
     @classmethod
     def _attr_value_from_name(cls, type_name: str, product_name: str) -> str:
@@ -1577,7 +1618,7 @@ class CoupangUploader(BaseUploader):
             if not isinstance(a, dict):
                 continue
             an = str(a.get('attributeTypeName') or '').strip()
-            if not an or 'gtin' in an.lower():            # gtin = 바코드 계열 → 전송 안 함(정본)
+            if not an or cls.is_barcode_attr(an):         # gtin·GTIN·MPN = 바코드 계열 → 전송 안 함(정본 · Y14 수정 PUT과 같은 판정)
                 continue
             if an in seen:                                # 중복 차원은 먼저 온 것만(정본)
                 continue
@@ -1636,7 +1677,7 @@ class CoupangUploader(BaseUploader):
                   for a in (attributes or [])
                   if str(a.get('attributeValueName') or '').strip() not in self.ATTR_BAD_VALUES}
         return [s['attributeTypeName'] for s in (attr_schema or [])
-                if s.get('required') and 'gtin' not in str(s.get('attributeTypeName', '')).lower()
+                if s.get('required') and not self.is_barcode_attr(s.get('attributeTypeName', ''))
                 and s.get('attributeTypeName') not in filled]
 
     def _build_images(self, product: dict) -> list:

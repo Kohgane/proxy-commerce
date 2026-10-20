@@ -22,24 +22,50 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def coupang(rec: Dict, name: str, category: str, make_up=None) -> Dict:
+def coupang(rec: Dict, name: str, category: str, make_up=None, *, item: Dict = None, detail: bool = False) -> Dict:
+    """`detail=True`면 같은 PUT에 상세(contents)도 싣는다 — 등록·상세 재전송과 같은 빌더(`coupang_detail_refresh.target`,
+    빈 설명 → AI 초안)로 만든 것. 재심사 1회로 이름·카테고리·상세를 같이(Y14 오너 10-20 결정 3)."""
     from src.services.coupang_detail_refresh import _uploader
     up = (make_up or _uploader)(rec.get("account") or "")
     live = up.get_product(rec["product_id"])
     if not isinstance(live, dict) or "error" in live:
         return {"ok": False, "error": f"쿠팡 상품 조회 실패 — {(live or {}).get('error') if isinstance(live, dict) else live}"}
-    plan = up.live_fix_plan(live, name=name)
+    plan = up.live_fix_plan(live, name=name)               # 빈 GTIN·MPN 칸은 여기서 빠진다(`strip_empty_barcode_attrs`)
     body = plan["body"]
+    extra: Dict = {"dropped_barcode": plan.get("dropped_barcode", 0)}
     before_cat = str(body.get("displayCategoryCode") or "")
     if category and before_cat != str(category):
         body["displayCategoryCode"] = int(category)
         plan["changes"].append({"field": "카테고리", "before": before_cat, "after": str(category)})
+        # Y14: Y13-G PUT(10-20 10:40 우주대행)은 카테고리 77914를 실었는데 SUCCESS + 「GTIN 속성이 유효하지 않습니다」 ·
+        #   상품명만 바뀌고 카테고리는 77903 그대로였다(응답에 이유 없음). 옵션 속성이 옛 카테고리(77903) 칸 그대로였다 —
+        #   새 카테고리 메타로 다시 짠다(등록 `build_attrs`와 같은 정제). 메타를 못 받으면 그대로(빈 바코드 칸만 빠짐).
+        try:
+            schema = up.get_category_attribute_schema(str(category))
+        except Exception as exc:                             # noqa: BLE001
+            schema, extra["schema_error"] = [], f"{type(exc).__name__}: {str(exc)[:120]}"
+        shape = up.reshape_attrs_for_category(body, schema, name) if hasattr(up, "reshape_attrs_for_category") else {}
+        if shape:
+            extra["attrs"] = shape
+            plan["changes"].append({"field": "옵션 속성(새 카테고리 메타)", "before": f"{shape['before']}칸",
+                                    "after": f"{shape['after']}칸"})
+    if detail and item is not None:
+        from src.services import coupang_detail_refresh as CDR
+        tg = CDR.target(item, up)
+        if not tg.get("ready"):
+            return {"ok": False, "error": f"상세가 아직 준비 안 됨 — 번역 실패 {tg.get('failed')}칸({tg.get('why')})", **extra}
+        before_len = sum(len(str(d.get("content") or "")) for it in (body.get("items") or [])[:1]
+                         for c in it.get("contents") or [] for d in c.get("contentDetails") or [])
+        for it in body.get("items") or []:
+            it["contents"] = tg["contents"]
+        after_len = sum(len(str(d.get("content") or "")) for c in tg["contents"] for d in c.get("contentDetails") or [])
+        plan["changes"].append({"field": "상세", "before": f"{before_len}자", "after": f"{after_len}자"})
     if not plan["changes"]:
-        return {"ok": True, "unchanged": True}
+        return {"ok": True, "unchanged": True, **extra}
     body["requested"] = True
     res = up.modify_product(body)
     return {"ok": bool(res.get("success")), "changes": plan["changes"], "error": str(res.get("error") or "")[:600],
-            "market_status": res.get("market_status"), "body": str(res.get("body") or "")[:2000]}
+            "market_status": res.get("market_status"), "body": str(res.get("body") or "")[:2000], **extra}
 
 
 def naver(rec: Dict, name: str, category: str, make_up=None) -> Dict:
@@ -71,7 +97,7 @@ def naver(rec: Dict, name: str, category: str, make_up=None) -> Dict:
 
 
 def run(item: Dict, markets: List[str], *, name: str, coupang_category: str = "", naver_category: str = "",
-        save=None) -> Dict:
+        save=None, detail_markets: List[str] = ()) -> Dict:
     """마켓마다 한 번씩 — `{market: 결과}`. 결과는 `save(fn)`으로 등록 기록에 남긴다."""
     from src.seller_console import listing_status as MS
     try:
@@ -85,7 +111,7 @@ def run(item: Dict, markets: List[str], *, name: str, coupang_category: str = ""
             continue
         try:
             if m.startswith("coupang"):
-                r = coupang(rec, name, coupang_category)
+                r = coupang(rec, name, coupang_category, item=item, detail=m in (detail_markets or ()))
             elif m.startswith("smartstore"):
                 r = naver(rec, name, naver_category)
             else:
