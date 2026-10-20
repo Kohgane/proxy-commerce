@@ -355,6 +355,14 @@ def scan(extra: dict, *, pending_images: int = 0) -> dict:
         if sig:
             sig["with"] = [h["label"] for h in tm_hits]
             hits.append(sig)
+    for c in tokens().get("compat_replace") or []:               # Y14: 호환 표기 — 바꿔서 등록(지우지 않음)
+        if c.get("label") in allow:
+            continue
+        h = _hit("compat:" + str(c["label"]), "호환 표기", c["label"], "hold", c.get("names") or [], False, where_text, imgs,
+                 f"상표 이름 — 「빼고 등록」은 「{c.get('to')}」로 바꿔요(사진은 글자 고치기)")
+        if h:
+            h["to"] = str(c.get("to") or "")
+            hits.append(h)
     bl = [t for t in _blacklist() if t not in allow]
     if bl:
         h = _hit("blacklist", "브랜드 블랙리스트", "브랜드 블랙리스트", "hold", bl, False, where_text, imgs,
@@ -468,6 +476,22 @@ def _strip(text: str, names, case=False) -> str:
     return re.sub(r"[ \t]{2,}", " ", s).strip()
 
 
+def _repl_pat(name: str, case: bool = False) -> "re.Pattern":
+    """Y14 — 치환용: 라틴 이름은 바로 뒤 숫자까지 한 덩어리(「applewatch7」 → 「스마트워치」). 그 밖은 `_pat`과 같다."""
+    if re.fullmatch(r"[A-Za-z][A-Za-z .'&èé-]*", name or ""):
+        return re.compile(rf"(?<![A-Za-z]){re.escape(name)}\d*(?![A-Za-z])", 0 if case else re.I)
+    return _pat(name, case)
+
+
+def _replace(text: str, names, to: str, case=False) -> str:
+    """Y14 호환 표기 — 이름을 지우지 않고 `to`로 바꾼다(긴 이름부터). 바꾼 뒤 같은 말이 붙어 겹치면 하나로."""
+    s = str(text or "")
+    for n in sorted(names or [], key=len, reverse=True):
+        s = _repl_pat(n, case).sub(to, s)
+    s = re.sub(rf"({re.escape(to)})(\s*\1)+", r"\1", s) if to else s
+    return re.sub(r"[ \t]{2,}", " ", s).strip()
+
+
 def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str = "") -> dict:
     """「빼고 등록」 — 그 낱말을 상품명·검색어·옵션·본문·참수에서 지우고, 걸린 사진은 등록에서 뺀다(사유: 위험 라벨).
     `erase_pixels`(사람이 누른 「빼고 등록」만) — 사진째 빼는 대신 그 낱말 상자만 지운 편집본(Y11-J6). 자동 적용은 픽셀을 안 바꾼다.
@@ -475,30 +499,40 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str
     (영문 「INTERSTELLAR」)이면 되살려도 사진에 상표가 남으니 그 장은 사진째 뺀다."""
     ex = extra
     names, case = h.get("names") or [], bool(h.get("case"))
-    for k in ("title_ko", "coupang_name", "title", "description", "description_ko"):
+    to = str(h.get("to") or "")
+    # Y14(SPORTLINK): 호환 표기(`compat:`)는 지우지 않고 보통 이름으로 바꾼다 — 「애플워치 호환」 → 「스마트워치 호환」
+    fix = (lambda t: _replace(t, names, to, case)) if to else (lambda t: _strip(t, names, case))
+    # 수집 원문 `title`은 지우기에선 예전처럼 고치지만, 바꾸기에선 손대지 않는다(수집 원본 불변 · 나가는 이름은 title_ko·coupang_name)
+    for k in (("title_ko", "coupang_name", "description", "description_ko") if to
+              else ("title_ko", "coupang_name", "title", "description", "description_ko")):
         if ex.get(k):
-            ex[k] = _strip(ex[k], names, case)
+            ex[k] = fix(ex[k])
     for k in ("keywords", "tags"):
         if isinstance(ex.get(k), list):
-            ex[k] = [x for x in ex[k] if not _find(str(x), names, case)]
+            if to:
+                ex[k] = list(dict.fromkeys(fix(str(x)) for x in ex[k] if fix(str(x))))
+            else:
+                ex[k] = [x for x in ex[k] if not _find(str(x), names, case)]
     for o in ex.get("options") or []:
         if isinstance(o, dict):
             for k in ("values_ko", "values"):
                 if isinstance(o.get(k), list):
-                    o[k] = [_strip(v, names, case) or v for v in o[k]]
+                    o[k] = [fix(v) or v for v in o[k]]
     if isinstance(ex.get("option_value_overrides"), dict):       # Y13-D 2: 옵션 탭·AI 축약으로 정한 값도 나간다
-        ex["option_value_overrides"] = {k: (_strip(v, names, case) or v) if isinstance(v, str) else v
+        ex["option_value_overrides"] = {k: (fix(v) or v) if isinstance(v, str) else v
                                         for k, v in ex["option_value_overrides"].items()}
     if isinstance(ex.get("detail_specs"), list):
         specs = []
         for kv in ex["detail_specs"]:
             if isinstance(kv, (list, tuple)) and len(kv) == 2:
-                specs.append([kv[0], _strip(kv[1], names, case)])
+                specs.append([kv[0], fix(kv[1])])
             else:
                 specs.append(kv)
         ex["detail_specs"] = specs
     if isinstance(ex.get("detail_auto"), dict) and ex["detail_auto"].get("text"):
-        ex["detail_auto"]["text"] = _strip(ex["detail_auto"]["text"], names, case)
+        ex["detail_auto"]["text"] = fix(ex["detail_auto"]["text"])
+    if pixels == "keep":
+        return ex                                                # Y14: 글자만 — 사진은 앞 결정(글자 고치기)이 맡았다
     want = {(i["kind"], int(i["idx"])) for i in h.get("images") or []}
     label = f"위험 — {h['cat']}({', '.join(h['found'][:2])})"
     for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail"), ("sku_images_ko", "sku")):
@@ -506,6 +540,11 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str
             if isinstance(e, dict) and (kind, int(e.get("idx", -1))) in want:
                 if _whole_prop(e) and not _prop_off(ex):
                     continue                     # Y11-O: 소품뿐인 사진은 절대 빼지 않는다(상표가 걸려도 「참고」 — 오너 2026-10-15)
+                if to and erase_pixels:
+                    _retext_or_exclude(ex, kind, e, names, case, to, label)
+                    continue
+                if to:
+                    continue                     # 자동 적용(글자만) — 사진은 사람이 누른 「빼고 등록」에서만 다시 그린다
                 if pixels == "restore":
                     _restore_or_exclude(ex, kind, e, names, case, label)
                     continue
@@ -523,6 +562,45 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str
                 else:
                     e["risk_exclude"] = f"{label} — 사진째 뺌({er.get('why') or '상자를 지우지 못함'})"
     return ex
+
+
+def _retext_or_exclude(ex: dict, kind: str, e: dict, names, case: bool, to: str, label: str) -> None:
+    """Y14(오너 2026-10-21 SPORTLINK) — 「사진 편집 → 글자 고치기」와 같은 길: 그 낱말이 든 **번역 글자 상자만** 바꾼 글자로 다시 그린
+    새 편집본(원본 불변 · `IE.apply` action=text). 원문 상자(한자)엔 상표 이름이 없으니 원문은 안 본다. 상자를 못 찾거나 편집을 못 쓰면
+    사진째 뺀다(사유). 바꾼 상자의 **예전 글자**를 `risk_erase.erased`에 남겨 검사가 그 편집본에선 세지 않는다(다시 그리지 않게)."""
+    idx = int(e.get("idx", -1))
+    try:
+        from src.services import image_edit as IE
+        ok_c, _why = IE.configured()
+        if not ok_c:
+            e["risk_exclude"] = f"{label} — 사진째 뺌(지금은 사진 편집을 쓸 수 없음)"
+            return
+        p = IE.plan(ex, kind, idx)
+    except Exception as exc:                                     # noqa: BLE001
+        e["risk_exclude"] = f"{label} — 사진째 뺌(글자 상자를 읽지 못함 {type(exc).__name__})"
+        return
+    ops, old = [], []
+    for b in p.get("boxes") or []:
+        tgt = str(b.get("tgt") or "")
+        if tgt and _find(tgt, names, case):
+            new = _replace(tgt, names, to, case)
+            if new and new != tgt:
+                ops.append({"id": b["id"], "action": "text", "text": new})
+                old.append(tgt)
+    if not ops:
+        e["risk_exclude"] = f"{label} — 사진째 뺌(그 낱말이 든 번역 글자 상자를 못 찾음)"
+        return
+    try:
+        res = IE.apply(ex, kind, idx, ops, by="risk")
+    except Exception as exc:                                     # noqa: BLE001
+        res = {"ok": False, "error": type(exc).__name__}
+    if not res.get("ok"):
+        e["risk_exclude"] = f"{label} — 사진째 뺌(글자 고치기 실패: {str(res.get('error') or '')[:60]})"
+        return
+    e.pop("risk_exclude", None)
+    e["risk_erase"] = {"edit": int(str(res.get("version") or "edit:0").split(":")[-1]), "how": "retext", "to": to,
+                       "erased": old, "label": label, "at": datetime.now(timezone.utc).isoformat(),
+                       "pending": bool(res.get("pending"))}
 
 
 def _restore_or_exclude(ex: dict, kind: str, e: dict, names, case: bool, label: str) -> None:
@@ -695,6 +773,8 @@ def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = ""
     dec = ex.setdefault("risk_decisions", {})
     dec[key] = {"action": action, "at": now, "by": by, "found": h["found"][:6], "label": h["label"], "cat": h["cat"],
                 "names": list(h.get("names") or []), "case": bool(h.get("case"))}
+    if h.get("to"):
+        dec[key]["to"] = h["to"]                                 # Y14: 치환값 — enforce·다시 걸기가 지우지 않고 바꾼다
     _learn(key, action, h)
     return {"ok": True, "hit": h, "changed": changed}
 
@@ -738,10 +818,17 @@ def confirm_allow(label: str, on: bool = True) -> List[str]:
 
 
 def auto_apply(extra: dict, *, by: str = "auto") -> List[str]:
-    """기억된 「빼고 등록」 — 결정 안 된 보류 항목 중 그 낱말의 기본이 strip이면 바로 뺀다. 뺀 라벨 목록."""
+    """기억된 「빼고 등록」 — 결정 안 된 보류 항목 중 그 낱말의 기본이 strip이면 바로 뺀다. 뺀 라벨 목록.
+
+    Y14(오너 2026-10-21 「AI 초안에 애플 재발 검사」): 이미 「빼고 등록」한 **호환 표기**가 다시 보이면(새 AI 초안 · 나중에 번역된
+    상세·옵션 사진) 같은 결정을 다시 건다 — 글자는 바꾸고, 사진은 글자 고치기(오너가 이미 고른 결정이라 사람 지시로 본다)."""
     mem = learned()
     done = []
     for h in scan(extra)["hits"]:
+        if h["decided"] == "strip" and h["key"].startswith("compat:"):
+            strip_extra(extra, h, erase_pixels=True)
+            done.append(h["label"] + "(다시 걸기)")
+            continue
         if h["decided"] or h["grade"] == "caution":
             continue
         if _auto_strippable(h["key"]) and (mem.get(h["key"]) or {}).get("default") == "strip":
@@ -759,7 +846,8 @@ def enforce(pd: dict, extra: dict) -> dict:
     for d in ((extra or {}).get("risk_decisions") or {}).values():
         if isinstance(d, dict) and d.get("action") == "strip" and d.get("names"):
             names = brand_filter(d["names"]) if d.get("cat") == "브랜드 블랙리스트" else d["names"]   # Y11-O: 보통명사는 다시 안 뺀다
-            h = {"names": names, "case": bool(d.get("case")), "images": [], "cat": d.get("cat", ""), "found": d.get("found") or []}
+            h = {"names": names, "case": bool(d.get("case")), "images": [], "cat": d.get("cat", ""), "found": d.get("found") or [],
+                 "to": str(d.get("to") or "")}
             strip_extra(pd, h)
     return pd
 

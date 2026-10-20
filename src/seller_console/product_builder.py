@@ -113,6 +113,8 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "gallery_images": images,
         "detail_images": [u for u in (ex.get("detail_images") or []) if isinstance(u, str) and u],
         "detail_blocks": ex.get("detail_blocks") or {},
+        # Y14(오너 2026-10-21 SPORTLINK): 상세 첫 줄 고정 문구(「※ 충전기·케이블 미포함 — 스탠드만 포함」) — 고지처럼 맨 위 · 셀러 글로 안 센다
+        "detail_head_note": str(ex.get("detail_head_note") or "").strip(),
         "coupang_attributes": list(ex.get("coupang_attributes") or []),
         "coupang_option_pick": dict(ex.get("coupang_option_pick") or {}),
         "skus": ex.get("skus") if isinstance(ex.get("skus"), list) else [],

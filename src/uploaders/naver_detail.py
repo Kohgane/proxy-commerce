@@ -144,6 +144,10 @@ def build(pd: Dict[str, Any]) -> str:
         return ""
     from src.seller_console.notice_texts import PURCHASE_AGENT_NOTICE
     parts = ['<div style="max-width:860px;margin:0 auto">']
+    note = str(pd.get("detail_head_note") or "").strip()
+    if note and note not in text:
+        # Y14(오너 2026-10-21 SPORTLINK): 오너 고정 첫 줄은 본문 **맨 위**(사진보다 먼저) — 설명 칸이 아니라 여기서 넣는다
+        parts.append('<p class="kgp-head-note" style="margin:0 0 16px;font-weight:700">' + _html.escape(note) + "</p>")
     for u in imgs:
         parts.append('<img src="' + _html.escape(u, quote=True) + '" style="max-width:100%;display:block;margin:0 auto" alt="">')
     if text:
