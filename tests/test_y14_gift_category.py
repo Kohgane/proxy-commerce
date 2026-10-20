@@ -26,3 +26,14 @@ def test_coupang_prediction_input_drops_freebie():
     up.predict_category = lambda title, description="": seen.append(title) or "1"
     up.category_for({"title": T})
     assert "키링" not in seen[0] and "구강스프레이" in seen[0]
+
+
+def test_short_guard_color_rule_skips_numeric_first_word():
+    """같은 라운드(3-in-1 맥세이프 거치대 · 네이버 옵션값 29자): AI 축약이 「지킬 말 빠짐(색상 「3-in-1」)」으로 버려졌다.
+    숫자가 든 첫 낱말은 색상이 아니다 — 값 안의 색 낱말(블랙)은 그대로 지킨다."""
+    from src.services.ai_fix import short_guard
+    ko = "3-in-1 블랙 휴대폰 이어폰 거치대(내장 충전기)"
+    assert short_guard(ko, "3-in-1 블랙 이어폰 거치대") == ""
+    assert short_guard(ko, "3-in-1 이어폰 거치대").startswith("지킬 말 빠짐(색상 「블랙」")
+    assert short_guard("아이보리 플란넬 의자", "플란넬 의자").startswith("지킬 말 빠짐(색상 「아이보리」")   # 예전 규칙 그대로
+    assert short_guard("검정색 실리콘가죽 의자", "검정 실리콘") == ""
