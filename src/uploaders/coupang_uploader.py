@@ -873,6 +873,8 @@ class CoupangUploader(BaseUploader):
         if pin.isdigit():
             return pin, 'owner', ''
         title = str((product or {}).get('title', '') or '') if isinstance(product, dict) else ''
+        from src.uploaders.naver_categories import strip_gift
+        title = strip_gift(title) or title                  # Y14-4: 증정품(「(과일키링 증정)」)이 예측을 끌지 않게 — 카테고리 재료에서만 뺀다
         cid = self.predict_category(title)
         if cid:
             # Y11O-1(오너): 상품명 리클라이너·라운지·안락·오토만 + 의자류 예측 → 안락의자(되돌리면 규칙 끔)
