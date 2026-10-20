@@ -356,6 +356,11 @@ class NaverSmartStoreUploader(BaseUploader):
                 logger.info('네이버 카테고리 %s(%s) sku=%s', _cid, _csrc, product.get('sku', ''))
                 product = {**product, 'category_id': _cid}
             payload = self._build_product_payload(product)
+            from src.uploaders import naver_kc as _kc
+            _kch = _kc.hold(payload, getattr(self, 'last_kc_required', None))
+            if _kch:
+                return {'success': False, 'held': True, 'sku': product.get('sku', ''),
+                        'reason_code': _kch['code'], 'error': _kch['line'], 'error_lines': [_kch['line']]}
             # 템플릿 예시값 유출 게이트 — 남의 상품 정보로 등록하느니 **중단**한다(택배사 게이트 동형).
             leaks = self.find_template_leaks(payload)
             if leaks:
@@ -452,7 +457,7 @@ class NaverSmartStoreUploader(BaseUploader):
         ch = str(channel_no or '').strip()
         return f'https://smartstore.naver.com/{self.store_slug()}/products/{ch}' if ch else ''
 
-    def _modify_origin(self, origin_no: str, mutate) -> dict:
+    def _modify_origin(self, origin_no: str, mutate, channel_mutate=None) -> dict:
         """`GET origin-products/{no}` → `mutate(originProduct)`가 돌려준 칸만 바꿔 → `PUT origin-products/{no}`(조회한 몸통 그대로).
 
         문서: 원상품 수정은 생략한 칸의 처리를 확인하지 못했다 → 조회한 값을 그대로 되돌려 보낸다. 판매 상태가 수정에 허용된 값
@@ -477,6 +482,9 @@ class NaverSmartStoreUploader(BaseUploader):
                     'error': f'판매 상태가 「{st or "미상"}」라 수정 요청을 보내지 않았어요(수정은 판매중·판매중지일 때만 — 문서)'}
         body = {k: v for k, v in cur.items() if k in ('originProduct', 'smartstoreChannelProduct', 'windowChannelProduct')}
         body['originProduct'] = {**op, **change}
+        if channel_mutate and isinstance(body.get('smartstoreChannelProduct'), dict):
+            # Y13-G 3: 채널 상품명처럼 채널 칸도 같은 요청에서(조회한 값 위에 바꿀 칸만)
+            body['smartstoreChannelProduct'] = {**body['smartstoreChannelProduct'], **(channel_mutate(body['smartstoreChannelProduct']) or {})}
         res = self._api_request('PUT', f'/v2/products/origin-products/{no}', data=body)
         if not isinstance(res, dict) or 'error' in res:
             from src.uploaders import naver_invalid as _ni
@@ -689,6 +697,9 @@ class NaverSmartStoreUploader(BaseUploader):
         if isinstance(_da, dict) and isinstance(_notice, dict) and _notice:
             _da['productInfoProvidedNotice'] = copy.deepcopy(_notice)
         self._ensure_notice_type(merged)
+        # Y13-G 1: KC 인증 대상 카테고리면 KC 특례(기본 해외구매대행) — 사전검증·등록 같은 조립(`naver_kc`)
+        from src.uploaders import naver_kc as _kc
+        self.last_kc_required = _kc.apply(merged, product, self)
         # Y7: 조합형을 실을 때는 같이 못 쓰는 단독형·표준형 칸(템플릿의 빈 목록)을 뺀다 — 빈 칸이라도 섞어 보내지 않는다.
         oi = merged.get('originProduct', {}).get('detailAttribute', {}).get('optionInfo')
         if isinstance(oi, dict) and oi.get('optionCombinations'):
