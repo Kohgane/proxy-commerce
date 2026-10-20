@@ -10844,7 +10844,7 @@ def _shape_collect_items(items, current_lang):
         it["thumbs"] = [rep] if rep else []           # 목록=대표 1장
         _imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
         it["thumb_alts"] = [u for u in (str(x or "").strip() for x in _imgs)
-                            if u and u != rep and " " not in u][:3]   # Y12-D: 대표를 못 받으면 차례로 시도할 갤러리 장
+                            if u and u != rep and " " not in u][:1]   # Y12-D: 대표를 못 받으면 대신 띄울 갤러리 1장(목록 페이로드 다이어트 — 1장만)
         _tko = (str(ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
         _ten = str(ex.get("title_en") or ex.get("title") or it.get("title") or "").strip()
         _translated = bool(_tko) and bool(_ten) and _tko != _ten
