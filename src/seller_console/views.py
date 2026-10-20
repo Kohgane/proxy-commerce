@@ -5134,6 +5134,16 @@ def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = Fa
           "draft_code_anthropic": (res or {}).get("draft_code_anthropic") or "",
           "ai_call": (res or {}).get("ai_call") or {}, "v": DRAFT_VERSION,
           "at": datetime.now(timezone.utc).isoformat()}
+    # Y14(오너 2026-10-21 「AI 초안에 애플 재발 검사」): 이미 정한 「빼고 등록」(지우기·바꾸기)을 새 초안에도 건다 — 저장본부터 깨끗하게
+    try:
+        from src.services import risk_gate as _rg_d
+        _box = {"detail_auto": dict(da)}
+        _rg_d.enforce(_box, ex)
+        if _box["detail_auto"].get("text") != da["text"]:
+            logger.info("[사전검증] 상세 자동 초안에 정한 위험 낱말이 다시 나옴 — 같은 결정으로 고침 item=%s", iid[:8])
+            da = {**da, "text": _box["detail_auto"]["text"], "risk_rechecked": True}
+    except Exception as exc:                                     # noqa: BLE001 — 검사 실패가 초안을 막지 않는다(등록 enforce가 다시 건다)
+        logger.warning("[사전검증] 초안 위험 낱말 다시 걸기 실패 item=%s: %s", iid[:8], exc)
     ex["detail_auto"] = da
     try:
         from . import collect_history_store as _chs

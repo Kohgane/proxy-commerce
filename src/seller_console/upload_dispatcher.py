@@ -255,8 +255,9 @@ def fill_empty_description(pd: Dict[str, Any], item: Optional[Dict[str, Any]] = 
     # 국내 마켓 필터가 먼저 붙인 고지(구매대행·플러그·전압)는 셀러 글이 아니다 — 그것만 남았으면 빈 설명으로 본다
     rest = cur
     for ln in ((_nt.PURCHASE_AGENT_NOTICE, _nt.PLUG_CN_TITLE, _nt.VOLTAGE_TITLE) + tuple(_nt.KC_AGENT_LINES)
-               + tuple(_nt.PLUG_CN_LINES) + tuple(_nt.VOLTAGE_LINES)):
-        rest = rest.replace(ln, "")
+               + tuple(_nt.PLUG_CN_LINES) + tuple(_nt.VOLTAGE_LINES)
+               + ((str(out.get("detail_head_note")),) if str(out.get("detail_head_note") or "").strip() else ())):
+        rest = rest.replace(ln, "")     # Y14: 오너 고정 첫 줄도 고지 — 그 한 줄 때문에 AI 초안이 안 실리면 안 된다
     if _re.search("[가-힣]", rest) or str(out.get("description_html") or "").strip() or out.get("detail_blocks"):
         return out
     a = out.get("detail_auto") if isinstance(out.get("detail_auto"), dict) else out.get("_detail_auto_saved")
@@ -1037,6 +1038,24 @@ def korea_kc_notice(payload: Dict[str, Any], market: str) -> Dict[str, Any]:
     except Exception as exc:                                    # noqa: BLE001 — 고지 실패가 등록을 막지 않는다(사유는 로그)
         logger.warning("[등록] KC 고지 넣기 실패(그대로): %s", exc)
         return payload
+
+
+def head_note(payload: Dict[str, Any], market: str) -> Dict[str, Any]:
+    """Y14(오너 2026-10-21 SPORTLINK 「상세 첫 줄 고정 ※ 충전기·케이블 미포함 — 스탠드만 포함」) — 오너가 정한 상품별 첫 줄
+    (`detail_head_note`)을 **국내 마켓 설명 맨 위**에. 네이버는 설명 칸이 아니라 본문 조립(`naver_detail.build`)이 맨 위에 싣는다 —
+    설명 칸에 넣으면 그 한 줄이 셀러 글로 읽혀 AI 초안을 막는다. 이미 있으면 다시 넣지 않는다."""
+    note = str((payload or {}).get("detail_head_note") or "").strip()
+    if not note or not _is_korea_market(market) or str(market).startswith("smartstore"):
+        return payload
+    import html as _h
+    out = dict(payload)
+    for key in ("description_html", "description"):
+        cur = str(out.get(key) or "")
+        if note in cur or (key == "description_html" and not cur.strip()):
+            continue
+        out[key] = ('<p class="kgp-head-note"><strong>' + _h.escape(note) + "</strong></p>" + cur) if key == "description_html" \
+            else note + ("\n\n" + cur if cur.strip() else "")
+    return out
 
 
 #: 네이버 문서 상한(판매가·옵션가 모두 ≤ 999,999,990). 옵션가의 「판매가 대비 %」 범위는 문서에서 확인하지 못해 재지 않는다.
@@ -2354,7 +2373,7 @@ class UploadDispatcher:
                 payload["lead_time_days"] = _ld
         except Exception as exc:                                     # noqa: BLE001
             logger.warning("[등록] 선주문 발송 소요 계산 실패(정본 7일): %s", exc)
-        return korea_kc_notice(korea_voltage_filter(payload, market), market), localized
+        return head_note(korea_kc_notice(korea_voltage_filter(payload, market), market), market), localized
 
     @staticmethod
     def _payload_for_market_core(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:

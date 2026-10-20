@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ PER_TICK = 5
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe", "coupang_relist", "register_report")
+       "thumb_probe", "coupang_relist", "register_report", "discard")
 
 
 def _now() -> str:
@@ -74,7 +74,11 @@ def _run(row: dict) -> Dict:
     if op == "owner_decision":
         return _owner_decision(item_id, row.get("rep") if isinstance(row.get("rep"), dict) else {},
                                [str(x) for x in (row.get("strip") or []) if x][:5], str(row.get("pixels") or ""),
-                               [str(m) for m in (row.get("markets") or []) if m])
+                               [str(m) for m in (row.get("markets") or []) if m],
+                               fields=row.get("fields") if isinstance(row.get("fields"), dict) else None,
+                               strip_keep=[str(x) for x in (row.get("strip_keep") or []) if x][:5])
+    if op == "discard":
+        return _discard(item_id, str(row.get("why") or ""))
     if op == "naver_resend":
         return _naver_resend(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_refresh":
@@ -531,7 +535,30 @@ def pick_rep(counts: Dict[int, object], prefer: int = -1) -> int:
     return prefer if prefer in zero else zero[0]
 
 
-def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, markets: List[str]) -> Dict:
+#: Y14(오너 2026-10-21 SPORTLINK) — 오너 결정 줄이 바꿔 넣을 수 있는 칸(나가는 값만 · 수집 원문 `title`·`tags`는 안 건드림).
+OWNER_FIELDS = ("title_ko", "coupang_name", "keywords", "detail_head_note")
+
+
+def _discard(item_id: str, why: str) -> Dict:
+    """Y14(오너 2026-10-21 리브러쉬 「등록 안 함 · 목록 버리기」) — 화면 「버리기」와 같은 기록(`extra.discarded`) · DB 삭제 아님."""
+    from datetime import datetime as _dt, timezone as _tz
+    from src.seller_console import collect_history_store as store
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+
+    def _fn(fresh):
+        if isinstance(fresh.get("discarded"), dict):
+            return False
+        fresh["discarded"] = {"at": _dt.now(_tz.utc).isoformat(), "by": "owner-oneshot", "why": (why or "오너 결정")[:80]}
+        return True
+    ok = bool(store.merge_extra(str(item.get("id") or item_id), _fn, seller_ids={uid} if uid else None))
+    return {"ok": ok, "why": "" if ok else "이미 버렸거나 저장하지 못했어요"}
+
+
+def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, markets: List[str], *,
+                    fields: Optional[dict] = None, strip_keep: Optional[List[str]] = None) -> Dict:
     import json
     from src.services import ocr_compare_diag as D
     from src.services import risk_gate as R
@@ -560,8 +587,20 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
             ex.pop("rep_image", None)
         out["rep"] = {"counts": {str(k): v for k, v in counts.items()}, "why": {str(k): v for k, v in whys.items()},
                       "picked": pick, "rule": "0상자 장 · 여럿이면 지정 장(prefer)"}
+    if fields:
+        # Y14: 오너가 정한 나가는 값 — 상품명(오너 초안) · 검색어 · 상세 첫 줄 고정 문구. 앞 값은 기록에 남긴다(되돌리기 재료)
+        prev = {}
+        for k in OWNER_FIELDS:
+            if k not in fields:
+                continue
+            v = fields[k]
+            v = [str(x).strip() for x in v if str(x).strip()][:20] if k == "keywords" and isinstance(v, list) else str(v or "").strip()
+            prev[k] = ex.get(k)
+            ex[k] = v
+        ex.setdefault("owner_fields_log", []).append({"at": _now(), "by": uid, "set": sorted(prev), "before": prev})
+        out["fields"] = sorted(prev)
     done = []
-    if strip:
+    if strip or strip_keep:
         sc = R.scan(ex)
         for lab in strip:
             h = next((x for x in sc["hits"] if x["label"] == lab or x["key"] == lab), None)
@@ -571,6 +610,17 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
             res = R.decide(ex, h["key"], "strip", by=uid, pixels=pixels)
             done.append({"label": h["label"], "ok": bool(res.get("ok")), "why": res.get("error") or "",
                          "images": R.strip_image_line(ex, h), "where": R.where_line(h)})
+        # Y14: 글자만 고칠 항목(블랙리스트 「애플」 — 사진은 앞 호환 표기 결정이 글자 고치기로 맡았다. 사진 쪽 원본 되살리기가
+        #   방금 다시 그린 상자를 원문으로 돌리지 않게) — 앞 결정 뒤 다시 재서
+        sc2 = R.scan(ex) if strip_keep else {"hits": []}
+        for lab in strip_keep or []:
+            h = next((x for x in sc2["hits"] if x["label"] == lab or x["key"] == lab), None)
+            if h is None:
+                done.append({"label": lab, "ok": True, "why": "앞 결정 뒤엔 남은 곳이 없음"})
+                continue
+            res = R.decide(ex, h["key"], "strip", by=uid, pixels="keep")
+            done.append({"label": h["label"], "ok": bool(res.get("ok")), "why": res.get("error") or "", "text_only": True,
+                         "where": R.where_line(h)})
         out["strip"] = done
     ex.pop("pv_ready", None)                             # 바꿨으니 지난 「준비 완료」는 낡았다 — 아래 사전검증이 다시 적는다
     ok = bool(store.update(iid, seller_ids={uid}, extra_json=json.dumps(ex, ensure_ascii=False)))
