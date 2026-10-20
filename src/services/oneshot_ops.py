@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
-       "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh")
+       "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend")
 
 
 def _now() -> str:
@@ -70,6 +70,8 @@ def _run(row: dict) -> Dict:
         return _owner_decision(item_id, row.get("rep") if isinstance(row.get("rep"), dict) else {},
                                [str(x) for x in (row.get("strip") or []) if x][:5], str(row.get("pixels") or ""),
                                [str(m) for m in (row.get("markets") or []) if m])
+    if op == "naver_resend":
+        return _naver_resend(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_refresh":
         return _coupang_refresh(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "relist_fix":
@@ -468,3 +470,27 @@ def _coupang_refresh(item_id: str, markets: List[str]) -> Dict:
     return {"ok": bool(rows) and all(r.get("ok") for r in rows),
             "rows": [{k: r.get(k) for k in ("market", "sid", "sent", "ok", "state", "error", "market_status")} for r in rows],
             "why": "" if rows else "쿠팡 등록 기록이 없어요"}
+
+
+def _naver_resend(item_id: str, markets: List[str]) -> Dict:
+    """Y13-H — 네이버 등록본 상세 본문 다시 보내기(화면 「본문 다시 보내기」와 같은 입구 — 그 상품 계정 세션으로)."""
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    if not uid:
+        return {"ok": False, "why": "상품 계정을 알 수 없어요(세션 없이 돌리지 않는다)"}
+    from flask import session
+    from src.order_webhook import app
+    from src.seller_console import views as V
+    iid = str(item.get("id") or item_id)
+    rows = []
+    for m in [x for x in markets if x.startswith("smartstore")]:
+        with app.test_request_context(f"/seller/collect/{iid}/naver-resend-detail", method="POST", json={"market": m}):
+            session["user_id"] = uid
+            resp = V.collect_naver_resend_detail(iid)
+        r, code = (resp if isinstance(resp, tuple) else (resp, 200))
+        js = r.get_json() or {}
+        rows.append({"market": m, "ok": bool(js.get("ok")), "status": code, "images": js.get("images"),
+                     "text_chars": js.get("text_chars"), "error": str(js.get("error") or "")[:300]})
+    return {"ok": bool(rows) and all(x["ok"] for x in rows), "rows": rows, "why": "" if rows else "네이버 마켓이 없어요"}

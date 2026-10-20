@@ -499,7 +499,15 @@ class NaverSmartStoreUploader(BaseUploader):
         """Y7-J — 등록된 상품의 **상세 본문만** 바꾼다(`_modify_origin` — 다른 칸은 조회한 값 그대로)."""
         if not str(detail_html or '').strip():
             return {'success': False, 'error': '보낼 상세 본문이 비어 있어요'}
-        out = self._modify_origin(origin_no, lambda op: {'detailContent': detail_html})
+        from src.uploaders import naver_kc as _kc
+
+        def _mut(op):
+            # Y13-H: 등록본 카테고리가 KC 대상이면(특례로 나간 상품) 본문 맨 위 구매대행 고지 — 등록과 같은 함수
+            body = detail_html
+            if _kc.kc_required(str(op.get('leafCategoryId') or ''), self):
+                body = _kc.with_notice(body)
+            return {'detailContent': body}
+        out = self._modify_origin(origin_no, _mut)
         out.pop('before', None)
         return out
 
@@ -700,6 +708,10 @@ class NaverSmartStoreUploader(BaseUploader):
         # Y13-G 1: KC 인증 대상 카테고리면 KC 특례(기본 해외구매대행) — 사전검증·등록 같은 조립(`naver_kc`)
         from src.uploaders import naver_kc as _kc
         self.last_kc_required = _kc.apply(merged, product, self)
+        if self.last_kc_required and _kc.exemption_for(product):
+            # Y13-H: KC 특례로 보내면 본문 맨 위에 구매대행 고지(법 제36조 문구) — 이미 있으면 그대로
+            _op = merged.get('originProduct') or {}
+            _op['detailContent'] = _kc.with_notice(_op.get('detailContent') or '')
         # Y7: 조합형을 실을 때는 같이 못 쓰는 단독형·표준형 칸(템플릿의 빈 목록)을 뺀다 — 빈 칸이라도 섞어 보내지 않는다.
         oi = merged.get('originProduct', {}).get('detailAttribute', {}).get('optionInfo')
         if isinstance(oi, dict) and oi.get('optionCombinations'):
