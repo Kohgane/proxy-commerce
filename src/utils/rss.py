@@ -224,7 +224,12 @@ def release(reason: str = "") -> tuple:
 
     로컬 실측: 앱 + 지연 모듈 147MB → 8스레드 큰 사진 작업 직후 697MB → **gc만으로는 697 그대로** → malloc_trim 뒤 187MB.
     놓은 힙을 운영체제에 안 돌려주면 그 자리가 다음 일까지 「상시 점유」로 남는다(그리기 워커·네이버 업로드만 하고 있었다).
-    백그라운드 워커 한 회차 끝(`workers.record_run`) · 사전검증 잡 끝 · 마켓 등록 끝에서 부른다. 실패해도 일은 계속."""
+    백그라운드 워커 한 회차 끝(`workers.record_run`) · 사전검증 잡 끝 · 마켓 등록 끝에서 부른다. 실패해도 일은 계속.
+
+    `RSS_RELEASE=0`이면 아무것도 안 한다 — 테스트 프로세스(conftest)용: 전체 스위트는 힙이 수 GB라, 앞 테스트가 띄운 잡 스레드의
+    `gc.collect()`가 1초 넘게 GIL을 쥐고 다음 테스트의 벽시계 계약(「1초 안에」)을 깼다(Y14 · test_z9 두 건). 운영 기본은 켬."""
+    if _os.getenv("RSS_RELEASE", "1") == "0":
+        return 0, 0
     try:
         import gc as _gc
         before = read_mb()[0]

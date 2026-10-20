@@ -34,6 +34,7 @@ def test_worker_round_end_releases_heap(monkeypatch):
 
 
 def test_release_trims_and_reports(monkeypatch):
+    monkeypatch.setenv("RSS_RELEASE", "1")                       # conftest가 테스트 프로세스에선 끈다 — 이 계약은 켜고 잰다
     from src.utils import rss, render_worker
     seq = iter([500, 180])
     monkeypatch.setattr(rss, "read_mb", lambda: (next(seq), 0))
@@ -73,3 +74,12 @@ def test_every_tick_logs_idle_instance_mb(monkeypatch):
     CRON._tick_lock.acquire(blocking=False)
     CRON._run_full_tick(app, limit=1, pilot_chunk=1, tick_budget=30.0)
     assert rows and rows[0] == ("tick-idle", True, 233, 420) and order == ["drain"]
+
+
+def test_release_switch_off_does_nothing(monkeypatch):
+    from src.utils import rss
+    import src.utils.render_worker as RW
+    called = []
+    monkeypatch.setattr(RW, "trim", lambda: called.append(1))
+    monkeypatch.setenv("RSS_RELEASE", "0")
+    assert rss.release("t") == (0, 0) and called == []
