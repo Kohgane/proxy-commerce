@@ -83,3 +83,22 @@ def test_detail_not_ready_does_not_send(monkeypatch):
     monkeypatch.setattr(CDR, "target", lambda item, u, seller_id="": {"ready": False, "failed": 2, "why": "번역 대기"})
     r = RF.coupang({"product_id": "1", "account": "gogane"}, "x", "77914", make_up=lambda a: up, item={"id": "i"}, detail=True)
     assert not r["ok"] and up.sent is None and "상세가 아직 준비 안 됨" in r["error"]
+
+
+def test_category_not_applied_is_reported_not_success():
+    """Y14(10-20 19:40 피샹리 2계정): PUT SUCCESS인데 다시 조회하면 77903 그대로 — 「미반영」을 적는다(가짜 성공 금지)."""
+    up = _Up()                                   # get_product가 늘 77903을 돌려준다(쿠팡이 카테고리를 무시한 상태)
+    r = RF.coupang({"product_id": "16419632846", "account": "woojoo"}, "1인 회전 라운지 소파 의자 거실 디자이너 체어", "77914",
+                   make_up=lambda a: up)
+    assert r["ok"] and r["category_after"] == "77903" and r["unapplied"] == ["카테고리"]
+    assert "Wing에서 카테고리를 직접" in r["warning"]
+
+    class _Applied(_Up):
+        def get_product(self, sid):
+            d = _live()
+            if self.sent:
+                d["displayCategoryCode"] = 77914
+            return d
+    up2 = _Applied()
+    r2 = RF.coupang({"product_id": "1", "account": "woojoo"}, "x", "77914", make_up=lambda a: up2)
+    assert r2["category_after"] == "77914" and "unapplied" not in r2

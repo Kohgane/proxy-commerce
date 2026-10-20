@@ -64,8 +64,22 @@ def coupang(rec: Dict, name: str, category: str, make_up=None, *, item: Dict = N
         return {"ok": True, "unchanged": True, **extra}
     body["requested"] = True
     res = up.modify_product(body)
-    return {"ok": bool(res.get("success")), "changes": plan["changes"], "error": str(res.get("error") or "")[:600],
-            "market_status": res.get("market_status"), "body": str(res.get("body") or "")[:2000], **extra}
+    out = {"ok": bool(res.get("success")), "changes": plan["changes"], "error": str(res.get("error") or "")[:600],
+           "market_status": res.get("market_status"), "body": str(res.get("body") or "")[:2000], **extra}
+    if out["ok"] and category:
+        # Y14(10-20 피샹리): 77914를 실은 수정 PUT이 두 번(10:40 · 19:40) SUCCESS였는데 조회 원문은 77903 그대로 —
+        #   응답 「성공」만 믿으면 가짜 성공이다. 보낸 뒤 다시 조회해 카테고리가 바뀌었는지 대조하고, 안 바뀌었으면 그렇게 적는다.
+        try:
+            after = up.get_product(rec["product_id"])
+            got = str((after or {}).get("displayCategoryCode") or "") if isinstance(after, dict) else ""
+        except Exception:                                    # noqa: BLE001
+            got = ""
+        out["category_after"] = got
+        if got and got != str(category):
+            out["unapplied"] = ["카테고리"]
+            out["warning"] = (f"쿠팡이 SUCCESS로 받았지만 카테고리는 {got} 그대로예요(요청 {category}) — 같은 PUT을 다시 보내도 "
+                              "재심사만 늘어요. Wing에서 카테고리를 직접 바꾸거나 쿠팡 판매자 지원에 변경을 요청하세요")
+    return out
 
 
 def naver(rec: Dict, name: str, category: str, make_up=None) -> Dict:
