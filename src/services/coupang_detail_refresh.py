@@ -33,11 +33,20 @@ def _hash(contents) -> str:
 
 
 def coupang_uploads(ex: dict) -> List[dict]:
+    """쿠팡 등록 기록 `[{market, account, sid}]`. 예전 기록(09월 · `product_id` 없이 `external_url`만)은 주소에서 번호를 읽는다 —
+    Y14(10-21): SPORTLINK 쿠팡 16397045086(09-28)이 여기서만 빠져 조회가 「쿠팡 등록 기록이 없어요」였다(`listing_status.records`·
+    화면 `_coupang_uploads`는 이미 주소에서 읽었다)."""
+    import re
     out = []
     for u in (ex or {}).get("uploaded") or []:
-        if isinstance(u, dict) and str(u.get("market") or "").startswith("coupang") and str(u.get("product_id") or "").strip():
-            out.append({"market": u["market"], "account": u.get("account") or u["market"].partition(":")[2],
-                        "sid": str(u["product_id"]).strip()})
+        if not (isinstance(u, dict) and str(u.get("market") or "").startswith("coupang")):
+            continue
+        sid = str(u.get("product_id") or "").strip()
+        if not sid:
+            hit = re.search(r"/(?:vp/products|products)/(\d+)", str(u.get("external_url") or ""))
+            sid = hit.group(1) if hit else ""
+        if sid:
+            out.append({"market": u["market"], "account": u.get("account") or u["market"].partition(":")[2], "sid": sid})
     return out
 
 
