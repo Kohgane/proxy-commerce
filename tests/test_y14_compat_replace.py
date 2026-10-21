@@ -177,3 +177,36 @@ def test_heal_retries_photos_dropped_for_missing_box(monkeypatch):
     ex2 = _ex()
     ex2["images_ko"][0]["risk_exclude"] = miss
     assert R.heal_retext_excludes(ex2) == [] and ex2["images_ko"][0]["risk_exclude"] == miss
+
+
+def test_name_only_in_original_source_text_does_not_drop_retexted_photo(monkeypatch):
+    """운영(10-21 04:50 SPORTLINK 사진 3): 글자 고치기는 됐는데(「에어팟스」→「무선 이어폰」) 원본 사진 원문(`source_text`)에
+    영문 「Airpods」가 남아 다시 검사에 걸렸고, 고친 그림엔 그 이름이 없어 「상자를 못 찾음」으로 또 빠졌다. 그림에 없으면 빼지 않는다."""
+    from src.services import image_edit as IE
+    monkeypatch.setattr(IE, "configured", lambda: (True, ""))
+    monkeypatch.setattr(IE, "plan", lambda ex, kind, idx, fetch=True: {"boxes": [
+        {"id": "t5", "src": "무선 이어폰", "tgt": ""}, {"id": "t7", "src": "무선 이어폰프로", "tgt": ""}]})
+    monkeypatch.setattr(IE, "apply", lambda *a, **k: (_ for _ in ()).throw(AssertionError("다시 그리면 안 됨")))
+    ex = {"title_ko": "SPORTLINK 3in1 스마트워치 호환 충전 거치대", "keywords": [],
+          "images_ko": [{"idx": 2, "status": "done", "url": "https://cdn/edit2.jpg",
+                         "source_text": "适用耳机型号 Airpods Airpods Pro Series8/7/6/SE",
+                         "target_text": "적용 헤드폰 모델 에어팟스 에어팟스 프로"}]}
+    h = _compat(R.scan(ex), "에어팟 호환 표기")
+    assert [i["idx"] for i in h["images"]] == [2]
+    R.strip_extra(ex, h, erase_pixels=True)
+    e = ex["images_ko"][0]
+    assert not e.get("risk_exclude") and e["risk_clear"]["img"] == "https://cdn/edit2.jpg"
+    assert {"Airpods", "에어팟스"} <= set(e["risk_clear"]["words"])
+    assert not [x for x in R.scan(ex)["hits"] if x["key"] == "compat:에어팟 호환 표기" and x.get("images")]   # 다시 안 셈
+    e["url"] = "https://cdn/edit3.jpg"                          # 그림이 바뀌면 다시 센다
+    assert [x for x in R.scan(ex)["hits"] if x["key"] == "compat:에어팟 호환 표기" and x.get("images")]
+
+
+def test_no_boxes_read_still_drops_with_reason(monkeypatch):
+    """글자를 못 읽었으면(상자 0 · 번역 전) 확인이 안 된 것 — 예전처럼 사진째 뺀다(사유)."""
+    from src.services import image_edit as IE
+    monkeypatch.setattr(IE, "configured", lambda: (True, ""))
+    monkeypatch.setattr(IE, "plan", lambda ex, kind, idx, fetch=True: {"boxes": [], "why": "아직 이 사진을 번역하지 않았어요"})
+    ex = _ex()
+    R.strip_extra(ex, _compat(R.scan(ex), "애플워치 호환 표기"), erase_pixels=True)
+    assert "그 낱말이 든 번역 글자 상자를 못 찾음" in ex["images_ko"][0]["risk_exclude"]
