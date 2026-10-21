@@ -33,9 +33,10 @@ def _now() -> str:
 
 def parse(text: str) -> Optional[Dict[str, Any]]:
     """글 한 덩어리에서 치수 `{dims_cm:[a,b,c], seen}` — 여러 개면 부피가 가장 큰 것. 없으면 None."""
-    from src.seller_console.shipping_ratio import _DIM_RE, labeled_dims
+    from src.seller_console.shipping_ratio import _DIM_RE, labeled_dims, normalize_dim_text
     best = None
-    for m in _DIM_RE.finditer(str(text or "")):
+    text = normalize_dim_text(text)
+    for m in _DIM_RE.finditer(text):
         vals = [float(m.group(i)) for i in (1, 2, 3)]
         if (m.group(4) or "").lower() in ("mm", "毫米"):
             vals = [v / 10 for v in vals]
@@ -88,9 +89,10 @@ def from_onebound(url: str, call: Callable = None) -> Dict[str, Any]:
     if not res.get("ok"):
         return {"found": None, "why": str(res.get("why") or "온바운드 실패")[:160], "calls": calls}
     item = (res.get("raw") or {}).get("item") or {}
-    cands = []
+    cands, raw_seen = [], []
     for p in item.get("props") or []:
         if isinstance(p, dict) and any(k in str(p.get("name") or "") for k in SPEC_KEYS):
+            raw_seen.append(f"{p.get('name')}:{str(p.get('value'))[:40]}")
             c = parse(f"{p.get('name')}:{p.get('value')}")
             if c:
                 cands.append(dict(c, seen=f"{p.get('name')} {c['seen']}"))
@@ -99,8 +101,11 @@ def from_onebound(url: str, call: Callable = None) -> Dict[str, Any]:
         c = parse(str(v))
         if c:
             cands.append(dict(c, seen=f"옵션 {str(v)[:40]}"))
-    return {"found": _biggest(cands), "why": "" if cands else "규격·옵션에 치수 없음", "calls": calls,
-            "reused": bool(res.get("reused"))}
+    # Y15: 「없음」일 때 무엇을 읽었는지 남긴다(치수 이름 칸이 있었는데 못 읽었나 / 아예 없었나) — 다음 규칙 구멍을 찾는 재료
+    why = "" if cands else ("규격에 치수 칸은 있는데 숫자를 못 읽음 — " + " · ".join(raw_seen[:3]) if raw_seen
+                            else f"규격·옵션에 치수 없음(규격 {len(item.get('props') or [])}칸 · 옵션 {len(plist)}개)")
+    return {"found": _biggest(cands), "why": why[:200], "calls": calls, "reused": bool(res.get("reused")),
+            "raw_seen": raw_seen[:5]}
 
 
 def _page_texts(ex: dict) -> List[tuple]:
@@ -196,7 +201,7 @@ def fetch(item: dict, *, ob_call: Callable = None, ocr: Callable = None, oneboun
     found = {"onebound": ob["found"], "photo": ph["found"], "spec": sb["found"]}
     d = decide(found)
     sources = [{"src": s, "label": SRC_LABEL[s], "dims_cm": (r["found"] or {}).get("dims_cm"),
-                "seen": (r["found"] or {}).get("seen", ""), "why": r.get("why", "")}
+                "seen": (r["found"] or {}).get("seen", ""), "why": r.get("why", ""), "raw_seen": r.get("raw_seen") or []}
                for s, r in (("onebound", ob), ("photo", ph), ("spec", sb))]
     out = dict(d, sources=sources, at=_now(), ocr_pages=ph["ocr_pages"], ocr_cache=ph["ocr_cache"],
                onebound_calls=ob.get("calls", 0))

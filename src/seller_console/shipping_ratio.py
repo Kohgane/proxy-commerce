@@ -97,9 +97,44 @@ _LAB_RE = re.compile(r"(宽|长|深|高|가로|세로|길이|깊이|높이|폭|�
                      r"(\d{1,3}(?:\.\d+)?)\s*(cm|CM|厘米|公分|mm|MM|毫米)", re.I)
 
 
+#: Y15(운영 10-21 치수 수집 5건 0건 — 읽는 규칙 구멍): 숫자마다 단위가 붙은 `60cm×50cm×45cm` · 이름표 뒤에 단위가 한 번만
+#:   있는 `长60 宽55 高70（cm）` · 둥근 물건 `直径35cm 高45cm`(지름 × 지름 × 높이 = 둘레 상자). 단위가 아예 없으면 읽지 않는다.
+_UNIT_MID_RE = re.compile(r"(\d)\s*(?:cm|CM|厘米|公分|mm|MM|毫米)\s*(?=[x×*X]\s*\d)")
+_UNIT_TAIL_RE = re.compile(r"[（(]\s*(?:单位\s*[:：]?\s*)?(cm|CM|厘米|公分)\s*[)）]|单位\s*[:：]?\s*(cm|CM|厘米|公分)")
+_LAB_NOUNIT_RE = re.compile(r"(宽|长|深|高|가로|세로|길이|깊이|높이|폭|너비)\s*(?:度)?\s*[:：/=]?\s*(\d{1,3}(?:\.\d+)?)(?!\s*(?:\.\d|\d|cm|CM|厘米|公分|mm|MM|毫米))")
+_DIAM_RE = re.compile(r"(?:直径|直徑|지름|Φ|φ|ø|Ø)\s*[:：/=]?\s*(\d{1,3}(?:\.\d+)?)\s*(cm|CM|厘米|公分|mm|MM|毫米)")
+_HEIGHT_RE = re.compile(r"(?:高度|高|높이|height)\s*[:：/=]?\s*(\d{1,3}(?:\.\d+)?)\s*(cm|CM|厘米|公分|mm|MM|毫米)", re.I)
+
+
+def normalize_dim_text(text: str) -> str:
+    """치수 읽기 전 정리 — 곱셈 사이 단위 떼기(`60cm×50cm×45cm` → `60×50×45cm`), 한 번만 적힌 단위를 이름표 숫자에 붙이기."""
+    t = _UNIT_MID_RE.sub(r"\1", str(text or ""))
+    m = _UNIT_TAIL_RE.search(t)
+    if m:
+        unit = m.group(1) or m.group(2)
+        t = _LAB_NOUNIT_RE.sub(lambda x: f"{x.group(1)}{x.group(2)}{unit}", t)
+    return t
+
+
+def _cm(val: str, unit: str) -> float:
+    return float(val) / 10 if unit.lower() in ("mm", "毫米") else float(val)
+
+
+def round_dims(text: str) -> Optional[Dict[str, Any]]:
+    """둥근 물건 — 지름과 높이가 둘 다 있으면 `[지름, 지름, 높이]`(둘레 상자). 하나라도 없으면 None."""
+    t = normalize_dim_text(text)
+    d = [_cm(m.group(1), m.group(2)) for m in _DIAM_RE.finditer(t)]
+    h = [_cm(m.group(1), m.group(2)) for m in _HEIGHT_RE.finditer(t)]
+    d, h = [x for x in d if 5 <= x <= 400], [x for x in h if 5 <= x <= 400]
+    if not (d and h):
+        return None
+    return {"dims_cm": [max(d), max(d), max(h)], "seen": f"지름 {max(d):g} · 높이 {max(h):g}cm"}
+
+
 def labeled_dims(text: str) -> Optional[Dict[str, Any]]:
     """`{dims_cm:[가로, 세로, 높이], seen:"宽100·长114·高74"}` 또는 None."""
     best: Dict[str, float] = {}
+    text = normalize_dim_text(text)
     for m in _LAB_RE.finditer(str(text or "")):
         lab, val, unit = m.group(1), float(m.group(2)), m.group(3).lower()
         if unit in ("mm", "毫米"):
@@ -110,7 +145,7 @@ def labeled_dims(text: str) -> Optional[Dict[str, Any]]:
         if ax and val > best.get(ax, 0):
             best[ax] = val
     if len(best) < 3:
-        return None
+        return round_dims(text)
     dims = [best["w"], best["l"], best["h"]]
     return {"dims_cm": dims, "seen": f"가로 {dims[0]:g} · 세로 {dims[1]:g} · 높이 {dims[2]:g}cm"}
 
@@ -139,7 +174,7 @@ def read_size(pd: dict) -> Dict[str, Any]:
 
 
 def _read_size(pd: dict) -> Dict[str, Any]:
-    text = _texts(pd)
+    text = normalize_dim_text(_texts(pd))
     dims = None
     for m in _DIM_RE.finditer(text):
         vals = [float(m.group(i)) for i in (1, 2, 3)]

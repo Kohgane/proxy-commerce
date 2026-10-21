@@ -174,3 +174,29 @@ def test_prevalidate_registered_rows_skip_unselected_legacy_market(monkeypatch):
     rows = V._pv_registered_rows("a3a35e92", ["coupang:gogane", "coupang:woojoo", "smartstore:chezgoga"])
     assert "coupang" not in rows and set(rows) <= {"coupang:gogane", "coupang:woojoo", "smartstore:chezgoga"}
     assert V._already_registered(item, ["coupang:woojoo"])          # 업로드 입구 중복 확인은 그대로
+
+
+def test_parse_reads_unit_per_number_tail_unit_and_round_items():
+    """Y15(운영 10-21 치수 5건 0건 뒤 규칙 점검): 숫자마다 단위 · 이름표 뒤 단위 한 번 · 둥근 물건(지름×지름×높이)."""
+    assert DF.parse("尺寸：60cm×50cm×45cm")["dims_cm"] == [60.0, 50.0, 45.0]
+    assert DF.parse("600mm×500mm×450mm")["dims_cm"] == [60.0, 50.0, 45.0]
+    assert DF.parse("产品尺寸：长60 宽55 高70（cm）")["dims_cm"] == [55.0, 60.0, 70.0]
+    r = DF.parse("规格:直径35cm 高45cm")
+    assert r["dims_cm"] == [35.0, 35.0, 45.0] and r["seen"] == "지름 35 · 높이 45cm"
+    assert DF.parse("长60宽55高70") is None                          # 단위가 아예 없으면 읽지 않는다(추정 금지)
+    assert DF.parse("直径30cm") is None and DF.parse("坐高41cm") is None    # 축 하나뿐
+
+
+def test_shipping_engine_reads_the_same_new_formats():
+    from src.seller_console.shipping_ratio import read_size
+    assert read_size({"title_ko": "의자", "detail_specs": [["尺寸", "60cm×50cm×45cm"]]})["dims_cm"] == [60.0, 50.0, 45.0]
+    assert read_size({"title_ko": "원형 스툴", "detail_specs": [["规格", "直径35cm 高45cm"]]})["dims_cm"] == [35.0, 35.0, 45.0]
+
+
+def test_onebound_none_says_what_it_saw():
+    r = DF.fetch(_item({}), ob_call=_ob(props=[{"name": "尺寸", "value": "大号"}, {"name": "品牌", "value": "x"}]),
+                 ocr=lambda u: "")["dims_auto"]
+    ob = next(s for s in r["sources"] if s["src"] == "onebound")
+    assert ob["raw_seen"] == ["尺寸:大号"] and ob["why"].startswith("규격에 치수 칸은 있는데 숫자를 못 읽음 — 尺寸:大号")
+    r2 = DF.fetch(_item({}), ob_call=_ob(props=[{"name": "品牌", "value": "x"}]), ocr=lambda u: "")["dims_auto"]
+    assert next(s for s in r2["sources"] if s["src"] == "onebound")["why"] == "규격·옵션에 치수 없음(규격 1칸 · 옵션 0개)"
