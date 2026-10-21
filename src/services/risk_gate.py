@@ -564,10 +564,16 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str
     return ex
 
 
+RETEXT_MISS = "그 낱말이 든 번역 글자 상자를 못 찾음"
+
+
 def _retext_or_exclude(ex: dict, kind: str, e: dict, names, case: bool, to: str, label: str) -> None:
-    """Y14(오너 2026-10-21 SPORTLINK) — 「사진 편집 → 글자 고치기」와 같은 길: 그 낱말이 든 **번역 글자 상자만** 바꾼 글자로 다시 그린
-    새 편집본(원본 불변 · `IE.apply` action=text). 원문 상자(한자)엔 상표 이름이 없으니 원문은 안 본다. 상자를 못 찾거나 편집을 못 쓰면
-    사진째 뺀다(사유). 바꾼 상자의 **예전 글자**를 `risk_erase.erased`에 남겨 검사가 그 편집본에선 세지 않는다(다시 그리지 않게)."""
+    """Y14(오너 2026-10-21 SPORTLINK) — 「사진 편집 → 글자 고치기」와 같은 길: 그 낱말이 든 **지금 그림의 글자 상자만** 바꾼 글자로
+    다시 그린 새 편집본(원본 불변 · `IE.apply` action=text). 상자를 못 찾거나 편집을 못 쓰면 사진째 뺀다(사유). 바꾼 상자의
+    **예전 글자**를 `risk_erase.erased`에 남겨 검사가 그 편집본에선 세지 않는다(다시 그리지 않게).
+
+    상자 글자 = 번역문(`tgt`)이 있으면 그것, 없으면 `src`. 운영(10-21 01:50 SPORTLINK 사진 1·3·4·5): 번역본 그림을 OCR로 읽은 상자는
+    한국어가 `src`에 있고 `tgt`는 빈칸이다 — `tgt`만 봐서 4장 모두 「상자를 못 찾음」으로 사진째 빠졌다(대표 사진 포함)."""
     idx = int(e.get("idx", -1))
     try:
         from src.services import image_edit as IE
@@ -581,14 +587,14 @@ def _retext_or_exclude(ex: dict, kind: str, e: dict, names, case: bool, to: str,
         return
     ops, old = [], []
     for b in p.get("boxes") or []:
-        tgt = str(b.get("tgt") or "")
+        tgt = str(b.get("tgt") or "") or str(b.get("src") or "")
         if tgt and _find(tgt, names, case):
             new = _replace(tgt, names, to, case)
             if new and new != tgt:
                 ops.append({"id": b["id"], "action": "text", "text": new})
                 old.append(tgt)
     if not ops:
-        e["risk_exclude"] = f"{label} — 사진째 뺌(그 낱말이 든 번역 글자 상자를 못 찾음)"
+        e["risk_exclude"] = f"{label} — 사진째 뺌({RETEXT_MISS})"
         return
     try:
         res = IE.apply(ex, kind, idx, ops, by="risk")
@@ -671,6 +677,34 @@ def heal_prop_excludes(extra: dict) -> List[str]:
             e.pop("risk_exclude")
             e["risk_exclude_healed"] = datetime.now(timezone.utc).isoformat()
             out.append(f"{lab} {int(e.get('idx', 0)) + 1}")
+    return out
+
+
+def heal_retext_excludes(extra: dict) -> List[str]:
+    """Y14(운영 10-21 01:50 SPORTLINK) — 호환 표기 「글자 고치기」가 상자를 못 찾아 **사진째 뺀** 장을 다시 고친다. 다시 시도한 사진 이름.
+
+    그때 `_retext_or_exclude`는 번역문(`tgt`)만 봤고, 번역본을 OCR로 읽은 상자는 글자가 `src`에 있어 4장이 빠졌다(대표 포함).
+    결정(`risk_decisions`의 바꾸기 `to`)이 있는 낱말이 그 장 글자에 있을 때만 — 사진째 빼기를 풀고 같은 길로 다시 그린다.
+    또 못 찾으면 다시 빠진다(사유 그대로). 다른 사유로 뺀 장(판촉·편집 불가·되살리기)은 건드리지 않는다."""
+    from src.services.detail_image_plan import entry_text
+    decs = [d for d in ((extra or {}).get("risk_decisions") or {}).values()
+            if isinstance(d, dict) and d.get("action") == "strip" and d.get("to") and d.get("names")]
+    if not decs:
+        return []
+    out = []
+    for key, kind, lab in (("images_ko", "gallery", "사진"), ("detail_images_ko", "detail", "상세"), ("sku_images_ko", "sku", "옵션 사진")):
+        for e in (extra or {}).get(key) or []:
+            rx = str((e or {}).get("risk_exclude") or "") if isinstance(e, dict) else ""
+            if not (rx.startswith("위험 —") and RETEXT_MISS in rx):
+                continue
+            t = entry_text(e)
+            d = next((d for d in decs if _find(t, d["names"], bool(d.get("case")))), None)
+            if d is None:
+                continue
+            label = rx.split(" — 사진째 뺌", 1)[0]
+            e.pop("risk_exclude", None)
+            _retext_or_exclude(extra, kind, e, d["names"], bool(d.get("case")), str(d["to"]), label)
+            out.append(f"{lab} {int(e.get('idx', 0)) + 1}" + ("" if e.get("risk_erase") else "(또 못 고침)"))
     return out
 
 
