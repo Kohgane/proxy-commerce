@@ -126,7 +126,7 @@ def test_prevalidate_job_records_ship_ratio_per_market(monkeypatch):
     got = {}
     monkeypatch.setattr(V, "_pv_update", lambda job_id, **kw: got.update(kw))
     monkeypatch.setattr("src.seller_console.shipping_ratio.estimate",
-                        lambda pd, sid="", m="": {"state": "ok", "ratio_pct": 18, "ship_krw": 9000, "sell_krw": 50000,
+                        lambda pd, sid="", m="": {"state": "ok" if m in ("coupang", "smartstore") else "unknown", "ratio_pct": 18, "ship_krw": 9000, "sell_krw": 50000,
                                                   "line": "운임 9,000원 · 판매가 50,000원 대비 18% (기준 35%)", "x": 1})
     V._pv_record_ship("j1", {"seller_id": "u1"}, ["coupang:gogane", "smartstore:chezgoga", "woocommerce"])
     assert set(got["ship"]) == {"coupang:gogane", "smartstore:chezgoga"}
