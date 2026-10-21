@@ -41,12 +41,12 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 PER_TICK = 5
 #: 사전검증 잡을 띄우는 줄 — 한 틱에 `HEAVY_PER_TICK`개만(잡이 겹치면 메모리 상한에 걸린다 · Y14 10-21)
-HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch")
+HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item")
 HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch")
+       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item")
 
 
 def _now() -> str:
@@ -88,6 +88,8 @@ def _run(row: dict) -> Dict:
         return _discard(item_id, str(row.get("why") or ""))
     if op == "dims_fetch":
         return dims_fetch(item_id, onebound=row.get("onebound", True) is not False)
+    if op == "check_item":
+        return check_item(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "naver_resend":
         return _naver_resend(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_refresh":
@@ -366,6 +368,16 @@ def carry_drain(now=None) -> Dict:
     return {"picked": len(out), "rows": out}
 
 
+def _login_email(uid: str) -> str:
+    """그 계정의 로그인 이메일(정체성 표 첫 줄) — 못 찾으면 ""."""
+    try:
+        from src.db import user_identities_pg as U
+        ems = U.emails_for(uid) or []
+        return str(ems[0]) if ems else ""
+    except Exception:                                            # noqa: BLE001
+        return ""
+
+
 def _prevalidate(item_id: str, markets: List[str]) -> Dict:
     """화면 「사전검증」과 같은 잡 — 그 상품 계정 세션으로(자격·마켓 키가 그 계정 것). 잡 id만 돌려준다(결과는 잡 기록)."""
     from src.services import ocr_compare_diag as D
@@ -382,6 +394,11 @@ def _prevalidate(item_id: str, markets: List[str]) -> Dict:
     data = {"product": build_product(item, edits={}, seller_id=uid), "markets": mk, "item_id": str(item.get("id") or item_id)}
     with app.test_request_context("/seller/collect/prevalidate", method="POST"):
         session["user_id"] = uid
+        # Y15(야간 미등록 전부 사전검증 — 두 번째 로그인 계정 상품): 그 계정으로 로그인한 화면과 **같은 판정**이 나오게
+        #   로그인 이메일도 싣는다(공유 마켓 = 관리자·FAMILY_EMAILS 판정이 이메일을 본다). 없으면 예전처럼 user_id만.
+        _em = _login_email(uid)
+        if _em:
+            session["user_email"] = _em
         dispatcher = V._get_upload_dispatcher()
         if dispatcher is None:
             return {"ok": False, "why": "업로드 디스패처를 불러오지 못했어요"}
@@ -578,6 +595,31 @@ def dims_fetch(item_id: str, *, onebound: bool = True, ob_call=None, ocr=None) -
     return {"ok": saved, "dims_cm": da.get("dims_cm"), "confidence": da.get("confidence"), "label": da.get("label"),
             "line": DF.line(da), "ocr_pages": da.get("ocr_pages"), "onebound_calls": da.get("onebound_calls"),
             "sources": [{k: s.get(k) for k in ("label", "dims_cm", "seen", "why")} for s in da.get("sources") or []]}
+
+
+def check_item(item_id: str, markets: List[str], *, fetch=None, prevalidate=None) -> Dict:
+    """Y15(오너 2026-10-21 야간 「미등록 전부 3호 체크리스트 사전검증 · 한 틱에 하나」) — 한 틱에 무거운 일 **하나만**:
+    가구·대형이라 치수 게이트에 걸리는데 서버 치수 수집이 아직이면 이번 틱엔 `dims_fetch`만 하고 사전검증 줄을 **맨 뒤에** 건다.
+    아니면 바로 사전검증. 등록·전송은 하지 않는다."""
+    import json
+    from src.services import dims_fetch as DF
+    from src.services import ocr_compare_diag as D
+    item, _uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        ex = {}
+    item_id = str(item.get("id") or item_id)
+    if DF.should_fetch(ex):
+        d = (fetch or dims_fetch)(item_id)
+        queued = enqueue({"op": "prevalidate", "item_id": item_id, "markets": list(markets or PREVALIDATE_MARKETS),
+                          "reason": "check_item — 치수 수집 뒤"})
+        return {"ok": bool(d.get("ok")), "step": "dims_fetch", "dims": d, "prevalidate_queued": queued,
+                "why": str(d.get("why") or "")[:160]}
+    r = (prevalidate or _prevalidate)(item_id, markets)
+    return dict(r, step="prevalidate")
 
 
 def _discard(item_id: str, why: str) -> Dict:

@@ -1859,6 +1859,28 @@ def readiness():
 @app.get('/health/deep')
 @limiter.limit(LIMIT_HEALTH)
 def deep_health():
+    """Deep healthcheck + Y15 운영 틱 나이(`ticks`) — 틱 기록 공백이 인스턴스 응답 불능의 유일한 신호였다(10-21)."""
+    resp = _deep_health_body()
+    body, code = (resp if isinstance(resp, tuple) else (resp, 200))
+    try:
+        data = body.get_json() or {}
+        data["ticks"] = _deep_health_ticks()
+        return jsonify(data), code
+    except Exception as exc:                                     # noqa: BLE001 — 틱 기록이 헬스체크를 깨지 않는다
+        logger.warning("Deep health: 틱 기록 첨부 실패: %s", exc)
+        return resp
+
+
+def _deep_health_ticks() -> dict:
+    """`{last_tick_age_min, stale, stale_after_min, leases:[{name, age_min}]}` — 나이만(보유자·원인 추정 없음)."""
+    from .services import tick_watch as _tw
+    st = _tw.status()
+    return {"seen": bool(st.get("seen")), "last_tick_age_min": st.get("age_min"), "stale": bool(st.get("stale")),
+            "stale_after_min": _tw.stale_min(),
+            "leases": [{"name": a["name"], "age_min": a["age_min"]} for a in st.get("leases") or []]}
+
+
+def _deep_health_body():
     """Deep healthcheck — 외부 의존성 상세 연결 확인.
 
     단계별 진단:

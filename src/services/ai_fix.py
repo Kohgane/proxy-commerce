@@ -90,7 +90,8 @@ def blocked(ex: dict) -> Dict[str, str]:
 #   (예전 검사가 맞는 답을 버렸다 — 같은 돈을 또 쓰는 게 아니라 그때 버린 답을 새 검사로 받는 것).
 #   Y14-4: 색상 지킴 규칙을 다시 고쳤다(숫자 든 첫 낱말은 색상 아님) — 그 전에 버린 축약도 다시 묻는다.
 #   Y14(10-21 순찰): 「~용」 꼬리 · 치수 이름 첫 낱말(높이·길이…) 오탐을 고쳤다 — 08:10 사전검증이 버린 축약도 다시 묻는다.
-SHORT_GUARD_SINCE = datetime(2026, 10, 21, 8, 45, tzinfo=timezone.utc)
+#   Y15(10-21 야간): 붙임표 낱말 경계(「벨벳-그린」 절단 오탐) — 10:20 사전검증이 버린 축약도 다시 묻는다.
+SHORT_GUARD_SINCE = datetime(2026, 10, 21, 14, 30, tzinfo=timezone.utc)
 
 
 def _recently_tried(ex: dict, key: str) -> bool:
@@ -248,7 +249,8 @@ _SHORT_COLORS = frozenset(("블랙", "화이트", "검정", "흰", "흰색", "�
 
 
 def _words(s: str) -> List[str]:
-    return [w for w in re.split(r"[\s/·,()\[\]+]+", str(s or "")) if w]
+    # Y15(운영 10-21 발판 「스노우 벨벳-다크 그린」이 「단어 중간 절단(벨벳-그린)」): 붙임표로 이은 것도 낱말 경계다
+    return [w for w in re.split(r"[\s/·,()\[\]+\-–【】]+", str(s or "")) if w]
 
 
 #: Y13-C 2(운영 10-18 피샹리 3건 「단어 중간 절단」 실측): 낱말 끝의 이 꼬리는 떼도 낱말을 자른 게 아니다 — 「검정색」→「검정」,
@@ -291,6 +293,10 @@ def short_guard(ko: str, short: str) -> str:
     ① 단어 중간 절단 금지: 줄인 값의 낱말마다 원래 값의 낱말(또는 붙어 있던 낱말 몇 개를 이은 것) — 「천연소」(천연+소가죽의 「소」) 버림.
     ② 지킬 말: 색상(원래 값 첫 낱말)·가죽 등급(풀가죽/반가죽)·발받침·오토만 등은 원래 값에 있으면 줄인 값에도 있어야 한다.
     """
+    from src.collectors.ko_polish import _balanced
+    if not _balanced(short) and _balanced(ko):
+        # Y15(운영 10-21 접이식 의자 「[제품 높이 쿠션 포함」이 규칙 축약으로 통과해 저장됨): 괄호 반쪽은 내보내지 않는다
+        return "괄호 짝 안 맞음"
     ow = _words(ko)
     joined = {"".join(ow[i:j]) for i in range(len(ow)) for j in range(i + 1, min(len(ow), i + 4) + 1)}
     cut = [w for w in _words(short) if w not in joined and not _stem_of_word(w, ow)]
@@ -318,7 +324,10 @@ def drop_stale_short(ex: dict, pd: dict) -> List[str]:
     """열쇠가 SKU 원문 스펙이 아닌 옛 축약(Y11-P 첫 등록 — 한국어 값 열쇠)을 지운다 — AI가 만든 값만, 수집 원본은 그대로."""
     raws = {str(x).strip() for k in (pd.get("skus") or []) if isinstance(k, dict) for x in (k.get("spec") or [])}
     fx = fixes_of(ex)
-    stale = [k for k in list(fx) if k.startswith("option_short:") and k.split(":", 1)[1] not in raws]
+    from src.collectors.ko_polish import _balanced
+    # Y15: 괄호 반쪽 축약(예전 검사 통과분)도 지운다 — 같은 값을 다시 묻게(AI 하루 대기와 무관: 축약이 지워지면 처음부터)
+    stale = [k for k in list(fx) if k.startswith("option_short:")
+             and (k.split(":", 1)[1] not in raws or not _balanced(str(fx[k].get("after") or "")))]
     if not stale:
         return []
     ov = dict(ex.get("option_value_overrides") or {}) if isinstance(ex.get("option_value_overrides"), dict) else {}
@@ -680,8 +689,15 @@ def overlay(pd: dict, ex: dict) -> dict:
         return pd
     ov = dict(pd.get("option_value_overrides") or {}) if isinstance(pd.get("option_value_overrides"), dict) else {}
     attrs = [a for a in (pd.get("coupang_attributes") or []) if isinstance(a, dict)]
+    from src.collectors.ko_polish import _balanced
     for key, f in fx.items():
         after, before = f.get("after"), f.get("before")
+        if key.startswith("option_short:") and not _balanced(str(after or "")):
+            # Y15: 예전 검사가 통과시킨 괄호 반쪽 축약은 얹지 않는다(저장본에 남아 있어도) — 긴 값으로 돌아가 다시 축약된다
+            v = key.split(":", 1)[1]
+            if ov.get(v) == after:
+                ov.pop(v, None)
+            continue
         if key.startswith(("option_value:", "option_short:")):
             v = key.split(":", 1)[1]
             if ov.get(v) in (None, "", before, after):

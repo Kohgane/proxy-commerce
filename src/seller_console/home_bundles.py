@@ -275,8 +275,9 @@ def _today() -> Dict:
             "polish_used": int(IP.today_count() or 0), "polish_cap": IP.daily_cap()}
 
 
-def build(seller_ids) -> Dict:
-    """`{attention, running, today, markets, products, recent, last_check}` — 묶음마다 실패해도 다른 묶음은 그린다."""
+def build(seller_ids, *, ticks: bool = False) -> Dict:
+    """`{attention, running, today, markets, products, recent, last_check}` — 묶음마다 실패해도 다른 묶음은 그린다.
+    `ticks`(관리자 화면만): 「돌아가는 것」에 「마지막 틱 HH:MM」, 30분 넘으면 손댈 것 「틱 멈춤 n분」(Y15)."""
     out: Dict = {}
     try:
         rows = _rows(seller_ids)
@@ -303,6 +304,31 @@ def build(seller_ids) -> Dict:
                                              "url": "/seller/extension"})
         at.setdefault("groups", []).insert(0, {"label": "PC 수집기 끊김", "n": 1, "kind": "collector_off"})
         at["n"] = int(at.get("n") or 0) + 1
+    if ticks:
+        _tick_lines(out)
     mk = out.get("markets")
     out["last_check"] = mk.get("last_check", "") if isinstance(mk, dict) else ""
     return out
+
+
+def _tick_lines(out: Dict) -> None:
+    """Y15(오너 2026-10-21 틱 멈춤 2시간 반 — 남은 신호는 틱 기록 공백뿐): 마지막 틱 시각 · 30분 넘으면 손댈 것.
+    원인은 추정하지 않는다(인스턴스 응답 불능은 Render 로그 없이 못 가림)."""
+    try:
+        from src.services import tick_watch as _tw
+        ts = _tw.status()
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[대시보드] 틱 기록 읽기 실패: %s", exc)
+        return
+    if not ts.get("seen"):
+        return
+    run = out.get("running")
+    if isinstance(run, dict) and not run.get("error"):
+        run.setdefault("lines", []).append(ts["line"])
+        run["show"] = True
+    at = out.get("attention")
+    if ts.get("stale") and isinstance(at, dict) and not at.get("error"):
+        at.setdefault("todo", []).insert(0, {"id": "", "title": "운영 틱", "text": ts["todo"], "kind": "tick_stale",
+                                             "url": "/seller/diagnostics"})
+        at.setdefault("groups", []).insert(0, {"label": f"틱 멈춤 {ts['age_min']}분", "n": 1, "kind": "tick_stale"})
+        at["n"] = int(at.get("n") or 0) + 1

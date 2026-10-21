@@ -765,9 +765,22 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
     if len(v) <= limit:
         return v
     # ③-c 구분자 둘레 공백 · 핵심 명사 축약표(`abbrev_ko` — 「3-in-1 휴대폰 이어폰 거치대」 → 「3in1 거치대」)
+    #   Y15(운영 10-21 발판 「분리세탁 · 커피 브라운 · 스노우 벨벳 - 다크 그린」 26자 남음): 띄운 「 - 」도 붙인다(「3-in-1」은 안 띄워 그대로).
     v = re.sub(r"\s*([+/·])\s*", r"\1", v)
+    v = re.sub(r"\s+-\s+", "-", v)
     if len(v) <= limit:
         return v
+    # ③-d Y15(운영 10-21 접이식 의자 「높이 44cm 화이트+높이 30cm 브라운/2개 세트」 29자): 같은 낱말 반복은 두 번째부터 뺀다 —
+    #   뜻이 그대로다. 숫자 든 낱말·색상은 빼지 않는다(SKU를 가르는 값).
+    v = _drop_repeats(v)
+    if len(v) <= limit:
+        return v
+    # ③-e 값 전체를 감싼 괄호(「[제품 높이 쿠션 포함, 기본 동일 색상 가죽 쿠션]」)는 벗긴다 — 뒤 조각을 빼다가 괄호 반쪽이 남지 않게.
+    m = re.fullmatch(r"[\[【(（]\s*(.+?)\s*[\]】)）]", v)
+    if m and _balanced(m.group(1)):
+        v = m.group(1)
+        if len(v) <= limit:
+            return v
     for ab_src, ab_ko in sorted(r.get("abbrev_ko") or [], key=lambda x: len(x[0]), reverse=True):
         if ab_src and ab_src in v:
             v = _tidy(v.replace(ab_src, ab_ko))
@@ -786,9 +799,39 @@ def shorten(value: str, limit: int = MAX_OPTION_VALUE) -> str:
             break
         segs.pop(drop)
         cand = _tidy(" · ".join(segs))
-        if len(cand) <= limit:
+        if len(cand) <= limit and _balanced(cand):           # Y15: 괄호 반쪽(「[제품 높이 쿠션 포함」)은 내보내지 않는다
             return cand
     return v                      # 그래도 넘으면 **자르지 않는다** — 호출부가 「미해석」
+
+
+_BRACKETS = (("(", ")"), ("[", "]"), ("【", "】"), ("（", "）"), ("「", "」"), ("{", "}"))
+
+
+def _balanced(s: str) -> bool:
+    """괄호 짝이 맞나(여는 것·닫는 것 수 · 순서). 옵션 값 축약이 괄호 반쪽을 남기면 안 된다(Y15 운영 10-21)."""
+    pairs = dict(_BRACKETS)
+    closers = {c: o for o, c in _BRACKETS}
+    stack = []
+    for ch in str(s or ""):
+        if ch in pairs:
+            stack.append(ch)
+        elif ch in closers:
+            if not stack or stack[-1] != closers[ch]:
+                return False
+            stack.pop()
+    return not stack
+
+
+def _drop_repeats(v: str) -> str:
+    """같은 한글 낱말(2자 이상 · 숫자 없음 · 색상 아님)이 두 번 이상이면 두 번째부터 뺀다."""
+    colors_ko = {ko for _src, ko in (rules().get("colors") or []) if ko}
+    seen, out = set(), v
+    for w in re.findall(r"[가-힣]{2,}", v):
+        if w in seen and w not in colors_ko:
+            out = re.sub(rf"(?<=[\s+/·,])\s*{re.escape(w)}\s*(?=[0-9])", "", out, count=1) if re.search(
+                rf"(?<=[\s+/·,]){re.escape(w)}\s*(?=[0-9])", out) else out
+        seen.add(w)
+    return _tidy(out)
 
 
 def fits(value: str, limit: int = MAX_OPTION_VALUE) -> bool:

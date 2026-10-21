@@ -1236,7 +1236,7 @@ def _render_dashboard_home():
     # Y12-A(오너 2026-10-17): 대시보드 = 세 묶음(손댈 것 · 돌아가는 것 · 오늘 쓴 것)만. 계정·마켓 연동 신호·등록 대장·
     #   소싱 대기는 「진단」(/seller/diagnostics) 한 곳으로 옮겼다.
     from .home_bundles import build as _bundles
-    context["home"] = _bundles(_seller_identities())
+    context["home"] = _bundles(_seller_identities(), ticks=_is_admin_user())
     return render_template("dashboard.html", widgets=widgets, page="dashboard", **context)
 
 
@@ -5506,6 +5506,23 @@ def _pv_perf_diff(a: dict, b: dict) -> dict:
     return {"segments_ms": seg, "counts": cnt, "external_ms_by_host": host}
 
 
+def _pv_record_ship(job_id, product_data, markets) -> None:
+    """Y15(오너 야간 「아침 표 — 운임 비율」): 마켓마다 배송비 추정(상태·비율·운임·판매가)을 잡 기록 `ship`에 남긴다.
+    보류가 없을 때도 비율이 남아 「35% 아래였나 · 계산을 못 했나」를 기록으로 가린다. 화면·판정은 그대로(기록만)."""
+    try:
+        from .shipping_ratio import estimate as _ship_est
+        out = {}
+        for m in markets or []:
+            if str(m).split(":")[0] not in ("coupang", "smartstore", "elevenst"):
+                continue
+            e = _ship_est(product_data, str(product_data.get("seller_id") or ""), m) or {}
+            out[m] = {k: e.get(k) for k in ("state", "ratio_pct", "ship_krw", "sell_krw", "line") if e.get(k) is not None}
+        if out:
+            _pv_update(job_id, ship=out)
+    except Exception as exc:                                     # noqa: BLE001 — 기록 실패가 사전검증을 막지 않는다
+        logger.debug("[사전검증] 운임 기록 실패: %s", exc)
+
+
 def _pv_registered_rows(item_id, markets) -> dict:
     """M8-7 — 이번 사전검증 대상 중 **이미 등록 기록이 있는 마켓**의 카드 줄 `{market: row}`. 마켓에 묻지 않는다(DB만).
     `ok=False`라 업로드 버튼(통과 마켓만)에서 빠진다. 다시 올리려면 마켓 상태 팝업에서 기록을 뺀다."""
@@ -5724,6 +5741,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 if _warm:
                     _pv_update(job_id, stages={"naver_detail_cdn": int((_time.monotonic() - t0) * 1000)})
                 results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
+                _pv_record_ship(job_id, product_data, markets)
                 t0 = _time.monotonic()
                 _auto, product_data = _pv_auto_translate(product_data, data, results)
                 if _auto is not None:
