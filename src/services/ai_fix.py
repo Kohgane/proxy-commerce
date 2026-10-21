@@ -89,7 +89,8 @@ def blocked(ex: dict) -> Dict[str, str]:
 #: Y13-C 2: 축약 검사를 고친 시각 — 그 전에 「단어 중간 절단·지킬 말 빠짐」으로 버린 축약은 하루를 기다리지 않고 다시 묻는다
 #   (예전 검사가 맞는 답을 버렸다 — 같은 돈을 또 쓰는 게 아니라 그때 버린 답을 새 검사로 받는 것).
 #   Y14-4: 색상 지킴 규칙을 다시 고쳤다(숫자 든 첫 낱말은 색상 아님) — 그 전에 버린 축약도 다시 묻는다.
-SHORT_GUARD_SINCE = datetime(2026, 10, 20, 16, 5, tzinfo=timezone.utc)
+#   Y14(10-21 순찰): 「~용」 꼬리 · 치수 이름 첫 낱말(높이·길이…) 오탐을 고쳤다 — 08:10 사전검증이 버린 축약도 다시 묻는다.
+SHORT_GUARD_SINCE = datetime(2026, 10, 21, 8, 45, tzinfo=timezone.utc)
 
 
 def _recently_tried(ex: dict, key: str) -> bool:
@@ -252,7 +253,11 @@ def _words(s: str) -> List[str]:
 
 #: Y13-C 2(운영 10-18 피샹리 3건 「단어 중간 절단」 실측): 낱말 끝의 이 꼬리는 떼도 낱말을 자른 게 아니다 — 「검정색」→「검정」,
 #   「베이지색」→「베이지」, 「실리콘가죽」→「실리콘」. 낱말 **하나** 안에서만 · 남는 앞부분 2자 이상(「소가죽」→「소」·「천연소」는 그대로 버림).
-_SHORT_SUFFIX = ("색", "가죽", "컬러")
+#   Y14(운영 10-21 허리 보호 소파 「성인용 …」→「성인 …」 2건이 「단어 중간 절단(성인)」으로 버려짐): 「~용」도 뗄 수 있는 꼬리.
+_SHORT_SUFFIX = ("색", "가죽", "컬러", "용")
+#: Y14(운영 10-21 접이식 의자 「높이 44cm 화이트+높이 30cm 브라운/2개 세트」): 첫 낱말이 치수·규격 이름이면 색상이 아니다 —
+#   「색상 「높이」 빠짐」으로 좋은 축약을 버렸다.
+_SHORT_NOT_COLOR = frozenset(("높이", "길이", "너비", "폭", "두께", "사이즈", "크기", "용량", "무게", "지름", "좌고", "제품", "구성"))
 
 
 def _stem(w: str) -> str:
@@ -298,7 +303,7 @@ def short_guard(ko: str, short: str) -> str:
     #   대신 값 안의 흔한 색 낱말(블랙·화이트…)은 어디 있든 지킨다.
     colors = [w for w in ow if _stem(w) in _SHORT_COLORS or w in _SHORT_COLORS]
     first = ow[0] if ow else ""
-    if first and not re.search(r"\d", first) and first not in colors:
+    if first and not re.search(r"\d", first) and first not in colors and first not in _SHORT_NOT_COLOR:
         colors.insert(0, first)
     for c in colors:
         if c not in flat and _stem(c) not in flat:
