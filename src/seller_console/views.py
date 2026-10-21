@@ -5522,6 +5522,10 @@ def _pv_registered_rows(item_id, markets) -> dict:
         m = h["market"]
         if m in out:                                             # 같은 마켓 2건이면 첫 줄만(번호는 팝업에서 전부)
             continue
+        if m not in markets:
+            # Y14(10-21 SPORTLINK 실측): 계정 없는 예전 「coupang」 기록 — 어느 계정 것인지 몰라 고른 마켓 줄로 못 바꾼다.
+            #   카드에 안 고른 「coupang」 줄이 따로 생기던 것 막음. 업로드 입구 중복 확인(409)이 그대로 잡는다.
+            continue
         out[m] = {"market": m, "market_label": MARKET_LABELS.get(m, m), "ok": False, "hold": False,
                   "error_code": "already_registered", "registered_no": h["shown_no"],
                   "message": f"이미 등록됨 {h['shown_no']} · 다시 등록하려면 기록을 빼세요",
