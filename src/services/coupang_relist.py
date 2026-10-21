@@ -148,7 +148,7 @@ def register(item: Dict, markets: List[str], *, save: Callable, register_fn: Cal
 
 def _register_dup_ok(item_id: str, markets: List[str]) -> Dict:
     from src.services import oneshot_ops as O
-    return O.register(item_id, markets, confirm_duplicate=True)
+    return O.register(item_id, markets, confirm_duplicate=True, relist=True)
 
 
 def stop_old(item: Dict, markets: List[str], *, save: Callable, make_up: Callable = None) -> Dict:

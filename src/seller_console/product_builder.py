@@ -115,6 +115,9 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "detail_blocks": ex.get("detail_blocks") or {},
         # Y14(오너 2026-10-21 SPORTLINK): 상세 첫 줄 고정 문구(「※ 충전기·케이블 미포함 — 스탠드만 포함」) — 고지처럼 맨 위 · 셀러 글로 안 센다
         "detail_head_note": str(ex.get("detail_head_note") or "").strip(),
+        # Y14(오너 2026-10-21 「치수 서버에서 수집」): 서버가 모은 치수(출처·신뢰) — 배송비 엔진이 읽은 치수가 없을 때 쓴다
+        "dims_auto": dict(ex.get("dims_auto")) if isinstance(ex.get("dims_auto"), dict) else {},
+        "rep_need_change": str(ex.get("rep_need_change") or ""),
         "coupang_attributes": list(ex.get("coupang_attributes") or []),
         "coupang_option_pick": dict(ex.get("coupang_option_pick") or {}),
         "skus": ex.get("skus") if isinstance(ex.get("skus"), list) else [],

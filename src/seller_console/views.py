@@ -3010,6 +3010,13 @@ def collect_upload():
     # Y7-K(오너 2026-10-10 18:09 KST — 셰고가 13742149801 새로 생성, 13741121333 이미 있음): 이미 등록된 마켓은
     #   **확인 없이 다시 올리지 않는다**. 화면 가드(M7 체크 해제)는 「다시 등록」·「실패 마켓 재시도」가 건너뛰었다 —
     #   입구 한 곳(서버)에서 막는다. 확인하면 `confirm_duplicate: true`로 다시 보낸다.
+    # Y14(오너 2026-10-21 SPORTLINK 쿠팡 고가네 — 옛 등록본 16397045086): relist로만 올릴 마켓은 이 입구에서 막는다(「통과 마켓에
+    #   업로드」·「다시 등록」 포함). relist 등록 단계만 `relist_register`로 지난다.
+    _ro = _relist_only(_owned, markets)
+    if _ro and not data.get("relist_register"):
+        return jsonify({"ok": False, "relist_only": _ro,
+                        "error": "이 마켓은 옛 등록본이 있어 「새로 등록 → 승인 → 옛 상품 판매중지」(relist) 경로로만 올려요: "
+                                 + " · ".join(_ro)}), 409
     _dup = _already_registered(_owned, markets)
     if _dup and not data.get("confirm_duplicate"):
         return jsonify({"ok": False, "needs_dup_confirm": True, "registered": _dup,
@@ -3142,6 +3149,18 @@ def _carry_option_quota(item_id, result_dict) -> None:
                 logger.warning("[쿠팡 옵션 한도] 이월 기록 실패 item=%s: %s", item_id, exc)
 
 
+def _relist_only(item, markets) -> list:
+    """Y14 — 상품 기록 `relist_only`에 든 이번 대상 마켓(쿠팡 마켓 이름 그대로)."""
+    if not item or not markets:
+        return []
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        return []
+    ro = {str(m) for m in (extra.get("relist_only") or [])}
+    return [str(m) for m in markets if str(m) in ro]
+
+
 def _already_registered(item, markets) -> list:
     """Y7-K — 이 상품의 등록 기록 중 이번 대상 마켓에 이미 있는 것 `[{market, chip, shown_no, date}]`."""
     if not item or not markets:
@@ -3154,7 +3173,9 @@ def _already_registered(item, markets) -> list:
     want = {str(m) for m in markets}
     out = []
     for r in _mk_records(extra):
-        if r["market"] in want:
+        # Y14(10-21 SPORTLINK): 계정이 붙기 전 예전 기록(market 「coupang」)은 어느 쿠팡 계정 것인지 기록만으론 모른다 —
+        #   쿠팡 계정 마켓을 올릴 때 중복 후보로 보여 준다(확인하면 올라간다 · 예전엔 「coupang:gogane」과 안 맞아 경고 없이 지났다).
+        if r["market"] in want or (r["market"] == "coupang" and any(m.startswith("coupang:") for m in want)):
             out.append({"market": r["market"], "chip": r["chip"], "shown_no": r.get("shown_no") or r.get("product_id") or "",
                         "date": str(r.get("at") or "")[:10]})
     return out
