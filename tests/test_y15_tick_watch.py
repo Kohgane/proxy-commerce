@@ -93,3 +93,28 @@ def test_check_item_non_furniture_goes_straight_to_prevalidate(monkeypatch):
     monkeypatch.setattr(D, "_item", lambda iid: (_item({"title": "手机壳", "title_ko": "휴대폰 케이스"}), "u1"))
     r = O.check_item("x1", [], fetch=lambda iid: 1 / 0, prevalidate=lambda iid, m: {"ok": True, "job_id": "j2"})
     assert r["step"] == "prevalidate" and r["job_id"] == "j2"
+
+
+def test_ops_prevalidate_session_carries_login_email(monkeypatch):
+    """두 번째 로그인 계정 상품: 화면 로그인 세션과 같은 판정(공유 마켓 = 관리자·FAMILY_EMAILS — 이메일을 본다)."""
+    from src.services import oneshot_ops as O
+    from src.services import ocr_compare_diag as D
+    from src.db import user_identities_pg as U
+    from src.seller_console import views as V
+    seen = {}
+    monkeypatch.setattr(D, "_item", lambda iid: ({"id": "8230f65c", "extra_json": "{}", "title": "x"}, "u2"))
+    monkeypatch.setattr(U, "emails_for", lambda uid: ["second@example.com"] if uid == "u2" else [])
+    monkeypatch.setattr("src.seller_console.product_builder.build_product", lambda item, edits, seller_id: {"title": "x"})
+    monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: object())
+
+    def _start(data, mk, disp):
+        from flask import jsonify, session
+        seen.update(uid=session.get("user_id"), email=session.get("user_email"))
+        return jsonify({"job_id": "j9"})
+    monkeypatch.setattr(V, "_pv_start_job", _start)
+    r = O._prevalidate("8230f65c", ["coupang:gogane"])
+    assert r["ok"] and seen == {"uid": "u2", "email": "second@example.com"}
+    monkeypatch.setattr(U, "emails_for", lambda uid: [])
+    seen.clear()
+    O._prevalidate("8230f65c", ["coupang:gogane"])
+    assert seen == {"uid": "u2", "email": None}                              # 못 찾으면 예전처럼 user_id만

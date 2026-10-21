@@ -368,6 +368,16 @@ def carry_drain(now=None) -> Dict:
     return {"picked": len(out), "rows": out}
 
 
+def _login_email(uid: str) -> str:
+    """그 계정의 로그인 이메일(정체성 표 첫 줄) — 못 찾으면 ""."""
+    try:
+        from src.db import user_identities_pg as U
+        ems = U.emails_for(uid) or []
+        return str(ems[0]) if ems else ""
+    except Exception:                                            # noqa: BLE001
+        return ""
+
+
 def _prevalidate(item_id: str, markets: List[str]) -> Dict:
     """화면 「사전검증」과 같은 잡 — 그 상품 계정 세션으로(자격·마켓 키가 그 계정 것). 잡 id만 돌려준다(결과는 잡 기록)."""
     from src.services import ocr_compare_diag as D
@@ -384,6 +394,11 @@ def _prevalidate(item_id: str, markets: List[str]) -> Dict:
     data = {"product": build_product(item, edits={}, seller_id=uid), "markets": mk, "item_id": str(item.get("id") or item_id)}
     with app.test_request_context("/seller/collect/prevalidate", method="POST"):
         session["user_id"] = uid
+        # Y15(야간 미등록 전부 사전검증 — 두 번째 로그인 계정 상품): 그 계정으로 로그인한 화면과 **같은 판정**이 나오게
+        #   로그인 이메일도 싣는다(공유 마켓 = 관리자·FAMILY_EMAILS 판정이 이메일을 본다). 없으면 예전처럼 user_id만.
+        _em = _login_email(uid)
+        if _em:
+            session["user_email"] = _em
         dispatcher = V._get_upload_dispatcher()
         if dispatcher is None:
             return {"ok": False, "why": "업로드 디스패처를 불러오지 못했어요"}
