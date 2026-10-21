@@ -184,6 +184,8 @@ def _images(extra: dict, *, props: Optional[list] = None):
             t = _minus(t, frags)                                  # 소품 상자 글자는 상자 수만큼만 뺀다(같은 낱말이 소품 밖에도 있으면 남는다)
             for frag in sorted(_risk_erased(e), key=len, reverse=True):       # Y11-J6: 「빼고 등록」으로 지운 상자 글자
                 t = t.replace(frag, " ")
+            for frag in sorted(_risk_cleared(e), key=len, reverse=True):      # Y14: 지금 그림엔 없고 원본 원문에만 있는 이름
+                t = t.replace(frag, " ")
             if t.strip():
                 out.append((kind, int(e["idx"]), nm, t))
     return out
@@ -594,6 +596,20 @@ def _retext_or_exclude(ex: dict, kind: str, e: dict, names, case: bool, to: str,
                 ops.append({"id": b["id"], "action": "text", "text": new})
                 old.append(tgt)
     if not ops:
+        if p.get("boxes"):
+            # Y14(운영 10-21 04:50 SPORTLINK 사진 3): 지금 나가는 그림의 글자를 읽었는데 그 이름이 없다 — 이름은 **원본 사진의 원문**
+            #   (`source_text` 「Airpods Airpods Pro」)에만 있고 번역본·편집본엔 「무선 이어폰」으로 그려져 있다. 그림에 없는 이름 때문에
+            #   사진째 빼지 않는다. 그 그림(주소)에선 그 낱말을 세지 않게 `risk_clear`에 적는다(그림이 바뀌면 다시 센다).
+            from src.services.detail_image_plan import entry_text
+            words = [m.group(0) for n in names or [] if n for m in _repl_pat(n, case).finditer(entry_text(e))]
+            prev = e.get("risk_clear") if isinstance(e.get("risk_clear"), dict) else {}
+            if prev.get("img") != str(e.get("url") or ""):
+                prev = {}
+            e.pop("risk_exclude", None)
+            e["risk_clear"] = {"img": str(e.get("url") or ""), "words": list(dict.fromkeys((prev.get("words") or []) + words)),
+                               "label": label, "why": "지금 나가는 그림의 글자 상자에 없음(원본 원문에만 있음)",
+                               "at": datetime.now(timezone.utc).isoformat()}
+            return
         e["risk_exclude"] = f"{label} — 사진째 뺌({RETEXT_MISS})"
         return
     try:
@@ -761,6 +777,14 @@ def _erase_hit(ex: dict, kind: str, idx: int, names, case: bool) -> dict:
         return {"ok": False, "why": str(res.get("error") or "지우기 실패")[:80]}
     return {"ok": True, "n": int(str(res.get("version") or "edit:0").split(":")[-1]), "erased": res.get("erased") or [],
             "pending": bool(res.get("pending"))}
+
+
+def _risk_cleared(e: dict) -> list:
+    """Y14 — 글자 고치기가 「지금 나가는 그림엔 그 이름이 없다」고 확인한 낱말(원본 사진 원문에만 있음). 그 그림 그대로일 때만."""
+    rc = e.get("risk_clear") if isinstance(e.get("risk_clear"), dict) else None
+    if not rc or not rc.get("img") or str(rc.get("img")) != str(e.get("url") or ""):
+        return []
+    return [str(x) for x in rc.get("words") or [] if str(x).strip()]
 
 
 def _risk_erased(e: dict) -> list:
