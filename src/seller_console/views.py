@@ -5415,13 +5415,34 @@ def _pv_run_markets(job_id: str, product_data: dict, markets: list, dispatcher, 
                 _pv_update(job_id, results={m: _pv_transport_fail(m, "error", f"검증 못 함 — {type(exc).__name__}: {str(exc)[:120]}")})
     except _cf.TimeoutError:
         pass
+    orphans = 0
     for fut, m in futs.items():
         if not fut.done():
-            logger.warning("[PV] job=%s market=%s %d초 초과 — 검증 못 함", job_id[:8], m, int(_PV_MARKET_TIMEOUT_SEC))
+            # Y14(운영 10-21 08:01 우주대행 12초 초과): 시간이 넘은 마켓 스레드는 잡이 끝난 뒤에도 돈다(취소 못 함) — 상품 몸통 사본을
+            #   쥔 채로. 잡 끝 반환은 그보다 먼저라 그 힙은 돌려줄 기회가 없었다 → 그 스레드가 끝나는 순간 한 번 더 반환한다.
+            orphans += 1
+            fut.add_done_callback(lambda _f, _m=m: _pv_orphan_done(job_id, _m))
             _pv_update(job_id, results={m: _pv_transport_fail(
                 m, "timeout", f"검증 못 함 — {int(_PV_MARKET_TIMEOUT_SEC)}초 안에 답이 없었어요")})
     ex.shutdown(wait=False, cancel_futures=True)
+    if orphans:
+        _pv_update(job_id, stages={"orphans": orphans})
     return done_results
+
+
+def _th_count() -> int:
+    import threading as _threading
+    return _threading.active_count()
+
+
+def _pv_orphan_done(job_id: str, market: str) -> None:
+    """시간이 넘어 잡보다 늦게 끝난 마켓 스레드 — 끝나는 자리에서 반환(gc+malloc_trim) · 한 줄."""
+    from src.utils import rss as _rss
+    try:
+        before, after = _rss.release("pv_orphan")
+        logger.info("[PV] job=%s market=%s 늦게 끝난 마켓 스레드 — 반환 %s→%sMB", job_id[:8], market, before, after)
+    except Exception:                                            # noqa: BLE001
+        pass
 
 
 def _pv_rep_check_followup(job_id: str, product_data: dict, results: list, rc, deadline_ts: float, dispatcher) -> None:
@@ -5577,6 +5598,7 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
             sem.release()                                                # 잡은 시작하지 않았다 — 자리를 바로 돌려준다
             return
         from src.db import pg as _pg
+        _rel = None
         try:
             # Z9 후속 계약: 잡 전체(본문 + 끝 기록)가 DB 연결 1개 — 끝 기록(rss)도 같은 범위 안에서(중첩 job_conn은 바깥 것을 쓴다)
             with _pg.job_conn():
@@ -5589,14 +5611,22 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
                     finally:
                         _gc.collect()
                 r1, p1 = _rss.log("pv_job_end", markets=",".join(markets))
+                # Y14(운영 10-21 08:00~08:10): 잡 4개가 **차례로** 돌았는데(세마포어 1) 잡마다 프로세스 바닥이 170→204→266→313MB로
+                #   올라 유휴 442MB에서 안 내려왔다. 반환(gc+malloc_trim)을 잡 몸통 끝이 아니라 **여기** — 몸통이 어떻게 끝나든 —
+                #   에서 하고, 전·후 MB와 살아 있는 스레드 수를 같이 남긴다(다음엔 「반환이 안 먹었나 / 남은 스레드가 쥐었나」를 가린다).
+                _rel = _rss.release("prevalidate")
                 if r0 >= 0 and r1 >= 0:
                     _pv_update(job_id, rss={"start_mb": r0, "end_mb": r1, "delta_mb": r1 - r0, "peak_mb": _w["peak"],
                                             "peak_at_ms": _w["peak_at"], "hwm_mb": p1,
                                             "instance_base_mb": _w.get("inst_base"), "instance_peak_mb": _w.get("inst_peak")})
                 from src.utils import render_worker as _rw                    # Y11-O: 로그를 못 볼 때 보고용(운영 DB rss:recent)
                 _rw.record("pv_job", job=job_id[:8], markets=",".join(markets), base_mb=_w.get("base"), peak_mb=_w["peak"],
-                           inst_base_mb=_w.get("inst_base"), inst_peak_mb=_w.get("inst_peak"), over=bool(_w.get("over")))
+                           inst_base_mb=_w.get("inst_base"), inst_peak_mb=_w.get("inst_peak"), over=bool(_w.get("over")),
+                           rel_before_mb=_rel[0], rel_after_mb=_rel[1], threads=_th_count(),
+                           orphans=int(((_pv_store().state_get(_PV_JOB_KEY + job_id) or {}).get("stages") or {}).get("orphans") or 0))
         finally:
+            if _rel is None:
+                _rss.release("prevalidate:fail")                     # 몸통·끝 기록이 예외로 끝나도 반환은 한다
             sem.release()
     finally:
         _rss.JOB.reset(tok)
@@ -5728,7 +5758,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
         # Z9: 잡 한 줄 — 요청 로그(slow_request)는 202로 이미 찍혀 이 시간이 어디에도 안 남는다.
         logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
                     json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
-        _rss.release("prevalidate")                              # Y14-2: 잡이 잡은 사진·응답 힙을 돌려준다(기록·한 줄을 남긴 뒤)
+        # 반환(`rss.release`)은 바깥 `_pv_job`이 한다 — 몸통이 예외로 끝나도 거치게(Y14 10-21)
 
 
 def _pv_mark_ready(data: dict, markets: list, cur: dict, job_id: str) -> None:

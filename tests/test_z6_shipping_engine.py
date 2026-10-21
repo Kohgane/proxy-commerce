@@ -252,3 +252,12 @@ def test_seller_screens_never_show_competitor_name():
     with a.session_transaction() as s:
         s.update(user_id="z6-admin", user_role="admin")
     assert "percenty_2026-10-08" in a.get("/seller/settings/shipping").get_data(as_text=True)
+
+
+def test_furniture_need_dims_card_opens_dims_input():
+    """Y14(오너 10-21 「치수 4건은 드로어에 가로·세로·높이 입력 칸」): 가구 치수 게이트(「치수 확인 필요」) 카드에서
+    무게·크기 입력칸이 펼쳐져 있고 가로·세로·높이 칸이 있다(오너 입력 대기)."""
+    iid = _item({"title_ko": "허리 보호 소형 소파 1인용 소파", "title": "护腰小沙发人体工学懒人沙发"})
+    h = _client().get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    assert "치수 확인 필요" in h and 'data-role="m5-ship-input" open' in h
+    assert all(f'data-k="{k}"' in h for k in ("l", "w", "h"))

@@ -47,14 +47,35 @@ def _status(live: Dict) -> str:
 
 
 def _records(ex: Dict, market: str) -> List[Dict]:
-    return [u for u in (ex.get("uploaded") or []) if isinstance(u, dict) and u.get("market") == market]
+    """그 마켓 등록 기록 — 계정이 붙기 전 예전 기록(09월 · market 「coupang」 · 번호는 주소에만)도 쿠팡 계정 마켓의 후보로 본다.
+    예전 기록이 정말 그 계정 것인지는 `plan`이 그 계정 키로 조회해 확인한다(남의 계정 상품은 조회가 실패한다)."""
+    out = []
+    for u in (ex.get("uploaded") or []):
+        if not isinstance(u, dict):
+            continue
+        um = str(u.get("market") or "")
+        if um == market or (um == "coupang" and market.startswith("coupang:")):
+            pid = str(u.get("product_id") or "").strip()
+            if not pid:
+                import re
+                hit = re.search(r"/(?:vp/products|products)/(\d+)", str(u.get("external_url") or ""))
+                pid = hit.group(1) if hit else ""
+            out.append(dict(u, product_id=pid, legacy=um != market))
+    out.sort(key=lambda u: u["legacy"])                          # 계정이 붙은 기록이 먼저
+    return out
 
 
-def plan(item: Dict, markets: List[str], make_up: Callable = None) -> Dict:
-    """읽기만 — 마켓마다 `{old_sid, category_now, category_to, vids, old_status, ready, why}`."""
+#: Y14(오너 2026-10-21 SPORTLINK 쿠팡 고가네): 카테고리는 그대로 두고 **내용을 바꿔** 새로 등록 → 승인 → 옛 상품 판매중지.
+#   예전 등록본(09-28 · 옛 이름·옛 사진)은 수정 PUT으로 고칠 수도 있지만 오너가 이 길을 골랐다. 이 모드는 카테고리 대조를 안 한다.
+MODES = ("category", "replace")
+
+
+def plan(item: Dict, markets: List[str], make_up: Callable = None, mode: str = "category") -> Dict:
+    """읽기만 — 마켓마다 `{old_sid, category_now, category_to, vids, old_status, ready, why, mode}`."""
     make_up = make_up or _uploader
     ex = _ex(item)
-    target = str(ex.get("coupang_category_id") or "").strip()
+    mode = mode if mode in MODES else "category"
+    target = "" if mode == "replace" else str(ex.get("coupang_category_id") or "").strip()
     rel = ex.get("coupang_relist") if isinstance(ex.get("coupang_relist"), dict) else {}
     out: Dict[str, Dict] = {}
     for m in markets:
@@ -63,9 +84,18 @@ def plan(item: Dict, markets: List[str], make_up: Callable = None) -> Dict:
             continue
         recs = _records(ex, m)
         old_sid = str((rel.get(m) or {}).get("old_sid") or (recs[0].get("product_id") if recs else "") or "")
-        row = {"old_sid": old_sid, "category_to": target, "ready": False, "why": ""}
+        row = {"old_sid": old_sid, "category_to": target, "ready": False, "why": "", "mode": mode,
+               "legacy_record": bool(recs and recs[0].get("legacy") and not (rel.get(m) or {}).get("old_sid"))}
         if not old_sid:
             row["why"] = "이 마켓 등록 기록이 없어요"
+        elif mode == "replace":
+            up = make_up(m.partition(":")[2])
+            live = up.get_product(old_sid)
+            if "error" in live:
+                row["why"] = f"옛 상품 조회 실패(이 계정 상품이 아닐 수 있어요) — {live['error']}"
+            else:
+                row.update(category_now=str(live.get("displayCategoryCode") or ""), old_status=_status(live), vids=_vids(live),
+                           old_name=str(live.get("sellerProductName") or "")[:80], ready=True)
         elif not target.isdigit():
             row["why"] = "바꿀 쿠팡 카테고리(상품 기록 coupang_category_id)가 없어요"
         else:
@@ -84,9 +114,9 @@ def plan(item: Dict, markets: List[str], make_up: Callable = None) -> Dict:
 
 
 def register(item: Dict, markets: List[str], *, save: Callable, register_fn: Callable = None,
-             make_up: Callable = None) -> Dict:
+             make_up: Callable = None, mode: str = "category") -> Dict:
     """옛 번호를 먼저 적고 새로 등록한다. `register_fn(item_id, markets)` = 화면 「마켓 등록」 입구(중복 확인만 넘김)."""
-    p = plan(item, markets, make_up=make_up)
+    p = plan(item, markets, make_up=make_up, mode=mode)
     go = [m for m, r in p["markets"].items() if r.get("ready")]
     if not go:
         return {"ok": False, "why": "새로 등록할 마켓이 없어요", "plan": p}
@@ -95,7 +125,7 @@ def register(item: Dict, markets: List[str], *, save: Callable, register_fn: Cal
     def _mark(fresh):
         rel = fresh.setdefault("coupang_relist", {})
         for m in go:
-            rel[m] = {"old_sid": olds[m], "category_to": p["markets"][m]["category_to"],
+            rel[m] = {"old_sid": olds[m], "category_to": p["markets"][m]["category_to"], "mode": p["markets"][m].get("mode"),
                       "old_vids": p["markets"][m].get("vids") or [], "state": "registering", "at": _now()}
         return True
     save(_mark)                                                  # 등록 전에 옛 번호를 남긴다 — 새 기록이 쌓여도 옛 것을 안다
@@ -141,7 +171,7 @@ def stop_old(item: Dict, markets: List[str], *, save: Callable, make_up: Callabl
         if st not in APPROVED:
             out[m] = {"stopped": 0, "new_status": st, "why": f"새 상품이 아직 「{st or '모름'}」 — 승인완료 뒤에 옛 상품을 내려요"}
             continue
-        if cat != str(r.get("category_to") or ""):
+        if r.get("mode") != "replace" and cat != str(r.get("category_to") or ""):
             out[m] = {"stopped": 0, "new_status": st, "new_category": cat,
                       "why": f"새 상품 카테고리가 {cat} — 바꿀 값 {r.get('category_to')}과 달라 옛 상품을 내리지 않아요"}
             continue

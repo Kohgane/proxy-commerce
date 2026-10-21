@@ -79,7 +79,10 @@ def _run(row: dict) -> Dict:
                                [str(x) for x in (row.get("strip") or []) if x][:5], str(row.get("pixels") or ""),
                                [str(m) for m in (row.get("markets") or []) if m],
                                fields=row.get("fields") if isinstance(row.get("fields"), dict) else None,
-                               strip_keep=[str(x) for x in (row.get("strip_keep") or []) if x][:5])
+                               strip_keep=[str(x) for x in (row.get("strip_keep") or []) if x][:5],
+                               exclude_images=[(str(p[0]), int(p[1])) for p in (row.get("exclude_images") or [])
+                                               if isinstance(p, (list, tuple)) and len(p) == 2][:10],
+                               exclude_why=str(row.get("exclude_why") or ""))
     if op == "discard":
         return _discard(item_id, str(row.get("why") or ""))
     if op == "naver_resend":
@@ -93,7 +96,8 @@ def _run(row: dict) -> Dict:
     if op == "register":
         return register(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_relist":
-        return _coupang_relist(item_id, str(row.get("step") or "plan"), [str(m) for m in (row.get("markets") or []) if m])
+        return _coupang_relist(item_id, str(row.get("step") or "plan"), [str(m) for m in (row.get("markets") or []) if m],
+                               mode=str(row.get("mode") or "category"))
     if op == "register_report":
         return register_report(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "image_probe":
@@ -317,7 +321,7 @@ def register_report(item_id: str, markets: List[str], make_up=None) -> Dict:
     return {"ok": bool(rows), "rows": rows, "why": "" if rows else "등록 기록이 없어요"}
 
 
-def _coupang_relist(item_id: str, step: str, markets: List[str]) -> Dict:
+def _coupang_relist(item_id: str, step: str, markets: List[str], mode: str = "category") -> Dict:
     """Y14-f — 쿠팡 카테고리 바꾸기(새로 등록 → 승인 → 옛 상품 판매중지). `step` = plan(읽기만) | register | stop_old."""
     from src.seller_console import collect_history_store as store
     from src.services import coupang_relist as CR
@@ -328,9 +332,9 @@ def _coupang_relist(item_id: str, step: str, markets: List[str]) -> Dict:
     iid = str(item.get("id") or item_id)
     save = lambda fn: store.merge_extra(iid, fn, seller_ids={uid} if uid else None)     # noqa: E731
     if step == "plan":
-        return CR.plan(item, markets)
+        return CR.plan(item, markets, mode=mode)
     if step == "register":
-        return CR.register(item, markets, save=save)
+        return CR.register(item, markets, save=save, mode=mode)
     if step == "stop_old":
         return CR.stop_old(item, markets, save=save)
     return {"ok": False, "why": f"모르는 단계({step[:20]})"}
@@ -569,8 +573,32 @@ def _discard(item_id: str, why: str) -> Dict:
     return {"ok": ok, "why": "" if ok else "이미 버렸거나 저장하지 못했어요"}
 
 
+#: Y14(오너 2026-10-21 SPORTLINK 「사진 3 제외」) — 오너가 뺀 장. `risk_exclude`와 같은 칸(등록 빌더·검사가 이미 보는 칸)에 적되
+#   「위험 —」으로 시작하지 않게 — 자동 되살리기(`heal_prop_excludes`·`heal_retext_excludes`)는 「위험 —」만 푼다.
+OWNER_EXCLUDE_PREFIX = "오너 결정 — 사진째 뺌"
+_KIND_KEY = {"gallery": "images_ko", "detail": "detail_images_ko", "sku": "sku_images_ko"}
+
+
+def _owner_exclude(ex: dict, pages: List[tuple], why: str, by: str) -> List[str]:
+    out = []
+    for kind, idx in pages:
+        key = _KIND_KEY.get(kind)
+        if not key:
+            continue
+        lst = ex.setdefault(key, [])
+        e = next((x for x in lst if isinstance(x, dict) and int(x.get("idx", -1)) == idx), None)
+        if e is None:
+            e = {"idx": idx, "kind": kind}
+            lst.append(e)
+        e["risk_exclude"] = f"{OWNER_EXCLUDE_PREFIX}({(why or '오너 결정')[:60]})"
+        e["owner_exclude"] = {"at": _now(), "by": by, "why": (why or "")[:80]}
+        out.append(f"{kind} {idx + 1}")
+    return out
+
+
 def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, markets: List[str], *,
-                    fields: Optional[dict] = None, strip_keep: Optional[List[str]] = None) -> Dict:
+                    fields: Optional[dict] = None, strip_keep: Optional[List[str]] = None,
+                    exclude_images: Optional[List[tuple]] = None, exclude_why: str = "") -> Dict:
     import json
     from src.services import ocr_compare_diag as D
     from src.services import risk_gate as R
@@ -634,6 +662,8 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
             done.append({"label": h["label"], "ok": bool(res.get("ok")), "why": res.get("error") or "", "text_only": True,
                          "where": R.where_line(h)})
         out["strip"] = done
+    if exclude_images:
+        out["excluded"] = _owner_exclude(ex, exclude_images, exclude_why, uid)
     ex.pop("pv_ready", None)                             # 바꿨으니 지난 「준비 완료」는 낡았다 — 아래 사전검증이 다시 적는다
     ok = bool(store.update(iid, seller_ids={uid}, extra_json=json.dumps(ex, ensure_ascii=False)))
     out["saved"] = ok
