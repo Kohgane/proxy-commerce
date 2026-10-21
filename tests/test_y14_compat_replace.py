@@ -131,3 +131,49 @@ def test_owner_decision_fields_and_discard(monkeypatch):
     r = O._discard("50a13703", "오너 결정 — 국내 상품 등록 안 함")
     assert r["ok"] and fresh["discarded"]["by"] == "owner-oneshot"
     assert not O._discard("50a13703", "")["ok"]                  # 두 번 버리지 않는다
+
+
+def _ocr_shape_plan(ex, kind, idx, fetch=True):
+    """운영(10-21 01:50 SPORTLINK 사진 1) 상자 모양 — 번역본 그림을 OCR로 읽은 상자: 한국어가 `src`, `tgt`는 빈칸."""
+    return {"boxes": [{"id": "t0", "src": "스포츠링크", "tgt": ""},
+                      {"id": "t3", "src": "애플 워치 충전 거치대", "tgt": ""},
+                      {"id": "t8", "src": "주의사항: 판매 상품은 스탠드만 포함되며", "tgt": ""}]}
+
+
+def test_retext_reads_src_when_box_came_from_ocr_of_translated_image(monkeypatch):
+    from src.services import image_edit as IE
+    sent = {}
+    monkeypatch.setattr(IE, "configured", lambda: (True, ""))
+    monkeypatch.setattr(IE, "plan", _ocr_shape_plan)
+
+    def apply(ex, kind, idx, ops, by="user", small=None):
+        sent["ops"] = ops
+        return {"ok": True, "version": "edit:1"}
+    monkeypatch.setattr(IE, "apply", apply)
+    ex = _ex()
+    R.strip_extra(ex, _compat(R.scan(ex), "애플워치 호환 표기"), erase_pixels=True)
+    assert sent["ops"] == [{"id": "t3", "action": "text", "text": "스마트워치 충전 거치대"}]
+    e = ex["images_ko"][0]
+    assert e["risk_erase"]["how"] == "retext" and e["risk_erase"]["erased"] == ["애플 워치 충전 거치대"]
+    assert not e.get("risk_exclude")
+
+
+def test_heal_retries_photos_dropped_for_missing_box(monkeypatch):
+    """운영에서 이미 「사진째 뺌(번역 글자 상자를 못 찾음)」이 된 4장 — 사전검증 때 같은 결정으로 다시 고친다. 다른 사유는 그대로."""
+    from src.services import image_edit as IE
+    monkeypatch.setattr(IE, "configured", lambda: (True, ""))
+    monkeypatch.setattr(IE, "plan", _ocr_shape_plan)
+    monkeypatch.setattr(IE, "apply", lambda ex, kind, idx, ops, by="user", small=None: {"ok": True, "version": "edit:2"})
+    miss = "위험 — 호환 표기(AppleWatch, applewatch) — 사진째 뺌(그 낱말이 든 번역 글자 상자를 못 찾음)"
+    ex = _ex()
+    ex["images_ko"] = [dict(ex["images_ko"][0], risk_exclude=miss),
+                       {"idx": 1, "status": "done", "target_text": "판촉 문구", "risk_exclude": "판촉 — 사진째 뺌(판촉)"}]
+    ex["risk_decisions"] = {"compat:애플워치 호환 표기": {"action": "strip", "names": ["애플워치", "애플 워치"], "to": "스마트워치"}}
+    assert R.heal_retext_excludes(ex) == ["사진 1"]
+    assert not ex["images_ko"][0].get("risk_exclude") and ex["images_ko"][0]["risk_erase"]["edit"] == 2
+    assert ex["images_ko"][1]["risk_exclude"] == "판촉 — 사진째 뺌(판촉)"            # 다른 사유는 손 안 댐
+    assert R.heal_retext_excludes(ex) == []                                       # 두 번째는 할 일 없음
+    # 결정이 없으면 풀지 않는다
+    ex2 = _ex()
+    ex2["images_ko"][0]["risk_exclude"] = miss
+    assert R.heal_retext_excludes(ex2) == [] and ex2["images_ko"][0]["risk_exclude"] == miss

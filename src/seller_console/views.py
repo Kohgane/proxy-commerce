@@ -4911,6 +4911,10 @@ def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
         _healed = _rg.heal_prop_excludes(extra)
         if _healed:
             logger.info("[리스크] 소품뿐인 사진 제외 풀기 item=%s: %s", item_id, ", ".join(_healed))
+        _retexted = _rg.heal_retext_excludes(extra)               # Y14: 글자 고치기가 상자를 못 찾아 사진째 뺀 장 — 다시 고치기
+        if _retexted:
+            logger.info("[리스크] 호환 표기 사진 글자 고치기 다시 item=%s: %s", item_id, ", ".join(_retexted))
+            _healed = list(_healed) + _retexted
         if _rg.auto_apply(extra, by=_seller_id()) or _healed:
             from . import collect_history_store as _chs
             _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
