@@ -1715,12 +1715,14 @@ class UploadDispatcher:
             except Exception:
                 _rh = None
             _rss.log("rep_image_check_after", market=market)
-            if _rh:
-                holds.append(_rh)
-            elif pd.get("rep_need_change"):
-                # Y14(오너 2026-10-21 SPORTLINK): 대표 자동 고르기가 글자 0상자 장을 못 찾았다 — 판정 캐시가 비어도 막는다
+            if pd.get("rep_need_change"):
+                # Y14(오너 2026-10-21 SPORTLINK): 대표 자동 고르기가 글자 0상자 장을 못 찾았다 — 판정 캐시가 비어도 막는다.
+                #   지금 대표의 「텍스트 있음」 판정이 있어도 오너가 정한 이름(「대표 사진 바꾸기 필요」)으로 하나만 낸다.
+                _tail = f" · {_rh['line']}" if _rh and _rh.get("line") else ""
                 holds.append({"short": "대표 사진 바꾸기 필요", "fix": "rep_image",
-                              "line": f"대표 사진 바꾸기 필요 — {pd['rep_need_change']} 「쿠팡 노출」 탭에서 다른 장을 대표로 고르거나 「그래도 등록」"})
+                              "line": f"대표 사진 바꾸기 필요 — {pd['rep_need_change']} 「쿠팡 노출」 탭에서 다른 장을 대표로 고르거나 「그래도 등록」{_tail}"})
+            elif _rh:
+                holds.append(_rh)
         if market in _KO_OPTION_MARKETS:
             _un = unresolved_option_values(pd)
             n = len(_un)

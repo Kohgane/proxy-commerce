@@ -147,3 +147,30 @@ def test_owner_decision_rep_sets_or_clears_need_change(monkeypatch):
     box.clear()
     run({0: 4, 1: 0, 2: 7})
     assert box["rep_image"] == imgs[1] and "rep_need_change" not in box
+
+
+def test_rep_need_change_wins_over_text_hold_single_line(monkeypatch):
+    """운영 10-21 13:00 SPORTLINK: 후보 4장 모두 글자(9·9·4·9상자) — 지금 대표 「텍스트 있음」 판정이 있어도 오너 이름 하나로."""
+    from src.seller_console.upload_dispatcher import UploadDispatcher as UD
+    rh = {"short": "대표 사진 텍스트 있음", "fix": "rep_image", "line": "쿠팡 대표 사진: 텍스트 있음 — 반려 가능(읽은 글자 「스포츠링크」)"}
+    monkeypatch.setattr("src.services.coupang_image_check.hold", lambda pd, m, cached_only=True: rh)
+    monkeypatch.setattr("src.services.coupang_image_check.kick", lambda pd, m: None)
+    base = {"title": "스탠드", "title_ko": "스탠드", "images": ["https://img/a.jpg"], "images_effective": ["https://img/a.jpg"],
+            "price": "10", "currency": "CNY", "rep_need_change": "후보 4장 모두 글자가 있어요"}
+    h = [x for x in UD.readiness_holds(base, "coupang:woojoo") if x.get("fix") == "rep_image"]
+    assert len(h) == 1 and h[0]["short"] == "대표 사진 바꾸기 필요" and "스포츠링크" in h[0]["line"]
+    base.pop("rep_need_change")
+    h2 = [x for x in UD.readiness_holds(base, "coupang:woojoo") if x.get("fix") == "rep_image"]
+    assert h2 == [rh]
+
+
+def test_prevalidate_registered_rows_skip_unselected_legacy_market(monkeypatch):
+    """운영 10-21 13:00 SPORTLINK 잡: 계정 없는 예전 「coupang」 기록이 고르지 않은 「coupang」 줄로 카드에 따로 붙었다."""
+    from src.seller_console import views as V
+    item = {"id": "a3a35e92", "extra_json": json.dumps({"uploaded": [
+        {"market": "coupang", "external_url": "https://www.coupang.com/vp/products/16397045086"},
+        {"market": "smartstore:chezgoga", "product_id": "111", "channel_product_no": "222"}]})}
+    monkeypatch.setattr(V, "_get_owned_item", lambda iid: item)
+    rows = V._pv_registered_rows("a3a35e92", ["coupang:gogane", "coupang:woojoo", "smartstore:chezgoga"])
+    assert "coupang" not in rows and set(rows) <= {"coupang:gogane", "coupang:woojoo", "smartstore:chezgoga"}
+    assert V._already_registered(item, ["coupang:woojoo"])          # 업로드 입구 중복 확인은 그대로
