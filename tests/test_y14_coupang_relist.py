@@ -137,3 +137,57 @@ def test_coupang_uploads_reads_old_records_from_url():
                        {"market": "smartstore:chezgoga", "product_id": "1"}]}
     assert coupang_uploads(ex) == [{"market": "coupang", "account": "", "sid": "16397045086"},
                                    {"market": "coupang:woojoo", "account": "woojoo", "sid": "16419632846"}]
+
+
+_SPORT = {"uploaded": [{"market": "coupang", "external_url": "https://www.coupang.com/vp/products/16397045086",
+                        "market_label": "쿠팡"}]}
+
+
+class _UpSport(_Up):
+    def get_product(self, sid):
+        if sid == "16397045086":
+            return {"displayCategoryCode": 63978, "statusName": "승인완료", "sellerProductName": "옛 이름",
+                    "items": [{"vendorItemId": 8101}, {"vendorItemId": 8102}]}
+        if sid == "16500000009":
+            return {"displayCategoryCode": 63999, "statusName": self.new_status, "items": [{"vendorItemId": 7009}]}
+        return {"error": "없음"}
+
+
+def test_replace_mode_relists_legacy_record_without_category_target():
+    """Y14(오너 10-21 SPORTLINK 쿠팡 고가네): 카테고리는 그대로 · 내용만 바꿔 새로 등록 → 승인 → 옛 16397045086 판매중지.
+    예전 기록은 market 「coupang」·번호는 주소에만 — 계정 마켓 「coupang:gogane」의 후보로 보고, 그 계정 키로 조회해 확인한다."""
+    up = _UpSport()
+    p = CR.plan(_item(_SPORT), ["coupang:gogane"], make_up=lambda a: up, mode="replace")
+    row = p["markets"]["coupang:gogane"]
+    assert p["ok"] and row["old_sid"] == "16397045086" and row["legacy_record"] and row["mode"] == "replace"
+    assert row["vids"] == ["8101", "8102"] and row["category_to"] == "" and up.stopped == []
+    # 카테고리 모드(기본)는 바꿀 카테고리가 없으면 멈춘다 — 예전처럼
+    assert not CR.plan(_item(_SPORT), ["coupang:gogane"], make_up=lambda a: up)["ok"]
+    # 남의 계정 키로는 조회가 실패 → 준비 안 됨
+    class _Other(_UpSport):
+        def get_product(self, sid):
+            return {"error": "권한 없음"}
+    assert not CR.plan(_item(_SPORT), ["coupang:woojoo"], make_up=lambda a: _Other(), mode="replace")["ok"]
+    # 새 상품 승인 뒤 — 카테고리가 달라도(바꾸기 모드) 옛 상품 옵션 판매중지
+    box = json.loads(json.dumps(_SPORT))
+    CR.register(_item(_SPORT), ["coupang:gogane"], save=_saver(box), make_up=lambda a: up, mode="replace",
+                register_fn=lambda i, m: {"ok": True, "rows": [{"market": "coupang:gogane", "success": True,
+                                                                "external_product_id": "16500000009"}]})
+    assert box["coupang_relist"]["coupang:gogane"]["mode"] == "replace"
+    r = CR.stop_old(_item(box), ["coupang:gogane"], save=_saver(box), make_up=lambda a: up)
+    assert r["ok"] and up.stopped == ["8101", "8102"]
+
+
+def test_owner_exclude_photo_is_not_healed_back(monkeypatch):
+    """Y14(오너 10-21 「SPORTLINK 사진 3 제외」): 오너가 뺀 장은 등록에서 빠지고, 자동 되살리기(위험 —)가 풀지 않는다."""
+    from src.services import oneshot_ops as O
+    from src.services import risk_gate as R
+    ex = {"images_ko": [{"idx": 2, "status": "done", "risk_clear": {"img": "u", "words": ["Airpods"]}}],
+          "risk_decisions": {"compat:에어팟 호환 표기": {"action": "strip", "names": ["Airpods"], "to": "무선 이어폰"}}}
+    assert O._owner_exclude(ex, [("gallery", 2)], "SPORTLINK 사진 3", "u1") == ["gallery 3"]
+    e = ex["images_ko"][0]
+    assert e["risk_exclude"].startswith(O.OWNER_EXCLUDE_PREFIX) and e["owner_exclude"]["by"] == "u1"
+    assert R.heal_retext_excludes(ex) == [] and R.heal_prop_excludes(ex) == [] and e.get("risk_exclude")
+    from src.services import image_translate_store as S
+    imgs = ["https://img/a.jpg", "https://img/b.jpg", "https://img/c.jpg"]
+    assert "https://img/c.jpg" not in S.effective_images(dict(ex, images=imgs), originals=imgs)

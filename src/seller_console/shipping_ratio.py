@@ -294,6 +294,12 @@ def _fx(currency: str) -> Optional[float]:
 def _size_for(pd: dict) -> Dict[str, Any]:
     """읽은 크기(毛重·包装体积·치수·크기 표) — 카드에서 직접 넣은 값(`ship_input`)이 있으면 그게 이긴다."""
     size = read_size(pd)
+    # Y14(오너 2026-10-21): 글·사진에서 못 읽었으면 서버가 모은 치수(`dims_auto` — 온바운드 규격·사진 OCR·규격 블록 대조)를 쓴다.
+    #   「추정」이면 근거에 그대로 적힌다(숨기지 않음). 오너가 넣은 값(`ship_input`)은 아래에서 여전히 이긴다.
+    da = pd.get("dims_auto") if isinstance(pd.get("dims_auto"), dict) else {}
+    if not size.get("dims_cm") and isinstance(da.get("dims_cm"), list) and len(da["dims_cm"]) == 3:
+        size = dict(size, dims_cm=[float(x) for x in da["dims_cm"]], need_dims="",
+                    basis=f"서버 수집 치수 — {da.get('label') or da.get('confidence') or ''}")
     mi = pd.get("ship_input") if isinstance(pd.get("ship_input"), dict) else {}
     try:
         w = float(mi.get("weight_kg") or 0)

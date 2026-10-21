@@ -83,3 +83,59 @@ def test_release_switch_off_does_nothing(monkeypatch):
     monkeypatch.setattr(RW, "trim", lambda: called.append(1))
     monkeypatch.setenv("RSS_RELEASE", "0")
     assert rss.release("t") == (0, 0) and called == []
+
+
+def test_prevalidate_job_releases_even_when_body_raises(monkeypatch):
+    """Y14(운영 10-21 08:00~08:10): 잡 넷이 차례로 돌았는데 잡마다 프로세스 바닥이 170→204→266→313MB로 올랐다.
+    반환은 몸통 끝에만 있어 몸통·끝 기록이 예외로 끝나면 건너뛰었다 — 이제 바깥에서 늘 한 번."""
+    from src.seller_console import views as V
+    from src.utils import rss
+    calls = []
+    monkeypatch.setattr(rss, "release", lambda reason="": calls.append(reason) or (300, 200))
+    monkeypatch.setattr(V, "_pv_wait_memory", lambda job_id, markets: (True, 200, 420))
+
+    def boom(*a, **k):
+        raise RuntimeError("몸통 실패")
+    monkeypatch.setattr(V, "_pv_job_body", boom)
+    try:
+        V._pv_job("jtest0001", {}, ["coupang:gogane"], None)
+    except RuntimeError:
+        pass
+    assert calls == ["prevalidate:fail"]
+    assert V._pv_semaphore().acquire(blocking=False)               # 자리도 돌려줬다
+    V._pv_semaphore().release()
+
+    calls.clear()
+    monkeypatch.setattr(V, "_pv_job_body", lambda *a, **k: None)
+    V._pv_job("jtest0002", {}, ["coupang:gogane"], None)
+    assert calls == ["prevalidate"]                                # 정상 끝 — 한 번만
+
+
+def test_late_market_thread_releases_when_it_finishes(monkeypatch):
+    """Y14(운영 10-21 08:01 우주대행 12초 초과): 시간이 넘은 마켓 스레드는 잡 뒤에도 돈다 — 끝나는 순간 반환."""
+    import threading
+    import time
+    from src.seller_console import views as V
+    from src.utils import rss
+    calls, gate = [], threading.Event()
+    monkeypatch.setattr(rss, "release", lambda reason="": calls.append(reason) or (0, 0))
+    monkeypatch.setattr(V, "_PV_MARKET_TIMEOUT_SEC", 0.2)
+    monkeypatch.setattr(V, "_pv_update", lambda job_id, **kw: {})
+
+    class _R:
+        market, error_code = "", ""
+
+    class _D:
+        def prevalidate(self, pd, markets):
+            if markets == ["coupang:woojoo"]:
+                gate.wait(5)
+            return [_R()]
+    monkeypatch.setattr(V, "_pv_dict", lambda r, rc: {"ok": True})
+    out = V._pv_run_markets("jtest0003", {}, ["coupang:gogane", "coupang:woojoo"], _D(), None, time.time() + 10)
+    assert len(out) == 1 and calls == []                           # 늦은 마켓은 아직 도는 중
+    gate.set()
+    for _ in range(50):
+        if calls:
+            break
+        time.sleep(0.05)
+    assert calls == ["pv_orphan"]

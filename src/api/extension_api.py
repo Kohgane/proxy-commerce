@@ -1186,6 +1186,12 @@ def apply_enrich(item_id: str, ids: set, seller_id_val: str, data: dict) -> tupl
         _auto_translate(seller_id_val, item_id, item.get("url") or "", extra)
     if ok:
         _auto_translate_options(seller_id_val, item_id, extra)      # J1: 남은 외국어 값 → 번역기 큐(저장 뒤)
+    if ok and str(extra.get("enrich_state") or "") == "done":
+        try:                                                        # Y14(오너 10-21): 가구·대형이면 치수 서버 수집 줄(저장 뒤)
+            from src.services import dims_fetch as _df
+            _df.maybe_queue(item_id, extra)
+        except Exception as exc:                                    # noqa: BLE001
+            logger.warning("[enrich] 치수 수집 줄 실패 item=%s: %s", item_id, exc)
     st = extra.get("collect_status") or {}
     # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
     logger.info("[enrich] item=%s changed=%s status=%s rep=%s", item_id, changed, st.get("status"), bool(rep))

@@ -1717,6 +1717,10 @@ class UploadDispatcher:
             _rss.log("rep_image_check_after", market=market)
             if _rh:
                 holds.append(_rh)
+            elif pd.get("rep_need_change"):
+                # Y14(오너 2026-10-21 SPORTLINK): 대표 자동 고르기가 글자 0상자 장을 못 찾았다 — 판정 캐시가 비어도 막는다
+                holds.append({"short": "대표 사진 바꾸기 필요", "fix": "rep_image",
+                              "line": f"대표 사진 바꾸기 필요 — {pd['rep_need_change']} 「쿠팡 노출」 탭에서 다른 장을 대표로 고르거나 「그래도 등록」"})
         if market in _KO_OPTION_MARKETS:
             _un = unresolved_option_values(pd)
             n = len(_un)

@@ -41,12 +41,12 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 PER_TICK = 5
 #: 사전검증 잡을 띄우는 줄 — 한 틱에 `HEAVY_PER_TICK`개만(잡이 겹치면 메모리 상한에 걸린다 · Y14 10-21)
-HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist")
+HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch")
 HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe", "coupang_relist", "register_report", "discard")
+       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch")
 
 
 def _now() -> str:
@@ -79,9 +79,15 @@ def _run(row: dict) -> Dict:
                                [str(x) for x in (row.get("strip") or []) if x][:5], str(row.get("pixels") or ""),
                                [str(m) for m in (row.get("markets") or []) if m],
                                fields=row.get("fields") if isinstance(row.get("fields"), dict) else None,
-                               strip_keep=[str(x) for x in (row.get("strip_keep") or []) if x][:5])
+                               strip_keep=[str(x) for x in (row.get("strip_keep") or []) if x][:5],
+                               exclude_images=[(str(p[0]), int(p[1])) for p in (row.get("exclude_images") or [])
+                                               if isinstance(p, (list, tuple)) and len(p) == 2][:10],
+                               exclude_why=str(row.get("exclude_why") or ""),
+                               relist_only=[str(m) for m in (row.get("relist_only") or []) if m][:4])
     if op == "discard":
         return _discard(item_id, str(row.get("why") or ""))
+    if op == "dims_fetch":
+        return dims_fetch(item_id, onebound=row.get("onebound", True) is not False)
     if op == "naver_resend":
         return _naver_resend(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_refresh":
@@ -93,7 +99,8 @@ def _run(row: dict) -> Dict:
     if op == "register":
         return register(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_relist":
-        return _coupang_relist(item_id, str(row.get("step") or "plan"), [str(m) for m in (row.get("markets") or []) if m])
+        return _coupang_relist(item_id, str(row.get("step") or "plan"), [str(m) for m in (row.get("markets") or []) if m],
+                               mode=str(row.get("mode") or "category"))
     if op == "register_report":
         return register_report(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "image_probe":
@@ -217,7 +224,7 @@ PREVALIDATE_MARKETS = ("coupang:gogane", "coupang:woojoo", "smartstore:chezgoga"
 REGISTER_MARKETS = PREVALIDATE_MARKETS + ("elevenst",)
 
 
-def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = False) -> Dict:
+def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = False, relist: bool = False) -> Dict:
     """화면 「마켓 등록」과 **같은 입구**(`collect_upload`) — 그 상품 계정 세션으로. 중복·위험·도달성 게이트도 그대로 지난다.
 
     확인 플래그(`confirm_duplicate`·`confirm_warn`)는 **붙이지 않는다** — 막히면 그 답(409 원문)을 그대로 돌려준다.
@@ -239,6 +246,8 @@ def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = Fals
     body = {"product": build_product(item, edits={}, seller_id=uid), "markets": mk, "item_id": str(item.get("id") or item_id)}
     if confirm_duplicate:
         body["confirm_duplicate"] = True
+    if relist:
+        body["relist_register"] = True                   # relist 경로 — `relist_only` 마켓도 이 길로만 올린다
     with app.test_request_context("/seller/collect/upload", method="POST", json=body):
         session["user_id"] = uid
         resp = V.collect_upload()
@@ -317,7 +326,7 @@ def register_report(item_id: str, markets: List[str], make_up=None) -> Dict:
     return {"ok": bool(rows), "rows": rows, "why": "" if rows else "등록 기록이 없어요"}
 
 
-def _coupang_relist(item_id: str, step: str, markets: List[str]) -> Dict:
+def _coupang_relist(item_id: str, step: str, markets: List[str], mode: str = "category") -> Dict:
     """Y14-f — 쿠팡 카테고리 바꾸기(새로 등록 → 승인 → 옛 상품 판매중지). `step` = plan(읽기만) | register | stop_old."""
     from src.seller_console import collect_history_store as store
     from src.services import coupang_relist as CR
@@ -328,9 +337,9 @@ def _coupang_relist(item_id: str, step: str, markets: List[str]) -> Dict:
     iid = str(item.get("id") or item_id)
     save = lambda fn: store.merge_extra(iid, fn, seller_ids={uid} if uid else None)     # noqa: E731
     if step == "plan":
-        return CR.plan(item, markets)
+        return CR.plan(item, markets, mode=mode)
     if step == "register":
-        return CR.register(item, markets, save=save)
+        return CR.register(item, markets, save=save, mode=mode)
     if step == "stop_old":
         return CR.stop_old(item, markets, save=save)
     return {"ok": False, "why": f"모르는 단계({step[:20]})"}
@@ -551,6 +560,26 @@ def pick_rep(counts: Dict[int, object], prefer: int = -1) -> int:
 OWNER_FIELDS = ("title_ko", "coupang_name", "keywords", "detail_head_note")
 
 
+def dims_fetch(item_id: str, *, onebound: bool = True, ob_call=None, ocr=None) -> Dict:
+    """Y14(오너 2026-10-21) — 치수 서버 수집(`dims_fetch` 모듈) → 상품 기록 `dims_auto` 칸만 덧대 저장. 표 한 줄을 돌려준다."""
+    from src.seller_console import collect_history_store as store
+    from src.services import dims_fetch as DF
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    res = DF.fetch(item, ob_call=ob_call, ocr=ocr, onebound=onebound)
+    da = res["dims_auto"]
+
+    def _fn(fresh):
+        fresh["dims_auto"] = da
+        return True
+    saved = bool(store.merge_extra(str(item.get("id") or item_id), _fn, seller_ids={uid} if uid else None))
+    return {"ok": saved, "dims_cm": da.get("dims_cm"), "confidence": da.get("confidence"), "label": da.get("label"),
+            "line": DF.line(da), "ocr_pages": da.get("ocr_pages"), "onebound_calls": da.get("onebound_calls"),
+            "sources": [{k: s.get(k) for k in ("label", "dims_cm", "seen", "why")} for s in da.get("sources") or []]}
+
+
 def _discard(item_id: str, why: str) -> Dict:
     """Y14(오너 2026-10-21 리브러쉬 「등록 안 함 · 목록 버리기」) — 화면 「버리기」와 같은 기록(`extra.discarded`) · DB 삭제 아님."""
     from datetime import datetime as _dt, timezone as _tz
@@ -569,8 +598,33 @@ def _discard(item_id: str, why: str) -> Dict:
     return {"ok": ok, "why": "" if ok else "이미 버렸거나 저장하지 못했어요"}
 
 
+#: Y14(오너 2026-10-21 SPORTLINK 「사진 3 제외」) — 오너가 뺀 장. `risk_exclude`와 같은 칸(등록 빌더·검사가 이미 보는 칸)에 적되
+#   「위험 —」으로 시작하지 않게 — 자동 되살리기(`heal_prop_excludes`·`heal_retext_excludes`)는 「위험 —」만 푼다.
+OWNER_EXCLUDE_PREFIX = "오너 결정 — 사진째 뺌"
+_KIND_KEY = {"gallery": "images_ko", "detail": "detail_images_ko", "sku": "sku_images_ko"}
+
+
+def _owner_exclude(ex: dict, pages: List[tuple], why: str, by: str) -> List[str]:
+    out = []
+    for kind, idx in pages:
+        key = _KIND_KEY.get(kind)
+        if not key:
+            continue
+        lst = ex.setdefault(key, [])
+        e = next((x for x in lst if isinstance(x, dict) and int(x.get("idx", -1)) == idx), None)
+        if e is None:
+            e = {"idx": idx, "kind": kind}
+            lst.append(e)
+        e["risk_exclude"] = f"{OWNER_EXCLUDE_PREFIX}({(why or '오너 결정')[:60]})"
+        e["owner_exclude"] = {"at": _now(), "by": by, "why": (why or "")[:80]}
+        out.append(f"{kind} {idx + 1}")
+    return out
+
+
 def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, markets: List[str], *,
-                    fields: Optional[dict] = None, strip_keep: Optional[List[str]] = None) -> Dict:
+                    fields: Optional[dict] = None, strip_keep: Optional[List[str]] = None,
+                    exclude_images: Optional[List[tuple]] = None, exclude_why: str = "",
+                    relist_only: Optional[List[str]] = None) -> Dict:
     import json
     from src.services import ocr_compare_diag as D
     from src.services import risk_gate as R
@@ -597,6 +651,12 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
             ex["rep_image"] = originals[pick]            # 「이 장을 대표로」와 같은 칸(원본 주소)
         elif pick == 0:
             ex.pop("rep_image", None)
+        # Y14(오너 2026-10-21 SPORTLINK): 글자 0상자 장이 없으면 「대표 사진 바꾸기 필요」 보류(쿠팡) — 재지 못한 장만 있으면 말하지 않는다
+        if pick < 0 and counts and all(isinstance(n, int) for n in counts.values()):
+            ex["rep_need_change"] = (f"후보 {len(counts)}장 모두 글자가 있어요(상자 "
+                                     + ", ".join(f"{int(k) + 1}번 {n}개" for k, n in sorted(counts.items())) + ")")
+        elif pick >= 0:
+            ex.pop("rep_need_change", None)
         out["rep"] = {"counts": {str(k): v for k, v in counts.items()}, "why": {str(k): v for k, v in whys.items()},
                       "picked": pick, "rule": "0상자 장 · 여럿이면 지정 장(prefer)"}
     if fields:
@@ -634,6 +694,13 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
             done.append({"label": h["label"], "ok": bool(res.get("ok")), "why": res.get("error") or "", "text_only": True,
                          "where": R.where_line(h)})
         out["strip"] = done
+    if exclude_images:
+        out["excluded"] = _owner_exclude(ex, exclude_images, exclude_why, uid)
+    if relist_only:
+        # Y14(오너 2026-10-21 SPORTLINK 쿠팡 고가네 — 옛 16397045086): 이 마켓은 「마켓 등록」으로 올리지 않는다 — relist(새로 등록 →
+        #   승인 → 옛 상품 판매중지) 경로로만. 등록 입구(`collect_upload`)가 막는다.
+        ex["relist_only"] = sorted(set((ex.get("relist_only") or []) + list(relist_only)))
+        out["relist_only"] = ex["relist_only"]
     ex.pop("pv_ready", None)                             # 바꿨으니 지난 「준비 완료」는 낡았다 — 아래 사전검증이 다시 적는다
     ok = bool(store.update(iid, seller_ids={uid}, extra_json=json.dumps(ex, ensure_ascii=False)))
     out["saved"] = ok
