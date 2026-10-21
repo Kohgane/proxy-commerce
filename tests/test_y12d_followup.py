@@ -328,3 +328,24 @@ def test_editor_get_resends_only_when_outbound_version_changes(monkeypatch, vers
     monkeypatch.setattr(IE, "_original", lambda ex, kind, idx: "")
     r = _client(uid).get(f"/seller/collect/{iid}/image-edit/detail/0")
     assert r.status_code == 200 and len(sent) == expect
+
+
+def test_oneshot_drain_runs_one_prevalidate_per_tick(monkeypatch):
+    """Y14(10-21 08:00·08:10 실측): 사전검증 5건을 두 틱에 몰았더니 잡이 겹쳐 인스턴스 437·461MB — 3건 「메모리 여유가 없어요」.
+    사전검증을 띄우는 줄은 한 틱에 하나만, 가벼운 줄은 그 틱에 같이 돈다 · 남은 줄은 순서 그대로."""
+    from src.db import image_translate_queue_pg as st
+    from src.services import oneshot_ops as O
+    st.reset_for_tests()
+    ran = []
+    monkeypatch.setattr(O, "_run", lambda r: ran.append(r["item_id"]) or {"ok": True})
+    rows = [{"op": "prevalidate", "item_id": "p1"}, {"op": "prevalidate", "item_id": "p2"},
+            {"op": "coupang_inspect", "item_id": "i1"}, {"op": "owner_decision", "item_id": "d1"},
+            {"op": "review_status", "item_id": "r1"}]
+    st.state_set(O.QUEUE_KEY, {"rows": rows})
+    O.drain()
+    assert ran == ["p1", "i1", "r1"] and [r["item_id"] for r in O.queue_rows()] == ["p2", "d1"]
+    O.drain()
+    assert ran[-1] == "p2" and [r["item_id"] for r in O.queue_rows()] == ["d1"]
+    O.drain()
+    assert ran[-1] == "d1" and O.queue_rows() == []
+    st.reset_for_tests()

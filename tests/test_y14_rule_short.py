@@ -61,3 +61,14 @@ def test_ai_answer_rejected_falls_back_to_rule_in_same_round(monkeypatch):
     assert out["calls"] == 1 and out["applied"] == ["option_short:黑色3合1"] and out["markets"] == ["smartstore:gocosmos"]
     assert "3-in-1" in ex["option_value_overrides"]["黑色3合1"] and ex["ai_fixes"]["option_short:黑色3合1"]["provider"] == "rule"
     assert any("숫자·영문 빠짐" in x for x in out["log"]) and any("규칙" in x for x in out["log"])
+
+
+def test_short_guard_suffix_yong_and_measure_first_word():
+    """Y14(운영 10-21 다음 5건 사전검증): AI 축약이 검사 오탐으로 버려졌다.
+    ① 「성인용 …」→「성인 …」(허리 보호 소파) — 「~용」 꼬리 떼기는 단어 절단이 아니다.
+    ② 「높이 44cm 화이트+높이 30cm 브라운/2개 세트」(접이식 의자) — 첫 낱말 「높이」는 색상이 아니다(색 낱말은 여전히 지킨다)."""
+    from src.services.ai_fix import short_guard
+    assert short_guard("성인용 새싹 그린 (의자발 캡 포함) 좌고 41cm", "성인 새싹그린 캡포함 좌고41cm") == ""
+    assert short_guard("높이 44cm 화이트+높이 30cm 브라운/2개 세트", "44cm 화이트+30cm 브라운 세트") == ""
+    assert "화이트" in short_guard("높이 44cm 화이트+높이 30cm 브라운/2개 세트", "44cm+30cm 브라운 세트")   # 색은 지킨다
+    assert "세트" in short_guard("높이 44cm 화이트+높이 30cm 브라운/2개 세트", "44cm 화이트+30cm 브라운")     # 지킬 말 그대로

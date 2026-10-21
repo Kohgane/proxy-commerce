@@ -40,6 +40,9 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ops:oneshot:queue"
 PER_TICK = 5
+#: 사전검증 잡을 띄우는 줄 — 한 틱에 `HEAVY_PER_TICK`개만(잡이 겹치면 메모리 상한에 걸린다 · Y14 10-21)
+HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist")
+HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
@@ -138,9 +141,18 @@ def drain() -> Dict:
     if not rows:
         return {"picked": 0, "rows": []}
     # 한 틱에 5줄 — 나머지는 줄에 **남긴다**(10-20 13:30 실측: 7줄 넣었더니 앞 5줄만 돌고 2줄이 조용히 사라졌다)
-    st.state_set(QUEUE_KEY, {"rows": rows[PER_TICK:]})
+    # Y14(10-21 08:00·08:10 실측): 사전검증 5건을 두 틱에 몰아 돌렸더니 잡이 겹쳐 인스턴스 437·461MB(상한 420/460) —
+    #   3건이 「메모리 여유가 없어요」로 검증 못 함. 무거운 줄(사전검증을 띄우는 줄)은 **한 틱에 하나**만, 나머지는 줄에 남긴다(순서 그대로).
+    pick, keep, heavy = [], [], 0
+    for r in rows:
+        if len(pick) >= PER_TICK or (r.get("op") in HEAVY_OPS and heavy >= HEAVY_PER_TICK):
+            keep.append(r)
+            continue
+        heavy += r.get("op") in HEAVY_OPS
+        pick.append(r)
+    st.state_set(QUEUE_KEY, {"rows": keep})
     out = []
-    for r in rows[:PER_TICK]:
+    for r in pick:
         try:
             res = _run(r)
         except Exception as exc:                                 # noqa: BLE001 — 한 줄 실패가 다른 줄을 막지 않는다

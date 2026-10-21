@@ -126,3 +126,14 @@ def test_successful_upload_queues_register_report(monkeypatch):
     got.clear()
     V._queue_register_report("a0a78ca4", {"results": [{"market": "coupang:gogane", "success": False}]})
     assert got == []
+
+
+def test_coupang_uploads_reads_old_records_from_url():
+    """Y14(10-21): SPORTLINK 쿠팡 16397045086(09-28 기록 — `product_id` 없이 `external_url`만)이 조회 대상에서 빠졌다."""
+    from src.services.coupang_detail_refresh import coupang_uploads
+    ex = {"uploaded": [{"market": "coupang", "external_url": "https://www.coupang.com/vp/products/16397045086"},
+                       {"market": "coupang:woojoo", "product_id": "16419632846"},
+                       {"market": "coupang:gogane", "external_url": "https://www.coupang.com/"},          # 번호 없음 — 뺀다
+                       {"market": "smartstore:chezgoga", "product_id": "1"}]}
+    assert coupang_uploads(ex) == [{"market": "coupang", "account": "", "sid": "16397045086"},
+                                   {"market": "coupang:woojoo", "account": "woojoo", "sid": "16419632846"}]
