@@ -232,14 +232,21 @@ def light_pd(ex: dict) -> dict:
             "url": ex.get("url") or ""}
 
 
+def should_fetch(ex: dict) -> bool:
+    """치수 게이트에 걸릴 상품인데 아직 서버 수집도 오너 값도 없다 — 한 번만 돈다(이미 돌았으면 결과가 「없음」이어도 다시 안 함)."""
+    ex = ex or {}
+    if isinstance(ex.get("dims_auto"), dict):
+        return False
+    si = ex.get("ship_input")
+    if isinstance(si, dict) and any(si.get(k) for k in ("l", "w", "h")):
+        return False
+    return bool(needed(light_pd(ex)))
+
+
 def maybe_queue(item_id: str, ex: dict) -> bool:
     """수집·보강이 끝난 뒤 — 가구·대형 치수 게이트에 걸릴 상품이면 `dims_fetch` 일회성 줄을 건다(한 번만 · 오너 값이 있으면 안 함).
     2호 때처럼 「치수 확인 필요」가 사람 손으로 넘어오지 않게(오너 2026-10-21)."""
-    ex = ex or {}
-    if not item_id or isinstance(ex.get("dims_auto"), dict) or isinstance(ex.get("ship_input"), dict) and any(
-            (ex.get("ship_input") or {}).get(k) for k in ("l", "w", "h")):
-        return False
-    if not needed(light_pd(ex)):
+    if not item_id or not should_fetch(ex):
         return False
     try:
         from src.services import oneshot_ops as O

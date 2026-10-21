@@ -1236,7 +1236,7 @@ def _render_dashboard_home():
     # Y12-A(오너 2026-10-17): 대시보드 = 세 묶음(손댈 것 · 돌아가는 것 · 오늘 쓴 것)만. 계정·마켓 연동 신호·등록 대장·
     #   소싱 대기는 「진단」(/seller/diagnostics) 한 곳으로 옮겼다.
     from .home_bundles import build as _bundles
-    context["home"] = _bundles(_seller_identities())
+    context["home"] = _bundles(_seller_identities(), ticks=_is_admin_user())
     return render_template("dashboard.html", widgets=widgets, page="dashboard", **context)
 
 
