@@ -54,3 +54,13 @@ def test_coupang_register_drops_book_prediction(monkeypatch):
     # 진짜 책이면 예측 그대로
     cid, src, _ = up.category_for({"title": "약사가 쓴 구강 건강 에세이"})
     assert (cid, src) == ("52046", "predict")
+
+
+def test_lazy_sofa_already_translated_as_beanbag_is_fixed_by_source():
+    """Y14(운영 10-21 805773b6): 원문 懒人沙发 · 09-27 번역 제목 「… 독서용 빈백 소파」 → 쿠팡 「빈백」 → 네이버 「소파>빈백」.
+    번역이 끝난 제목은 원문을 보고 고친다. 豆袋(진짜 빈백)가 원문에 있으면 그대로."""
+    from src.collectors.ko_polish import title_fix
+    src = "护腰小沙发人体工学护脊客厅小户型游戏椅儿童护腰阅读懒人沙发"
+    assert title_fix("어린이용 허리 보호 독서용 빈백 소파", src) == "어린이용 허리 보호 독서용 1인용 소파"
+    assert title_fix("빈백 소파 다다미", "懒人豆袋沙发懒人沙发") == "빈백 소파 다다미"
+    assert title_fix("빈백 소파", "豆袋沙发") == "빈백 소파"                     # 懒人沙发 없음 — 손대지 않음
