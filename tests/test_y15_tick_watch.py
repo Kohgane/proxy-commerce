@@ -118,3 +118,21 @@ def test_ops_prevalidate_session_carries_login_email(monkeypatch):
     seen.clear()
     O._prevalidate("8230f65c", ["coupang:gogane"])
     assert seen == {"uid": "u2", "email": None}                              # 못 찾으면 예전처럼 user_id만
+
+
+def test_prevalidate_job_records_ship_ratio_per_market(monkeypatch):
+    """아침 표 「운임 비율」 — 보류가 없을 때도 비율을 잡 기록에 남긴다(기록만, 판정·화면 그대로)."""
+    from src.seller_console import views as V
+    got = {}
+    monkeypatch.setattr(V, "_pv_update", lambda job_id, **kw: got.update(kw))
+    monkeypatch.setattr("src.seller_console.shipping_ratio.estimate",
+                        lambda pd, sid="", m="": {"state": "ok", "ratio_pct": 18, "ship_krw": 9000, "sell_krw": 50000,
+                                                  "line": "운임 9,000원 · 판매가 50,000원 대비 18% (기준 35%)", "x": 1})
+    V._pv_record_ship("j1", {"seller_id": "u1"}, ["coupang:gogane", "smartstore:chezgoga", "woocommerce"])
+    assert set(got["ship"]) == {"coupang:gogane", "smartstore:chezgoga"}
+    assert got["ship"]["coupang:gogane"] == {"state": "ok", "ratio_pct": 18, "ship_krw": 9000, "sell_krw": 50000,
+                                             "line": "운임 9,000원 · 판매가 50,000원 대비 18% (기준 35%)"}
+    monkeypatch.setattr("src.seller_console.shipping_ratio.estimate", lambda *a, **k: 1 / 0)
+    got.clear()
+    V._pv_record_ship("j1", {}, ["coupang:gogane"])                            # 실패해도 조용히(사전검증 안 막음)
+    assert got == {}
