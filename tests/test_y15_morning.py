@@ -233,3 +233,11 @@ def test_option_retry_runs_translate_now_once_and_reports_left_values(monkeypatc
     assert calls == [("u2", "d5af2185-full")]
     assert r == {"ok": False, "status": "failed", "why": "1개 남음", "sent": 2, "left": {"左手黑": "번역기가 원문 그대로 돌려줌"}}
     assert "option_retry" not in O.HEAVY_OPS
+
+
+def test_load_capacity_is_not_product_weight():
+    """운영 10-22 ROME 1인 소파 `67cb4742`: 규격 「最大承重 200kg」을 실중량으로 읽어 「대형화물 · 실중량 200kg」 — 하중은 무게가 아니다."""
+    from src.seller_console import shipping_ratio as S
+    assert S._read_size({"title": "沙发", "detail_specs": [["最大承重", "200kg"]]}).get("weight_kg") == 0.0
+    assert S._read_size({"title": "x", "detail_specs": [["最大承重", "200kg"], ["重量", "8kg"]]})["weight_kg"] == 8.0
+    assert S._read_size({"title": "x", "description": "净重 12kg，可承重150kg · 최대 하중 120kg · max load 90 kg"})["weight_kg"] == 12.0
