@@ -242,3 +242,32 @@ def test_load_capacity_is_not_product_weight():
     assert S._read_size({"title": "沙发", "detail_specs": [["最大承重", "200kg"]]}).get("weight_kg") == 0.0
     assert S._read_size({"title": "x", "detail_specs": [["最大承重", "200kg"], ["重量", "8kg"]]})["weight_kg"] == 8.0
     assert S._read_size({"title": "x", "description": "净重 12kg，可承重150kg · 최대 하중 120kg · max load 90 kg"})["weight_kg"] == 12.0
+
+
+def test_slow_naver_cdn_prewarm_does_not_starve_market_window(monkeypatch):
+    """운영 10-22 cdd8f42f: 네이버 상세 CDN 미리 올리기 57.8초가 잡 마감(60초)을 다 써 4곳 모두 「12초 안에 답이 없었어요」 —
+    미리 올리기는 마켓 창 밖 일이다. 준비가 마감을 넘겨도 마켓은 제 창(여기선 1초)을 받는다."""
+    import time
+    import src.seller_console.views as V
+    from src.seller_console.upload_dispatcher import UploadDispatcher, PrevalidationResult
+    from tests._pv_helper import prevalidate
+    monkeypatch.setattr(V, "_PV_JOB_DEADLINE_SEC", 0.3)
+    monkeypatch.setattr(V, "_PV_MARKET_TIMEOUT_SEC", 1.0)
+    monkeypatch.setattr(V, "_outbound_images", lambda pd, iid: (pd, [], None))
+    monkeypatch.setattr(V, "_pv_auto_detail", lambda pd, data, results, force=False: (None, pd))
+    monkeypatch.setattr(V, "_pv_auto_translate", lambda pd, data, results: (None, pd))
+    monkeypatch.setattr(V, "_pv_prewarm_naver_detail", lambda pd, markets: time.sleep(0.5) or True)
+
+    def _slowish(self, pd, market):
+        time.sleep(0.3)                                          # 마켓 응답 0.3초 — 창이 0.1초로 줄면 못 받는다
+        return PrevalidationResult(market=market, ok=True, message="사전검증 통과")
+    monkeypatch.setattr(UploadDispatcher, "_prevalidate_market", _slowish)
+    monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: UploadDispatcher())
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y15-cdn"
+    d = prevalidate(c, {"product": {"title": "x", "title_ko": "테스트 상품", "price": 10000, "currency": "KRW",
+                                    "images": ["https://img.alicdn.com/a.jpg"]}, "markets": ["coupang"]})
+    rows = d.get("results") or []
+    assert rows and all("12초" not in str(r.get("message")) and "답이 없었어요" not in str(r.get("message")) for r in rows), rows

@@ -5742,6 +5742,10 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                     _warm = _pv_prewarm_naver_detail(product_data, markets)
                 if _warm:
                     _pv_update(job_id, stages={"naver_detail_cdn": int((_time.monotonic() - t0) * 1000)})
+                # Y15(운영 10-22 — 잡 4개가 「12초 안에 답이 없었어요」): 준비(상세 초안 6~13초 · 네이버 상세 CDN 18~58초)가
+                #   잡 마감(60초)을 다 쓰면 마켓 창이 0.1초로 줄어 4곳 모두 「검증 못 함」이었다(쿠팡은 CDN과 무관한데도).
+                #   미리 올리기는 마켓 창 **밖** 일이다(Y7-G) — 마켓 창 12초는 늘 지킨다.
+                deadline_ts = max(deadline_ts, _time.time() + _PV_MARKET_TIMEOUT_SEC + 1)
                 results = _pv_run_markets(job_id, product_data, markets, dispatcher, rc, deadline_ts)
                 _pv_record_ship(job_id, product_data, markets)
                 t0 = _time.monotonic()
