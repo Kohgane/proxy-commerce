@@ -242,3 +242,52 @@ def test_load_capacity_is_not_product_weight():
     assert S._read_size({"title": "沙发", "detail_specs": [["最大承重", "200kg"]]}).get("weight_kg") == 0.0
     assert S._read_size({"title": "x", "detail_specs": [["最大承重", "200kg"], ["重量", "8kg"]]})["weight_kg"] == 8.0
     assert S._read_size({"title": "x", "description": "净重 12kg，可承重150kg · 최대 하중 120kg · max load 90 kg"})["weight_kg"] == 12.0
+
+
+def test_slow_naver_cdn_prewarm_does_not_starve_market_window(monkeypatch):
+    """운영 10-22 cdd8f42f: 네이버 상세 CDN 미리 올리기 57.8초가 잡 마감(60초)을 다 써 4곳 모두 「12초 안에 답이 없었어요」 —
+    미리 올리기는 마켓 창 밖 일이다. 준비가 마감을 넘겨도 마켓은 제 창(여기선 1초)을 받는다."""
+    import time
+    import src.seller_console.views as V
+    from src.seller_console.upload_dispatcher import UploadDispatcher, PrevalidationResult
+    from tests._pv_helper import prevalidate
+    monkeypatch.setattr(V, "_PV_JOB_DEADLINE_SEC", 0.3)
+    monkeypatch.setattr(V, "_PV_MARKET_TIMEOUT_SEC", 1.0)
+    monkeypatch.setattr(V, "_outbound_images", lambda pd, iid: (pd, [], None))
+    monkeypatch.setattr(V, "_pv_auto_detail", lambda pd, data, results, force=False: (None, pd))
+    monkeypatch.setattr(V, "_pv_auto_translate", lambda pd, data, results: (None, pd))
+    monkeypatch.setattr(V, "_pv_prewarm_naver_detail", lambda pd, markets: time.sleep(0.5) or True)
+
+    def _slowish(self, pd, market):
+        time.sleep(0.3)                                          # 마켓 응답 0.3초 — 창이 0.1초로 줄면 못 받는다
+        return PrevalidationResult(market=market, ok=True, message="사전검증 통과")
+    monkeypatch.setattr(UploadDispatcher, "_prevalidate_market", _slowish)
+    monkeypatch.setattr(V, "_get_upload_dispatcher", lambda: UploadDispatcher())
+    from src.order_webhook import app
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = "y15-cdn"
+    d = prevalidate(c, {"product": {"title": "x", "title_ko": "테스트 상품", "price": 10000, "currency": "KRW",
+                                    "images": ["https://img.alicdn.com/a.jpg"]}, "markets": ["coupang"]})
+    rows = d.get("results") or []
+    assert rows and all("12초" not in str(r.get("message")) and "답이 없었어요" not in str(r.get("message")) for r in rows), rows
+
+
+def test_zhonggu_style_is_vintage_not_used():
+    """운영 10-22 KYLIA 흔들의자 15df5bbf 「中古摇椅」 → 「중고 흔들의자」 — 中古(风)는 빈티지 스타일, 헌 물건(二手)이 아니다."""
+    from src.collectors.ko_polish import title_fix
+    assert title_fix("KYLIA 중고 흔들의자 발코니", "KYLIA 中古摇椅阳台懒人椅") == "KYLIA 빈티지 흔들의자 발코니"
+    assert title_fix("중고 흔들의자 9성 새것", "二手中古摇椅九成新") == "중고 흔들의자 9성 새것"      # 진짜 중고는 그대로
+
+
+def test_risk_gate_furniture_snack_cart_and_eco_formula_are_not_food_or_drug():
+    """운영 10-22: 티테이블 9874c0d7 「零食推车」(간식 카트)가 「수입식품」 보류 · 원목 수납장 805282aa 사진 글자 「环保配方」의
+    오역 「환경 친화적 처방」이 「의약품 — 처방」 차단. 진짜 식품·의약품은 그대로 걸린다."""
+    from src.services import risk_gate as R
+
+    def labels(ex):
+        return {h["label"] for h in R.scan(ex)["hits"]}
+    assert "인증: 수입식품" not in labels({"title_ko": "티테이블", "description": "它能变身为沙发边柜休闲小桌、零食推车。"})
+    assert "인증: 수입식품" in labels({"title_ko": "간식", "description": "进口零食大礼包"})
+    assert "의약품·의료기기" not in labels({"title_ko": "원목 수납장", "description_ko": "임신 및 유아용 환경 친화적 처방"})
+    assert "의약품·의료기기" in labels({"title_ko": "처방전 필요 의약품"})

@@ -222,6 +222,9 @@ TITLE_GLOSSARY = [
     #   쿠팡 예측 「빈백」 → 네이버 고정 매핑 「소파>빈백」. 치환표(#935)는 원문 한자가 남은 글만 고친다 — 번역이 끝난 제목은
     #   원문을 보고 여기서. 豆袋(진짜 빈백)가 원문에 같이 있으면 손대지 않는다(아래 `title_fix`).
     ["懒人沙发", ["빈백 소파", "빈백소파", "빈백 의자", "빈백"], "1인용 소파"],
+    # Y15(운영 10-22 KYLIA 흔들의자 15df5bbf 「中古摇椅」 → 「중고 흔들의자」): 中古(风)는 빈티지·미드센추리 **스타일**이다 —
+    #   헌 물건(二手)이 아니다. 「중고」로 두면 새 상품이 중고로 읽힌다. 二手·闲置·n成新이 원문에 같이 있으면 손대지 않는다(아래).
+    ["中古", ["중고 스타일", "중고풍", "중고 풍", "중고"], "빈티지"],
 ]
 
 
@@ -246,6 +249,8 @@ def title_fix(text: str, src: str, *, hits: dict | None = None) -> str:
             wrongs = [w for w in (wrongs or []) if w != "스커트"]           # 진짜 스커트가 같이 있는 상품
         if cn == "懒人沙发" and "豆袋" in src:
             continue                                               # 진짜 빈백(豆袋)이 같이 있는 상품
+        if cn == "中古" and re.search(r"二手|闲置|[0-9一二三四五六七八九]成新", src):
+            continue                                               # 진짜 중고(二手) 상품
         for w in sorted([x for x in wrongs or [] if x and x != right], key=len, reverse=True):
             if w in s and w not in right:                      # 바른 말 안에 든 조각(「스커트」⊂「롱스커트」)만 건너뛴다
                 s = s.replace(w, right)

@@ -315,6 +315,13 @@ def _blacklist() -> List[str]:
     return keep
 
 
+def _drop_phrases(text, phrases) -> str:
+    t = str(text or "")
+    for p in sorted((str(x) for x in phrases or [] if x), key=len, reverse=True):
+        t = t.replace(p, " ")
+    return t
+
+
 def _hit(key, cat, label, grade, names, case, where_text, imgs, why="") -> Optional[dict]:
     where, found = {}, []
     for w, txt in where_text.items():
@@ -384,8 +391,12 @@ def scan(extra: dict, *, pending_images: int = 0) -> dict:
     for c in tokens().get("cert") or []:
         if c["label"] in allow:
             continue
+        wt, im = where_text, imgs
+        if c.get("except"):                                        # Y15: 그 이름이 든 예외 구절(「零食推车」 = 간식 카트)은 빼고 잰다
+            wt = {w: _drop_phrases(t, c["except"]) for w, t in where_text.items()}
+            im = [(k, i, n, _drop_phrases(t, c["except"])) for k, i, n, t in imgs]
         h = _hit("cert:" + c["key"], c["label"], c["label"], c.get("grade") or "hold", c.get("names") or [], False,
-                 where_text, imgs, c.get("why") or "")
+                 wt, im, c.get("why") or "")
         if h:
             certs.append(h)
             shadowed |= set(c.get("shadows") or [])
