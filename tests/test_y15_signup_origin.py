@@ -1,4 +1,6 @@
 """Y15-B(오너 2026-10-22) — 가입 유입 기록: 첫 방문 referrer·랜딩·utm(세션) → 가입 때 ip·ua와 함께 저장 + 텔레그램 「유입:」 줄."""
+import uuid
+
 import pytest
 
 
@@ -49,7 +51,7 @@ def test_email_signup_keeps_first_visit_referrer_and_utm(env):
     c, sent = env
     c.get("/?utm_source=insta&utm_campaign=fall", headers={"Referer": "https://www.instagram.com/p/abc"})
     c.get("/auth/signup", headers={"Referer": "http://localhost/"})        # 가입 화면 referrer는 우리 사이트 — 덮지 않는다
-    r = c.post("/auth/signup", data={"email": "origin1@example.test", "password": "pass12345", "name": "새셀러"},
+    r = c.post("/auth/signup", data={"email": f"origin-{uuid.uuid4().hex[:8]}@example.test", "password": "pass12345", "name": "새셀러"},
                headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1", "User-Agent": "Mozilla/5.0 (iPhone)"})
     assert r.status_code == 302
     with c.session_transaction() as s:
@@ -67,9 +69,11 @@ def test_social_signup_records_origin_and_says_direct(env, monkeypatch):
     c, sent = env
 
     class _P:
+        is_configured = True
+
         def exchange_code(self, code, redirect_uri): return {"access_token": "t"}
         def get_user_info(self, token):
-            return {"provider_user_id": "g-998877", "email": "origin2@example.test", "name": "구글셀러"}
+            return {"provider_user_id": "g-998877", "email": f"origin-{uuid.uuid4().hex[:8]}@example.test", "name": "구글셀러"}
     monkeypatch.setattr(AV, "_get_provider", lambda p: _P())
     c.get("/auth/login")                                         # referrer 없이 바로 들어온 첫 방문
     with c.session_transaction() as s:
