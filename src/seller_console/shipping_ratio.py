@@ -26,7 +26,10 @@ _RULES_FILE = Path(__file__).with_name("shipping_size_rules.json")
 _STATE_KEY = "shipping_size:rules"
 _cache: dict = {"at": 0.0, "rules": None}
 
-_DIM_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*[x×*X]\s*(\d{1,3}(?:\.\d+)?)\s*[x×*X]\s*(\d{1,3}(?:\.\d+)?)\s*(mm|cm|厘米|公分)?")
+#: Y15(운영 10-22 온풍기 e14acd34 「机身尺寸(长X宽X高) 485X300X580(mm)」 → 485×300×580cm · 「한 변 580cm 대형화물」):
+#   괄호에 싼 단위 「(mm)」·대문자 「MM」·「毫米」도 단위로 읽는다(예전엔 단위 없음 = cm로 봤다).
+_DIM_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*[x×*X]\s*(\d{1,3}(?:\.\d+)?)\s*[x×*X]\s*(\d{1,3}(?:\.\d+)?)\s*"
+                     r"(?:[（(]\s*)?(mm|MM|毫米|cm|CM|厘米|公分)?")
 _KG_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(kg|KG|Kg|公斤|千克)")
 #: Y15(운영 10-22 ROME 1인 소파 `67cb4742` 규격 「最大承重 200kg」 → 「실중량 200kg · 대형화물」): 하중·견딜 무게·사용자 체중은
 #   상품 무게가 아니다 — 무게를 읽기 전에 그 구절을 지운다(무게 칸 「重量」·「净重」·「毛重」은 그대로 읽는다).
@@ -183,7 +186,7 @@ def _read_size(pd: dict) -> Dict[str, Any]:
     dims = None
     for m in _DIM_RE.finditer(text):
         vals = [float(m.group(i)) for i in (1, 2, 3)]
-        if (m.group(4) or "").lower() == "mm":
+        if (m.group(4) or "").lower() in ("mm", "毫米"):
             vals = [v / 10 for v in vals]
         if all(v > 0 for v in vals) and (dims is None or vals[0] * vals[1] * vals[2] > dims[0] * dims[1] * dims[2]):
             dims = vals

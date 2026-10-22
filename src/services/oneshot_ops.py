@@ -26,6 +26,7 @@
   「권고안 채택」): 화면 버튼과 **같은 함수**로 오너 결정을 적용한다 — 대표 사진(후보 장마다 텐센트 OCR 상자 수를 재서 0상자 장 ·
   여럿이면 `prefer`)=「이 장을 대표로」, 위험 「빼고 등록」=`risk_gate.decide(strip)`(`pixels=restore`: 음차 상자만 원본 복원 ·
   원문에 상표가 남는 장은 사진째 뺌). 저장 뒤 같은 계정으로 사전검증 잡을 띄운다. 수집 원본(`images`·`skus`)은 손대지 않는다
+- `undiscard` {item_id, why} — Y15(오너 2026-10-22): 「버리기」 되돌리기(`extra.discarded` 해제 · `discard_log`에 남김)
 - `option_retry` {item_id} — Y15(오너 2026-10-22): 옵션 값 한국어 옮기기 1회(화면 「한국어로 번역」과 같은 `translate_now`) ·
   남은 값과 그 사유를 결과에
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
@@ -48,7 +49,7 @@ HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry")
+       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard")
 
 
 def _now() -> str:
@@ -90,6 +91,8 @@ def _run(row: dict) -> Dict:
         return _discard(item_id, str(row.get("why") or ""))
     if op == "option_retry":
         return option_retry(item_id)
+    if op == "undiscard":
+        return _undiscard(item_id, str(row.get("why") or ""))
     if op == "dims_fetch":
         return dims_fetch(item_id, onebound=row.get("onebound", True) is not False)
     if op == "check_item":
@@ -191,7 +194,9 @@ def _mem_mark() -> dict:
         mb = _rss.read_mb()[0]
     except Exception:                                            # noqa: BLE001
         mb = -1
-    return {"mb": mb, "threads": threading.active_count(), "names": {t.name for t in threading.enumerate()}}
+    from src.utils import memprobe as _mp
+    return {"mb": mb, "threads": threading.active_count(), "names": {t.name for t in threading.enumerate()},
+            "probe": _mp.before()}
 
 
 def _mem_after(row: dict, mem0: Optional[dict]) -> None:
@@ -202,12 +207,14 @@ def _mem_after(row: dict, mem0: Optional[dict]) -> None:
     try:
         from src.utils import rss as _rss
         from src.utils import render_worker as _rw
+        from src.utils import memprobe as _mp
         rel = _rss.release("oneshot:" + str(row.get("op") or ""))
         now = {t.name for t in threading.enumerate()}
         new = sorted(n for n in now - set((mem0 or {}).get("names") or ()))[:8]
         _rw.record("op_job", op=str(row.get("op") or ""), item=str(row.get("item_id") or "")[:8],
                    start_mb=(mem0 or {}).get("mb"), rel_before_mb=rel[0], rel_after_mb=rel[1],
-                   threads_before=(mem0 or {}).get("threads"), threads_after=threading.active_count(), new_threads=new)
+                   threads_before=(mem0 or {}).get("threads"), threads_after=threading.active_count(), new_threads=new,
+                   **_mp.after((mem0 or {}).get("probe")))
     except Exception as exc:                                     # noqa: BLE001 — 기록 실패가 줄을 막지 않는다
         logger.debug("[일회성 작업] 메모리 기록 실패: %s", exc)
 
@@ -680,6 +687,30 @@ def option_retry(item_id: str) -> Dict:
         pass
     return {"ok": res.get("status") == "done", "status": res.get("status"), "why": str(res.get("reason") or "")[:240],
             "sent": res.get("sent", 0), "left": {k: str(v)[:160] for k, v in list(left.items())[:6]}}
+
+
+def _undiscard(item_id: str, why: str) -> Dict:
+    """Y15(오너 2026-10-22 순찰 32 KYLIA 15df5bbf 「되살리기」): `_discard`를 되돌린다 — `extra.discarded`를 빼고 그 기록은
+    `discard_log`에 남긴다(언제·왜 버렸고 언제·왜 되살렸나). 수집 원본은 손대지 않는다."""
+    from datetime import datetime as _dt, timezone as _tz
+    from src.seller_console import collect_history_store as store
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    prev: Dict = {}
+
+    def _fn(fresh):
+        d = fresh.get("discarded")
+        if not isinstance(d, dict):
+            return False
+        prev.update(d)
+        fresh.pop("discarded", None)
+        fresh.setdefault("discard_log", []).append({"discarded": d, "restored_at": _dt.now(_tz.utc).isoformat(),
+                                                    "by": "owner-oneshot", "why": (why or "오너 결정")[:120]})
+        return True
+    ok = bool(store.merge_extra(str(item.get("id") or item_id), _fn, seller_ids={uid} if uid else None))
+    return {"ok": ok, "why": "" if ok else "버린 기록이 없거나 저장하지 못했어요", "was": prev}
 
 
 def _discard(item_id: str, why: str) -> Dict:
