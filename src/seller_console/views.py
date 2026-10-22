@@ -36,6 +36,7 @@ from urllib.parse import quote_plus
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for, Response
 from src.utils.branding import get_brand_name, get_brand_name_ko
+from .usage_meter import UsageLimitReached as _UsageLimitReached   # Y15 요금제 한도(가벼운 모듈 — 무거운 임포트 없음)
 
 logger = logging.getLogger(__name__)
 _CS_FAQ_SUPPORTED_LOCALES = {"ko", "ja", "en", "zh"}
@@ -1535,6 +1536,8 @@ def collect_preview():
             response["id"] = item_id
             response["preview_url"] = f"/seller/collect/preview/{item_id}"
             response["history_url"] = "/seller/collect/history"
+        except _UsageLimitReached as exc:                     # Y15: 이번 달 한도 — 정직 안내 + 요금제 링크
+            return jsonify(exc.payload()), 402
         except Exception as exc:
             logger.warning("수집 이력 저장 실패(%s): %s", url, exc)
             response["save_error"] = "수집은 됐지만 이력 저장에 실패했습니다."
@@ -1645,6 +1648,8 @@ def _quick_collect(url: str, source: str = "bookmarklet", share_raw: str = "") -
             currency=draft.get("currency") or "",
             extra=draft, seller_id=_seller_id(),
         )
+    except _UsageLimitReached as exc:                          # Y15: 이번 달 한도 — 정직 안내 + 요금제 링크
+        return {"ok": False, "item_id": None, "status": 200, "message": exc.message, "limit_reached": True}
     except Exception as exc:
         logger.warning("빠른 수집 이력 저장 실패: %s", exc)
         return {"ok": False, "item_id": None, "status": 200,
@@ -1677,7 +1682,7 @@ def collect_quick():
     # 북마클릿은 편집 페이지로 바로 안 보내고 '수집됨'만 표시(오너 결정, Phase 219).
     return render_template(
         "collect_quick_result.html", ok=res["ok"], message=res["message"],
-        url=url, item_id=res.get("item_id"),
+        url=url, item_id=res.get("item_id"), limit_reached=bool(res.get("limit_reached")),
     ), res["status"]
 
 
@@ -2813,6 +2818,8 @@ def collect_receive():
             extra=draft,
             seller_id=_seller_id(),
         )
+    except _UsageLimitReached as exc:                          # Y15: 이번 달 한도 — 정직 안내 + 요금제 링크
+        return jsonify(exc.payload()), 402
     except Exception as exc:
         logger.warning("receiver 수집 이력 저장 실패: %s", exc)
         return jsonify({"ok": False, "error": "수집은 됐지만 이력 저장에 실패했습니다."}), 200
@@ -4840,6 +4847,12 @@ def collect_prevalidate():
     dispatcher = _get_upload_dispatcher()
     if dispatcher is None:
         return jsonify({"ok": False, "error": "업로드 디스패처 준비 중입니다."}), 503
+    # Y15(오너 2026-10-22): 요금제 월 사전검증 한도 — 누를 때 1회(마켓 수와 무관). 공유 사용자·유료 무제한은 안 센다.
+    try:
+        from .usage_meter import take_precheck
+        take_precheck(_seller_id(), str(session.get("user_email") or ""))
+    except _UsageLimitReached as exc:
+        return jsonify(exc.payload()), 402
     return _pv_start_job(data, list(markets), dispatcher)
 
 
@@ -6833,8 +6846,8 @@ def collect_bulk_translate():
     # 무제한 = env 훅 또는 활성 유료 플랜(Plus/Pro). 유료 활성은 실제 결제 시에만(가짜 금지).
     _unlimited = os.getenv("TRANSLATION_UNLIMITED", "0") == "1"
     try:
-        from . import billing_store
-        if billing_store.is_unlimited(sid):
+        from . import usage_meter
+        if usage_meter.translate_unlimited(sid):    # Y15: 유료 플랜 + 공유 사용자(관리자·가족)는 재지 않는다
             _unlimited = True
     except Exception:
         pass
@@ -7414,6 +7427,7 @@ def collect_bulk_duplicate():
                 status="ok",
                 extra=extra,
                 seller_id=sid,
+                meter=False,                                   # Y15: 내가 만든 복제본은 수집이 아니다(한도 안 셈)
             )
             new_ids.append(new_id)
     except Exception as exc:
@@ -9255,7 +9269,14 @@ def billing_page():
     notice = (request.args.get("notice") or "").strip()
     error = (request.args.get("error") or "").strip()
     toss_client_key = os.getenv("TOSS_CLIENT_KEY", "") if pay_ready else ""
-    return render_template("billing.html", account=acc, plans=billing_store.PLANS,
+    # Y15: 이번 달 쓴 양 — 표는 billing_store.PLANS 그대로, 숫자는 실제 센 값(못 세면 「—」)
+    try:
+        from . import usage_meter
+        usage = usage_meter.summary(sid, str(session.get("user_email") or ""))
+    except Exception as exc:
+        logger.warning("요금제 사용량 집계 실패: %s", exc)
+        usage = {"plan": acc.get("plan", "free"), "exempt": False, "rows": []}
+    return render_template("billing.html", account=acc, plans=billing_store.PLANS, usage=usage,
                            pay_ready=pay_ready,
                            toss_client_key=toss_client_key,
                            notice=notice,

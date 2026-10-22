@@ -396,6 +396,14 @@ def distinct_domains(days: int = 90, seller_id=None, seller_ids=None) -> list:
         return [r[0] for r in cur.fetchall()]
 
 
+def count_created_since(since, seller_ids) -> int:
+    """Y15 한도: `since` 뒤에 **새로 만든** 행 수 — 지운 행(소프트삭제)도 센다(지우고 다시 수집해 한도를 돌지 않게)."""
+    sc, params = _scope(None, set(seller_ids or ()))
+    with pg.query() as cur:
+        cur.execute(f"SELECT count(*) FROM collect_history WHERE created_at >= %s AND {sc}", [since] + params)
+        return int(cur.fetchone()[0])
+
+
 def count_total(days: int = 3650, seller_id=None, seller_ids=None) -> int:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)

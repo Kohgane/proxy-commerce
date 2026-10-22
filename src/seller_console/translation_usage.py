@@ -24,10 +24,16 @@ _in_memory: dict[str, int] = {}
 
 
 def free_limit() -> int:
+    # Y15: 기본값은 요금표 정본(billing_store.PLANS free translate) — env가 있으면 env가 이긴다(지금 그대로).
     try:
-        return max(0, int(os.getenv("TRANSLATION_FREE_LIMIT", "20") or "20"))
+        from .billing_store import PLANS
+        base = int((PLANS["free"].get("limits") or {}).get("translate") or 20)
+    except Exception:
+        base = 20
+    try:
+        return max(0, int(os.getenv("TRANSLATION_FREE_LIMIT", str(base)) or base))
     except (TypeError, ValueError):
-        return 20
+        return base
 
 
 def _get_worksheet():

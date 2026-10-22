@@ -21,13 +21,23 @@ _HEADERS = ["seller_id", "plan", "token_balance"]
 _in_memory: dict[str, dict] = {}
 _pending_payments: dict[str, dict] = {}
 
+# Y15(오너 2026-10-22): **요금표의 정본은 여기 하나다.** 화면(billing.html)·한도 집행(usage_meter)이 이 표를 읽는다.
+#   `limits` 값 None = 무제한. collect·precheck는 달마다(KST 1일 0시에 풀림), translate는 지금처럼 누적 무료 횟수.
+#   `tenancy/subscription_plan.py`(FREE/BASIC/PRO/ENTERPRISE)는 옛 테넌시 API 전용 legacy — 셀러 화면은 쓰지 않는다.
+#   공유 사용자(관리자·FAMILY_EMAILS — 오너 서버 자격)는 한도를 적용하지 않는다(usage_meter.is_exempt).
 PLANS = {
     "free": {"label": "Free", "price_krw": 0, "translate_unlimited": False,
-             "desc": "기본 수집·편집·등록. 무료 번역 20회."},
+             "limits": {"collect": 30, "translate": 20, "precheck": 10},
+             "features": {"auto_register": False, "sourcing_monitor": False, "priority_support": False},
+             "desc": "수집 월 30개 · 번역 20회 · 사전검증 월 10회."},
     "plus": {"label": "Plus", "price_krw": 19000, "translate_unlimited": True,
-             "desc": "번역 무제한 · 대량 수집 · 자동 등록."},
+             "limits": {"collect": 500, "translate": None, "precheck": None},
+             "features": {"auto_register": True, "sourcing_monitor": False, "priority_support": False},
+             "desc": "수집 월 500개 · 번역·사전검증 무제한 · 자동 등록."},
     "pro": {"label": "Pro", "price_krw": 49000, "translate_unlimited": True,
-            "desc": "Plus + 소싱 모니터링 · 우선 지원."},
+            "limits": {"collect": None, "translate": None, "precheck": None},
+            "features": {"auto_register": True, "sourcing_monitor": True, "priority_support": True},
+            "desc": "전부 무제한 · 소싱 모니터링 · 우선 지원."},
 }
 
 
@@ -104,6 +114,11 @@ def set_plan(seller_id: Optional[str], plan: str) -> dict:
     cur["plan"] = plan
     durable = _save(sid, cur)
     cur["durable"] = durable
+    try:
+        from .usage_meter import forget_plan
+        forget_plan(sid)                    # Y15: 올린 직후 한도가 바로 풀리게(플랜 캐시 60초를 기다리지 않는다)
+    except Exception:
+        pass
     return cur
 
 

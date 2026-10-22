@@ -1360,6 +1360,21 @@ def collect_from_extension():
     title = payload.get("title") or ""
     source = "extension"
 
+    # Y15(오너 2026-10-22): 이번 달 수집 한도 — 번역(유료 API)보다 **먼저** 잰다. 이미 수집한 상품(중복·다시 수집)은
+    #   새 행을 만들지 않으니 막지 않는다. 관문은 `collect_history_store.append`에도 그대로 있다(이중 안전망).
+    from src.seller_console.usage_meter import UsageLimitReached as _ULR, ensure as _ensure_quota
+    try:
+        _ensure_quota("collect", str(user.get("user_id") or ""), str(user.get("email") or ""))
+    except _ULR as _lim:
+        try:
+            from src.seller_console.collect_history_store import find_by_product_key as _fdup
+            _is_dup = bool(_fdup(url, seller_ids={str(user.get("user_id") or "")}))
+        except Exception:
+            _is_dup = False
+        if not _is_dup:
+            logger.info("[collect %s] 이번 달 한도 — 저장 안 함: %s", _corr, _lim.message)
+            return jsonify(_lim.payload()), 402
+
     # 수집 시 한국어 번역 (키 없으면 원문 유지)
     translate = payload.get("translate", True) is not False
     tr = _translate_payload(payload) if translate else {
@@ -1687,6 +1702,8 @@ def collect_from_extension():
                 saved = bool(item_id)
         logger.info("[collect %s] 저장 자기검증(목록 스코프 재읽기) saved=%s durable=%s ids=%r",
                     _corr, saved, durable, sorted(verify_ids))
+    except _ULR as _lim:                                          # Y15: 관문에서 막힘(위 사전 확인과 경합한 경우)
+        return jsonify(_lim.payload()), 402
     except Exception as exc:
         # P0 진단: 전체 예외 스택을 남긴다(PG 예외·컬럼 불일치 등 원인 규명). corr-id로 grep.
         logger.exception("[collect %s] 수집 이력 기록 실패(스택): %s", _corr, exc)
@@ -2057,13 +2074,18 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> d
         )
         # v38 P0: 이력에 실제 저장(이전엔 catalog만 써서 수집품목에 안 보였음).
         from src.seller_console.collect_history_store import append as history_append
-        _ret = history_append(
-            return_durable=True, source=source, url=url, title=title,
-            image=images[0] if images else "", price=price, currency=currency,
-            status="ok", seller_id=str(seller_id or ""),
-            extra={"title": title, "title_ko": title, "images": images,
-                   "price": price, "currency": currency},
-        )
+        from src.seller_console.usage_meter import UsageLimitReached as _ULR
+        try:
+            _ret = history_append(
+                return_durable=True, source=source, url=url, title=title,
+                image=images[0] if images else "", price=price, currency=currency,
+                status="ok", seller_id=str(seller_id or ""),
+                extra={"title": title, "title_ko": title, "images": images,
+                       "price": price, "currency": currency},
+            )
+        except _ULR as _lim:                                      # Y15: 이번 달 한도 — 항목별 정직 사유
+            return {"url": url, "ok": False, "error": _lim.message, "limit_reached": True,
+                    "billing_url": _lim.payload()["billing_url"]}
         item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
         if not item_id or not durable:
             return {"url": url, "ok": False, "error": "저장 영속화 실패(재시도 필요)"}

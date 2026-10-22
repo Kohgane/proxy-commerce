@@ -1,4 +1,9 @@
-"""src/tenancy/subscription_plan.py — 구독 플랜 관리."""
+"""src/tenancy/subscription_plan.py — 구독 플랜 관리 (**legacy**).
+
+Y15(오너 2026-10-22): 셀러가 보는 요금표·한도의 정본은 `src/seller_console/billing_store.PLANS`(free/plus/pro)다.
+이 모듈(FREE/BASIC/PRO/ENTERPRISE)은 옛 멀티테넌시 API(`/api/v1/tenants`, `src/api/tenancy_api.py`) 전용으로만 남아 있고,
+셀러 콘솔·한도 집행은 읽지 않는다(`tests/test_y15_billing_limits.py`가 핀). 여기 숫자를 고쳐도 화면·한도는 안 바뀐다.
+"""
 from __future__ import annotations
 
 from enum import Enum

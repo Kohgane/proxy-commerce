@@ -663,12 +663,15 @@ def signup_post():
     if accounts.require_email_verify():
         logger.info("[auth] signup 인증 메일: %s", _send_verify_mail(email, name, verify_token))
 
+    # Y15-B: 어디서 들어왔는지(첫 방문 referrer·랜딩·utm + ip·ua) — 처음 보는 사람만
+    _origin = _record_signup_origin(acct["user_id"]) if not was_known else {}
     if not was_known:
         try:
             from src.notifications.telegram import send_telegram
+            from .signup_origin import telegram_line
             _async_notify(
                 send_telegram,
-                f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입",
+                f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입\n{telegram_line(_origin)}",
                 urgency="info",
             )
         except Exception:
@@ -680,6 +683,16 @@ def signup_post():
     # flash는 싣지 않는다 — 콘솔 화면은 flash를 그리지 않아, 남은 「가입 완료」가 나중 로그인 화면에 뜬다.
     #   대시보드에 들어간 것 자체가 결과다.
     return redirect(next_url)
+
+
+def _record_signup_origin(user_id: str) -> dict:
+    """Y15-B: 가입 유입 한 줄(`signup_origin.record`) — 실패해도 가입은 계속."""
+    try:
+        from .signup_origin import record
+        return record(user_id) or {}
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[auth] 가입 유입 기록 실패: %s", exc)
+        return {}
 
 
 def _send_verify_mail(email: str, name: str, token: str) -> str:
@@ -940,13 +953,17 @@ def oauth_callback(provider: str):
 
             # 텔레그램 알림 — **처음 보는 이메일일 때만**(같은 사람이 로그인할 때마다
             #   「신규 가입」이 오면 그 알림은 곧 아무 뜻도 없게 된다).
+            # Y15-B: 어디서 들어왔는지(첫 방문 referrer·랜딩·utm + ip·ua)
+            _origin = _record_signup_origin(user.user_id) if not was_known else {}
             if not was_known:
                 try:
                     from src.notifications.telegram import send_telegram
+                    from .signup_origin import telegram_line
                     provider_label = {"kakao": "카카오", "google": "구글", "naver": "네이버"}.get(provider, provider)
                     _async_notify(
                         send_telegram,
-                        f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: {provider_label} 로그인",
+                        f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: {provider_label} 로그인\n"
+                        f"{telegram_line(_origin)}",
                         urgency="info",
                     )
                 except Exception:

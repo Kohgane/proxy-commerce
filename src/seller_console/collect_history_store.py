@@ -60,6 +60,7 @@ def append(
     extra: dict = None,
     seller_id: str = "",
     return_durable: bool = False,
+    meter: bool = True,
 ):
     """수집 이력 1건 추가. PG면 트랜잭션 커밋 후 durable, 아니면 인메모리(개발/테스트).
 
@@ -76,6 +77,12 @@ def append(
     여기가 모든 수집 경로가 지나는 **단 하나의 관문**이다(확장·공유·텔레그램·URL·벌크).
     그래서 여기서 찍는다 — 경로마다 찍으면 언젠가 한 경로가 빠진다.
     """
+    # Y15(오너 2026-10-22): 요금제 월 수집 한도 — 모든 수집이 지나는 이 관문에서 잰다(경로마다 두면 한 경로가 샌다).
+    #   넘으면 `usage_meter.UsageLimitReached`(정직 안내 문구 + /seller/billing). 공유 사용자·서버 자신은 재지 않는다.
+    #   `meter=False`는 수집이 아닌 새 행(내가 만든 복제본)만.
+    if meter:
+        from . import usage_meter as _um
+        _um.ensure("collect", seller_id)
     extra = dict(extra or {})
     # Y11-D: 광고 클릭 링크(click.simba)는 상품 정규 주소로 — 원래 링크는 `raw_url` 컬럼에(「원본 보기」가 과금 클릭을 열지 않게)
     raw_url = ""
@@ -516,6 +523,16 @@ def dashboard_rows(*, seller_ids: Optional[set] = None) -> list:
         out.append({"id": row.get("id"), "title": row.get("title") or "", "collected_at": row.get("collected_at") or "",
                     "last_action_at": str(row.get("last_action_at") or ""), "attn_n": int(row.get("attn_n") or 0), "extra": small})
     return out
+
+
+def count_created_since(since, seller_ids) -> int:
+    """Y15 한도: `since`(UTC datetime) 뒤에 새로 만든 행 수 — PG는 지운 행도 센다. 인메모리(개발·테스트)는 지우면 줄이 없어진다."""
+    ids = {str(x) for x in (seller_ids or ()) if x}
+    _b = _pg_backend()
+    if _b:
+        return _b.count_created_since(since, ids)
+    cut = since.isoformat()
+    return sum(1 for r in list(_in_memory) if str(r.get("seller_id") or "") in ids and str(r.get("collected_at") or "") >= cut)
 
 
 def summary(days: int = 30, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> dict:
