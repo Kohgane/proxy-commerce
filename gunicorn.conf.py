@@ -54,17 +54,48 @@ def _active_jobs():
         return []
 
 
+# Y15(운영 10-21 17:20~10-22 07:10 — 14시간): 새 잡 문지기는 **인스턴스 합계**(master+워커, `INSTANCE_MEM_START_MAX_MB` 420)로 보고
+#   이 재시작은 **워커 RSS**(380)만 봤다. 워커 340MB · 합계 422~435MB에서 문지기는 매 틱 「시작 거부」, 재시작은 「상한 아래」 —
+#   일회성 작업 54줄이 밤새 하나도 안 돌았다(서로 풀어 줄 쪽이 없는 교착). 합계가 문지기 상한 이상이면 같은 조건(잡 없음·간격)으로 갈아끼운다.
+#   합계 재기는 /proc을 여러 번 읽으므로 `_INST_EVERY_SEC`(60초)에 한 번만.
+_INST_EVERY_SEC = int(os.getenv('WORKER_INSTANCE_CHECK_SEC', '60') or 60)
+_inst_seen = {'at': 0.0, 'over': False, 'mb': -1, 'lim': 0}
+
+
+def _instance_over():
+    """`(인스턴스 합계 ≥ 새 잡 문지기 상한, 합계 MB, 상한 MB)` — 60초에 한 번 잰다. 못 재면 아니오."""
+    import time as _t
+    now = _t.time()
+    if now - _inst_seen['at'] < _INST_EVERY_SEC:
+        return _inst_seen['over'], _inst_seen['mb'], _inst_seen['lim']
+    over, mb, lim = False, -1, 0
+    try:
+        from src.utils import rss as _rss
+        lim = _rss.start_limit_mb()
+        if lim > 0:
+            mb = _rss.instance_mb()
+            over = mb >= lim
+    except Exception:
+        pass
+    _inst_seen.update(at=now, over=over, mb=mb, lim=lim)
+    return over, mb, lim
+
+
 def post_request(worker, req, environ, resp):
     if _RSS_LIMIT_MB <= 0 or not getattr(worker, 'alive', False):
         return
     rss = _worker_rss_mb()
+    why = ''
     if rss < _RSS_LIMIT_MB:
-        return
+        over, inst, lim = _instance_over()
+        if not over:
+            return
+        why = f' · 인스턴스 합계 {inst} ≥ 문지기 {lim}'
     # Z10-B(오너 2026-10-11): 잡·크론이 도는 중이면 갈아끼우지 않는다 — 그 잡을 죽이면 카드가 「검증 못 함」으로 끝나고
     #   다시 누르면 같은 일을 처음부터 한다. 잡이 끝난 뒤 첫 요청에서 다시 본다.
     busy = _active_jobs()
     if busy:
-        worker.log.warning('[RSS] worker pid=%s rss_mb=%d ≥ %d — 잡 %s 진행 중이라 이번엔 남는다', worker.pid, rss, _RSS_LIMIT_MB, busy)
+        worker.log.warning('[RSS] worker pid=%s rss_mb=%d (상한 %d%s) — 잡 %s 진행 중이라 이번엔 남는다', worker.pid, rss, _RSS_LIMIT_MB, why, busy)
         return
     import time as _t
     try:
@@ -72,12 +103,12 @@ def post_request(worker, req, environ, resp):
     except OSError:
         last = 0
     if _t.time() - last < _RSS_GAP_SEC:
-        worker.log.warning('[RSS] worker pid=%s rss_mb=%d ≥ %d — 다른 워커가 방금 재시작해 이번엔 남는다', worker.pid, rss, _RSS_LIMIT_MB)
+        worker.log.warning('[RSS] worker pid=%s rss_mb=%d (상한 %d%s) — 다른 워커가 방금 재시작해 이번엔 남는다', worker.pid, rss, _RSS_LIMIT_MB, why)
         return
     try:
         with open(_RSS_STAMP, 'w') as fh:
             fh.write(str(worker.pid))
     except OSError:
         pass
-    worker.log.warning('[RSS] worker pid=%s rss_mb=%d ≥ %d — 이 워커만 재시작(받던 요청은 끝내고)', worker.pid, rss, _RSS_LIMIT_MB)
+    worker.log.warning('[RSS] worker pid=%s rss_mb=%d (상한 %d%s) — 이 워커만 재시작(받던 요청은 끝내고)', worker.pid, rss, _RSS_LIMIT_MB, why)
     worker.alive = False
