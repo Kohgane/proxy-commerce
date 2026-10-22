@@ -25,6 +25,8 @@ os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
 # Y14: 잡 스레드 끝의 gc+malloc_trim(`rss.release`)이 큰 테스트 힙에서 GIL을 1초 넘게 쥐어 벽시계 계약을 깼다 — 테스트에선 끈다
 #   (`release` 자체 계약은 tests/test_y14_memory.py가 켜고 잰다).
 os.environ.setdefault("RSS_RELEASE", "0")
+# Y15(순찰 32) 메모리 측정(gc 객체 전수·모듈 캐시)은 큰 테스트 힙에서 잡 끝마다 수 초 — 사전검증 시간·메모리 계약을 흔든다. 측정 테스트만 켠다.
+os.environ.setdefault("MEMPROBE", "0")
 # Z8: 대시보드 API는 키가 비면 닫힌다(fail-closed). 테스트 레인만 명시적으로 연다 — 운영(APP_ENV=production)은 무시.
 os.environ.setdefault("DASHBOARD_API_OPEN", "1")
 # M5 후속: 진단의 img.alicdn.com HEAD(네트워크)는 테스트 레인에서 끈다.

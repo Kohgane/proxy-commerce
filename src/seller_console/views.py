@@ -5643,13 +5643,14 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
             return
         from src.db import pg as _pg
         _rel = None
+        _mp0 = None
         try:
             # Z9 후속 계약: 잡 전체(본문 + 끝 기록)가 DB 연결 1개 — 끝 기록(rss)도 같은 범위 안에서(중첩 job_conn은 바깥 것을 쓴다)
             with _pg.job_conn():
                 r0, _p0 = _rss.log("pv_job_start", markets=",".join(markets))
                 # Y15(오너 순찰 32 「측정만」): 잡 앞·뒤 gc 객체 type별 증가 · 모듈 수준 캐시 크기 — 바닥 상승의 주인을 가린다
-                from src.utils import memprobe as _mp
-                _mp0 = _mp.before()
+                from src.utils import memprobe as _memp
+                _mp0 = _memp.before()
                 # Z10-B: 200ms 샘플러 — 단계 경계 사이 순간 피크(이 구간, 프로세스 전체)와 그 순간 스레드별 프레임
                 from src.utils import rss_sampler as _smp
                 with _smp.watch("pv_job", job=job_id) as _w:
@@ -5670,12 +5671,20 @@ def _pv_job(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 _rw.record("pv_job", job=job_id[:8], markets=",".join(markets), base_mb=_w.get("base"), peak_mb=_w["peak"],
                            inst_base_mb=_w.get("inst_base"), inst_peak_mb=_w.get("inst_peak"), over=bool(_w.get("over")),
                            rel_before_mb=_rel[0], rel_after_mb=_rel[1], threads=_th_count(),
-                           orphans=int(((_pv_store().state_get(_PV_JOB_KEY + job_id) or {}).get("stages") or {}).get("orphans") or 0),
-                           **_mp.after(_mp0))
+                           orphans=int(((_pv_store().state_get(_PV_JOB_KEY + job_id) or {}).get("stages") or {}).get("orphans") or 0))
         finally:
             if _rel is None:
                 _rss.release("prevalidate:fail")                     # 몸통·끝 기록이 예외로 끝나도 반환은 한다
             sem.release()
+        # Y15 측정(순찰 32): 잡 앞·뒤 gc type 증가 · 모듈 캐시 — 세마포어를 **놓은 뒤**(다음 잡이 측정 시간만큼 기다리지 않게) 따로 한 줄
+        try:
+            from src.utils import memprobe as _memp
+            _mpo = _memp.after(_mp0) if _mp0 is not None else {}
+            if _mpo:
+                from src.utils import render_worker as _rw2
+                _rw2.record("pv_mem", job=job_id[:8], **_mpo)
+        except Exception as exc:                                         # noqa: BLE001 — 측정 실패는 잡과 무관
+            logger.debug("[사전검증] 메모리 측정 실패: %s", exc)
     finally:
         _rss.JOB.reset(tok)
 

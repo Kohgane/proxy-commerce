@@ -16,34 +16,35 @@ import sys
 from collections import Counter, deque
 from typing import Any, Dict, List, Optional
 
+import functools as _ft
+
 _TRACE_ON = False
+_LRU_TYPES = tuple(t for t in (getattr(_ft, "_lru_cache_wrapper", None),) if isinstance(t, type))
 _SCAN_CAP = 20000            # 컨테이너 하나의 한 단계 크기를 잴 때 최대 원소 수(큰 캐시도 측정이 잡을 멈추지 않게)
+
+
+def enabled() -> bool:
+    """`MEMPROBE=0`이면 끈다(기본 켜짐). 테스트 스위트는 꺼 둔다 — 큰 힙에서 잡 끝마다 수 초가 더해져 시간·메모리 계약이 흔들린다."""
+    return os.getenv("MEMPROBE", "1").strip() not in ("0", "false", "no", "off")
 
 
 def _trace_wanted() -> bool:
     return os.getenv("MEM_TRACE", "").strip() in ("1", "true", "yes")
 
 
-def _counts() -> tuple:
-    n: Counter = Counter()
-    b: Counter = Counter()
-    for o in gc.get_objects():
-        t = type(o).__name__
-        n[t] += 1
-        try:
-            b[t] += sys.getsizeof(o)
-        except Exception:                                        # noqa: BLE001
-            pass
-    return n, b
+def _counts() -> Counter:
+    return Counter(type(o).__name__ for o in gc.get_objects())
 
 
 def before() -> Dict[str, Any]:
     global _TRACE_ON
+    if not enabled():
+        return {"off": True}
     snap: Dict[str, Any] = {}
     try:
-        snap["n"], snap["b"] = _counts()
+        snap["n"] = _counts()
     except Exception:                                            # noqa: BLE001
-        snap["n"], snap["b"] = Counter(), Counter()
+        snap["n"] = Counter()
     if _trace_wanted():
         try:
             import tracemalloc
@@ -57,15 +58,27 @@ def before() -> Dict[str, Any]:
 
 
 def type_growth(snap: Dict[str, Any], top: int = 10) -> List[list]:
-    """`[[type, 늘어난 개수, 늘어난 크기 KB], …]` — 개수 기준 상위 `top`."""
+    """`[[type, 늘어난 개수, 늘어난 크기 KB(추정 = 지금 그 type 평균 크기 × 늘어난 개수)], …]` — 개수 기준 상위 `top`.
+    크기는 상위 type만 한 번 더 훑어 잰다(모든 객체 `getsizeof`는 큰 힙에서 초 단위라 잡을 늦춘다)."""
     try:
-        n1, b1 = _counts()
+        n1 = _counts()
     except Exception:                                            # noqa: BLE001
         return []
-    n0, b0 = snap.get("n") or Counter(), snap.get("b") or Counter()
-    rows = [[t, n1[t] - n0.get(t, 0), round((b1[t] - b0.get(t, 0)) / 1024, 1)] for t in n1 if n1[t] - n0.get(t, 0) > 0]
-    rows.sort(key=lambda r: (-r[1], -r[2]))
-    return rows[:top]
+    n0 = snap.get("n") or Counter()
+    grown = sorted(((t, n1[t] - n0.get(t, 0)) for t in n1 if n1[t] - n0.get(t, 0) > 0), key=lambda r: -r[1])[:top]
+    names = {t for t, _ in grown}
+    size: Counter = Counter()
+    try:
+        for o in gc.get_objects():
+            t = type(o).__name__
+            if t in names:
+                try:
+                    size[t] += sys.getsizeof(o)
+                except Exception:                                # noqa: BLE001
+                    pass
+    except Exception:                                            # noqa: BLE001
+        pass
+    return [[t, d, round(size[t] / max(1, n1[t]) * d / 1024, 1)] for t, d in grown]
 
 
 def trace_growth(snap: Dict[str, Any], top: int = 10) -> List[list]:
@@ -119,12 +132,15 @@ def module_caches(prefixes=("src.",), top: Optional[int] = None, min_len: int = 
             if attr.startswith("__"):
                 continue
             try:
-                if hasattr(val, "cache_info") and callable(getattr(val, "cache_info")):
+                # 진짜 functools lru 래퍼만 — `hasattr(…, "cache_info")`는 Mock 등에도 참이라 남의 객체를 **부른다**(호출 기록이 바뀜)
+                if isinstance(val, _LRU_TYPES):
                     ci = val.cache_info()
                     if ci.currsize >= min_len:
                         out.append({"name": f"{mname}.{attr}", "file": fname, "kind": "lru_cache", "len": ci.currsize,
                                     "kb": None, "maxsize": ci.maxsize})
-                elif isinstance(val, (dict, list, set, deque)) and len(val) >= min_len:
+                elif type(val) in (dict, list, set, deque) or type(val).__name__ in ("OrderedDict", "defaultdict"):
+                    if len(val) < min_len:
+                        continue
                     out.append({"name": f"{mname}.{attr}", "file": fname, "kind": type(val).__name__, "len": len(val),
                                 "kb": _shallow_kb(val), "maxsize": getattr(val, "maxlen", None)})
             except Exception:                                    # noqa: BLE001
@@ -136,6 +152,8 @@ def module_caches(prefixes=("src.",), top: Optional[int] = None, min_len: int = 
 def after(snap: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """잡 끝 한 번 — `{types, caches, trace?}`(기록용 짧은 모양)."""
     snap = snap or {}
+    if snap.get("off") or not enabled():
+        return {}
     out: Dict[str, Any] = {"types": type_growth(snap)}
     try:
         allc = module_caches()
@@ -146,4 +164,18 @@ def after(snap: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     tr = trace_growth(snap)
     if tr:
         out["trace"] = tr
+    _trace_stop()
     return out
+
+
+def _trace_stop() -> None:
+    """`before()`가 켠 tracemalloc은 잡 끝에 끈다(켜 둔 채면 이후 모든 할당이 느려진다)."""
+    global _TRACE_ON
+    if not _TRACE_ON:
+        return
+    try:
+        import tracemalloc
+        tracemalloc.stop()
+    except Exception:                                            # noqa: BLE001
+        pass
+    _TRACE_ON = False

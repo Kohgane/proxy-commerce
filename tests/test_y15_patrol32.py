@@ -1,6 +1,13 @@
 """Y15 순찰 32(오너 2026-10-22) — KYLIA 되살리기 · 메모리 측정(gc type 증가·모듈 캐시) · 리뷰 보상 옵션 · 괄호 단위 치수."""
 import json
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _probe_on(monkeypatch):
+    monkeypatch.setenv("MEMPROBE", "1")                           # conftest는 꺼 둔다 — 이 파일은 측정 자체를 본다
+
 
 # ── 1. 되살리기(undiscard) ──────────────────────────────────────────────────────
 
@@ -79,6 +86,8 @@ def test_memprobe_trace_only_when_env(monkeypatch):
     blob = [bytearray(10000) for _ in range(50)]
     out = M.after(s)
     assert out.get("trace") and isinstance(out["trace"][0][0], str)
+    import tracemalloc
+    assert not tracemalloc.is_tracing()                           # 켠 것은 끄고 나온다(이후 테스트·잡이 느려지지 않게)
     del blob
 
 
@@ -126,3 +135,25 @@ def test_parenthesized_mm_unit_is_read_as_mm():
     assert S._read_size({"title": "x", "description": "485X300X580 MM"})["dims_cm"] == [48.5, 30.0, 58.0]
     assert S._read_size({"title": "x", "description": "100×114×74（毫米）"})["dims_cm"] == [10.0, 11.4, 7.4]
     assert S._read_size({"title": "x", "description": "尺寸 60x50x45cm"})["dims_cm"] == [60.0, 50.0, 45.0]   # 그대로
+
+
+def test_module_caches_never_calls_foreign_objects(monkeypatch):
+    """전체 스위트 실측: `hasattr(x, "cache_info")`는 Mock에도 참 → 측정이 테스트가 끼운 Mock을 **불러** 호출 횟수 계약(「AI 두 번째 호출 없음」)이
+    깨졌다. 진짜 lru 래퍼·순수 컨테이너만 본다."""
+    import sys
+    import types
+    from unittest.mock import MagicMock
+    from src.utils import memprobe as M
+    mod = types.ModuleType("src._probe_mock")
+    mod.__file__ = "src/_probe_mock.py"
+    mod.call_ai = MagicMock()
+    monkeypatch.setitem(sys.modules, "src._probe_mock", mod)
+    M.module_caches()
+    M.after(M.before())
+    assert mod.call_ai.call_count == 0 and mod.call_ai.mock_calls == []
+
+
+def test_memprobe_off_switch(monkeypatch):
+    from src.utils import memprobe as M
+    monkeypatch.setenv("MEMPROBE", "0")
+    assert M.before() == {"off": True} and M.after(M.before()) == {}
