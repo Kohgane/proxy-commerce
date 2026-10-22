@@ -705,6 +705,25 @@ def temp_env(updates: Dict[str, Optional[str]]):
                 os.environ[name] = value
 
 
+def _shared_owner_for(seller_id: str) -> str:
+    """이 요청의 사람이 **공유 사용자**(관리자·`FAMILY_EMAILS`)이고 그 사람이 `seller_id` 본인일 때만 오너 계정 id. 그 밖은 ""
+    (크론·세션 없는 일·일반 가입자는 오너 저장값을 쓰지 않는다 — Z6 경계 그대로)."""
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return ""
+        sid = str(seller_id or "")
+        if not sid or str(session.get("user_id") or "") != sid:
+            return ""
+        from src.auth.identity import OWNER_USER_ID
+        if not OWNER_USER_ID or sid == OWNER_USER_ID:
+            return ""
+        from .market_pick import session_is_shared
+        return OWNER_USER_ID if session_is_shared() else ""
+    except Exception:                                            # noqa: BLE001
+        return ""
+
+
 @contextmanager
 def seller_market_env(seller_id: str, markets, extra: Optional[Dict[str, str]] = None):
     """선택 마켓들의 셀러 자격증명을 환경변수에 일시 주입한다.
@@ -717,8 +736,15 @@ def seller_market_env(seller_id: str, markets, extra: Optional[Dict[str, str]] =
     if isinstance(markets, str):
         markets = [markets]
     updates: Dict[str, str] = {}
+    owner = _shared_owner_for(seller_id)
     for market in markets or []:
-        updates.update(credential_env(seller_id, market))
+        mine = credential_env(seller_id, market)
+        if not mine and owner:
+            # Y15(오너 2026-10-22): 공유 사용자(두 번째 로그인·가족)는 마켓 키를 오너 서버 자격으로 쓰는데 쿠팡 배송 프로필(해외
+            #   출고지)은 **계정별 저장**이라 비어 「구매대행 출고지 (해외)가 비어 있습니다」로 막혔다. 키와 출고지가 같은 곳에서 오게 —
+            #   자기 저장값이 없는 마켓은 오너 계정 저장값을 통째로.
+            mine = credential_env(owner, market)
+        updates.update(mine)
     if extra:
         updates.update({k: v for k, v in extra.items() if v})
 

@@ -145,7 +145,11 @@ def _call(b64: str) -> dict:
     sid, skey = _secret()
     prof = ClientProfile(httpProfile=HttpProfile(endpoint=endpoint(), reqTimeout=timeout_sec()))
     client = CommonClient(SERVICE, VERSION, credential.Credential(sid, skey), region(), profile=prof)
-    resp = client.call_json(ACTION, {"ImageBase64": b64, "LanguageType": getattr(_LANG, "value", None) or "auto"})
+    try:
+        resp = client.call_json(ACTION, {"ImageBase64": b64, "LanguageType": getattr(_LANG, "value", None) or "auto"})
+    finally:
+        from src.services.image_translate_tencent import close_client
+        close_client(client)                                       # Y15: 호출마다 새 Session — 다 쓰면 닫는다
     return (resp or {}).get("Response") or {}
 
 

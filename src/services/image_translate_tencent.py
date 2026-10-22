@@ -165,9 +165,11 @@ def _download(url: str, proxies=None) -> bytes:
     limit = int(MAX_BASE64_BYTES * 3 / 4) + 1
     if proxies:
         import requests
-        r = requests.get(url, headers={"User-Agent": "gogabridj/1.0"}, proxies=proxies, timeout=DOWNLOAD_TIMEOUT_SEC, stream=True)
-        r.raise_for_status()
-        return r.raw.read(limit)
+        # Y15: stream=True 응답은 다 읽지 않으면 연결을 쥔 채 남는다 — 닫는다
+        with requests.get(url, headers={"User-Agent": "gogabridj/1.0"}, proxies=proxies, timeout=DOWNLOAD_TIMEOUT_SEC,
+                          stream=True) as r:
+            r.raise_for_status()
+            return r.raw.read(limit)
     import urllib.request
     req = urllib.request.Request(url, headers={"User-Agent": "gogabridj/1.0"})
     with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT_SEC) as resp:
@@ -267,8 +269,11 @@ def translate_text(text: str, source: str = "zh", target: str = "ko", timeout_se
             sid, skey = _secret()
             prof = ClientProfile(httpProfile=HttpProfile(endpoint=endpoint(), reqTimeout=int(timeout_sec)))
             cli = CommonClient("tmt", "2018-03-21", credential.Credential(sid, skey), region(), profile=prof)
-            resp = cli.call_json(TEXT_ACTION, {"SourceText": text[:int(max_chars)], "Source": source, "Target": target,
-                                               "ProjectId": 0})
+            try:
+                resp = cli.call_json(TEXT_ACTION, {"SourceText": text[:int(max_chars)], "Source": source, "Target": target,
+                                                   "ProjectId": 0})
+            finally:
+                close_client(cli)
             out = str(((resp or {}).get("Response") or {}).get("TargetText") or "").strip()
             logger.info("[텍스트 번역] %s자 → %s자 (시도 %s)", len(text), len(out), attempts)
             return {"ok": bool(out), "text": out, "why": "" if out else "빈 응답", "code": "", "message": "",
@@ -306,6 +311,17 @@ def status() -> dict:
 # ---------------------------------------------------------------------------
 # 호출
 # ---------------------------------------------------------------------------
+
+def close_client(cli) -> None:
+    """Y15(운영 10-21 밤 — 잡마다 바닥 +8~34MB · 스레드 9→16): SDK 클라이언트는 호출마다 `requests.Session`을 새로 만들고
+    닫지 않는다(`client.request.conn._session`). 다 쓴 자리에서 닫는다 — 소켓·버퍼를 GC에 맡기지 않는다. 실패해도 조용히."""
+    try:
+        sess = getattr(getattr(getattr(cli, "request", None), "conn", None), "_session", None)
+        if sess is not None:
+            sess.close()
+    except Exception:                                               # noqa: BLE001
+        pass
+
 
 def _client(timeout_sec: int):
     from tencentcloud.common import credential
@@ -448,6 +464,7 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
             pass
 
     called = [False]
+    cli = None
     try:
         from tencentcloud.tmt.v20180321 import models
         req = models.ImageTranslateLLMRequest()
@@ -563,6 +580,8 @@ def translate_image(*, url: str = "", data: bytes = b"", mode: int = 0,
             "hint": ERROR_HINTS.get(code, ""),
         })
         logger.warning("[이미지번역] 실패 %s code=%s", type(exc).__name__, code or "-")
+    finally:
+        close_client(cli)                                         # Y15: 호출마다 새 Session — 다 쓰면 닫는다
 
     if called[0]:
         out["today"] = _count_call()

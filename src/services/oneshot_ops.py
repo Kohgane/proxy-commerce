@@ -162,16 +162,50 @@ def drain() -> Dict:
     st.state_set(QUEUE_KEY, {"rows": keep})
     out = []
     for r in pick:
+        heavy_op = r.get("op") in HEAVY_OPS
+        mem0 = _mem_mark() if heavy_op else None
         try:
             res = _run(r)
         except Exception as exc:                                 # noqa: BLE001 — 한 줄 실패가 다른 줄을 막지 않는다
             logger.warning("[일회성 작업] %s 실패: %s", r.get("op"), exc)
             res = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}"}
+        finally:
+            if heavy_op:
+                _mem_after(r, mem0)
         out.append({**{k: r.get(k) for k in ("op", "item_id", "kind", "idx", "detail_idx", "reason")}, "result": res, "at": _now()})
         logger.info("[일회성 작업] %s item=%s ok=%s why=%s", r.get("op"), str(r.get("item_id") or "")[:8], res.get("ok"),
                     str(res.get("why") or "")[:120])
     st.state_set(LAST_KEY, {"at": _now(), "rows": out})
     return {"picked": len(out), "rows": out}
+
+
+def _mem_mark() -> dict:
+    """무거운 줄 시작 — 프로세스 MB · 살아 있는 스레드 수."""
+    import threading
+    try:
+        from src.utils import rss as _rss
+        mb = _rss.read_mb()[0]
+    except Exception:                                            # noqa: BLE001
+        mb = -1
+    return {"mb": mb, "threads": threading.active_count(), "names": {t.name for t in threading.enumerate()}}
+
+
+def _mem_after(row: dict, mem0: Optional[dict]) -> None:
+    """Y15(오너 2026-10-22 「치수 수집 앞뒤 MB·스레드 수 따로」 — 밤새 잡마다 바닥 +8~34MB · 스레드 9→16):
+    무거운 줄 하나가 끝난 자리 — 반환(gc+malloc_trim) 전·후 MB, 앞뒤 스레드 수, **새로 생겨 남은 스레드 이름**을 `rss:recent`(op_job)에.
+    사전검증 줄은 잡을 띄우고 바로 돌아오므로 그 잡 스레드가 남은 것으로 보인다(잡 자체 기록은 pv_job)."""
+    import threading
+    try:
+        from src.utils import rss as _rss
+        from src.utils import render_worker as _rw
+        rel = _rss.release("oneshot:" + str(row.get("op") or ""))
+        now = {t.name for t in threading.enumerate()}
+        new = sorted(n for n in now - set((mem0 or {}).get("names") or ()))[:8]
+        _rw.record("op_job", op=str(row.get("op") or ""), item=str(row.get("item_id") or "")[:8],
+                   start_mb=(mem0 or {}).get("mb"), rel_before_mb=rel[0], rel_after_mb=rel[1],
+                   threads_before=(mem0 or {}).get("threads"), threads_after=threading.active_count(), new_threads=new)
+    except Exception as exc:                                     # noqa: BLE001 — 기록 실패가 줄을 막지 않는다
+        logger.debug("[일회성 작업] 메모리 기록 실패: %s", exc)
 
 
 def _attn_backfill() -> Dict:
@@ -574,7 +608,9 @@ def pick_rep(counts: Dict[int, object], prefer: int = -1) -> int:
 
 
 #: Y14(오너 2026-10-21 SPORTLINK) — 오너 결정 줄이 바꿔 넣을 수 있는 칸(나가는 값만 · 수집 원문 `title`·`tags`는 안 건드림).
-OWNER_FIELDS = ("title_ko", "coupang_name", "keywords", "detail_head_note")
+#: Y15(오너 2026-10-22 바퀴 의자 「아기 전용 의자」): `child_product` = 어린이제품 표시(사유 한 줄) — 등록 경로 보류 「오너 확인」.
+#:   인증 규칙은 단정하지 않는다(무엇이 필요한지는 오너가 확인). 빈 값이면 표시를 푼다.
+OWNER_FIELDS = ("title_ko", "coupang_name", "keywords", "detail_head_note", "child_product")
 
 
 def dims_fetch(item_id: str, *, onebound: bool = True, ob_call=None, ocr=None) -> Dict:

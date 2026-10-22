@@ -118,6 +118,7 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         # Y14(오너 2026-10-21 「치수 서버에서 수집」): 서버가 모은 치수(출처·신뢰) — 배송비 엔진이 읽은 치수가 없을 때 쓴다
         "dims_auto": dict(ex.get("dims_auto")) if isinstance(ex.get("dims_auto"), dict) else {},
         "rep_need_change": str(ex.get("rep_need_change") or ""),
+        "child_product": str(ex.get("child_product") or "").strip(),     # Y15: 어린이제품 표시 → 등록 보류 「오너 확인」
         "coupang_attributes": list(ex.get("coupang_attributes") or []),
         "coupang_option_pick": dict(ex.get("coupang_option_pick") or {}),
         "skus": ex.get("skus") if isinstance(ex.get("skus"), list) else [],
