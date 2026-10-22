@@ -5515,7 +5515,9 @@ def _pv_record_ship(job_id, product_data, markets) -> None:
         for m in markets or []:
             if str(m).split(":")[0] not in ("coupang", "smartstore", "elevenst"):
                 continue
-            e = _ship_est(product_data, str(product_data.get("seller_id") or ""), m) or {}
+            # 판매가 분모는 수수료가 기준 마켓 이름(`coupang`·`smartstore`)으로 잡힌다 — 계정 마켓(`coupang:gogane`)을 그대로
+            #   넘기면 「판매수수료율이 없습니다」로 0이 돼 보류 판정(44%)과 기록(「판매가를 못 내」)이 갈렸다(운영 10-21 15:50).
+            e = _ship_est(product_data, str(product_data.get("seller_id") or ""), str(m).split(":")[0]) or {}
             out[m] = {k: e.get(k) for k in ("state", "ratio_pct", "ship_krw", "sell_krw", "line") if e.get(k) is not None}
         if out:
             _pv_update(job_id, ship=out)
