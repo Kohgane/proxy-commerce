@@ -216,9 +216,10 @@ def test_child_product_flag_holds_every_market_and_blocks_dispatch():
 def test_child_product_is_an_owner_field_and_reaches_product_data():
     from src.services import oneshot_ops as O
     assert "child_product" in O.OWNER_FIELDS
-    from src.seller_console import product_builder as PB
-    import inspect
-    assert '"child_product": str(ex.get("child_product")' in inspect.getsource(PB)
+    from src.seller_console.product_builder import build_product
+    item = {"id": "2f523fc1", "title": "x", "extra_json": json.dumps({"title_ko": "바퀴 의자", "child_product": " 아기 전용 의자 "},
+                                                                  ensure_ascii=False)}
+    assert build_product(item, None, seller_id="u1")["child_product"] == "아기 전용 의자"
 
 
 def test_option_retry_runs_translate_now_once_and_reports_left_values(monkeypatch):
