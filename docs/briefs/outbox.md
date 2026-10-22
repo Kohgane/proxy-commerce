@@ -518,4 +518,5 @@ pytest 로컬 전체 16435 passed / 0 failed / 17 skipped · PG 레인 42 · CI 
 다음 한 수(오너 결정): `MEM_TRACE=1`을 한 틱만 켜면 줄 단위 할당 diff가 같은 기록에 실린다(env 변경이라 내가 안 켰다). 또는 잡 **사이** 구간을 재는 틱 시작 프로브를 하나 더 둔다.
 
 ### 머지
-(아래에 채움)
+PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a72b10a, 24분 43초) · PG 레인 **71 passed** · CI 5/5(python-guard·extension-zip·full-suite·pg-suite·Docker) 그린 뒤 머지.
+(첫 스위트 실행 820dadf2는 16,549 passed · 1 failed — 새 테스트의 가짜 소셜 프로바이더에 `is_configured`가 없던 것. 테스트만 고치고 HEAD에서 다시 돌린 숫자가 위다.)
