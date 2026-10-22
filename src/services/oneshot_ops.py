@@ -26,6 +26,8 @@
   「권고안 채택」): 화면 버튼과 **같은 함수**로 오너 결정을 적용한다 — 대표 사진(후보 장마다 텐센트 OCR 상자 수를 재서 0상자 장 ·
   여럿이면 `prefer`)=「이 장을 대표로」, 위험 「빼고 등록」=`risk_gate.decide(strip)`(`pixels=restore`: 음차 상자만 원본 복원 ·
   원문에 상표가 남는 장은 사진째 뺌). 저장 뒤 같은 계정으로 사전검증 잡을 띄운다. 수집 원본(`images`·`skus`)은 손대지 않는다
+- `option_retry` {item_id} — Y15(오너 2026-10-22): 옵션 값 한국어 옮기기 1회(화면 「한국어로 번역」과 같은 `translate_now`) ·
+  남은 값과 그 사유를 결과에
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
   (리퍼러 없이 = 목록 `<img referrerpolicy=no-referrer>`와 같은 조건). 상태 코드·형식·크기만 남긴다 — 기록은 바꾸지 않는다
 """
@@ -46,7 +48,7 @@ HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item")
+       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry")
 
 
 def _now() -> str:
@@ -86,6 +88,8 @@ def _run(row: dict) -> Dict:
                                relist_only=[str(m) for m in (row.get("relist_only") or []) if m][:4])
     if op == "discard":
         return _discard(item_id, str(row.get("why") or ""))
+    if op == "option_retry":
+        return option_retry(item_id)
     if op == "dims_fetch":
         return dims_fetch(item_id, onebound=row.get("onebound", True) is not False)
     if op == "check_item":
@@ -656,6 +660,26 @@ def check_item(item_id: str, markets: List[str], *, fetch=None, prevalidate=None
                 "why": str(d.get("why") or "")[:160]}
     r = (prevalidate or _prevalidate)(item_id, markets)
     return dict(r, step="prevalidate")
+
+
+def option_retry(item_id: str) -> Dict:
+    """Y15(오너 2026-10-22 「왼쪽 마우스 스탠드 옵션 미해석 2개 번역 재시도 1회」) — 화면 「한국어로 번역」과 같은 함수
+    (`option_translate_auto.translate_now`: 규칙 → 번역기, 일 상한 안) **한 번**. 못 옮긴 값은 그 값의 사유가 그대로 남는다."""
+    from src.services import ocr_compare_diag as D
+    from src.services import option_translate_auto as OT
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    iid = str(item.get("id") or item_id)
+    res = OT.translate_now(uid, iid)
+    left = {}
+    try:
+        _row, ex = OT._load(iid, uid)
+        left = dict(((ex or {}).get("option_translate_diag") or {}).get("values") or {})
+    except Exception:                                            # noqa: BLE001
+        pass
+    return {"ok": res.get("status") == "done", "status": res.get("status"), "why": str(res.get("reason") or "")[:240],
+            "sent": res.get("sent", 0), "left": {k: str(v)[:160] for k, v in list(left.items())[:6]}}
 
 
 def _discard(item_id: str, why: str) -> Dict:

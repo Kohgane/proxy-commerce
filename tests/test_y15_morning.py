@@ -219,3 +219,17 @@ def test_child_product_is_an_owner_field_and_reaches_product_data():
     from src.seller_console import product_builder as PB
     import inspect
     assert '"child_product": str(ex.get("child_product")' in inspect.getsource(PB)
+
+
+def test_option_retry_runs_translate_now_once_and_reports_left_values(monkeypatch):
+    from src.services import oneshot_ops as O
+    from src.services import ocr_compare_diag as D
+    from src.services import option_translate_auto as OT
+    monkeypatch.setattr(D, "_item", lambda iid: ({"id": "d5af2185-full"}, "u2"))
+    calls = []
+    monkeypatch.setattr(OT, "translate_now", lambda uid, iid: calls.append((uid, iid)) or {"status": "failed", "reason": "1개 남음", "sent": 2})
+    monkeypatch.setattr(OT, "_load", lambda iid, uid: ({}, {"option_translate_diag": {"values": {"左手黑": "번역기가 원문 그대로 돌려줌"}}}))
+    r = O._run({"op": "option_retry", "item_id": "d5af2185"})
+    assert calls == [("u2", "d5af2185-full")]
+    assert r == {"ok": False, "status": "failed", "why": "1개 남음", "sent": 2, "left": {"左手黑": "번역기가 원문 그대로 돌려줌"}}
+    assert "option_retry" not in O.HEAVY_OPS
