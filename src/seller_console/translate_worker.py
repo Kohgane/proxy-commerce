@@ -111,8 +111,8 @@ def drain_once(limit: int = 10, *, worker_id: str = "", time_budget_sec: float =
         # 무료 쿼터(회계 불변) — 무제한 아니고 소진이면 quota 터미널.
         unlimited = _unlimited_env
         try:
-            from . import billing_store
-            if billing_store.is_unlimited(uid):
+            from . import usage_meter
+            if usage_meter.translate_unlimited(uid):   # Y15: 유료 플랜 + 공유 사용자(관리자·가족)는 재지 않는다
                 unlimited = True
         except Exception:
             pass

@@ -144,36 +144,41 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
 
     from src.seller_console.collect_history_store import append as history_append
     _t_save = time.perf_counter()
-    _ret = history_append(
-        return_durable=True, source=source, url=url,
-        title=title_ko or title or "(제목 없음)",
-        image="", price=price, currency=currency,   # ← 없으면 빈칸. 만들지 않는다
-        status=("보강 대기" if not price else "ok"), seller_id=str(seller_id or ""),
-        extra={
-            "title": title, "title_ko": title_ko,
-            "images": [], "price": price, "currency": currency,
-            # 실시간 시세가 아니다 — 공유한 그 순간의 값이다. 화면이 이걸 그대로 밝힌다.
-            "price_source": ("share_link" if price else ""),
-            "price_captured_at_share": bool(price),
-            # 목록·드로어가 '간이'로 읽는 기존 상태를 그대로 쓴다(새 상태 발명 금지).
-            "mode": "share",
-            "share_tk": share.get("tk", ""),
-            "share_code": share.get("share_code", ""),
-            "site_item_id": share.get("item_id") or item_id_site,
-            "short_name": share.get("short_name", ""),
-            "final_url": share.get("final_url", ""),
-            "uncollected": uncollected,
-            # C-F14: **한 필드에 두 뜻을 지우지 않는다.** F11에서 가격이 오면 `enrich_state="done"`으로
-            #   뒀는데, 그건 「등록 게이트 열림」이라는 뜻이었다. 그런데 목록은 같은 필드를
-            #   「보강 완료」로 읽어서 **이미지 0장 + done = 추출 실패**로 표시했다 —
-            #   제목·상품번호·가격이 다 담긴 셋이 「실패」로, 아무것도 없는 하나가 「대기」로 뒤집혔다.
-            #   → 두 축을 나눈다: `gate_ready`(등록 가능) / `enrich_state`(보강 진행).
-            "gate_ready": bool(price),
-            # 보강은 **이미지가 실제로 들어왔을 때만** done이다. 가격이 왔다고 보강이 끝난 게 아니다.
-            "enrich_state": "pending",
-            "share_raw": share.get("raw", "")[:500],
-        },
-    )
+    from src.seller_console.usage_meter import UsageLimitReached
+    try:
+        _ret = history_append(
+            return_durable=True, source=source, url=url,
+            title=title_ko or title or "(제목 없음)",
+            image="", price=price, currency=currency,   # ← 없으면 빈칸. 만들지 않는다
+            status=("보강 대기" if not price else "ok"), seller_id=str(seller_id or ""),
+            extra={
+                "title": title, "title_ko": title_ko,
+                "images": [], "price": price, "currency": currency,
+                # 실시간 시세가 아니다 — 공유한 그 순간의 값이다. 화면이 이걸 그대로 밝힌다.
+                "price_source": ("share_link" if price else ""),
+                "price_captured_at_share": bool(price),
+                # 목록·드로어가 '간이'로 읽는 기존 상태를 그대로 쓴다(새 상태 발명 금지).
+                "mode": "share",
+                "share_tk": share.get("tk", ""),
+                "share_code": share.get("share_code", ""),
+                "site_item_id": share.get("item_id") or item_id_site,
+                "short_name": share.get("short_name", ""),
+                "final_url": share.get("final_url", ""),
+                "uncollected": uncollected,
+                # C-F14: **한 필드에 두 뜻을 지우지 않는다.** F11에서 가격이 오면 `enrich_state="done"`으로
+                #   뒀는데, 그건 「등록 게이트 열림」이라는 뜻이었다. 그런데 목록은 같은 필드를
+                #   「보강 완료」로 읽어서 **이미지 0장 + done = 추출 실패**로 표시했다 —
+                #   제목·상품번호·가격이 다 담긴 셋이 「실패」로, 아무것도 없는 하나가 「대기」로 뒤집혔다.
+                #   → 두 축을 나눈다: `gate_ready`(등록 가능) / `enrich_state`(보강 진행).
+                "gate_ready": bool(price),
+                # 보강은 **이미지가 실제로 들어왔을 때만** done이다. 가격이 왔다고 보강이 끝난 게 아니다.
+                "enrich_state": "pending",
+                "share_raw": share.get("raw", "")[:500],
+            },
+        )
+    except UsageLimitReached as lim:                              # Y15: 이번 달 한도 — 정직 사유 + 요금제 링크
+        return {"ok": False, "url": url, "error": lim.message, "limit_reached": True,
+                "billing_url": lim.payload()["billing_url"]}
     timings["save"] = int((time.perf_counter() - _t_save) * 1000)
     item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
     if not item_id or not durable:

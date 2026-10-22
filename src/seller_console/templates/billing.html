@@ -4,8 +4,30 @@
 <div class="container py-4" style="max-width: 880px;">
   <h1 class="h3 mb-1"><i class="bi bi-credit-card"></i> 요금제 · 충전</h1>
   <p class="text-muted">쉽고 간편하게. 지금 플랜: <strong>{{ plans[account.plan].label }}</strong>
-    · 무료 번역 <strong>{{ free_remaining }}</strong>/{{ free_limit }}회 남음
     {% if account.token_balance %}· 토큰 <strong>{{ account.token_balance }}</strong>{% endif %}</p>
+
+  {# Y15: 이번 달 쓴 양 — 실제로 센 값만(못 세면 「—」). 공유 사용자는 한도 없음. #}
+  {% if usage and usage.rows %}
+  <div class="op-card mb-3" data-usage>
+    <div class="op-card-body">
+      <div class="pc-overline mb-2">이번 달 쓴 양</div>
+      <ul class="list-unstyled mb-0 small">
+        {% for r in usage.rows %}
+        <li class="d-flex justify-content-between py-1 border-bottom">
+          <span>{{ r.label }}{% if not r.monthly %} <span class="text-muted">(누적)</span>{% endif %}</span>
+          <span><strong>{{ r.used if r.used is not none else '—' }}</strong>
+            / {% if r.limit is none %}무제한{% else %}{{ r.limit }}{{ r.unit }}{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% if usage.exempt %}
+      <p class="small text-muted mt-2 mb-0">운영 계정이라 한도를 재지 않아요.</p>
+      {% else %}
+      <p class="small text-muted mt-2 mb-0">수집·사전검증은 다음 달 1일에 다시 풀려요.</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 
   {% if notice %}
   <div class="pc-status pc-status-success py-2"><i class="bi bi-check-circle"></i> {{ notice }}</div>
@@ -44,6 +66,29 @@
       </div>
     </div>
     {% endfor %}
+  </div>
+
+  {# Y15: 요금표 — billing_store.PLANS 정본 그대로(숫자를 여기 따로 적지 않는다) #}
+  {% set _lim_rows = [("collect", "수집", "개", true), ("translate", "번역", "회", false), ("precheck", "사전검증", "회", true)] %}
+  {% set _feat_rows = [("auto_register", "자동 등록"), ("sourcing_monitor", "소싱 모니터링"), ("priority_support", "우선 지원")] %}
+  <div class="op-card mt-3" data-plan-table>
+    <div class="op-card-body p-0">
+      <table class="table table-sm mb-0 small align-middle text-center">
+        <thead><tr><th class="text-start ps-3">한도</th>{% for code, p in plans.items() %}<th>{{ p.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for key, name, unit, monthly in _lim_rows %}
+          <tr><td class="text-start ps-3">{{ name }}{% if monthly %} <span class="text-muted">/월</span>{% endif %}</td>
+            {% for code, p in plans.items() %}{% set v = (p.limits or {}).get(key) %}
+            <td>{% if v is none %}무제한{% else %}{{ '{:,}'.format(v) }}{{ unit }}{% endif %}</td>{% endfor %}</tr>
+          {% endfor %}
+          {% for key, name in _feat_rows %}
+          <tr><td class="text-start ps-3">{{ name }}</td>
+            {% for code, p in plans.items() %}
+            <td>{% if (p.features or {}).get(key) %}<strong>포함</strong>{% else %}<span class="text-muted" aria-label="없음">—</span>{% endif %}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <p class="text-muted small mt-3">결제·환불은 관련 법규를 따릅니다. 구독은 언제든 해지할 수 있어요.</p>

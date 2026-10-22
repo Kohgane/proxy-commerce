@@ -1206,6 +1206,14 @@ def _naver_tree_boot():
     return None
 
 
+@app.before_request
+def _signup_first_visit():
+    """Y15-B: 로그인 안 한 사람의 첫 화면 요청 — referrer·랜딩·utm을 세션에(가입 때 옮긴다)."""
+    from src.auth.signup_origin import capture_first_visit
+    capture_first_visit()
+    return None
+
+
 @app.teardown_request
 def _close_request_db_conn(exc):
     """속도: 요청 범위에서 재사용한 PG 읽기 연결을 요청 종료 시 닫는다(연결 누수 0)."""
