@@ -56,6 +56,8 @@ def coupang_fix(product: dict, predicted_id: str) -> Optional[Dict[str, str]]:
     pid = str(predicted_id or "").strip()
     for r in rules():
         toks = _hits(_title(p), r.get("tokens"))
+        if toks and _hits(_wide(p), r.get("absent")):
+            continue                                               # Y15: 「없어야 하는」 신호가 있으면 이 규칙이 아니다
         if toks and pid in (r.get("coupang_from") or []) and pid != str(r.get("coupang")):
             return {"id": str(r["coupang"]), "name": r.get("coupang_name", ""), "path": r.get("coupang_path", ""),
                     "rule": r.get("key", ""), "tokens": toks, "from": pid,
@@ -70,10 +72,15 @@ def naver_fix(product: dict, coupang_id: str) -> Optional[Dict]:
         toks = _hits(_title(p), r.get("tokens"))
         if not toks or cid not in set(r.get("coupang_from") or []) | {str(r.get("coupang"))}:
             continue
+        if _hits(_wide(p), r.get("absent")):
+            continue                                               # Y15: 빈백 신호가 있으면 진짜 빈백 — 매핑표 그대로
         sig = _hits(_wide(p), r.get("lounge_signals"))
         nid = str(r["naver_lounge"] if sig else r["naver"])
         other = str(r["naver"] if sig else r["naver_lounge"])
         alt = [other] + [str(a) for a in r.get("naver_alt") or [] if str(a) not in (nid, other)]
-        why = f"상품명 「{'·'.join(toks)}」" + (f" + 라운지 신호 「{'·'.join(sig)}」 → 라운지체어" if sig else " → 안락의자")
+        if r.get("key") == "not_beanbag_sofa":
+            why = f"상품명 「{'·'.join(toks)}」 · 빈백 신호 없음 → 빈백 아님(1인 소파 → 안락의자)"
+        else:
+            why = f"상품명 「{'·'.join(toks)}」" + (f" + 라운지 신호 「{'·'.join(sig)}」 → 라운지체어" if sig else " → 안락의자")
         return {"id": nid, "alt": alt, "signals": sig, "tokens": toks, "why": why}
     return None

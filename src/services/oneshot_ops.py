@@ -26,6 +26,8 @@
   「권고안 채택」): 화면 버튼과 **같은 함수**로 오너 결정을 적용한다 — 대표 사진(후보 장마다 텐센트 OCR 상자 수를 재서 0상자 장 ·
   여럿이면 `prefer`)=「이 장을 대표로」, 위험 「빼고 등록」=`risk_gate.decide(strip)`(`pixels=restore`: 음차 상자만 원본 복원 ·
   원문에 상표가 남는 장은 사진째 뺌). 저장 뒤 같은 계정으로 사전검증 잡을 띄운다. 수집 원본(`images`·`skus`)은 손대지 않는다
+- `option_retry` {item_id} — Y15(오너 2026-10-22): 옵션 값 한국어 옮기기 1회(화면 「한국어로 번역」과 같은 `translate_now`) ·
+  남은 값과 그 사유를 결과에
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
   (리퍼러 없이 = 목록 `<img referrerpolicy=no-referrer>`와 같은 조건). 상태 코드·형식·크기만 남긴다 — 기록은 바꾸지 않는다
 """
@@ -46,7 +48,7 @@ HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item")
+       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry")
 
 
 def _now() -> str:
@@ -86,6 +88,8 @@ def _run(row: dict) -> Dict:
                                relist_only=[str(m) for m in (row.get("relist_only") or []) if m][:4])
     if op == "discard":
         return _discard(item_id, str(row.get("why") or ""))
+    if op == "option_retry":
+        return option_retry(item_id)
     if op == "dims_fetch":
         return dims_fetch(item_id, onebound=row.get("onebound", True) is not False)
     if op == "check_item":
@@ -162,16 +166,50 @@ def drain() -> Dict:
     st.state_set(QUEUE_KEY, {"rows": keep})
     out = []
     for r in pick:
+        heavy_op = r.get("op") in HEAVY_OPS
+        mem0 = _mem_mark() if heavy_op else None
         try:
             res = _run(r)
         except Exception as exc:                                 # noqa: BLE001 — 한 줄 실패가 다른 줄을 막지 않는다
             logger.warning("[일회성 작업] %s 실패: %s", r.get("op"), exc)
             res = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}"}
+        finally:
+            if heavy_op:
+                _mem_after(r, mem0)
         out.append({**{k: r.get(k) for k in ("op", "item_id", "kind", "idx", "detail_idx", "reason")}, "result": res, "at": _now()})
         logger.info("[일회성 작업] %s item=%s ok=%s why=%s", r.get("op"), str(r.get("item_id") or "")[:8], res.get("ok"),
                     str(res.get("why") or "")[:120])
     st.state_set(LAST_KEY, {"at": _now(), "rows": out})
     return {"picked": len(out), "rows": out}
+
+
+def _mem_mark() -> dict:
+    """무거운 줄 시작 — 프로세스 MB · 살아 있는 스레드 수."""
+    import threading
+    try:
+        from src.utils import rss as _rss
+        mb = _rss.read_mb()[0]
+    except Exception:                                            # noqa: BLE001
+        mb = -1
+    return {"mb": mb, "threads": threading.active_count(), "names": {t.name for t in threading.enumerate()}}
+
+
+def _mem_after(row: dict, mem0: Optional[dict]) -> None:
+    """Y15(오너 2026-10-22 「치수 수집 앞뒤 MB·스레드 수 따로」 — 밤새 잡마다 바닥 +8~34MB · 스레드 9→16):
+    무거운 줄 하나가 끝난 자리 — 반환(gc+malloc_trim) 전·후 MB, 앞뒤 스레드 수, **새로 생겨 남은 스레드 이름**을 `rss:recent`(op_job)에.
+    사전검증 줄은 잡을 띄우고 바로 돌아오므로 그 잡 스레드가 남은 것으로 보인다(잡 자체 기록은 pv_job)."""
+    import threading
+    try:
+        from src.utils import rss as _rss
+        from src.utils import render_worker as _rw
+        rel = _rss.release("oneshot:" + str(row.get("op") or ""))
+        now = {t.name for t in threading.enumerate()}
+        new = sorted(n for n in now - set((mem0 or {}).get("names") or ()))[:8]
+        _rw.record("op_job", op=str(row.get("op") or ""), item=str(row.get("item_id") or "")[:8],
+                   start_mb=(mem0 or {}).get("mb"), rel_before_mb=rel[0], rel_after_mb=rel[1],
+                   threads_before=(mem0 or {}).get("threads"), threads_after=threading.active_count(), new_threads=new)
+    except Exception as exc:                                     # noqa: BLE001 — 기록 실패가 줄을 막지 않는다
+        logger.debug("[일회성 작업] 메모리 기록 실패: %s", exc)
 
 
 def _attn_backfill() -> Dict:
@@ -574,7 +612,9 @@ def pick_rep(counts: Dict[int, object], prefer: int = -1) -> int:
 
 
 #: Y14(오너 2026-10-21 SPORTLINK) — 오너 결정 줄이 바꿔 넣을 수 있는 칸(나가는 값만 · 수집 원문 `title`·`tags`는 안 건드림).
-OWNER_FIELDS = ("title_ko", "coupang_name", "keywords", "detail_head_note")
+#: Y15(오너 2026-10-22 바퀴 의자 「아기 전용 의자」): `child_product` = 어린이제품 표시(사유 한 줄) — 등록 경로 보류 「오너 확인」.
+#:   인증 규칙은 단정하지 않는다(무엇이 필요한지는 오너가 확인). 빈 값이면 표시를 푼다.
+OWNER_FIELDS = ("title_ko", "coupang_name", "keywords", "detail_head_note", "child_product")
 
 
 def dims_fetch(item_id: str, *, onebound: bool = True, ob_call=None, ocr=None) -> Dict:
@@ -620,6 +660,26 @@ def check_item(item_id: str, markets: List[str], *, fetch=None, prevalidate=None
                 "why": str(d.get("why") or "")[:160]}
     r = (prevalidate or _prevalidate)(item_id, markets)
     return dict(r, step="prevalidate")
+
+
+def option_retry(item_id: str) -> Dict:
+    """Y15(오너 2026-10-22 「왼쪽 마우스 스탠드 옵션 미해석 2개 번역 재시도 1회」) — 화면 「한국어로 번역」과 같은 함수
+    (`option_translate_auto.translate_now`: 규칙 → 번역기, 일 상한 안) **한 번**. 못 옮긴 값은 그 값의 사유가 그대로 남는다."""
+    from src.services import ocr_compare_diag as D
+    from src.services import option_translate_auto as OT
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    iid = str(item.get("id") or item_id)
+    res = OT.translate_now(uid, iid)
+    left = {}
+    try:
+        _row, ex = OT._load(iid, uid)
+        left = dict(((ex or {}).get("option_translate_diag") or {}).get("values") or {})
+    except Exception:                                            # noqa: BLE001
+        pass
+    return {"ok": res.get("status") == "done", "status": res.get("status"), "why": str(res.get("reason") or "")[:240],
+            "sent": res.get("sent", 0), "left": {k: str(v)[:160] for k, v in list(left.items())[:6]}}
 
 
 def _discard(item_id: str, why: str) -> Dict:

@@ -28,6 +28,11 @@ _cache: dict = {"at": 0.0, "rules": None}
 
 _DIM_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*[x×*X]\s*(\d{1,3}(?:\.\d+)?)\s*[x×*X]\s*(\d{1,3}(?:\.\d+)?)\s*(mm|cm|厘米|公分)?")
 _KG_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(kg|KG|Kg|公斤|千克)")
+#: Y15(운영 10-22 ROME 1인 소파 `67cb4742` 규격 「最大承重 200kg」 → 「실중량 200kg · 대형화물」): 하중·견딜 무게·사용자 체중은
+#   상품 무게가 아니다 — 무게를 읽기 전에 그 구절을 지운다(무게 칸 「重量」·「净重」·「毛重」은 그대로 읽는다).
+_LOAD_KG_RE = re.compile(r"(?:最大承重|承重|承载|载重|负重|耐重|限重|适用体重|体重|최대\s*하중|내하중|하중|견딜\s*수\s*있는\s*무게|체중|"
+                         r"max(?:imum)?\s*load|load\s*capacity|weight\s*capacity|bearing)"
+                         r"[^0-9\n]{0,8}\d{1,4}(?:\.\d+)?\s*(?:kg|KG|Kg|公斤|千克)", re.I)
 
 
 def rules() -> dict:
@@ -182,7 +187,7 @@ def _read_size(pd: dict) -> Dict[str, Any]:
             vals = [v / 10 for v in vals]
         if all(v > 0 for v in vals) and (dims is None or vals[0] * vals[1] * vals[2] > dims[0] * dims[1] * dims[2]):
             dims = vals
-    kg = max((float(m.group(1)) for m in _KG_RE.finditer(text)), default=0.0)
+    kg = max((float(m.group(1)) for m in _KG_RE.finditer(_LOAD_KG_RE.sub(" ", text))), default=0.0)
     basis = "상품 글·사진에서 읽은 " + ("치수" if dims else "무게")
     if not dims:
         lab = labeled_dims(text)

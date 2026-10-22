@@ -1639,6 +1639,13 @@ class UploadDispatcher:
         if _exp:
             holds.append({"short": "유통기한 임박·떨이 소싱 — 등록 차단", "fix": "block",
                           "line": f"「{_exp[0]}」 — 유통기한 임박·떨이 상품은 등록하지 않습니다(번역도 하지 않음)."})
+        # Y15(오너 2026-10-22 바퀴 의자 「아기 전용 의자」): 오너가 어린이제품으로 표시한 상품 — 모든 마켓 등록 차단, 「오너 확인」.
+        #   어떤 인증이 필요한지는 여기서 단정하지 않는다(확인 전) — 표시를 오너가 풀 때까지 등록 버튼이 열리지 않는다.
+        _child = str(pd.get("child_product") or "").strip()
+        if _child:
+            holds.append({"short": "어린이제품 — 오너 확인", "fix": "block", "code": "child_product",
+                          "line": f"「{_child[:40]}」 — 어린이제품일 수 있어 오너 확인 전까지 등록하지 않아요"
+                                  "(필요한 인증은 확인 전 — 단정하지 않음)."})
         # Y8(오너 2026-10-04): 五孔·国标插座 = 중국 표준 콘센트 — 국내 콘센트에 안 맞고 전기용품 KC 대상 → 소싱 제외(등록 차단)
         # Z3-B: 규격표(공급자 props) 값도 본다 — 五孔·国标插座는 규격표에 적히는 일이 많다(이 판정에만)
         _plug = _kp.cn_plug_hits(_risk_text + " " + " ".join(str(x) for sp in (pd.get("detail_specs") or [])
@@ -2080,6 +2087,12 @@ class UploadDispatcher:
 
     def _dispatch_one(self, product_data: Dict[str, Any], market: str) -> "UploadResult":
         """한 마켓 — 표시광고 게이트 → 마켓별 판매가 → 업로드. (U0: 계정 컨텍스트 안에서 불린다)"""
+        # Y15: 오너가 어린이제품으로 표시한 상품은 전송도 막는다(사전검증 보류와 같은 판정 · 직접 호출 우회 0)
+        _child = str((product_data or {}).get("child_product") or "").strip()
+        if _child:
+            return UploadResult(market=market, success=False, error_code="child_product",
+                                message=f"전송 전에 보류했습니다 — 어린이제품 — 오너 확인(「{_child[:40]}」)",
+                                hint="오너가 확인하고 표시를 풀 때까지 등록하지 않아요")
         # U0b: 스마트스토어 미승인·한도 꽉 참·고단가 기준 미달은 사전검증과 **같은 판정**으로 전송 전 보류(직접 호출 우회 0).
         if market == "smartstore":
             _pv = self._prevalidate_market(product_data, market)
