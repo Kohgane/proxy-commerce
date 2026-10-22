@@ -279,3 +279,33 @@ def test_small_copy_asks_cloudinary_for_a_2000px_jpeg_once(monkeypatch):
     assert body == b"\xff\xd8\xffJPEG" and not why
     assert got["fmt"] == "jpg" and got["max_side"] == 2000 and got["overwrite"] is False
     assert got["public_id"].startswith("conv_") and got["folder"] == "conv"
+
+
+def test_worker_restarts_when_instance_total_blocks_new_jobs(monkeypatch, tmp_path):
+    """Y15(운영 10-21 17:20~10-22 07:10): 워커 340MB(<380)인데 인스턴스 합계 422~435MB(≥ 문지기 420) — 문지기는 매 틱 거부,
+    재시작은 「상한 아래」라 14시간 교착. 합계가 문지기 상한 이상이면 같은 조건(잡 없음·간격)으로 갈아끼운다."""
+    import importlib.util
+    monkeypatch.setenv("WORKER_RSS_LIMIT_MB", "380")
+    monkeypatch.setenv("WORKER_RSS_RESTART_STAMP", str(tmp_path / "stamp"))
+    monkeypatch.setenv("INSTANCE_MEM_START_MAX_MB", "420")
+    spec = importlib.util.spec_from_file_location("gconf_y15", "gunicorn.conf.py")
+    g = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(g)
+
+    class W:
+        pid, alive = 8, True
+        log = type("L", (), {"warning": lambda *a, **k: None})()
+    from src.utils import rss
+    monkeypatch.setattr(g, "_worker_rss_mb", lambda: 340)
+    monkeypatch.setattr(rss, "instance_mb", lambda: 410)
+    w = W()
+    g.post_request(w, None, None, None)
+    assert w.alive is True                                                      # 합계도 상한 아래 — 남는다
+    g._inst_seen["at"] = 0.0                                                     # 60초 주기 캐시 비우기
+    monkeypatch.setattr(rss, "instance_mb", lambda: 435)
+    from src.utils import rss_sampler as S
+    with S.watch("pv_job", job="abc"):
+        g.post_request(w, None, None, None)
+        assert w.alive is True                                                  # 잡이 도는 중 — 남는다
+    g.post_request(w, None, None, None)
+    assert w.alive is False                                                     # 합계가 문지기 상한 이상 · 잡 없음 — 갈아끼운다
