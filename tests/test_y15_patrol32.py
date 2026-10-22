@@ -31,13 +31,18 @@ def test_undiscard_clears_discarded_and_keeps_log(monkeypatch):
 
 # ── 2. 메모리 측정만 ─────────────────────────────────────────────────────────────
 
+class _StayedBehind:                                              # 이 테스트만 만드는 type — 다른 객체가 풀려도 개수가 흔들리지 않는다
+    def __init__(self, i):
+        self.i = i
+
+
 def test_memprobe_type_growth_names_what_stayed():
     from src.utils import memprobe as M
     snap = M.before()
-    kept = [{"k": [i]} for i in range(3000)]                      # 잡 뒤에도 남는 것
+    kept = [_StayedBehind(i) for i in range(30000)]               # 잡 뒤에도 남는 것(상위 10에 들 만큼)
     rows = M.type_growth(snap)
     top = {r[0]: r for r in rows}
-    assert top["dict"][1] >= 3000 and top["list"][1] >= 3000 and top["dict"][2] > 0
+    assert top["_StayedBehind"][1] == 30000 and top["_StayedBehind"][2] > 0
     assert len(rows) <= 10
     del kept
 
