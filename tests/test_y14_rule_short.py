@@ -15,8 +15,10 @@ _W = "3-in-1 화이트 휴대폰 이어폰 거치대(내장 충전기)"
 def test_rule_short_passes_same_guards():
     s, why = A.rule_short(_V, set())
     assert why == "" and len(s) <= 25 and "3-in-1" in s and "블랙" in s
-    # 형제 값과 같아지면 버린다
-    assert A.rule_short(_V, {s})[1] == "다른 옵션 값과 같아짐"
+    # 형제 값과 같아지면 다음 규칙(순찰 59 오너 3단계)으로 — 그것도 같아지면 버린다
+    s2, why2 = A.rule_short(_V, {s})
+    assert why2 == "" and s2 == A.owner_short_steps(_V) and s2 != s
+    assert A.rule_short(_V, {s, s2})[1] == "다른 옵션 값과 같아짐"
 
 
 def _setup(monkeypatch):
