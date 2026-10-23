@@ -646,3 +646,46 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 ⚠️ **이건 상품 판정이 아니라 키 격리다.** 이 상품 주인 `36ba2852` = **오너의 ciuga7134 구글 로그인**(이메일 해시 대조 일치) — 정본 오너 id(`f275b60d`)에 안 묶인 계정이라 P0-2(정체성 규칙 · `ADMIN_EMAILS`·세션 role 안 봄) 뒤로 **공유 사용자가 아니게 됐다**(지난 보고 「오너 확인 1」 그 경우). 같은 계정 상품 49개 — **KYLIA `15df5bbf`도 이 계정**(「등록」 누르면 같은 「키 없음」). 3-in-1 `a0a78ca4`·SPORTLINK `a3a35e92`·17a12ee4는 정본 오너 계정이라 영향 없음. P0-2 배포(03:10) 뒤 사전검증은 이 1건뿐.
 - **오너 액션(env, CC는 안 바꾼다):** Render `ADMIN_USER_IDS`에 `36ba2852-8174-4f0c-9437-982e29d01638` 추가 → 바로 공유 사용자(캐시 60초). 그 뒤 CC가 d5af2185 사전검증을 다시 넣는다.
 - 그 밖 상품이 있는 계정 `895339e2`(3-in-1 2개 · 5개 · 09-28)·6월 계정 4개는 누구인지 이 세션에서 못 가린다 — 오너·가족이면 같은 조치(가족은 `FAMILY_EMAILS`에 그 로그인 이메일이 있으면 이미 공유).
+
+- **머지:** #959 54d4121d(09:06:59 UTC) · 로컬 전체 16,577 passed / 0 failed · PG 99 · CI 5/5.
+
+## Y15 P0-운영 — 배포 뒤 인스턴스 먹통 (2026-10-23 10:3x UTC · 이 PR 머지 전 작성)
+
+### 오너 캡처 원문 줄 (Render 로그, 표시 시각 UTC+8 → UTC = −8h)
+| 표시 시각 | UTC | 인스턴스 | 줄 |
+|---|---|---|---|
+| 17:08:39 | 09:08:39 | p8c76 | gunicorn 8000 listening → live |
+| 17:09:01~ | 09:09:01~ | vssjj | `No open HTTP ports detected on 0.0.0.0` 반복 |
+| 17:10:38 | 09:10:38 | vssjj | gunicorn `Handling signal: term` / `Worker exiting (pid 35)` / `Shutting down: Master` |
+| 17:13:48 | 09:13:48 | vssjj | `Port scan timeout reached, no open HTTP ports detected` |
+| 17:33:33 | 09:33:33 | vssjj | `src.services.tick_watch` WARNING(텔레그램) — **마스터가 내려갔다고 찍고 23분 뒤에도 살아 있음** |
+| 이벤트 12:09 | 04:09 | — | #957 live |
+| 이벤트 14:23 | 06:23 | rsqcq | `Instance failed: dial tcp 10.31.231.242:8000 i/o timeout while running your code` → 같은 시각 recovered(오늘 두 번째) |
+
+### DB 쪽 실측 (Supabase Postgres 로그 · 운영 `app_state`, 읽기만)
+- **부팅 때마다 스키마 DDL 99문장**을 직접 연결로 보낸다(문장당 ~0.2초 → 09:07:54~09:08:13 약 20초). preload라 이게 **포트 바인드 전**이다.
+- 배포마다 **부팅이 둘씩 동시**(03:08:12·03:08:28 / 04:08:57·04:09:07 / 08:21:45·08:21:47 / 09:07:54·09:08:13·09:08:19). 09:08:14 `trigger "trg_tglink_updated_at" for relation "telegram_links" already exists` — 두 부팅이 DROP·DROP·CREATE·CREATE로 경합(그 뒤 6초 만에 세 번째 부팅).
+- 틱: 09:00 다음 **09:50** — 50분 유실. 공백 알림 원자 자리 `tickgap:alert:…09:00:36` = 09:33:32에 잡힘(오너 로그 17:33과 일치 → 그 경고를 낸 게 vssjj).
+
+### 원인 (로컬 재현으로 확정한 것 / 아닌 것)
+| 항목 | 사실 |
+|---|---|
+| 우리 `threading.Thread` | **전부 daemon=True**(37곳 전수) — non-daemon 스레드는 없었다 |
+| 막는 것 | gunicorn `preload_app=True` → 앱 임포트가 **마스터**에서 일어나, 임포트 때 띄우던 상시 스레드(틱 공백 감시·이미지 번역 자동·부팅 실측·폴러·이월)가 **전부 마스터에 붙었다**. 마스터 안 **스레드 풀(`concurrent.futures`) 일**이 있으면 `sys.exit` 뒤 인터프리터 종료가 그 일을 끝까지 기다린다(풀 스레드는 데몬이 아님 — 맡긴 쪽이 데몬이어도). **로컬 재현:** 그 모양 하나로 「Handling signal: term → Worker exiting → Shutting down: Master」를 찍고 **20초+ 생존**(오너 로그와 같은 줄 순서). 운영 vssjj 마스터가 무엇을 기다렸는지는 그 프로세스 스택이 없어 **특정 못 함**(후보: 부팅 스마트스토어 실측의 스레드 풀 — 마스터 안 유일한 풀) |
+| vssjj 「No open HTTP ports」 | preload 임포트(DDL 99문장 ~20초 + 정체성 부트스트랩 + CDN 백필) 동안 포트가 안 열렸다. 바인드 전이다 |
+
+### 고친 것 (이 PR)
+1. **상시 스레드를 마스터에서 뺀다:** `gunicorn.conf.py`가 `KGP_DEFER_BG_THREADS=1` → 임포트 때 안 띄우고 `post_worker_init`(워커 안)에서 `start_background_threads()`. 로컬 확인: 마스터 파이썬 스레드 = MainThread + gunicorn 자체 제어 스레드뿐, 워커 = boot-chores·tick-gap-watch.
+2. **내려갈 때 반드시 내려간다:** `src/utils/shutdown.py` — 멈춤 신호(`STOP`)·등록 스레드 join(합계 ≤3초)·`os._exit` 강제 종료(워커 4초·마스터 2초, 앱 모듈 임포트가 실패해도 설정 파일 안에서 건다). 루프 4종(틱 공백 감시·네이버 폴러·온바운드 이월·RSS 샘플러)은 `sleep` 대신 `STOP.wait`, 이미지 번역 자동은 장 사이에 멈춤 확인. `graceful_timeout` 30→**20 이하**.
+3. **바인드 전 대기 줄이기:** 정체성 부트스트랩·CDN 백필 → 워커의 백그라운드(`boot-chores`). 스키마는 **지문**(파일 SHA)이 `app_state schema:applied`와 같으면 쿼리 1번으로 끝 · 다르면 권고 잠금으로 **한 인스턴스만** 적용(다른 쪽은 ≤15초 기다렸다 지문 재확인) · 문장마다 `lock_timeout 5s`·`statement_timeout 60s`(잠금 못 잡으면 이번 적용만 멈추고 부팅 계속 — 다음 부팅이 다시).
+4. `/health` = DB·네트워크 안 만지는 200 유지(풀 확인은 부팅 때 캐시) — 첫 요청이 헬스체크여도 카테고리 표 부팅을 안 깨운다. `/health/deep` 그대로.
+5. 틱 공백 경고 문구에 **인스턴스 id**(`RENDER_INSTANCE_ID` 또는 호스트 이름).
+
+### 로컬 측정
+| 경우 | 전 | 후 |
+|---|---|---|
+| 마스터에 풀 일 1개(그날 모양) SIGTERM → 종료 | **20초+ 생존** | **2.3~2.5초**(강제 종료 줄 찍힘) |
+| 실제 앱(gunicorn·PG·워커 켬) SIGTERM → 종료 | 1.0~1.3초 | 1.1초 |
+| 새 DB 첫 부팅 스키마 | 99문장 매번 | 0.84초(1회) · 동시 부팅 다른 쪽 = 「방금 적용 — 건너뜀」 |
+| 두 번째 부팅 스키마 | 99문장 | **0.30초**(지문 같음 — 쿼리 1번) |
+| 실제 앱 포트 열림(로컬 PG) | — | 1.8초 |

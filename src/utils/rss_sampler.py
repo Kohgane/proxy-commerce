@@ -97,6 +97,9 @@ def _tm_top5() -> List[str]:
         return [f"tracemalloc 실패 {type(exc).__name__}"]
 
 
+from src.utils.shutdown import STOP as _STOP  # noqa: E402
+
+
 def _loop() -> None:
     from src.utils import rss as _rss
     me = threading.get_ident()
@@ -126,7 +129,10 @@ def _loop() -> None:
                 w["over"] = (inst, lim, int((now - w["t0"]) * 1000))
                 if not w.get("stacks"):
                     w["stacks"] = _top_frames(me)
-        time.sleep(interval_sec())
+        if _STOP.wait(interval_sec()):                 # P0-운영: 내려갈 때 바로 깬다
+            with _LOCK:
+                _THREAD[0] = None
+            return
 
 
 def _ensure_thread() -> None:

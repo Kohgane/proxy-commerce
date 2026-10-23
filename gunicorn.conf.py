@@ -14,7 +14,8 @@ timeout = int(os.getenv('GUNICORN_TIMEOUT', '120'))
 #   워커 1개면 재시작 순간 받을 곳이 없으므로 켜지 않는다. 0을 주면 끈다.
 max_requests = int(os.getenv('GUNICORN_MAX_REQUESTS', '200')) if workers >= 2 else 0
 max_requests_jitter = int(os.getenv('GUNICORN_MAX_REQUESTS_JITTER', '50')) if workers >= 2 else 0
-graceful_timeout = int(os.getenv('GUNICORN_GRACEFUL_TIMEOUT', '30'))
+# P0-운영(오너 2026-10-23): 20 이하 — Render가 새 인스턴스로 넘기는 동안 옛 인스턴스가 오래 붙잡지 않게.
+graceful_timeout = min(20, int(os.getenv('GUNICORN_GRACEFUL_TIMEOUT', '20') or 20))
 keepalive = int(os.getenv('GUNICORN_KEEPALIVE', '5'))
 accesslog = '-'
 # M3-iOS 실측 결함(2026-09-28): 기본 형식의 `%(r)s`(요청 줄)·`%(f)s`(Referer)는 **쿼리를 통째로** 남긴다 —
@@ -24,6 +25,55 @@ access_log_format = '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms "%(a)s"
 errorlog = '-'
 loglevel = os.getenv('GUNICORN_LOG_LEVEL', 'info')
 preload_app = True
+
+# P0-운영(오너 2026-10-23 Render 로그 — 10-23 09:10 UTC vssjj): 마스터가 「Shutting down: Master」를 찍고도 안 끝났다.
+#   preload라 앱 임포트가 **마스터**에서 일어나, 임포트 때 띄우던 상시 스레드(틱 공백 감시·이미지 번역 자동·폴러·부팅 실측 등)가
+#   전부 마스터에 붙었고 — 그 안의 스레드 풀 일이 인터프리터 종료를 붙잡았다(로컬 재현: 풀 일 하나로 마스터가 20초+ 생존).
+#   ① 임포트 때는 띄우지 않는다(`KGP_DEFER_BG_THREADS`) → 워커가 뜬 뒤(`post_worker_init`) 그 워커에서 띄운다. 마스터는 감독만.
+#   ② 내려갈 때: 멈춤 신호 + join(합계 몇 초) → 그래도 붙잡혀 있으면 `os._exit`(워커 4초 · 마스터 2초).
+os.environ.setdefault('KGP_DEFER_BG_THREADS', '1')
+
+
+def post_worker_init(worker):
+    try:
+        import src.order_webhook as _app_mod
+        _app_mod.start_background_threads()
+    except Exception as exc:                                     # noqa: BLE001 — 백그라운드 실패가 요청 처리를 막지 않는다
+        worker.log.warning('[부팅] 백그라운드 스레드 시작 실패(계속): %s', exc)
+
+
+def _arm_hard_exit(sec, log):
+    """이 파일 안에서만 — 앱 모듈을 못 읽어도(임포트 실패·경로) 강제 종료는 건다."""
+    import threading as _th
+    import time as _tm
+
+    def _kill():
+        _tm.sleep(sec)
+        try:
+            log.warning('[종료] %.1f초 뒤에도 프로세스가 안 끝남 — 강제 종료(pid %s)', sec, os.getpid())
+        except Exception:                                        # noqa: BLE001
+            pass
+        os._exit(0)
+
+    _th.Thread(target=_kill, name='hard-exit', daemon=True).start()
+
+
+def _stop_app_threads(join_sec, log):
+    try:
+        from src.utils import shutdown as _sd
+        _sd.stop_all(join_sec=join_sec)
+    except Exception as exc:                                     # noqa: BLE001
+        log.warning('[종료] 앱 스레드 멈춤 신호 실패(강제 종료는 건다): %s', exc)
+
+
+def worker_exit(server, worker):
+    _stop_app_threads(3.0, worker.log)
+    _arm_hard_exit(4.0, worker.log)
+
+
+def on_exit(server):
+    _stop_app_threads(1.0, server.log)
+    _arm_hard_exit(2.0, server.log)
 
 # Z10-C: 워커 1개에선 이 재시작이 서비스를 잠깐 비운다 — 잡·크론이 없을 때만(아래 `_active_jobs`) · 같은 상한.
 # Z10(오너 2026-10-10 22:34·22:35 KST — Render 512MB 초과 2회): 워커 RSS 상한 — 요청이 끝났는데 이 워커가
