@@ -125,6 +125,13 @@ if os.getenv("SMARTSTORE_LIVE_PROBE", "1").strip().lower() not in ("0", "false",
     import threading as _ss_threading
     _ss_threading.Thread(target=_smartstore_boot_probe, name="smartstore-boot-probe", daemon=True).start()
 
+# 순찰 43(2026-10-23): 틱 공백 30분 텔레그램 — 틱이 안 들어오는 날(도메인·cron 끊김)은 /cron 안에서 알 수 없어 서버 안 타이머로 본다.
+try:
+    from src.services import tick_watch as _tick_gap
+    _tick_gap.start_gap_watch()
+except Exception as _tgexc:                                   # noqa: BLE001
+    logger.warning("틱 공백 감시 시작 실패(계속): %s", _tgexc)
+
 # Y4(2026-10-04): 이미지 번역 차단기 — 글자 없는 사진을 실패에서 뺀 재계산이 상한 아래면 풀고 대기분을 다시 돈다.
 #   워커 서비스(WORKERS_ENABLED)에서만. 사람이 멈춘 것은 그대로.
 try:
@@ -1912,10 +1919,27 @@ def deep_health():
     try:
         data = body.get_json() or {}
         data["ticks"] = _deep_health_ticks()
+        data["instance"] = _deep_health_instance()
         return jsonify(data), code
     except Exception as exc:                                     # noqa: BLE001 — 틱 기록이 헬스체크를 깨지 않는다
         logger.warning("Deep health: 틱 기록 첨부 실패: %s", exc)
         return resp
+
+
+def _deep_health_instance() -> dict:
+    """순찰 43(오너 2026-10-23): **어느 인스턴스가 응답했나** — 같은 빌드·같은 DB로 둘이 돌던 날(커스텀 도메인 쪽 ≠ onrender 쪽)
+    응답만 봐선 가릴 수 없었다. `id` = `RENDER_INSTANCE_ID`(있으면) 아니면 호스트 이름 · `started_at` = 이 프로세스 기동 시각(UTC)."""
+    import socket
+    from datetime import datetime, timezone
+    iid = (os.getenv("RENDER_INSTANCE_ID") or "").strip()
+    if not iid:
+        try:
+            iid = socket.gethostname()
+        except Exception:                                        # noqa: BLE001
+            iid = ""
+    return {"id": iid, "id_source": "RENDER_INSTANCE_ID" if os.getenv("RENDER_INSTANCE_ID") else "hostname",
+            "started_at": datetime.fromtimestamp(_START_TIME, timezone.utc).isoformat(timespec="seconds"),
+            "pid": os.getpid()}
 
 
 def _deep_health_ticks() -> dict:

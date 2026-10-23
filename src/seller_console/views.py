@@ -136,6 +136,8 @@ def inject_seller_template_flags():
         "is_admin": _is_admin,          # F30: 화면은 이 값 하나만 본다(판정기 셋 금지)
         # Z9: 오너 풀 화면(CS·메시징·B2B·정기구독) 링크 — 막힌 사람에게 403뿐인 죽은 버튼을 보이지 않는다
         "owner_pool_ok": not _owner_pool_denied(),
+        # 순찰 43: 오너 도구(등록 파이프) 링크 — 그 화면 입구와 **같은 판정**(정체성 규칙). 부를 때만 잰다(요청 격리가 이미 데운 60초 캐시)
+        "viewer_shared": _viewer_shared,
         "latest_ext_version": _ext_ver,
         "session_account": _acct,
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",
@@ -12775,6 +12777,8 @@ def sourcing_register_pipe():
     """
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
+    if not _viewer_shared():
+        abort(403)                            # 순찰 43(오너 결정): 오너 도구 — 공유 사용자(오너·가족)만. 한국어 안내(Z9)
 
     review = None
     urls_text = ""
@@ -12968,6 +12972,8 @@ def sourcing_register_pipe_register():
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if not _viewer_shared():                  # 순찰 43: 오너 도구 — 공유 사용자(오너·가족)만
+        return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요."}), 403
     from src.pipeline.register_pipe import register_source_rows
 
     from src.pipeline.register_adapters import get_adapter

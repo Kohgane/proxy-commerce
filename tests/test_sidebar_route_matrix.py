@@ -42,8 +42,17 @@ def app():
 
 @pytest.fixture(scope="module")
 def client(app):
-    with app.test_client() as c:
-        yield c
+    # Y15 P0-2·순찰 43: 「관리자」 = 정체성 목록(`ADMIN_USER_IDS`) — 세션 role만으론 오너 도구(등록 파이프)가 403이다.
+    prev = os.environ.get("ADMIN_USER_IDS")
+    os.environ["ADMIN_USER_IDS"] = "admin-user"
+    try:
+        with app.test_client() as c:
+            yield c
+    finally:
+        if prev is None:
+            os.environ.pop("ADMIN_USER_IDS", None)
+        else:
+            os.environ["ADMIN_USER_IDS"] = prev
 
 
 def test_sidebar_menu_links_exist_in_dashboard_html(client):

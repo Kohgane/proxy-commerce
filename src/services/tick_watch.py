@@ -124,3 +124,66 @@ def status(now: Optional[datetime] = None, *, leases: Optional[List[Dict]] = Non
     return {"seen": True, "last_at": last.isoformat(), "age_min": age, "stale": stale, "leases": ages,
             "line": f"마지막 틱 {hhmm}" + (f" · {age}분 전" if stale else ""),
             "todo": f"틱 멈춤 {age}분 — 마지막 틱 {hhmm}(KST) · 원인 미확인 → Render 메일·/health/deep 먼저" if stale else ""}
+
+
+# ── 순찰 43(오너 2026-10-23): 틱 공백 알림 — 틱 자체가 안 오니 서버 안 타이머로 본다 ─────────────────────────
+#   10-23 04:00→06:30 UTC 150분 빈칸 = 커스텀 도메인 무응답(04:15~06:25, onrender 주소는 200) — cron이 커스텀 도메인을 쳐서
+#   틱이 아예 들어오지 않았다. 코드가 아니라 길이 끊긴 것이라 /cron 안에선 알 수 없다 → 워커 스레드가 DB의 마지막 틱 나이를 본다.
+#   인스턴스가 둘이어도 한 번만: 공백 하나(= 마지막 틱 시각)당 `tickgap:alert:<last_at>`을 원자적으로 하나만 잡는다.
+GAP_ALERT_PREFIX = "tickgap:alert:"
+_GAP_THREAD = {"t": None}
+
+
+def gap_alert_min() -> int:
+    try:
+        return max(1, int(os.getenv("TICK_GAP_ALERT_MIN", "30")))
+    except ValueError:
+        return 30
+
+
+def check_gap(now: Optional[datetime] = None, *, status_fn=None, take_fn=None, send_fn=None) -> Dict[str, Any]:
+    """한 번 본다. `{alert, why, age_min}` — 기록이 없거나(첫 배포·DB 없음) 30분 안이면 알리지 않는다."""
+    st = (status_fn or status)(now)
+    age, last = st.get("age_min"), st.get("last_at")
+    if not st.get("seen") or age is None or not last:
+        return {"alert": False, "why": "틱 기록 없음 — 단정하지 않음", "age_min": age}
+    if age < gap_alert_min():
+        return {"alert": False, "why": "정상", "age_min": age}
+    if take_fn is None:
+        from src.db import image_translate_queue_pg as _st
+        take_fn = _st.take_start
+    took, _n = take_fn(GAP_ALERT_PREFIX + str(last), 1)
+    if not took:
+        return {"alert": False, "why": "이 공백은 이미 알림", "age_min": age}
+    hhmm = _parse(last).astimezone(_KST).strftime("%H:%M") if _parse(last) else "?"
+    msg = f"틱 {age}분 공백 — 도메인/cron 확인 (마지막 틱 {hhmm} KST)"
+    if send_fn is None:
+        from src.notifications.telegram import send_telegram as send_fn
+    sent = bool(send_fn(msg, "warning"))
+    logger.warning("[틱 감시] %s · 텔레그램 %s", msg, "보냄" if sent else "못 보냄(키 없음·실패)")
+    return {"alert": True, "sent": sent, "message": msg, "age_min": age}
+
+
+def start_gap_watch(interval_sec: Optional[int] = None) -> bool:
+    """부팅 때 한 번 — 데몬 스레드가 `interval_sec`(기본 300초)마다 `check_gap`. `TICK_GAP_WATCH=0`이면 안 띄운다(테스트 기본)."""
+    import threading
+    import time as _time
+    if str(os.getenv("TICK_GAP_WATCH", "1")).strip().lower() in ("0", "false", "no", "off"):
+        return False
+    t = _GAP_THREAD.get("t")
+    if t is not None and t.is_alive():
+        return False
+    every = int(interval_sec or int(os.getenv("TICK_GAP_CHECK_SEC", "300") or 300))
+
+    def _loop():
+        while True:
+            _time.sleep(every)
+            try:
+                check_gap()
+            except Exception as exc:                             # noqa: BLE001 — 감시가 죽지 않는다
+                logger.debug("[틱 감시] 공백 확인 실패: %s", exc)
+
+    t = threading.Thread(target=_loop, name="tick-gap-watch", daemon=True)
+    _GAP_THREAD["t"] = t
+    t.start()
+    return True
