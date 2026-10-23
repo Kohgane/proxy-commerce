@@ -235,7 +235,8 @@
     <script>
     // 계정 축은 마켓마다 다르다 — 쿠팡(고가네/우주대행)과 스마트스토어(chezgoga/gocosmos)는 별개다.
     var P3_ACCOUNTS = {
-      coupang: [['gogane', '고가네 (A01381223)'], ['woojoo', '우주대행 (A01504840)']],
+      {# 순찰 42: 판매자 번호는 공유 사용자(오너·가족)에게만 #}
+      coupang: [['gogane', '고가네{% if vendor_shown %} (A01381223){% endif %}'], ['woojoo', '우주대행{% if vendor_shown %} (A01504840){% endif %}']],
       smartstore: [['chezgoga', 'chezgoga'], ['gocosmos', 'gocosmos']],
       // 자사몰은 단일 스토어라 계정 축이 없다.
       woocommerce: [['multishop', '코가네멀티샵']]

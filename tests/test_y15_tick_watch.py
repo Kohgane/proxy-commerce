@@ -55,11 +55,12 @@ def test_dashboard_tick_lines_admin_only(monkeypatch):
 def test_health_deep_carries_tick_ages(monkeypatch):
     monkeypatch.setattr(TW, "status", lambda *a, **k: {"seen": True, "age_min": 5, "stale": False,
                                                        "leases": [{"name": "imgko-auto", "holder": "svc:13", "age_min": 5}]})
+    monkeypatch.setattr(TW, "queued_for", lambda name: 3 if name == "imgko-auto" else None)
     from src.order_webhook import app
     js = app.test_client().get("/health/deep").get_json()
     t = js["ticks"]
     assert t["last_tick_age_min"] == 5 and t["stale"] is False and t["stale_after_min"] == 30
-    assert t["leases"] == [{"name": "imgko-auto", "age_min": 5}]               # 보유자(서비스:pid)는 공개 헬스에 안 낸다
+    assert t["leases"] == [{"name": "imgko-auto", "age_min": 5, "queued": 3}]  # 보유자(서비스:pid)는 공개 헬스에 안 낸다
     assert "checks" in js and "status" in js                                  # 기존 응답 그대로
 
 

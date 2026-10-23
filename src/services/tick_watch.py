@@ -52,6 +52,43 @@ def _lease_rows() -> List[Dict[str, Any]]:
     return out
 
 
+def _q_translate() -> int:
+    from src.db import translation_jobs_pg as q
+    return int((q.counts() or {}).get("pending") or 0)
+
+
+def _q_imgko() -> int:
+    from src.db import image_translate_queue_pg as q
+    return int((q.counts() or {}).get("queued") or 0)
+
+
+def _q_optko() -> int:
+    from src.db import option_translate_queue_pg as q
+    return int((q.counts() or {}).get("queued") or 0)
+
+
+def _q_reject() -> int:
+    from src.db import market_registrations_pg as q
+    return len(q.watch_queue(account="", limit=500) or [])
+
+
+#: 순찰 42(오너 2026-10-23) — 리스마다 「돌 게 몇 개 남았나」. 0이고 리스가 오래됐으면 **돌 게 없음**, 0보다 큰데 오래됐으면 **멈춤**.
+#:   틱(translate-pilot-tick)은 번역 잡 대기(pending)만 센다 — 틱이 하는 다른 일(파일럿·갱신 큐)은 이 수에 없다.
+_QUEUED = {TICK: "_q_translate", "imgko-auto": "_q_imgko", "optko-auto": "_q_optko", "reject-watch": "_q_reject"}
+
+
+def queued_for(name: str) -> Optional[int]:
+    """이 리스가 처리할 대기 수. 모르는 리스·읽기 실패 = None(0이라 단정하지 않는다)."""
+    fn = globals().get(_QUEUED.get(str(name or ""), ""))
+    if not fn:
+        return None
+    try:
+        return fn()
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[틱 감시] %s 대기 수 못 읽음: %s", name, exc)
+        return None
+
+
 def _runs_last(runs: dict, name: str = TICK) -> Optional[datetime]:
     ats = [_parse((svc or {}).get(name, {}).get("last_at")) for svc in (runs or {}).values() if isinstance(svc, dict)]
     ats = [a for a in ats if a]

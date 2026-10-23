@@ -1919,12 +1919,14 @@ def deep_health():
 
 
 def _deep_health_ticks() -> dict:
-    """`{last_tick_age_min, stale, stale_after_min, leases:[{name, age_min}]}` — 나이만(보유자·원인 추정 없음)."""
+    """`{last_tick_age_min, stale, stale_after_min, leases:[{name, age_min, queued}]}` — 나이만(보유자·원인 추정 없음).
+    `queued`(순찰 42) = 그 리스가 처리할 대기 수 — 0이면 「돌 게 없음」, 0보다 큰데 오래됐으면 「멈춤」. 모르면 null."""
     from .services import tick_watch as _tw
     st = _tw.status()
     return {"seen": bool(st.get("seen")), "last_tick_age_min": st.get("age_min"), "stale": bool(st.get("stale")),
             "stale_after_min": _tw.stale_min(),
-            "leases": [{"name": a["name"], "age_min": a["age_min"]} for a in st.get("leases") or []]}
+            "leases": [{"name": a["name"], "age_min": a["age_min"], "queued": _tw.queued_for(a["name"])}
+                       for a in st.get("leases") or []]}
 
 
 def _deep_health_body():

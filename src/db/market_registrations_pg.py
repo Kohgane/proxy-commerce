@@ -39,65 +39,101 @@ def _key(marketplace: str, product_id: str) -> str:
     return f"{marketplace}|{product_id}"
 
 
+def owner_scope(seller_ids) -> Optional[list]:
+    """Y15 순찰 42 — 이 사람이 읽을 대장 줄의 주인 범위. `None` = 전부(공유 사용자 · 서버 자신 = 신원 없음),
+    목록 = 그 사람 줄만(주인 빈 옛 줄 = 서버 줄은 안 보인다). 공유 판정은 마켓 키 격리와 같은 함수
+    (`market_credentials.seller_shared_reason`) — 판정이 깨지면 닫는다(그 사람 줄만)."""
+    ids = sorted({str(s).strip() for s in (seller_ids or []) if str(s or "").strip()})
+    if not ids:
+        return None
+    try:
+        from src.seller_console.market_credentials import seller_shared_reason
+        if any(seller_shared_reason(i) for i in ids):
+            return None
+    except Exception:                                            # noqa: BLE001 — 닫는다
+        pass
+    return ids
+
+
+def _mine(r: dict, owners) -> bool:
+    return owners is None or str(r.get("owner_seller_id") or "") in owners
+
+
+def _owner_sql(owners, sql: list, args: list) -> None:
+    if owners is not None:
+        sql.append("AND owner_seller_id = ANY(%s)")
+        args.append(list(owners))
+
+
 def record(product_id: str, *, marketplace: str = "coupang", account: str = "",
            vendor_sku: str = "", title: str = "", source_url: str = "",
-           market_url: str = "") -> dict:
+           market_url: str = "", owner_seller_id: str = "") -> dict:
     """등록 성공분 적재(재등록이면 갱신). 반환 {ok, product_id, durable}.
 
     durable=False = PG 미가동 폴백(인메모리) — 재시작하면 사라진다는 뜻(가짜 영속 주장 금지).
+    `owner_seller_id` = 등록한 셀러(반려감시가 그 사람 키로 조회). 재등록에서 빈 값이 오면 원래 주인을 지우지 않는다.
     """
+    owner = str(owner_seller_id or "").strip()
     pid = str(product_id or "").strip()
     if not pid:
         return {"ok": False, "error": "product_id 없음", "durable": False}
     row = {"marketplace": marketplace, "account": account, "product_id": pid,
            "vendor_sku": vendor_sku, "title": title, "source_url": source_url,
            "market_url": market_url, "status": "submitted", "reject_kind": "",
-           "reject_comment": "", "prescription": "", "checked_at": None}
+           "reject_comment": "", "prescription": "", "checked_at": None, "owner_seller_id": owner}
     if not enabled():
+        old = _MEM.get(_key(marketplace, pid)) or {}
+        if not owner and old.get("owner_seller_id"):
+            row["owner_seller_id"] = old["owner_seller_id"]
         _MEM[_key(marketplace, pid)] = row
         return {"ok": True, "product_id": pid, "durable": False}
     with pg.tx() as cur:
         cur.execute(
             """INSERT INTO market_registrations
-                 (marketplace, account, product_id, vendor_sku, title, source_url, market_url)
-               VALUES (%s,%s,%s,%s,%s,%s,%s)
+                 (marketplace, account, product_id, vendor_sku, title, source_url, market_url, owner_seller_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (marketplace, product_id) WHERE deleted_at IS NULL
                DO UPDATE SET account=EXCLUDED.account, vendor_sku=EXCLUDED.vendor_sku,
                              title=EXCLUDED.title, source_url=EXCLUDED.source_url,
-                             market_url=EXCLUDED.market_url, status='submitted'
+                             market_url=EXCLUDED.market_url, status='submitted',
+                             owner_seller_id=COALESCE(NULLIF(EXCLUDED.owner_seller_id, ''),
+                                                      market_registrations.owner_seller_id)
                RETURNING product_id""",
-            (marketplace, account, pid, vendor_sku, title, source_url, market_url))
+            (marketplace, account, pid, vendor_sku, title, source_url, market_url, owner))
         cur.fetchone()
     return {"ok": True, "product_id": pid, "durable": True}
 
 
-def watch_queue(*, marketplace: str = "coupang", account: str = "", limit: int = 50) -> list:
-    """감시 대상(미확정 등록분) — 오래 안 본 것 먼저. 반환: [{sid, title, account, ...}].
+def watch_queue(*, marketplace: str = "coupang", account: str = "", limit: int = 50, owners=None) -> list:
+    """감시 대상(미확정 등록분) — 오래 안 본 것 먼저. 반환: [{sid, title, account, owner, ...}].
+    `owners`(`owner_scope` 결과): None = 전부, 목록 = 그 주인 줄만.
 
     확정된 건(approved/deleted)은 큐에 안 넣는다 — 반복 조회 낭비 방지. 반려는 넣는다(Y12-A e).
     """
     if not enabled():
         rows = [r for r in _MEM.values()
                 if r["marketplace"] == marketplace and r["status"] in _WATCH_STATUSES and not _held(r)
-                and (not account or r["account"] == account)]
+                and (not account or r["account"] == account) and _mine(r, owners)]
         return [{"sid": r["product_id"], "title": r["title"], "account": r["account"],
-                 "market_url": r["market_url"], "status": r["status"]}
+                 "market_url": r["market_url"], "status": r["status"],
+                 "owner": r.get("owner_seller_id") or ""}
                 for r in rows[:max(0, int(limit))]]
     # `status`도 같이 준다(6-h-3 N3): 화면이 **상태별로 링크를 갈라야** 하는데,
     #   상태가 안 오면 갈 수가 없어 승인 전 건에도 구매자 URL을 걸게 된다(그게 그 결함이었다).
-    sql = ["""SELECT product_id, title, account, market_url, status FROM market_registrations
+    sql = ["""SELECT product_id, title, account, market_url, status, owner_seller_id FROM market_registrations
               WHERE deleted_at IS NULL AND marketplace=%s AND status = ANY(%s) AND """ + _HELD_SQL]
     args = [marketplace, list(_WATCH_STATUSES)]
     if account:
         sql.append("AND account=%s")
         args.append(account)
+    _owner_sql(owners, sql, args)
     sql.append("ORDER BY checked_at NULLS FIRST, created_at LIMIT %s")
     args.append(max(0, int(limit)))
     with pg.query() as cur:
         cur.execute(" ".join(sql), tuple(args))
         rows = cur.fetchall()
-    return [{"sid": r[0], "title": r[1], "account": r[2], "market_url": r[3], "status": r[4]}
-            for r in rows]
+    return [{"sid": r[0], "title": r[1], "account": r[2], "market_url": r[3], "status": r[4],
+             "owner": r[5] or ""} for r in rows]
 
 
 def mark_checked(product_id: str, *, marketplace: str = "coupang", status: str = "",
@@ -192,7 +228,7 @@ def get(product_id: str, *, marketplace: str = "coupang") -> Optional[dict]:
             "reject_kind": r[4], "reject_comment": r[5], "prescription": r[6]}
 
 
-def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: int = 5) -> list:
+def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: int = 5, owners=None) -> list:
     """반려 **확정** 건 최근 N개(화면 읽기용).
 
     F5(2026-09-04): 대시보드 02 카드가 `watch_queue`만 읽어서 `rejected`가 한 건도 안 보였다 — 읽는 함수를 따로 둔다.
@@ -202,7 +238,7 @@ def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: i
     if not enabled():
         rows = [r for r in _MEM.values()
                 if r["marketplace"] == marketplace and r["status"] == "rejected"
-                and (not account or r["account"] == account)]
+                and (not account or r["account"] == account) and _mine(r, owners)]
         return [{"sid": r["product_id"], "title": r["title"], "account": r["account"],
                  "market_url": r["market_url"], "reject_kind": r.get("reject_kind", ""),
                  "reject_comment": r.get("reject_comment", "")}
@@ -214,6 +250,7 @@ def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: i
     if account:
         sql.append("AND account=%s")
         args.append(account)
+    _owner_sql(owners, sql, args)
     sql.append("ORDER BY checked_at DESC NULLS LAST, created_at DESC LIMIT %s")
     args.append(max(0, int(limit)))
     with pg.query() as cur:
@@ -223,38 +260,43 @@ def recent_rejected(*, marketplace: str = "coupang", account: str = "", limit: i
              "reject_kind": r[4] or "", "reject_comment": r[5] or ""} for r in rows]
 
 
-def account_counts(*, marketplace: str = "coupang") -> list:
+def account_counts(*, marketplace: str = "coupang", owners=None) -> list:
     """Y12-C 대시보드 마켓별 현황 — `[{account, status, held, n, checked_at}]`. `held` = 사유가 임시저장인 반려 줄
     (09-05 수리 전 판정 — 반려로 세지 않는다, 진단 「임시저장 · 낡은 기록」 그대로)."""
     if not enabled():
         agg: dict = {}
         for r in _MEM.values():
-            if r["marketplace"] != marketplace:
+            if r["marketplace"] != marketplace or not _mine(r, owners):
                 continue
             k = (r["account"], r["status"], _held(r))
             a = agg.setdefault(k, {"account": k[0], "status": k[1], "held": k[2], "n": 0, "checked_at": None})
             a["n"] += 1
         return list(agg.values())
+    sql, args = [f"""SELECT account, status, NOT ({_HELD_SQL}), count(*), max(checked_at) FROM market_registrations
+                     WHERE deleted_at IS NULL AND marketplace=%s"""], [marketplace]
+    _owner_sql(owners, sql, args)
+    sql.append("GROUP BY 1, 2, 3")
     with pg.query() as cur:
-        cur.execute(f"""SELECT account, status, NOT ({_HELD_SQL}), count(*), max(checked_at) FROM market_registrations
-                        WHERE deleted_at IS NULL AND marketplace=%s GROUP BY 1, 2, 3""", (marketplace,))
+        cur.execute(" ".join(sql), tuple(args))
         rows = cur.fetchall()
     return [{"account": r[0] or "", "status": r[1] or "", "held": bool(r[2]), "n": int(r[3] or 0),
              "checked_at": r[4].isoformat() if hasattr(r[4], "isoformat") else (r[4] or None)} for r in rows]
 
 
-def counts(*, marketplace: str = "coupang") -> dict:
+def counts(*, marketplace: str = "coupang", owners=None) -> dict:
     """상태별 건수(대시보드·정직 표기용). 조회 실패는 예외로 올린다(가짜 0 금지)."""
     if not enabled():
         out = {}
         for r in _MEM.values():
-            if r["marketplace"] == marketplace:
+            if r["marketplace"] == marketplace and _mine(r, owners):
                 out[r["status"]] = out.get(r["status"], 0) + 1
         return out
+    sql, args = ["""SELECT status, count(*) FROM market_registrations
+                    WHERE deleted_at IS NULL AND marketplace=%s"""], [marketplace]
+    _owner_sql(owners, sql, args)
+    sql.append("GROUP BY status")
     with pg.query() as cur:
-        cur.execute("""SELECT status, count(*) FROM market_registrations
-                       WHERE deleted_at IS NULL AND marketplace=%s GROUP BY status""",
-                    (marketplace,))
+        cur.execute(" ".join(sql), tuple(args))
         rows = cur.fetchall()
     return {r[0]: int(r[1]) for r in rows}
 

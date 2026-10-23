@@ -35,6 +35,10 @@ CREATE INDEX IF NOT EXISTS ix_mktreg_watch
   ON market_registrations (marketplace, status, checked_at)
   WHERE deleted_at IS NULL;
 
+-- Y15 순찰 42(오너 2026-10-23): 줄 주인(seller_id). 반려감시가 **주인 키로** 조회하고, 화면은 주인 줄만 보인다.
+--   빈 값 = 칸이 생기기 전 줄(운영 3줄 · 08-25~09-02, 첫 일반 가입 10-22 이전) — 서버(오너) 줄로 읽는다. 재적용해도 안전하다.
+ALTER TABLE market_registrations ADD COLUMN IF NOT EXISTS owner_seller_id text NOT NULL DEFAULT '';
+
 DROP TRIGGER IF EXISTS trg_mktreg_updated_at ON market_registrations;
 CREATE TRIGGER trg_mktreg_updated_at
   BEFORE UPDATE ON market_registrations

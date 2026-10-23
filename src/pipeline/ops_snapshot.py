@@ -148,7 +148,7 @@ def account_tiles() -> list:
     return out
 
 
-def registration_counts(marketplace: str = "coupang") -> dict:
+def registration_counts(marketplace: str = "coupang", owners=None) -> dict:
     """등록 대장 상태별 건수(**누적**). P4 크론이 읽는 그 대장과 같은 소스.
 
     ※ '오늘' 축은 대장에 집계 함수가 없다 — 여기서 만들지 않는다(발명 0).
@@ -158,7 +158,7 @@ def registration_counts(marketplace: str = "coupang") -> dict:
         from src.db import market_registrations_pg as ledger
         if not ledger.enabled():
             return {"connected": False, "note": "등록 대장 미연결(DATABASE_URL 미설정)", "counts": {}}
-        return {"connected": True, "note": "", "counts": ledger.counts(marketplace=marketplace)}
+        return {"connected": True, "note": "", "counts": ledger.counts(marketplace=marketplace, owners=owners)}
     except Exception as exc:
         logger.warning('등록 대장 집계 실패: %s', exc)
         return {"connected": False, "note": "대장 조회 실패", "counts": {}}
@@ -191,7 +191,7 @@ def _reject_words(r: dict) -> dict:
             "check_note": check_note(r.get("checked_at"))}   # 24시간 넘으면 「조회 낡음」 — 숨기지 않는다(오너 e)
 
 
-def recent_rejections(limit: int = 5, marketplace: str = "coupang") -> dict:
+def recent_rejections(limit: int = 5, marketplace: str = "coupang", owners=None) -> dict:
     """02 카드 — **감시 대기 + 반려 확정**을 함께 보여준다.
 
     F5 부검(2026-09-04): 카드 제목은 '반려 감시'인데 소스가 `watch_queue`뿐이었다.
@@ -208,9 +208,10 @@ def recent_rejections(limit: int = 5, marketplace: str = "coupang") -> dict:
         cap = int(limit or 5)
         # Y12-A e: 반려도 감시 큐에서 재조회한다 — 「감시」 줄엔 반려를 겹쳐 싣지 않는다(반려 줄은 아래 반려 확정 쪽에)
         watching = [dict(r, phase="watching") for r in
-                    (ledger.watch_queue(marketplace=marketplace, limit=cap) or []) if r.get("status") != "rejected"]
+                    (ledger.watch_queue(marketplace=marketplace, limit=cap, owners=owners) or [])
+                    if r.get("status") != "rejected"]
         rejected, stale = [], []
-        for r in (ledger.recent_rejected(marketplace=marketplace, limit=cap) or []):
+        for r in (ledger.recent_rejected(marketplace=marketplace, limit=cap, owners=owners) or []):
             row = dict(r, **_reject_words(r))
             (stale if row["phase"] == "stale" else rejected).append(row)
         # 반려 확정이 먼저다 — 조치가 필요한 쪽이 위로 온다. 낡은 기록은 맨 뒤(세지 않는다).
@@ -262,10 +263,16 @@ def linked_markets(seller_id: str = "") -> dict:
 
 def build(seller_ids=None, *, reject_limit: int = 5, seller_id: str = "") -> dict:
     """대시보드 한 판. 각 블록은 독립적으로 실패할 수 있고, 실패는 '미연결'로 정직 표기된다."""
+    owners = None
+    try:                                                         # 순찰 42: 대장은 내 줄만(공유 사용자 = 전부)
+        from src.db import market_registrations_pg as ledger
+        owners = ledger.owner_scope(seller_ids)
+    except Exception:                                            # noqa: BLE001 — 판정이 깨지면 닫는다(빈 목록)
+        owners = []
     return {
         "accounts": account_tiles(),
-        "registrations": registration_counts(),
-        "rejections": recent_rejections(limit=reject_limit),
+        "registrations": registration_counts(owners=owners),
+        "rejections": recent_rejections(limit=reject_limit, owners=owners),
         "sourcing": sourcing_queue(seller_ids),
         "markets": linked_markets(seller_id),
     }
