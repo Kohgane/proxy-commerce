@@ -30,6 +30,8 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 TIMEOUT_SEC = float(os.getenv("IMAGE_REACH_TIMEOUT_SEC", "6"))
+#: 순찰 59: 속도 제한 응답 — 막지 않고 모름(`unknown`)으로
+RATE_LIMITED = (420, 429)
 MAX_CHECKS = int(os.getenv("IMAGE_REACH_MAX", "20"))
 
 # 우리 서버 주소는 **외부에서 열리지 않는다**(로그인 게이트 뒤). 물어보기 전에 안다.
@@ -96,6 +98,12 @@ def check_one(url: str) -> dict:
         except Exception:
             pass
 
+    if out["status"] in RATE_LIMITED:
+        # 순찰 59(운영 10-23 15:20 c44dde91 「12장 응답 420」 — 10-22엔 통과): 420·429는 「너무 빨리 물었다」(alicdn 크롤 제한)이지
+        #   「마켓이 못 가져간다」가 아니다 — 우리가 한꺼번에 물은 사정이라 모름으로 올린다(막지 않는다 · 위 예외와 같은 원칙).
+        out["reason"] = f"확인하지 못했습니다(속도 제한 응답 {out['status']})"
+        out["unknown"] = True
+        return out
     if out["status"] != 200:
         out["reason"] = f"응답 {out['status']}"
         return out

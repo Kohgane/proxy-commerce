@@ -35,3 +35,18 @@ def test_rule_attempts_before_the_new_rules_get_one_more_try():
                            "option_short_rule:新": A._now()}}
     assert not A._recently_tried(ex, "option_short_rule:白色【夹灯版】宿舍床头")     # 새 규칙 전에 떨어진 것 = 다시
     assert A._recently_tried(ex, "option_short_rule:新")                              # 새 규칙으로 떨어진 것 = 하루 대기
+
+
+def test_rate_limited_image_check_is_unknown_not_a_block():
+    """c44dde91(10-23 15:20): 상세 12장이 「응답 420」(alicdn 크롤 제한)으로 4곳 모두 막혔다 — 10-22엔 통과한 같은 주소."""
+    from unittest.mock import patch
+    from src.services import image_reachability as R
+    from tests.test_d2b_cdn_and_reachability import _Resp, _sess
+    for code in (420, 429):
+        with patch("requests.Session", lambda code=code: _sess(head=_Resp(code, "text/html"))):
+            r = R.check_one("https://img.alicdn.com/a.jpg")
+        assert r["unknown"] is True and r["status"] == code and "속도 제한" in r["reason"]
+        with patch("requests.Session", lambda code=code: _sess(head=_Resp(code, "text/html"))):
+            assert R.check_all(["https://img.alicdn.com/a.jpg", "https://img.alicdn.com/b.jpg"])["ok"] is True
+    with patch("requests.Session", lambda: _sess(head=_Resp(404, "text/html"))):
+        assert R.check_all(["https://img.alicdn.com/a.jpg"])["ok"] is False       # 진짜 없는 장은 그대로 막는다
