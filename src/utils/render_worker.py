@@ -51,6 +51,40 @@ def trim() -> bool:
         return False
 
 
+TICKS_KEY = "rss:ticks"
+TICKS_KEEP = 400
+
+
+def record_tick(kind: str, **kw) -> None:
+    """Y15 순찰 41(오너 2026-10-23 「틱 경계 프로브」): 리스 틱 시작/끝 · 요청 100개마다의 RSS·스레드 — `rss:ticks` 400줄.
+    `rss:recent`(60줄)에 섞으면 2시간 치가 사전검증·작업 기록을 밀어내서 따로 둔다. 실패해도 일은 계속."""
+    from datetime import datetime, timezone
+    try:
+        from src.db import image_translate_queue_pg as st
+        cur = st.state_get(TICKS_KEY) or {}
+        rows = list(cur.get("rows") or [])[-(TICKS_KEEP - 1):] + [{"at": datetime.now(timezone.utc).isoformat(), "kind": kind, **kw}]
+        st.state_set(TICKS_KEY, {"rows": rows})
+    except Exception as exc:                                      # noqa: BLE001
+        logger.debug("[RSS] 틱 기록 실패: %s", exc)
+
+
+def probe_row() -> dict:
+    """지금 이 프로세스의 RSS(MB) · 살아 있는 스레드 수 · 서비스 이름 — 값만(무거운 측정 없음)."""
+    import threading
+    from src.utils import rss
+    mb, peak = rss.read_mb()
+    try:
+        from src.services.workers import service_name
+        svc = service_name()
+    except Exception:                                             # noqa: BLE001
+        svc = ""
+    return {"mb": mb, "hwm_mb": peak, "threads": threading.active_count(), "svc": svc}
+
+
+def tick_probe_on() -> bool:
+    return str(os.getenv("TICK_PROBE", "1")).strip().lower() not in ("0", "false", "no", "off")
+
+
 def _record(row: dict) -> None:
     """최근 그리기·사전검증 메모리 기록 60줄(운영 DB `rss:recent`) — 실패해도 일은 계속."""
     try:

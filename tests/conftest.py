@@ -29,6 +29,8 @@ os.environ.setdefault("RSS_RELEASE", "0")
 os.environ.setdefault("MEMPROBE", "0")
 # Y15 요금제 한도: 다른 테스트가 한 셀러로 수집 30개를 넘게 만든다 — 한도 테스트(test_y15_billing_limits)만 켠다.
 os.environ.setdefault("USAGE_LIMITS", "0")
+# Y15 순찰 41 틱 경계 프로브(리스 시작/끝·요청 100개마다 RSS) — 프로브 테스트만 켠다(리스를 잡는 테스트마다 기록이 쌓이지 않게).
+os.environ.setdefault("TICK_PROBE", "0")
 # Z8: 대시보드 API는 키가 비면 닫힌다(fail-closed). 테스트 레인만 명시적으로 연다 — 운영(APP_ENV=production)은 무시.
 os.environ.setdefault("DASHBOARD_API_OPEN", "1")
 # M5 후속: 진단의 img.alicdn.com HEAD(네트워크)는 테스트 레인에서 끈다.
