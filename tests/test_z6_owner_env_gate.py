@@ -21,6 +21,8 @@ OWNER_ENV = {
     "COUPANG_ACCESS_KEY": "owner-ak", "COUPANG_SECRET_KEY": "owner-sk", "COUPANG_VENDOR_ID": "A00OWNER",
     "COUPANG_RETURN_ADDRESS": "오너 반품지 주소", "COUPANG_GOGANE_ACCESS_KEY": "owner-gogane-ak",
     "ELEVENST_API_KEY": "owner-11st", "NAVER_CLIENT_ID": "owner-naver", "NAVER_CLIENT_SECRET": "owner-naver-sec",
+    # Y15 P0-3: 접미 없는 스마트스토어의 서버 키 이름은 커머스 이름(위 NAVER_CLIENT_*는 서버에선 로그인 OAuth 값)
+    "NAVER_COMMERCE_CLIENT_ID": "owner-naver", "NAVER_COMMERCE_CLIENT_SECRET": "owner-naver-sec",
 }
 PLAIN = ["shopify", "woocommerce", "coupang", "elevenst", "smartstore"]
 
@@ -33,6 +35,7 @@ def _env(tmp_path, monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("ADMIN_EMAILS", raising=False)
     monkeypatch.setenv("FAMILY_EMAILS", "mom@example.com")
+    monkeypatch.setenv("ADMIN_USER_IDS", "owner-z6")      # Y15 P0-2: 오너는 세션 role이 아니라 user_id 목록으로
     for k, v in OWNER_ENV.items():
         monkeypatch.setenv(k, v)
     from src.seller_console import market_credentials as mc

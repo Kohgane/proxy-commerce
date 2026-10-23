@@ -224,14 +224,31 @@ def _issue(store: str) -> dict:
 def _env_names(up) -> list:
     """그 스토어가 실제로 읽는 키 이름(값 아님) — 진단 매트릭스·Health 카드가 같은 이름을 본다."""
     pfx = up.ACCOUNT_PREFIXES.get(up.account or "")
-    return [f"{pfx}_CLIENT_ID", f"{pfx}_CLIENT_SECRET"] if pfx else ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"]
+    return [f"{pfx}_CLIENT_ID", f"{pfx}_CLIENT_SECRET"] if pfx else ["NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"]
+
+
+def _cred_scope(store: str) -> str:
+    """Y15 P0-1(오너 2026-10-23): 실측 캐시는 **누구의 키로 잰 것인가**별로 — 예전엔 스토어만 열쇠라, 부팅 실측(서버 = 오너 키)의
+    「전자서명 생성 실패(bcrypt)」가 10분 동안 **일반 가입자의 사전검증에 그대로** 나갔다(반대로 가입자의 「키 없음」이 오너에게도).
+    서버(오너) 키면 `server`, 셀러 격리 중이면 그 셀러 키 지문(값 아님 — 해시 앞 10자)."""
+    try:
+        from .market_credentials import isolation_active
+        if not isolation_active():
+            return "server"
+        from src.uploaders.naver_uploader import NaverSmartStoreUploader
+        up = NaverSmartStoreUploader(account=store or None)
+        import hashlib
+        return "iso:" + (hashlib.sha256(str(up.client_id or "").encode()).hexdigest()[:10] if up.client_id else "none")
+    except Exception:                                            # noqa: BLE001 — 모르면 격리 쪽(서버 캐시를 안 본다)
+        return "iso:unknown"
 
 
 def probe(store: str = "", *, force: bool = False) -> dict:
     """스토어별 토큰 실측(10분 캐시) — `{store, label, state, ok, raw, count, count_raw, at}`."""
     now = time.monotonic()
+    scope = _cred_scope(store)
     with _lock:
-        hit = _probes.get(store)
+        hit = _probes.get((store, scope))
     if hit and not force and now - hit[0] < _COUNT_TTL:
         return hit[1]
     try:
@@ -242,7 +259,9 @@ def probe(store: str = "", *, force: bool = False) -> dict:
     out = dict(r, store=store, label=store_label(store) if store else "스마트스토어", ok=(r.get("state") == "ok"),
                at=datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S KST"))
     with _lock:
-        _probes[store] = (now, out)
+        _probes[(store, scope)] = (now, out)
+    if scope != "server":
+        return out                       # Y15 P0-1: 셀러 자기 키로 잰 결과는 오너 진단 기록(app_state)에 쓰지 않는다
     if r.get("state") in ("ok", "fail", "no_creds"):
         logger.info("[스스 실측] %s — %s · 상품 수 %s · 경로 %s", out["label"], out["raw"][:200],
                     out["count"] if out["count"] is not None else ("조회 불가 " + out["count_raw"][:120] if out["ok"] else "—"),

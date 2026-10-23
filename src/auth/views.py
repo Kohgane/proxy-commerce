@@ -671,7 +671,8 @@ def signup_post():
             from .signup_origin import telegram_line
             _async_notify(
                 send_telegram,
-                f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입\n{telegram_line(_origin)}",
+                f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: 이메일 가입\n{telegram_line(_origin)}\n"
+                f"{_signup_access_line(acct['user_id'], role, email)}",
                 urgency="info",
             )
         except Exception:
@@ -683,6 +684,20 @@ def signup_post():
     # flash는 싣지 않는다 — 콘솔 화면은 flash를 그리지 않아, 남은 「가입 완료」가 나중 로그인 화면에 뜬다.
     #   대시보드에 들어간 것 자체가 결과다.
     return redirect(next_url)
+
+
+def _signup_access_line(user_id: str, role: str, email: str) -> str:
+    """Y15 P0-4(오너 2026-10-23): 「권한: seller/admin/family · 공유 판정: 예/아니오(이유)」 — 오너 마켓 키에 닿는 가입이면 알림에서 바로 보인다.
+    공유 판정 = 마켓 자격 격리와 같은 함수(`seller_shared_reason`, user_id 기준)."""
+    try:
+        from src.seller_console.market_credentials import seller_shared_reason
+        from src.seller_console.market_pick import family_emails
+        who = "admin" if role == "admin" else ("family" if str(email or "").strip().lower() in family_emails() else "seller")
+        why = seller_shared_reason(user_id)
+        shared = f"예({why})" if why and why != "server" else "아니오"
+        return f"권한: {who} · 공유 판정: {shared}"
+    except Exception as exc:                                     # noqa: BLE001
+        return f"권한: ? · 공유 판정: 확인 실패({type(exc).__name__})"
 
 
 def _record_signup_origin(user_id: str) -> dict:
@@ -963,7 +978,7 @@ def oauth_callback(provider: str):
                     _async_notify(
                         send_telegram,
                         f"🆕 신규 셀러 가입\n이메일: {email}\n이름: {name}\n경로: {provider_label} 로그인\n"
-                        f"{telegram_line(_origin)}",
+                        f"{telegram_line(_origin)}\n{_signup_access_line(user.user_id, role, email)}",
                         urgency="info",
                     )
                 except Exception:

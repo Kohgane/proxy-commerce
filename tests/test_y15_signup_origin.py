@@ -61,7 +61,8 @@ def test_email_signup_keeps_first_visit_referrer_and_utm(env):
     assert (o["utm_source"], o["utm_campaign"]) == ("insta", "fall")
     assert o["ip"] == "203.0.113.7" and o["ua"].startswith("Mozilla/5.0") and o["at"] and o["first_at"]
     msg = [t for t in sent if "신규 셀러 가입" in t][-1]
-    assert msg.endswith("유입: instagram.com")                     # 국가는 모르면 뺀다
+    assert "\n유입: instagram.com\n" in msg                       # 국가는 모르면 뺀다
+    assert msg.endswith("권한: seller · 공유 판정: 아니오")         # Y15 P0-4
 
 
 def test_social_signup_records_origin_and_says_direct(env, monkeypatch):
@@ -86,7 +87,8 @@ def test_social_signup_records_origin_and_says_direct(env, monkeypatch):
     o = _origin(uid)
     assert o["referrer"] == "" and o["landing_path"] == "/auth/login" and o["ip"] == "198.51.100.2"
     msg = [t for t in sent if "신규 셀러 가입" in t][-1]
-    assert "경로: 구글 로그인" in msg and msg.endswith("유입: 직접 · KR")
+    assert "경로: 구글 로그인" in msg and "\n유입: 직접 · KR\n" in msg
+    assert msg.endswith("공유 판정: 아니오")                        # Y15 P0-4
 
 
 def test_first_visit_is_not_overwritten_and_skips_static(env):

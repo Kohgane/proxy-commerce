@@ -12,6 +12,13 @@ import pytest
 from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
 
+@pytest.fixture(autouse=True)
+def _y15_owner_ids(monkeypatch):
+    """Y15 P0-2(오너 2026-10-23): 오너 서버 자격은 세션 role이 아니라 **user_id 목록**으로 — 이 파일의 「오너 세션 모양」 id를 목록에."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "owner-y7,owner-y7-small,owner-y7-pv,owner-y7-bad")
+
+
+
 def _holds(pd):
     """Z9: 사전검증은 대표 사진 판정을 기다리지 않는다(백그라운드) — 판정이 끝난 뒤의 보류 줄을 잰다."""
     import time as _t

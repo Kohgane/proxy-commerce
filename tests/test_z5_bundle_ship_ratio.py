@@ -6,6 +6,13 @@ import json
 import pytest
 from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
+
+@pytest.fixture(autouse=True)
+def _y15_owner_ids(monkeypatch):
+    """Y15 P0-2(오너 2026-10-23): 오너 서버 자격은 세션 role이 아니라 **user_id 목록**으로 — 이 파일의 「오너 세션 모양」 id를 목록에."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "owner-z5-override")
+
+
 SOFA = {"url": "https://item.taobao.com/item.htm?id=733241700286", "title_src": "格斯潘懒人沙发单人", "title": "격스판 빈백 소파 1인용", "title_ko": "격스판 빈백 소파 1인용",
         "price": "780", "currency": "CNY", "images": ["https://img.alicdn.com/a.jpg", "https://img.alicdn.com/b.jpg"]}
 SOFA_DIMS = dict(SOFA, title="격스판 빈백 소파 1인용 90x80x70cm", title_ko="격스판 빈백 소파 1인용 90x80x70cm")   # Y13-C: 실측 있는 소파

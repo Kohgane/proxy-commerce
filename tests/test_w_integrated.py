@@ -9,6 +9,13 @@ from __future__ import annotations
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _y15_owner_ids(monkeypatch):
+    """Y15 P0-2(오너 2026-10-23): 오너 서버 자격은 세션 role이 아니라 **user_id 목록**으로 — 이 파일의 「오너 세션 모양」 id를 목록에."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "owner-w")
+
+
 _BASE = {"COUPANG_ACCESS_KEY": "base-ak", "COUPANG_SECRET_KEY": "base-sk", "COUPANG_VENDOR_ID": "A01381223"}
 _GOGANE_SHIP = {"COUPANG_GOGANE_RETURN_CENTER_CODE": "G-RC", "COUPANG_GOGANE_OUTBOUND_SHIPPING_PLACE_CODE": "G-OB",
                 "COUPANG_GOGANE_VENDOR_USER_ID": "gogane-wing"}

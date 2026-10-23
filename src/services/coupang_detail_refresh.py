@@ -402,13 +402,16 @@ def drain(get_item: Callable[[str, str], Optional[dict]], save_for: Callable[[st
             _queue_drop(q["item_id"], q["market"])
             out["rows"].append({**q, "dropped": "시도 상한"})
             continue
-        if q.get("reason") != "번역 대기":
-            st = make_up(q["account"]).review_status(q["sid"])
-            if st.get("state") not in ("approved", "saved", "rejected"):
-                out["rows"].append({**q, "waiting": st.get("state") or "unknown"})
-                continue                                          # 아직 검토 중 — 다음 회전에
-        res = refresh_item(item, seller_id=q.get("seller_id") or "", markets=[q["market"]], make_up=make_up,
-                           save=save_for(q["item_id"], q.get("seller_id") or ""))
+        # Y15 P0-2(fail-closed): 그 상품 주인의 키로만 — 주인이 공유 목록에 없으면 오너 서버 자격이 안 보이는 격리 안에서
+        from src.seller_console.market_credentials import job_market_env
+        with job_market_env(q.get("seller_id") or ""):
+            if q.get("reason") != "번역 대기":
+                st = make_up(q["account"]).review_status(q["sid"])
+                if st.get("state") not in ("approved", "saved", "rejected"):
+                    out["rows"].append({**q, "waiting": st.get("state") or "unknown"})
+                    continue                                      # 아직 검토 중 — 다음 회전에
+            res = refresh_item(item, seller_id=q.get("seller_id") or "", markets=[q["market"]], make_up=make_up,
+                               save=save_for(q["item_id"], q.get("seller_id") or ""))
         for r in res:
             out["sent"] += int(bool(r.get("sent")))
             out["ok"] += int(bool(r.get("ok")))

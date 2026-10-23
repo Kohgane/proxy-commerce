@@ -17,9 +17,10 @@ class TossPaymentsClient(PGClient):
     """Toss Payments API 클라이언트."""
 
     def __init__(self) -> None:
-        self._secret_key = os.getenv("TOSS_PAYMENTS_SECRET_KEY", "")
+        # Y15 G(오너 2026-10-23): 비밀키 이름은 요금제(`payments/toss.py`)와 같은 `TOSS_SECRET_KEY` 한 벌 — 옛 이름은 폴백만.
+        self._secret_key = os.getenv("TOSS_SECRET_KEY", "") or os.getenv("TOSS_PAYMENTS_SECRET_KEY", "")
         if not self._secret_key:
-            logger.warning("TOSS_PAYMENTS_SECRET_KEY 환경변수가 설정되지 않았습니다.")
+            logger.warning("TOSS_SECRET_KEY 환경변수가 설정되지 않았습니다.")
 
     def _auth_header(self) -> dict:
         token = base64.b64encode(f"{self._secret_key}:".encode()).decode()

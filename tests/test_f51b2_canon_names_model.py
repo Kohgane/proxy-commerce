@@ -14,6 +14,13 @@ from tests.test_f49t2_tmall_ice_sku import res_of
 from tests.test_f51_coupang_multi_sku import META, SHIP, _product, _skus
 from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
+
+@pytest.fixture(autouse=True)
+def _y15_owner_ids(monkeypatch):
+    """Y15 P0-2(오너 2026-10-23): 오너 서버 자격은 세션 role이 아니라 **user_id 목록**으로 — 이 파일의 「오너 세션 모양」 id를 목록에."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "u-f51b2-pre")
+
+
 pytestmark = pytest.mark.coupang_precheck
 
 CANON = ["화이트", "블랙", "핑크", "블루", "레드",

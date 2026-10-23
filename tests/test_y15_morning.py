@@ -147,6 +147,9 @@ def _creds(monkeypatch, shared: bool):
     import src.auth.identity as ident
     monkeypatch.setattr(ident, "OWNER_USER_ID", "owner-1")
     monkeypatch.setattr(market_pick, "session_is_shared", lambda admin=None: shared)
+    # Y15 P0-2: 공유 판정 = 잡 주인 user_id(세션 무관) — google-2(두 번째 로그인)가 공유면 그 잡은 어디서 돌든 오너 저장값
+    monkeypatch.setattr(MC, "seller_shared_reason",
+                        lambda sid: "owner" if sid == "owner-1" else ("FAMILY_EMAILS" if shared and sid == "google-2" else ""))
     saved = {("owner-1", "coupang:gogane"): {"COUPANG_GOGANE_OVERSEAS_SHIPPING_PLACE_CODE": "77"}}
     monkeypatch.setattr(MC, "credential_env", lambda sid, m: dict(saved.get((sid, m), {})))
     monkeypatch.setattr(MC, "env_fallback_allowed", lambda: True)
@@ -176,11 +179,11 @@ def test_non_shared_or_no_session_never_reads_owner_profile(monkeypatch):
         session["user_id"] = "seller-9"
         with MC.seller_market_env("seller-9", ["coupang:gogane"]):
             assert "COUPANG_GOGANE_OVERSEAS_SHIPPING_PLACE_CODE" not in os.environ
-    MC = _creds(monkeypatch, shared=True)
-    with MC.seller_market_env("google-2", ["coupang:gogane"]):     # 요청 밖(크론) — 오너 값 안 씀
+    MC = _creds(monkeypatch, shared=False)                        # Y15 P0-2: 판정은 잡 주인 — 공유 아닌 주인의 잡은 크론에서도 안 씀
+    with MC.seller_market_env("google-2", ["coupang:gogane"]):
         assert "COUPANG_GOGANE_OVERSEAS_SHIPPING_PLACE_CODE" not in os.environ
-    with app.test_request_context():                              # 세션 사람 ≠ 상품 계정 — 안 씀
-        session["user_id"] = "someone-else"
+    with app.test_request_context():                              # 세션이 누구든(오너 모양이어도) 잡 주인이 공유가 아니면 안 씀
+        session["user_id"] = "someone-else"; session["user_role"] = "admin"
         with MC.seller_market_env("google-2", ["coupang:gogane"]):
             assert "COUPANG_GOGANE_OVERSEAS_SHIPPING_PLACE_CODE" not in os.environ
 

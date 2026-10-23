@@ -159,8 +159,8 @@ def test_prevalidate_holds_before_naver(monkeypatch, tree):
     from src.seller_console import smartstore_routing as SR
     monkeypatch.setattr(UD, "smartstore_approved", lambda store="": True)
     monkeypatch.setattr(SR, "price_hold", lambda pd: "")
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")               # Y15 P0-3: 접미 없는 계정 = 커머스 이름
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     monkeypatch.setenv("NAVER_IMAGE_UPLOAD", "0")
     pv = UD.UploadDispatcher()._prevalidate_market(_pleats(), "smartstore")
     assert pv.hold and pv.error_code == "category_unset" and pv.fixes == ["naver_category"], pv

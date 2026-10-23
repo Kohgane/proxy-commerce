@@ -29,8 +29,8 @@ BODY_19_46 = json.dumps({"code": "InvalidInput", "message": "요청 값이 올�
 
 @pytest.fixture
 def fashion(monkeypatch):
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")                # 사전검증은 키 점검이 먼저 — 여기선 있는 상태로
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")                # 사전검증은 키 점검이 먼저 — 여기선 있는 상태로
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     import src.uploaders.naver_categories as NC
     monkeypatch.setattr(NC, "name_of", lambda cid: {"50000816": "패션의류>여성의류>정장세트",
                                                     "50000570": "패션잡화>패션소품>키링"}.get(str(cid), ""))

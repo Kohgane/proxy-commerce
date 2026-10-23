@@ -34,14 +34,19 @@ class TestSmartstoreNaverSignature:
         assert ss._naver_signature("c", "not-a-valid-bcrypt-salt", "123") is None
 
     def test_creds_fallback_to_naver_client_names(self, monkeypatch):
+        """Y15 P0-3: 서버의 `NAVER_CLIENT_*`(= 네이버 로그인 OAuth)로는 떨어지지 않는다. 인앱 연결 저장값(`NAVER_CLIENT_*` 칸)은
+        `seller_market_env`가 커머스 이름으로도 실어 그대로 인식된다."""
         from src.seller_console.market_adapters import smartstore_adapter as ss
+        from src.seller_console import market_credentials as mc
         for k in ("NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"):
             monkeypatch.delenv(k, raising=False)
-        # 인앱 연결이 저장하는 NAVER_CLIENT_* 도 인식해야 한다
-        monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
-        monkeypatch.setenv("NAVER_CLIENT_SECRET", "csec")
-        assert ss._naver_creds() == ("cid", "csec")
-        assert ss._api_active() is True
+        monkeypatch.setenv("NAVER_CLIENT_ID", "login-id")
+        monkeypatch.setenv("NAVER_CLIENT_SECRET", "login-sec")
+        assert ss._naver_creds() == ("", "")
+        monkeypatch.setattr(mc, "credential_env", lambda sid, m: {"NAVER_CLIENT_ID": "cid", "NAVER_CLIENT_SECRET": "csec"})
+        with mc.seller_market_env("seller-live-fix", ["smartstore"]):
+            assert ss._naver_creds() == ("cid", "csec")
+            assert ss._api_active() is True
 
     def test_token_request_sends_sign_not_plaintext_secret(self, monkeypatch):
         import bcrypt
@@ -93,8 +98,8 @@ class TestCredentialStripping:
         from src.seller_console.market_adapters import smartstore_adapter as ss
         for k in ("NAVER_COMMERCE_CLIENT_ID", "NAVER_COMMERCE_CLIENT_SECRET"):
             monkeypatch.delenv(k, raising=False)
-        monkeypatch.setenv("NAVER_CLIENT_ID", "  cid\n")
-        monkeypatch.setenv("NAVER_CLIENT_SECRET", "csec  ")
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "  cid\n")      # Y15 P0-3: 커머스 이름
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "csec  ")
         assert ss._naver_creds() == ("cid", "csec")
 
 

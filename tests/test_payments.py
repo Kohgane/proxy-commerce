@@ -37,7 +37,7 @@ class TestPGClientAbstract:
 
 class TestTossPaymentsClient:
     def _make_client(self, key: str = 'test_secret_key') -> TossPaymentsClient:
-        with patch.dict(os.environ, {'TOSS_PAYMENTS_SECRET_KEY': key}):
+        with patch.dict(os.environ, {'TOSS_SECRET_KEY': key}):           # Y15 G: 한 벌 이름
             return TossPaymentsClient()
 
     def test_init_reads_env(self):
@@ -47,10 +47,10 @@ class TestTossPaymentsClient:
     def test_init_missing_key_warns(self, caplog):
         import logging
         with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop('TOSS_PAYMENTS_SECRET_KEY', None)
+            os.environ.pop('TOSS_SECRET_KEY', None)
             with caplog.at_level(logging.WARNING, logger='src.payments.toss_client'):
                 TossPaymentsClient()
-        assert any('TOSS_PAYMENTS_SECRET_KEY' in r.message for r in caplog.records)
+        assert any('TOSS_SECRET_KEY' in r.message for r in caplog.records)
 
     def test_request_payment(self):
         client = self._make_client()

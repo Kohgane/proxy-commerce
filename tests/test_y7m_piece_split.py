@@ -139,8 +139,8 @@ def test_3_prevalidate_card_has_caution_and_does_not_hold(monkeypatch):
     monkeypatch.setattr(UD, "smartstore_approved", lambda store="": True)
     monkeypatch.setattr(SR, "price_hold", lambda pd: "")
     monkeypatch.setattr(NC, "hold", lambda *a, **k: None)
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     monkeypatch.setattr(SS, "image_upload_enabled", False, raising=False)
     # 상품명은 50자 이내(긴 운영 제목은 네이버 품명 칸 보류가 따로 걸린다 — 이 테스트는 칩만 본다)
     pd = {"title_ko": "플리츠 상의 스커트 투피스 세트", "price": 168, "images": GALLERY, "options": OPTS, "category_code": "CLO",

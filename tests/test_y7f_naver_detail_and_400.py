@@ -222,8 +222,8 @@ def _pv(monkeypatch, pd):
     monkeypatch.setattr(SR, "price_hold", lambda pd: "")
     monkeypatch.setattr(NC, "hold", lambda *a, **k: None)
     monkeypatch.setattr(NC, "describe", lambda *a, **k: {})
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     import contextlib
     import urllib.request
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: contextlib.nullcontext())

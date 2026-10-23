@@ -1207,6 +1207,23 @@ def _naver_tree_boot():
 
 
 @app.before_request
+def _market_env_isolation_begin():
+    """Y15 P0-2(fail-closed): 로그인한 **비공유** 사람의 요청은 처음부터 마켓 환경변수 격리 — 그 사람 저장값만 보인다.
+    잡 스레드(copy_context)도 이 겹을 물려받는다. 공유(오너·가족)·비로그인·정적 경로는 영향 0."""
+    from flask import g
+    from src.seller_console.market_credentials import request_isolation_begin
+    g._kgp_env_iso = request_isolation_begin()
+    return None
+
+
+@app.teardown_request
+def _market_env_isolation_end(exc):
+    from flask import g
+    from src.seller_console.market_credentials import request_isolation_end
+    request_isolation_end(g.pop("_kgp_env_iso", None))
+
+
+@app.before_request
 def _signup_first_visit():
     """Y15-B: 로그인 안 한 사람의 첫 화면 요청 — referrer·랜딩·utm을 세션에(가입 때 옮긴다)."""
     from src.auth.signup_origin import capture_first_visit

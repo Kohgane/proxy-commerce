@@ -36,6 +36,10 @@
   <div class="pc-status pc-status-warning py-2"><i class="bi bi-exclamation-triangle"></i> {{ error }}</div>
   {% endif %}
 
+  {% if pay_test_mode %}
+  <div class="pc-status pc-status-warning border small" data-pay-test-mode><i class="bi bi-cone-striped"></i>
+    <strong>테스트 결제 모드</strong> — 토스페이먼츠 테스트 키로 열려 있어요. 결제창은 뜨지만 실제로 돈이 나가지 않고, 승인돼도 요금제는 바뀌지 않아요.</div>
+  {% endif %}
   {% if not pay_ready %}
   <div class="pc-status pc-status-info border small"><i class="bi bi-shield-lock"></i> 결제 연동(토스페이먼츠)이 아직 켜지지 않았어요. Free는 바로 쓰실 수 있고,
     유료 플랜은 준비가 끝나는 즉시 결제창이 열립니다.</div>

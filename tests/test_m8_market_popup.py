@@ -16,6 +16,13 @@ import pytest
 
 from tests.test_u_register_followup import AE9, LIVE, _up_with
 
+
+@pytest.fixture(autouse=True)
+def _y15_owner_ids(monkeypatch):
+    """Y15 P0-2(오너 2026-10-23): 오너 서버 자격은 세션 role이 아니라 **user_id 목록**으로 — 이 파일의 「오너 세션 모양」 id를 목록에."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "m8-put")
+
+
 UPLOADED = [
     {"market": "coupang:gogane", "account": "gogane", "product_id": "16407690349", "market_label": "쿠팡 — 고가네",
      "external_url": "https://www.coupang.com/vp/products/16407690349", "at": "2026-10-09T07:26:00+00:00"},
