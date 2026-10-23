@@ -136,6 +136,8 @@ def inject_seller_template_flags():
         "is_admin": _is_admin,          # F30: 화면은 이 값 하나만 본다(판정기 셋 금지)
         # Z9: 오너 풀 화면(CS·메시징·B2B·정기구독) 링크 — 막힌 사람에게 403뿐인 죽은 버튼을 보이지 않는다
         "owner_pool_ok": not _owner_pool_denied(),
+        # 순찰 43: 오너 도구(등록 파이프) 링크 — 그 화면 입구와 **같은 판정**(정체성 규칙). 부를 때만 잰다(요청 격리가 이미 데운 60초 캐시)
+        "viewer_shared": _viewer_shared,
         "latest_ext_version": _ext_ver,
         "session_account": _acct,
         "diagnostic_reveal_enabled": os.getenv("DIAGNOSTIC_REVEAL", "0") == "1",

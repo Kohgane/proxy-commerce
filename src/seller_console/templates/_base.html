@@ -167,7 +167,7 @@
       <li class="console-nav-group-title">AI 소싱·등록</li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/listing/ai-create') %}active{% endif %}" href="/seller/listing/ai-create"><i class="bi bi-robot"></i><span>AI 상품등록(자동 생성)</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/keywords') %}active{% endif %}" href="/seller/keywords"><i class="bi bi-graph-up"></i><span>키워드 트렌드</span></a></li>
-      {% if owner_pool_ok is not defined or owner_pool_ok %}{# 순찰 43: 등록 파이프 = 오너 도구(공유 사용자만) — 막힌 사람에게 403뿐인 링크를 안 보인다 #}
+      {% if viewer_shared is not defined or viewer_shared() %}{# 순찰 43: 등록 파이프 = 오너 도구(공유 사용자만) — 입구와 같은 판정이라 403뿐인 링크가 안 보인다 #}
       <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/register-pipe') %}active{% endif %}" href="/seller/sourcing/register-pipe"><i class="bi bi-clipboard-check"></i><span>소싱 URL 검수</span></a></li>
       {% endif %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/sourcing/reject-watch') %}active{% endif %}" href="/seller/sourcing/reject-watch"><i class="bi bi-clipboard-x"></i><span>반려 감시</span></a></li>
