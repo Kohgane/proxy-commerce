@@ -96,8 +96,8 @@ def test_op_job_record_carries_type_growth_and_caches(monkeypatch):
     from src.db import image_translate_queue_pg as st
     from src.utils import rss, render_worker
     store = {O.QUEUE_KEY: {"rows": [{"op": "dims_fetch", "item_id": "x1"}]}}
-    monkeypatch.setattr(st, "state_get", lambda k: store.get(k))
-    monkeypatch.setattr(st, "state_set", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(st, "_enabled", lambda: False)          # 순찰 57: 원자 쓰기(state_update)도 같은 저장소
+    monkeypatch.setattr(st, "_MEM_STATE", store)
     monkeypatch.setattr(rss, "release", lambda reason="": (200, 190))
     recs = []
     monkeypatch.setattr(render_worker, "record", lambda kind, **kw: recs.append(dict(kw, kind=kind)))

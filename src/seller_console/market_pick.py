@@ -49,16 +49,32 @@ def session_email() -> str:
         return ""
 
 
+def session_identity() -> str:
+    """로그인 세션의 정본 신원 — user_id, 없으면 로그인 이메일. 요청 밖·비로그인은 ""."""
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return ""
+        return str(session.get("user_id") or session.get("user_email") or session.get("email") or "").strip()
+    except Exception:
+        return ""
+
+
 def session_is_shared(admin: Optional[bool] = None) -> bool:
-    """지금 요청의 사람이 공유 마켓(= 오너 서버 자격) 사용자인가. `admin`을 안 주면 세션에서 판정."""
-    if admin is None:
-        try:
-            from flask import session
-            from src.auth.admin_resolver import is_admin_session
-            admin = bool(is_admin_session(session)[0])
-        except Exception:
-            admin = False
-    return is_shared(session_email(), admin)
+    """지금 요청의 사람이 공유 마켓(= 오너 서버 자격) 사용자인가.
+
+    순찰 57(오너 2026-10-23 「Z9 오너 풀 공유 판정 user_id 통일」): 마켓 키 격리(P0-2)와 **같은 정체성 규칙** —
+    `market_credentials.seller_shared_reason(user_id)`(정본 오너 · `ADMIN_USER_IDS` · `FAMILY_EMAILS` 로그인 이메일).
+    세션 role·`ADMIN_EMAILS`만으로는 공유가 아니다(예전엔 세었다 — 화면은 보이는데 마켓 키는 안 쓰이는 어긋남).
+    `admin` 인자는 예전 호출 호환으로만 받고 판정에 쓰지 않는다. 비로그인·요청 밖은 아니오."""
+    ident = session_identity()
+    if not ident:
+        return False
+    try:
+        from .market_credentials import seller_shared_reason
+        return seller_shared_reason(ident) not in ("", "server")
+    except Exception:
+        return False                                             # 판정이 깨지면 닫는다
 
 
 def scope(seller_id: str, shared: bool) -> str:

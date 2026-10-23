@@ -48,7 +48,10 @@ def test_key_wrong_is_401_and_right_key_passes(closed, monkeypatch):
 
 def test_shared_session_passes_public_signup_does_not(closed, monkeypatch):
     monkeypatch.setenv("DASHBOARD_API_KEY", "k-test")
+    monkeypatch.setenv("ADMIN_USER_IDS", "o1")                    # 순찰 57: 공유 판정 = 계정 번호(role만으로는 아님)
     owner = _client(closed, user_id="o1", user_email="owner@example.com", user_role="admin")
+    assert _client(closed, user_id="o2", user_email="x@example.com", user_role="admin").get(
+        "/api/v1/email-campaigns/").status_code == 401         # 목록에 없는 admin role은 닫힌다
     assert owner.get("/api/v1/email-campaigns/").status_code == 200
     family = _client(closed, user_id="m1", user_email="mom@example.com")
     assert family.get("/api/v1/returns/").status_code == 200

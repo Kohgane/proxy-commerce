@@ -282,6 +282,43 @@ def state_set(key: str, value: dict) -> None:
                     (key, json.dumps(value or {}, ensure_ascii=False)))
 
 
+def state_update(key: str, fn) -> dict:
+    """`fn(현재 값) → 새 값`을 **한 번에** — 읽고-덧쓰기 사이에 다른 인스턴스·스레드가 끼어 줄이 사라지지 않게(순찰 57).
+    PG면 행을 `FOR UPDATE`로 잡은 트랜잭션 안에서, 아니면 잠금 안에서. 새 값을 돌려준다. `fn`은 짧게(잠금을 잡고 있다)."""
+    if not _enabled():
+        with _LOCK:
+            new = dict(fn(dict(_MEM_STATE.get(key) or {})) or {})
+            _MEM_STATE[key] = new
+            return dict(new)
+    with pg.tx() as cur:
+        cur.execute("INSERT INTO app_state (key, value, updated_at) VALUES (%s, '{}'::jsonb, now()) ON CONFLICT (key) DO NOTHING",
+                    (key,))
+        cur.execute("SELECT value FROM app_state WHERE key=%s FOR UPDATE", (key,))
+        r = cur.fetchone()
+        v = r[0] if r else {}
+        v = v if isinstance(v, dict) else (json.loads(v) if v else {})
+        new = dict(fn(v) or {})
+        cur.execute("UPDATE app_state SET value=%s::jsonb, updated_at=now() WHERE key=%s",
+                    (json.dumps(new, ensure_ascii=False), key))
+    return new
+
+
+def state_incr(key: str, by: int = 1) -> int:
+    """`value.n`을 원자적으로 `by` 올리고 올린 뒤 값을 돌려준다(인스턴스·재시작을 넘어 이어지는 카운터)."""
+    if not _enabled():
+        with _LOCK:
+            cur = dict(_MEM_STATE.get(key) or {})
+            cur["n"] = int(cur.get("n") or 0) + int(by)
+            _MEM_STATE[key] = cur
+            return cur["n"]
+    with pg.tx() as cur:
+        cur.execute("INSERT INTO app_state (key, value, updated_at) VALUES (%s, jsonb_build_object('n', %s::bigint), now()) "
+                    "ON CONFLICT (key) DO UPDATE SET value = jsonb_set(app_state.value, '{n}', "
+                    "to_jsonb(COALESCE((app_state.value->>'n')::bigint, 0) + %s::bigint)), updated_at = now() "
+                    "RETURNING (value->>'n')::bigint", (key, int(by), int(by)))
+        return int(cur.fetchone()[0])
+
+
 def state_scan(prefix: str, *, field: str = "", equals: str = "", limit: int = 200) -> list:
     """`prefix`로 시작하는 `(key, value)` — `field`를 주면 그 값이 `equals`인 것만. 재시작 회수(`restart_recovery`)가 쓴다."""
     if not _enabled():

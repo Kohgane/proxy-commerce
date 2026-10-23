@@ -187,26 +187,29 @@ def _run(row: dict) -> Dict:
             "pages": [{k: p.get(k) for k in ("no", "idx", "verdict", "why", "url")} for p in res.get("pages") or []]}
 
 
+def _row_key(r: dict) -> tuple:
+    return (str(r.get("op")), str(r.get("item_id")), tuple(sorted(r.get("markets") or [])))
+
+
 def enqueue(row: dict) -> bool:
-    """줄 하나를 **덧붙인다**(덮어쓰지 않음) — 같은 op·상품·마켓 줄이 이미 있으면 안 넣는다."""
+    """줄 하나를 **덧붙인다**(덮어쓰지 않음) — 같은 op·상품·마켓 줄이 이미 있으면 안 넣는다.
+    순찰 57: 읽고-덧쓰기를 한 번에(`state_update`) — 두 인스턴스가 같은 순간 넣어도·꺼내는 중에 넣어도 줄이 안 사라진다."""
     from src.db import image_translate_queue_pg as st
-    rows = queue_rows()
-    key = (str(row.get("op")), str(row.get("item_id")), tuple(sorted(row.get("markets") or [])))
-    if any((str(r.get("op")), str(r.get("item_id")), tuple(sorted(r.get("markets") or []))) == key for r in rows):
-        return False
-    st.state_set(QUEUE_KEY, {"rows": rows + [dict(row, queued_at=_now())]})
-    return True
+    added = {"ok": False}
+
+    def _fn(cur: dict) -> dict:
+        rows = [r for r in cur.get("rows") or [] if isinstance(r, dict)]
+        if any(_row_key(r) == _row_key(row) for r in rows):
+            return dict(cur, rows=rows)
+        added["ok"] = True
+        return dict(cur, rows=rows + [dict(row, queued_at=_now())])
+
+    st.state_update(QUEUE_KEY, _fn)
+    return added["ok"]
 
 
-def drain() -> Dict:
-    """줄을 통째로 꺼내(먼저 비운다 — 한 번만) 차례로 돌린다. `{picked, rows}`."""
-    from src.db import image_translate_queue_pg as st
-    rows = queue_rows()
-    if not rows:
-        return {"picked": 0, "rows": []}
-    # 한 틱에 5줄 — 나머지는 줄에 **남긴다**(10-20 13:30 실측: 7줄 넣었더니 앞 5줄만 돌고 2줄이 조용히 사라졌다)
-    # Y14(10-21 08:00·08:10 실측): 사전검증 5건을 두 틱에 몰아 돌렸더니 잡이 겹쳐 인스턴스 437·461MB(상한 420/460) —
-    #   3건이 「메모리 여유가 없어요」로 검증 못 함. 무거운 줄(사전검증을 띄우는 줄)은 **한 틱에 하나**만, 나머지는 줄에 남긴다(순서 그대로).
+def _pick(rows: List[dict]) -> tuple:
+    """`(이번 틱에 돌 줄, 남길 줄)` — 한 틱 `PER_TICK`줄, 무거운 줄은 `HEAVY_PER_TICK`줄(순서 그대로)."""
     pick, keep, heavy = [], [], 0
     for r in rows:
         if len(pick) >= PER_TICK or (r.get("op") in HEAVY_OPS and heavy >= HEAVY_PER_TICK):
@@ -214,12 +217,34 @@ def drain() -> Dict:
             continue
         heavy += r.get("op") in HEAVY_OPS
         pick.append(r)
+    return pick, keep
+
+
+def drain() -> Dict:
+    """줄을 통째로 꺼내(먼저 비운다 — 한 번만) 차례로 돌린다. `{picked, rows}`."""
+    from src.db import image_translate_queue_pg as st
+    if not queue_rows():
+        return {"picked": 0, "rows": []}
+    # 한 틱에 5줄 — 나머지는 줄에 **남긴다**(10-20 13:30 실측: 7줄 넣었더니 앞 5줄만 돌고 2줄이 조용히 사라졌다)
+    # Y14(10-21 08:00·08:10 실측): 사전검증 5건을 두 틱에 몰아 돌렸더니 잡이 겹쳐 인스턴스 437·461MB(상한 420/460) —
+    #   3건이 「메모리 여유가 없어요」로 검증 못 함. 무거운 줄(사전검증을 띄우는 줄)은 **한 틱에 하나**만, 나머지는 줄에 남긴다(순서 그대로).
+    # 순찰 57: 고르기·남기기를 한 번에(`state_update`) — 꺼내는 사이에 들어온 줄도 남는다.
+    got = {"pick": []}
+
+    def _take(cur: dict) -> dict:
+        pick, keep = _pick([r for r in cur.get("rows") or [] if isinstance(r, dict)])
+        got["pick"] = pick
+        return dict(cur, rows=keep)
+
+    st.state_update(QUEUE_KEY, _take)
+    pick = got["pick"]
+    if not pick:
+        return {"picked": 0, "rows": []}
     from src.utils.instance import holder as _holder
     me = _holder()
     inkey = INFLIGHT_PREFIX + me
     track = [dict(r, _state="pending") for r in pick]
-    _inflight_set(inkey, me, track)                              # 줄에서 뺀 순간부터 — 도중에 죽어도 다음 부팅이 안다
-    st.state_set(QUEUE_KEY, {"rows": keep})
+    _inflight_set(inkey, me, track)                              # 꺼낸 바로 뒤 — 도중에 죽어도 다음 부팅이 안다
     out = []
     try:
         for i, r in enumerate(pick):

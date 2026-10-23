@@ -75,6 +75,7 @@ def market_calls(monkeypatch):
 def env(monkeypatch):
     monkeypatch.setenv("FAMILY_EMAILS", "mom@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "owner@example.com")
+    monkeypatch.setenv("ADMIN_USER_IDS", "owner-1,owner-2")          # 순찰 57: 공유 = 계정 번호·가족 이메일(정체성 규칙)
 
 
 def _client(user_id, email, role="seller"):
@@ -270,8 +271,8 @@ def test_stranger_can_still_work_own_order(orders_mem, stranger):
 # ── 공유 사용자·서버 자신은 종전 그대로 ────────────────────────────────────────
 
 @pytest.mark.parametrize("uid,email,role", [
-    ("owner-1", "owner@example.com", "seller"),    # ADMIN_EMAILS
-    ("owner-2", "x@example.com", "admin"),         # user_role admin
+    ("owner-1", "owner@example.com", "seller"),    # ADMIN_USER_IDS
+    ("owner-2", "x@example.com", "admin"),         # ADMIN_USER_IDS(role은 판정에 안 씀)
     ("mom-1", "Mom@Example.com", "seller"),        # FAMILY_EMAILS(대소문자 무관)
 ])
 def test_shared_users_see_owner_pool(orders_mem, env, uid, email, role):
@@ -282,6 +283,16 @@ def test_shared_users_see_owner_pool(orders_mem, env, uid, email, role):
     assert 'id="ordersSyncButton"' in body
     r = c.post(f"/seller/orders/coupang/{OWNER_ROW}/status", json={"next_status": "preparing"})
     assert r.status_code == 200 and _status_of(orders_mem, OWNER_ROW) == "preparing"
+
+
+@pytest.mark.parametrize("uid,email,role", [
+    ("admin-only", "x@example.com", "admin"),      # 세션 role만 admin
+    ("mail-only", "owner@example.com", "seller"),  # ADMIN_EMAILS 이메일만
+])
+def test_role_or_admin_email_alone_is_not_shared(orders_mem, env, uid, email, role):
+    """순찰 57(오너 2026-10-23 「Z9 공유 판정 user_id 통일」): 마켓 키 격리(P0-2)와 같은 규칙 — 목록에 없는 계정은 role·이메일로 공유가 되지 않는다."""
+    body = _client(uid, email, role).get("/seller/orders").get_data(as_text=True)
+    assert OWNER_ROW not in body
 
 
 def test_shared_user_tracking_for_unsynced_order_still_reaches_market(orders_mem, env, market_calls):

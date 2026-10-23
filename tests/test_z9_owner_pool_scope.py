@@ -25,6 +25,7 @@ NAV = ['href="/seller/cs/inbox"', 'href="/seller/messaging"', 'href="/seller/cs/
 def _family(monkeypatch):
     monkeypatch.setenv("FAMILY_EMAILS", "mom@example.com")
     monkeypatch.delenv("ADMIN_EMAILS", raising=False)
+    monkeypatch.setenv("ADMIN_USER_IDS", "owner-z9")                # 순찰 57: 관리자 = 계정 번호(세션 role만으로는 공유 아님)
 
 
 def _client(**sess):

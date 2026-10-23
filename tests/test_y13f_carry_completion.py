@@ -18,7 +18,9 @@ def memory_state(monkeypatch):
 
 
 def tomorrow():
-    return datetime.now(timezone.utc) + timedelta(days=2, hours=1)
+    # 이틀 뒤 **KST 정오** — 「지금+이틀+1시간」은 UTC 14:00~14:09에 돌면 KST 00:00~00:09(이월 시각 00:10 전)가 돼 하루 10분 실패했다(순찰 57 실측)
+    kst = timezone(timedelta(hours=9))
+    return (datetime.now(kst) + timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 
 def test_exception_keeps_carry_for_review_without_resending():

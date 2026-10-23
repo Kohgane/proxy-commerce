@@ -246,6 +246,7 @@ def test_u1b_route_is_admin_only_and_previews_before_sending(monkeypatch):
         s["user_id"] = "u-u1b"
     assert c.get(f"/seller/collect/{iid}/live-fix").status_code == 403
     monkeypatch.setattr(V, "_is_admin_user", lambda: True)
+    monkeypatch.setattr(V, "_shared_markets", lambda: True)        # 순찰 57: 공유 판정은 role이 아니라 정체성
     d = c.get(f"/seller/collect/{iid}/live-fix").get_json()
     assert d["ok"] and {x["field"] for x in d["changes"]} >= {"상품명", "검색어"} and "다시 심사" in d["note"]
     assert not any(m == "PUT" for m, *_ in calls)                              # 미리보기는 보내지 않는다
@@ -289,8 +290,10 @@ def test_u0_missing_account_keys_say_so_and_non_admin_sees_one_coupang(monkeypat
     assert r.market == "coupang:gogane" and r.ok is False
     import src.seller_console.views as V
     monkeypatch.setattr(V, "_is_admin_user", lambda: False)
+    monkeypatch.setattr(V, "_shared_markets", lambda: False)        # 순찰 57: 공유 판정은 role이 아니라 정체성
     assert [m["code"] for m in V._with_coupang_accounts([{"code": "coupang", "checked": True}])] == ["coupang"]
     monkeypatch.setattr(V, "_is_admin_user", lambda: True)
+    monkeypatch.setattr(V, "_shared_markets", lambda: True)        # 순찰 57: 공유 판정은 role이 아니라 정체성
     rows = V._with_coupang_accounts([{"code": "coupang", "checked": True}])
     assert [m["code"] for m in rows] == ["coupang:gogane", "coupang:woojoo"]
     from src.seller_console import market_pick as MP                           # Z5 후속: 기본 체크는 market_pick
