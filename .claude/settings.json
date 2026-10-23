@@ -11,5 +11,13 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Bash(git *)",
+      "Bash(python -m pytest *)",
+      "Bash(gh *)"
+    ]
   }
 }
