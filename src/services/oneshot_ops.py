@@ -26,6 +26,8 @@
   「권고안 채택」): 화면 버튼과 **같은 함수**로 오너 결정을 적용한다 — 대표 사진(후보 장마다 텐센트 OCR 상자 수를 재서 0상자 장 ·
   여럿이면 `prefer`)=「이 장을 대표로」, 위험 「빼고 등록」=`risk_gate.decide(strip)`(`pixels=restore`: 음차 상자만 원본 복원 ·
   원문에 상표가 남는 장은 사진째 뺌). 저장 뒤 같은 계정으로 사전검증 잡을 띄운다. 수집 원본(`images`·`skus`)은 손대지 않는다
+- `owner_decision` … `option_overrides:{원문 값: 한국어}` — 순찰 42(오너 2026-10-23 d5af2185): 오너가 정한 옵션 값을 편집 화면과
+  같은 칸(`option_value_overrides`)에 넣고 사전검증을 다시 띄운다. 원문 값은 손대지 않는다
 - `undiscard` {item_id, why} — Y15(오너 2026-10-22): 「버리기」 되돌리기(`extra.discarded` 해제 · `discard_log`에 남김)
 - `option_retry` {item_id} — Y15(오너 2026-10-22): 옵션 값 한국어 옮기기 1회(화면 「한국어로 번역」과 같은 `translate_now`) ·
   남은 값과 그 사유를 결과에
@@ -109,7 +111,9 @@ def _run(row: dict) -> Dict:
                                exclude_images=[(str(p[0]), int(p[1])) for p in (row.get("exclude_images") or [])
                                                if isinstance(p, (list, tuple)) and len(p) == 2][:10],
                                exclude_why=str(row.get("exclude_why") or ""),
-                               relist_only=[str(m) for m in (row.get("relist_only") or []) if m][:4])
+                               relist_only=[str(m) for m in (row.get("relist_only") or []) if m][:4],
+                               option_overrides=(row.get("option_overrides")
+                                                 if isinstance(row.get("option_overrides"), dict) else None))
     if op == "discard":
         return _discard(item_id, str(row.get("why") or ""))
     if op == "option_retry":
@@ -778,10 +782,34 @@ def _owner_exclude(ex: dict, pages: List[tuple], why: str, by: str) -> List[str]
     return out
 
 
+def _owner_option_overrides(ex: dict, wanted: dict, uid: str) -> Dict:
+    """순찰 42(오너 2026-10-23 d5af2185): 오너가 정한 옵션 값 — 편집 화면 옵션 탭과 **같은 칸**(`option_value_overrides`, 원문 값 → 한국어,
+    `option_ko`의 1순위). 원문(`options[].values`·`skus[].spec`)은 손대지 않는다. 지금 옵션에 없는 원문 값은 넣지 않고 사유를 남긴다.
+    앞 값은 `owner_fields_log`에(되돌리기 재료)."""
+    have = {str(v) for o in (ex.get("options") or []) if isinstance(o, dict) for v in (o.get("values") or [])}
+    ov = dict(ex.get("option_value_overrides") or {}) if isinstance(ex.get("option_value_overrides"), dict) else {}
+    done, prev = [], {}
+    for raw, ko in list(wanted.items())[:30]:
+        raw, ko = str(raw or "").strip(), str(ko or "").strip()
+        if not raw or not ko:
+            continue
+        if raw not in have:
+            done.append({"value": raw[:40], "ok": False, "why": "지금 옵션에 없는 값"})
+            continue
+        prev[raw] = ov.get(raw)
+        ov[raw] = ko
+        done.append({"value": raw[:40], "ok": True, "set": ko})
+    if prev:
+        ex["option_value_overrides"] = ov
+        ex.setdefault("owner_fields_log", []).append({"at": _now(), "by": uid, "set": ["option_value_overrides"],
+                                                      "before": {"option_value_overrides": prev}})
+    return {"set": sum(1 for d in done if d["ok"]), "rows": done}
+
+
 def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, markets: List[str], *,
                     fields: Optional[dict] = None, strip_keep: Optional[List[str]] = None,
                     exclude_images: Optional[List[tuple]] = None, exclude_why: str = "",
-                    relist_only: Optional[List[str]] = None) -> Dict:
+                    relist_only: Optional[List[str]] = None, option_overrides: Optional[dict] = None) -> Dict:
     import json
     from src.services import ocr_compare_diag as D
     from src.services import risk_gate as R
@@ -828,6 +856,8 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
             ex[k] = v
         ex.setdefault("owner_fields_log", []).append({"at": _now(), "by": uid, "set": sorted(prev), "before": prev})
         out["fields"] = sorted(prev)
+    if option_overrides:
+        out["option_overrides"] = _owner_option_overrides(ex, option_overrides, uid)
     done = []
     if strip or strip_keep:
         sc = R.scan(ex)

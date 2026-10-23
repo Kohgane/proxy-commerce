@@ -79,7 +79,7 @@ def test_textarea_is_placeholder_not_prefilled(client):
 def test_single_source_for_the_queue():
     """판정기 2개 금지 — 화면이 보여준 목록과 조회가 쓰는 목록이 같은 함수에서 나온다."""
     assert VIEWS.count("REG.watch_queue(") == 1
-    assert "_reject_watch_queue(account)" in VIEWS
+    assert "_reject_watch_queue(account, owners=" in VIEWS
     assert 'sids = [q["sid"] for q in watch["rows"]]' in VIEWS
 
 

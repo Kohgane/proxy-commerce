@@ -416,7 +416,7 @@ def test_wing_link_for_pre_approval_rows():
     assert "{% if w.status in ('approved', 'selling') and w.market_url %}" in b
     # 상태가 화면까지 와야 가를 수 있다 — 큐가 status를 싣는다.
     reg = Path("src/db/market_registrations_pg.py").read_text(encoding="utf-8")
-    assert '"status": r["status"]' in reg and "market_url, status FROM market_registrations" in reg
+    assert '"status": r["status"]' in reg and "market_url, status, owner_seller_id FROM market_registrations" in reg
 
 
 @pytest.mark.skipif(not _pw_ok(), reason="크로미움 없음 — 정직하게 skip")

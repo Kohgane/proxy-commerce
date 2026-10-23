@@ -100,7 +100,7 @@ def _attention(seller_ids, rows: Optional[List[Dict]] = None) -> Dict:
             g = groups.setdefault(key, {"label": label, "n": 0, "kind": i["kind"]})
             g["n"] += 1
     # Y12-A: 등록 대장(복제 등록분 — 수집 목록 밖)의 반려도 같은 묶음에. 사유가 임시저장인 줄은 반려가 아니다.
-    for r in _ledger_rejections():
+    for r in _ledger_rejections(seller_ids=seller_ids):
         label = f"쿠팡 — {_ACCOUNT_KO.get(str(r.get('account') or ''), str(r.get('account') or ''))} 승인반려"
         line = label + (f" · {r['kind_word']}" if r.get("kind_word") else "") + f" · {check_note(r.get('checked_at'))}"
         title = str(r.get("title") or r.get("product_id") or "")[:60]
@@ -113,7 +113,7 @@ def _attention(seller_ids, rows: Optional[List[Dict]] = None) -> Dict:
             "products": products[:TODO_N], "todo": todo[:TODO_N], "more": max(0, len(todo) - TODO_N), "capped": False}
 
 
-def _ledger_rejections(limit: int = 50) -> List[Dict]:
+def _ledger_rejections(limit: int = 50, seller_ids=None) -> List[Dict]:
     """등록 대장의 반려 줄 **전부**(오너 e — 조회가 오래됐다고 숨기지 않는다, 「조회 낡음」 표시).
     사유가 「임시저장」인 줄은 반려가 아니라 임시저장이다(낱말은 `ops_snapshot._reject_words` 한 곳) — 손댈 것 · 반려에서 뺀다."""
     try:
@@ -122,7 +122,9 @@ def _ledger_rejections(limit: int = 50) -> List[Dict]:
             return []
         from src.pipeline.ops_snapshot import _reject_words
         out = []
-        for r in ledger.recent_rejected(marketplace="coupang", limit=limit) or []:
+        # 순찰 42: 내 줄만(공유 사용자 = 전부) — 남의 등록 제목이 손댈 것에 뜨면 안 된다
+        for r in ledger.recent_rejected(marketplace="coupang", limit=limit,
+                                        owners=ledger.owner_scope(seller_ids)) or []:
             w = _reject_words(r)
             if w["phase"] == "rejected":
                 out.append(dict(r, **w))
@@ -133,7 +135,7 @@ def _ledger_rejections(limit: int = 50) -> List[Dict]:
 
 
 # ── B. 마켓별 현황 ──────────────────────────────────────────────────────────────────────────────────
-def _markets(rows: List[Dict]) -> Dict:
+def _markets(rows: List[Dict], seller_ids=None) -> Dict:
     from .listing_status import records, slot_of
     acc = {slot: {"sale": 0, "wait": 0, "rejected": 0, "checked": None} for slot, _n, _m in MARKET_ROWS}
 
@@ -154,7 +156,7 @@ def _markets(rows: List[Dict]) -> Dict:
     try:                                                         # 등록 대장(쿠팡 복제 등록분 — 수집 목록 밖)
         from src.db import market_registrations_pg as ledger
         if ledger.enabled():
-            for c in ledger.account_counts(marketplace="coupang") or []:
+            for c in ledger.account_counts(marketplace="coupang", owners=ledger.owner_scope(seller_ids)) or []:
                 a = acc.get(f"coupang:{c['account']}")
                 if a is not None and not c.get("held"):          # 사유 임시저장 반려 줄은 세지 않는다(진단 「임시저장 · 낡은 기록」)
                     _add(a, "approved" if c["status"] == "approved" else c["status"], n=int(c["n"]), checked=c.get("checked_at"))
@@ -285,7 +287,7 @@ def build(seller_ids, *, ticks: bool = False) -> Dict:
         logger.warning("[대시보드] 상품 읽기 실패: %s", exc)
         rows = None
     for key, fn in (("attention", lambda: _attention(seller_ids, rows)), ("running", lambda: _running(seller_ids, rows)),
-                    ("today", _today), ("markets", lambda: _markets(rows)), ("products", lambda: _products(rows)),
+                    ("today", _today), ("markets", lambda: _markets(rows, seller_ids)), ("products", lambda: _products(rows)),
                     ("recent", lambda: _recent(rows))):
         try:
             if rows is None and key != "today":

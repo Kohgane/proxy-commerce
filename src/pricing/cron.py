@@ -390,14 +390,37 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
             from src.pipeline import reject_watch as RW
             from src.pipeline.coupang_replicate import _account_creds
             from src.uploaders.coupang_uploader import CoupangUploader
+            from src.seller_console.market_credentials import job_market_env
+            # 순찰 42(오너 2026-10-23): **줄 주인의 키로** 조회한다. 주인 빈 줄(칸 생기기 전 옛 줄 = 서버 줄)과
+            #   공유 사용자(오너·가족) 줄은 지금 그대로 서버 키. 일반 셀러 줄은 그 사람 저장 키만 — 없으면 그 줄만
+            #   「조회 실패(내 키 없음)」로 남기고 서버 키로 대신 보지 않는다(fail-closed). 조회(histories)만 — 쓰기 0.
+            owner_of: dict = {}
+            uploaders: dict = {}
+
+            def _queue(n):
+                rows = REG.watch_queue(account=account, limit=n) or []
+                owner_of.update({r["sid"]: str(r.get("owner") or "") for r in rows})
+                return rows
+
+            def _history(sid, acct):
+                own = owner_of.get(sid, "")
+                with job_market_env(own):
+                    if own not in uploaders:
+                        ak, sk, vid = _account_creds(account)
+                        uploaders[own] = (CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account)
+                                          if ak and sk else None)
+                    up = uploaders[own]
+                    if up is None:
+                        raise RuntimeError("주인 쿠팡 키 없음 — 마켓 연동에서 내 키를 넣어 주세요(서버 키로 대신 보지 않음)")
+                    return up.get_status_histories(sid)
+
             ak, sk, vid = _account_creds(account)
             if not (ak and sk):
                 out = {"ok": False, "error": f"{account} 쿠팡 자격 미설정 — 감시 불가(가짜 결과 0)"}
             else:
-                up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account)
                 out = RW.watch_registered(
-                    queue_fn=lambda n: REG.watch_queue(account=account, limit=n),
-                    history_fn=lambda sid, acct: up.get_status_histories(sid),
+                    queue_fn=_queue,
+                    history_fn=_history,
                     record_fn=lambda sid, **kw: REG.mark_checked(sid, **kw),
                     # dry-run은 알림도 보내지 않는다 — 세어 보는 것만으로 사람을 깨우지 않는다.
                     notify_fn=(None if dry_run else _reject_notify_fn(account)),
@@ -412,8 +435,10 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
             elif out.get("scanned"):
                 # 상태 분포를 로그에 남긴다 — **큐에 남았나 떠났나**가 이 트랙의 실전 검증이다.
                 #   `wrote`는 실제로 대장에 쓴 상태고, 남음/졸업은 감시 큐 기준 분류다.
-                _w = out.get("wrote") or {}
-                _dist = " · ".join(f"{k} {v}" for k, v in sorted(_w.items(), key=lambda x: -x[1]))
+                # 순찰 42: 여기 이름이 `_w`(workers 모듈)였다 — dict로 덮어 finally의 `_w.release`가 깨지고, 리스·실행 기록·
+                #   감시 락이 안 풀렸다(감시 대상이 1건이라도 있으면 그 프로세스에선 다음 회전이 영영 「진행 중」).
+                _wrote = out.get("wrote") or {}
+                _dist = " · ".join(f"{k} {v}" for k, v in sorted(_wrote.items(), key=lambda x: -x[1]))
                 logger.info("반려감시 완료(%s): %s · 기록 %s · 알림 %s · %.1fs%s",
                             account, out.get("alert"), out.get("recorded"), out.get("notified"),
                             total, "  ⚠️예산소진" if out.get("budget_exhausted") else "")

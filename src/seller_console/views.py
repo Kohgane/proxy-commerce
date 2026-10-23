@@ -12727,7 +12727,8 @@ def _record_registration(entry: dict, marketplace: str = "coupang"):
     return REG.record(entry.get("product_id"), marketplace=marketplace,
                       account=entry.get("account") or "", vendor_sku=entry.get("vendor_sku") or "",
                       title=entry.get("title") or "", source_url=entry.get("source_url") or "",
-                      market_url=entry.get("market_url") or "")
+                      market_url=entry.get("market_url") or "",
+                      owner_seller_id=_seller_id())     # 순찰 42: 반려감시가 주인 키로 조회한다
 
 
 def _lookup_registration(sku: str, account: str, marketplace: str = "coupang"):
@@ -13002,7 +13003,7 @@ def sourcing_register_pipe_register():
     return jsonify(result), status
 
 
-def _reject_watch_queue(account: str, limit: int = 50) -> dict:
+def _reject_watch_queue(account: str, limit: int = 50, owners=None) -> dict:
     """P4 크론이 **지금 물고 있는** 감시 대상(등록 대장 status=submitted/unknown). 읽기 전용.
 
     ★ 왜 화면에 필요한가: 여태 이 목록은 **POST로 빈 폼을 제출해야만** 읽혔고, 그것도 쿠팡
@@ -13012,7 +13013,7 @@ def _reject_watch_queue(account: str, limit: int = 50) -> dict:
     """
     try:
         from src.db import market_registrations_pg as REG
-        rows = REG.watch_queue(account=account, limit=int(limit)) or []
+        rows = REG.watch_queue(account=account, limit=int(limit), owners=owners) or []
         return {"connected": True, "note": "", "rows": rows}
     except Exception as exc:
         logger.warning("등록 대장 조회 실패: %s", exc)
@@ -13040,26 +13041,30 @@ def sourcing_reject_watch():
     if account not in ("gogane", "woojoo"):
         account = "gogane"
     sids_text = ""
-    watch = _reject_watch_queue(account)      # GET에서도 보인다 — 감시가 블랙박스가 되지 않게
+    from src.db import market_registrations_pg as _REG
+    # 순찰 42: 내 줄만(공유 사용자 = 전부). 남의 등록 제목이 보이면 안 된다.
+    watch = _reject_watch_queue(account, owners=_REG.owner_scope(_seller_identities()))
     approved = str(_os.getenv("REJECT_WATCH_APPROVED", "0")).lower() in ("1", "true", "yes")
     if request.method == "POST":
         sids_text = (request.form.get("sids") or "").strip()
         sids = [s.strip() for s in sids_text.replace(",", "\n").split() if s.strip()]
-        ak, sk, vid = _account_creds(account)
-        titles = {}
-        if not sids:
-            # 입력이 없으면 **등록 대장**에서 감시 대상을 채운다(위 화면에 뜬 그 목록과 같은 소스).
-            sids = [q["sid"] for q in watch["rows"]]
-            titles = {q["sid"]: q.get("title") or "" for q in watch["rows"]}
-        if not sids:
-            scan = {"error": ("감시 대상이 없습니다 — 등록 대장에 미확정 건이 없습니다. "
-                              "특정 상품을 보려면 sid를 직접 입력하세요(한 줄에 하나).")}
-        elif not (ak and sk):
-            scan = {"error": f"{account} 쿠팡 자격 미설정 — 라이브 조회 불가(Render 전용). 자격 설정 후 조회하세요."}
-        else:
-            up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account)
-            items = [{"sid": s, "title": titles.get(s, ""), "account": account} for s in sids]
-            scan = RW.scan_rejections(items, history_fn=lambda sid, acct: up.get_status_histories(sid))
+        from .market_credentials import job_market_env
+        with job_market_env(_seller_id()):     # 순찰 42: 내 키로만 조회(공유 사용자 = 지금 그대로)
+            ak, sk, vid = _account_creds(account)
+            titles = {}
+            if not sids:
+                # 입력이 없으면 **등록 대장**에서 감시 대상을 채운다(위 화면에 뜬 그 목록과 같은 소스).
+                sids = [q["sid"] for q in watch["rows"]]
+                titles = {q["sid"]: q.get("title") or "" for q in watch["rows"]}
+            if not sids:
+                scan = {"error": ("감시 대상이 없습니다 — 등록 대장에 미확정 건이 없습니다. "
+                                  "특정 상품을 보려면 sid를 직접 입력하세요(한 줄에 하나).")}
+            elif not (ak and sk):
+                scan = {"error": f"{account} 쿠팡 자격 미설정 — 라이브 조회 불가(Render 전용). 자격 설정 후 조회하세요."}
+            else:
+                up = CoupangUploader(access_key=ak, secret_key=sk, vendor_id=vid, account=account)
+                items = [{"sid": s, "title": titles.get(s, ""), "account": account} for s in sids]
+                scan = RW.scan_rejections(items, history_fn=lambda sid, acct: up.get_status_histories(sid))
 
     return render_template("reject_watch.html", page="sourcing", scan=scan, account=account,
                            sids_text=sids_text, approved=approved, kinds=RW.REJECTION_KINDS,
