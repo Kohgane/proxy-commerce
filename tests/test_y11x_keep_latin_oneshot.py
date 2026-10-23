@@ -52,8 +52,8 @@ def test_ocr_line_ends_with_run_time_kst():
 def qstate(monkeypatch):
     from src.db import image_translate_queue_pg as st
     box = {}
-    monkeypatch.setattr(st, "state_get", lambda k: box.get(k))
-    monkeypatch.setattr(st, "state_set", lambda k, v: box.__setitem__(k, v))
+    monkeypatch.setattr(st, "_enabled", lambda: False)          # 순찰 57: 원자 쓰기(state_update)도 같은 저장소
+    monkeypatch.setattr(st, "_MEM_STATE", box)
     return box
 
 

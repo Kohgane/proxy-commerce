@@ -48,8 +48,10 @@ def app():
     return wh.app
 
 
-def test_seller_dashboard_contains_phase_links(client):
+def test_seller_dashboard_contains_phase_links(client, monkeypatch):
     # v17: 일부 링크(api-status)는 관리자 전용 가드 → 관리자 세션에서 전체 메뉴 노출 확인.
+    # 순찰 57: 오너 풀 메뉴(CS·메시징)는 공유 판정 = 계정 번호 — 그 id를 공유 목록에.
+    monkeypatch.setenv("ADMIN_USER_IDS", "admin-user")
     with client.session_transaction() as sess:
         sess["user_id"] = "admin-user"; sess["user_email"] = "a@x.com"; sess["user_role"] = "admin"
     resp = client.get("/seller/dashboard")

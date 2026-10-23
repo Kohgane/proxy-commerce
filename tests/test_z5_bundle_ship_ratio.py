@@ -125,6 +125,7 @@ def test_m5_has_override_button_wiring():
 def test_default_bundle_is_woojoo(monkeypatch):
     import src.seller_console.views as V
     monkeypatch.setattr(V, "_is_admin_user", lambda: True)
+    monkeypatch.setattr(V, "_shared_markets", lambda: True)        # 순찰 57: 공유 판정은 role이 아니라 정체성
     from src.seller_console import market_cred_view as MCV, smartstore_routing as SR
     monkeypatch.setattr(MCV, "coupang_account_choices", lambda: [
         {"code": "coupang:gogane", "account": "gogane", "label": "쿠팡 — 고가네", "ready": True, "missing": []},

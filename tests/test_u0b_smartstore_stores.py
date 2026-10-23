@@ -118,8 +118,10 @@ def test_picker_groups_by_business_with_defaults(monkeypatch):
     base = [{"code": m, "label": m, "connected": True, "checked": m == "coupang"}
             for m in ("coupang", "smartstore", "elevenst", "shopify", "woocommerce")]
     monkeypatch.setattr(V, "_is_admin_user", lambda: False)
+    monkeypatch.setattr(V, "_shared_markets", lambda: False)        # 순찰 57: 공유 판정은 role이 아니라 정체성
     assert [m["code"] for m in V._with_coupang_accounts(base, {"title_ko": "스테인리스 냄비 주방"})] == [m["code"] for m in base]
     monkeypatch.setattr(V, "_is_admin_user", lambda: True)
+    monkeypatch.setattr(V, "_shared_markets", lambda: True)        # 순찰 57: 공유 판정은 role이 아니라 정체성
     rows = V._with_coupang_accounts(base, {"title_ko": "스테인리스 냄비 주방", "category_code": "HOM"})
     assert [m["code"] for m in rows[:4]] == ["coupang:gogane", "smartstore:chezgoga", "coupang:woojoo", "smartstore:gocosmos"]
     assert [m["group_label"] for m in rows[:4]] == ["고가네", "고가네", "우주대행", "우주대행"]
@@ -151,8 +153,10 @@ def test_admin_drawer_renders_store_tiles(monkeypatch):
                  "NAVER_GOCOSMOS_CLIENT_ID": "o", "NAVER_GOCOSMOS_CLIENT_SECRET": "o"}.items():
         monkeypatch.setenv(k, v)
     monkeypatch.setattr(V, "_is_admin_user", lambda: True)
+    monkeypatch.setattr(V, "_shared_markets", lambda: True)        # 순찰 57: 공유 판정은 role이 아니라 정체성
     iid = S.append(source="extension", url="https://item.taobao.com/item.htm?id=4242", seller_id="u-u0b-d", title="냄비",
                    price="120", currency="CNY", extra={"title": "汤锅", "title_ko": "스테인리스 냄비 주방", "category_code": "HOM"})
+    monkeypatch.setenv("ADMIN_USER_IDS", "u-u0b-d")                # 순찰 57: 드로어(요청)의 공유 판정 = 계정 번호
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = "u-u0b-d"

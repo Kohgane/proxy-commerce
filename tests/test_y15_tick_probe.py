@@ -11,8 +11,8 @@ def store(monkeypatch):
     from src.db import image_translate_queue_pg as st
     from src.services import workers as W
     data = {}
-    monkeypatch.setattr(st, "state_get", lambda k: data.get(k))
-    monkeypatch.setattr(st, "state_set", lambda k, v: data.__setitem__(k, v))
+    monkeypatch.setattr(st, "_enabled", lambda: False)          # 순찰 57: 원자 쓰기(state_update)도 같은 저장소
+    monkeypatch.setattr(st, "_MEM_STATE", data)
     monkeypatch.setattr(W, "_pg_on", lambda: False)
     W._PROBE_OPEN.clear()
     W._MEM.clear()
@@ -35,8 +35,11 @@ def test_lease_start_once_and_end_on_release(store):
 def test_every_100th_request_is_sampled_and_rows_are_capped(store, monkeypatch):
     import src.order_webhook as OW
     from src.utils import render_worker as RW
+    import threading
+    import time
     monkeypatch.setattr(OW, "_REQ_PROBE_EVERY", 3)
-    OW._REQ_PROBE["n"] = 0
+    monkeypatch.setattr(OW, "_REQ_PROBE_FLUSH_N", 1)              # 순찰 57: 매 요청 DB 카운터에 더한다(테스트만)
+    monkeypatch.setattr(OW, "_REQ_PROBE", {"pending": 0, "flushed_at": time.monotonic(), "lock": threading.Lock()})
     c = OW.app.test_client()
     for _ in range(7):
         c.get("/health/live")

@@ -98,8 +98,8 @@ def test_drain_records_heavy_op_memory_and_new_threads(monkeypatch):
     from src.db import image_translate_queue_pg as st
     from src.utils import rss, render_worker
     store = {O.QUEUE_KEY: {"rows": [{"op": "dims_fetch", "item_id": "4863d363"}, {"op": "thumb_probe", "item_id": "x"}]}}
-    monkeypatch.setattr(st, "state_get", lambda k: store.get(k))
-    monkeypatch.setattr(st, "state_set", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(st, "_enabled", lambda: False)          # 순찰 57: 원자 쓰기(state_update)도 같은 저장소
+    monkeypatch.setattr(st, "_MEM_STATE", store)
     monkeypatch.setattr(rss, "read_mb", lambda: (250, 300))
     monkeypatch.setattr(rss, "release", lambda reason="": (262, 240))
     recs = []
@@ -129,8 +129,8 @@ def test_drain_memory_record_failure_does_not_stop_queue(monkeypatch):
     from src.db import image_translate_queue_pg as st
     from src.utils import rss
     store = {O.QUEUE_KEY: {"rows": [{"op": "dims_fetch", "item_id": "a"}]}}
-    monkeypatch.setattr(st, "state_get", lambda k: store.get(k))
-    monkeypatch.setattr(st, "state_set", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(st, "_enabled", lambda: False)          # 순찰 57: 원자 쓰기(state_update)도 같은 저장소
+    monkeypatch.setattr(st, "_MEM_STATE", store)
     monkeypatch.setattr(rss, "release", lambda reason="": 1 / 0)
     monkeypatch.setattr(O, "_run", lambda row: {"ok": True})
     out = O.drain()

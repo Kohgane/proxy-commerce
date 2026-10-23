@@ -3289,13 +3289,10 @@ _BUSINESS_LABELS = (("gogane", "고가네"), ("woojoo", "우주대행"))
 
 def _shared_markets() -> bool:
     """Z5 후속(오너 2026-10-06): 오너 서버의 공유 마켓(쿠팡 고가네·우주대행 · 스마트스토어 셰고가·고코스모스)을 쓰는 사람 —
-    관리자 + 가족(`FAMILY_EMAILS`). 공개 가입자는 아니다(L1 이후 누구나 가입한다)."""
-    try:
-        admin = _is_admin_user()
-    except Exception:
-        admin = False
+    관리자 + 가족(`FAMILY_EMAILS`). 공개 가입자는 아니다(L1 이후 누구나 가입한다).
+    순찰 57: 판정 = 정체성 규칙(`market_pick.session_is_shared` — 계정 번호·가족 이메일). 세션 role은 안 본다."""
     from .market_pick import session_is_shared
-    return session_is_shared(admin)
+    return session_is_shared()
 
 
 def _account_codes_forbidden(markets):
