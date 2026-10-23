@@ -92,6 +92,8 @@ def blocked(ex: dict) -> Dict[str, str]:
 #   Y14(10-21 순찰): 「~용」 꼬리 · 치수 이름 첫 낱말(높이·길이…) 오탐을 고쳤다 — 08:10 사전검증이 버린 축약도 다시 묻는다.
 #   Y15(10-21 야간): 붙임표 낱말 경계(「벨벳-그린」 절단 오탐) — 10:20 사전검증이 버린 축약도 다시 묻는다.
 SHORT_GUARD_SINCE = datetime(2026, 10, 21, 14, 30, tzinfo=timezone.utc)
+#: 순찰 59(오너 2026-10-23 결정): 규칙 축약에 오너 3단계(괄호·용도 수식어·색상+명사구)가 붙었다 — 그 전에 떨어진 규칙 축약은 한 번 다시 한다.
+RULE_SHORT_SINCE = datetime(2026, 10, 23, 15, 0, tzinfo=timezone.utc)
 
 
 def _recently_tried(ex: dict, key: str) -> bool:
@@ -99,6 +101,8 @@ def _recently_tried(ex: dict, key: str) -> bool:
     try:
         if t and key.startswith("option_short:") and datetime.fromisoformat(str(t)) < SHORT_GUARD_SINCE and \
                 str((ex.get("ai_fix_rejects") or {}).get(key) or "").startswith(("단어 중간 절단", "지킬 말 빠짐")):
+            return False
+        if t and key.startswith("option_short_rule:") and datetime.fromisoformat(str(t)) < RULE_SHORT_SINCE:
             return False
         return bool(t) and datetime.now(timezone.utc) - datetime.fromisoformat(str(t)) < RETRY_AFTER
     except Exception:
@@ -245,7 +249,8 @@ def long_option_values(pd: dict, cap: int = 0) -> List[dict]:
 
 _SHORT_KEEP = ("풀가죽", "반가죽", "발받침", "오토만", "스툴", "세트")
 _SHORT_COLORS = frozenset(("블랙", "화이트", "검정", "흰", "흰색", "그레이", "회색", "베이지", "아이보리", "핑크", "레드", "빨강", "블루", "파랑",
-                           "네이비", "그린", "초록", "카키", "브라운", "갈색", "실버", "골드", "옐로", "노랑", "퍼플", "보라", "오렌지", "민트"))
+                           "네이비", "그린", "초록", "카키", "브라운", "갈색", "실버", "골드", "옐로", "노랑", "퍼플", "보라", "오렌지", "민트",
+                           "검은색", "검은", "하얀색", "하얀"))
 
 
 def _words(s: str) -> List[str]:
@@ -273,18 +278,65 @@ def _stem_of_word(w: str, words: List[str]) -> bool:
     return len(w) >= 2 and any(o != w and _stem(o) == w for o in words)
 
 
+#: 순찰 59(오너 2026-10-23 결정) 규칙 축약 ②: 용도 수식어(宿舍/家用/办公/学生) — 낱말 통째로만 뺀다.
+_USAGE_WORDS = frozenset(("기숙사용", "기숙사", "가정용", "가정", "사무용", "사무실용", "사무", "학생용", "학생"))
+_BRACKETS = re.compile(r"[\[\]【】〔〕［］]")
+_KEEP_TOKEN = re.compile(r"[A-Za-z0-9]")          # 브랜드·모델·용량(Pro·6000mAh·4in1) — 끝까지 남긴다
+
+
+def _is_color(w: str) -> bool:
+    return w in _SHORT_COLORS or _stem(w) in _SHORT_COLORS
+
+
+def owner_short_steps(ko: str, cap: int = 0) -> str:
+    """순찰 59(오너 2026-10-23 결정) — 네이버 옵션값 규칙 축약 3단계. 한도 안에 든 첫 단계 값, 못 들면 ""(자르지 않는다).
+
+    ① 대괄호 꾸밈말은 **괄호만** 뗀다(안 말은 남김) ② 용도 수식어(기숙사용·가정용·사무용·학생용) 낱말을 뺀다
+    ③ 그래도 넘으면 **색상 + 다음 명사구 1개**만 — 브랜드·모델·용량 토큰(영문·숫자가 든 낱말: Pro·6000mAh·4in1)은 끝까지 순서대로 붙인다."""
+    from src.uploaders.naver_options import OPTION_NAME_MAX
+    cap = cap or OPTION_NAME_MAX
+    v = re.sub(r"\s{2,}", " ", _BRACKETS.sub(" ", str(ko or ""))).strip()                     # ①
+    if len(v) <= cap:
+        return v
+    words = [w for w in v.split(" ") if w]
+    v = " ".join(w for w in words if w not in _USAGE_WORDS)                                   # ②
+    if len(v) <= cap:
+        return v
+    words = [w for w in re.split(r"\s+", v) if w and w not in ("·", "/", "+", ",")]            # ③
+    ci = next((i for i, w in enumerate(words) if _is_color(w)), None)
+    if ci is None:
+        return ""
+    head = [words[ci]]
+    nxt = next((w for w in words[ci + 1:] if not _KEEP_TOKEN.search(w)), "")
+    if nxt:
+        head.append(nxt)
+    keep = [w for w in words if _KEEP_TOKEN.search(w) and w not in head]
+    v = " ".join(head + list(dict.fromkeys(keep)))
+    return v if len(v) <= cap else ""
+
+
 def rule_short(ko: str, taken, cap: int = 0) -> Tuple[str, str]:
-    """Y14-d — 규칙 축약(`ko_polish.shorten`, AI 호출 없음) → `(값, 버린 이유)`. AI 축약과 **같은 검사**를 통과해야 "" 이유."""
+    """Y14-d — 규칙 축약(AI 호출 없음) → `(값, 버린 이유)`. AI 축약과 **같은 검사**를 통과해야 "" 이유.
+    순찰 59: 예전 `ko_polish.shorten`이 못 줄이면(또는 검사에서 떨어지면) 오너 결정 3단계(`owner_short_steps`)."""
     from src.collectors.ko_polish import shorten
     from src.uploaders.coupang_options import lost_tokens
     from src.uploaders.naver_options import OPTION_NAME_MAX
     cap = cap or OPTION_NAME_MAX
-    s = str(shorten(ko, cap) or "").strip()
-    lost = lost_tokens(ko, s) if s else []
-    why = ("규칙 축약 실패" if not s or s == ko else "") or guard(s) or (f"{cap}자 초과" if len(s) > cap else "") \
-        or ("다른 옵션 값과 같아짐" if s in (taken or set()) else "") or short_guard(ko, s) \
-        or ("지금 값의 숫자·영문 빠짐(" + ", ".join(lost) + ")" if lost else "")
-    return s, why
+
+    def _check(s: str) -> str:
+        lost = lost_tokens(ko, s) if s else []
+        return ("규칙 축약 실패" if not s or s == ko else "") or guard(s) or (f"{cap}자 초과" if len(s) > cap else "") \
+            or ("다른 옵션 값과 같아짐" if s in (taken or set()) else "") or short_guard(ko, s) \
+            or ("지금 값의 숫자·영문 빠짐(" + ", ".join(lost) + ")" if lost else "")
+
+    first = None
+    # 예전 규칙(`shorten`)이 먼저 — 그게 못 줄이거나 검사에서 떨어지면 오너 3단계(폴백에 **추가**, 순찰 59 결정)
+    for s in dict.fromkeys(x for x in (str(shorten(ko, cap) or "").strip(), owner_short_steps(ko, cap)) if x):
+        why = _check(s)
+        if not why:
+            return s, ""
+        first = first or (s, why)                   # 둘 다 떨어지면 먼저 시도한 값과 이유
+    return first or ("", _check(""))
 
 
 def short_guard(ko: str, short: str) -> str:
