@@ -164,7 +164,7 @@
       {% endif %}
     </div>
     <div class="op-card-foot">
-      <a class="btn btn-cta btn-sm" href="/seller/sourcing/register-pipe">소싱 URL 검수</a>
+      {% if owner_pool_ok is not defined or owner_pool_ok %}<a class="btn btn-cta btn-sm" href="/seller/sourcing/register-pipe">소싱 URL 검수</a>{% endif %}
       <a class="btn btn-ghost btn-sm" href="/seller/collect/history">수집 이력</a>
     </div>
   </section>

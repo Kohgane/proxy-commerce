@@ -12775,6 +12775,8 @@ def sourcing_register_pipe():
     """
     if not _check_auth():
         return redirect(url_for("seller_console.index"))
+    if not _viewer_shared():
+        abort(403)                            # 순찰 43(오너 결정): 오너 도구 — 공유 사용자(오너·가족)만. 한국어 안내(Z9)
 
     review = None
     urls_text = ""
@@ -12968,6 +12970,8 @@ def sourcing_register_pipe_register():
     """
     if not _check_auth():
         return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    if not _viewer_shared():                  # 순찰 43: 오너 도구 — 공유 사용자(오너·가족)만
+        return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요."}), 403
     from src.pipeline.register_pipe import register_source_rows
 
     from src.pipeline.register_adapters import get_adapter
