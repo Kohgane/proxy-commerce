@@ -689,3 +689,17 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 | 새 DB 첫 부팅 스키마 | 99문장 매번 | 0.84초(1회) · 동시 부팅 다른 쪽 = 「방금 적용 — 건너뜀」 |
 | 두 번째 부팅 스키마 | 99문장 | **0.30초**(지문 같음 — 쿼리 1번) |
 | 실제 앱 포트 열림(로컬 PG) | — | 1.8초 |
+- **머지:** #960 → main `c4707603`(10-23 11:06 UTC) · CI 5/5 · 로컬 16581 passed / 1 failed(확장 타이밍 `test_f49t4_infinite_scroll` — 단독 3/3·CI 그린, 확장 무변경) · PG 105 passed.
+
+### 추가 1 — 강제 종료 뒤 남는 「running」(오너 2026-10-23 · 이 PR 머지 전 작성)
+**확인 결과(전):** 회수 없음. 두 가지가 샌다.
+| 남는 것 | 전 | 운영 실측(읽기만, 11:1x UTC) |
+|---|---|---|
+| 사전검증 잡 `prevalidate_job:<id>` | 화면 폴링이 마감 지나면 닫음 — **줄 선 잡(`queued`)·아무도 안 보는 잡(일회성 줄이 띄움)은 영영 running** | running **3건**(10-10 13:35 ~ 10-11 14:39, 일회성 기록 없음) · done 156 |
+| 일회성 작업 줄 | `drain`이 줄에서 **먼저 빼고** 돌림 → 도중에 죽으면 줄이 **조용히 사라짐**(결과 기록도 없음) | 진행 기록 자체가 없었음 |
+
+**고친 것:** `drain`이 꺼낸 줄을 `ops:oneshot:inflight:<인스턴스:pid>`에 적고(줄마다 pending→running→done) 끝나면 지운다. 사전검증 잡 기록에 `holder`(인스턴스:pid)·띄운 일회성 줄(`oneshot`). `src/services/restart_recovery.sweep()` — 부팅 부가 작업이 부팅 때 + 판정 창(최대 20분) 뒤 한 번 더:
+- 판정은 **시간으로만**(Render는 새 인스턴스를 띄운 뒤 옛 것을 내린다 — 옛 것이 아직 돌 수 있다): 일회성 기록 마지막 갱신 20분(`ONESHOT_INFLIGHT_STALE_SEC`) · 사전검증 시작 + 마감 60 + AI 60 + 줄 대기 90 + 여유 60초.
+- 시작 못 한 줄 → 그대로 다시 넣음 · 돌던 줄 → **읽기 작업만**(prevalidate·check_item·dims_fetch·review_status·image_probe·thumb_probe·coupang_inspect) **1회** 다시 · 등록·전송·결정 적용(register·owner_decision·naver_resend 등) → 다시 안 넣고 `ops:oneshot:interrupted`에 「중단됨」(중복 등록 방지).
+- 사전검증 잡 → `done` · 남은 마켓 「검증 못 함 — 서버가 다시 시작돼 검증이 끊겼어요(다시 눌러 주세요)」 · 일회성 줄이 띄운 읽기 작업이면 그 줄 1회 다시.
+- 배포 뒤 첫 스윕이 위 옛 running 3건을 「서버 재시작」으로 닫는다(다시 넣는 것 0 — 띄운 줄 기록 없음).

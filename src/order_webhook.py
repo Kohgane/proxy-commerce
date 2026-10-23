@@ -126,6 +126,15 @@ def _boot_chores():
         _cdn_backfill()
     except Exception as _cbexc:
         logger.warning("번역본 CDN 백필 건너뜀(계속): %s", _cbexc)
+    # P0-운영(오너 2026-10-23): 강제 종료·OOM으로 죽은 프로세스가 남긴 「running」 사전검증 잡·일회성 줄을 닫고 안전한 것만 다시 넣는다.
+    #   판정 창(최대 20분) 뒤 한 번 더 보므로 따로 띄운다(부가 작업·임포트를 붙잡지 않게).
+    if os.getenv("RESTART_RECOVERY", "1").strip().lower() not in ("0", "false", "no", "off"):
+        try:
+            from src.services import restart_recovery as _rr
+            from src.utils import shutdown as _sd_rr
+            _sd_rr.start_daemon(_rr.boot_sweep, "restart-recovery")
+        except Exception as _rrexc:                              # noqa: BLE001
+            logger.warning("재시작 회수 시작 실패(계속): %s", _rrexc)
 
 
 _BG_STARTED = {"pid": None}

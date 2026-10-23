@@ -282,6 +282,30 @@ def state_set(key: str, value: dict) -> None:
                     (key, json.dumps(value or {}, ensure_ascii=False)))
 
 
+def state_scan(prefix: str, *, field: str = "", equals: str = "", limit: int = 200) -> list:
+    """`prefix`로 시작하는 `(key, value)` — `field`를 주면 그 값이 `equals`인 것만. 재시작 회수(`restart_recovery`)가 쓴다."""
+    if not _enabled():
+        with _LOCK:
+            rows = [(k, dict(v or {})) for k, v in _MEM_STATE.items() if k.startswith(prefix)]
+        return [(k, v) for k, v in rows if not field or str(v.get(field) or "") == equals][:limit]
+    sql, args = "SELECT key, value FROM app_state WHERE key LIKE %s", [prefix.replace("%", r"\%").replace("_", r"\_") + "%"]
+    if field:
+        sql, args = sql + " AND value->>%s = %s", args + [field, equals]
+    with pg.query() as cur:
+        cur.execute(sql + " ORDER BY updated_at LIMIT %s", (*args, int(limit)))
+        rows = cur.fetchall()
+    return [(k, v if isinstance(v, dict) else (json.loads(v) if v else {})) for k, v in rows]
+
+
+def state_delete(key: str) -> None:
+    if not _enabled():
+        with _LOCK:
+            _MEM_STATE.pop(key, None)
+        return
+    with pg.tx() as cur:
+        cur.execute("DELETE FROM app_state WHERE key=%s", (key,))
+
+
 def take_start(day_key: str, cap: int) -> tuple:
     """오늘 시작 수를 **상한 아래일 때만** 1 올린다(원자적) — `(took, count_after)`.
 

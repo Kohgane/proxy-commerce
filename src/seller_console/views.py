@@ -5402,10 +5402,16 @@ def _pv_start_job(data: dict, markets: list, dispatcher):
     #   사진 그리기가 끝나고 5초 뒤에 재고, 그래도 차 있으면 30초 뒤 한 번 더 스스로 시도한다(`_pv_wait_memory`).
     job_id = _uuid.uuid4().hex
     now = datetime.now(timezone.utc)
+    # P0-운영(오너 2026-10-23): 누가 돌리나(`인스턴스:pid`)·어느 일회성 줄이 띄웠나 — 프로세스가 도중에 죽으면 다음 부팅의
+    #   `restart_recovery`가 이 잡을 「검증 못 함 — 서버 재시작」으로 닫고, 일회성 줄이 띄운 잡이면 그 줄을 한 번 다시 넣는다.
+    from src.services.oneshot_ops import current_row as _oneshot_row
+    from src.utils.instance import holder as _holder
+    _origin = _oneshot_row()
     _pv_store().state_set(_PV_JOB_KEY + job_id, {
         "state": "running", "owner": _seller_id(), "markets": markets, "results": {}, "auto_translate": None,
         "started_at": now.isoformat(), "started_ts": now.timestamp(),
-        "market_timeout": _PV_MARKET_TIMEOUT_SEC, "deadline": _PV_JOB_DEADLINE_SEC})
+        "market_timeout": _PV_MARKET_TIMEOUT_SEC, "deadline": _PV_JOB_DEADLINE_SEC, "holder": _holder(),
+        "oneshot": {k: v for k, v in (_origin or {}).items() if not str(k).startswith("_")} or None})
     # 요청 컨텍스트(세션 — Z6 오너 자격 판정)를 그대로 잡 스레드로 넘긴다(Flask 3은 contextvars).
     _th.Thread(target=_cv.copy_context().run, args=(_pv_job, job_id, data, markets, dispatcher), daemon=True).start()
     return jsonify({"ok": True, "job_id": job_id, "markets": markets,

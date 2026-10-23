@@ -23,3 +23,8 @@ def instance_id() -> str:
 def instance_info() -> dict:
     return {"id": instance_id(), "id_source": "RENDER_INSTANCE_ID" if os.getenv("RENDER_INSTANCE_ID") else "hostname",
             "pid": os.getpid()}
+
+
+def holder() -> str:
+    """이 프로세스 한 개를 가리키는 이름 — `인스턴스:pid`(인스턴스가 둘이면 pid가 같아도 다르다). 잡 기록의 「누가 돌리나」."""
+    return f"{instance_id()}:{os.getpid()}"
