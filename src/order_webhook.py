@@ -1253,6 +1253,28 @@ from src.api.api_gate import install as _install_api_gate
 _install_api_gate(app)
 
 
+_REQ_PROBE = {"n": 0, "lock": __import__("threading").Lock()}
+_REQ_PROBE_EVERY = int(os.getenv("REQ_PROBE_EVERY", "100") or 100)
+
+
+@app.after_request
+def _req_rss_sample(response):
+    """Y15 순찰 41(오너 2026-10-23): 요청 100개마다 RSS·스레드 한 줄(`rss:ticks`) — 바닥이 틱 사이 어느 구간에서 오르는지.
+    경로는 엔드포인트 이름만(쿼리·값 없음)."""
+    try:
+        with _REQ_PROBE["lock"]:
+            _REQ_PROBE["n"] += 1
+            hit = _REQ_PROBE_EVERY > 0 and _REQ_PROBE["n"] % _REQ_PROBE_EVERY == 0
+            n = _REQ_PROBE["n"]
+        if hit:
+            from src.utils import render_worker as _rw
+            if _rw.tick_probe_on():
+                _rw.record_tick("req", n=n, endpoint=str(request.endpoint or "")[:60], **_rw.probe_row())
+    except Exception:                                      # noqa: BLE001 — 측정이 응답을 막지 않는다
+        pass
+    return response
+
+
 @app.after_request
 def _perf_after_request(response):
     try:

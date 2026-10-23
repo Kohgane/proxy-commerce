@@ -27,6 +27,29 @@ _RUNS_KEY = "workers:runs"
 _LEASE_PREFIX = "worker_lease:"
 _MEM: dict = {}
 _LOCK = threading.Lock()
+# Y15 순찰 41: 틱 경계 프로브 — 이 네 리스는 잡은 순간(처음)과 놓는 순간에 RSS·스레드 한 줄씩(`rss:ticks`).
+PROBED_LEASES = ("translate-pilot-tick", "imgko-auto", "reject-watch", "optko-auto")
+_PROBE_OPEN: set = set()
+
+
+def _tick_probe(name: str, phase: str) -> None:
+    if name not in PROBED_LEASES:
+        return
+    with _LOCK:
+        if phase == "start":
+            if name in _PROBE_OPEN:                    # 장마다 리스 갱신 — 시작은 한 번만 센다
+                return
+            _PROBE_OPEN.add(name)
+        else:
+            if name not in _PROBE_OPEN:
+                return
+            _PROBE_OPEN.discard(name)
+    try:
+        from src.utils import render_worker as _rw
+        if _rw.tick_probe_on():
+            _rw.record_tick("tick", name=name, phase=phase, **_rw.probe_row())
+    except Exception as exc:                           # noqa: BLE001 — 측정이 워커를 막지 않는다
+        logger.debug("[틱 프로브] 실패: %s", exc)
 
 # 진단에 보일 워커 목록(이름 → 설명). 실제로 이 레포 서버에서 도는 것만.
 WORKERS = {
@@ -80,6 +103,13 @@ def _pg_on() -> bool:
 
 def lease(name: str, ttl: int = 120) -> bool:
     """`name` 워커를 지금 이 프로세스가 돌려도 되나 — 비었거나·만료됐거나·이미 내 것이면 잡고 True."""
+    ok = _lease(name, ttl)
+    if ok:
+        _tick_probe(name, "start")
+    return ok
+
+
+def _lease(name: str, ttl: int = 120) -> bool:
     until = datetime.now(timezone.utc) + timedelta(seconds=int(ttl))
     me = _holder()
     val = {"holder": me, "service": service_name(), "until": until.isoformat()}
@@ -106,6 +136,7 @@ def lease(name: str, ttl: int = 120) -> bool:
 
 def release(name: str) -> None:
     """내가 잡은 리스만 놓는다(만료 시각을 지금으로)."""
+    _tick_probe(name, "end")
     me = _holder()
     now = datetime.now(timezone.utc).isoformat()
     if not _pg_on():
