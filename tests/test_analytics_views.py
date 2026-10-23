@@ -11,6 +11,8 @@ def test_seller_analytics_view_renders(monkeypatch):
 
     app.config["TESTING"] = True
     # Z7: BI는 오너 풀(공유 마켓) 데이터 — 관리자·가족만 본다. 일반 가입자는 빈 상태(test_z7_orders_scope).
+    # 순찰 57: 공유 판정 = 정체성 규칙(user_id) — 세션 role만으로는 아니다. 공유 목록에 그 계정 번호를 넣는다.
+    monkeypatch.setenv("ADMIN_USER_IDS", "seller-1")
     with app.test_client() as client:
         with client.session_transaction() as sess:
             sess["user_id"] = "seller-1"
@@ -21,6 +23,7 @@ def test_seller_analytics_view_renders(monkeypatch):
     assert "BI" in html
     assert "베스트셀러" in html
 
+    monkeypatch.delenv("ADMIN_USER_IDS")
     with app.test_client() as client:
         with client.session_transaction() as sess:
             sess["user_id"] = "seller-1"

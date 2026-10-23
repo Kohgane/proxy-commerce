@@ -1297,23 +1297,47 @@ from src.api.api_gate import install as _install_api_gate
 _install_api_gate(app)
 
 
-_REQ_PROBE = {"n": 0, "lock": __import__("threading").Lock()}
+_REQ_PROBE = {"pending": 0, "flushed_at": 0.0, "lock": __import__("threading").Lock()}
 _REQ_PROBE_EVERY = int(os.getenv("REQ_PROBE_EVERY", "100") or 100)
+_REQ_PROBE_FLUSH_N = int(os.getenv("REQ_PROBE_FLUSH_N", "10") or 10)
+_REQ_PROBE_FLUSH_SEC = float(os.getenv("REQ_PROBE_FLUSH_SEC", "60") or 60)
+REQ_PROBE_KEY = "rss:req:count"
+
+
+def _req_probe_flush(force: bool = False):
+    """`(합계, 이번에 올린 수)` — 쌓인 요청 수를 DB 원자 카운터(`rss:req:count`)에 더한다. 안 올렸으면 None.
+
+    순찰 57(오너 2026-10-23 「지금 0줄인 구멍」): 카운터가 프로세스 메모리에만 있어 재시작·배포마다 0부터 — 07:40~13:05에
+    100개가 한 번도 안 찼다(13:05 스캔 400개만 4줄). DB 카운터는 재시작·인스턴스를 넘어 이어진다. 요청마다 쓰지 않고
+    `REQ_PROBE_FLUSH_N`(10)개 또는 `REQ_PROBE_FLUSH_SEC`(60초)마다 한 번."""
+    import time as _t
+    with _REQ_PROBE["lock"]:
+        due = _REQ_PROBE["pending"] >= _REQ_PROBE_FLUSH_N or \
+            (_REQ_PROBE["pending"] and _t.monotonic() - _REQ_PROBE["flushed_at"] >= _REQ_PROBE_FLUSH_SEC)
+        if not (due or (force and _REQ_PROBE["pending"])):
+            return None
+        by, _REQ_PROBE["pending"], _REQ_PROBE["flushed_at"] = _REQ_PROBE["pending"], 0, _t.monotonic()
+    from src.db import image_translate_queue_pg as _st
+    return _st.state_incr(REQ_PROBE_KEY, by), by
 
 
 @app.after_request
 def _req_rss_sample(response):
     """Y15 순찰 41(오너 2026-10-23): 요청 100개마다 RSS·스레드 한 줄(`rss:ticks`) — 바닥이 틱 사이 어느 구간에서 오르는지.
-    경로는 엔드포인트 이름만(쿼리·값 없음)."""
+    경로는 엔드포인트 이름만(쿼리·값 없음) — 맞는 라우트가 없으면 첫 경로 조각만. 순찰 57: 세는 건 DB 원자 카운터."""
     try:
+        if _REQ_PROBE_EVERY <= 0:
+            return response
         with _REQ_PROBE["lock"]:
-            _REQ_PROBE["n"] += 1
-            hit = _REQ_PROBE_EVERY > 0 and _REQ_PROBE["n"] % _REQ_PROBE_EVERY == 0
-            n = _REQ_PROBE["n"]
-        if hit:
-            from src.utils import render_worker as _rw
-            if _rw.tick_probe_on():
-                _rw.record_tick("req", n=n, endpoint=str(request.endpoint or "")[:60], **_rw.probe_row())
+            _REQ_PROBE["pending"] += 1
+        got = _req_probe_flush()
+        if got:
+            total, by = got
+            if total // _REQ_PROBE_EVERY > (total - by) // _REQ_PROBE_EVERY:      # 이번에 100의 배수를 넘었다
+                from src.utils import render_worker as _rw
+                if _rw.tick_probe_on():
+                    ep = str(request.endpoint or "")[:60] or ("path:/" + (request.path or "/").lstrip("/").split("/")[0][:30])
+                    _rw.record_tick("req", n=total, endpoint=ep, status=int(response.status_code or 0), **_rw.probe_row())
     except Exception:                                      # noqa: BLE001 — 측정이 응답을 막지 않는다
         pass
     return response

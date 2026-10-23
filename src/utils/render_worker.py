@@ -59,11 +59,11 @@ def record_tick(kind: str, **kw) -> None:
     """Y15 순찰 41(오너 2026-10-23 「틱 경계 프로브」): 리스 틱 시작/끝 · 요청 100개마다의 RSS·스레드 — `rss:ticks` 400줄.
     `rss:recent`(60줄)에 섞으면 2시간 치가 사전검증·작업 기록을 밀어내서 따로 둔다. 실패해도 일은 계속."""
     from datetime import datetime, timezone
+    row = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind, **kw}
     try:
         from src.db import image_translate_queue_pg as st
-        cur = st.state_get(TICKS_KEY) or {}
-        rows = list(cur.get("rows") or [])[-(TICKS_KEEP - 1):] + [{"at": datetime.now(timezone.utc).isoformat(), "kind": kind, **kw}]
-        st.state_set(TICKS_KEY, {"rows": rows})
+        # 순찰 57: 읽고-덧쓰기를 한 번에 — 틱 프로브와 요청 샘플이(또는 두 인스턴스가) 같은 순간 쓰면 한 줄이 사라졌다
+        st.state_update(TICKS_KEY, lambda cur: {"rows": list(cur.get("rows") or [])[-(TICKS_KEEP - 1):] + [row]})
     except Exception as exc:                                      # noqa: BLE001
         logger.debug("[RSS] 틱 기록 실패: %s", exc)
 

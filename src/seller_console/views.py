@@ -237,15 +237,32 @@ def _owner_pool_denied() -> bool:
         return True
 
 
+def _forbidden_hint() -> str:
+    """순찰 57(오너 2026-10-23 「403 힌트」): 왜 막혔는지 한 줄 — 공유 판정은 **로그인 계정 번호** 기준이라, 오너가 본인 다른 로그인으로
+    들어왔을 때 무엇을 알려 주면 되는지. 계정 번호는 앞 8자리만(본인 화면에만) · 설정 이름·값은 안 보인다."""
+    try:
+        from .market_pick import session_identity
+        ident = session_identity()
+    except Exception:                                            # noqa: BLE001
+        ident = ""
+    if not ident or "@" in ident:
+        return ""
+    return (f"이 화면은 로그인 계정 번호로 판정해요. 오너·가족인데 막혔다면 이 계정 번호(앞 8자리 {ident[:8]})를 "
+            "오너에게 알려 주세요 — 공유 목록에 넣으면 바로 열려요.")
+
+
 @bp.errorhandler(403)
 def _seller_forbidden(_err):
     """Z9: 콘솔 403은 한국어 안내로 — 영문 서버 기본 문구(「Forbidden … read-protected」)를 보이지 않는다."""
+    hint = _forbidden_hint()
     if request.accept_mimetypes.best == "application/json" or request.is_json:
-        return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요."}), 403
+        return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요.", "hint": hint}), 403
+    from markupsafe import escape as _esc
     body = ('<div class="pc-status" data-role="forbidden"><h1 class="pc-h2">이 화면은 열 수 없어요</h1>'
             "<p>오너 마켓 계정에 연결된 사용자(관리자·가족)만 볼 수 있는 화면이에요. "
             "내 상품·내 주문은 왼쪽 메뉴에서 그대로 쓸 수 있어요.</p>"
-            "<p><a class='btn btn-primary' href='/seller/'>대시보드로</a></p></div>")
+            + (f"<p class='text-muted small' data-role='forbidden-hint'>{_esc(hint)}</p>" if hint else "")
+            + "<p><a class='btn btn-primary' href='/seller/'>대시보드로</a></p></div>")
     return _render_seller_page("열 수 없는 화면", body, page="forbidden"), 403
 
 
@@ -257,7 +274,7 @@ def _owner_pool_gate(json_resp: bool = False):
         return redirect(url_for("auth.login", next=request.full_path))
     if _owner_pool_denied():
         if json_resp:
-            return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요."}), 403
+            return jsonify({"ok": False, "error": "이 계정에서는 볼 수 없는 화면이에요.", "hint": _forbidden_hint()}), 403
         abort(403)
     return None
 
