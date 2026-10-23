@@ -148,8 +148,13 @@ def test_expired_ticket(client):
     assert _state(h) == "담지 못했어요" and "10분이 지나" in h
 
 
-def test_rate_limit_per_ip():
+def test_rate_limit_per_ip(monkeypatch):
+    from datetime import datetime, timezone
     from src.order_webhook import app
+    from src.seller_console import share_tickets as ST
+    # 상한은 「IP × 시계 분」 칸이다 — 11번 요청이 분 경계를 넘으면 11번째가 새 칸에 들어가 통과한다(CI 10-23 #961 실측).
+    #   시계를 한 분 안에 고정해 잰다(상한 자체는 그대로).
+    monkeypatch.setattr(ST, "_now", lambda: datetime(2026, 10, 23, 12, 0, 30, tzinfo=timezone.utc))
     c = app.test_client()
     got = [_ticket_url(c.post("/seller/collect/share-in", data={"text": "x https://e.tb.cn/h.a"},
                               headers={"X-Forwarded-For": "203.0.113.9"})).query for _ in range(11)]

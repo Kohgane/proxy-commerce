@@ -3,6 +3,8 @@
 버튼(「번역 다듬기(이 상품)」·「OCR 다시 판정(이 상품)」)은 상품 전체를 돈다 — 오너가 **한 장만** 시킬 때(상세 13번만 재다듬,
 상세 1번만 다시 판정) 다른 장의 캐시·과금을 건드리지 않으려고 둔다. 줄은 `app_state ops:oneshot:queue`, 결과는 `ops:oneshot:last`.
 `/cron/translate-drain` 틱이 꺼내 **한 번만** 돌린다(꺼내자마자 줄에서 뺀다 — 실패해도 다시 돌지 않는다, 결과에 사유).
+P0-운영(오너 2026-10-23): 꺼낸 줄은 `ops:oneshot:inflight:<인스턴스:pid>`에 적어 두고 끝나면 지운다 — 프로세스가 도중에 죽으면
+(강제 종료·OOM) 다음 부팅의 `restart_recovery`가 시작 못 한 줄은 다시 넣고, 돌던 줄은 읽기 작업만 한 번 다시 넣고 나머지는 「중단됨」.
 
 허용 작업은 둘뿐(그 밖의 줄은 「모르는 작업」으로 버린다):
 - `polish_page` {item_id, kind, idx} — 그 장만 `image_polish.polish_job`(다시 만들 다듬음 버전일 때만 새로 그림)
@@ -36,6 +38,7 @@
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 from contextlib import contextmanager
@@ -50,6 +53,11 @@ PER_TICK = 5
 HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item")
 HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
+INFLIGHT_PREFIX = "ops:oneshot:inflight:"
+INTERRUPTED_KEY = "ops:oneshot:interrupted"
+#: 도중에 끊겨도 다시 돌려도 되는 줄(조회·사전검증만 — 마켓에 쓰지 않는다). 등록·전송·결정 적용은 다시 넣지 않는다(중복 등록 방지).
+REQUEUE_SAFE_OPS = ("prevalidate", "check_item", "dims_fetch", "review_status", "image_probe", "thumb_probe", "coupang_inspect")
+_CURRENT_ROW: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar("oneshot_row", default=None)
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
        "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard")
@@ -57,6 +65,19 @@ OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalid
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def current_row() -> Optional[dict]:
+    """지금 이 스레드가 돌리는 일회성 작업 줄(없으면 None) — 사전검증 잡이 「어느 줄이 띄웠나」를 기록에 남긴다(재시작 회수용)."""
+    return _CURRENT_ROW.get()
+
+
+def _inflight_set(key: str, holder: str, rows: list) -> None:
+    from src.db import image_translate_queue_pg as st
+    try:
+        st.state_set(key, {"holder": holder, "at": _now(), "rows": rows})
+    except Exception as exc:                                     # noqa: BLE001 — 기록 실패가 작업을 막지 않는다
+        logger.warning("[일회성 작업] 진행 기록 실패(계속): %s", exc)
 
 
 def queue_rows() -> List[dict]:
@@ -193,24 +214,40 @@ def drain() -> Dict:
             continue
         heavy += r.get("op") in HEAVY_OPS
         pick.append(r)
+    from src.utils.instance import holder as _holder
+    me = _holder()
+    inkey = INFLIGHT_PREFIX + me
+    track = [dict(r, _state="pending") for r in pick]
+    _inflight_set(inkey, me, track)                              # 줄에서 뺀 순간부터 — 도중에 죽어도 다음 부팅이 안다
     st.state_set(QUEUE_KEY, {"rows": keep})
     out = []
-    for r in pick:
-        heavy_op = r.get("op") in HEAVY_OPS
-        mem0 = _mem_mark() if heavy_op else None
+    try:
+        for i, r in enumerate(pick):
+            track[i].update(_state="running", started_at=_now())
+            _inflight_set(inkey, me, track)
+            heavy_op = r.get("op") in HEAVY_OPS
+            mem0 = _mem_mark() if heavy_op else None
+            tok = _CURRENT_ROW.set(r)
+            try:
+                with _job_env(r):
+                    res = _run(r)
+            except Exception as exc:                             # noqa: BLE001 — 한 줄 실패가 다른 줄을 막지 않는다
+                logger.warning("[일회성 작업] %s 실패: %s", r.get("op"), exc)
+                res = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}"}
+            finally:
+                _CURRENT_ROW.reset(tok)
+                if heavy_op:
+                    _mem_after(r, mem0)
+            track[i]["_state"] = "done"
+            out.append({**{k: r.get(k) for k in ("op", "item_id", "kind", "idx", "detail_idx", "reason")}, "result": res, "at": _now()})
+            logger.info("[일회성 작업] %s item=%s ok=%s why=%s", r.get("op"), str(r.get("item_id") or "")[:8], res.get("ok"),
+                        str(res.get("why") or "")[:120])
+        st.state_set(LAST_KEY, {"at": _now(), "rows": out})
+    finally:
         try:
-            with _job_env(r):
-                res = _run(r)
-        except Exception as exc:                                 # noqa: BLE001 — 한 줄 실패가 다른 줄을 막지 않는다
-            logger.warning("[일회성 작업] %s 실패: %s", r.get("op"), exc)
-            res = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}"}
-        finally:
-            if heavy_op:
-                _mem_after(r, mem0)
-        out.append({**{k: r.get(k) for k in ("op", "item_id", "kind", "idx", "detail_idx", "reason")}, "result": res, "at": _now()})
-        logger.info("[일회성 작업] %s item=%s ok=%s why=%s", r.get("op"), str(r.get("item_id") or "")[:8], res.get("ok"),
-                    str(res.get("why") or "")[:120])
-    st.state_set(LAST_KEY, {"at": _now(), "rows": out})
+            st.state_delete(inkey)                               # 정상으로 끝난 틱은 흔적을 남기지 않는다
+        except Exception as exc:                                 # noqa: BLE001
+            logger.warning("[일회성 작업] 진행 기록 지우기 실패(계속): %s", exc)
     return {"picked": len(out), "rows": out}
 
 
