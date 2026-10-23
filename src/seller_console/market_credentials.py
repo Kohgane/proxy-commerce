@@ -869,7 +869,7 @@ _REQ_SKIP = ("/static/", "/health", "/favicon", "/sw.js", "/manifest")
 
 
 def request_isolation_begin():
-    """Y15 P0-2: 로그인한 **비공유** 사람의 요청은 처음부터 격리 — 어느 화면·잡 스레드(copy_context)가 os.environ을 직접 읽어도
+    """Y15 P0-2: 로그인한 **비공유** 사람의 요청은 처음부터 격리(빈 겹) — 어느 화면·잡 스레드(copy_context)가 os.environ을 직접 읽어도
     오너 마켓 키가 안 보인다. 반환 = 되돌릴 토큰(없으면 None). `request_isolation_end(token)`로 닫는다."""
     try:
         from flask import request
@@ -878,8 +878,8 @@ def request_isolation_begin():
         ident = _session_identity()
         if not ident or seller_is_shared(ident):
             return None
-        return _ENV_OVERLAY.set({k: str(v) for k, v in _commerce_aliases(all_credential_env(ident)).items()
-                                 if v and _is_market_env(k)})
+        # 빈 겹 — 요청마다 저장값을 읽지 않는다(페이지 쿼리 예산). 그 셀러 키가 필요한 길은 `seller_market_env`가 저장값을 얹는다.
+        return _ENV_OVERLAY.set({})
     except Exception as exc:                                   # noqa: BLE001 — 판정이 깨지면 닫는다(빈 겹)
         logger.warning("[격리] 요청 격리 판정 실패 — 빈 겹으로 닫음: %s", exc)
         try:
