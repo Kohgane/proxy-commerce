@@ -31,8 +31,13 @@
       <div class="op-card-body">
         <label class="form-label small mb-1" for="account">계정</label>
         <select id="account" name="account" class="form-select form-select-sm mb-3">
+          {# 순찰 42: 판매자 번호·두 번째 계정은 공유 사용자(오너·가족)에게만 — 일반 셀러는 자기 쿠팡 키 하나 #}
+          {% if vendor_shown %}
           <option value="gogane" {% if account=='gogane' %}selected{% endif %}>고가네 (A01381223)</option>
           <option value="woojoo" {% if account=='woojoo' %}selected{% endif %}>우주대행 (A01504840)</option>
+          {% else %}
+          <option value="gogane" selected>내 쿠팡</option>
+          {% endif %}
         </select>
 
         <label class="form-label small mb-1" for="sids">상품 번호(sellerProductId, 한 줄에 하나)</label>

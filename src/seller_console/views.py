@@ -12793,7 +12793,17 @@ def sourcing_register_pipe():
     business_accounts = {b["business"]: dict(b["accounts"]) for b in BUSINESSES}
     return render_template("register_pipe.html", page="sourcing", review=review,
                            urls_text=urls_text, preferred_business=preferred_business,
-                           business_accounts=business_accounts)
+                           business_accounts=business_accounts, vendor_shown=_viewer_shared())
+
+
+def _viewer_shared() -> bool:
+    """순찰 42: 지금 보는 사람이 공유 사용자(오너·가족·서버 자신)인가 — 오너 쿠팡 판매자 번호 같은 계정 식별자는
+    이 사람에게만 보인다. 판정은 마켓 키 격리와 같은 함수. 깨지면 False(닫는다)."""
+    try:
+        from .market_credentials import seller_is_shared
+        return bool(seller_is_shared(_seller_id()))
+    except Exception:                                            # noqa: BLE001
+        return False
 
 
 def build_review_for_urls(urls, *, cap: int = 50, rules: "dict | None" = None) -> dict:
@@ -13038,8 +13048,8 @@ def sourcing_reject_watch():
 
     scan = None
     account = (request.values.get("account") or "gogane").strip().lower()
-    if account not in ("gogane", "woojoo"):
-        account = "gogane"
+    if account not in ("gogane", "woojoo") or not _viewer_shared():
+        account = "gogane"                    # 순찰 42: 일반 셀러 = 자기 쿠팡 키 하나(오너 두 번째 계정은 없다)
     sids_text = ""
     from src.db import market_registrations_pg as _REG
     # 순찰 42: 내 줄만(공유 사용자 = 전부). 남의 등록 제목이 보이면 안 된다.
@@ -13068,7 +13078,7 @@ def sourcing_reject_watch():
 
     return render_template("reject_watch.html", page="sourcing", scan=scan, account=account,
                            sids_text=sids_text, approved=approved, kinds=RW.REJECTION_KINDS,
-                           watch=watch)
+                           watch=watch, vendor_shown=_viewer_shared())
 
 
 @bp.post("/sourcing/my-sources")

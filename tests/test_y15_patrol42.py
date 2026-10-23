@@ -170,3 +170,16 @@ def test_pg_owner_filter_and_coalesce(monkeypatch):
     finally:
         with pg.tx() as cur:
             cur.execute("DELETE FROM market_registrations WHERE account='t42'")
+
+
+def test_owner_vendor_ids_shown_only_to_shared_viewers():
+    from src.auth.identity import OWNER_USER_ID
+    from src.order_webhook import app
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        for uid, shown in (("u-plain", False), (OWNER_USER_ID, True)):
+            with c.session_transaction() as s:
+                s["user_id"], s["user_email"], s["user_role"] = uid, f"{uid}@example.com", "seller"
+            html = c.get("/seller/sourcing/reject-watch").get_data(as_text=True)
+            assert ("A01381223" in html) is shown and ("A01504840" in html) is shown, uid
+            assert ("우주대행" in html) is shown and (">내 쿠팡<" in html) is not shown, uid
