@@ -171,7 +171,11 @@ def test_pv_job_records_shared_reason_names_only():
         assert mc.fallback_reason() == "not_shared"
         with mc.isolated_market_env({}):
             assert mc.fallback_reason() == "overlay"
-    assert mc.fallback_reason() == "no_request"
+    out = {}                                                     # 요청 밖 = 새 스레드(다른 테스트가 메인 스레드에 남긴 요청 컨텍스트와 무관하게)
+    t = threading.Thread(target=lambda: out.__setitem__("r", mc.fallback_reason()))
+    t.start()
+    t.join()
+    assert out["r"] == "no_request"
 
 
 # ── G. 토스 비밀키 이름 한 벌 ────────────────────────────────────────────────────
