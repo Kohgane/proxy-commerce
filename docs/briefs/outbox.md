@@ -556,7 +556,7 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 | P0-3 | 접미 없는 스마트스토어 = `NAVER_COMMERCE_CLIENT_*`만(업로더·어댑터·채널 브리지·빈 설정 점검·연결 판정) · 셀러 저장 칸은 커머스 이름으로도 실음. **공유 목록에서 빼는 대신 커머스 이름**을 골랐다 — 오너 Render에 `NAVER_COMMERCE_*`가 있으면 그 앱으로, 없으면 「키 없음」(로그인 값으로 서명 안 함) |
 | P0-4 | 가입 텔레그램 「권한: seller/admin/family · 공유 판정: 예/아니오(이유)」 |
 | G | 토스 비밀키 `TOSS_SECRET_KEY` 한 벌(옛 `TOSS_PAYMENTS_SECRET_KEY` 폴백) · env_catalog · `test_` 키 = 「테스트 결제 모드」 배지 + 승인돼도 요금제 안 바꿈 · 캡처 `docs/screens/y15g/` |
-| 검증 | 전체 스위트 16,562 passed · PG 83 · CI 5/5 · 기존 테스트 「오너 세션 모양(role=admin)」→ `ADMIN_USER_IDS` 15파일·서버 스스 키 → 커머스 이름 13파일(계약 그대로 새 규칙) |
+| 검증 | 전체 스위트 16,562 passed · PG 83 · CI 5/5 · 기존 테스트 「오너 세션 모양(role=admin)」→ `ADMIN_USER_IDS` 13파일·서버 스스 키 → 커머스 이름 15파일(계약 그대로 새 규칙) |
 | 볼트 | 지뢰 2 + 색인: 「NAVER_CLIENT_* 로그인 커머스 이름 충돌」 · 「토스 secret env 이름 2벌」 |
 | 남은 것 | `reject_watch`는 등록 대장에 주인 칸이 없어 아직 서버 키로 **조회만** 한다(쓰기 없음) |
 
