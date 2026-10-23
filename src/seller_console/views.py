@@ -5753,7 +5753,11 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
             if reg:
                 _pv_update(job_id, results=reg)
                 markets = [m for m in markets if m not in reg]
+            # Y15 P0-1(오너 2026-10-23): 이 잡이 오너 서버 자격을 볼 수 있었나 — 갈래 이름만(값 없음). 잡 스레드 안에서 잰다.
+            _shr = {"session": mc.fallback_reason(), "owner": mc.seller_shared_reason(_seller_id()) or "not_shared"}
             with mc.seller_market_env(_seller_id(), markets):
+                _shr["isolated"] = mc.isolation_active()
+                _pv_update(job_id, shared_reason=_shr)
                 # Y7-J: 네이버로 나가는데 셀러 글이 없으면(초안이 없거나 옛 형식) 마켓 검증 **전에** 초안부터 — 본문 = 사진 위 · 글 아래
                 if data.get("item_id") and not _risk_open and _pv_needs_auto_text(product_data, markets):
                     t0 = _time.monotonic()
@@ -9269,6 +9273,9 @@ def billing_page():
     notice = (request.args.get("notice") or "").strip()
     error = (request.args.get("error") or "").strip()
     toss_client_key = os.getenv("TOSS_CLIENT_KEY", "") if pay_ready else ""
+    # Y15 G: 테스트 키(`test_` 접두)면 「테스트 결제 모드」 배지 — 결제 버튼 열림 조건(키 둘 다)은 그대로(가짜 활성 금지)
+    pay_test_mode = pay_ready and os.getenv("TOSS_CLIENT_KEY", "").startswith("test_") \
+        and os.getenv("TOSS_SECRET_KEY", "").startswith("test_")
     # Y15: 이번 달 쓴 양 — 표는 billing_store.PLANS 그대로, 숫자는 실제 센 값(못 세면 「—」)
     try:
         from . import usage_meter
@@ -9278,6 +9285,7 @@ def billing_page():
         usage = {"plan": acc.get("plan", "free"), "exempt": False, "rows": []}
     return render_template("billing.html", account=acc, plans=billing_store.PLANS, usage=usage,
                            pay_ready=pay_ready,
+                           pay_test_mode=pay_test_mode,
                            toss_client_key=toss_client_key,
                            notice=notice,
                            error=error,
@@ -9365,6 +9373,11 @@ def billing_success():
         return redirect(url_for("seller_console.billing_page", error="결제 상태를 완료로 확인하지 못했어요."))
 
     plan = str(pending.get("plan") or "free")
+    if os.getenv("TOSS_SECRET_KEY", "").startswith("test_"):
+        # Y15 G: 테스트 키 결제는 돈이 안 나간다 — 요금제를 바꾸면 가짜 활성이다. 승인 확인까지만 하고 그렇다고 말한다.
+        billing_store.pop_pending_payment(order_id)
+        return redirect(url_for("seller_console.billing_page",
+                                notice="테스트 결제가 승인됐어요 — 테스트 키라 요금제는 바꾸지 않았어요."))
     try:
         billing_store.set_plan(sid, plan)
     except billing_store.BillingCommitError as exc:

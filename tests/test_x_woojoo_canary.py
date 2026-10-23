@@ -12,6 +12,13 @@ import json
 import pytest
 from tests._pv_helper import prevalidate as _pv   # Z9: 사전검증은 202 + 잡(폴링)
 
+
+@pytest.fixture(autouse=True)
+def _y15_owner_ids(monkeypatch):
+    """Y15 P0-2(오너 2026-10-23): 오너 서버 자격은 세션 role이 아니라 **user_id 목록**으로 — 이 파일의 「오너 세션 모양」 id를 목록에."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "owner-x,owner-x-route,owner-x-save,owner-x2-ok,owner-x2-fail")
+
+
 GOGANE_DOM, GOGANE_OV, WOOJOO_DOM, WOOJOO_OV = "22796911", "25479338", "23612851", "26600001"
 
 
@@ -199,8 +206,8 @@ def _open_smartstore(monkeypatch):
     from src.seller_console import smartstore_routing as SR
     monkeypatch.setattr(SR, "_issue", lambda st: {"state": "ok", "raw": "토큰 발급 OK", "count": 10, "count_raw": ""})
     SR.reset_cache()
-    monkeypatch.setenv("NAVER_CLIENT_ID", "x")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "y")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "x")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "y")
 
 
 def _item(seller):

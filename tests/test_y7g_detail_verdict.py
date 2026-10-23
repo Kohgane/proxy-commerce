@@ -64,8 +64,8 @@ def cdn(monkeypatch):
         return {"ok": True, "reason": "", "urls": ["https://shop-phinf.pstatic.net/" + p.rsplit("/", 1)[-1] for p in ps]}
     monkeypatch.setattr(SS, "_fetch_image", fetch)
     monkeypatch.setattr(SS, "_upload_parts", parts)
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_ID", "id")
     monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_SECRET", "sec")
     import src.uploaders.naver_categories as NC

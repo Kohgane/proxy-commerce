@@ -121,17 +121,15 @@ def test_shared_users_are_never_metered(monkeypatch):
     assert not M.is_exempt(_sid()) and not M.translate_unlimited(_sid())
 
 
-def test_session_judgement_wins_for_the_signed_in_person(client, monkeypatch):
-    """세션이 이 사람이면 세션 판정(관리자 role 포함) — 신원 표에 없어도 관리자는 면제, 일반 가입자는 아니다."""
+def test_session_admin_role_alone_is_not_exempt(client, monkeypatch):
+    """Y15 P0-2(오너 2026-10-23): 한도 면제도 마켓 키 격리와 같은 판정 — 세션 role=admin만으론 아니고 user_id 목록이어야 한다."""
     from src.seller_console import usage_meter as M
-    with client.session_transaction() as s:
-        s["user_id"], s["user_email"], s["user_role"] = "sess-admin", "boss@example.com", "admin"
     with client.application.test_request_context():
         from flask import session
         session.update({"user_id": "sess-admin", "user_email": "boss@example.com", "user_role": "admin"})
+        assert not M.is_exempt("sess-admin")
+        monkeypatch.setenv("ADMIN_USER_IDS", "sess-admin")
         assert M.is_exempt("sess-admin")
-        session.update({"user_id": "sess-seller", "user_email": "new@example.com", "user_role": "seller"})
-        assert not M.is_exempt("sess-seller")
 
 
 def test_meter_failure_never_blocks(monkeypatch):

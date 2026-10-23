@@ -215,7 +215,7 @@ API_REGISTRY: list = [
     ApiKey(
         name="toss_payments",
         env_vars=["TOSS_CLIENT_KEY", "TOSS_SECRET_KEY"],
-        purpose="토스페이먼츠 - 한국 결제(셀러 SaaS 또는 자체몰)",
+        purpose="토스페이먼츠 - 한국 결제(셀러 SaaS 요금제·자체몰 공용 · 옛 이름 TOSS_PAYMENTS_SECRET_KEY는 폴백만)",
         docs_url="https://app.tosspayments.com",
         category=ApiCategory.PAYMENT,
     ),

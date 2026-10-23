@@ -147,8 +147,8 @@ def test_smartstore_channel_prices_skus_with_smartstore_fees(monkeypatch):
                         staticmethod(lambda pd, market="": markets.append(market) or (50000.0, "")))
     seen = {}
     monkeypatch.setattr(SU, "run_upload", lambda up, pd, **k: seen.update({"pd": pd}) or {"product_id": "1"})
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")               # Y15 P0-3: 접미 없는 계정 = 커머스 이름
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     SU.upload(_pleats())
     assert markets and set(markets) == {"smartstore"}
     assert all(k["sell_price_krw"] == 50000 for k in seen["pd"]["skus"])

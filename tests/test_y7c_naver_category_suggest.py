@@ -99,8 +99,8 @@ def _prevalidate(monkeypatch, pd):
     from src.seller_console import smartstore_routing as SR
     monkeypatch.setattr(UD, "smartstore_approved", lambda store="": True)
     monkeypatch.setattr(SR, "price_hold", lambda pd: "")
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")               # Y15 P0-3: 접미 없는 계정 = 커머스 이름
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     import contextlib
     import urllib.request
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: contextlib.nullcontext())   # 대표 이미지 HEAD(네트워크) 대역

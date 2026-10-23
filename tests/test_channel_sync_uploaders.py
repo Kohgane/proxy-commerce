@@ -137,8 +137,8 @@ class TestCoupangBridge:
 class TestSmartstoreBridge:
     def test_upload_success(self, monkeypatch):
         import src.uploaders.naver_uploader as nu
-        monkeypatch.setenv("NAVER_CLIENT_ID", "a")
-        monkeypatch.setenv("NAVER_CLIENT_SECRET", "b")
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "a")            # Y15 P0-3: 커머스 이름
+        monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "b")
 
         class _FakeNaver:
             def prepare_product(self, collected):

@@ -108,8 +108,9 @@ def test_select_paid_with_payment_returns_checkout_payload(client, monkeypatch):
 
 def test_billing_success_confirms_and_activates_plan(client, monkeypatch):
     from src.seller_console import billing_store as bs
-    monkeypatch.setenv("TOSS_CLIENT_KEY", "test_ck")
-    monkeypatch.setenv("TOSS_SECRET_KEY", "test_sk")
+    # Y15 G: `test_` 키는 테스트 결제 모드(요금제 안 바뀜 — test_y15_p0_failclosed) — 여기는 실키 모양으로 활성을 잰다
+    monkeypatch.setenv("TOSS_CLIENT_KEY", "live_ck")
+    monkeypatch.setenv("TOSS_SECRET_KEY", "live_sk")
     created = client.post("/seller/billing/select", json={"plan": "pro"}).get_json()["checkout_payload"]
     with patch("src.payments.toss.confirm_payment") as mocked_confirm:
         mocked_confirm.return_value = {"ok": True, "status": "DONE"}

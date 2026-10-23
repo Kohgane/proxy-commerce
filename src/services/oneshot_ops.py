@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -59,6 +60,28 @@ def _now() -> str:
 def queue_rows() -> List[dict]:
     from src.db import image_translate_queue_pg as st
     return [r for r in (st.state_get(QUEUE_KEY) or {}).get("rows") or [] if isinstance(r, dict)]
+
+
+@contextmanager
+def _job_env(row: dict):
+    """Y15 P0-2(fail-closed): 상품 줄은 **그 상품 주인**의 마켓 키로만 — 주인이 공유 목록(오너·가족)에 없으면 그 셀러 저장값만 보이는
+    격리 안에서 돈다(오너 서버 자격 0). 주인을 못 읽으면 닫는다(빈 격리). 상품 없는 줄(백필 등)은 그대로."""
+    from src.seller_console import market_credentials as mc
+    iid = str(row.get("item_id") or "")
+    if not iid:
+        yield
+        return
+    try:
+        from src.services import ocr_compare_diag as D
+        got = D._item(iid)
+        uid = str((got[1] if isinstance(got, tuple) and len(got) > 1 else "") or "")
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[일회성 작업] 상품 주인 조회 실패 — 격리로 닫음 item=%s: %s", iid[:8], exc)
+        with mc.isolated_market_env({}):
+            yield
+        return
+    with mc.job_market_env(uid):
+        yield
 
 
 def _run(row: dict) -> Dict:
@@ -172,7 +195,8 @@ def drain() -> Dict:
         heavy_op = r.get("op") in HEAVY_OPS
         mem0 = _mem_mark() if heavy_op else None
         try:
-            res = _run(r)
+            with _job_env(r):
+                res = _run(r)
         except Exception as exc:                                 # noqa: BLE001 — 한 줄 실패가 다른 줄을 막지 않는다
             logger.warning("[일회성 작업] %s 실패: %s", r.get("op"), exc)
             res = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}"}

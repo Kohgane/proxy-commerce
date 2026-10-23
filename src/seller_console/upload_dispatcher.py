@@ -1783,8 +1783,16 @@ class UploadDispatcher:
         #   사유는 네이버 응답 **원문** 그대로(「미승인」이라고 짐작해 쓰지 않는다).
         if market == "smartstore" and not smartstore_approved():
             from .market_cred_view import current_naver_account
-            from .smartstore_routing import store_label, status_text
+            from .smartstore_routing import probe as _ss_probe, store_label, status_text
             _st = current_naver_account()
+            # Y15 P0-2: 자기 키 없는 일반 셀러에겐 서버 이름(env)이 아니라 할 일 한 줄 — 「마켓 연동에서 내 키를 넣어 주세요」
+            from .market_credentials import isolation_active as _iso
+            if _iso() and _ss_probe(_st).get("state") == "no_creds":
+                return PrevalidationResult(
+                    market=market, ok=False, error_code="token_missing",
+                    message="마켓 연동에서 내 키를 넣어 주세요 — 스마트스토어 키가 아직 없어요.",
+                    hint="키를 넣으면 이 사전검증을 다시 눌러 주세요.",
+                    action_url=_connect_url(market))
             return PrevalidationResult(
                 market=market,
                 ok=False,
@@ -1842,15 +1850,15 @@ class UploadDispatcher:
             if not has_token:
                 missing.append("SHOPIFY_CLIENT_ID/SECRET (또는 SHOPIFY_AUTO_TOKEN)")
 
-        # 스마트스토어: NAVER_CLIENT_* 또는 NAVER_COMMERCE_CLIENT_* 어느 쪽이든 허용.
+        # 스마트스토어(접미 없음): NAVER_COMMERCE_CLIENT_* 만 — Y15 P0-3(NAVER_CLIENT_* = 서버 로그인 OAuth 이름).
         #   V1'': 스토어 계정(셰고가·고코스모스)은 자기 이름(`NAVER_<STORE>_*`)만 읽고, 위 토큰 실측이
         #   이미 그 키로 발급에 성공했다 — 공용 이름을 다시 찾으면 있는 키를 「없다」고 말하게 된다.
         from .market_cred_view import current_naver_account as _cna
         if market == "smartstore" and not _cna():
-            if not (os.getenv("NAVER_CLIENT_ID") or os.getenv("NAVER_COMMERCE_CLIENT_ID")):
-                missing.append("NAVER_CLIENT_ID (또는 NAVER_COMMERCE_CLIENT_ID)")
-            if not (os.getenv("NAVER_CLIENT_SECRET") or os.getenv("NAVER_COMMERCE_CLIENT_SECRET")):
-                missing.append("NAVER_CLIENT_SECRET (또는 NAVER_COMMERCE_CLIENT_SECRET)")
+            if not os.getenv("NAVER_COMMERCE_CLIENT_ID"):                  # Y15 P0-3: 커머스 이름만(로그인 OAuth 이름 아님)
+                missing.append("NAVER_COMMERCE_CLIENT_ID")
+            if not os.getenv("NAVER_COMMERCE_CLIENT_SECRET"):
+                missing.append("NAVER_COMMERCE_CLIENT_SECRET")
 
         # 쿠팡: API 키 외에 출고지/반품지(Wing 배송정보)도 필수 — 없으면 등록 거부됨
         if market == "coupang":

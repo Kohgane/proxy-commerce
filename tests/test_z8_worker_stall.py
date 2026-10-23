@@ -294,8 +294,8 @@ def test_prevalidate_passes_with_tree_missing(monkeypatch, ncat):
     monkeypatch.setattr(UD, "smartstore_approved", lambda store="": True)
     monkeypatch.setattr(SR, "price_hold", lambda pd: "")
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: contextlib.nullcontext())
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     pd = {"title_ko": "플리츠 미니멀 여성 여름 세트", "naver_category_id": "50000805", "price": 168, "currency": "CNY",
           "images": ["https://img.alicdn.com/a.jpg"], "item_id": "z8-1", "description": "상세"}   # Y7-F: 네이버 상세 본문 필수
     t0 = time.monotonic()

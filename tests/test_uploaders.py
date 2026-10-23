@@ -55,8 +55,8 @@ def coupang_uploader(monkeypatch):
 
 @pytest.fixture
 def naver_uploader(monkeypatch):
-    monkeypatch.setenv('NAVER_CLIENT_ID', 'test-client-id')
-    monkeypatch.setenv('NAVER_CLIENT_SECRET', 'test-client-secret')
+    monkeypatch.setenv('NAVER_COMMERCE_CLIENT_ID', 'test-client-id')       # Y15 P0-3: 접미 없는 계정 = 커머스 이름
+    monkeypatch.setenv('NAVER_COMMERCE_CLIENT_SECRET', 'test-client-secret')
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
     return NaverSmartStoreUploader()
 
@@ -365,8 +365,8 @@ class TestCoupangUploadProduct:
 
 class TestNaverUploaderInit:
     def test_init_reads_env(self, monkeypatch):
-        monkeypatch.setenv('NAVER_CLIENT_ID', 'ncid')
-        monkeypatch.setenv('NAVER_CLIENT_SECRET', 'ncs')
+        monkeypatch.setenv('NAVER_COMMERCE_CLIENT_ID', 'ncid')        # Y15 P0-3: 커머스 이름(로그인 OAuth 이름 아님)
+        monkeypatch.setenv('NAVER_COMMERCE_CLIENT_SECRET', 'ncs')
         from src.uploaders.naver_uploader import NaverSmartStoreUploader
         u = NaverSmartStoreUploader()
         assert u.client_id == 'ncid'

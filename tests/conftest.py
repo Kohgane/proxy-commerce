@@ -453,6 +453,16 @@ def _reset_inmemory_stores():
             oa._MEM.rows[:] = []
         except Exception:
             pass
+        try:                                          # Y15 P0-2: 공유 판정 60초 캐시(테스트마다 정체성 표를 바꿔 끼운다)
+            import src.seller_console.market_credentials as mc
+            mc._shared_cache.clear()
+        except Exception:
+            pass
+        try:                                          # Y15 P0-1: 스마트스토어 실측 캐시(키 범위별)
+            import src.seller_console.smartstore_routing as ssr
+            ssr._probes.clear()
+        except Exception:
+            pass
     _clear()
     yield
     _clear()

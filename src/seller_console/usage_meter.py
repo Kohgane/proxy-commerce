@@ -71,46 +71,14 @@ def message(kind: str, plan: str, limit: int) -> str:
     return f"이번 달 {label} 한도({name} {limit}{unit})를 다 썼어요 — {up} 다음 달 1일에 풀려요"
 
 
-def _session_matches(sid: str, email: str):
-    """요청 세션이 이 사람이면 세션 판정(관리자 role 포함) 결과, 아니면 None."""
-    try:
-        from flask import has_request_context, session
-        if not has_request_context():
-            return None
-        mine = {str(session.get(k) or "").strip().lower() for k in ("user_id", "user_email", "email")} - {""}
-        if not mine or not ({sid.lower(), str(email or "").strip().lower()} & mine):
-            return None
-        from .market_pick import session_is_shared
-        return bool(session_is_shared())
-    except Exception:                                            # noqa: BLE001
-        return None
-
-
 def is_exempt(seller_id, email: str = "") -> bool:
-    """한도를 재지 않는 사람인가 — 공유 사용자(관리자·FAMILY_EMAILS) 또는 서버 자신(신원 없음).
-
-    세션 없는 경로(확장 토큰·텔레그램·벌크 잡)도 같은 답이 나와야 한다 — 세션이 이 사람이면 세션 판정,
-    아니면 신원(정본 user_id · ADMIN_USER_IDS · 이 사람의 로그인 이메일 전부 vs ADMIN_EMAILS·FAMILY_EMAILS)으로."""
-    sid = str(seller_id or "").strip()
-    if not sid or sid == "default":
-        return True
-    by_session = _session_matches(sid, email)
-    if by_session is not None:
-        return by_session
+    """한도를 재지 않는 사람인가 — 오너 서버 자격을 쓰는 사람과 같은 판정(`market_credentials.seller_shared_reason`, Y15 P0-2):
+    정본 오너 · `ADMIN_USER_IDS` · `FAMILY_EMAILS`(그 사람의 로그인 이메일) · 서버 자신(신원 없음·`default`).
+    세션 role(admin)은 보지 않는다 — 마켓 키 격리와 한도 면제가 같은 사람에게 같은 답을 낸다. `email`은 이메일이 곧 신원인 줄용."""
+    sid = str(seller_id or "").strip() or str(email or "").strip()
     try:
-        from src.auth.identity import OWNER_USER_ID
-        from src.auth.admin_resolver import _env_list, admin_user_ids
-        from .market_pick import family_emails
-        if sid == OWNER_USER_ID or sid.lower() in admin_user_ids():
-            return True
-        mails = {str(email or "").strip().lower()} | ({sid.lower()} if "@" in sid else set())
-        try:
-            from src.db import user_identities_pg
-            mails |= {str(m).strip().lower() for m in user_identities_pg.emails_for(sid)}
-        except Exception as exc:                                 # noqa: BLE001
-            logger.debug("[한도] 이메일 조회 실패(아는 것만으로): %s", exc)
-        mails.discard("")
-        return bool(mails & (set(_env_list("ADMIN_EMAILS")) | set(family_emails())))
+        from .market_credentials import seller_shared_reason
+        return bool(seller_shared_reason(sid))
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[한도] 공유 판정 실패 — 재지 않음(막지 않는다): %s", exc)
         return True

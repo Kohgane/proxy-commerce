@@ -40,8 +40,9 @@ def _naver_creds() -> tuple[str, str]:
     인앱 연결/Render 환경변수 명명 혼용을 흡수: NAVER_COMMERCE_* 우선,
     없으면 NAVER_CLIENT_* 폴백.
     """
-    client_id = os.getenv("NAVER_COMMERCE_CLIENT_ID") or os.getenv("NAVER_CLIENT_ID", "")
-    client_secret = os.getenv("NAVER_COMMERCE_CLIENT_SECRET") or os.getenv("NAVER_CLIENT_SECRET", "")
+    # Y15 P0-3: `NAVER_CLIENT_*`(서버 = 네이버 로그인 OAuth)로 떨어지지 않는다 — 커머스 이름만
+    client_id = os.getenv("NAVER_COMMERCE_CLIENT_ID", "")
+    client_secret = os.getenv("NAVER_COMMERCE_CLIENT_SECRET", "")
     return (client_id or "").strip(), (client_secret or "").strip()
 
 

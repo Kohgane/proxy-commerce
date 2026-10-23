@@ -269,9 +269,11 @@ class NaverSmartStoreUploader(BaseUploader):
                 except Exception:
                     pass
         else:
-            self.client_id = self._acct_env('NAVER_CLIENT_ID') or os.getenv('NAVER_COMMERCE_CLIENT_ID', '')
-            self.client_secret = (self._acct_env('NAVER_CLIENT_SECRET')
-                                  or os.getenv('NAVER_COMMERCE_CLIENT_SECRET', ''))
+            # Y15 P0-3(오너 2026-10-23): 접미 없는 계정은 **커머스 이름만** — `NAVER_CLIENT_*`는 서버에서 네이버 **로그인** OAuth 값이라
+            #   커머스 서명에 넣으면 「bcrypt 형식」 오류만 났다(공유 사용자에게도 쓸모없는 오류). 셀러가 「마켓 연동」에 넣은 키는
+            #   `seller_market_env`가 커머스 이름으로도 싣는다(`_commerce_aliases`).
+            self.client_id = os.getenv('NAVER_COMMERCE_CLIENT_ID', '').strip()
+            self.client_secret = os.getenv('NAVER_COMMERCE_CLIENT_SECRET', '').strip()
         self.channel_id = self._acct_env('NAVER_CHANNEL_ID')
         # 출고지/반품지 주소 ID — env 우선, 미설정이면 정본 실증값(계정별).
         _addr = self.DEFAULT_ADDRESS_IDS.get(self.account or '', {})

@@ -14,8 +14,8 @@ FAM = "fam-y7l@example.com"
 
 @pytest.fixture
 def naver(monkeypatch):
-    monkeypatch.setenv("NAVER_CLIENT_ID", "id")
-    monkeypatch.setenv("NAVER_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_COMMERCE_CLIENT_SECRET", "sec")
     monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_ID", "id")
     monkeypatch.setenv("NAVER_CHEZGOGA_CLIENT_SECRET", "sec")
     for k in ("NAVER_AS_PHONE", "NAVER_CHEZGOGA_AS_PHONE", "NAVER_GOCOSMOS_AS_PHONE"):

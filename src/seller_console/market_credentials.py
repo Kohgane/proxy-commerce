@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import time
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
@@ -538,27 +539,109 @@ def _install_env_overlay() -> None:
 _install_env_overlay()
 
 
-def env_fallback_allowed() -> bool:
-    """오너 서버 자격(전역 환경변수)으로 폴백해도 되는가 — Z6.
+_SHARED_TTL = 60.0
+_shared_cache: Dict[tuple, tuple] = {}               # (sid, 목록 env) → (ts, reason) — 요청마다 정체성 표를 다시 읽지 않게(상한 500)
 
-    - 격리 컨텍스트 안: 아니오.
-    - 요청 밖(크론·부팅·스크립트 = 오너 서버 자신): 예.
-    - 로그인한 사람의 요청: 공유 사용자(관리자·가족)만 예.
-    - 로그인 신원이 없는 요청(`/cron/*` 등 서버 내부 · 인증 꺼진 개발): 예 — 셀러 콘솔은 인증이 막는다.
-    """
-    if _ENV_OVERLAY.get() is not None:
-        return False
+
+def seller_shared_reason(seller_id) -> str:
+    """Y15 P0-2(오너 2026-10-23 「fail-closed」): 이 **잡 주인**이 오너 서버 자격을 써도 되는 사람인가 — 이유 한 단어, 아니면 "".
+
+    판정 기준은 **user_id(정체성)뿐** — 세션 role·`ADMIN_EMAILS`는 보지 않는다(세션이 admin이어도 목록에 없으면 아니다).
+    - `server` — 잡 주인이 없다(크론·부팅·오너 풀 `user_id` 빈 행·인증 꺼진 개발 `default`)
+    - `owner` — 정본 오너 user_id · `ADMIN_USER_IDS` — 그 목록 · `FAMILY_EMAILS` — 그 사람의 로그인 이메일(정체성 표) 중 하나
+    판정이 깨지면 "" (닫는다)."""
+    sid = str(seller_id or "").strip()
+    if not sid or sid == "default":
+        return "server"
     try:
         from flask import has_request_context, session
-        if not has_request_context():
-            return True
-        if not (session.get("user_id") or session.get("user_email") or session.get("email")):
-            return True
-        from .market_pick import session_is_shared
-        return session_is_shared()
-    except Exception as exc:
-        logger.warning("공유 사용자 판정 실패 — 오너 자격 폴백 거부: %s", exc)
-        return False
+        _sm = str(session.get("user_email") or "") if has_request_context() and str(session.get("user_id") or "") == sid else ""
+    except Exception:                                          # noqa: BLE001
+        _sm = ""
+    ck = (sid, _sm, os.getenv("ADMIN_USER_IDS", ""), os.getenv("FAMILY_EMAILS", ""))  # 목록이 바뀌면 바로 다시 잰다
+    hit = _shared_cache.get(ck)
+    if hit and time.time() - hit[0] < _SHARED_TTL:
+        return hit[1]
+    reason = ""
+    try:
+        from src.auth.identity import OWNER_USER_ID
+        from src.auth.admin_resolver import admin_user_ids
+        from .market_pick import family_emails
+        if OWNER_USER_ID and sid == OWNER_USER_ID:
+            reason = "owner"
+        elif sid.lower() in admin_user_ids():
+            reason = "ADMIN_USER_IDS"
+        else:
+            fam = set(family_emails())
+            mails = {sid.lower()} if "@" in sid else set()
+            try:                                               # 그 사람 본인의 로그인 세션이면 그 로그인 이메일도(정체성 — role은 안 본다)
+                from flask import has_request_context, session
+                if has_request_context() and str(session.get("user_id") or "") == sid:
+                    mails |= {str(session.get(k) or "").strip().lower() for k in ("user_email", "email")}
+            except Exception:                                  # noqa: BLE001
+                pass
+            if fam:
+                try:
+                    from src.db import user_identities_pg
+                    mails |= {str(m).strip().lower() for m in user_identities_pg.emails_for(sid)}
+                except Exception as exc:                       # noqa: BLE001 — 표를 못 읽으면 아는 것만으로(닫는 쪽)
+                    logger.debug("[공유 판정] 정체성 표 조회 실패: %s", exc)
+            if mails & fam:
+                reason = "FAMILY_EMAILS"
+    except Exception as exc:                                   # noqa: BLE001
+        logger.warning("[공유 판정] 실패 — 닫음: %s", exc)
+        return ""
+    if len(_shared_cache) >= 500:
+        _shared_cache.clear()
+    _shared_cache[ck] = (time.time(), reason)
+    return reason
+
+
+def seller_is_shared(seller_id) -> bool:
+    return bool(seller_shared_reason(seller_id))
+
+
+def _session_identity() -> str:
+    """요청 세션의 정본 신원(user_id, 없으면 이메일) — 요청 밖이면 None."""
+    from flask import has_request_context, session
+    if not has_request_context():
+        return None
+    return str(session.get("user_id") or session.get("user_email") or session.get("email") or "")
+
+
+def fallback_reason() -> str:
+    """`env_fallback_allowed()`가 고른 갈래(값 없음) — 사전검증 잡 기록 `shared_reason`용.
+
+    `overlay`(격리 중 → 아니오) · `no_request`(요청 밖 = 서버 자신 → 예) · `no_identity`(신원 없는 요청 → 예) ·
+    `shared:<이유>`(→ 예) · `not_shared`(→ 아니오) · `error`(→ 아니오)."""
+    if _ENV_OVERLAY.get() is not None:
+        return "overlay"
+    try:
+        ident = _session_identity()
+        if ident is None:
+            return "no_request"
+        if not ident:
+            return "no_identity"
+        why = seller_shared_reason(ident)
+        return f"shared:{why}" if why else "not_shared"
+    except Exception:                                          # noqa: BLE001
+        return "error"
+
+
+def env_fallback_allowed() -> bool:
+    """오너 서버 자격(전역 환경변수)으로 폴백해도 되는가 — Z6 · Y15 P0-2.
+
+    - 격리 컨텍스트 안: 아니오.
+    - 요청 밖(크론·부팅·스크립트 = 오너 서버 자신): 예 — 남의 상품을 다루는 잡은 `job_market_env`로 감싼다.
+    - 로그인한 사람의 요청: 그 **user_id**가 공유 목록(`seller_shared_reason`)에 있을 때만 예 — 세션 role은 안 본다.
+    - 로그인 신원이 없는 요청(`/cron/*` 등 서버 내부 · 인증 꺼진 개발): 예 — 셀러 콘솔은 인증이 막는다.
+    """
+    r = fallback_reason()
+    if r in ("no_request", "no_identity") or r.startswith("shared:"):
+        return True
+    if r == "error":
+        logger.warning("공유 사용자 판정 실패 — 오너 자격 폴백 거부")
+    return False
 
 
 def isolation_active() -> bool:
@@ -579,6 +662,14 @@ def isolated_market_env(values: Optional[Dict[str, str]] = None):
         _ENV_OVERLAY.reset(token)
 
 
+# Y15 P0-3: 셀러 저장 칸 이름 → 서버 전역에서 읽을 이름. 스마트스토어 칸은 `NAVER_CLIENT_*`인데 서버의 그 이름은 **로그인** OAuth 값이다.
+_GLOBAL_ENV_NAME = {"NAVER_CLIENT_ID": "NAVER_COMMERCE_CLIENT_ID", "NAVER_CLIENT_SECRET": "NAVER_COMMERCE_CLIENT_SECRET"}
+
+
+def _global_env(env: str) -> str:
+    return os.getenv(_GLOBAL_ENV_NAME.get(env, env), "")
+
+
 def _market_ok(stored: Dict[str, str], market: str, allow_env: Optional[bool] = None) -> bool:
     fields = MARKET_CRED_FIELDS.get(market)
     if not fields:
@@ -588,7 +679,7 @@ def _market_ok(stored: Dict[str, str], market: str, allow_env: Optional[bool] = 
     for field in fields:
         if not field.get("required"):
             continue
-        if not ((stored or {}).get(field["env"]) or (allow_env and os.getenv(field["env"]))):
+        if not ((stored or {}).get(field["env"]) or (allow_env and _global_env(field["env"]))):
             return False
     return True
 
@@ -653,7 +744,7 @@ def status(seller_id: str, market: str) -> Dict[str, Any]:
     for field in MARKET_CRED_FIELDS.get(market, []):
         env = field["env"]
         stored_val = stored.get(env, "")
-        global_val = os.getenv(env, "") if allow_env else ""
+        global_val = _global_env(env) if allow_env else ""
         has_value = bool(stored_val or global_val)
         display = ""
         if stored_val:
@@ -706,22 +797,26 @@ def temp_env(updates: Dict[str, Optional[str]]):
 
 
 def _shared_owner_for(seller_id: str) -> str:
-    """이 요청의 사람이 **공유 사용자**(관리자·`FAMILY_EMAILS`)이고 그 사람이 `seller_id` 본인일 때만 오너 계정 id. 그 밖은 ""
-    (크론·세션 없는 일·일반 가입자는 오너 저장값을 쓰지 않는다 — Z6 경계 그대로)."""
+    """이 잡 주인이 **공유 사용자**(오너 외 — 두 번째 로그인·가족)일 때만 오너 계정 id. 그 밖은 "".
+    Y15 P0-2: 세션이 아니라 잡 주인 user_id로 판정한다(`seller_shared_reason`) — 크론·일반 가입자는 오너 저장값을 쓰지 않는다."""
     try:
-        from flask import has_request_context, session
-        if not has_request_context():
-            return ""
         sid = str(seller_id or "")
-        if not sid or str(session.get("user_id") or "") != sid:
-            return ""
         from src.auth.identity import OWNER_USER_ID
-        if not OWNER_USER_ID or sid == OWNER_USER_ID:
+        if not sid or not OWNER_USER_ID or sid == OWNER_USER_ID:
             return ""
-        from .market_pick import session_is_shared
-        return OWNER_USER_ID if session_is_shared() else ""
+        return OWNER_USER_ID if seller_shared_reason(sid) not in ("", "server") else ""
     except Exception:                                            # noqa: BLE001
         return ""
+
+
+def _commerce_aliases(values: Dict[str, str]) -> Dict[str, str]:
+    """Y15 P0-3: 셀러가 「마켓 연동」에 넣은 스마트스토어 키(`NAVER_CLIENT_*` 칸)는 **커머스 이름**(`NAVER_COMMERCE_CLIENT_*`)으로도 싣는다.
+    접미 없는 스토어는 커머스 이름만 읽는다 — 서버의 `NAVER_CLIENT_*`는 네이버 **로그인** OAuth 값이라 커머스 서명에 쓰면 bcrypt 오류만 난다."""
+    out = dict(values or {})
+    for a, b in (("NAVER_CLIENT_ID", "NAVER_COMMERCE_CLIENT_ID"), ("NAVER_CLIENT_SECRET", "NAVER_COMMERCE_CLIENT_SECRET")):
+        if out.get(a) and not out.get(b):
+            out[b] = out[a]
+    return out
 
 
 @contextmanager
@@ -747,10 +842,56 @@ def seller_market_env(seller_id: str, markets, extra: Optional[Dict[str, str]] =
         updates.update(mine)
     if extra:
         updates.update({k: v for k, v in extra.items() if v})
+    updates = _commerce_aliases(updates)
 
-    if not env_fallback_allowed():
+    # Y15 P0-2(fail-closed): 오너 서버 자격은 **잡 주인 user_id**가 공유 목록에 있을 때만 — 세션 판정과 무관하게.
+    #   (세션이 공유여도 다른 사람의 잡이면 닫고, 이미 격리 중이면 그대로 격리)
+    if _ENV_OVERLAY.get() is not None or not seller_is_shared(seller_id) or not env_fallback_allowed():
         with isolated_market_env(updates):
             yield
         return
     with temp_env(updates):
         yield
+
+
+@contextmanager
+def job_market_env(seller_id: str):
+    """Y15 P0-2: 요청 밖(틱·큐·일회성 작업)에서 **남의 상품**에 마켓 API를 부를 때 — 잡 주인이 공유 목록에 없으면
+    그 셀러 저장값만 보이는 격리 안에서. 공유(오너·가족·서버 자신)면 지금 그대로(영향 0)."""
+    if seller_is_shared(seller_id) and _ENV_OVERLAY.get() is None:
+        yield
+        return
+    with isolated_market_env(_commerce_aliases(all_credential_env(str(seller_id or "")))):
+        yield
+
+
+_REQ_SKIP = ("/static/", "/health", "/favicon", "/sw.js", "/manifest")
+
+
+def request_isolation_begin():
+    """Y15 P0-2: 로그인한 **비공유** 사람의 요청은 처음부터 격리 — 어느 화면·잡 스레드(copy_context)가 os.environ을 직접 읽어도
+    오너 마켓 키가 안 보인다. 반환 = 되돌릴 토큰(없으면 None). `request_isolation_end(token)`로 닫는다."""
+    try:
+        from flask import request
+        if request.path.startswith(_REQ_SKIP):
+            return None
+        ident = _session_identity()
+        if not ident or seller_is_shared(ident):
+            return None
+        return _ENV_OVERLAY.set({k: str(v) for k, v in _commerce_aliases(all_credential_env(ident)).items()
+                                 if v and _is_market_env(k)})
+    except Exception as exc:                                   # noqa: BLE001 — 판정이 깨지면 닫는다(빈 겹)
+        logger.warning("[격리] 요청 격리 판정 실패 — 빈 겹으로 닫음: %s", exc)
+        try:
+            return _ENV_OVERLAY.set({})
+        except Exception:                                      # noqa: BLE001
+            return None
+
+
+def request_isolation_end(token) -> None:
+    if token is None:
+        return
+    try:
+        _ENV_OVERLAY.reset(token)
+    except Exception:                                          # noqa: BLE001 — 다른 컨텍스트에서 불리면 무시(새 요청은 새로 판정)
+        pass
