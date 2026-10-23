@@ -199,6 +199,7 @@ jobs:
             tests/test_z9b_job_conn_pg.py \
             tests/test_y12b_pg_backfill.py \
             tests/test_y15_patrol42.py \
+            tests/test_y15_p0_shutdown.py \
             2>&1 | tee /tmp/pytest_pg.txt
           tail -1 /tmp/pytest_pg.txt
 

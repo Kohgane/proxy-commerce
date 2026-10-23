@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import logging
+import json
 import os
 import threading
 from pathlib import Path
@@ -567,31 +568,109 @@ def _split_sql(script: str) -> list:
 _schema_done = False
 
 
+SCHEMA_FILES = ("schema_stage1.sql", "schema_stage2.sql", "schema_stage3.sql", "schema_stage4.sql",
+                "schema_stage5.sql",   # v88-B: translation_jobs(백그라운드 번역 큐)
+                "schema_stage6.sql",   # P4: market_registrations(마켓 등록 대장·반려감시 소스)
+                "schema_stage7.sql",   # C-F17-B: telegram_links(폰 기본 입구의 chat_id↔셀러 바인딩)
+                "schema_stage8.sql",   # C-F19: user_identities((provider,email)→user_id) + 병합 백업
+                "schema_stage9.sql",   # D1: image_translate_usage(장당 과금 장부) + image_bench_runs
+                "schema_stage10.sql",  # F24: sourcing_rules(소싱 원칙) + 봇별 기본 등록 계정
+                "schema_stage11.sql",  # F25b: api_rate_slots(서버 전역 호출 차례표)
+                "schema_stage12.sql",  # D2: image_ko_blobs(번역본 바이트 — 로컬 파일 폐기)
+                "schema_stage13.sql",  # D2b: 번역본의 외부 주소(cdn_url) — 마켓이 가져갈 수 있게
+                "schema_stage14.sql",  # D3-8: 이미지 번역 자동 큐 + 전역 작은 상태(app_state)
+                "schema_stage15.sql",  # AUTH-1: 이메일+비밀번호 계정(password_accounts) — 시트 대신 커밋 확인
+                "schema_stage16.sql",  # J1: 옵션 값·상품명 번역기 큐(수집하면 자동)
+                "schema_stage17.sql",  # Y11-D: 수집 주소 광고 링크(click.simba) → 정규 주소 + raw_url 보존
+                "schema_stage18.sql",  # F-PROXY-1: proxy_orders(구매대행 승인 큐 + 증빙 대장)
+                "schema_stage19.sql")  # Y12-A: collect_history.last_action_at·attn_n(목록 최신 동작순·손댈 것만)
+SCHEMA_KEY = "schema:applied"
+_SCHEMA_ADVISORY = 774_201_023          # 인스턴스 사이 「한 곳만 적용」 잠금 번호(아무 숫자 — 이 용도 전용)
+
+
+def _schema_texts() -> list:
+    here = Path(__file__).parent
+    return [(n, (here / n).read_text(encoding="utf-8")) for n in SCHEMA_FILES if (here / n).exists()]
+
+
+def schema_digest(texts=None) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    for name, text in (texts if texts is not None else _schema_texts()):
+        h.update(name.encode() + b"\0" + text.encode("utf-8") + b"\0")
+    return h.hexdigest()[:16]
+
+
+def _applied_digest(cur):
+    try:
+        cur.execute("SELECT value->>'digest' FROM app_state WHERE key=%s", (SCHEMA_KEY,))
+        row = cur.fetchone()
+        return (row or [None])[0]
+    except Exception:                                            # noqa: BLE001 — 표가 아직 없으면(첫 배포) 적용한다
+        return None
+
+
 def init_schema():
-    """이관 스키마를 idempotent 적용(1단계 collect_history·user_tokens, 2단계 market_links). 직접 연결로 실행."""
+    """이관 스키마를 idempotent 적용 — **직접 연결**.
+
+    P0-운영(오너 2026-10-23 Render 로그): preload라 이 함수는 **포트 바인드 전**(앱 임포트)에 돈다. 예전엔 부팅마다 99문장을
+    다시 보냈다(문장당 ~0.2초 = 바인드가 20초 늦음 · DROP/CREATE TRIGGER가 표마다 가장 센 잠금). 배포 때 인스턴스 둘이 **동시에**
+    돌려 09:08:14 `trigger … already exists` 경합까지 났다(DROP·DROP·CREATE·CREATE).
+    - 스키마 파일 지문(`schema_digest`)이 `app_state schema:applied`와 같으면 **쿼리 1번으로 끝**(대부분의 배포).
+    - 다르면 권고 잠금(`pg_try_advisory_lock`)을 잡은 **한 인스턴스만** 적용 — 다른 쪽은 최대 `SCHEMA_LOCK_WAIT_SEC`(15) 기다렸다 지문을 다시 본다.
+    - 문장마다 `lock_timeout`(`SCHEMA_LOCK_TIMEOUT_MS` 5000) · `statement_timeout`(60초) — 잠금을 못 잡으면 **영원히 기다리지 않고**
+      이번 적용을 멈춘다(지문을 안 적으니 다음 부팅이 다시 시도). 바인드를 붙잡지 않는다."""
     global _schema_done
     if _schema_done or not pg_enabled():
         return
-    here = Path(__file__).parent
-    # v87-S3: stage4 = settings(가격 정책). 스키마 파일은 순서대로 idempotent 적용된다.
-    for fname in ("schema_stage1.sql", "schema_stage2.sql", "schema_stage3.sql", "schema_stage4.sql",
-                  "schema_stage5.sql",   # v88-B: translation_jobs(백그라운드 번역 큐)
-                  "schema_stage6.sql",   # P4: market_registrations(마켓 등록 대장·반려감시 소스)
-                  "schema_stage7.sql",   # C-F17-B: telegram_links(폰 기본 입구의 chat_id↔셀러 바인딩)
-                  "schema_stage8.sql",   # C-F19: user_identities((provider,email)→user_id) + 병합 백업
-                  "schema_stage9.sql",   # D1: image_translate_usage(장당 과금 장부) + image_bench_runs
-                  "schema_stage10.sql",  # F24: sourcing_rules(소싱 원칙) + 봇별 기본 등록 계정
-                  "schema_stage11.sql",  # F25b: api_rate_slots(서버 전역 호출 차례표)
-                  "schema_stage12.sql",  # D2: image_ko_blobs(번역본 바이트 — 로컬 파일 폐기)
-                  "schema_stage13.sql",  # D2b: 번역본의 외부 주소(cdn_url) — 마켓이 가져갈 수 있게
-                  "schema_stage14.sql",  # D3-8: 이미지 번역 자동 큐 + 전역 작은 상태(app_state)
-                  "schema_stage15.sql",  # AUTH-1: 이메일+비밀번호 계정(password_accounts) — 시트 대신 커밋 확인
-                  "schema_stage16.sql",  # J1: 옵션 값·상품명 번역기 큐(수집하면 자동)
-                  "schema_stage17.sql",  # Y11-D: 수집 주소 광고 링크(click.simba) → 정규 주소 + raw_url 보존
-                  "schema_stage18.sql",  # F-PROXY-1: proxy_orders(구매대행 승인 큐 + 증빙 대장)
-                  "schema_stage19.sql"): # Y12-A: collect_history.last_action_at·attn_n(목록 최신 동작순·손댈 것만)
-        f = here / fname
-        if f.exists():
-            run_ddl(f.read_text(encoding="utf-8"))
+    import time as _t
+    texts = _schema_texts()
+    digest = schema_digest(texts)
+    lock_ms = int(os.getenv("SCHEMA_LOCK_TIMEOUT_MS", "5000") or 5000)
+    wait_sec = float(os.getenv("SCHEMA_LOCK_WAIT_SEC", "15") or 15)
+    conn = _connect(direct_url(), autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SET lock_timeout = '{max(100, lock_ms)}ms'")
+            cur.execute("SET statement_timeout = '60s'")
+            if _applied_digest(cur) == digest:
+                _schema_done = True
+                logger.info("Postgres 스키마 지문 같음(%s) — 적용 건너뜀", digest)
+                return
+            deadline = _t.monotonic() + wait_sec
+            while True:
+                cur.execute("SELECT pg_try_advisory_lock(%s)", (_SCHEMA_ADVISORY,))
+                if (cur.fetchone() or [False])[0]:
+                    break
+                if _t.monotonic() >= deadline:
+                    logger.warning("Postgres 스키마: 다른 인스턴스가 적용 중(%.0f초 대기) — 이번 부팅은 건너뜀", wait_sec)
+                    _schema_done = True
+                    return
+                _t.sleep(0.5)
+            try:
+                if _applied_digest(cur) == digest:              # 기다리는 사이 다른 인스턴스가 끝냈다
+                    _schema_done = True
+                    logger.info("Postgres 스키마: 다른 인스턴스가 방금 적용(%s) — 건너뜀", digest)
+                    return
+                for _name, text in texts:
+                    for stmt in _split_sql(text):
+                        if stmt.strip():
+                            cur.execute(stmt)
+                cur.execute("INSERT INTO app_state (key, value, updated_at) VALUES (%s, %s::jsonb, now()) "
+                            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()",
+                            (SCHEMA_KEY, json.dumps({"digest": digest, "files": len(texts)})))
+            except Exception as exc:                             # noqa: BLE001
+                if type(exc).__name__ in ("LockNotAvailable", "QueryCanceled"):
+                    logger.warning("Postgres 스키마: 잠금·시간 초과로 이번 적용 멈춤(다음 부팅이 다시) — %s", exc)
+                    _schema_done = True
+                    return
+                raise
+            finally:
+                try:
+                    cur.execute("SELECT pg_advisory_unlock(%s)", (_SCHEMA_ADVISORY,))
+                except Exception:                                # noqa: BLE001
+                    pass
+    finally:
+        conn.close()
     _schema_done = True
-    logger.info("Postgres 이관 스키마 적용 완료(직접 연결)")
+    logger.info("Postgres 이관 스키마 적용 완료(직접 연결 · 지문 %s)", digest)

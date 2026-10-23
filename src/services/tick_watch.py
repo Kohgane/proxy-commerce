@@ -156,7 +156,9 @@ def check_gap(now: Optional[datetime] = None, *, status_fn=None, take_fn=None, s
     if not took:
         return {"alert": False, "why": "이 공백은 이미 알림", "age_min": age}
     hhmm = _parse(last).astimezone(_KST).strftime("%H:%M") if _parse(last) else "?"
-    msg = f"틱 {age}분 공백 — 도메인/cron 확인 (마지막 틱 {hhmm} KST)"
+    from src.utils.instance import instance_id
+    # P0-운영(오너 2026-10-23): 어느 인스턴스가 말하는지 — 둘이 돌 때 내려가는 쪽이 말한 것인지 가린다
+    msg = f"틱 {age}분 공백 — 도메인/cron 확인 (마지막 틱 {hhmm} KST · 인스턴스 {instance_id() or '?'})"
     if send_fn is None:
         from src.notifications.telegram import send_telegram as send_fn
     sent = bool(send_fn(msg, "warning"))
@@ -166,8 +168,6 @@ def check_gap(now: Optional[datetime] = None, *, status_fn=None, take_fn=None, s
 
 def start_gap_watch(interval_sec: Optional[int] = None) -> bool:
     """부팅 때 한 번 — 데몬 스레드가 `interval_sec`(기본 300초)마다 `check_gap`. `TICK_GAP_WATCH=0`이면 안 띄운다(테스트 기본)."""
-    import threading
-    import time as _time
     if str(os.getenv("TICK_GAP_WATCH", "1")).strip().lower() in ("0", "false", "no", "off"):
         return False
     t = _GAP_THREAD.get("t")
@@ -175,15 +175,14 @@ def start_gap_watch(interval_sec: Optional[int] = None) -> bool:
         return False
     every = int(interval_sec or int(os.getenv("TICK_GAP_CHECK_SEC", "300") or 300))
 
+    from src.utils import shutdown as _sd
+
     def _loop():
-        while True:
-            _time.sleep(every)
+        while not _sd.wait(every):                               # P0-운영: 내려갈 때 바로 깬다
             try:
                 check_gap()
             except Exception as exc:                             # noqa: BLE001 — 감시가 죽지 않는다
                 logger.debug("[틱 감시] 공백 확인 실패: %s", exc)
 
-    t = threading.Thread(target=_loop, name="tick-gap-watch", daemon=True)
-    _GAP_THREAD["t"] = t
-    t.start()
+    _GAP_THREAD["t"] = _sd.start_daemon(_loop, "tick-gap-watch")
     return True

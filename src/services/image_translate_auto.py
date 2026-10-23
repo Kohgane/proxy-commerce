@@ -411,8 +411,9 @@ def _drain(max_pages: int = 10_000) -> int:
     """큐가 빌 때까지(또는 상한·일시정지) 한 장씩. 처리한 장 수."""
     q = _q()
     n = 0
+    from src.utils import shutdown as _sd
     while n < max_pages:
-        if pause_state().get("paused"):
+        if pause_state().get("paused") or _sd.stopping():      # P0-운영: 내려갈 땐 다음 장을 잡지 않는다
             return n
         from src.services import workers as _w
         _w.lease("imgko-auto")                                 # 리스 갱신(장마다)

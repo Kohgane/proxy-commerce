@@ -234,9 +234,11 @@ def _safe_tick() -> None:
 
 
 def _loop() -> None:
-    while True:
+    from src.utils import shutdown as _sd
+    while not _sd.stopping():
         _safe_tick()
-        time.sleep(interval())
+        if _sd.wait(interval()):                    # P0-운영: 내려갈 때 바로 깬다
+            return
 
 
 def start_if_enabled() -> str:
@@ -250,7 +252,8 @@ def start_if_enabled() -> str:
     with _LOCK:
         if _STARTED["done"]:
             return "이미 실행 중"
-        threading.Thread(target=_loop, daemon=True, name=WORKER).start()
+        from src.utils import shutdown as _sd
+        _sd.start_daemon(_loop, WORKER)
         _STARTED["done"] = True
     return f"실행 — {interval() // 60}분마다"
 

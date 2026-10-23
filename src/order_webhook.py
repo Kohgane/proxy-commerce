@@ -61,24 +61,7 @@ try:
     _pg_ok = _pgboot.pg_enabled()     # 성공 시 pg.py가 'DB 연결: Supabase OK' 로깅
     if _pg_ok:
         _pgboot.init_schema()         # 이관 테이블 idempotent 생성(직접 연결)
-        # C-F19: 로그인 정체성 고정·정리. **배포와 함께 자동**으로 돌고 멱등이다(오너 Shell 불필요).
-        #   실측(2026-09-13 16:02): 로그인할 때마다 새 user_id가 나서 데이터를 쥔 UUID와
-        #   흩어졌다. 표를 세우고, **같은 사람임이 증명된 고아만** 정본으로 합친다(백업 후).
-        #   여기서 실패해도 부팅은 계속한다 — 정리는 서비스의 전제조건이 아니다.
-        try:
-            from src.auth.identity import bootstrap as _identity_bootstrap
-            _identity_bootstrap()
-        except Exception as _idexc:
-            logger.warning("정체성 부트스트랩 실패(계속): %s", _idexc)
-        # D2b: 번역본에 **외부에서 열리는 주소**를 붙인다(CDN 백필, 멱등).
-        #   우리 서버 주소는 로그인 게이트 뒤라 마켓이 못 가져간다 — 그대로 두면
-        #   등록 직전 도달성 게이트에 걸려 셀러가 영문을 모른 채 막힌다.
-        #   Cloudinary가 없으면 **아무것도 하지 않는다**(할 수가 없다 — 그렇게 말한다).
-        try:
-            from src.services.image_cdn_backfill import run_quietly as _cdn_backfill
-            _cdn_backfill()
-        except Exception as _cbexc:
-            logger.warning("번역본 CDN 백필 건너뜀(계속): %s", _cbexc)
+        # P0-운영(오너 2026-10-23): 정체성 부트스트랩·CDN 백필은 **포트 바인드 뒤**(백그라운드 `boot-chores`) — 아래 `start_background_threads`.
     else:
         # v87-W3: '조용한 휘발' 봉인. 예전 가드는 APP_ENV==production일 때만 실패해, 그 값을
         #   안 두면 배포서도 조용히 in-memory로 폴백 → 수집 이력이 배포마다 소실됐다. 이제
@@ -121,40 +104,82 @@ def _smartstore_boot_probe():
         logger.warning("스마트스토어 부팅 실측 실패(계속): %s", _ssexc)
 
 
-if os.getenv("SMARTSTORE_LIVE_PROBE", "1").strip().lower() not in ("0", "false", "no", "off"):
-    import threading as _ss_threading
-    _ss_threading.Thread(target=_smartstore_boot_probe, name="smartstore-boot-probe", daemon=True).start()
+def _boot_chores():
+    """부팅 부가 작업 — 포트 바인드를 붙잡지 않게 백그라운드에서. 실패해도 서비스는 계속."""
+    try:
+        from src.db import pg as _pgc
+        if not _pgc.pg_enabled():
+            return
+    except Exception:                                            # noqa: BLE001
+        return
+    # C-F19: 로그인 정체성 고정·정리. **배포와 함께 자동**으로 돌고 멱등이다(오너 Shell 불필요).
+    #   실측(2026-09-13 16:02): 로그인할 때마다 새 user_id가 나서 데이터를 쥔 UUID와 흩어졌다.
+    #   표를 세우고, **같은 사람임이 증명된 고아만** 정본으로 합친다(백업 후). 실패해도 계속.
+    try:
+        from src.auth.identity import bootstrap as _identity_bootstrap
+        _identity_bootstrap()
+    except Exception as _idexc:
+        logger.warning("정체성 부트스트랩 실패(계속): %s", _idexc)
+    # D2b: 번역본에 **외부에서 열리는 주소**를 붙인다(CDN 백필, 멱등). Cloudinary가 없으면 아무것도 하지 않는다.
+    try:
+        from src.services.image_cdn_backfill import run_quietly as _cdn_backfill
+        _cdn_backfill()
+    except Exception as _cbexc:
+        logger.warning("번역본 CDN 백필 건너뜀(계속): %s", _cbexc)
 
-# 순찰 43(2026-10-23): 틱 공백 30분 텔레그램 — 틱이 안 들어오는 날(도메인·cron 끊김)은 /cron 안에서 알 수 없어 서버 안 타이머로 본다.
-try:
-    from src.services import tick_watch as _tick_gap
-    _tick_gap.start_gap_watch()
-except Exception as _tgexc:                                   # noqa: BLE001
-    logger.warning("틱 공백 감시 시작 실패(계속): %s", _tgexc)
 
-# Y4(2026-10-04): 이미지 번역 차단기 — 글자 없는 사진을 실패에서 뺀 재계산이 상한 아래면 풀고 대기분을 다시 돈다.
-#   워커 서비스(WORKERS_ENABLED)에서만. 사람이 멈춘 것은 그대로.
-try:
-    from src.services import workers as _wk
-    if _wk.workers_enabled():
-        from src.services import image_translate_auto as _imgauto
-        logger.info("이미지 번역 차단기: %s", _imgauto.heal_breaker())
-except Exception as _hbexc:
-    logger.warning("이미지 번역 차단기 재계산 실패(계속): %s", _hbexc)
+_BG_STARTED = {"pid": None}
 
-# W1·W2(2026-10-03): 네이버 주문 폴러 워커 — NAVER_ORDER_POLL=1 + WORKERS_ENABLED 서비스에서만(기본 꺼짐).
-try:
-    from src.order_alerts.naver_worker import start_if_enabled as _naver_poll_start
-    logger.info("네이버 주문 폴러: %s", _naver_poll_start())
-except Exception as _npexc:
-    logger.warning("네이버 주문 폴러 시작 실패(계속): %s", _npexc)
 
-# Z3-C(2026-10-07): 온바운드 하루 한도 이월 대기 — 한도가 풀리면(베이징 자정·「새로 받기」) 자동 수집. 워커 서비스에서만.
-try:
-    from src.services.onebound_carry import start_if_enabled as _carry_start
-    logger.info("온바운드 이월 대기: %s", _carry_start())
-except Exception as _carry_exc:
-    logger.warning("온바운드 이월 대기 시작 실패(계속): %s", _carry_exc)
+def start_background_threads(chores_inline: bool = False) -> bool:
+    """P0-운영(오너 2026-10-23 Render 로그): 상시 백그라운드 일을 **이 프로세스에서** 한 번 띄운다.
+
+    gunicorn `preload_app`이면 앱 임포트가 **마스터**에서 일어나 여기서 띄운 스레드가 전부 마스터에 붙었다 — 마스터가 SIGTERM에
+    「Shutting down」을 찍고도 그 일(스레드 풀 포함)을 기다리느라 안 끝났다(10-23 09:10 vssjj). 그래서 gunicorn 아래선 임포트 때
+    띄우지 않고(`KGP_DEFER_BG_THREADS=1` — `gunicorn.conf.py`가 세운다) **워커가 포크된 뒤**(`post_fork`) 여기를 부른다. 마스터는 감독만.
+    gunicorn 밖(개발 서버·테스트)은 예전처럼 임포트 때. 같은 프로세스에서 두 번 부르면 아무것도 안 한다."""
+    if _BG_STARTED["pid"] == os.getpid():
+        return False
+    _BG_STARTED["pid"] = os.getpid()
+    from src.utils import shutdown as _sd
+    if chores_inline:                                            # gunicorn 밖(개발·테스트): 예전처럼 임포트 때 끝낸다
+        _boot_chores()
+    else:
+        _sd.start_daemon(_boot_chores, "boot-chores")
+    if os.getenv("SMARTSTORE_LIVE_PROBE", "1").strip().lower() not in ("0", "false", "no", "off"):
+        _sd.start_daemon(_smartstore_boot_probe, "smartstore-boot-probe")
+    # 순찰 43(2026-10-23): 틱 공백 30분 텔레그램 — 틱이 안 들어오는 날(도메인·cron 끊김)은 /cron 안에서 알 수 없어 서버 안 타이머로 본다.
+    try:
+        from src.services import tick_watch as _tick_gap
+        _tick_gap.start_gap_watch()
+    except Exception as _tgexc:                               # noqa: BLE001
+        logger.warning("틱 공백 감시 시작 실패(계속): %s", _tgexc)
+    # Y4(2026-10-04): 이미지 번역 차단기 — 글자 없는 사진을 실패에서 뺀 재계산이 상한 아래면 풀고 대기분을 다시 돈다.
+    #   워커 서비스(WORKERS_ENABLED)에서만. 사람이 멈춘 것은 그대로.
+    try:
+        from src.services import workers as _wk
+        if _wk.workers_enabled():
+            from src.services import image_translate_auto as _imgauto
+            logger.info("이미지 번역 차단기: %s", _imgauto.heal_breaker())
+    except Exception as _hbexc:
+        logger.warning("이미지 번역 차단기 재계산 실패(계속): %s", _hbexc)
+    # W1·W2(2026-10-03): 네이버 주문 폴러 워커 — NAVER_ORDER_POLL=1 + WORKERS_ENABLED 서비스에서만(기본 꺼짐).
+    try:
+        from src.order_alerts.naver_worker import start_if_enabled as _naver_poll_start
+        logger.info("네이버 주문 폴러: %s", _naver_poll_start())
+    except Exception as _npexc:
+        logger.warning("네이버 주문 폴러 시작 실패(계속): %s", _npexc)
+    # Z3-C(2026-10-07): 온바운드 하루 한도 이월 대기 — 한도가 풀리면(베이징 자정·「새로 받기」) 자동 수집. 워커 서비스에서만.
+    try:
+        from src.services.onebound_carry import start_if_enabled as _carry_start
+        logger.info("온바운드 이월 대기: %s", _carry_start())
+    except Exception as _carry_exc:
+        logger.warning("온바운드 이월 대기 시작 실패(계속): %s", _carry_exc)
+    return True
+
+
+if os.getenv("KGP_DEFER_BG_THREADS", "0") != "1":
+    start_background_threads(chores_inline=True)
 
 app = Flask(__name__)
 
@@ -1201,6 +1226,9 @@ def _naver_tree_boot():
     """Z8: 네이버 카테고리 트리는 워커(포크 뒤 프로세스)마다 첫 요청 때 **백그라운드로** 받기 시작 — 요청은 안 기다린다."""
     if _NAVER_TREE_BOOT["pid"] == os.getpid():
         return None
+    # P0-운영(오너 2026-10-23): 헬스체크(Render 경로 `/health`)는 DB·네트워크를 안 만지는 가벼운 200 — 첫 요청이 헬스체크여도 여기서 안 받는다
+    if request.path.startswith(("/health", "/static/", "/favicon")):
+        return None
     _NAVER_TREE_BOOT["pid"] = os.getpid()
     try:
         from src.uploaders.naver_categories import boot_refresh
@@ -1929,17 +1957,9 @@ def deep_health():
 def _deep_health_instance() -> dict:
     """순찰 43(오너 2026-10-23): **어느 인스턴스가 응답했나** — 같은 빌드·같은 DB로 둘이 돌던 날(커스텀 도메인 쪽 ≠ onrender 쪽)
     응답만 봐선 가릴 수 없었다. `id` = `RENDER_INSTANCE_ID`(있으면) 아니면 호스트 이름 · `started_at` = 이 프로세스 기동 시각(UTC)."""
-    import socket
     from datetime import datetime, timezone
-    iid = (os.getenv("RENDER_INSTANCE_ID") or "").strip()
-    if not iid:
-        try:
-            iid = socket.gethostname()
-        except Exception:                                        # noqa: BLE001
-            iid = ""
-    return {"id": iid, "id_source": "RENDER_INSTANCE_ID" if os.getenv("RENDER_INSTANCE_ID") else "hostname",
-            "started_at": datetime.fromtimestamp(_START_TIME, timezone.utc).isoformat(timespec="seconds"),
-            "pid": os.getpid()}
+    from .utils.instance import instance_info
+    return dict(instance_info(), started_at=datetime.fromtimestamp(_START_TIME, timezone.utc).isoformat(timespec="seconds"))
 
 
 def _deep_health_ticks() -> dict:

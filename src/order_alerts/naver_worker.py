@@ -40,7 +40,9 @@ def _loop(pollers, interval: int):
                     errs.append(f"{p.store}: {str(exc)[:120]}")
                     logger.error("[네이버 주문] %s 폴링 오류: %s", p.store, exc)
             _w.record_run("naver-order-poll", total, note=" · ".join(errs))
-        time.sleep(interval)
+        from src.utils import shutdown as _sd
+        if _sd.wait(interval):                     # P0-운영: 내려갈 때 바로 깬다(sleep은 종료를 붙잡는다)
+            return
 
 
 def start_if_enabled() -> str:
@@ -58,6 +60,7 @@ def start_if_enabled() -> str:
         if _STARTED["done"]:
             return "이미 실행 중"
         interval = int(os.getenv("ORDER_POLL_INTERVAL_SECONDS", "300") or 300)
-        threading.Thread(target=_loop, args=(pollers, interval), daemon=True, name="naver-order-poll").start()
+        from src.utils import shutdown as _sd
+        _sd.start_daemon(_loop, "naver-order-poll", pollers, interval)
         _STARTED["done"] = True
     return f"실행 — {', '.join(p.store for p in pollers)}"
