@@ -703,3 +703,13 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 - 시작 못 한 줄 → 그대로 다시 넣음 · 돌던 줄 → **읽기 작업만**(prevalidate·check_item·dims_fetch·review_status·image_probe·thumb_probe·coupang_inspect) **1회** 다시 · 등록·전송·결정 적용(register·owner_decision·naver_resend 등) → 다시 안 넣고 `ops:oneshot:interrupted`에 「중단됨」(중복 등록 방지).
 - 사전검증 잡 → `done` · 남은 마켓 「검증 못 함 — 서버가 다시 시작돼 검증이 끊겼어요(다시 눌러 주세요)」 · 일회성 줄이 띄운 읽기 작업이면 그 줄 1회 다시.
 - 배포 뒤 첫 스윕이 위 옛 running 3건을 「서버 재시작」으로 닫는다(다시 넣는 것 0 — 띄운 줄 기록 없음).
+- **머지:** #961 → main `e8ff81ec`(10-23 12:53 UTC) · CI 5/5(1차 실패 = `test_p_share_ticket::test_rate_limit_per_ip` 분 경계 플레이크 — 시계 고정으로 수리, 상한 그대로) · 로컬 3.11/3.12 각 16583 passed · PG 131 passed.
+
+### 배포 뒤 확인 (13:0x UTC, 운영 DB 읽기만)
+| 항목 | 결과 |
+|---|---|
+| 틱(`rss:ticks` start) 10:30→13:00 | **10분 간격 빠짐 0** — #960 배포(11:07) 뒤 11:10 · #961 배포(12:53) 뒤 13:00 그대로 들어옴 = 커스텀 도메인 끊김 0 · 틱 공백 0 |
+| 새 프로세스 표시 | 틱 MB 187→155(11:10) · 175→156(13:00) — 배포마다 새 프로세스로 교체됨 |
+| 스키마 | `schema:applied` 11:07:27 한 번(19개 파일 지문) — #961은 스키마 변화 없음 → 지문 같아 건너뜀 |
+| 틱 공백 알림 | 09:33 한 건 뒤로 새 알림 0 |
+| 재시작 회수(#961 첫 부팅 12:55:21) | 옛 running 사전검증 잡 **3건 → done · interrupted** · 다시 넣은 줄 0 · `ops:oneshot:inflight:*` 남은 것 0 |
