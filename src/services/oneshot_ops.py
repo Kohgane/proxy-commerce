@@ -53,6 +53,10 @@ PER_TICK = 5
 HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item")
 HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
+#: 순찰 62 — 끝난 줄 최근 기록(덮어쓰지 않고 덧붙임 · `LOG_MAX`줄) · 한 줄이 `LOG_ROW_MAX`자를 넘으면 마켓별 성공·사유만
+LOG_KEY = "ops:oneshot:log"
+LOG_MAX = 60
+LOG_ROW_MAX = 4000
 INFLIGHT_PREFIX = "ops:oneshot:inflight:"
 INTERRUPTED_KEY = "ops:oneshot:interrupted"
 #: 도중에 끊겨도 다시 돌려도 되는 줄(조회·사전검증만 — 마켓에 쓰지 않는다). 등록·전송·결정 적용은 다시 넣지 않는다(중복 등록 방지).
@@ -268,12 +272,36 @@ def drain() -> Dict:
             logger.info("[일회성 작업] %s item=%s ok=%s why=%s", r.get("op"), str(r.get("item_id") or "")[:8], res.get("ok"),
                         str(res.get("why") or "")[:120])
         st.state_set(LAST_KEY, {"at": _now(), "rows": out})
+        _log_append(out)
     finally:
         try:
             st.state_delete(inkey)                               # 정상으로 끝난 틱은 흔적을 남기지 않는다
         except Exception as exc:                                 # noqa: BLE001
             logger.warning("[일회성 작업] 진행 기록 지우기 실패(계속): %s", exc)
     return {"picked": len(out), "rows": out}
+
+
+def _log_row(r: dict) -> dict:
+    """기록 한 줄 — 결과가 크면(등록 뒤 표 등) 마켓별 성공·사유만 남긴다."""
+    res = r.get("result") if isinstance(r.get("result"), dict) else {}
+    if len(json.dumps(res, ensure_ascii=False, default=str)) > LOG_ROW_MAX:
+        res = {"ok": res.get("ok"), "why": str(res.get("why") or "")[:300], "trimmed": True,
+               "rows": [{k: x.get(k) for k in ("market", "success", "ok", "message", "error_code", "error", "no",
+                                                "external_product_id", "status")}
+                        for x in (res.get("rows") or []) if isinstance(x, dict)][:8]}
+    return dict(r, result=res)
+
+
+def _log_append(out: List[dict]) -> None:
+    """순찰 62(10-24 df0f8a8c 스마트스토어 등록 사유 유실): `ops:oneshot:last`는 다음 틱이 덮는다 — 끝난 줄을 최근
+    `LOG_MAX`줄 기록(`ops:oneshot:log`)에도 덧붙인다(실패 사유가 다음 틱에 사라지지 않게)."""
+    from src.db import image_translate_queue_pg as st
+    rows = [_log_row(r) for r in out]
+    try:
+        st.state_update(LOG_KEY, lambda cur: dict(cur, rows=([x for x in cur.get("rows") or [] if isinstance(x, dict)]
+                                                             + rows)[-LOG_MAX:]))
+    except Exception as exc:                                     # noqa: BLE001 — 기록 실패가 작업을 막지 않는다
+        logger.warning("[일회성 작업] 기록 덧붙이기 실패(계속): %s", exc)
 
 
 def _mem_mark() -> dict:

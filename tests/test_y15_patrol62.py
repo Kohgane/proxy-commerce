@@ -33,3 +33,27 @@ def test_option_value_tokens_cover_the_three_words():
     assert option_value_tokens("夹灯 宿舍床头") == "집게등 기숙사 침대 머리맡"
     assert option_value_tokens("白色 夹灯") == "화이트 집게등"
     assert option_value_tokens("白色【夹灯版】宿舍床头") == ""                # 표에 없는 글자(版)가 남으면 짓지 않는다
+
+
+def test_oneshot_results_are_logged_not_only_overwritten(monkeypatch):
+    """10-24 df0f8a8c: 등록 줄 결과(스스 2곳 실패 사유)가 다음 틱의 `ops:oneshot:last`에 덮여 사라졌다 — 기록에 남는다."""
+    from src.db import image_translate_queue_pg as st
+    from src.services import oneshot_ops as O
+    monkeypatch.setattr(st, "_enabled", lambda: False)
+    monkeypatch.setattr(st, "_MEM_STATE", {})
+    monkeypatch.setattr(O, "_job_env", lambda row: __import__("contextlib").nullcontext())
+    big = [{"market": "smartstore:chezgoga", "success": False, "message": "스마트스토어 업로드 실패 — 예시", "x": "y" * 9000}]
+    monkeypatch.setattr(O, "_run", lambda row: {"ok": False, "why": "", "rows": big} if row["op"] == "register" else {"ok": True})
+    O.enqueue({"op": "register", "item_id": "df0f8a8c", "markets": ["smartstore:chezgoga"]})
+    O.drain()
+    O.enqueue({"op": "review_status", "item_id": "a", "market": "coupang"})
+    O.drain()
+    assert [r["op"] for r in st.state_get(O.LAST_KEY)["rows"]] == ["review_status"]        # last는 덮인다
+    log = st.state_get(O.LOG_KEY)["rows"]
+    assert [r["op"] for r in log] == ["register", "review_status"]
+    reg = log[0]["result"]
+    assert reg["trimmed"] and reg["rows"][0]["message"].startswith("스마트스토어 업로드 실패") and "x" not in reg["rows"][0]
+    monkeypatch.setattr(O, "LOG_MAX", 1)
+    O.enqueue({"op": "review_status", "item_id": "b", "market": "coupang"})
+    O.drain()
+    assert [r["item_id"] for r in st.state_get(O.LOG_KEY)["rows"]] == ["b"]
