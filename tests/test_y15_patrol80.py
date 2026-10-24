@@ -50,13 +50,19 @@ def test_naver_find_op_reports_per_store(monkeypatch):
         def __init__(self, account):
             self.account = account
 
-        def find_by_name(self, words):
+        def find_by_name(self, words, max_pages=10):
+            pages.append(max_pages)
             rows = [{"channel_no": "9", "name": "타지 두부 블록 소파"}] if self.account == "gocosmos" else []
             return {"ok": True, "rows": rows, "total": 4, "scanned": 4, "complete": True, "error": ""}
+    pages = []
     monkeypatch.setattr(NU, "NaverSmartStoreUploader", Fake)
     res = O._run({"op": "naver_find", "item_id": "", "words": ["두부", "타지"]})
     assert res["found"] == 1 and [s["store"] for s in res["stores"]] == ["chezgoga", "gocosmos"]
-    assert all(s["complete"] for s in res["stores"])
+    assert all(s["complete"] for s in res["stores"]) and pages == [10, 10]
+    # 10-24 실측: 1,466·1,187개를 10쪽(1,000)으로 다 못 훑었다 — 줄에서 늘리되 상한 30
+    O._run({"op": "naver_find", "item_id": "", "words": ["두부"], "max_pages": 20})
+    O._run({"op": "naver_find", "item_id": "", "words": ["두부"], "max_pages": 99})
+    assert pages[2:] == [20, 20, 30, 30]
 
 
 def test_register_row_can_go_through_the_screen_job_and_measures_reg_job(monkeypatch):
