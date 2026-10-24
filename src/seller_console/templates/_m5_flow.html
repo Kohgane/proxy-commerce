@@ -755,8 +755,9 @@
     Object.keys(fixes).reduce(function (p, f) {
       return p.then(function () { return post('/seller/collect/' + encodeURIComponent(itemId) + '/' + OVERRIDES[f][0], {}); });
     }, Promise.resolve()).then(function () {
-    return post('/seller/collect/upload', {product: product, markets: targets, item_id: itemId, confirm_warn: !!confirmWarn,
-                                           confirm_duplicate: !!confirmDup}); }).then(function (d) {
+    var upBody = {product: product, markets: targets, item_id: itemId, confirm_warn: !!confirmWarn, confirm_duplicate: !!confirmDup};
+    // 순찰 77: 등록 = 잡(202 + 폴링 — seller.js `kgpUploadJob`, 끝나면 예전과 같은 응답). 없으면 예전 동기 호출
+    return window.kgpUploadJob ? window.kgpUploadJob(upBody) : post('/seller/collect/upload', upBody); }).then(function (d) {
       checkBtn.disabled = false;
       // Y7-K: 이미 등록된 마켓 — 서버가 확인 없이 다시 올리지 않는다(같은 상품이 하나 더 생긴다)
       if (d.needs_dup_confirm) {

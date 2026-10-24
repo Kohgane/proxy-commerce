@@ -3006,8 +3006,86 @@ def collect_upload():
 
     Request body: {"product": {...}, "markets": ["coupang", "smartstore"], "target_margin_pct": 22}
     Response: {"ok": true, "result": {...}}
+
+    순찰 77(오너 2026-10-24): 화면이 `"async": true`로 보내면 사전검증과 같은 잡 모양 — 즉시 202 + 잡 id, 몸통(아래 `_collect_upload_run`)은
+    잡 스레드에서, 결과는 `GET /collect/upload/job/<id>`(끝나면 이 함수가 돌려줬을 **같은 JSON·상태 코드**). 등록 한 건이 네이버 CDN 업로드·
+    쿠팡 SKU 호출로 25~30초 요청 스레드를 붙잡던 것을 없앤다. 일회성 줄(`oneshot_ops.register`)·`async` 없는 호출은 예전처럼 끝까지 동기.
     """
     data = request.get_json(force=True, silent=True) or {}
+    if data.get("async"):
+        from src.services.oneshot_ops import current_row as _oneshot_row
+        if _oneshot_row() is None:
+            return _upload_start_job(data)
+    return _collect_upload_run(data)
+
+
+_UP_JOB_KEY = "upload_job:"
+#: 등록 잡은 한 번에 하나 — 사진 업로드가 겹치면 인스턴스 메모리 상한(Z10-C)에 걸린다. 뒤 잡은 앞 잡이 끝나길 기다린다.
+_UP_SEM = __import__("threading").Semaphore(1)
+
+
+def _resp_parts(resp) -> tuple:
+    """뷰 반환값(Response 또는 (Response, code)) → `(본문 dict, 상태 코드)`."""
+    r, code = (resp if isinstance(resp, tuple) else (resp, None))
+    body = r.get_json(silent=True) if hasattr(r, "get_json") else None
+    return (body if isinstance(body, dict) else {"ok": False, "error": "등록 응답을 읽지 못했어요"}), int(code or getattr(r, "status_code", 200))
+
+
+def _upload_start_job(data: dict):
+    import contextvars as _cv
+    import threading as _th
+    import uuid as _uuid
+    from src.utils.instance import holder as _holder
+    job_id = _uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    _pv_store().state_set(_UP_JOB_KEY + job_id, {
+        "state": "running", "owner": _seller_id(), "item_id": str(data.get("item_id") or "")[:64],
+        "markets": [str(m) for m in (data.get("markets") or [])][:12], "started_at": now.isoformat(),
+        "started_ts": now.timestamp(), "holder": _holder()})
+    body = {k: v for k, v in data.items() if k != "async"}
+    # 요청 컨텍스트(세션 — 셀러·공유 판정)를 그대로 잡 스레드로(사전검증 잡과 같은 방식)
+    _th.Thread(target=_cv.copy_context().run, args=(_upload_job, job_id, body), daemon=True,
+               name=f"upload-job-{job_id[:8]}").start()
+    return jsonify({"ok": True, "job_id": job_id, "poll": f"/seller/collect/upload/job/{job_id}", "poll_sec": 3}), 202
+
+
+def _upload_job(job_id: str, data: dict) -> None:
+    import time as _time
+    from src.utils import stall_guard as _sg
+    t0 = _time.monotonic()
+    _sg.begin("upload_job:" + job_id[:8], limit=120)
+    try:
+        with _UP_SEM:
+            waited = round(_time.monotonic() - t0, 1)
+            try:
+                body, code = _resp_parts(_collect_upload_run(data))
+            except Exception as exc:                             # noqa: BLE001 — 잡이 죽어도 「끝남 + 사유」는 남긴다
+                logger.warning("[등록 잡] %s 실패: %s", job_id[:8], exc)
+                body, code = {"ok": False, "error": f"업로드 중 오류: {exc}"}, 500
+        st = _pv_store()
+        cur = st.state_get(_UP_JOB_KEY + job_id) or {}
+        cur.update(state="done", http_status=code, body=body, wait_sec=waited,
+                   sec=round(_time.monotonic() - t0, 1), finished_at=datetime.now(timezone.utc).isoformat())
+        st.state_set(_UP_JOB_KEY + job_id, cur)
+        logger.info("[등록 잡] %s 끝 status=%s %.1fs(대기 %.1fs)", job_id[:8], code, cur["sec"], waited)
+    finally:
+        _sg.end()
+
+
+@bp.get("/collect/upload/job/<job_id>")
+def collect_upload_job(job_id: str):
+    """등록 잡 결과 — 끝나면 `body`가 동기 등록이 돌려줬을 그 JSON(`http_status` 같이). 재시작으로 끊긴 잡은 `interrupted`."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    cur = _pv_store().state_get(_UP_JOB_KEY + str(job_id)[:64]) or {}
+    if not cur or str(cur.get("owner") or "") != _seller_id():
+        return jsonify({"ok": False, "error": "등록 작업을 찾지 못했어요 — 마켓 상태를 먼저 확인해 주세요."}), 404
+    return jsonify({"ok": True, "state": cur.get("state"), "http_status": cur.get("http_status"), "body": cur.get("body"),
+                    "error": cur.get("error") or "", "sec": cur.get("sec")})
+
+
+def _collect_upload_run(data: dict):
+    """등록 몸통 — 동기 호출과 등록 잡이 같은 함수를 지난다(게이트·중복·위험·도달성·보강 확인 그대로)."""
     product_data = data.get("product") or {}
     markets = data.get("markets") or []
 

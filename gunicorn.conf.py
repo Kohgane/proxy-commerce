@@ -9,6 +9,8 @@ bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 workers = max(1, min(int(os.getenv('GUNICORN_WORKERS', '1') or 1), int(os.getenv('GUNICORN_MAX_WORKERS', '1') or 1)))
 worker_class = os.getenv('GUNICORN_WORKER_CLASS', 'gthread')
 threads = int(os.getenv('GUNICORN_THREADS', '8'))
+# 순찰 77: gthread에선 이 값이 **요청 상한이 아니다** — 본 스레드가 1초마다 마스터에 살아 있다고 알려서, 요청 스레드가 전부 묶여도
+#   워커는 안 죽는다. 묶인 풀은 `restart_log.check_quiet`(요청 0건 10분 + 처리 중 HTTP ≥ 스레드 수 → 이 워커만 내림)가 맡는다.
 timeout = int(os.getenv('GUNICORN_TIMEOUT', '120'))
 # Z7(오너 2026-10-08 OOM): 워커 2개 이상이면 요청 200±50번마다 워커를 갈아끼운다 — 누수 보험(한 워커가 커져도 오래 안 간다).
 #   워커 1개면 재시작 순간 받을 곳이 없으므로 켜지 않는다. 0을 주면 끈다.
@@ -43,7 +45,9 @@ def post_worker_init(worker):
     # 순찰 73: 새 워커가 떴다 — 직전 종료 기록과 짝지어 재시작에 걸린 시간 · 우리 상한 밖 재시작(배포·Render)인지(`rss:restart`)
     try:
         from src.utils import restart_log as _rl
-        _rl.note_boot(os.getpid(), _worker_rss_mb())
+        _cfg = getattr(worker, 'cfg', None)
+        _rl.note_boot(os.getpid(), _worker_rss_mb(), threads=getattr(_cfg, 'threads', None), timeout=getattr(_cfg, 'timeout', None),
+                      worker_class=str(getattr(_cfg, 'worker_class_str', '') or ''), workers=getattr(_cfg, 'workers', None))
     except Exception as exc:                                     # noqa: BLE001
         worker.log.warning('[부팅] 재시작 기록 실패(계속): %s', exc)
 

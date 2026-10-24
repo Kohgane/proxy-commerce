@@ -209,7 +209,7 @@ def test_registration_is_blocked_before_enrichment():
     import ast as _ast
     src = Path("src/seller_console/views.py").read_text(encoding="utf-8")
     fn = next(n for n in _ast.walk(_ast.parse(src))
-              if isinstance(n, _ast.FunctionDef) and n.name == "collect_upload")
+              if isinstance(n, _ast.FunctionDef) and n.name == "_collect_upload_run")  # 순찰 77: 등록 몸통(동기·잡 공용)
     block = _ast.unparse(fn)
     # **코드가 실제로 쓰는 이름**으로 잰다. 옛 계약은 글자 수로 자른 창에서
     #   `enrich_state`를 찾았는데 그건 **주석에만** 있었다 — 주석을 근거로 초록이던 셈이다

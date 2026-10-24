@@ -735,12 +735,11 @@ function uploadProduct() {
   btn.textContent = '업로드 중...';
   setStep(4);
 
-  fetch('/seller/collect/upload', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({product: collectPayload(), markets})
-  })
-    .then((r) => r.json())
+  // 순찰 77: 등록 = 잡(202 + 폴링 — seller.js `kgpUploadJob`, 끝나면 예전과 같은 응답)
+  const upBody = {product: collectPayload(), markets};
+  (window.kgpUploadJob ? window.kgpUploadJob(upBody)
+    : fetch('/seller/collect/upload', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                       body: JSON.stringify(upBody)}).then((r) => r.json()))
     .then((data) => {
       if (!(data.ok && data.result)) {
         throw new Error(data.error || '업로드 실패');

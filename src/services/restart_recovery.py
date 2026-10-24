@@ -118,12 +118,33 @@ def _sweep_prevalidate(now: float, me: str) -> Dict:
     return out
 
 
+#: 순찰 77 — 화면 등록 잡(`upload_job:`)이 이보다 오래 「running」이고 돌던 프로세스가 아니면 끊긴 것
+UPLOAD_STALE_SEC = 600
+
+
+def _sweep_upload(now: float, me: str) -> Dict:
+    """재시작으로 끊긴 화면 등록 잡을 「확인 못 함」으로 닫는다 — **다시 넣지 않는다**(마켓에 일부 올라갔을 수 있다 — 중복 등록 방지)."""
+    from src.db import image_translate_queue_pg as st
+    from src.seller_console import views as V
+    out = {"closed": 0}
+    for key, cur in st.state_scan(V._UP_JOB_KEY, field="state", equals="running"):
+        started = float(cur.get("started_ts") or 0) or _ts(cur.get("started_at"))
+        if now - started < UPLOAD_STALE_SEC or str(cur.get("holder") or "") == me:
+            continue
+        msg = "등록 결과를 확인하지 못했어요 — 서버가 다시 시작됐어요. 마켓에 올라갔는지 먼저 확인해 주세요(다시 누르면 중복될 수 있어요)"
+        cur.update(state="interrupted", interrupted=True, error=msg, http_status=503, body={"ok": False, "error": msg},
+                   finished_at=datetime.now(timezone.utc).isoformat())
+        st.state_set(key, cur)
+        out["closed"] += 1
+    return out
+
+
 def sweep(now: Optional[float] = None) -> Dict:
     from src.utils.instance import holder
     now = time.time() if now is None else float(now)
     me = holder()
     out = {}
-    for name, fn in (("oneshot", _sweep_oneshot), ("prevalidate", _sweep_prevalidate)):
+    for name, fn in (("oneshot", _sweep_oneshot), ("prevalidate", _sweep_prevalidate), ("upload", _sweep_upload)):
         try:
             out[name] = fn(now, me)
         except Exception as exc:                                 # noqa: BLE001 — 회수 실패가 부팅을 막지 않는다

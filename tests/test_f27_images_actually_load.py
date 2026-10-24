@@ -214,7 +214,7 @@ def test_upload_route_passes_item_id_so_it_can_check():
     """등록 경로가 `item_id`를 넘겨야 바이트를 볼 수 있다 — 안 넘기면 적힌 대로 나간다."""
     src = (ROOT / "src/seller_console/views.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
-    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "collect_upload")
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_collect_upload_run")  # 순찰 77: 등록 몸통(동기·잡 공용)
     # S1: 이미지 배열은 사전검증과 같은 함수(`_outbound_images`)에서 — 등록이 item_id를 넘기고, 그 함수가 쓴다.
     assert "_outbound_images(product_data, data.get('item_id'))" in ast.unparse(fn)
     helper = ast.unparse(next(n for n in ast.walk(tree)

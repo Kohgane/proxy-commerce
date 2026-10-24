@@ -204,6 +204,6 @@ def test_the_registration_gate_is_still_fail_closed():
     """★ 오너 지시: **게이트는 손대지 않는다.** 409로 막는 자리가 그대로 있다."""
     import inspect
     from src.seller_console import views
-    src = inspect.getsource(views.collect_upload)
+    src = inspect.getsource(views._collect_upload_run)
     assert '"step": "도달성 확인"' in src and "409" in src
     assert "unreachable" in src

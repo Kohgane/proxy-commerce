@@ -146,7 +146,7 @@ def test_the_single_upload_path_fills_it_too():
     """★★ 단건도 같은 빌더를 지난다 — 카나리 4차에서 **여기만** 빠져 있었다."""
     import inspect
     from src.seller_console import views
-    assert "build_dispatch_payload" in inspect.getsource(views.collect_upload)
+    assert "build_dispatch_payload" in inspect.getsource(views._collect_upload_run)
 
 
 # ---------------------------------------------------------------------------

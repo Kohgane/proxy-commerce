@@ -219,7 +219,7 @@ def test_the_upload_path_applies_it():
     from tests._ast_probe import calls_in
     # S1(2026-10-02): 이미지 배열은 사전검증과 같은 함수(`_outbound_images`)에서 — 등록·사전검증이 그 함수를 부른다.
     #   (문자열 핀이 아니라 호출 구조로 잰다 — 메타 계약)
-    assert "_outbound_images" in calls_in(views.collect_upload)
+    assert "_outbound_images" in calls_in(views._collect_upload_run)
     # M5 후속(2026-10-07)·Z9(10-09): 사전검증은 잡(`_pv_job`) 하나 — `_pv_prepare`를 지나고, 거기서 `_outbound_images`
     assert "_outbound_images" in calls_in(views._pv_prepare)
     # Z10(10-10): 잡은 줄 서기·메모리 상한 껍데기(`_pv_job`) + 본문(`_pv_job_body`) — 본문이 `_pv_prepare`를 지난다
