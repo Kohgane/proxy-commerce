@@ -96,3 +96,30 @@ def test_register_row_can_go_through_the_screen_job_and_measures_reg_job(monkeyp
     assert res["ok"] and [r["market"] for r in res["rows"]] == ["smartstore:chezgoga", "smartstore:gocosmos"]
     assert seen and seen[0][0].startswith("upload-job-") and seen[0][1] == ["smartstore:chezgoga", "smartstore:gocosmos"]
     assert "reg_job" in recs                                               # 잡 안에선 일회성 줄 표시가 지워져 측정된다
+
+
+# 순찰 80 결과(2026-10-24 14:20 UTC, 잡 b79309a1) — 셰고가·고코스모스 둘 다 400 원문:
+# 「optionCombinations[0].optionName1 — 1번째 옵션의 옵션값 항목에 콤마(,)는 사용하실 수 없습니다.」 + [2]. 운영 저장값 그대로.
+_DF_SRC = ["星云白，雪花绒【防水防污】（杨溪博主同款） 可拆洗", "奶咖色，雪花绒【防水防污】可拆洗 （博主同款）", "深灰色，雪花绒【防水防污】可拆洗",
+           "脏粉色，雪尼尔【防水防污】可拆洗", "传奇黑，雪花绒【防水防污】可拆洗", "姜黄色，雪花绒【防水防污】可拆洗",
+           "焦糖色，雪花绒【防水防污】可拆洗", "森林绿，雪花绒【防水防污】可拆洗", "复古绿，丝绒【防水防污】可拆洗"]
+_DF_KO = ["성운백, 설화융 [방수 및 오염 방지](양시 블로거 동일 모델) 분리 세탁 가능",
+          "밀크 커피 색상, 눈꽃 벨벳 소재 [방수 및 오염 방지] 분리 세탁 가능 (브로셔 작성자 착용 제품)",
+          "다크 그레이, 스노우 벨벳 / 방수 오염 방지 / 분리 세탁", "누드 핑크, 쉐니에르 [방수 및 오염 방지] 분리 세탁 가능",
+          "전설 블랙, 눈꽃 벨벳 [방수 및 오염 방지] 분리 세탁 가능", "생강색, 눈꽃 벨벳 [방수 및 오염 방지] 분리 세탁 가능",
+          "카라멜 색상, 스노우 플리스 [방수 및 오염 방지] 분리 세탁 가능", "숲속 녹색, 눈꽃 벨벳 [방수 및 오염 방지] 분리 세탁 가능",
+          "빈티지 그린, 벨벳 [방수 및 오염 방지] 분리 세탁 가능"]
+
+
+def test_naver_option_values_carry_no_comma_df0f8a8c():
+    from src.uploaders.naver_options import clean_value, plan
+    p = plan({"options": [{"name": "颜色分类", "values": _DF_SRC, "name_ko": "색상", "values_ko": _DF_KO}],
+              "skus": [{"sku_id": str(i), "spec": [v], "stock": 5, "sell_price_krw": 883790} for i, v in enumerate(_DF_SRC)],
+              "options_translated": True,
+              "option_value_overrides": {_DF_SRC[0]: "성운백, 설화융 [방수 및 오염 방지]"}})
+    assert p["mode"] == "combo", p.get("why")
+    names = [c["optionName1"] for c in p["option_info"]["optionCombinations"]]
+    assert not any("," in n or "，" in n for n in names)
+    assert names[0] == "성운백 설화융 [방수 및 오염 방지]"            # 오너 덮어쓰기 값 — 쉼표만 빠짐
+    assert names[2] == "다크 그레이 스노우 벨벳 / 분리 세탁"
+    assert clean_value("A ， B,C") == "A B C"
