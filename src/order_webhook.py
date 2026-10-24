@@ -1298,7 +1298,7 @@ _install_api_gate(app)
 
 
 _REQ_PROBE = {"pending": 0, "flushed_at": 0.0, "lock": __import__("threading").Lock()}
-_REQ_PROBE_EVERY = int(os.getenv("REQ_PROBE_EVERY", "100") or 100)
+_REQ_PROBE_EVERY = int(os.getenv("REQ_PROBE_EVERY", "10") or 10)      # 순찰 62: 100 → 10(2시간 77건엔 샘플 줄 0이었다)
 _REQ_PROBE_FLUSH_N = int(os.getenv("REQ_PROBE_FLUSH_N", "10") or 10)
 _REQ_PROBE_FLUSH_SEC = float(os.getenv("REQ_PROBE_FLUSH_SEC", "60") or 60)
 REQ_PROBE_KEY = "rss:req:count"
@@ -1323,7 +1323,7 @@ def _req_probe_flush(force: bool = False):
 
 @app.after_request
 def _req_rss_sample(response):
-    """Y15 순찰 41(오너 2026-10-23): 요청 100개마다 RSS·스레드 한 줄(`rss:ticks`) — 바닥이 틱 사이 어느 구간에서 오르는지.
+    """Y15 순찰 41(오너 2026-10-23): 요청 `REQ_PROBE_EVERY`개마다(기본 10 — 순찰 62) RSS·스레드 한 줄(`rss:ticks`) — 바닥이 틱 사이 어느 구간에서 오르는지.
     경로는 엔드포인트 이름만(쿼리·값 없음) — 맞는 라우트가 없으면 첫 경로 조각만. 순찰 57: 세는 건 DB 원자 카운터."""
     try:
         if _REQ_PROBE_EVERY <= 0:
@@ -1333,7 +1333,7 @@ def _req_rss_sample(response):
         got = _req_probe_flush()
         if got:
             total, by = got
-            if total // _REQ_PROBE_EVERY > (total - by) // _REQ_PROBE_EVERY:      # 이번에 100의 배수를 넘었다
+            if total // _REQ_PROBE_EVERY > (total - by) // _REQ_PROBE_EVERY:      # 이번에 EVERY의 배수를 넘었다
                 from src.utils import render_worker as _rw
                 if _rw.tick_probe_on():
                     ep = str(request.endpoint or "")[:60] or ("path:/" + (request.path or "/").lstrip("/").split("/")[0][:30])
