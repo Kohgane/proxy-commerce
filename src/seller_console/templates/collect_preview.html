@@ -2721,19 +2721,18 @@ async function runUpload(confirmWarn) {
   goToStep('stepUploading');
 
   try {
-    const resp = await fetch('/seller/collect/upload', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        product: buildProductData(),
-        markets: _validatedMarkets,
-        target_margin_pct: targetMarginPct,
-        item_id: _ITEM_ID,                 // v44-1: 성공 마켓을 항목에 영속(목록 '등록됨' 뱃지)
-        confirm_warn: !!confirmWarn,       // D2-3: 금칙어 확인을 이미 받았나
-        confirm_duplicate: _confirmDup,    // Y7-K: 이미 등록된 마켓 다시 올리기를 확인했나
-      }),
-    });
-    const data = await resp.json();
+    const upBody = {
+      product: buildProductData(),
+      markets: _validatedMarkets,
+      target_margin_pct: targetMarginPct,
+      item_id: _ITEM_ID,                 // v44-1: 성공 마켓을 항목에 영속(목록 '등록됨' 뱃지)
+      confirm_warn: !!confirmWarn,       // D2-3: 금칙어 확인을 이미 받았나
+      confirm_duplicate: _confirmDup,    // Y7-K: 이미 등록된 마켓 다시 올리기를 확인했나
+    };
+    // 순찰 77: 등록 = 잡(202 + 폴링, seller.js `kgpUploadJob`) — 끝나면 예전과 같은 응답. seller.js가 없는 문맥은 예전 동기 호출
+    const data = window.kgpUploadJob ? await window.kgpUploadJob(upBody)
+      : await (await fetch('/seller/collect/upload', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                     body: JSON.stringify(upBody)})).json();
     _confirmDup = false;
     if (data && data.needs_dup_confirm) {
       goToStep('stepPrevalidate');   // Y7-K: 예전 'stepMarkets'는 없는 id라 TypeError(확인 창이 안 떴다)

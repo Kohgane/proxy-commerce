@@ -40,7 +40,7 @@ from src.seller_console.upload_dispatcher import (DISPATCH_PATHS, build_dispatch
 
 #: 페이로드를 만드는 **모든** 라우트/함수. 새 경로가 생기면 여기 올린다.
 PAYLOAD_BUILDERS = (
-    views.collect_upload,              # 단건(서랍)
+    views._collect_upload_run,         # 단건(서랍) — 순찰 77: 몸통(동기·잡 공용)
     views.collect_bulk_upload,         # 일괄(수집 이력)
     views._woocommerce_dispatch,       # 재등록(멀티샵)
 )
@@ -145,7 +145,7 @@ def test_the_single_path_fills_the_url_outside_the_swallowing_try():
     """
     # **구조로 잰다**: 빌더 호출이 어떤 `try` 안에도 들어 있지 않아야 한다.
     #   (예전엔 줄번호로 앞뒤를 쟀다 — 코드가 조금만 움직여도 헛것이 된다.)
-    tree = ast.parse(textwrap.dedent(inspect.getsource(views.collect_upload)))
+    tree = ast.parse(textwrap.dedent(inspect.getsource(views._collect_upload_run)))
     inside_try = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Try):
@@ -161,7 +161,7 @@ def test_the_single_path_does_not_refill_inside_the_block():
     """★ 같은 일을 두 자리에서 하면 한쪽만 고쳐진다 — 블록 안의 옛 채우기는 사라졌다."""
     # 빌더 말고 **다른 자리에서 `["url"]`에 대입**하는 곳이 없어야 한다.
     #   (다른 키 대입은 이 계약의 일이 아니다 — 이미지·상세는 그 자리가 맞다.)
-    tree = ast.parse(textwrap.dedent(inspect.getsource(views.collect_upload)))
+    tree = ast.parse(textwrap.dedent(inspect.getsource(views._collect_upload_run)))
     url_writes = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):

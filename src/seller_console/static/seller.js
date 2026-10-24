@@ -343,3 +343,43 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 });
+
+// 순찰 77(오너 2026-10-24): 화면 「마켓 등록」 = 사전검증과 같은 잡 모양 — 즉시 202 + 잡 id → 3초마다 결과를 묻는다.
+//   끝나면 예전 동기 응답과 **같은 JSON**(needs_dup_confirm·needs_confirm·result…)을 돌려줘서 결과 화면·배지·재시도는 그대로.
+//   등록이 요청 스레드를 25~30초 붙잡지 않게(01:21~01:48 요청 0건 26분 — 순찰 73).
+window.kgpUploadJob = async function (body, opts) {
+  opts = opts || {};
+  const waitMs = (s) => new Promise((res) => setTimeout(res, s));
+  let r, d;
+  try {
+    r = await fetch('/seller/collect/upload', {method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({}, body, {async: true}))});
+    try { d = await r.json(); } catch (e) { d = {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }
+  } catch (e) {
+    return {ok: false, error: '네트워크 오류 — ' + ((e && e.message) || e)};
+  }
+  d._status = r.status;
+  if (r.status !== 202 || !d.job_id) return d;                 // 바로 막힌 경우(400 등)·예전 서버
+  const until = Date.now() + (opts.maxMs || 10 * 60 * 1000);
+  let misses = 0;
+  while (Date.now() < until) {
+    await waitMs((d.poll_sec || 3) * 1000);
+    let j = null;
+    try {
+      const pr = await fetch(d.poll, {credentials: 'same-origin'});
+      j = await pr.json();
+    } catch (e) {
+      if (++misses >= 20) break;                               // 1분 넘게 못 물으면 그만(결과는 마켓 상태로)
+      continue;
+    }
+    misses = 0;
+    if (j && (j.state === 'done' || j.state === 'interrupted')) {
+      const out = (j.body && typeof j.body === 'object') ? j.body : {ok: false, error: j.error || '등록 결과가 비었어요'};
+      out._status = j.http_status;
+      return out;
+    }
+    if (j && j.ok === false && !j.state) return {ok: false, error: j.error || '등록 작업을 찾지 못했어요'};
+    if (typeof opts.onTick === 'function') { try { opts.onTick(j); } catch (e) { /* 진행 표시 실패는 무시 */ } }
+  }
+  return {ok: false, error: '등록 결과를 아직 받지 못했어요 — 「마켓 상태」로 올라갔는지 먼저 확인해 주세요(다시 누르면 중복될 수 있어요)'};
+};

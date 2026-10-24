@@ -285,5 +285,5 @@ def test_the_gate_is_still_fail_closed():
     out = S.effective_images(_extra(), kind="detail")
     assert out == [SUPPLIER]
     assert R.check_all(out)["ok"] is False
-    src = inspect.getsource(views.collect_upload)
+    src = inspect.getsource(views._collect_upload_run)
     assert '"step": "도달성 확인"' in src and "409" in src
