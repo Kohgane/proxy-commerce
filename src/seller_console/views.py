@@ -3054,6 +3054,9 @@ def _upload_job(job_id: str, data: dict) -> None:
     from src.utils import stall_guard as _sg
     t0 = _time.monotonic()
     _sg.begin("upload_job:" + job_id[:8], limit=120)
+    # 순찰 80: 일회성 줄이 띄운 잡도 「화면 등록」처럼 잰다(`reg_job`) — 복사된 컨텍스트의 줄 표시를 잡 안에서만 지운다
+    from src.services.oneshot_ops import _CURRENT_ROW as _oneshot_row_var
+    _row_tok = _oneshot_row_var.set(None)
     try:
         with _UP_SEM:
             waited = round(_time.monotonic() - t0, 1)
@@ -3069,6 +3072,7 @@ def _upload_job(job_id: str, data: dict) -> None:
         st.state_set(_UP_JOB_KEY + job_id, cur)
         logger.info("[등록 잡] %s 끝 status=%s %.1fs(대기 %.1fs)", job_id[:8], code, cur["sec"], waited)
     finally:
+        _oneshot_row_var.reset(_row_tok)
         _sg.end()
 
 

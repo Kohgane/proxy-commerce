@@ -33,6 +33,9 @@ P0-운영(오너 2026-10-23): 꺼낸 줄은 `ops:oneshot:inflight:<인스턴스:
 - `undiscard` {item_id, why} — Y15(오너 2026-10-22): 「버리기」 되돌리기(`extra.discarded` 해제 · `discard_log`에 남김)
 - `option_retry` {item_id} — Y15(오너 2026-10-22): 옵션 값 한국어 옮기기 1회(화면 「한국어로 번역」과 같은 `translate_now`) ·
   남은 값과 그 사유를 결과에
+- `naver_find` {item_id, words:[…], stores?} — 순찰 80: **읽기만** — 스마트스토어 전 상태(판매대기·승인대기·판매중지·반려 포함)에서
+  상품명 검색. 스토어마다 다 훑었는지(`complete`)를 남긴다(다 못 훑었으면 「없음」이라 하지 않는다). `item_id`는 그 상품 주인 키로 돌리려고
+- `register` … `via_job:true` — 순찰 80: 화면 「등록」과 같은 잡(`_upload_start_job`)으로 보내고 끝날 때까지 기다린다(측정 = `reg_job`)
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
   (리퍼러 없이 = 목록 `<img referrerpolicy=no-referrer>`와 같은 조건). 상태 코드·형식·크기만 남긴다 — 기록은 바꾸지 않는다
 """
@@ -60,11 +63,13 @@ LOG_ROW_MAX = 4000
 INFLIGHT_PREFIX = "ops:oneshot:inflight:"
 INTERRUPTED_KEY = "ops:oneshot:interrupted"
 #: 도중에 끊겨도 다시 돌려도 되는 줄(조회·사전검증만 — 마켓에 쓰지 않는다). 등록·전송·결정 적용은 다시 넣지 않는다(중복 등록 방지).
-REQUEUE_SAFE_OPS = ("prevalidate", "check_item", "dims_fetch", "review_status", "image_probe", "thumb_probe", "coupang_inspect")
+REQUEUE_SAFE_OPS = ("prevalidate", "check_item", "dims_fetch", "review_status", "image_probe", "thumb_probe", "coupang_inspect",
+                    "naver_find")
 _CURRENT_ROW: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar("oneshot_row", default=None)
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
-       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard")
+       "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard",
+       "naver_find")
 
 
 def _now() -> str:
@@ -158,7 +163,10 @@ def _run(row: dict) -> Dict:
     if op == "relist_fix":
         return _relist_fix(item_id, row)
     if op == "register":
-        return register(item_id, [str(m) for m in (row.get("markets") or []) if m])
+        return register(item_id, [str(m) for m in (row.get("markets") or []) if m], via_job=bool(row.get("via_job")))
+    if op == "naver_find":
+        return naver_find([str(w) for w in (row.get("words") or []) if w][:5],
+                          [str(s) for s in (row.get("stores") or []) if s][:4] or None)
     if op == "coupang_relist":
         return _coupang_relist(item_id, str(row.get("step") or "plan"), [str(m) for m in (row.get("markets") or []) if m],
                                mode=str(row.get("mode") or "category"))
@@ -389,7 +397,8 @@ PREVALIDATE_MARKETS = ("coupang:gogane", "coupang:woojoo", "smartstore:chezgoga"
 REGISTER_MARKETS = PREVALIDATE_MARKETS + ("elevenst",)
 
 
-def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = False, relist: bool = False) -> Dict:
+def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = False, relist: bool = False,
+             via_job: bool = False) -> Dict:
     """화면 「마켓 등록」과 **같은 입구**(`collect_upload`) — 그 상품 계정 세션으로. 중복·위험·도달성 게이트도 그대로 지난다.
 
     확인 플래그(`confirm_duplicate`·`confirm_warn`)는 **붙이지 않는다** — 막히면 그 답(409 원문)을 그대로 돌려준다.
@@ -413,11 +422,14 @@ def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = Fals
         body["confirm_duplicate"] = True
     if relist:
         body["relist_register"] = True                   # relist 경로 — `relist_only` 마켓도 이 길로만 올린다
-    with app.test_request_context("/seller/collect/upload", method="POST", json=body):
-        session["user_id"] = uid
-        resp = V.collect_upload()
-    r, code = (resp if isinstance(resp, tuple) else (resp, 200))
-    js = r.get_json() or {}
+    if via_job:
+        js, code = _register_via_job(body, uid)
+    else:
+        with app.test_request_context("/seller/collect/upload", method="POST", json=body):
+            session["user_id"] = uid
+            resp = V.collect_upload()
+        r, code = (resp if isinstance(resp, tuple) else (resp, 200))
+        js = r.get_json() or {}
     rows = [{k: x.get(k) for k in ("market", "success", "message", "error_code", "external_product_id", "channel_product_no")}
             for x in ((js.get("result") or {}).get("results") or []) if isinstance(x, dict)]
     # 빈 배열의 all()은 True다. 요청한 마켓마다 정확히 한 응답이 있어야 성공이라고 말한다.
@@ -427,6 +439,50 @@ def register(item_id: str, markets: List[str], *, confirm_duplicate: bool = Fals
     if not complete and not why:
         why = "등록 결과가 빠져 있어 완료를 확인하지 못했어요"
     return {"ok": ok, "status": code, "markets": mk, "rows": rows, "why": why}
+
+
+#: 순찰 80 — 화면 등록 잡을 기다리는 상한(초) · 묻는 간격
+REG_JOB_WAIT_SEC = 600
+REG_JOB_POLL_SEC = 2.0
+
+
+def _register_via_job(body: dict, uid: str) -> tuple:
+    """순찰 80(오너 2026-10-24 「새 등록 잡 경로(#968)로 — 첫 reg_job 측정 표도」): 화면 「등록」과 **같은 잡**(`_upload_start_job`)을
+    띄우고 끝날 때까지 기다린다 — 몸통은 잡 스레드, 메모리 측정은 그 잡이 `reg_job`으로 남긴다. `(본문, 상태 코드)`."""
+    import time as _t
+    from flask import session
+    from src.order_webhook import app
+    from src.seller_console import views as V
+    from src.db import image_translate_queue_pg as st
+    with app.test_request_context("/seller/collect/upload", method="POST", json=dict(body, **{"async": True})):
+        session["user_id"] = uid
+        resp = V._upload_start_job(body)
+    r = resp[0] if isinstance(resp, tuple) else resp
+    job_id = str((r.get_json() or {}).get("job_id") or "")
+    if not job_id:
+        return {"ok": False, "error": "등록 잡을 띄우지 못했어요"}, 500
+    t0 = _t.monotonic()
+    while _t.monotonic() - t0 < REG_JOB_WAIT_SEC:
+        cur = st.state_get(V._UP_JOB_KEY + job_id) or {}
+        if cur.get("state") in ("done", "interrupted"):
+            js = cur.get("body") if isinstance(cur.get("body"), dict) else {"ok": False, "error": "등록 결과가 비었어요"}
+            return dict(js, job_id=job_id), int(cur.get("http_status") or 500)
+        _t.sleep(REG_JOB_POLL_SEC)
+    return {"ok": False, "job_id": job_id, "error": f"등록 잡이 {REG_JOB_WAIT_SEC}초 안에 끝나지 않았어요 — 마켓 상태를 먼저 확인"}, 504
+
+
+def naver_find(words: List[str], stores: Optional[List[str]] = None) -> Dict:
+    """순찰 80 — **읽기만**: 스마트스토어 전 상태에서 상품명 검색(`find_by_name`). 스토어마다 다 훑었는지(`complete`)를 같이 남긴다."""
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader as N
+    out = []
+    for stn in stores or ("chezgoga", "gocosmos"):
+        try:
+            res = N(account=stn).find_by_name(words)
+        except Exception as exc:                                 # noqa: BLE001
+            res = {"ok": False, "rows": [], "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        out.append({"store": stn, **{k: res.get(k) for k in ("ok", "rows", "total", "scanned", "complete", "error")}})
+    return {"ok": all(s.get("ok") for s in out), "words": words, "stores": out,
+            "found": sum(len(s.get("rows") or []) for s in out)}
 
 
 def _sent_excluded(ex: dict, sent_urls: set) -> List[str]:
