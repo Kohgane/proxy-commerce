@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from typing import Dict, List
 
 #: 오너 스펙 — 축 2개까지(문서상 조합형 그룹 최대 3개).
@@ -51,6 +52,14 @@ REASON_SPLIT = "naver_option_split"
 OPTION_NAME_MAX = 25
 #: 상품명 상한 — 판매자센터 안내 100자(문서엔 숫자 없음 · 미실측).
 TITLE_MAX = 100
+#: 순찰 80(오너 2026-10-24 df0f8a8c 셰고가·고코스모스 400 원문 「1번째 옵션의 옵션값 항목에 콤마(,)는 사용하실 수 없습니다.」) —
+#: 옵션값에서 쉼표를 빈칸으로 바꾼다(전각 「，」도). 쿠팡은 같은 값을 받았다 — 네이버 전송만.
+_COMMA_RE = re.compile(r"\s*[,，]\s*")
+
+
+def clean_value(v: str) -> str:
+    """네이버 옵션값 — 쉼표 → 빈칸(앞뒤 빈칸 하나로). 길이·중복 검사 전에 부른다(사전검증·등록 같은 함수)."""
+    return re.sub(r"\s{2,}", " ", _COMMA_RE.sub(" ", str(v or ""))).strip()
 
 
 def price_range(sale_price: int):
@@ -303,7 +312,7 @@ def plan(product: Dict, *, stock_default: int = 999, base_override: int = 0, bas
 
     rows, no_price, untranslated = [], [], []
     for k in skus:
-        names = K.spec_ko(product, list(k.get("spec") or []))
+        names = [clean_value(n) for n in K.spec_ko(product, list(k.get("spec") or []))]
         names += [""] * (axes - len(names))
         if any(K._cjk(n) for n in names + groups):
             untranslated.append(" / ".join(names))
