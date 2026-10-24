@@ -61,7 +61,10 @@ def test_owner_canon_lines_and_tokens_are_the_owner_list():
            "杏色": "베이지", "卡其": "카키", "酒红": "와인", "上衣": "상의", "半裙": "스커트", "连衣裙": "원피스",
            "套装": "세트", "均码": "프리사이즈"}
     assert all(OPTION_VALUE_TOKENS[k] == v for k, v in y6c.items())
-    assert set(OPTION_VALUE_TOKENS) <= set(owner_f51b) | set(y6c) | {"半身裙"}
+    # 순찰 60·62(오너 2026-10-23): 사전 夹灯/床头/宿舍 — 오너가 준 세 낱말
+    p62 = {"夹灯": "집게등", "床头": "침대 머리맡", "宿舍": "기숙사"}
+    assert all(OPTION_VALUE_TOKENS[k] == v for k, v in p62.items())
+    assert set(OPTION_VALUE_TOKENS) <= set(owner_f51b) | set(y6c) | {"半身裙"} | set(p62)
 
 
 def test_without_the_lines_translator_values_pass_with_a_badge(monkeypatch):
