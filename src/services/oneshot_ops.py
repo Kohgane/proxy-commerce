@@ -33,7 +33,7 @@ P0-운영(오너 2026-10-23): 꺼낸 줄은 `ops:oneshot:inflight:<인스턴스:
 - `undiscard` {item_id, why} — Y15(오너 2026-10-22): 「버리기」 되돌리기(`extra.discarded` 해제 · `discard_log`에 남김)
 - `option_retry` {item_id} — Y15(오너 2026-10-22): 옵션 값 한국어 옮기기 1회(화면 「한국어로 번역」과 같은 `translate_now`) ·
   남은 값과 그 사유를 결과에
-- `naver_find` {item_id, words:[…], stores?} — 순찰 80: **읽기만** — 스마트스토어 전 상태(판매대기·승인대기·판매중지·반려 포함)에서
+- `naver_find` {item_id, words:[…], stores?, max_pages?(기본 10 · 상한 30)} — 순찰 80: **읽기만** — 스마트스토어 전 상태(판매대기·승인대기·판매중지·반려 포함)에서
   상품명 검색. 스토어마다 다 훑었는지(`complete`)를 남긴다(다 못 훑었으면 「없음」이라 하지 않는다). `item_id`는 그 상품 주인 키로 돌리려고
 - `register` … `via_job:true` — 순찰 80: 화면 「등록」과 같은 잡(`_upload_start_job`)으로 보내고 끝날 때까지 기다린다(측정 = `reg_job`)
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
@@ -166,7 +166,8 @@ def _run(row: dict) -> Dict:
         return register(item_id, [str(m) for m in (row.get("markets") or []) if m], via_job=bool(row.get("via_job")))
     if op == "naver_find":
         return naver_find([str(w) for w in (row.get("words") or []) if w][:5],
-                          [str(s) for s in (row.get("stores") or []) if s][:4] or None)
+                          [str(s) for s in (row.get("stores") or []) if s][:4] or None,
+                          max_pages=max(1, min(int(row.get("max_pages") or 10), NAVER_FIND_MAX_PAGES)))
     if op == "coupang_relist":
         return _coupang_relist(item_id, str(row.get("step") or "plan"), [str(m) for m in (row.get("markets") or []) if m],
                                mode=str(row.get("mode") or "category"))
@@ -471,13 +472,17 @@ def _register_via_job(body: dict, uid: str) -> tuple:
     return {"ok": False, "job_id": job_id, "error": f"등록 잡이 {REG_JOB_WAIT_SEC}초 안에 끝나지 않았어요 — 마켓 상태를 먼저 확인"}, 504
 
 
-def naver_find(words: List[str], stores: Optional[List[str]] = None) -> Dict:
+#: 순찰 80(10-24 13:10 실측): 기본 10쪽(1,000개)으론 셰고가 1,466 · 고코스모스 1,187을 다 못 훑었다 — 줄에서 `max_pages`로 늘린다(상한)
+NAVER_FIND_MAX_PAGES = 30
+
+
+def naver_find(words: List[str], stores: Optional[List[str]] = None, max_pages: int = 10) -> Dict:
     """순찰 80 — **읽기만**: 스마트스토어 전 상태에서 상품명 검색(`find_by_name`). 스토어마다 다 훑었는지(`complete`)를 같이 남긴다."""
     from src.uploaders.naver_uploader import NaverSmartStoreUploader as N
     out = []
     for stn in stores or ("chezgoga", "gocosmos"):
         try:
-            res = N(account=stn).find_by_name(words)
+            res = N(account=stn).find_by_name(words, max_pages=max_pages)
         except Exception as exc:                                 # noqa: BLE001
             res = {"ok": False, "rows": [], "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
         out.append({"store": stn, **{k: res.get(k) for k in ("ok", "rows", "total", "scanned", "complete", "error")}})
