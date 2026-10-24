@@ -225,6 +225,17 @@ TITLE_GLOSSARY = [
     # Y15(운영 10-22 KYLIA 흔들의자 15df5bbf 「中古摇椅」 → 「중고 흔들의자」): 中古(风)는 빈티지·미드센추리 **스타일**이다 —
     #   헌 물건(二手)이 아니다. 「중고」로 두면 새 상품이 중고로 읽힌다. 二手·闲置·n成新이 원문에 같이 있으면 손대지 않는다(아래).
     ["中古", ["중고 스타일", "중고풍", "중고 풍", "중고"], "빈티지"],
+    # 순찰 60·62(오너 2026-10-23 d5af2185 충전식 독서등 「白色【夹灯版】宿舍床头」 → 「스포트라이트 포함 기숙사 침대 머리판」):
+    #   夹灯 = 집게(클립)로 집어 쓰는 등 · 床头 = 침대 머리맡(머리판이 아니다) · 宿舍 = 기숙사.
+    ["夹灯", ["스포트라이트 포함", "스포트라이트", "클립 램프", "클립 조명", "클램프 램프"], "집게등"],
+    ["床头", ["침대 머리판", "침대 헤드보드", "침대 헤드"], "침대 머리맡"],
+    ["宿舍", ["도미토리", "숙소"], "기숙사"],
+]
+
+#: 순찰 60·62(오너 2026-10-23 「브랜드 한자 직역 금지」): 한자로 쓴 브랜드를 번역기가 **뜻으로** 옮긴 표기 — 원문에 그 브랜드가 있으면
+#:   상품명에서 뺀다(뜻 풀이는 다른 물건 이름이 된다: 左马 충전 스탠드 → 「왼쪽 마우스 충전식 스탠드」). [원문 브랜드, [직역 표기들]]
+HANZI_BRAND_LITERAL = [
+    ["左马", ["왼쪽 마우스", "왼쪽 말", "좌측 말", "좌마"]],
 ]
 
 
@@ -256,6 +267,14 @@ def title_fix(text: str, src: str, *, hits: dict | None = None) -> str:
                 s = s.replace(w, right)
                 if hits is not None:
                     hits.setdefault("replace", []).append(f"{w}→{right}")
+    # 순찰 62: 한자 브랜드의 뜻 풀이는 지운다(원문에 그 브랜드가 있을 때만) — 남는 쉼표·빈칸은 아래 `_tidy`가 정리
+    for cn, wrongs in HANZI_BRAND_LITERAL:
+        if cn in src:
+            for w in sorted(wrongs, key=len, reverse=True):
+                if w in s:
+                    s = re.sub(rf"\s*{re.escape(w)}\s*", " ", s).strip(" ,")
+                    if hits is not None:
+                        hits.setdefault("delete", []).append(f"브랜드 직역 {w}")
     # 같은 바른 말이 두 번 생기면(「무드등 … 무드등」) 첫 번째만
     for _cn, _w, right in _glossary_rows():
         if right and re.search("[가-힣]", right) and s.count(right) > 1:
