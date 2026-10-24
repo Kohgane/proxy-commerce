@@ -31,6 +31,8 @@ ACTIONS: Dict[str, tuple] = {
     "notice": ("고시 기본값 →", "/seller/settings/naver-notice"),
 }
 
+#: 순찰 82 — 네이버 금지 문자 문구. 실측 「옵션값 항목에 콤마(,)는 사용하실 수 없습니다.」 → 괄호 안 문자, 없으면 「는」 앞 문자.
+_FORBID_RE = re.compile(r"항목에\s*(?:[^()\s]*\((?P<ch>[^)]{1,3})\)|(?P<ch2>\S{1,3}))\s*[은는이가]\s*사용하실 수 없습니다")
 _ITEM_RE = re.compile(r'\{[^{}]*?"name"\s*:\s*"([^"]+)"[^{}]*?(?:"message"\s*:\s*"([^"]*)")?[^{}]*?\}')
 
 
@@ -70,6 +72,15 @@ def row(name: str, message: str = "", item_id: str = "") -> Dict[str, str]:
     if not line and ".productInfoProvidedNotice." in name:
         # Y7-H: 상품정보제공고시 칸 — 고칠 곳은 고시 기본값 설정(19:46 KST 400 `etc.itemName`·`etc.manufacturer`)
         kind = "notice"
+    m = _FORBID_RE.search(str(message or ""))
+    if not line and m:
+        # 순찰 82: 「…옵션값 항목에 콤마(,)는 사용하실 수 없습니다」 — 그 문자를 이름 붙여 보인다. 표(`naver_options.FORBIDDEN_CHARS`)에
+        #   없는 문자면 「새 금지 문자」 — 다음 전송부터 빈칸으로 바꾸려면 표에 한 줄(문서엔 목록이 없어 실측으로만 늘린다).
+        from src.uploaders.naver_options import FORBIDDEN_CHARS
+        ch = m.group("ch") or m.group("ch2")
+        known = ch in FORBIDDEN_CHARS
+        line = (f"옵션값에 「{ch}」 못 써요 — " + ("이제 빈칸으로 바꿔 보내요(다시 보내면 됩니다)" if known
+                                                else "새 금지 문자: 금지 문자 표에 추가해야 해요") + f" ({message})")
     if not line:
         line = f"{name or '(필드 이름 없음)'} — 값 확인" + (f"({message})" if message else "")
     act = action_for(kind, item_id)
