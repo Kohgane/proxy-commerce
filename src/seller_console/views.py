@@ -3143,8 +3143,12 @@ def collect_upload():
             _mp.save_last(_mp.scope(_seller_id(), _shared_markets()), markets)
         except Exception as _mpe:
             logger.warning("[마켓 선택] 지난 선택 기억 실패(등록은 진행): %s", _mpe)
-        with mc.seller_market_env(_seller_id(), markets):
-            result = dispatcher.dispatch(product_data, markets)
+        _mp0 = _reg_mem_before()
+        try:
+            with mc.seller_market_env(_seller_id(), markets):
+                result = dispatcher.dispatch(product_data, markets)
+        finally:
+            _reg_mem_after(_mp0, data.get("item_id"), markets)
         rd = result.to_dict()
         # v44-1: 서버가 성공 확인한 마켓만 항목에 영속 저장 → 목록에 '등록됨' 뱃지 영구 표시(가짜 성공 0).
         _persist_upload_status(data.get("item_id"), rd)
@@ -3155,6 +3159,36 @@ def collect_upload():
         # v11 P0: 가짜 일반 실패 금지 — 실제 사유를 패스스루로 노출.
         logger.warning("업로드 디스패처 오류: %s", exc)
         return jsonify({"ok": False, "error": f"업로드 중 오류: {exc}"}), 500
+
+
+def _reg_mem_before():
+    """순찰 73(오너 2026-10-24): 화면 「마켓 등록」에도 사전검증과 같은 틀 — 앞 스냅샷(gc type 수). 일회성 줄로 돈 등록은
+    그 줄이 이미 잰다(`oneshot_ops._mem_mark` → `op_job`)라 여기선 안 잰다(두 번 세지 않게)."""
+    try:
+        from src.services import oneshot_ops as _oo
+        if _oo.current_row() is not None:
+            return None
+        from src.utils import memprobe as _memp
+        from src.utils import rss as _rss
+        return {"probe": _memp.before(), "mb": _rss.read_mb()[0]}
+    except Exception as exc:                                     # noqa: BLE001 — 측정 실패는 등록과 무관
+        logger.debug("[등록] 메모리 측정 시작 실패: %s", exc)
+        return None
+
+
+def _reg_mem_after(mp0, item_id, markets) -> None:
+    """끝에서 반환(gc + malloc_trim) 전·후 MB · 늘어난 type 상위 · 모듈 캐시를 `rss:recent`(`reg_job`)에 — 「등록 뒤 무엇이 남나」."""
+    if mp0 is None:
+        return
+    try:
+        from src.utils import memprobe as _memp
+        from src.utils import render_worker as _rw
+        from src.utils import rss as _rss
+        rel = _rss.release("register")
+        _rw.record("reg_job", item=str(item_id or "")[:8], markets=",".join(str(m) for m in markets or [])[:120],
+                   start_mb=mp0.get("mb"), rel_before_mb=rel[0], rel_after_mb=rel[1], **_memp.after(mp0.get("probe")))
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[등록] 메모리 측정 실패: %s", exc)
 
 
 def _carry_option_quota(item_id, result_dict) -> None:
