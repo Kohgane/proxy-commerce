@@ -1545,6 +1545,19 @@ class UploadDispatcher:
                         r.cautions = list(r.cautions or []) + [_pc]
             except Exception as exc:                             # noqa: BLE001
                 logger.warning("[사전검증] 조각 판매 주의 칩 실패: %s", exc)
+            # 순찰 82: 네이버 옵션값 금지 문자(실측 표 `naver_options.FORBIDDEN_CHARS`) — 보낼 땐 빈칸으로 바꿔 보낸다(보류 아님).
+            #   예전엔 이 검사 자체가 없어 사전검증 통과 → 등록 400(df0f8a8c 「옵션값 항목에 콤마(,)는 사용하실 수 없습니다」).
+            try:
+                if base == "smartstore":
+                    from src.uploaders import naver_options as _nof
+                    _fb = _nof.forbidden_found(product_data)
+                    if _fb:
+                        _ln = (f"네이버 옵션값 금지 문자({' '.join(sorted({c for f in _fb for c in f['chars']}))}) "
+                               f"{len(_fb)}개 — 빈칸으로 바꿔 보냄: 「{_fb[0]['before']}」 → 「{_fb[0]['after']}」")
+                        if _ln not in (r.details or []):
+                            r.details = list(r.details or []) + [_ln]
+            except Exception as exc:                             # noqa: BLE001
+                logger.warning("[사전검증] 네이버 금지 문자 줄 실패: %s", exc)
             # Z9: 쿠팡 대표 사진 글자 판정이 아직이면 「대기 중」 한 줄(보류 아님) — 잡이 결과가 오면 다시 잰다.
             try:
                 from src.services.coupang_image_check import rep_pending as _rep_pending

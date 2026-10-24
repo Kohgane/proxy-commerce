@@ -52,14 +52,34 @@ REASON_SPLIT = "naver_option_split"
 OPTION_NAME_MAX = 25
 #: 상품명 상한 — 판매자센터 안내 100자(문서엔 숫자 없음 · 미실측).
 TITLE_MAX = 100
-#: 순찰 80(오너 2026-10-24 df0f8a8c 셰고가·고코스모스 400 원문 「1번째 옵션의 옵션값 항목에 콤마(,)는 사용하실 수 없습니다.」) —
-#: 옵션값에서 쉼표를 빈칸으로 바꾼다(전각 「，」도). 쿠팡은 같은 값을 받았다 — 네이버 전송만.
-_COMMA_RE = re.compile(r"\s*[,，]\s*")
+#: 네이버 옵션값 금지 문자 → (바꿀 글자, 근거). **실측만 싣는다** — 커머스API 문서(Context7 `/websites/apicenter_commerce_naver`
+#: 「원상품 정보 구조체 > optionCombinations」)엔 옵션값 금지 문자 목록이 없다(타입 string·필수만). 커머스API 깃허브 토론에도 없음.
+#: 순찰 80(2026-10-24 df0f8a8c 셰고가·고코스모스 400 원문 「1번째 옵션의 옵션값 항목에 콤마(,)는 사용하실 수 없습니다.」).
+#: 새 문자가 거부되면 `naver_invalid`가 그 문자를 이름 붙여 보여 준다 → 여기에 한 줄 추가.
+FORBIDDEN_CHARS: Dict[str, tuple] = {
+    ",": (" ", "실측 400 2026-10-24 df0f8a8c"),
+    "，": (" ", "전각 쉼표 — 같은 글자로 봄(반각과 함께)"),
+}
+_FORBIDDEN_RE = re.compile(r"\s*[" + re.escape("".join(FORBIDDEN_CHARS)) + r"]\s*")
 
 
 def clean_value(v: str) -> str:
-    """네이버 옵션값 — 쉼표 → 빈칸(앞뒤 빈칸 하나로). 길이·중복 검사 전에 부른다(사전검증·등록 같은 함수)."""
-    return re.sub(r"\s{2,}", " ", _COMMA_RE.sub(" ", str(v or ""))).strip()
+    """네이버 옵션값 — 금지 문자 → 빈칸(앞뒤 빈칸 하나로). 길이·중복 검사 전에 부른다(사전검증·등록 같은 함수)."""
+    out = _FORBIDDEN_RE.sub(lambda m: FORBIDDEN_CHARS[m.group(0).strip()][0], str(v or ""))
+    return re.sub(r"\s{2,}", " ", out).strip()
+
+
+def forbidden_found(product: Dict) -> List[Dict]:
+    """사전검증 줄 — 금지 문자가 든 옵션값 `[{before, after, chars}]`(보낼 땐 `clean_value`로 바꿔 보낸다 · 보류 아님)."""
+    from src.collectors import option_ko as K
+    out, seen = [], set()
+    for k in _skus(product or {}):
+        for n in K.spec_ko(product, list(k.get("spec") or [])):
+            chars = sorted({c for c in str(n or "") if c in FORBIDDEN_CHARS})
+            if chars and n not in seen:
+                seen.add(n)
+                out.append({"before": n, "after": clean_value(n), "chars": chars})
+    return out
 
 
 def price_range(sale_price: int):
