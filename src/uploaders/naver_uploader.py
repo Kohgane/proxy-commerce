@@ -593,6 +593,37 @@ class NaverSmartStoreUploader(BaseUploader):
                 break
         return {'ok': True, 'rows': rows, 'total': total, 'scanned': scanned, 'error': err}
 
+    def find_by_name(self, words, size: int = 100, max_pages: int = 10) -> dict:
+        """순찰 80(오너 2026-10-24 df0f8a8c) — **읽기만**: 전 상태(`RECENT_STATUSES` — 판매대기·승인대기·판매중지·반려 포함)에서
+        상품명에 `words` 중 하나라도 든 상품 `{ok, rows:[{channel_no, origin_no, name, status, reg}], total, scanned, complete, error}`.
+        날짜로 거르지 않는다. 다 못 훑었으면(`complete` False) 「없음」이라고 말하지 않는다(호출부가 판단)."""
+        ws = [str(w).strip().lower() for w in (words or []) if str(w).strip()]
+        rows, scanned, total, err = [], 0, None, ''
+        for page in range(1, int(max_pages) + 1):
+            body = {'productStatusTypes': list(self.RECENT_STATUSES), 'page': page, 'size': int(size)}
+            res = self._api_request('POST', '/v1/products/search', data=body)
+            if not isinstance(res, dict) or 'error' in res:
+                return {'ok': False, 'rows': rows, 'total': total, 'scanned': scanned, 'complete': False,
+                        'error': str((res or {}).get('error') if isinstance(res, dict) else res)[:300]}
+            if 'contents' not in res:
+                err = f'응답에 contents 없음: {str(res)[:200]}'
+                break
+            total = res.get('totalElements', total)
+            contents = res.get('contents') or []
+            for c in contents:
+                for ch in (c or {}).get('channelProducts') or []:
+                    scanned += 1
+                    name = str(ch.get('name') or '')
+                    if ws and any(w in name.lower() for w in ws):
+                        rows.append({'channel_no': str(ch.get('channelProductNo') or ''),
+                                     'origin_no': str((c or {}).get('originProductNo') or ch.get('originProductNo') or ''),
+                                     'name': name, 'status': str(ch.get('statusType') or ''),
+                                     'reg': str(ch.get('regDate') or (c or {}).get('regDate') or '')})
+            if len(contents) < int(size):
+                break
+        complete = (not err) and total is not None and scanned >= int(total)
+        return {'ok': not err, 'rows': rows, 'total': total, 'scanned': scanned, 'complete': complete, 'error': err}
+
     def delete_product(self, product_id: str) -> bool:
         """Naver SmartStore 상품을 삭제한다."""
         try:
