@@ -1326,6 +1326,11 @@ def _req_rss_sample(response):
     """Y15 순찰 41(오너 2026-10-23): 요청 `REQ_PROBE_EVERY`개마다(기본 10 — 순찰 62) RSS·스레드 한 줄(`rss:ticks`) — 바닥이 틱 사이 어느 구간에서 오르는지.
     경로는 엔드포인트 이름만(쿼리·값 없음) — 맞는 라우트가 없으면 첫 경로 조각만. 순찰 57: 세는 건 DB 원자 카운터."""
     try:
+        from src.utils import restart_log as _rl
+        _rl.touch_request()                                       # 순찰 73: 요청이 끝난 시각(값만) — 「요청 없음」 감시가 본다
+    except Exception:                                             # noqa: BLE001
+        pass
+    try:
         if _REQ_PROBE_EVERY <= 0:
             return response
         with _REQ_PROBE["lock"]:

@@ -136,13 +136,13 @@ _GAP_THREAD = {"t": None}
 
 def gap_alert_min() -> int:
     try:
-        return max(1, int(os.getenv("TICK_GAP_ALERT_MIN", "30")))
+        return max(1, int(os.getenv("TICK_GAP_ALERT_MIN", "20")))
     except ValueError:
-        return 30
+        return 20
 
 
 def check_gap(now: Optional[datetime] = None, *, status_fn=None, take_fn=None, send_fn=None) -> Dict[str, Any]:
-    """한 번 본다. `{alert, why, age_min}` — 기록이 없거나(첫 배포·DB 없음) 30분 안이면 알리지 않는다."""
+    """한 번 본다. `{alert, why, age_min}` — 기록이 없거나(첫 배포·DB 없음) 기준(`TICK_GAP_ALERT_MIN`, 순찰 73: 30 → 20분) 안이면 알리지 않는다."""
     st = (status_fn or status)(now)
     age, last = st.get("age_min"), st.get("last_at")
     if not st.get("seen") or age is None or not last:
@@ -183,6 +183,12 @@ def start_gap_watch(interval_sec: Optional[int] = None) -> bool:
                 check_gap()
             except Exception as exc:                             # noqa: BLE001 — 감시가 죽지 않는다
                 logger.debug("[틱 감시] 공백 확인 실패: %s", exc)
+            try:
+                # 순찰 73(10-24 01:21~01:48): 이 스레드는 5분마다 돌았는데 요청은 26분 동안 하나도 안 끝났다 — 그 순간을 적는다
+                from src.utils import restart_log as _rl
+                _rl.check_quiet()
+            except Exception as exc:                             # noqa: BLE001
+                logger.debug("[틱 감시] 요청 없음 확인 실패: %s", exc)
 
     _GAP_THREAD["t"] = _sd.start_daemon(_loop, "tick-gap-watch")
     return True

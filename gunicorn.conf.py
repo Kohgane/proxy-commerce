@@ -40,6 +40,12 @@ def post_worker_init(worker):
         _app_mod.start_background_threads()
     except Exception as exc:                                     # noqa: BLE001 — 백그라운드 실패가 요청 처리를 막지 않는다
         worker.log.warning('[부팅] 백그라운드 스레드 시작 실패(계속): %s', exc)
+    # 순찰 73: 새 워커가 떴다 — 직전 종료 기록과 짝지어 재시작에 걸린 시간 · 우리 상한 밖 재시작(배포·Render)인지(`rss:restart`)
+    try:
+        from src.utils import restart_log as _rl
+        _rl.note_boot(os.getpid(), _worker_rss_mb())
+    except Exception as exc:                                     # noqa: BLE001
+        worker.log.warning('[부팅] 재시작 기록 실패(계속): %s', exc)
 
 
 def _arm_hard_exit(sec, log):
@@ -161,4 +167,11 @@ def post_request(worker, req, environ, resp):
     except OSError:
         pass
     worker.log.warning('[RSS] worker pid=%s rss_mb=%d (상한 %d%s) — 이 워커만 재시작(받던 요청은 끝내고)', worker.pid, rss, _RSS_LIMIT_MB, why)
+    # 순찰 73: 사유·전후 MB를 운영 DB에(`rss:restart`) — 로그 없이도 「왜 바뀌었나」를 본다
+    try:
+        from src.utils import restart_log as _rl
+        _rl.note_exit('인스턴스 합계' if why else '워커 RSS', pid=worker.pid, worker_mb=rss, inst_mb=_inst_seen['mb'],
+                      worker_limit=_RSS_LIMIT_MB, inst_limit=_inst_seen['lim'])
+    except Exception:                                            # noqa: BLE001
+        pass
     worker.alive = False

@@ -18,12 +18,12 @@ def test_gap_alert_once_per_gap_even_with_two_instances(monkeypatch):
         return True, 1
 
     send = lambda msg, urgency: sent.append((msg, urgency)) or True
-    assert TW.check_gap(status_fn=_status(29), take_fn=take, send_fn=send)["alert"] is False   # 30분 안 = 조용
-    a = TW.check_gap(status_fn=_status(31), take_fn=take, send_fn=send)                        # 인스턴스 1
-    b = TW.check_gap(status_fn=_status(36), take_fn=take, send_fn=send)                        # 인스턴스 2 · 5분 뒤
+    assert TW.check_gap(status_fn=_status(19), take_fn=take, send_fn=send)["alert"] is False   # 20분 안 = 조용(순찰 73: 30 → 20)
+    a = TW.check_gap(status_fn=_status(21), take_fn=take, send_fn=send)                        # 인스턴스 1
+    b = TW.check_gap(status_fn=_status(26), take_fn=take, send_fn=send)                        # 인스턴스 2 · 5분 뒤
     assert a["alert"] and not b["alert"] and b["why"] == "이 공백은 이미 알림"
-    assert sent == [("틱 31분 공백 — 도메인/cron 확인 (마지막 틱 13:00 KST · 인스턴스 srv-a-vssjj)", "warning")]
-    c = TW.check_gap(status_fn=_status(31, "2026-10-23T09:00:00+00:00"), take_fn=take, send_fn=send)
+    assert sent == [("틱 21분 공백 — 도메인/cron 확인 (마지막 틱 13:00 KST · 인스턴스 srv-a-vssjj)", "warning")]
+    c = TW.check_gap(status_fn=_status(21, "2026-10-23T09:00:00+00:00"), take_fn=take, send_fn=send)
     assert c["alert"] and len(sent) == 2                                                       # 다음 공백은 또 알린다
     none = TW.check_gap(status_fn=lambda now=None: {"seen": False}, take_fn=take, send_fn=send)
     assert none["alert"] is False and len(sent) == 2                                           # 기록 없음 = 단정 안 함
