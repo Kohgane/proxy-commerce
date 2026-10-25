@@ -135,3 +135,14 @@ def test_polished_version_with_unconverted_jin_is_redone():
     assert P._redo_polish(good, boxes) is False
     assert P._redo_polish(bad_drawn, boxes) is True
     assert P._redo_polish(not_drawn, boxes) is True
+
+
+def test_jin_rule_beats_cached_ai_answer(monkeypatch):
+    """순찰 99d(운영 10-25 18:20 재렌더 실측): 옛 다듬기 캐시 「80-105근」이 斤 환산 규칙을 덮어 또 「근」으로 그렸다."""
+    from src.ai import llm
+    from src.services import image_polish as P
+    monkeypatch.setattr(llm, "anthropic_ready", lambda: False)
+    boxes = [{"id": "t22", "src": "80-105斤", "tgt": "80-105kg"}]
+    cache = {("80-105斤", "80-105kg"): {"ai": "80-105근", "pv": P.PROMPT_VER, "tries": 1, "tmt": ""}}
+    out = P.polish_boxes(boxes, {"outbound": True, "rule": None}, cache=cache)
+    assert out["rows"][0]["ko"] == "40~52.5kg" and out["rows"][0]["from"] == "glossary"
