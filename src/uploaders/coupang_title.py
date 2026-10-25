@@ -37,6 +37,18 @@ COMPAT = ((re.compile(r"air\s*pods?|에어\s*팟", re.I), "에어팟"),
           (re.compile(r"\bpencil\b|펜슬|触控笔|电容笔", re.I), "펜슬"))
 _PARTICLE_TAIL = re.compile(r"(에서|으로|은|는|을|를|의|에|로|와|과|이|가|용)$")
 _HANGUL_TOKEN = re.compile(r"^[가-힣]+$")
+#: 순찰 106(운영 10-26 `5d1b6679` 쿠팡 상품명 「… 흐르 듯 우아한 민소매」): 「흐르는 듯」의 「는」은 조사가 아니라 관형형 어미 —
+#   뒤가 의존 명사(듯·것·만큼…)면 떼지 않는다.
+_DEPENDENT_NOUNS = ("듯", "듯한", "듯이", "것", "만큼", "대로", "채")
+
+
+def _strip_particle(t: str, nxt: str = "") -> str:
+    """낱말 끝 조사를 뗀다(뗀 뒤 2자 이상일 때만) — 다음 낱말이 의존 명사면 관형형(「흐르는 듯」)이라 그대로."""
+    if len(t) <= 2 or len(_PARTICLE_TAIL.sub("", t)) < 2:
+        return t
+    if t[-1] in "는은을" and str(nxt or "").strip("()[]{}「」'\"") in _DEPENDENT_NOUNS:
+        return t
+    return _PARTICLE_TAIL.sub("", t)
 _BRAND_PAREN = re.compile(r"\(\s*([A-Za-z][A-Za-z0-9&\-. ]{1,30}?)\s*\)")
 
 # ── 규칙 검사(사전검증 경고) ─────────────────────────────────────────────
@@ -145,12 +157,12 @@ def product_type(title_ko: str, brand: str = "") -> str:
     body = _strip_brand_chunk(title_ko, brand)
     head = re.split(r"[,，/|·]", body, maxsplit=1)[0]
     toks: List[str] = []
-    for raw in head.split():
+    raws = head.split()
+    for i, raw in enumerate(raws):
         t = raw.strip("()[]{}「」'\"")
         if not _HANGUL_TOKEN.match(t):
             continue                                  # 「applewatch7」·「9용」 같은 검색어 조각은 유형이 아니다
-        if len(t) > 2:
-            t = _PARTICLE_TAIL.sub("", t) if len(_PARTICLE_TAIL.sub("", t)) >= 2 else t
+        t = _strip_particle(t, raws[i + 1] if i + 1 < len(raws) else "")
         toks.append(t)
     if toks and not _type_nouns_in(" ".join(toks)):
         # 한국어 명사구는 **끝 명사가 머리**다(「·시계 무선 충전 거치대」의 머리는 거치대 — 시계는 충전 대상).
@@ -283,12 +295,12 @@ def _extend_to_floor(name: str, title: str, brand: str) -> tuple:
         return name, []
     have = {_norm_tok(t) for t in name.split()}
     added: List[str] = []
-    for raw in re.split(r"[\s,，/|·]+", _strip_brand_chunk(title, brand)):
+    raws = re.split(r"[\s,，/|·]+", _strip_brand_chunk(title, brand))
+    for i, raw in enumerate(raws):
         t = raw.strip("()[]{}「」'\"")
         if not _HANGUL_TOKEN.match(t) or len(t) < 2:
             continue
-        if len(t) > 2 and len(_PARTICLE_TAIL.sub("", t)) >= 2:
-            t = _PARTICLE_TAIL.sub("", t)
+        t = _strip_particle(t, raws[i + 1] if i + 1 < len(raws) else "")
         if _norm_tok(t) in have:
             continue
         have.add(_norm_tok(t))

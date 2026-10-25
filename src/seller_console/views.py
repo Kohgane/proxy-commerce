@@ -5048,6 +5048,12 @@ def _pv_prepare(data: dict, product_data: dict):
             product_data["rep_auto_caution"] = _ral(_sx)
             # Y9: 상세 사진 번역 진행(사전검증 카드 「상세 사진 번역 중 n/28」)
             product_data["detail_translate_progress"] = _detail_translate_progress(str(data["item_id"]), _sx)
+            # 순찰 106-B: 「등록 품질」 — 옵션 한자·근 · 상품명 음차 · 상세 약관 · 의류 대형화물(주의 · 보류 아님)
+            try:
+                from . import listing_quality as _lq
+                product_data["_quality"] = _lq.card(_lq.checks(_sx, product_data))
+            except Exception as exc:                                  # noqa: BLE001
+                logger.warning("[사전검증] 등록 품질 검사 실패: %s", exc)
             # Y10: 리스크 게이트 — 기억된 「빼고 등록」은 바로 적용(저장) → 저장된 「빼고 등록」을 몸통에도 → 전 위치 검사
             product_data["_risk"] = _risk_scan_for(str(data["item_id"]), _sx, product_data)
             from src.services import risk_gate as _rgk
@@ -5887,6 +5893,8 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
             _risk_open = bool(_risk and _rgate.holds(_risk))
             if _risk and (_risk.get("hits") or _risk.get("waiting") or _risk.get("skip")):
                 _pv_update(job_id, risk=dict(_rgate.card(_risk), ai_waits=_risk_open))
+            if product_data.get("_quality"):                            # 순찰 106-B 「등록 품질」(주의)
+                _pv_update(job_id, quality=product_data["_quality"])
             # Y9: 상세 사진 번역이 아직이면 카드에 「상세 사진 번역 중 n/28」(보류 아님 — 끝나면 번역본으로 나간다)
             _dtp = product_data.get("detail_translate_progress") or {}
             if _dtp.get("pending"):
@@ -6051,11 +6059,34 @@ def collect_prevalidate_job(job_id: str):
                     "auto_fix": cur.get("auto_fix"),                                          # 반려 사유 자동 수정
                     "ai_fix": cur.get("ai_fix"),                                                      # Y8
                     "risk": cur.get("risk"),                                                          # Y10 위험 블록
+                    "quality": cur.get("quality"),                                                    # 순찰 106-B 등록 품질
                     "image_edit": cur.get("image_edit"),                                              # Y11 자동 판촉 지우기
                     "detail_translate": cur.get("detail_translate"),                                  # Y9
                     "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중
                     "rss": cur.get("rss") or {},
                     "error": cur.get("error") or ""})
+
+
+@bp.post("/collect/<item_id>/quality-fix")
+def collect_quality_fix(item_id: str):
+    """순찰 106-B 「등록 품질」 「자동 수정」 — 규칙으로 고칠 것은 규칙, 옵션 값 한자는 Y8 AI 경로(같은 검사·되돌리기).
+    고친 값은 수집 기록에 저장 → 화면이 저장본으로 사전검증을 다시 돈다. 의류 대형화물(무게·크기)은 사람이 고친다."""
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from . import collect_history_store as _chs
+    from . import listing_quality as _lq
+    from .product_builder import build_product
+    pd = build_product(item, seller_id=_seller_id())
+    from src.services import ai_fix as _aif
+    _aif.overlay(pd, ex)
+    res = _lq.apply_fixes(ex, pd, ai=bool((request.get_json(silent=True) or {}).get("ai", True)))
+    if res["changed"] and not _chs.update(item_id, seller_ids=_seller_identities(),
+                                          extra_json=json.dumps(ex, ensure_ascii=False)):
+        return jsonify({"ok": False, "error": "고친 값을 저장하지 못했어요 — 다시 눌러 주세요."}), 500
+    logger.info("[등록 품질] 자동 수정 item=%s 고침 %d · 남음 %d", item_id[:8], len(res["applied"]), len(res["left"]))
+    return jsonify({"ok": True, **res, "fields": {"title_ko": ex.get("title_ko")} if res["changed"] else {},
+                    "quality": _lq.card(_lq.checks(ex, pd))})
 
 
 def _image_edit_item(item_id: str):

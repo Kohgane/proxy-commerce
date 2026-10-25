@@ -2430,6 +2430,7 @@ async function runPrevalidate() {
       }
       window._kgpDetailTr = d.detail_translate || null;             // Y9: 상세 사진 번역 진행(보류 아님)
       window._kgpRisk = d.risk || null;                              // Y10: 위험 블록
+      window._kgpQuality = d.quality || null;                        // 순찰 106-B: 등록 품질(주의)
       window._kgpImgEdit = d.image_edit || null;                     // Y11: 자동 판촉 지우기
       renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '', d.auto_fix, d.ai_fix);
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
@@ -2554,6 +2555,7 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix, a
       ' — 끝나면 번역본으로 나가요(지금 등록하면 남은 장은 원본으로 나가요).</div>';
   }
   if (window.kgpRiskBlockHtml) html += window.kgpRiskBlockHtml(window._kgpRisk);   // Y10: 게이트가 먼저
+  if (window.kgpQualityHtml) html += window.kgpQualityHtml(window._kgpQuality, window._kgpQualityFixed);     // 순찰 106-B: 등록 품질(주의)
   if (window.kgpImgEditNote) html += window.kgpImgEditNote(window._kgpImgEdit);      // Y11
   html += renderAiFix(aiFix);
   html += '<div class="list-group mb-3">';
@@ -2670,6 +2672,16 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix, a
     if (f.keywords != null && document.getElementById('editKeywords')) document.getElementById('editKeywords').value = f.keywords.join(', ');
     if (t.image_line) pcToast(t.image_line, 'info');           // Y11-J6: 사진은 그 낱말 상자만 지웠는지 · 사진째 뺐는지(왜)
     window._kgpRisk = t.risk || window._kgpRisk;
+    window._kgpRefreshFromStore = true; runPrevalidate();
+  }));
+  // 순찰 106-B: 「등록 품질」 자동 수정 — 저장 → (상품명을 고쳤으면 편집 칸도) → 저장본으로 다시 검증
+  el.querySelectorAll('[data-role="quality-fix"]').forEach(b => b.addEventListener('click', async () => {
+    const t = await window.kgpQualityFix(_ITEM_ID, b);
+    if (!t.ok) { pcToast(t.error || '고치지 못했어요', 'warning'); return; }
+    const f = t.fields || {};
+    if (f.title_ko != null && document.getElementById('editTitle')) document.getElementById('editTitle').value = f.title_ko;
+    window._kgpQuality = t.quality || null; window._kgpQualityFixed = {done: t.applied || [], left: t.left || []};
+    if ((t.applied || []).length) pcToast('고쳤어요 — ' + t.applied.length + '건, 다시 확인할게요', 'info');
     window._kgpRefreshFromStore = true; runPrevalidate();
   }));
   // Y8: AI 수정 되돌리기 — 원래 값으로, 다시 AI가 고치지 않게 막고 다시 검증(그 보류가 다시 보인다)

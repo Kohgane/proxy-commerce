@@ -53,6 +53,34 @@ window.kgpImgEditNote = window.kgpImgEditNote || function (rows) {
   skip.forEach(function (r) { h += '<div class="kgp-risk-why">사진 ' + (r.idx + 1) + '번 — ' + esc(r.skipped) + '</div>'; });
   return h + '</div>';
 };
+// 순찰 106-B — 「등록 품질」(주의 · 등록은 막지 않음). 「자동 수정」 하나 = data-role="quality-fix" — 각 화면이 눌림을 받아
+//   /quality-fix 후 저장본으로 사전검증을 다시 돈다. 사람이 고칠 줄(의류 대형화물)은 버튼 대상이 아니다.
+window.kgpQualityHtml = window.kgpQualityHtml || function (q, fixed) {
+  q = q || {}; fixed = fixed || {};
+  var lines = q.lines || [], done = fixed.done || [], left = fixed.left || [];
+  if (!lines.length && !done.length && !left.length) return '';
+  var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); };
+  var h = '<div class="kgp-risk" data-role="quality-block" data-fixable="' + esc(q.fixable || 0) + '">' +
+    '<div class="kgp-risk-head"><strong>' + (lines.length ? '등록 품질 ' + lines.length + '건' : '등록 품질 — 다 고쳤어요') + '</strong>' +
+    (lines.length ? ' <span class="kgp-risk-sub">— 등록은 그대로 진행돼요</span>' : '') + '</div>';
+  lines.forEach(function (x) {
+    h += '<div class="kgp-risk-row" data-role="quality-row" data-code="' + esc(x.code) + '"><div><span class="pc-badge pc-badge-caution">주의</span> ' +
+      esc(x.line) + '</div>' + (x.fix ? '' : '<div class="kgp-risk-why">자동으로 못 고쳐요 — 직접 고쳐 주세요.</div>') + '</div>';
+  });
+  if (q.fixable) h += '<div class="kgp-risk-acts"><button type="button" class="kgp-risk-btn is-main" data-role="quality-fix">자동 수정 ' + esc(q.fixable) + '건</button></div>';
+  if (done.length) h += '<div class="kgp-risk-done" data-role="quality-done">고쳤어요: ' + done.map(esc).join(' · ') + '</div>';
+  if (left.length) h += left.map(function (l) { return '<div class="kgp-risk-why" data-role="quality-left">' + esc(l) + '</div>'; }).join('');
+  return h + '</div>';
+};
+window.kgpQualityFix = window.kgpQualityFix || function (itemId, btn) {
+  btn.disabled = true; btn.textContent = '고치는 중…';
+  return fetch('/seller/collect/' + encodeURIComponent(itemId) + '/quality-fix', {method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'}, body: '{}'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) { if (!d.ok) { btn.disabled = false; btn.textContent = '자동 수정'; } return d; })
+    .catch(function () { btn.disabled = false; btn.textContent = '자동 수정'; return {ok: false, error: '고치지 못했어요 — 다시 눌러 주세요'}; });
+};
 window.kgpRiskAct = window.kgpRiskAct || function (itemId, btn) {
   var action = btn.getAttribute('data-action'), key = btn.getAttribute('data-key') || '';
   btn.disabled = true;
