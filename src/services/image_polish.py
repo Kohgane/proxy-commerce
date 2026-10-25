@@ -535,7 +535,21 @@ def _redo_polish(x: dict, boxes: Optional[list] = None, size=None) -> bool:
             or any(o.get("action") == "text" and _short_of(o.get("text"), by_id.get(o.get("id"))) for o in ops)
             or bool(size and any(tiny_latin(b, size) and i not in restored for i, b in by_id.items()))
             # Y11X: ⑨ 원문 유지 표기(「Proprietary 20」)를 음차한 채 둔 버전 — 원본 되살림이 될 때만(틀이 다르면 그대로)
-            or bool(size and any(_keep_broken(b, i, ops, restored) for i, b in by_id.items())))
+            or bool(size and any(_keep_broken(b, i, ops, restored) for i, b in by_id.items()))
+            # 순찰 99b: 斤 상자를 환산 없이(「80-105근」·「80-105kg」) 그렸거나 아예 안 그린(텐센트 「80-105kg」 그대로) 버전 — 다시 그린다
+            or _jin_broken(ops, by_id))
+
+
+def _jin_broken(ops: list, by_id: dict) -> bool:
+    drawn = {o.get("id"): str(o.get("text") or "") for o in ops if o.get("action") == "text"}
+    for i, b in by_id.items():
+        src, tgt = str(b.get("src") or ""), str(b.get("tgt") or "")
+        if not _JIN_RE.search(src):
+            continue
+        shown = drawn.get(i, tgt)                               # 안 그린 상자는 텐센트 글자가 그대로 보인다
+        if fix_jin(src, shown) != shown:
+            return True
+    return False
 
 
 def _keep_broken(box: dict, bid: str, ops: list, restored: set) -> bool:

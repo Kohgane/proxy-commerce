@@ -123,3 +123,15 @@ def test_single_policy_word_does_not_exclude():
     assert d.text_exclusion("面料:100%桑蚕丝 售后卡 洗护 Details") == ""          # 조각 하나(售后卡)만 — 소재 설명
     assert d.text_exclusion("Size Guide 衣长 胸围 cm") == ""
     assert d.text_exclusion("天猫国际邀请入驻 品牌奖").startswith("스토어·수상 배너")    # 기존 규칙 그대로
+
+
+def test_polished_version_with_unconverted_jin_is_redone():
+    from src.services import image_edit as IE
+    from src.services import image_polish as P
+    boxes = [{"src": "80-105斤", "tgt": "80-105kg"}, {"src": "衣长", "tgt": "의장"}]
+    good = {"by": P.POLISH_BY, "render": "local", "render_v": IE.RENDER_V, "ops": [{"id": "t0", "action": "text", "text": "40~52.5kg"}]}
+    bad_drawn = dict(good, ops=[{"id": "t0", "action": "text", "text": "80-105근"}])
+    not_drawn = dict(good, ops=[{"id": "t1", "action": "text", "text": "총장"}])   # 斤 상자를 안 그려 텐센트 「80-105kg」이 남음
+    assert P._redo_polish(good, boxes) is False
+    assert P._redo_polish(bad_drawn, boxes) is True
+    assert P._redo_polish(not_drawn, boxes) is True
