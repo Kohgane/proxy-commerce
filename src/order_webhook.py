@@ -1936,13 +1936,22 @@ def health():
         _storage = storage_status()
     except Exception:
         _storage = {"durable": None}
+    # 순찰 106-F(10-25 19:35~22:14 159분 무응답): pid · 부팅 뒤 요청 수 · 마지막 틱 — 틱 공백이 `HEALTH_TICK_STALE_MIN`(20분) 이상이면
+    #   503(Render가 이 인스턴스를 갈아끼운다). 부팅 뒤 아직 틱이 없으면 부팅 시각부터 잰다. 값만 읽는다(DB 없음 — 헬스체크는 가볍게).
+    try:
+        from src.utils.restart_log import health_snapshot
+        _proc = health_snapshot()
+    except Exception:                                            # noqa: BLE001 — 못 재면 예전처럼 200
+        _proc = {"stale": False}
+    stale = bool(_proc.get("stale"))
     return jsonify({
-        "status": "ok",
+        "status": "stale" if stale else "ok",
         "service": "proxy-commerce",
         "version": os.getenv("APP_VERSION", "dev"),
         "build": get_build_sha(),   # v53 STEP0: 라이브 배포 커밋(7자리) — 배포 누락 판정용
         "storage": _storage,        # v87-W3: {durable, backend, url_set, deployed, volatile_in_production}
-    })
+        "process": _proc,           # 순찰 106-F: {pid, requests, up_min, last_tick_at, tick_gap_min, stale}
+    }), (503 if stale else 200)
 
 
 @app.get('/health/ready')

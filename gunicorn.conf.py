@@ -63,6 +63,7 @@ def post_worker_init(worker):
         _cfg = getattr(worker, 'cfg', None)
         _rl.note_boot(os.getpid(), _worker_rss_mb(), threads=getattr(_cfg, 'threads', None), timeout=getattr(_cfg, 'timeout', None),
                       worker_class=str(getattr(_cfg, 'worker_class_str', '') or ''), workers=getattr(_cfg, 'workers', None))
+        _rl.arm_no_traffic()                                     # 순찰 106-F: 부팅 60초 안 요청 0이면 `no_traffic` 한 줄
     except Exception as exc:                                     # noqa: BLE001
         worker.log.warning('[부팅] 재시작 기록 실패(계속): %s', exc)
 
