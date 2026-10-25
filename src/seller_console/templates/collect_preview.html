@@ -2431,6 +2431,7 @@ async function runPrevalidate() {
       window._kgpDetailTr = d.detail_translate || null;             // Y9: 상세 사진 번역 진행(보류 아님)
       window._kgpRisk = d.risk || null;                              // Y10: 위험 블록
       window._kgpQuality = d.quality || null;                        // 순찰 106-B: 등록 품질(주의)
+      window._kgpAiReview = d.ai_review || null;                     // 순찰 106-C: AI 검수(접힌 줄)
       window._kgpImgEdit = d.image_edit || null;                     // Y11: 자동 판촉 지우기
       renderPrevalidateResults(d.results || [], d.pending || [], d.state, d.queued ? (d.queue_note || '앞 작업이 끝나면 시작해요') : '', d.auto_fix, d.ai_fix);
       if (d.state === 'running') setTimeout(poll, (data.poll_sec || 3) * 1000);
@@ -2626,6 +2627,7 @@ function renderPrevalidateResults(results, pending, state, queueNote, autoFix, a
     document.getElementById('btnConfirmUpload').disabled = false;
     html += `<div class="pc-status pc-status-info">통과 마켓 <strong>${_validatedMarkets.length}개</strong>에 업로드합니다: ${results.filter(r => r.ok).map(r => r.market_label || r.market).join(', ')}</div>`;   // Z9: 코드(smartstore) 대신 이름
   }
+  if (window.kgpAiReviewHtml) html += window.kgpAiReviewHtml(window._kgpAiReview);   // 순찰 106-C: 카드 아래 접힌 줄
   el.innerHTML = html;
   // Y2·Z5(오너 2026-10-04): 보류 카드에서 바로 — 번역(옵션 축·값 포함)하고 다시 검증 / 배송비 비율 「그래도 등록」.
   el.querySelectorAll('[data-role="pv-translate-recheck"]').forEach(b => b.addEventListener('click', async () => {

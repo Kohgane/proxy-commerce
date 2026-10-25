@@ -22,6 +22,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # 셀러 콘솔 인증 강제는 운영 기본 ON(SELLER_CONSOLE_AUTH 미설정 시 "1"). 단 테스트는
 # 세션 없이 페이지를 직접 호출하므로 OFF로 고정한다(모듈 로드 전에 설정해야 반영됨).
 os.environ.setdefault("SELLER_CONSOLE_AUTH", "0")
+# 순찰 106-C: 등록 전 AI 검수는 운영 기본 ON(`AI_REVIEW` 미설정 시 "1"). 사전검증 잡의 AI 호출 수를 재는 계약(Y8 등)이
+#   그 한 번을 세지 않게 테스트 기본은 끈다 — 검수 자체의 계약(test_y15_patrol106_ai_review)은 켜고 잰다.
+os.environ.setdefault("AI_REVIEW", "0")
 # Y14: 잡 스레드 끝의 gc+malloc_trim(`rss.release`)이 큰 테스트 힙에서 GIL을 1초 넘게 쥐어 벽시계 계약을 깼다 — 테스트에선 끈다
 #   (`release` 자체 계약은 tests/test_y14_memory.py가 켜고 잰다).
 os.environ.setdefault("RSS_RELEASE", "0")

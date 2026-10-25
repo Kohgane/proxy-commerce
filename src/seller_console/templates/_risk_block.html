@@ -73,6 +73,29 @@ window.kgpQualityHtml = window.kgpQualityHtml || function (q, fixed) {
   if (left.length) h += left.map(function (l) { return '<div class="kgp-risk-why" data-role="quality-left">' + esc(l) + '</div>'; }).join('');
   return h + '</div>';
 };
+// 순찰 106-C — 등록 전 AI 검수: 접힌 줄 하나(펼치면 5줄 이내). AI는 제안만 — 버튼 없음(결정은 사람이).
+window.kgpAiReviewHtml = window.kgpAiReviewHtml || function (r) {
+  if (!r || !r.status || r.status === 'skip') return '';
+  var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); };
+  var lines = r.lines || [];
+  var head = r.status === 'done' ? (lines.length ? 'AI 검수 · 짚을 점 ' + lines.length + '개' : 'AI 검수 · 이상한 점 없음')
+    : (r.status === 'running' ? 'AI 검수 · 아직이에요' : 'AI 검수 · 못 했어요');
+  var h = '<details class="kgp-risk kgp-ai-review" data-role="ai-review" data-status="' + esc(r.status) + '"' + (window._kgpAiReviewOpen ? ' open' : '') +
+    '><summary><strong>' + esc(head) + '</strong>' +
+    ' <span class="kgp-risk-sub">— AI 제안이에요, 결정은 직접</span></summary>';
+  if (lines.length) h += '<ul class="kgp-ai-review-list">' + lines.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
+  if (r.why) h += '<div class="kgp-risk-why">' + esc(r.why) + '</div>';
+  return h + '</details>';
+};
+// 결과 카드는 폴링마다 다시 그려진다 — 펼친 상태를 기억해 다시 그려도 펼친 채로
+if (!window._kgpAiReviewToggle) {
+  window._kgpAiReviewToggle = true;
+  document.addEventListener('toggle', function (e) {
+    var t = e.target;
+    if (t && t.getAttribute && t.getAttribute('data-role') === 'ai-review') window._kgpAiReviewOpen = !!t.open;
+  }, true);
+}
 window.kgpQualityFix = window.kgpQualityFix || function (itemId, btn) {
   btn.disabled = true; btn.textContent = '고치는 중…';
   return fetch('/seller/collect/' + encodeURIComponent(itemId) + '/quality-fix', {method: 'POST', credentials: 'same-origin',
