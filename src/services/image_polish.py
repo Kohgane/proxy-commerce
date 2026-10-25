@@ -97,6 +97,41 @@ def keep_original(src: str) -> str:
     return s
 
 
+#: 순찰 99(운영 10-25 원피스 `5d1b6679` 상세 1 사이즈표): 텐센트가 「80-105斤」을 「80-105kg」으로 옮겼다 — 斤(500g)을 kg으로
+#   바꾸지 않고 단위만 갈아 끼운 **틀린 숫자**(몸무게 80~105kg 손님용 원피스가 된다). AI 다듬기는 「숫자·단위 원문 그대로」라
+#   「80-105근」(한국 근=600g, 손님이 못 읽음)으로 답했다. 斤이 든 상자는 AI에 묻지 않고 **kg으로 환산**해 그린다.
+_JIN_RE = re.compile(r"(\d{1,4}(?:\.\d+)?)(?:\s*[-~–至到]\s*(\d{1,4}(?:\.\d+)?))?\s*斤")
+
+
+def _kg(jin: str) -> str:
+    v = float(jin) / 2
+    return f"{v:g}"
+
+
+def fix_jin(src: str, tgt: str) -> str:
+    """원문에 斤이 있고 텐센트 한국어가 같은 숫자에 kg·근을 붙였으면 kg 환산값으로 바꾼다(없으면 그대로)."""
+    out = str(tgt or "")
+    for m in _JIN_RE.finditer(str(src or "")):
+        a, b = m.group(1), m.group(2)
+        ko_a, ko_b = _kg(a), (_kg(b) if b else "")
+        want = f"{ko_a}~{ko_b}kg" if b else f"{ko_a}kg"
+        pat = (re.escape(a) + r"\s*[-~–]\s*" + re.escape(b) if b else re.escape(a)) + r"\s*(?:kg|KG|Kg|근|斤)"
+        out, n = re.subn(pat, want, out, count=1)
+        if not n and b:                                          # 텐센트가 구간을 「80~105 kg」처럼 띄웠을 수도
+            out = re.sub(re.escape(a) + r"\s*[-~–]\s*" + re.escape(b) + r"(?=\s*kg)", want.replace("kg", ""), out, count=1)
+    return out
+
+
+def jin_nums(src: str) -> set:
+    """원문 斤 숫자(환산 전) — 숫자 보존 검사에서 빼 준다(환산값이 대신 들어간다)."""
+    out = set()
+    for m in _JIN_RE.finditer(str(src or "")):
+        out.add(m.group(1).replace(",", ""))
+        if m.group(2):
+            out.add(m.group(2).replace(",", ""))
+    return out
+
+
 def apply_glossary(src: str, tgt: str, terms: Optional[List[Dict]] = None) -> str:
     """원문에 용어가 있고 한국어에 그 용어의 「틀린 말」이 있으면 바른 말로(이미 바른 말이면 그대로).
     ⑨ 원문 유지 표기(`keep_original`)는 용어집 단계에서 원문 그대로 — AI가 없어도 음차가 나가지 않는다."""
@@ -232,7 +267,7 @@ def check(src: str, tgt: str, ko: str, rule: Optional[Dict] = None) -> str:
         return f"다른 품목 표현({w})"
     before = f"{src} {tgt}"
     # Y11-M(오너): 숫자는 **집합**으로 본다 — 원문·텐센트 둘 다 있던 숫자가 다듬은 글에도 다 있으면 통과(1:0.618 같은 비율 그대로)
-    lost = sorted((_nums(src) & _nums(tgt)) - _nums(ko))
+    lost = sorted((_nums(src) & _nums(tgt)) - _nums(ko) - jin_nums(src))
     if lost:
         return f"숫자 누락({lost[0]})"
     tm = _new_trademark(ko, before)
@@ -341,6 +376,12 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
     for b in boxes:
         src, tgt = str(b.get("src") or ""), str(b.get("tgt") or "")
         g = apply_glossary(src, tgt, terms)
+        j = fix_jin(src, g)
+        if j != g:
+            # 斤 환산은 규칙이 정본 — AI에 묻지 않는다(원문 숫자 유지 규칙이 틀린 kg을 되돌린다)
+            rows.append({"id": b["id"], "src": src, "tgt": tgt, "glossary": j, "ko": j, "from": "glossary", "why": "斤→kg 환산",
+                         "han_left": han_left(j), "cached": True, "jin": True})
+            continue
         rows.append({"id": b["id"], "src": src, "tgt": tgt, "glossary": g, "ko": g,
                      "from": "glossary" if g != tgt else "tencent", "why": "", "han_left": han_left(tgt)})
     calls, ai_why, cached = 0, "", 0
