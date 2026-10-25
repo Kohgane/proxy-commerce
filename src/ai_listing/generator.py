@@ -162,14 +162,13 @@ def _call_llm_title(prompt: str) -> str:
             logger.warning("OpenAI 제목 생성 실패: %s", exc)
     elif provider == "claude" and os.getenv("ANTHROPIC_API_KEY"):
         try:
-            import anthropic  # type: ignore
-            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-            resp = client.messages.create(
-                model=os.getenv("AI_LISTING_CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
-                max_tokens=200,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return resp.content[0].text.strip() if resp.content else ""
+            from src.ai import llm  # 순찰 106-A: SDK 대신 HTTP 직접(SDK import만으로 +40MB 상주)
+            body = llm.messages_create({
+                "model": os.getenv("AI_LISTING_CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
+                "max_tokens": 200,
+                "messages": [{"role": "user", "content": prompt}],
+            }, timeout=60)
+            return llm.response_text(body)
         except Exception as exc:
             logger.warning("Claude 제목 생성 실패: %s", exc)
     return ""

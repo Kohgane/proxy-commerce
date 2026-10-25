@@ -532,6 +532,30 @@ def polish_auto_max_mb() -> int:
         return POLISH_AUTO_MAX_MB_DEFAULT
 
 
+POLISH_COUNT_PREFIX = "polish_auto:"
+
+
+def _polish_count(what: str) -> None:
+    """순찰 106-A: 자동 다듬기 「돌림/미룸」 하루(KST) 카운터 — `polish_auto:<ran|deferred>:<YYYY-MM-DD>`. 미룬 비율을 숫자로 본다."""
+    try:
+        from datetime import datetime, timedelta, timezone
+        from src.db import image_translate_queue_pg as st
+        day = (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y-%m-%d")
+        st.state_incr(f"{POLISH_COUNT_PREFIX}{what}:{day}")
+    except Exception:                                            # noqa: BLE001 — 세기 실패가 다듬기를 막지 않는다
+        pass
+
+
+def polish_auto_counts(day: str) -> dict:
+    """`{"day", "ran", "deferred", "deferred_pct"}` — 그날(KST) 자동 다듬기를 돌린 수·미룬 수·미룬 비율(%, 0건이면 None)."""
+    from src.db import image_translate_queue_pg as st
+    ran = int((st.state_get(f"{POLISH_COUNT_PREFIX}ran:{day}") or {}).get("n") or 0)
+    deferred = int((st.state_get(f"{POLISH_COUNT_PREFIX}deferred:{day}") or {}).get("n") or 0)
+    total = ran + deferred
+    return {"day": day, "ran": ran, "deferred": deferred,
+            "deferred_pct": round(deferred * 100.0 / total, 1) if total else None}
+
+
 def _maybe_polish(item_id: str, uid: str, kind: str, idx: int) -> bool:
     """번역 직후 자동 다듬기 — 인스턴스 합계가 `polish_auto_max_mb()` 미만일 때만. 미루면 False(번역 결과엔 손대지 않음)."""
     from src.services import image_polish as _ip
@@ -551,7 +575,9 @@ def _maybe_polish(item_id: str, uid: str, kind: str, idx: int) -> bool:
         if cur >= lim:
             logger.warning("[다듬기] item=%s %s#%s 자동 다듬기 미룸 — 인스턴스 합계 %dMB ≥ %dMB(IMAGE_POLISH_AUTO_MAX_MB) · 번역본은 그대로",
                            str(item_id)[:8], kind, idx, cur, lim)
+            _polish_count("deferred")
             return False
+    _polish_count("ran")
     _ip.polish_job(item_id, uid, kind, idx)
     return True
 

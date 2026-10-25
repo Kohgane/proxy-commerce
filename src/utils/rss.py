@@ -178,6 +178,12 @@ def instance_mb() -> int:
     return read_mb()[0]
 
 
+def instance_parts() -> dict:
+    """순찰 106-A: 합계가 어디서 오는지 — `{"pss": master+워커 PSS 합, "cg": cgroup 익명+shmem, "w": 이 워커 RSS}`(MB, 못 읽으면 -1).
+    `rss:gate` 줄에 같이 남겨 바닥이 오를 때 워커 몫인지 마스터·공유 몫인지 숫자로 가른다."""
+    return {"pss": processes_pss_mb(), "cg": cgroup_mb() if under_gunicorn() else -1, "w": read_mb()[0]}
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(_os.getenv(name, str(default)) or default)

@@ -51,8 +51,14 @@ def _gate_log(name: str, ok: bool, cur_mb: int, lim_mb: int) -> None:
     try:
         from src.db import image_translate_queue_pg as st
         rows = [r for r in (st.state_get(GATE_KEY) or {}).get("rows") or [] if isinstance(r, dict)]
-        rows.append({"at": datetime.now(timezone.utc).isoformat(), "job": str(name)[:40], "ok": bool(ok),
-                     "mb": int(cur_mb), "limit": int(lim_mb)})
+        row = {"at": datetime.now(timezone.utc).isoformat(), "job": str(name)[:40], "ok": bool(ok),
+               "mb": int(cur_mb), "limit": int(lim_mb)}
+        try:                                             # 순찰 106-A: 합계의 출처(PSS 합 · cgroup · 이 워커 RSS)
+            from src.utils import rss as _rss
+            row.update(_rss.instance_parts())
+        except Exception:                                # noqa: BLE001
+            pass
+        rows.append(row)
         st.state_set(GATE_KEY, {"rows": rows[-GATE_KEEP:]})
     except Exception:                                    # noqa: BLE001 — 기록 실패가 잡을 막지 않는다
         pass
