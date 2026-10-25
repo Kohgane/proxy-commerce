@@ -36,6 +36,21 @@ preload_app = True
 os.environ.setdefault('KGP_DEFER_BG_THREADS', '1')
 
 
+# 순찰 106-A(오너 2026-10-26 「메모리 바닥」): preload라 앱 객체는 마스터 페이지에 있고 워커는 그걸 나눠 쓴다(CoW).
+#   워커의 gc가 세대 2를 훑을 때마다 객체 머리(gc 헤더)에 써서 그 페이지가 워커 쪽으로 복사된다 → 마스터 사본 + 워커 사본 = 두 번 센다.
+#   포크 직전에 지금 객체를 영구 세대로 옮긴다(`gc.freeze`) — gc가 다시 훑지 않아 공유가 유지된다(로컬 실측 합계 101→83MB).
+#   `KGP_GC_FREEZE=0`이면 끈다.
+def pre_fork(server, worker):
+    if os.getenv('KGP_GC_FREEZE', '1') == '0':
+        return
+    try:
+        import gc as _gc
+        _gc.collect()
+        _gc.freeze()
+    except Exception as exc:                                     # noqa: BLE001 — 얼리기 실패가 포크를 막지 않는다
+        server.log.warning('[부팅] gc.freeze 실패(계속): %s', exc)
+
+
 def post_worker_init(worker):
     try:
         import src.order_webhook as _app_mod

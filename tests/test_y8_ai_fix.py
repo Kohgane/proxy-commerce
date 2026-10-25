@@ -348,28 +348,28 @@ def test_0_budget_shared(monkeypatch, ai):
 
 
 def test_0_sdk_call_shape(monkeypatch):
-    """공식 SDK 호출 모양 — Sonnet은 effort low, Haiku 4.5는 effort 없음(넣으면 400)."""
-    import anthropic
+    """Messages API 호출 모양(순찰 106-A: SDK 대신 HTTP 직접) — Sonnet은 effort low, Haiku 4.5는 effort 없음(넣으면 400)."""
+    import requests
     from src.ai import llm
     sent = []
 
-    class Msgs:
-        def create(self, **kw):
-            sent.append(kw)
+    class R:
+        status_code = 200
 
-            class U:
-                input_tokens, output_tokens = 3, 4
+        @staticmethod
+        def json():
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 3, "output_tokens": 4},
+                    "stop_reason": "end_turn"}
 
-            class B:
-                type, text = "text", "ok"
-            return type("R", (), {"content": [B()], "usage": U(), "stop_reason": "end_turn"})()
-
-    monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: type("C", (), {"messages": Msgs()})())
+    monkeypatch.setattr(requests, "post", lambda url, headers=None, json=None, timeout=None:
+                        sent.append((url, headers, json)) or R())
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
     assert llm._call_anthropic("claude-sonnet-5", "sys", "hi", 100, 5)["text"] == "ok"
     assert llm._call_anthropic("claude-haiku-4-5", "", "hi", 100, 5)["tokens_out"] == 4
-    assert sent[0]["output_config"] == {"effort": "low"} and sent[0]["system"] == "sys"
-    assert "output_config" not in sent[1] and "system" not in sent[1] and "temperature" not in sent[0]
+    url, hd, body = sent[0]
+    assert url == "https://api.anthropic.com/v1/messages" and hd["x-api-key"] == "k" and hd["anthropic-version"]
+    assert body["output_config"] == {"effort": "low"} and body["system"] == "sys"
+    assert "output_config" not in sent[1][2] and "system" not in sent[1][2] and "temperature" not in body
 
 
 # ── 0. 상세 초안: Anthropic 우선 · 「OpenAI 크레딧 없음」은 Anthropic 실패 때만 ──────────────────

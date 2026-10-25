@@ -5,7 +5,8 @@
 - 예산: 두 공급자 모두 서버 월 예산 `AI_MONTHLY_BUDGET_USD`(`src.ai.budget.BudgetGuard`) 하나에 묶는다 — 부르기 전 추정치로
   확인, 부른 뒤 실제 토큰으로 기록.
 - 로그: 부를 때마다 `[AI] provider=anthropic model=… tokens=입력+출력 usd=… purpose=…` 한 줄(키·본문은 남기지 않는다).
-- Anthropic은 공식 SDK(`anthropic`)로 부른다. SDK가 없거나 키가 없으면 그 단을 건너뛴다(OpenAI로).
+- Anthropic은 Messages API를 `requests`로 직접 부른다(순찰 106-A — SDK는 import만으로 워커에 +40MB가 눌러앉아 바닥을 올렸다).
+  키가 없으면 그 단을 건너뛴다(OpenAI로).
 
 반환은 늘 dict — 성공이면 `text`, 둘 다 실패면 `error`(마지막 사유)와 `attempts`(공급자별 사유·예외 이름). 예외를 던지지 않는다.
 """
@@ -55,14 +56,7 @@ def _env(name: str) -> str:
 
 
 def anthropic_ready() -> bool:
-    if not _env("ANTHROPIC_API_KEY"):
-        return False
-    # Z10-C: 「있나」만 본다 — import하면 SDK(+39MB)가 워커에 눌러앉는다. 실제로 부를 때만 import한다.
-    try:
-        import importlib.util
-        return importlib.util.find_spec("anthropic") is not None
-    except Exception:
-        return False
+    return bool(_env("ANTHROPIC_API_KEY"))
 
 
 def openai_ready() -> bool:
@@ -104,10 +98,64 @@ def _log(provider: str, model: str, tin: int, tout: int, usd: Decimal, purpose: 
                 purpose or "-", "" if ok else f" fail={why[:120]}")
 
 
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+#: 한 번 더 묻는 응답 — SDK(`max_retries=1`)와 같은 묶음: 요청 제한·서버 쪽 오류·과부하
+_RETRY_STATUS = (408, 409, 429, 500, 502, 503, 504, 529)
+
+
+class AnthropicHTTPError(Exception):
+    """Messages API가 2xx가 아닌 답을 줬다 — `status_code`·`error_type`(응답 `error.type`)을 그대로 단다(attempts 사유용)."""
+
+    def __init__(self, status_code: int, error_type: str, message: str):
+        super().__init__(f"{status_code} {error_type}: {message}"[:400])
+        self.status_code, self.error_type = int(status_code), error_type
+
+
+def _retry_wait(resp) -> float:
+    try:
+        return min(8.0, max(0.5, float(resp.headers.get("retry-after") or 1)))
+    except (TypeError, ValueError, AttributeError):
+        return 1.0
+
+
+def messages_create(payload: Dict[str, Any], timeout: float, *, retries: int = 1) -> Dict[str, Any]:
+    """Messages API 한 번(`POST /v1/messages`) — 본문 dict를 그대로 보내고 응답 JSON dict를 돌려준다.
+    요청 제한·서버 오류·연결 실패는 `retries`번 더(retry-after 존중, 최대 8초). 그래도 안 되면 `AnthropicHTTPError`(또는 연결 예외)."""
+    import time as _time
+
+    import requests as _req
+    headers = {"x-api-key": _env("ANTHROPIC_API_KEY"), "anthropic-version": ANTHROPIC_VERSION,
+               "content-type": "application/json"}
+    for n in range(int(retries) + 1):
+        try:
+            resp = _req.post(ANTHROPIC_URL, headers=headers, json=payload, timeout=timeout)
+        except (_req.ConnectionError, _req.Timeout):
+            if n < retries:
+                _time.sleep(1.0)
+                continue
+            raise
+        if resp.status_code < 300:
+            return resp.json()
+        if resp.status_code in _RETRY_STATUS and n < retries:
+            _time.sleep(_retry_wait(resp))
+            continue
+        try:
+            err = (resp.json() or {}).get("error") or {}
+        except ValueError:
+            err = {}
+        raise AnthropicHTTPError(resp.status_code, str(err.get("type") or "http_error"),
+                                 str(err.get("message") or (resp.text or "")[:200]))
+    raise AnthropicHTTPError(0, "no_attempt", "retries < 0")       # 닿지 않는다(retries ≥ 0)
+
+
+def response_text(body: Dict[str, Any]) -> str:
+    return "".join(str(b.get("text") or "") for b in (body.get("content") or [])
+                   if isinstance(b, dict) and b.get("type") == "text").strip()
+
+
 def _call_anthropic(model: str, system: str, prompt: str, max_tokens: int, timeout: float,
                     images: Optional[List[str]] = None) -> dict:
-    import anthropic
-    client = anthropic.Anthropic(api_key=_env("ANTHROPIC_API_KEY"), timeout=timeout, max_retries=1)
     content: Any = prompt
     if images:                                    # Y11-O: 사진 주소(공개 URL)를 같이 — 카테고리 고르기
         content = [{"type": "image", "source": {"type": "url", "url": u}} for u in images] + [{"type": "text", "text": prompt}]
@@ -118,11 +166,10 @@ def _call_anthropic(model: str, system: str, prompt: str, max_tokens: int, timeo
     # Sonnet 5 계열은 effort를 받는다(짧은 수정 — 낮게). Haiku 4.5는 effort가 없다(넣으면 400).
     if not model.startswith("claude-haiku-4"):
         kw["output_config"] = {"effort": "low"}
-    resp = client.messages.create(**kw)
-    text = "".join(getattr(b, "text", "") for b in (resp.content or []) if getattr(b, "type", "") == "text").strip()
-    u = getattr(resp, "usage", None)
-    return {"text": text, "tokens_in": int(getattr(u, "input_tokens", 0) or 0),
-            "tokens_out": int(getattr(u, "output_tokens", 0) or 0), "stop_reason": getattr(resp, "stop_reason", "")}
+    body = messages_create(kw, timeout)
+    u = body.get("usage") or {}
+    return {"text": response_text(body), "tokens_in": int(u.get("input_tokens") or 0),
+            "tokens_out": int(u.get("output_tokens") or 0), "stop_reason": str(body.get("stop_reason") or "")}
 
 
 def _call_openai(model: str, system: str, prompt: str, max_tokens: int, timeout: float, json_mode: bool,

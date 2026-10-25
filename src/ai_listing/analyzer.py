@@ -132,13 +132,11 @@ def _call_openai_vision(image_url: str, prompt: str) -> Dict[str, Any]:
 def _call_claude_vision(image_url: str, prompt: str) -> Dict[str, Any]:
     """Anthropic Claude Vision API 호출 (fallback)."""
     try:
-        import anthropic  # type: ignore
-
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        resp = client.messages.create(
-            model=os.getenv("AI_LISTING_CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
-            max_tokens=800,
-            messages=[
+        from src.ai import llm  # 순찰 106-A: SDK 대신 HTTP 직접(SDK import만으로 +40MB 상주)
+        body = llm.messages_create({
+            "model": os.getenv("AI_LISTING_CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
+            "max_tokens": 800,
+            "messages": [
                 {
                     "role": "user",
                     "content": [
@@ -150,8 +148,8 @@ def _call_claude_vision(image_url: str, prompt: str) -> Dict[str, Any]:
                     ],
                 }
             ],
-        )
-        text = resp.content[0].text if resp.content else "{}"
+        }, timeout=60)
+        text = llm.response_text(body) or "{}"
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
