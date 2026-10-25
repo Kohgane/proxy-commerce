@@ -167,6 +167,8 @@ def test_worker_runs_polish_after_translation(monkeypatch):
     monkeypatch.setattr(A, "translate_page", lambda *a, **k: dict(entry))
     calls = []
     monkeypatch.setattr(P, "polish_job", lambda *a: calls.append(a))
+    from src.utils import rss as _rss
+    monkeypatch.setattr(_rss, "instance_mb", lambda: 200)          # 순찰 99: 메모리 문지기(300MB) 아래 — 테스트 러너 메모리와 무관하게
     st, _why = A._translate_job({"item_id": iid, "kind": "detail", "idx": 0, "user_id": "y11i"})
     assert st == "done" and calls and calls[0][2:] == ("detail", 0)
 
