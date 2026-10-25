@@ -2,7 +2,7 @@
 {% block og_title %}{{ brand_name_ko|default('고가브릿지', true) }} — {% block page_title %}{% endblock %}{% endblock %}
 {% block head %}
 <link rel="privacy-policy" href="/privacy">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+<link href="/static/vendor/noto-serif-kr/noto-serif-kr.css" rel="stylesheet">
 <style>
   body.bg-light { background: var(--paper) !important; color: var(--ink); margin: 0; line-height: 1.7; }
   .pub-nav { position: sticky; top: 0; z-index: 20; background: var(--ink); border-bottom: 1px solid color-mix(in srgb, var(--gold) 25%, transparent); }

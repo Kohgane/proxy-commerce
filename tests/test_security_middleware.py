@@ -95,26 +95,26 @@ class TestSecurityHeaders:
             assert 'Content-Security-Policy' in resp.headers
 
     def test_csp_html_page_allows_cdn(self, secure_app):
-        """/admin/ 응답에는 Bootstrap CDN 허용 CSP가 적용된다 (style-src에 CDN 포함)."""
+        """/admin/ 응답에는 우리 출처만 허용하는 CSP가 적용된다(순찰 95 self-host) (style-src에 CDN 포함)."""
         with secure_app.test_client() as client:
             resp = client.get('/admin/')
             csp = resp.headers.get('Content-Security-Policy', '')
             # style-src 또는 script-src에 CDN 도메인이 명시되어야 함
-            assert 'jsdelivr.net' in csp
+            assert 'jsdelivr.net' not in csp and "script-src 'self'" in csp   # 순찰 95: Bootstrap은 /static/vendor(우리 출처)
 
     def test_csp_seller_page_allows_cdn(self, secure_app):
-        """/seller/ 응답에는 Bootstrap CDN 허용 CSP가 적용된다."""
+        """/seller/ 응답에는 우리 출처만 허용하는 CSP가 적용된다(순찰 95 self-host)."""
         with secure_app.test_client() as client:
             resp = client.get('/seller/dashboard')
             csp = resp.headers.get('Content-Security-Policy', '')
-            assert 'jsdelivr.net' in csp
+            assert 'jsdelivr.net' not in csp and "script-src 'self'" in csp   # 순찰 95: Bootstrap은 /static/vendor(우리 출처)
 
     def test_csp_api_docs_allows_cdn(self, secure_app):
-        """/api/docs 응답에는 Bootstrap CDN 허용 CSP가 적용된다."""
+        """/api/docs 응답에는 우리 출처만 허용하는 CSP가 적용된다(순찰 95 self-host)."""
         with secure_app.test_client() as client:
             resp = client.get('/api/docs')
             csp = resp.headers.get('Content-Security-Policy', '')
-            assert 'jsdelivr.net' in csp
+            assert 'jsdelivr.net' not in csp and "script-src 'self'" in csp   # 순찰 95: Bootstrap은 /static/vendor(우리 출처)
 
     def test_csp_api_v1_is_strict(self, secure_app):
         """/api/v1/ 응답에는 strict CSP가 적용된다 (외부 리소스 차단)."""

@@ -5,12 +5,12 @@
  * 작업 화면(콘솔)은 한지 라이트(가독성), 랜딩/로그인은 먹 다크(입구 럭셔리, 별도 테마).
  * 색·폰트·간격은 이 토큰을 단일 소스로 — 화면에서 하드코딩하지 말 것.
  * 폰트: 디스플레이=Noto Serif KR(명조), 본문/UI=Pretendard. 둘 다 display=swap(FOIT 방지).
- * (속도 ③: Noto Serif는 CSP가 fonts.googleapis.com을 막아 프로덕션에서 안 뜨던 것을 CSP 허용으로 해소.)
+ * 순찰 95: 두 폰트 모두 /static/vendor에서(외부 CDN·구글 폰트는 중국에서 막힌다). 글자 범위(unicode-range)별 조각이라 쓰는 글자만 받는다.
  */
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+@import url('/static/vendor/pretendard-1.3.9/pretendardvariable-dynamic-subset.css');
 /* v52 STEP1(전송 최적화): 콘솔 세리프(--font-display)는 실사 결과 weight 600만 사용(h1·pc-display 등
    전부 --w-semi=600). 미사용 500·700 굵기 제거 → 전송량↓(패밀리·디자인·토큰 불변). display=swap 유지. */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600&display=swap');
+@import url('/static/vendor/noto-serif-kr/noto-serif-kr.css');
 
 :root {
   /* D3-6 ⑥ — 벤치 결과 그림 표시 폭(출력물 영향 0) */

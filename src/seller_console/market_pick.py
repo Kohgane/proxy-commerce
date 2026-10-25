@@ -60,6 +60,16 @@ def session_identity() -> str:
         return ""
 
 
+def owner_contact_hint() -> str:
+    """순찰 57·95: 막힌 화면(403 · 사전검증 「키를 넣어 주세요」)에 한 줄 — 공유 판정은 **로그인 계정 번호** 기준이라, 가족·관리자가
+    목록에 없는 로그인으로 들어왔을 때 무엇을 오너에게 주면 되는지. 계정 번호는 앞 8자리만(본인 화면에만) · 설정 이름·값은 안 보인다."""
+    ident = session_identity()
+    if not ident or "@" in ident:
+        return ""
+    return (f"이 화면은 로그인 계정 번호로 판정해요. 가족·관리자인데 이게 보이면 이 계정 번호(앞 8자리 {ident[:8]})를 "
+            "오너에게 알려 주세요 — 공유 목록에 넣으면 바로 열려요.")
+
+
 def session_is_shared(admin: Optional[bool] = None) -> bool:
     """지금 요청의 사람이 공유 마켓(= 오너 서버 자격) 사용자인가.
 
@@ -118,6 +128,31 @@ def _bundle_codes() -> tuple:
     return BUNDLE.get(biz, BUNDLE["woojoo"])
 
 
+ENV_FAMILY_BUNDLE = "FAMILY_MARKET_BUNDLE"
+BUNDLE_LABEL = {"woojoo": "쿠팡 우주대행 · 스마트스토어 고코스모스", "gogane": "쿠팡 고가네 · 스마트스토어 셰고가"}
+
+
+def family_bundle_label(codes: tuple) -> str:
+    return next((BUNDLE_LABEL[b] for b, c in BUNDLE.items() if tuple(c) == tuple(codes)), " · ".join(codes))
+
+
+def family_bundle(ident: Optional[str] = None) -> tuple:
+    """순찰 95(오너 2026-10-25): `FAMILY_MARKET_BUNDLE`(gogane|woojoo)이 있으면 **가족**(`FAMILY_EMAILS` 판정) 사용자의 마켓을
+    그 묶음으로 고정한다 — 화면엔 그 묶음 줄만, 서버는 묶음 밖 마켓 요청을 거부. 비어 있으면 () = 지금 그대로.
+    오너·`ADMIN_USER_IDS`는 고정하지 않는다(가족만). 판정이 깨지면 () — 고정하지 않는 쪽(줄은 지금처럼 다 보인다)."""
+    biz = (os.getenv(ENV_FAMILY_BUNDLE, "") or "").strip().lower()
+    if biz not in BUNDLE:
+        return ()
+    ident = session_identity() if ident is None else str(ident or "").strip()
+    if not ident:
+        return ()
+    try:
+        from .market_credentials import seller_shared_reason
+        return BUNDLE[biz] if seller_shared_reason(ident) == "FAMILY_EMAILS" else ()
+    except Exception:                                            # noqa: BLE001
+        return ()
+
+
 def no_auto_codes() -> tuple:
     """Y7-O 5(오너 2026-10-12): 공유 마켓에서 **저절로 체크하지 않는** 마켓 — `MARKET_NO_AUTO_CHECK`(기본 `woocommerce`).
     코가네멀티샵(WC)은 Bluehost 쪽 ReadTimeout(5,386ms)으로 매번 「검증 못 함」이었다 — 줄은 그대로 두고(손으로 고를 수 있다)
@@ -130,6 +165,14 @@ def apply_checks(markets: list, sc: str, shared: bool = True) -> dict:
     """`markets`(화면 줄) 각 줄의 `checked`를 정하고 `{source, codes}`를 돌려준다. 줄은 지우지도 막지도 않는다.
     공유 마켓이 아닌 셀러(자기 키)의 묶음 기본은 예전 그대로 「쿠팡」 한 줄."""
     codes = [m.get("code") for m in markets]
+    fb = family_bundle() if shared else ()
+    if fb:                                                       # 순찰 95: 가족 고정 묶음 — 지난 등록·설정보다 앞선다
+        hit = []
+        for m in markets:
+            m["checked"] = bool(m.get("code") in fb and m.get("connected") and not m.get("pending"))
+            if m["checked"]:
+                hit.append(m["code"])
+        return {"source": "family_bundle", "codes": hit}
     skip = no_auto_codes() if shared else ()
     for source, pick in (("last", get_last(sc)), ("setting", get_default(sc))):
         hit = [c for c in pick if c in codes and c not in skip]
@@ -150,4 +193,5 @@ def apply_checks(markets: list, sc: str, shared: bool = True) -> dict:
 
 def source_label(src: Optional[str]) -> str:
     return {"last": "지난번 등록에서 고른 마켓", "setting": "설정의 기본 등록 마켓",
-            "bundle": "우주대행 묶음(설정 없음)"}.get(src or "", "")
+            "bundle": "우주대행 묶음(설정 없음)",
+            "family_bundle": "가족 계정 — 이 묶음으로만 등록해요"}.get(src or "", "")

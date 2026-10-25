@@ -241,14 +241,10 @@ def _forbidden_hint() -> str:
     """순찰 57(오너 2026-10-23 「403 힌트」): 왜 막혔는지 한 줄 — 공유 판정은 **로그인 계정 번호** 기준이라, 오너가 본인 다른 로그인으로
     들어왔을 때 무엇을 알려 주면 되는지. 계정 번호는 앞 8자리만(본인 화면에만) · 설정 이름·값은 안 보인다."""
     try:
-        from .market_pick import session_identity
-        ident = session_identity()
+        from .market_pick import owner_contact_hint
+        return owner_contact_hint()
     except Exception:                                            # noqa: BLE001
-        ident = ""
-    if not ident or "@" in ident:
         return ""
-    return (f"이 화면은 로그인 계정 번호로 판정해요. 오너·가족인데 막혔다면 이 계정 번호(앞 8자리 {ident[:8]})를 "
-            "오너에게 알려 주세요 — 공유 목록에 넣으면 바로 열려요.")
 
 
 @bp.errorhandler(403)
@@ -3417,7 +3413,14 @@ def _account_codes_forbidden(markets):
     acct = [str(m) for m in (markets or []) if ":" in str(m)]
     if acct and not _shared_markets():
         return jsonify({"ok": False, "error": "이 계정에서는 공유 마켓 계정으로 등록할 수 없어요.",
-                        "markets": acct}), 403
+                        "markets": acct, "hint": _forbidden_hint()}), 403
+    # 순찰 95: 가족 고정 묶음(`FAMILY_MARKET_BUNDLE`)이면 묶음 밖 마켓은 서버가 거부한다(화면 숨김만으론 직접 호출이 남는다)
+    from .market_pick import family_bundle, family_bundle_label
+    fb = family_bundle()
+    out = [str(m) for m in (markets or []) if str(m).strip() and str(m) not in fb]
+    if fb and out:
+        return jsonify({"ok": False, "error": f"이 계정은 {family_bundle_label(fb)}로만 등록해요.",
+                        "markets": out, "family_bundle": list(fb), "hint": _forbidden_hint()}), 403
     return None
 
 
@@ -3454,6 +3457,9 @@ def _market_rows(markets: list, product: Optional[dict] = None):
     rows = _with_coupang_accounts([dict(m) for m in markets], product)
     if shared:
         rows = [m for m in rows if m.get("group") or m.get("connected")]
+        _fb = _mp.family_bundle()
+        if _fb:                                                  # 순찰 95: 가족 고정 묶음 — 그 묶음 줄만 보인다
+            rows = [m for m in rows if m.get("code") in _fb]
     pick = _mp.apply_checks(rows, _mp.scope(_seller_id(), shared), shared=shared)
     pick["label"] = _mp.source_label(pick["source"]) if shared or pick["source"] != "bundle" else ""
     if pick["source"] == "bundle" and shared and not pick["codes"]:
@@ -10872,6 +10878,38 @@ def _chrome_extension_version() -> str:
         return read_version(_P(_chrome_extension_dir()))
     except Exception:
         return ""
+
+
+_FAV_CACHE: Dict[str, bytes] = {}
+_FAV_CACHE_MAX = 300
+_FAV_DOMAIN_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+
+
+@bp.get("/fav/<domain>.png")
+def site_favicon(domain):
+    """순찰 95(오너 2026-10-25): 소싱처 칩 아이콘 — 브라우저가 구글(google.com/s2)에 직접 가지 않게 **우리 서버가 받아 전달**.
+    중국에서는 구글 출처가 막혀 칩 아이콘이 빈칸이었다. 도메인 모양만 받고, 받은 그림은 프로세스 안에 둔다(최대 300개).
+    못 받으면 404 — 화면의 onerror가 아이콘만 숨긴다(칩은 그대로)."""
+    dom = str(domain or "").strip().lower()
+    if not _FAV_DOMAIN_RE.match(dom):
+        abort(404)
+    body = _FAV_CACHE.get(dom)
+    if body is None:
+        try:
+            import requests
+            r = requests.get("https://www.google.com/s2/favicons", params={"domain": dom, "sz": 32}, timeout=4)
+            if r.status_code != 200 or not r.content or len(r.content) > 64 * 1024:
+                abort(404)
+            body = r.content
+        except Exception as exc:                                 # noqa: BLE001 — 아이콘 하나라 화면을 막지 않는다
+            if getattr(exc, "code", None) == 404:
+                raise
+            logger.debug("[아이콘] %s 못 받음: %s", dom, exc)
+            abort(404)
+        if len(_FAV_CACHE) >= _FAV_CACHE_MAX:
+            _FAV_CACHE.clear()
+        _FAV_CACHE[dom] = body
+    return Response(body, mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 
 @bp.get("/extension")

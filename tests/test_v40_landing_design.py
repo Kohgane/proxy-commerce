@@ -51,7 +51,7 @@ def test_impeccable_polish_signature_and_a11y():
     # 접근성(Chanel): 키보드 포커스 링(:focus-visible)
     assert ":focus-visible" in TPL and "outline:" in TPL
     # 폰트는 우리 토큰 고정(impeccable이 Inter 밀어도 우리 정체성 유지)
-    assert "Noto+Serif+KR" in TPL and "var(--font-display)" in TPL   # 세리프 로드 + 토큰 적용
+    assert "/static/vendor/noto-serif-kr/" in TPL and "var(--font-display)" in TPL   # 세리프 로드(순찰 95 self-host) + 토큰 적용
 
 
 def test_gold_cta_band_and_dark_sections():

@@ -1445,6 +1445,16 @@ class UploadDispatcher:
             _rss.log("prevalidate_start", market=market)
             with ctx:
                 r = self._prevalidate_market(product_data, base)
+                if r.error_code == "token_missing" and base in ("coupang", "smartstore"):
+                    # 순찰 95: 「키를 넣어 주세요」 벽 — 가족·관리자가 목록에 없는 로그인으로 들어온 경우 무엇을 오너에게 줄지
+                    #   한 줄. 오너와 함께 쓰는 마켓(쿠팡·스마트스토어) 줄에만 — 마켓 다섯 줄에 같은 말을 되풀이하지 않는다.
+                    try:
+                        from .market_pick import owner_contact_hint
+                        _och = owner_contact_hint()
+                        if _och:
+                            r.hint = (str(r.hint or "").rstrip(" .") + " · " + _och) if r.hint else _och
+                    except Exception as exc:                     # noqa: BLE001
+                        logger.debug("[사전검증] 계정 번호 안내 실패: %s", exc)
                 if base == "smartstore" and r.error_code not in ("smartstore_token_failed", "unsupported_market"):
                     # Y7-C: 통과든 보류든 「카테고리 자동: … (바꾸기)」/후보 칩을 카드가 그릴 재료(등록과 같은 판정 pick).
                     try:

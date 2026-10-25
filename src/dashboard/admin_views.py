@@ -73,8 +73,8 @@ admin_panel_bp = Blueprint("admin_panel", __name__, url_prefix="/admin")
 
 _BOOTSTRAP_CDN = (
     '<link rel="stylesheet" '
-    'href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">'
-    '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js">'
+    'href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">'
+    '<script src="/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js">'
     "</script>"
 )
 
@@ -1358,7 +1358,7 @@ def diagnostics_naver_orders():
 
 _NAVER_ORDERS_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>네이버 주문 대조</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:960px" data-role="naver-orders">
 <h5>스마트스토어 {{ store_label }} — 최근 {{ days }}일 결제완료 주문</h5>
 <p class="small text-muted">API로 당긴 목록입니다. 스마트스토어센터 주문 수와 대조하고, 텔레그램에 없는 줄이 재발송 대상입니다(구매자 정보는 싣지 않음).</p>
@@ -1409,7 +1409,7 @@ def diagnostics_naver_recent():
 
 _NAVER_RECENT_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>네이버 최근 등록</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:960px" data-role="naver-recent">
 <h5>스마트스토어 최근 등록 {{ from_d }} ~ {{ to_d }}{% if q %} · 「{{ q }}」{% endif %}</h5>
 <p class="small text-muted">등록일 기준 · 상태 무관. 등록이 400으로 거부된 상품이 여기 보이면 네이버에 반쪽 상품이 남은 것입니다(지우기는 판매자센터에서).</p>
@@ -1574,7 +1574,7 @@ def diagnostics_taobao_provider_raw(num_iid):
 
 _TAOBAO_PROVIDER_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>타오바오 상세 공급자</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px;overflow-wrap:anywhere;word-break:break-word" data-role="taobao-provider">
 <h5>타오바오 상세 — 온바운드 item_get</h5>
 <p class="small mb-1" data-role="provider-status">상세 공급자 <strong>{{ name }}</strong>(TAOBAO_DETAIL_PROVIDER) · {{ st.line }}</p>
@@ -1628,7 +1628,7 @@ def diagnostics_taobao_mtop_sample():
 
 _TAOBAO_MTOP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>타오바오 모바일 API 실측</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px" data-role="taobao-mtop">
 <h5>타오바오 모바일 상세 API — 이 서버에서 익명으로 되나</h5>
 <form method="get" class="mb-3"><textarea class="form-control form-control-sm" name="q" rows="3" placeholder="e.tb.cn 링크·상품 주소·상품번호(줄마다 하나, 최대 5)">{{ q }}</textarea>
@@ -1688,7 +1688,7 @@ def diagnostics_qoo10():
 
 _QOO10_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Qoo10 재팬 준비 상태</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px;overflow-wrap:anywhere;word-break:break-word" data-role="qoo10-diag">
 <h5>Qoo10 재팬 — 준비 상태(R2 뼈대)</h5>
 <p data-role="qoo10-status"><strong>{{ st.line }}</strong></p>
@@ -1737,7 +1737,7 @@ def diagnostics_ocr_precheck():
 
 _OCR_PRECHECK_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>OCR 판정 정확도</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px" data-role="ocr-precheck">
 <h5>텐센트 OCR — 「한자 있나」 판정 정확도(운영 라벨 · 장마다 OCR 호출 1회 과금)</h5>
 <p data-role="ocr-summary"><strong>{{ summary }}</strong></p>
@@ -1779,7 +1779,7 @@ def diagnostics_ocr_compare():
 
 _OCR_COMPARE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>OCR 사전검사 비교</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:860px;overflow-wrap:anywhere;word-break:break-word" data-role="ocr-compare">
 <h5>OCR 사전검사 비교 — 축소·인식 언어별 한자 수</h5>
 <p class="small text-muted">상세 장마다 텐센트 OCR 4회 + 대표 사진 1회(과금). 결과는 저장돼 나중에 다시 열어도 보입니다.</p>
@@ -1848,7 +1848,7 @@ def diagnostics_image_polish():
 
 _IMAGE_POLISH_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>번역 다듬기</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:860px;overflow-wrap:anywhere;word-break:break-word" data-role="image-polish">
 <h5>번역 다듬기 — 이미 번역된 상품</h5>
 <p class="small text-muted">오늘 다듬기 {{ today }}/{{ cap }}회. 장마다 AI 1회(상자 10개씩) + 사진 편집 1회. 텐센트 번역본은 버전으로 남아요.</p>
@@ -1912,7 +1912,7 @@ def diagnostics_flip_check():
 
 _FLIP_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>사진 좌우반전 확인</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px;word-break:break-all" data-role="flip-check">
 <h5>사진 좌우반전 확인 — 원본 vs 보여 주는 사진</h5>
 <form class="mb-2"><input name="item" value="{{ item }}" placeholder="상품 ID" class="form-control mb-1"><button class="btn btn-sm btn-primary">비교</button></form>
@@ -1973,7 +1973,7 @@ def diagnostics_image_mode_compare():
 
 _IMAGE_MODE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>이미지 번역 pro·lite 비교</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px" data-role="image-mode-compare">
 <h5>이미지 번역 — 같은 사진 pro(Mode 0) · lite(Mode 1)</h5>
 <p class="small">{{ line }}</p>
@@ -2017,7 +2017,7 @@ def diagnostics_coupang_sign():
 
 _COUPANG_SIGN_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>쿠팡 서명 비교</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px" data-role="coupang-sign">
 <h5>쿠팡 서명 — 계정별 같은 요청(반품지 목록 GET)</h5>
 <p class="small text-muted">키 값은 싣지 않아요(액세스 키 끝 4자·시크릿 길이만). 서명문 = 시각 + 메서드 + 경로(+쿼리)이고 시크릿은 들어가지 않아요.</p>
@@ -2068,7 +2068,7 @@ def diagnostics_coupang_meta():
 
 _COUPANG_META_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>쿠팡 카테고리 메타 비교</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container" style="max-width:820px" data-role="coupang-meta">
 <h5>쿠팡 카테고리 메타 — 계정별 비교</h5>
 <form class="d-flex flex-wrap gap-2 mb-3" method="get">
@@ -2187,7 +2187,7 @@ def diagnostics_naver_category_table():
 
 _NCAT_TABLE_TEMPLATE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>네이버 카테고리 자동 지정 표</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<link href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css" rel="stylesheet"></head>
 <body class="p-3"><div class="container-fluid" data-role="ncat-table">
 <h5>운영 수집 상품명 → 쿠팡 예측 경로 → 네이버 자동 지정</h5>
 <p class="small text-muted">쿠팡 예측은 서버 쿠팡 키로 상품명마다 1번 묻습니다(백그라운드). 기억(캐시)은 쓰지 않고 지금 규칙으로 다시 계산합니다.</p>
@@ -3388,7 +3388,7 @@ _DIAGNOSTICS_TEMPLATE = """
   <meta property="og:site_name" content="{{ brand_name }}">
   <meta property="og:title" content="{{ brand_name }}">
   <meta name="theme-color" content="#f8fafc">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="/admin/static/css/style.css">
   <style>
@@ -4649,7 +4649,7 @@ _DIAGNOSTICS_TEMPLATE = """
   </main>
 </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js"></script>
 <script>
   (function () {
     const btn = document.getElementById('ai-listing-cache-clear');

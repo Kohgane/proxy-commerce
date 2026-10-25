@@ -67,5 +67,6 @@ def test_pg_list_index():
 
 
 def test_csp_allows_brand_fonts():
-    assert "fonts.googleapis.com" in SEC          # style-src (Noto Serif KR 로드 허용)
-    assert "fonts.gstatic.com" in SEC             # font-src
+    # 순찰 95: 브랜드 폰트는 /static/vendor(우리 출처) — CSP는 외부 폰트·CDN 호스트를 열지 않는다
+    assert "fonts.googleapis.com" not in SEC and "fonts.gstatic.com" not in SEC and "cdn.jsdelivr.net" not in SEC
+    assert "font-src 'self' data:" in SEC

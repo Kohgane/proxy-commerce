@@ -66,10 +66,10 @@ def test_admin_dashboard_no_escaped_html(client):
 
 
 def test_admin_dashboard_has_bootstrap_cdn(client):
-    """대시보드 응답 <head>에 Bootstrap CDN 링크가 포함되어야 한다."""
+    """대시보드 응답 <head>에 Bootstrap 링크가 포함되어야 한다 — 순찰 95: 우리 서버(/static/vendor)에서."""
     resp = client.get("/admin/")
     body = resp.data.decode("utf-8")
-    assert "jsdelivr.net" in body
+    assert "/static/vendor/bootstrap-5.3.3/" in body and "jsdelivr.net" not in body
     assert "bootstrap" in body.lower()
 
 
