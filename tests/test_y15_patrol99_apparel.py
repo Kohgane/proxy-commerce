@@ -146,3 +146,19 @@ def test_jin_rule_beats_cached_ai_answer(monkeypatch):
     cache = {("80-105斤", "80-105kg"): {"ai": "80-105근", "pv": P.PROMPT_VER, "tries": 1, "tmt": ""}}
     out = P.polish_boxes(boxes, {"outbound": True, "rule": None}, cache=cache)
     assert out["rows"][0]["ko"] == "40~52.5kg" and out["rows"][0]["from"] == "glossary"
+
+
+def test_jin_converted_value_is_drawn_not_restored():
+    """순찰 99e(19:00 재렌더 실측 t25): 「105-110斤」/「105-110근」 → 환산 「52.5~55kg」이 한글이 없다고 「원문 되돌림」(restore)으로 빠졌다.
+    환산값은 한글이 없어도 되돌림이 아니다 — `polish_entry`가 jin 줄을 text op로 보낸다(아래 `_redo_polish` 가드와 짝)."""
+    from src.services import image_polish as P
+    assert P.foreign_revert("52.5~55kg", {"tgt": "105-110근"}) is True        # 휴리스틱은 그대로 — 그래서 jin 분기가 먼저 잡아야 한다
+    assert P.fix_jin("105-110斤", "105-110근") == "52.5~55kg"
+
+
+def test_redo_when_jin_box_was_restored():
+    from src.services import image_edit as IE
+    from src.services import image_polish as P
+    boxes = [{"src": "105-110斤", "tgt": "105-110근"}]
+    bad = {"by": P.POLISH_BY, "render": "local", "render_v": IE.RENDER_V, "ops": [{"id": "t0", "action": "restore"}]}
+    assert P._redo_polish(bad, boxes) is True

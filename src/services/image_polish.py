@@ -544,10 +544,13 @@ def _redo_polish(x: dict, boxes: Optional[list] = None, size=None) -> bool:
 
 def _jin_broken(ops: list, by_id: dict) -> bool:
     drawn = {o.get("id"): str(o.get("text") or "") for o in ops if o.get("action") == "text"}
+    restored = {o.get("id") for o in ops if o.get("action") == "restore"}
     for i, b in by_id.items():
         src, tgt = str(b.get("src") or ""), str(b.get("tgt") or "")
         if not _JIN_RE.search(src):
             continue
+        if i in restored:
+            return True                                          # 斤 상자를 원문(斤) 픽셀로 되살린 버전 — 손님이 못 읽는다
         shown = drawn.get(i, tgt)                               # 안 그린 상자는 텐센트 글자가 그대로 보인다
         if fix_jin(src, shown) != shown:
             return True
@@ -659,6 +662,9 @@ def polish_entry(extra: dict, kind: str, idx: int) -> Dict:
             continue
         _b = by_id.get(r["id"]) or {"tgt": r["tgt"]}
         if r["ko"] == r["tgt"]:
+            continue
+        if r.get("jin"):
+            ops.append({"id": r["id"], "action": "text", "text": r["ko"]})     # 순찰 99e: 斤 환산값(숫자+kg, 한글 없음)은 「원문 되돌림」이 아니다
             continue
         if foreign_revert(r["ko"], _b):
             if restorable(e):                                    # Y11-W: 원문으로 되돌릴 땐 원본 픽셀을 붙인다(다시 그리지 않음)
