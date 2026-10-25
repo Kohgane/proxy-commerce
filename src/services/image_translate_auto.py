@@ -504,8 +504,11 @@ def _translate_job(job: dict) -> tuple:
         _ndr.enqueue_item(item_id, extra, uid)
     if st == "done" and istore.has_boxes(entry):
         # Y11-I: 번역 직후 자동 다듬기 — 새 버전(번역본(다듬음))만 만든다. 텐센트 번역본은 버전으로 남는다. 실패해도 번역은 그대로.
-        from src.services import image_polish as _ip
-        _ip.polish_job(item_id, uid, kind, idx)
+        # 순찰 99(2026-10-25 15:37 KST 실측): 다듬기 그리기(cv2·Pillow)는 인스턴스 합계를 +40~130MB 올린다(폴리시 7장 피크
+        #   469·438·388·369·472·466·483MB, 512MB 인스턴스) → 번역 큐가 이미 345~444MB에서 돌 때 그리기가 OOM — 프로세스가
+        #   죽고 같은 장을 또 집어 되풀이(15:37·15:41·15:42 재시작). 여유가 없으면 **미룬다**(번역본은 그대로 남고, 다듬기는
+        #   「다듬기」·일회성 작업이 `item_targets`로 뒤에 집는다).
+        _maybe_polish(item_id, uid, kind, idx)
     if st not in ("done", "skipped") and _q().is_no_text(why):
         # Y4: 글자 없는 사진 = **성공(원본 유지)**. 실패로 세면 차단기가 멀쩡한 큐를 멈춘다(실측 20장 중 14장이 이것).
         return "skipped", f"글자 없는 사진 — 원본 그대로({why[:60]})"
@@ -515,6 +518,42 @@ def _translate_job(job: dict) -> tuple:
     if st == "excluded":                          # Y9: 주소·크기로 뺀 장 — 보내지 않았다(실패 아님)
         return "skipped", str(entry.get("reason") or "")
     return (st if st in ("done", "skipped") else "failed"), why
+
+
+#: 순찰 99: 자동 다듬기를 시작해도 되는 인스턴스 합계 상한(MB). 그리기 피크 +130MB가 `INSTANCE_MEM_ABORT_MB`(460) 안에 들게 300.
+#   0이면 끈다(언제나 다듬음 — 예전 동작).
+POLISH_AUTO_MAX_MB_DEFAULT = 300
+
+
+def polish_auto_max_mb() -> int:
+    try:
+        return int(os.getenv("IMAGE_POLISH_AUTO_MAX_MB", str(POLISH_AUTO_MAX_MB_DEFAULT)) or POLISH_AUTO_MAX_MB_DEFAULT)
+    except ValueError:
+        return POLISH_AUTO_MAX_MB_DEFAULT
+
+
+def _maybe_polish(item_id: str, uid: str, kind: str, idx: int) -> bool:
+    """번역 직후 자동 다듬기 — 인스턴스 합계가 `polish_auto_max_mb()` 미만일 때만. 미루면 False(번역 결과엔 손대지 않음)."""
+    from src.services import image_polish as _ip
+    lim = polish_auto_max_mb()
+    if lim > 0:
+        from src.utils import rss as _rss
+        cur = _rss.instance_mb()
+        if cur >= lim:
+            try:
+                import gc as _gc
+                _gc.collect()
+                from src.utils.render_worker import trim as _trim
+                _trim()
+            except Exception:                                    # noqa: BLE001
+                pass
+            cur = _rss.instance_mb()
+        if cur >= lim:
+            logger.warning("[다듬기] item=%s %s#%s 자동 다듬기 미룸 — 인스턴스 합계 %dMB ≥ %dMB(IMAGE_POLISH_AUTO_MAX_MB) · 번역본은 그대로",
+                           str(item_id)[:8], kind, idx, cur, lim)
+            return False
+    _ip.polish_job(item_id, uid, kind, idx)
+    return True
 
 
 def _after_sku_translated(item_id: str, uid: str, extra: dict) -> None:
