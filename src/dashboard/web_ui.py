@@ -153,9 +153,8 @@ _BASE_HTML = """<!DOCTYPE html>
 <link rel="icon" type="image/png" sizes="32x32" href="/seller/static/favicon-32.png?v=183">
 <link rel="icon" type="image/png" sizes="16x16" href="/seller/static/favicon-16.png?v=183">
 <link rel="apple-touch-icon" href="/seller/static/apple-touch-icon.png?v=183">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&display=swap">
+<link rel="stylesheet" href="/static/vendor/pretendard-1.3.9/pretendardvariable-dynamic-subset.css">
+<link rel="stylesheet" href="/static/vendor/noto-serif-kr/noto-serif-kr.css">
 <style>
 /* ══ 고가브릿지 콘솔 디자인 시스템 (v87 STEP1) ═══════════════════════════════
    토큰 단일 소스. 화면 CSS는 여기 var()만 참조한다 — 하드코딩 hex/px 금지.

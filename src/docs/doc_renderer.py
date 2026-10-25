@@ -112,9 +112,9 @@ class DocRenderer:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} — API 문서</title>
   <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+        href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
   <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+        href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
   <style>
     body {{ background:#f5f7fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
     .endpoint-path {{ font-family: 'JetBrains Mono','Fira Code',monospace; font-size:.85rem; }}
@@ -188,7 +188,7 @@ class DocRenderer:
   </p>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js"></script>
 <script src="/static/api_docs.js"></script>
 </body>
 </html>"""

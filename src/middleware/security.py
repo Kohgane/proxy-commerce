@@ -13,7 +13,7 @@ Flask 앱에 다음 보안 기능을 추가한다:
 
 CSP 정책 (경로별 분기):
   HTML 페이지 (/admin/*, /seller/*, /api/docs, /):
-      cdn.jsdelivr.net Bootstrap CDN 허용, unsafe-inline 허용
+      우리 출처만('self') — Bootstrap·폰트는 /static/vendor(순찰 95), unsafe-inline 허용
   API/웹훅 응답 (/api/v1/*, /api/dashboard, /webhook/*, /health/*):
       default-src 'none' — strict CSP
 """
@@ -30,11 +30,11 @@ _HSTS_MAX_AGE = int(os.getenv("SECURITY_HSTS_MAX_AGE", "31536000"))  # 1년
 # HTML 페이지용 CSP — Bootstrap CDN 및 인라인 스타일/스크립트 허용
 _CSP_HTML_PAGES = (
     "default-src 'self'; "
-    # 속도 ③: 폰트를 <link>로 병렬 로드하도록 Google Fonts 호스트 허용(기존 @import가 CSP에 막혀
-    #   Noto Serif KR이 아예 안 뜨던 문제도 함께 해소 — 브랜드 세리프 실제 로드).
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-    "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com data:; "
+    # 순찰 95(오너 2026-10-25): Bootstrap·아이콘·웹폰트는 /static/vendor(우리 출처) — jsdelivr·구글 폰트는 중국에서 막혀
+    #   화면이 깨지고 「등록」 모달(bootstrap.Modal)이 안 열렸다. CSP도 우리 출처만.
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; "
     "img-src 'self' data: https:; "
     # Y6-C D(오너 2026-10-07): 상품 동영상은 Cloudinary(res.cloudinary.com)에 있다. media-src가 없으면 default-src
     #   'self'로 떨어져 브라우저가 <video>를 막는다(포스터 jpg는 img-src라 보여서 「재생만 안 됨」으로 보였다).

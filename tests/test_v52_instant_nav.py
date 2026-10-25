@@ -70,12 +70,11 @@ def test_eligible_link_filtering():
 
 
 def test_font_weight_reduced_transfer_only():
-    # 콘솔 세리프 600만, 랜딩 500;900 — 미사용 굵기 제거(패밀리·display=swap 불변).
-    assert "Noto+Serif+KR:wght@600&display=swap" in APPCSS
-    assert "wght@500;600;700" not in APPCSS                     # 옛 3굵기 제거
-    assert "Noto+Serif+KR:wght@500;900&display=swap" in LANDING
-    assert "wght@500;700;900" not in LANDING
-    assert "display=swap" in APPCSS and "display=swap" in LANDING
+    # 순찰 95: 굵기별 구글 폰트 대신 /static/vendor 가변 폰트 하나(글자 범위 조각 — 쓰는 글자만 받는다) · swap 유지
+    assert "/static/vendor/noto-serif-kr/noto-serif-kr.css" in APPCSS and "fonts.googleapis.com/css2" not in APPCSS
+    assert "/static/vendor/noto-serif-kr/noto-serif-kr.css" in LANDING and "fonts.googleapis.com/css2" not in LANDING
+    css = open("src/static/vendor/noto-serif-kr/noto-serif-kr.css", encoding="utf-8").read()
+    assert "font-display: swap" in css and "'Noto Serif KR'" in css and "unicode-range" in css
 
 
 def test_list_images_lazy():

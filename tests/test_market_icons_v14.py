@@ -20,8 +20,8 @@ def client(monkeypatch):
 
 def test_oneclick_markets_use_site_logos(client):
     html = client.get("/seller/collect").get_data(as_text=True)
-    assert "s2/favicons?domain=" in html          # 각 사이트 로고(파비콘) 아이콘 표시
-    assert "domain=taobao.com" in html
+    # 순찰 95: 로고는 우리 서버가 받아 전달(/seller/fav/<도메인>.png) — 브라우저가 구글에 직접 가지 않는다(중국에서 막힘)
+    assert "/seller/fav/taobao.com.png" in html and "s2/favicons" not in html
 
 
 def test_oneclick_big_markets_only(client):

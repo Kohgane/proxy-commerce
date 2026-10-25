@@ -7,7 +7,11 @@
 from __future__ import annotations
 
 TEST_ACCOUNT_PREFIXES = ("QA-TEST",)
-TEST_ACCOUNT_IDS = ("dev",)
+TEST_ACCOUNT_IDS = (
+    "dev",
+    # 순찰 95(오너 2026-10-25): 중국 접속 실측용 시험 계정 kgp-cn-test-1025@example.com(10-24 가입) — 그 상품 cd7429ff도 같이 빠진다
+    "a07afb1b-72f9-4127-a0e9-682ed13aab39",
+)
 
 #: `user_id` 열이 있는 표에 붙이는 조건(인자 없는 쿼리·있는 쿼리 둘 다 — `%%`는 LIKE에서 와일드카드 둘이라 같은 뜻)
 NOT_TEST_SQL = ("NOT (COALESCE(user_id, '') LIKE 'QA-TEST%%' OR COALESCE(user_id, '') IN ("

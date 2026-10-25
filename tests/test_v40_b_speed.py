@@ -22,10 +22,10 @@ def client():
 
 
 def test_preconnect_resource_hints_present():
+    # 순찰 95(오너 2026-10-25): CDN·구글 폰트는 우리 서버(/static/vendor)로 — 외부 사전연결도 없앴다(중국에서 막힘).
     base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
-    assert 'rel="preconnect" href="https://cdn.jsdelivr.net"' in base
-    assert 'rel="preconnect" href="https://fonts.gstatic.com"' in base
-    assert 'rel="dns-prefetch"' in base
+    assert "cdn.jsdelivr.net" not in base and "fonts.gstatic.com" not in base
+    assert '/static/vendor/bootstrap-5.3.3/bootstrap.min.css' in base
 
 
 def test_versioned_static_is_immutable(client):

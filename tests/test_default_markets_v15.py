@@ -40,4 +40,4 @@ def client(monkeypatch):
 def test_oneclick_row_has_new_markets_with_icons(client):
     html = client.get("/seller/collect").get_data(as_text=True)
     for dom in ("iherb.com", "dhgate.com", "qoo10.com", "mercari.com", "rakuten.co.jp"):
-        assert "domain=" + dom in html, f"원클릭 행에 {dom} 파비콘 없음"
+        assert f"/seller/fav/{dom}.png" in html, f"원클릭 행에 {dom} 파비콘 없음"   # 순찰 95: 서버가 받아 전달
