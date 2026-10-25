@@ -153,6 +153,42 @@ def _strip_common(s: str, r: dict, hits: dict | None) -> str:
     return s
 
 
+#: 순찰 99(운영 10-25 원피스 `5d1b6679` 사이즈 옵션 「36 80-105斤」 → 「36 80-105근」): 斤(500g)은 한국 손님이 못 읽는다 —
+#   **kg으로 환산**해 적는다(「36 40~52.5kg」). 「发发码数-105-110斤」처럼 가게가 붙인 「○○码数」 꼬리표는 뗀다(码数 = 사이즈).
+_JIN_RE = re.compile(r"(\d{1,4}(?:\.\d+)?)(?:\s*[-~–至到]\s*(\d{1,4}(?:\.\d+)?))?\s*斤")
+_MASHU_RE = re.compile(r"[\u4e00-\u9fff]{0,3}码数\s*[-–:：]?\s*")
+
+
+def _kg_str(jin: str) -> str:
+    return f"{float(jin) / 2:g}"
+
+
+def jin_to_kg(text: str) -> str:
+    """원문 속 「80-105斤」 → 「40~52.5kg」, 「90斤」 → 「45kg」. 斤이 없으면 그대로."""
+    def _one(m):
+        a, b = m.group(1), m.group(2)
+        return f"{_kg_str(a)}~{_kg_str(b)}kg" if b else f"{_kg_str(a)}kg"
+    return _JIN_RE.sub(_one, str(text or ""))
+
+
+def fix_jin_ko(src: str, ko: str) -> str:
+    """번역기가 「80-105斤」을 「80-105kg」·「80-105근」으로 옮겼으면(숫자 그대로, 단위만) kg 환산값으로 바꾼다."""
+    out = str(ko or "")
+    for m in _JIN_RE.finditer(str(src or "")):
+        a, b = m.group(1), m.group(2)
+        want = f"{_kg_str(a)}~{_kg_str(b)}kg" if b else f"{_kg_str(a)}kg"
+        pat = (re.escape(a) + r"\s*[-~–]\s*" + re.escape(b) if b else re.escape(a)) + r"\s*(?:kg|KG|Kg|근|斤)"
+        out, n = re.subn(pat, want, out, count=1)
+        if not n and b:
+            out = re.sub(re.escape(a) + r"\s*[-~–]\s*" + re.escape(b) + r"(?=\s*kg)", want[:-2], out, count=1)
+    return out
+
+
+def strip_size_tag(text: str) -> str:
+    """「发发码数-105-110斤」의 「发发码数-」 같은 가게 사이즈 꼬리표 제거(숫자·斤 앞에 올 때만)."""
+    return _MASHU_RE.sub("", str(text or ""))
+
+
 def preclean_cn(text: str, *, hits: dict | None = None) -> str:
     """번역 **전** 원문 정리 — 판촉어·가격 삭제, 용어·색상은 한국어로 먼저."""
     r = rules()
@@ -724,7 +760,7 @@ def option_value(value: str) -> Dict:
     `色[소재]부속 접미사` 모양은 괄호를 조각 경계(` / `)로 바꿔 조각별로 치환한다.
     """
     hits: dict = {}
-    s = str(value or "").translate(_FW)
+    s = strip_size_tag(jin_to_kg(str(value or "").translate(_FW)))
     s = re.sub(r"\s*[\[{]\s*", " / ", s)
     s = re.sub(r"\s*[\]}]\s*", " / ", s)
     s = re.sub(r"\s*[|丨]\s*", " / ", s)
@@ -1011,6 +1047,9 @@ def _brand_core(field: str, value: str) -> str:
     return v
 
 
+_LATIN_HAN_BRAND = re.compile(r"^([A-Za-z][A-Za-z0-9&.\'\-]{1,20})\s+([㐀-䶿一-鿿]{2,4})(?:旗舰店|专卖店|官方店|官方|店)?$")
+
+
 def brand_prefix(title: str, extra: dict | None) -> Dict | None:
     """`{han, latin, field, rest}` 또는 None. 제목 맨 앞 한자 2~4자 == 브랜드·가게 필드(접미 「旗舰店」 등 뗌)."""
     t = str(title or "").strip().translate(_FW)
@@ -1019,6 +1058,11 @@ def brand_prefix(title: str, extra: dict | None) -> Dict | None:
     #   접미(旗舰店·专卖店·官方…)를 떼고, 뗀 뒤 2자 미만이면 브랜드 없음(「XX旗舰店」이 병음으로 박히는 사고 방지).
     fields = ("brand",) if str(ex.get("brand") or "").strip() else BRAND_FIELDS[1:]
     for f in fields:
+        # 순찰 99(운영 10-25 `5d1b6679` 가게 「Taffa 唐发发」 → 제목 「Taffa 타파파 …」): 라틴 브랜드 + 한자 가게 이름 짝이
+        #   제목 맨 앞에 그대로 오면 한자 쪽은 떼고(음차 금지) 라틴 표기를 브랜드로 쓴다.
+        pair = _LATIN_HAN_BRAND.match(str(ex.get(f) or "").strip().translate(_FW))
+        if pair and t.startswith(pair.group(0)):
+            return {"han": pair.group(2), "latin": pair.group(1), "field": f, "rest": t[len(pair.group(0)):].strip()}
         core = _brand_core(f, ex.get(f) or "")
         if not (2 <= len(core) <= 4 and _HAN_ONLY.match(core) and t.startswith(core)):
             continue

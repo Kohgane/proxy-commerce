@@ -76,3 +76,33 @@ def test_apparel_glossary_terms():
     assert P.apply_glossary("均码", "균일 코드") == "프리사이즈"
     assert P.apply_glossary("肩宽", "견폭") == "어깨너비"
     assert P.apply_glossary("发发170cm/49kg/全店38码", "발발 170cm/49kg/전점 38 사이즈") == "발발 170cm/49kg/전 상품 38 사이즈"
+
+
+# ── 옵션 값·상품명(순찰 99 운영 실측 5d1b6679) ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("value,want", [
+    ("36 80-105斤", "36 40~52.5kg"),
+    ("38 发发码数-105-110斤", "38 52.5~55kg"),                   # 가게 꼬리표 「发发码数-」는 뗀다
+    ("42 120-135斤", "42 60~67.5kg"),
+    ("均码", "프리사이즈"),
+])
+def test_option_value_rule_converts_jin(value, want):
+    from src.collectors import ko_polish as kp
+    assert kp.option_value(value)["value"] == want
+
+
+def test_translator_output_jin_is_fixed():
+    from src.collectors import ko_polish as kp
+    assert kp.strip_size_tag(kp.fix_jin_ko("38 发发码数-105-110斤", "38 발발 코드 수 - 105-110근")) == "38 발발 코드 수 - 52.5~55kg"
+    assert kp.fix_jin_ko("36 80-105斤", "36 80-105kg") == "36 40~52.5kg"
+    assert kp.fix_jin_ko("샴페인", "샴페인") == "샴페인"
+
+
+def test_latin_han_shop_brand_is_not_transliterated():
+    from src.collectors import ko_polish as kp
+    src = "Taffa 唐发发 夏季新款【真丝云纱连衣裙】飘逸优雅无袖"
+    sent, info = kp.title_for_translator(src, {"shop_name": "Taffa 唐发发"})
+    assert "唐发发" not in sent and "Taffa" not in sent          # 번역기엔 브랜드를 떼고 보낸다(음차 금지)
+    assert info["latin"] == "Taffa" and info["han"] == "唐发发"
+    assert kp.attach_brand("여름 신상 실크 원피스", info) == "Taffa 여름 신상 실크 원피스"
+    assert kp.brand_prefix("小米 手机", {"shop_name": "小米旗舰店"})["latin"] == "XIAOMI"   # 기존 한자 브랜드 경로 그대로

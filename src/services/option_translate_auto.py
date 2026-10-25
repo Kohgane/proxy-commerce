@@ -362,7 +362,7 @@ def _job(job: dict) -> tuple:
             opt = (out.get("options") or [{}])[0]
             diag = out.get("diag") or {}
             for v, k in zip(opt.get("values") or [], opt.get("values_ko") or []):
-                k = str(k or "").strip()
+                k = kp.strip_size_tag(kp.fix_jin_ko(v, str(k or "").strip()))   # 순찰 99: 斤→kg 환산 · 「○○码数-」 꼬리표
                 if k and k != v and not foreign(k):
                     mapping[v] = k
                 else:
