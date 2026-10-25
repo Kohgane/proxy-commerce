@@ -391,6 +391,8 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
     #   캐시 값도 지금 규칙(품목 금지 표현·한자·금지어…)으로 다시 검사하고, 통과한 것만 쓴다(통과 못 하면 그 상자만 다시 묻는다).
     #   같은 프롬프트 판(PROMPT_VER)의 답은 버린 것까지 그대로 쓴다(다시 물어도 같은 규칙) — 옛 판 답은 지금 검사를 통과할 때만.
     for r in rows:
+        if r.get("jin"):
+            continue                                             # 순찰 99d: 斤 환산 상자는 캐시(옛 AI 「80-105근」)보다 규칙이 먼저
         hit = (cache or {}).get((r["src"], r["tgt"]))
         if not isinstance(hit, dict) or not isinstance(hit.get("ai"), str):
             continue
