@@ -53,9 +53,10 @@ def test_default_threshold_and_env_override(monkeypatch, calls):
 
 
 def test_translate_job_calls_gate_not_polish_directly():
-    import inspect
+    from tests._ast_probe import calls_in
 
     from src.services import image_translate_auto as ita
-    src = inspect.getsource(ita._translate_job)
-    assert "_maybe_polish(item_id, uid, kind, idx)" in src
-    assert "_ip.polish_job(" not in src
+    calls = calls_in(ita._translate_job)
+    assert "_maybe_polish" in calls
+    assert "polish_job" not in calls                             # 직접 부르면 메모리 문지기를 건너뛴다
+    assert "polish_job" in calls_in(ita._maybe_polish)
