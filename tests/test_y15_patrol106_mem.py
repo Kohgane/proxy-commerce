@@ -5,15 +5,13 @@
 - preload 공유 페이지: 워커 gc가 세대 2를 훑으며 마스터 페이지를 복사 → 포크 직전 `gc.freeze`.
 그리고 다음 판단에 쓸 숫자 둘: `rss:gate` 줄의 출처(PSS 합·cgroup·워커 RSS) · 자동 다듬기 돌림/미룸 하루 카운터.
 """
-import pathlib
 import subprocess
 import sys
 
 
 def test_no_anthropic_sdk_import_anywhere_in_src():
-    hits = [str(p) for p in pathlib.Path("src").rglob("*.py")
-            if "import anthropic" in p.read_text(encoding="utf-8") or "from anthropic" in p.read_text(encoding="utf-8")]
-    assert hits == []
+    from tests._ast_probe import importers_of
+    assert importers_of("anthropic") == []                               # import 구문(AST)으로 — 설명문은 안 센다
 
 
 def test_ai_call_path_leaves_sdk_out_of_the_process():
@@ -90,8 +88,10 @@ def test_anthropic_ready_is_the_key_alone(monkeypatch):
 
 def test_gunicorn_freezes_gc_before_fork(monkeypatch):
     import gc
-    ns = {"__name__": "gunicorn_conf"}
-    exec(compile(pathlib.Path("gunicorn.conf.py").read_text(encoding="utf-8"), "gunicorn.conf.py", "exec"), ns)
+    import os
+    import runpy
+    monkeypatch.setenv("KGP_DEFER_BG_THREADS", os.environ.get("KGP_DEFER_BG_THREADS", "1"))   # 설정 파일의 setdefault를 테스트 뒤 되돌린다
+    ns = runpy.run_path("gunicorn.conf.py")
     assert ns["preload_app"] is True and callable(ns["pre_fork"])
 
     class S:
