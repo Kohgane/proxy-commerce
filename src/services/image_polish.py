@@ -122,6 +122,23 @@ def fix_jin(src: str, tgt: str) -> str:
     return out
 
 
+#: 순찰 106-E(운영 10-25 `5d1b6679` 사이즈표 캡션 「发发170cm/49kg/全店38码」 → 텐센트·AI 「발발 170cm/49kg/전점 38사이즈」):
+#   모델 이름(가게가 붙인 별명)을 음차하고 「全店」(가게 전 상품)을 「전점」으로 직역했다. 이 모양(이름 + 키cm/몸무게kg/사이즈码)은
+#   **모델 착용 정보**다 — 규칙으로 「모델 170cm · 49kg · 38 사이즈 착용」(이름은 버림 · AI에 묻지 않음).
+_MODEL_LINE_RE = re.compile(r"^\s*(?:模特|[\u4e00-\u9fffA-Za-z]{1,6})?\s*[:：]?\s*(\d{3})\s*(?:cm|CM|厘米)\s*[/／,，、]\s*"
+                            r"(\d{2,3}(?:\.\d)?)\s*(kg|KG|斤)\s*[/／,，、]\s*(?:全店|均穿|穿)?\s*([A-Z0-9]{1,4})\s*码?\s*$")
+
+
+def fix_model_line(src: str) -> str:
+    """사이즈표의 모델 착용 캡션이면 한국어 한 줄(아니면 "") — 斤이면 kg으로 환산."""
+    m = _MODEL_LINE_RE.match(str(src or ""))
+    if not m:
+        return ""
+    h, w, unit, size = m.groups()
+    kg = _kg(w) if unit == "斤" else w
+    return f"모델 {h}cm · {kg}kg · {size} 사이즈 착용"
+
+
 def jin_nums(src: str) -> set:
     """원문 斤 숫자(환산 전) — 숫자 보존 검사에서 빼 준다(환산값이 대신 들어간다)."""
     out = set()
@@ -376,6 +393,12 @@ def polish_boxes(boxes: List[Dict], ctx: Dict, cache: Optional[Dict] = None) -> 
     for b in boxes:
         src, tgt = str(b.get("src") or ""), str(b.get("tgt") or "")
         g = apply_glossary(src, tgt, terms)
+        ml = fix_model_line(src)
+        if ml:
+            # 순찰 106-E: 모델 착용 캡션은 규칙이 정본(이름 음차·「전점」 직역 방지) — AI에 묻지 않는다
+            rows.append({"id": b["id"], "src": src, "tgt": tgt, "glossary": ml, "ko": ml, "from": "glossary", "why": "모델 착용 캡션",
+                         "han_left": False, "cached": True, "jin": True})
+            continue
         j = fix_jin(src, g)
         if j != g:
             # 斤 환산은 규칙이 정본 — AI에 묻지 않는다(원문 숫자 유지 규칙이 틀린 kg을 되돌린다)
