@@ -32,6 +32,12 @@ _SPACER = re.compile(r"(?:^|/)(?:s|spacer|blank|pixel|transparent)\.gif(?:$|\?)"
 STORE_UI = ("旗舰店", "专营店", "官方店", "邀请入驻", "入驻", "天猫国际",   # Y11-V: 티몰 입점 홍보 배너(「天猫国际邀请入驻 …」)
             "品牌奖", "设计奖", "新锐品牌", "权威认可", "好评率", "总销量", "用户口碑",
             "回购", "关注店铺", "进店有礼", "TMALL GLOBAL", "Tmall Global", "AWARDS", "Awards", "#1 BRAND", "88VIP")
+#: 순찰 99(운영 10-25 원피스 `5d1b6679` 상세 17·18 「服务细则」): 중국 가게의 배송·반품·고객센터 안내 — 한국 손님에겐 틀린 약속
+#   (SF 무료 배송·중국 본토만·7일 무조건 반품·온라인 고객센터). **두 조각 이상** 맞을 때만 뺀다(소재 설명에 「售后」 한 번 ≠ 약관).
+SHOP_POLICY = ("服务细则", "退换货", "退货与退款", "无理由退", "退换商品", "顺丰", "圆通", "中国大陆", "在线客服", "联系客服", "店内客服",
+               "发货时间", "小时内完成发货", "签收起", "售后卡", "退货政策", "配送服务", "快递", "快遞",
+               "반품 및 환불", "반품/교환", "무조건 반품", "중국 본토", "고객센터에 문의", "온라인 고객센터", "택배로 배송", "무료 배송 서비스")
+SHOP_POLICY_MIN = 2
 #: 브랜드 스토리(뒤로) — 상품 자체가 아니라 회사·디자이너·철학 이야기.
 STORY = ("设计团队", "致敬", "品牌故事", "品牌理念", "创始", "匠心", "初心", "原创设计", "为原创而生", "Brand Story", "BRAND STORY",
          "since", "Since", "SINCE", "创新无止境", "我们致力于")
@@ -105,6 +111,9 @@ def text_exclusion(text: str) -> str:
     for t in STORE_UI:
         if t in s and t not in hits:
             hits.append(t)
+    policy = [t for t in SHOP_POLICY if t in s]
+    if not hits and len(policy) >= SHOP_POLICY_MIN:
+        return f"가게 안내(배송·반품 — 한국 손님에겐 안 맞음)({', '.join(policy[:4])})"
     if not hits:
         return ""
     kind = "판촉·스토어 문구" if any(h in s for h in ("券", "折", "减", "SALE", "OFF", "쿠폰", "세일", "할인", "VIP", "促")) \

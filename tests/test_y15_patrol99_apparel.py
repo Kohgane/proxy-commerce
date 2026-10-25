@@ -106,3 +106,20 @@ def test_latin_han_shop_brand_is_not_transliterated():
     assert info["latin"] == "Taffa" and info["han"] == "唐发发"
     assert kp.attach_brand("여름 신상 실크 원피스", info) == "Taffa 여름 신상 실크 원피스"
     assert kp.brand_prefix("小米 手机", {"shop_name": "小米旗舰店"})["latin"] == "XIAOMI"   # 기존 한자 브랜드 경로 그대로
+
+
+# ── 상세 사진: 중국 가게 배송·반품 약관은 등록에서 뺀다(순찰 99 상세 17·18) ──────────────────────────────────────
+
+def test_shop_policy_pages_are_excluded():
+    from src.services import detail_image_plan as d
+    why = d.text_exclusion("[服务细则] 品牌甄选顺丰速运为您免费提供配送服务,送货区域仅覆盖中国大陆地区 退货与退款 自签收起7天无理由退换货")
+    assert why.startswith("가게 안내")
+    why2 = d.text_exclusion("明确的穿着痕迹或污渍(香水味等)强制退货并拒绝沟通的 退换货 在线客服 반품 및 환불")
+    assert why2.startswith("가게 안내")
+
+
+def test_single_policy_word_does_not_exclude():
+    from src.services import detail_image_plan as d
+    assert d.text_exclusion("面料:100%桑蚕丝 售后卡 洗护 Details") == ""          # 조각 하나(售后卡)만 — 소재 설명
+    assert d.text_exclusion("Size Guide 衣长 胸围 cm") == ""
+    assert d.text_exclusion("天猫国际邀请入驻 品牌奖").startswith("스토어·수상 배너")    # 기존 규칙 그대로
