@@ -1074,3 +1074,12 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 **대기(오너):**
 - 5d1b6679 사진 1번(「발발 …/전점」) 다시 그려 마켓에 다시 보내기 — 규칙(#983)은 이제 「모델 170cm · 49kg · 38 사이즈 착용」으로 그린다. 마켓 전송이라 오너 결정.
 - 외부 크론을 멈출 일이 생기면 `HEALTH_TICK_STALE_MIN=0`(503 끔) — env 변경이라 오너 결정. 지금 값(20분) 그대로면 틱이 멈출 때 Render가 인스턴스를 갈아끼운다.
+
+## Y15 순찰 122b — 채팅 감독 직접 수행 (2026-10-26 18:33~19:55 KST · PR #985 c8ebbb9e 머지)
+오너 18:29 「모바일 앱스럽게 + 데스크톱 고급 기능 숨김」 · 18:33 「얼른 해치워라」. CC 13:30 이후 커밋 없어 채팅이 직접.
+- **U2 고급 기능 게이트** `advanced_gate.py`: 관리자 | plus·pro | 설정 토글(`user_prefs:<sid>.advanced_on`). 숨길 땐 핵심 6 + 연동·요금제·설정·알림 + 「고급 기능 켜기」. 숨긴 URL 직접 진입 200+안내 한 줄. `/seller/me` 카드(사람 말 5줄·토글·Plus 안내) · `POST /seller/me/advanced`. 개발 모드(SELLER_CONSOLE_AUTH=0)는 전부 보임.
+- **U1 모바일 앱 셸**: 하단 탭 5(홈·수집·상품·주문·더보기) · 햄버거 제거 → 더보기=사이드바 바텀시트(링크 0 삭제) · 상단 로고·검색·계정 · 상품 목록 썸네일 64·제목 2줄·뱃지 줄 · 시트 언어 알약.
+- 가드: test_y15_patrol122_advanced_gate(16) · test_y15_patrol122_mobile_shell(7, Playwright 390px 가로 스크롤 0·탭바 바닥·≥44·시트 열림) · sidebar_route_matrix #조각 정규화 · responsive_smoke/design_tokens_v18 햄버거→더보기 핀.
+- CI 흉터 3개(원문): `console-nav-adv-off` 클래스 홈 없음 → CSS 규칙 · me.html `badge` v2 잔재 33>32 → pc-badge · 자리표시 skip 사유에 「Playwright」 → 인프라 게이트 실패 → 실제 브라우저 계약으로 교체.
+- 캡처 docs/screens/y15p122/ (데스크톱 before/after 5 · 모바일 390 before/after 8). 로컬 16695 passed · CI 5/5.
+- **CC 다음(inbox 118b·122b 그대로)**: 118b ① 배포 뒤 워커 미기동 원인(13:56 재발) → G 등록 대기 3건 표 → I 24h 바닥. U1 2차(대시보드 KPI 2열·오늘 할 일 1줄·편집 드로어 16px)는 오너가 폰으로 보고 찍은 화면부터.
