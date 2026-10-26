@@ -70,12 +70,13 @@
 
 {# v36 PART A: 모바일 단일 헤더(압축) — 로고 + 검색 아이콘(확장) + 내 계정 아바타 + 햄버거.
    공통 console-topbar(검색/수출형/언어/계정 나열)는 모바일에서 숨김(CSS) → 맨텍스트 나열 제거. #}
+{# 순찰 122b-U1(오너 10-26 「앱스럽게」): 모바일 = 앱 셸. 상단은 로고·검색·계정만(햄버거는 하단 「더보기」 탭이 대신),
+   하단 고정 탭 5개(홈·수집·상품·주문·더보기), 「더보기」는 사이드바 전체를 **바텀시트**로 연다(링크는 하나도 안 지운다). #}
 <div class="mobile-topbar d-flex align-items-center justify-content-between px-3 d-md-none">
-  <a href="/seller/" class="text-decoration-none fw-bold mobile-topbar-brand"><i class="bi bi-shop"></i> 셀러 콘솔</a>
+  <a href="/seller/" class="text-decoration-none fw-bold mobile-topbar-brand"><span class="kgp-mt-mark" aria-hidden="true"></span>{{ brand_name_ko|default('고가브릿지', true) }}</a>
   <div class="d-flex align-items-center gap-1">
     <button class="mobile-icon-btn" aria-label="상품 검색" onclick="toggleMobileSearch()"><i class="bi bi-search"></i></button>
     <a href="/seller/me" class="mobile-account-avatar" aria-label="내 계정">{{ (_user_name or _user_email or '나')[:1]|upper }}</a>
-    <button class="mobile-icon-btn" id="sidebarToggle" aria-label="메뉴 열기" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
   </div>
 </div>
 <div class="mobile-search d-md-none" id="mobileSearch" hidden>
@@ -112,11 +113,10 @@
     {% endif %}
 
     {# v36 PART A: 모바일 드로어에서도 언어 전환 가능(공통 topbar가 모바일에서 숨겨지므로) #}
-    <div class="btn-group btn-group-sm w-100 mb-3 d-md-none" role="group" aria-label="{{ t('lang.label') }}">
-      <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}"
-         class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-ghost' }}">한국어</a>
-      <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}"
-         class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-ghost' }}">EN</a>
+    {# 순찰 122b-U1: 바텀시트에선 작은 알약 2개(큰 청록 버튼이 메뉴보다 커 보였다) #}
+    <div class="kgp-sheet-lang d-md-none mb-2" role="group" aria-label="{{ t('lang.label') }}">
+      <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'ko' else '' }}">한국어</a>
+      <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'en' else '' }}">EN</a>
     </div>
 
     <div class="flex-grow-1">
@@ -393,6 +393,21 @@
     </main>
   </div>
 </div>
+
+{% if _show_console_nav and not (request is defined and request.args.get('drawer')) %}
+{# 순찰 122b-U1: 하단 고정 탭바(모바일만). 활성 탭 = 금 1색. 드로어(?drawer=1) 안에선 안 그린다. #}
+<nav class="kgp-tabbar d-md-none" data-role="mobile-tabbar" aria-label="주요 메뉴">
+  {% set _tab_home = _path in ('/seller/', '/seller') or _path.startswith('/seller/dashboard') %}
+  {% set _tab_collect = _path.startswith('/seller/manual-collect') or _path.startswith('/seller/sourcing') or _path == '/seller/collect' %}
+  {% set _tab_items = _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect/preview') or _path.startswith('/seller/catalog') %}
+  {% set _tab_orders = _path.startswith('/seller/orders') %}
+  <a class="kgp-tab {% if _tab_home %}active{% endif %}" href="/seller/dashboard" {% if _tab_home %}aria-current="page"{% endif %}><i class="bi bi-house-door{% if _tab_home %}-fill{% endif %}"></i><span>홈</span></a>
+  <a class="kgp-tab {% if _tab_collect %}active{% endif %}" href="/seller/collect" {% if _tab_collect %}aria-current="page"{% endif %}><i class="bi bi-plus-circle{% if _tab_collect %}-fill{% endif %}"></i><span>수집</span></a>
+  <a class="kgp-tab {% if _tab_items %}active{% endif %}" href="/seller/collect/history" {% if _tab_items %}aria-current="page"{% endif %}><i class="bi bi-grid{% if _tab_items %}-fill{% endif %}"></i><span>상품</span></a>
+  <a class="kgp-tab {% if _tab_orders %}active{% endif %}" href="/seller/orders" {% if _tab_orders %}aria-current="page"{% endif %}><i class="bi bi-receipt{% if _tab_orders %}-cutoff{% endif %}"></i><span>주문</span></a>
+  <button type="button" class="kgp-tab" id="sidebarToggle" aria-label="더보기 메뉴" onclick="toggleSidebar()"><i class="bi bi-three-dots"></i><span>더보기</span></button>
+</nav>
+{% endif %}
 
 <!-- 전역 토스트 컨테이너 (pcToast) — 모든 셀러 페이지 공용 비차단 알림 -->
 <div id="pcToastContainer" class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1090;" aria-live="polite" aria-atomic="true"></div>

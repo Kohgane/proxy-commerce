@@ -23,11 +23,11 @@ def test_base_html_loads_shared_app_css():
 
 
 def test_base_html_has_hamburger_toggle():
-    """_base.html에 모바일 햄버거 메뉴 버튼이 있어야 한다."""
+    """_base.html에 모바일 메뉴 여는 버튼이 있어야 한다 — 순찰 122b-U1부터 상단 햄버거 대신 하단 탭바 「더보기」(bi-three-dots)."""
     with open("src/seller_console/templates/_base.html", encoding="utf-8") as f:
         content = f.read()
     assert "sidebarToggle" in content
-    assert "bi-list" in content   # v18: 햄버거 = 아이콘셋(bi-*)
+    assert "bi-three-dots" in content   # v18: 아이콘셋(bi-*) · 122b: 탭바 「더보기」
 
 
 def test_base_html_has_drawer_sidebar():
