@@ -5895,6 +5895,8 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 _pv_update(job_id, risk=dict(_rgate.card(_risk), ai_waits=_risk_open))
             if product_data.get("_quality"):                            # 순찰 106-B 「등록 품질」(주의)
                 _pv_update(job_id, quality=product_data["_quality"])
+            # 순찰 106-C: 등록 전 AI 검수(상품당 1회 · 마켓 검증과 나란히 돈다 · 끝나기 전에 합친다)
+            _air = _pv_ai_review_start(job_id, product_data, str(data["item_id"])) if data.get("item_id") else None
             # Y9: 상세 사진 번역이 아직이면 카드에 「상세 사진 번역 중 n/28」(보류 아님 — 끝나면 번역본으로 나간다)
             _dtp = product_data.get("detail_translate_progress") or {}
             if _dtp.get("pending"):
@@ -5981,6 +5983,7 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
             _pv_update(job_id, results=missing, error=f"{type(exc).__name__}: {str(exc)[:160]}")
         finally:
             _sg.end()
+        _pv_ai_review_finish(job_id, locals().get("_air"), deadline_ts)
         elapsed = int((_time.monotonic() - t_job) * 1000)
         perf = _pv_perf_diff(p0, _pv_perf_now())
         cur = _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat(),
@@ -5990,6 +5993,67 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
         logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
                     json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
         # 반환(`rss.release`)은 바깥 `_pv_job`이 한다 — 몸통이 예외로 끝나도 거치게(Y14 10-21)
+
+
+def _pv_ai_review_start(job_id: str, product_data: dict, item_id: str):
+    """순찰 106-C — 저장된 검수가 있으면 카드에 바로(다시 안 부른다), 없으면 따로 도는 스레드 `(thread, box)`. 실패해도 잡은 그대로."""
+    import contextvars as _cv
+    import threading as _th
+    from src.services import ai_review as _ar
+    try:
+        ex = json.loads((_get_owned_item(item_id) or {}).get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        return None
+    have = _ar.cached(ex)
+    if have:
+        _pv_update(job_id, ai_review=_ar.card(dict(have, cached=True)))
+        return None
+    if not _ar.enabled():
+        return None
+    box: dict = {}
+    pd = dict(product_data)
+    sids = _seller_identities()
+
+    def _run():
+        try:
+            rv = _ar.run(pd, ex)
+        except Exception as exc:                                 # noqa: BLE001 — 검수 실패는 등록을 막지 않는다
+            rv = {"status": "failed", "lines": [], "why": f"{type(exc).__name__}"}
+        box["r"] = rv
+        if rv.get("status") != "done":
+            return
+        try:
+            from . import collect_history_store as _chs
+            _chs.merge_extra(item_id, lambda f: f.__setitem__(_ar.KEY, rv), seller_ids=sids)
+        except Exception as exc:                                 # noqa: BLE001
+            logger.warning("[AI 검수] 저장 실패 item=%s: %s", item_id[:8], exc)
+        try:                                                     # 가족(FAMILY_EMAILS) 상품이면 오너 텔레그램 한 번(처음 검수 때만)
+            from .market_pick import session_identity
+            from .market_credentials import seller_shared_reason
+            if seller_shared_reason(session_identity()) == "FAMILY_EMAILS":
+                from src.notifications.telegram import send_telegram
+                send_telegram(_ar.telegram_text(pd.get("title_ko") or pd.get("title") or "", item_id, rv), urgency="info")
+        except Exception as exc:                                 # noqa: BLE001
+            logger.warning("[AI 검수] 텔레그램 실패 item=%s: %s", item_id[:8], exc)
+
+    t = _th.Thread(target=_cv.copy_context().run, args=(_run,), daemon=True, name="pv-ai-review")
+    t.start()
+    return t, box
+
+
+def _pv_ai_review_finish(job_id: str, handle, deadline_ts: float) -> None:
+    """잡을 닫기 전에 검수 스레드를 잠깐 기다린다(최대 15초 · 마감 넘기지 않게). 아직이면 「검수 중 — 다음 사전검증에서」."""
+    import time as _time
+    if not handle:
+        return
+    from src.services import ai_review as _ar
+    t, box = handle
+    try:
+        t.join(timeout=max(0.0, min(15.0, deadline_ts + 10 - _time.time())))
+        r = box.get("r") or {"status": "running", "lines": [], "why": "AI 검수가 아직이에요 — 다음 사전검증 때 보여요"}
+        _pv_update(job_id, ai_review=_ar.card(r))
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[AI 검수] 카드 실패 job=%s: %s", job_id[:8], exc)
 
 
 def _pv_mark_ready(data: dict, markets: list, cur: dict, job_id: str) -> None:
@@ -6060,6 +6124,7 @@ def collect_prevalidate_job(job_id: str):
                     "ai_fix": cur.get("ai_fix"),                                                      # Y8
                     "risk": cur.get("risk"),                                                          # Y10 위험 블록
                     "quality": cur.get("quality"),                                                    # 순찰 106-B 등록 품질
+                    "ai_review": cur.get("ai_review"),                                                # 순찰 106-C AI 검수(접힌 줄)
                     "image_edit": cur.get("image_edit"),                                              # Y11 자동 판촉 지우기
                     "detail_translate": cur.get("detail_translate"),                                  # Y9
                     "queued": bool(cur.get("queued")), "queue_note": cur.get("queue_note") or "",   # Z10: 줄 서는 중

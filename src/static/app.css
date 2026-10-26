@@ -2366,6 +2366,11 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   background: var(--surface); color: var(--text); font-size: var(--caption); }
 .kgp-risk-btn.is-main { background: var(--ink); border-color: var(--ink); color: var(--cream); }
 .kgp-risk-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+/* 순찰 106-C 등록 전 AI 검수 — 결과 카드 아래 접힌 줄(제안이라 주황 대신 청록 · 버튼 없음) */
+.kgp-ai-review { border-left-color: var(--teal); }
+.kgp-ai-review > summary { min-height: 44px; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); cursor: pointer; }
+.kgp-ai-review > summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.kgp-ai-review-list { margin: var(--space-1) 0 0; padding-left: var(--space-4); line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
 
 /* Y11 사진 편집(_image_edit.html) — 풀스크린 시트 · 상자 오버레이(분류별 테두리) · 바닥 시트 3버튼. 강조 버튼은 「적용」·「지우기」 하나씩. */
 .kie { position: fixed; inset: 0; z-index: 1080; background: color-mix(in srgb, var(--ink) 55%, transparent); display: flex; align-items: flex-end; }
