@@ -598,3 +598,7 @@ details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
   .console-content .ch-table tr.ch-row > td.ch-c-when { flex: none; order: 11; margin-left: auto; align-self: center; color: var(--text-muted); font-size: .78rem; }
   .console-content .mk-badge { min-width: 26px; min-height: 26px; font-size: .74rem; border-radius: 8px; }
 }
+
+/* 순찰 122b-U2: 숨긴 고급 메뉴 자리의 「고급 기능 켜기」 — 회색 글자·점선 위 헤어라인으로 「메뉴가 아니라 입구」임을 보인다 */
+.console-nav-adv-off { color: var(--text-muted); border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 10px; border-radius: 0; }
+.console-nav-adv-off:hover { color: var(--text-strong); }
