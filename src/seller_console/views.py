@@ -132,7 +132,24 @@ def inject_seller_template_flags():
         _ext_ver = _chrome_extension_version()
     except Exception:
         _ext_ver = ""
+    # 순찰 122b(오너 10-26): 「고급 기능」 메뉴는 관리자·유료·직접 켠 사람에게만 — 한 곳(advanced_gate)에서 판정
+    _adv = True
+    try:
+        from .advanced_gate import advanced_visible as _adv_vis
+        #   인증을 끈 개발·테스트 모드(SELLER_CONSOLE_AUTH=0)는 전부 보인다 — 운영은 인증 ON이라 게이트가 산다
+        _adv = (not _AUTH_ENABLED) or _adv_vis(is_admin=_is_admin, plan=_plan,
+                                                sid=_seller_id() if (session.get("user_id") or session.get("user_email")) else "")
+    except Exception:
+        _adv = False
+    _adv_route = False
+    try:
+        from .advanced_gate import is_advanced_path as _is_adv_path
+        _adv_route = _is_adv_path(request.path)
+    except Exception:
+        _adv_route = False
     return {
+        "advanced_visible": _adv,       # 순찰 122b: 사이드바 고급 접이식·숨김 URL 배너가 이 값 하나만 본다
+        "advanced_route": _adv_route,
         "is_admin": _is_admin,          # F30: 화면은 이 값 하나만 본다(판정기 셋 금지)
         # Z9: 오너 풀 화면(CS·메시징·B2B·정기구독) 링크 — 막힌 사람에게 403뿐인 죽은 버튼을 보이지 않는다
         "owner_pool_ok": not _owner_pool_denied(),
@@ -8633,10 +8650,22 @@ def my_page():
         pass
     from . import billing_store as _bs
     plan_meta = _bs.PLANS.get(plan, _bs.PLANS["free"])
+    # 순찰 122b: 고급 기능 카드 — 왜 보이는지/숨겼는지 한 줄 + 토글(관리자·유료는 토글 대신 「항상 열림」)
+    from . import advanced_gate as _ag
+    _adv_admin = False
+    try:
+        _adv_admin = _is_admin_user()
+    except Exception:
+        _adv_admin = False
+    _adv_pref = _ag.pref_on(sid)
 
     return render_template(
         "me.html",
         page="me",
+        advanced_summary=_ag.ADVANCED_SUMMARY,
+        advanced_pref=_adv_pref,
+        advanced_locked_open=bool(_adv_admin or _ag.is_paid(plan)),
+        advanced_reason=_ag.visibility_reason(is_admin=_adv_admin, plan=plan, pref=_adv_pref),
         user=user,
         telegram_active=bool(os.getenv("TELEGRAM_BOT_TOKEN")),
         resend_active=bool(os.getenv("RESEND_API_KEY")),
@@ -8649,6 +8678,19 @@ def my_page():
         collected_count=collected_count,
     )
 
+
+
+@bp.post("/me/advanced")
+def my_page_advanced_toggle():
+    """순찰 122b: 「고급 기능 켜기」 토글 저장(본인 설정, 서버 저장, 되돌릴 수 있음). `{ok, on}` / 실패 `{ok:false,error}`."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요해요"}), 401
+    from . import advanced_gate as _ag
+    body = request.get_json(silent=True) or {}
+    on = bool(body.get("on"))
+    if not _ag.set_pref(_seller_id(), on):
+        return jsonify({"ok": False, "error": "설정을 저장하지 못했어요"}), 500
+    return jsonify({"ok": True, "on": on})
 
 @bp.post("/me/deactivate")
 def deactivate_account():

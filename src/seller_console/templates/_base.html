@@ -157,6 +157,8 @@
     </ul>
 
     <!-- 고급 기능(접이식, 기본 닫힘 — 현재 위치가 안에 있으면 JS가 자동으로 펼침) -->
+    {# 순찰 122b(오너 10-26): 관리자·유료·직접 켠 사람에게만 그린다(advanced_gate 한 곳 판정). 라우트는 살아 있다. #}
+    {% if advanced_visible is not defined or advanced_visible %}
     <details class="adv-nav" id="advNav">
       <summary class="console-nav-adv-summary"><i class="bi bi-sliders2"></i> {{ t('nav.advanced') }}</summary>
     <ul class="nav flex-column gap-1 mt-1">
@@ -233,6 +235,16 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/about') %}active{% endif %}" href="/seller/about"><i class="bi bi-info-circle"></i><span>고가브릿지란?(소개)</span></a></li>
     </ul>
     </details>
+    {% else %}
+    {# 순찰 122b: 고급을 숨겨도 **누구나 써야 하는** 네 가지는 남긴다 — 연동·요금제·설정·알림. 나머지는 「고급 기능 켜기」 뒤로. #}
+    <ul class="nav flex-column gap-1 mt-2" data-role="nav-basic-extras">
+      <li><a class="console-nav-link {% if _path.startswith('/seller/markets/connect') %}active{% endif %}" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연동(API 키 입력)</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/billing') %}active{% endif %}" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>
+      <li><a class="console-nav-link {% if _path == '/seller/me' %}active{% endif %}" href="/seller/me"><i class="bi bi-gear"></i><span>내 정보·설정</span></a></li>
+      <li><a class="console-nav-link {% if _path.startswith('/seller/notifications') %}active{% endif %}" href="/seller/notifications"><i class="bi bi-bell"></i><span>알림 설정</span></a></li>
+      <li><a class="console-nav-link console-nav-adv-off" href="/seller/me#advancedCard" data-role="nav-advanced-off"><i class="bi bi-sliders2"></i><span>고급 기능 켜기</span></a></li>
+    </ul>
+    {% endif %}
     {% else %}
     {# 비로그인: 공개 진입점만 안내 #}
     <ul class="nav flex-column gap-1">
@@ -348,6 +360,13 @@
 
     <main class="console-content">
       {# v81 STEP7: '이번 업데이트' 배너 — 체인지로그 단일 소스. 최신 버전 1회만(localStorage dismiss). 이모지 0. #}
+      {% if advanced_visible is defined and not advanced_visible and advanced_route is defined and advanced_route and not _quiet_chrome %}
+      {# 순찰 122b: 숨긴 고급 화면에 북마크로 들어온 사람 — 막지 않고 한 줄만 #}
+      <div class="pc-status pc-status-info mb-3" data-role="advanced-hidden-banner">
+        <i class="bi bi-sliders2"></i> 이 화면은 <strong>고급 기능</strong>이에요. 메뉴에 두고 쓰려면
+        <a href="/seller/me#advancedCard">설정에서 「고급 기능 켜기」</a>를 켜 주세요(Plus·Pro 플랜은 항상 열려 있어요).
+      </div>
+      {% endif %}
       {% if changelog_banner and changelog_banner.points and not _quiet_chrome %}
       <div id="kgpUpdateBanner" class="kgp-update-banner" data-ver="{{ changelog_banner.version }}" hidden>
         <span class="kgp-ub-keystone" aria-hidden="true"></span>
