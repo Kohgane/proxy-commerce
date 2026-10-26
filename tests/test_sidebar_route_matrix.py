@@ -13,9 +13,11 @@ SIDEBAR_TEMPLATE = PROJECT_ROOT / "src" / "seller_console" / "templates" / "_bas
 
 
 def _extract_links(html: str) -> list[str]:
+    # 순찰 122b: 「고급 기능 켜기」(/seller/me#advancedCard)처럼 조각(#)이 붙은 길은 그 화면으로 센다 —
+    #   숨김 분기 전용 링크라 관리자 화면엔 조각 그대로는 없다(라우트 검사는 화면 단위).
     return sorted(
         {
-            href
+            href.split("#", 1)[0]
             for href in HREF_PATTERN.findall(html)
             if href.startswith("/")
             and not href.startswith("//")

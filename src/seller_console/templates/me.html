@@ -117,6 +117,52 @@
   </div>
 </div>
 
+<!-- 순찰 122b(오너 10-26): 고급 기능 — 관리자·Plus·Pro는 항상, 무료는 여기서 켠 사람만 메뉴에 보인다 -->
+<div class="op-card border-0 shadow-sm mb-4" id="advancedCard" data-role="advanced-card">
+  <div class="op-card-body d-flex flex-wrap justify-content-between align-items-start gap-3">
+    <div style="max-width:560px">
+      <div class="console-kpi-label">고급 기능</div>
+      <p class="small mb-2" style="color:var(--text-muted);">처음 쓰는 분은 없어도 되는 메뉴예요. 켜면 왼쪽 메뉴에 「고급 기능」이 나타나고, 끄면 다시 숨겨져요(라우트·데이터는 그대로).</p>
+      <ul class="small mb-2 ps-3" style="color:var(--text-muted);">
+        {% for line in advanced_summary %}<li>{{ line }}</li>{% endfor %}
+      </ul>
+      <div class="small" data-role="advanced-reason" style="color:var(--text-muted);">{{ advanced_reason }}</div>
+    </div>
+    <div class="d-flex flex-column align-items-end gap-2">
+      {% if advanced_locked_open %}
+        <span class="pc-badge pc-badge-on">항상 열림</span>
+      {% else %}
+        <div class="form-check form-switch m-0">
+          <input class="form-check-input" type="checkbox" role="switch" id="advancedToggle" data-role="advanced-toggle" {% if advanced_pref %}checked{% endif %} style="width:3em;height:1.5em;">
+          <label class="form-check-label small ms-1" for="advancedToggle">{% if advanced_pref %}켜짐{% else %}꺼짐{% endif %}</label>
+        </div>
+        {% if plan == 'free' %}<a href="/seller/billing" class="btn btn-ghost btn-sm">Plus로 항상 열기</a>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  const t = document.getElementById('advancedToggle');
+  if (!t) return;
+  t.addEventListener('change', async function () {
+    const on = t.checked;
+    t.disabled = true;
+    try {
+      const r = await fetch('/seller/me/advanced', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({on: on})});
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || '저장 실패');
+      t.nextElementSibling.textContent = on ? '켜짐' : '꺼짐';
+      pcToast(on ? '고급 기능을 켰어요 — 왼쪽 메뉴에 나타나요' : '고급 기능을 숨겼어요', 'success');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) {
+      t.checked = !on;
+      pcToast('저장하지 못했어요 — ' + (e && e.message ? e.message : '다시 시도해 주세요'), 'error');
+    } finally { t.disabled = false; }
+  });
+})();
+</script>
+
 <!-- D3-8: 이미지 자동 번역(중국 소싱처 · 보강 완료 뒤) -->
 <div class="op-card border-0 shadow-sm mb-4">
   <div class="op-card-body">
