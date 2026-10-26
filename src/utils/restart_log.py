@@ -27,8 +27,12 @@ KEEP = 60
 #: 직전 `exit` 기록이 이 초보다 오래면 이번 부팅은 우리 상한 탓이 아니다(배포·Render 재시작·강제 종료)
 EXIT_MATCH_SEC = 600
 
-_LAST_REQ = {"at": time.monotonic(), "quiet_noted": False}
-_BOOT_AT = {"at": time.monotonic()}
+_LAST_REQ = {"at": time.monotonic(), "quiet_noted": False, "n": 0}
+_BOOT_AT = {"at": time.monotonic(), "noted": False}     # noted = gunicorn 워커로 떴다(`note_boot`) — 503 판정은 그때만
+#: 순찰 106-F: 이 프로세스에서 마지막 틱이 끝난 시각(monotonic, 0 = 부팅 뒤 아직) — `/health`가 DB 없이 본다
+_LAST_TICK = {"at": 0.0}
+#: 부팅 뒤 이 초 안에 요청이 하나도 안 끝났으면 `no_traffic` 한 줄(10-25 19:34 부팅 뒤 159분 무응답 — 밖에서 안 닿았다)
+NO_TRAFFIC_SEC = 60
 
 
 def _now() -> str:
@@ -72,8 +76,9 @@ def note_exit(reason: str, *, pid: int, worker_mb: int, inst_mb: int = -1, worke
 def note_boot(pid: int, mb: int, now: Optional[datetime] = None, **cfg) -> Dict[str, Any]:
     """새 워커가 떴다 — 직전 `exit`과 짝지어 재시작 시간(초)을 적는다. 적은 줄을 돌려준다(테스트용)."""
     now = now or datetime.now(timezone.utc)
-    _BOOT_AT["at"] = time.monotonic()
-    _LAST_REQ.update(at=time.monotonic(), quiet_noted=False)
+    _BOOT_AT.update(at=time.monotonic(), noted=True)
+    _LAST_REQ.update(at=time.monotonic(), quiet_noted=False, n=0)
+    _LAST_TICK["at"] = 0.0
     prev = None
     try:
         prev = next((r for r in reversed(rows()) if r.get("kind") in ("exit", "boot")), None)
@@ -89,10 +94,68 @@ def note_boot(pid: int, mb: int, now: Optional[datetime] = None, **cfg) -> Dict[
     return row
 
 
+def arm_no_traffic(delay: Optional[float] = None) -> None:
+    """부팅 직후 한 번 — `delay`(기본 60초) 뒤 `check_no_traffic`(데몬 타이머 · 실패해도 부팅은 그대로)."""
+    try:
+        t = threading.Timer(NO_TRAFFIC_SEC if delay is None else delay, check_no_traffic)
+        t.daemon = True
+        t.name = "no-traffic-check"
+        t.start()
+    except Exception as exc:                                     # noqa: BLE001
+        logger.debug("[재시작 기록] no_traffic 타이머 실패: %s", exc)
+
+
+def check_no_traffic(now_mono: Optional[float] = None) -> Optional[dict]:
+    """부팅 뒤 끝난 요청이 0이면 `no_traffic` 한 줄(적은 줄) — 헬스체크(/health)도 요청이라 0이면 밖에서 아예 안 닿은 것."""
+    now_mono = time.monotonic() if now_mono is None else now_mono
+    if int(_LAST_REQ.get("n") or 0) > 0:
+        return None
+    row = {"pid": os.getpid(), "since_boot_sec": round(now_mono - _BOOT_AT["at"], 1), "requests": 0}
+    append("no_traffic", **row)
+    logger.warning("[요청 없음] 부팅 %.0f초 동안 끝난 요청 0 — 헬스체크도 안 닿음(pid %s)", row["since_boot_sec"], row["pid"])
+    return row
+
+
 def touch_request() -> None:
     """요청 하나가 끝났다(after_request) — 값만 바꾼다(DB 없음)."""
     _LAST_REQ["at"] = time.monotonic()
     _LAST_REQ["quiet_noted"] = False
+    _LAST_REQ["n"] = int(_LAST_REQ.get("n") or 0) + 1
+
+
+def note_tick() -> None:
+    """틱 하나가 끝났다 — 값만(DB 없음). `/health`의 틱 나이."""
+    _LAST_TICK["at"] = time.monotonic()
+
+
+def tick_stale_min() -> int:
+    """`/health`가 503을 내는 틱 공백(분) — `HEALTH_TICK_STALE_MIN`(기본 20). 0이면 끈다(나이만 보인다)."""
+    try:
+        return max(0, int(os.getenv("HEALTH_TICK_STALE_MIN", "20") or 0))
+    except ValueError:
+        return 20
+
+
+def health_snapshot(now_mono: Optional[float] = None) -> Dict[str, Any]:
+    """`/health`에 싣는 값(DB 없음) — pid · 부팅 뒤 요청 수 · 마지막 틱(없으면 부팅 시각부터 잰 공백) · 503 여부.
+    503(`stale`)은 gunicorn 워커로 뜬 프로세스만(개발 서버·테스트는 틱이 안 돈다 — 나이만 보인다)."""
+    now_mono = time.monotonic() if now_mono is None else now_mono
+    ticked = _LAST_TICK["at"] > 0
+    base = _LAST_TICK["at"] if ticked else _BOOT_AT["at"]
+    gap_min = round((now_mono - base) / 60, 1)
+    lim = tick_stale_min()
+    try:
+        from src.utils.rss import under_gunicorn
+        live = bool(_BOOT_AT.get("noted")) and under_gunicorn()
+    except Exception:                                            # noqa: BLE001
+        live = False
+    last_at = None
+    if ticked:
+        last_at = datetime.fromtimestamp(time.time() - (now_mono - _LAST_TICK["at"]), timezone.utc).isoformat()
+    return {"pid": os.getpid(), "requests": int(_LAST_REQ.get("n") or 0),
+            "up_min": round((now_mono - _BOOT_AT["at"]) / 60, 1),
+            "last_tick_at": last_at, "tick_gap_min": gap_min, "ticked_since_boot": ticked,
+            "stale_after_min": lim, "stale": bool(lim and live and gap_min >= lim)}
 
 
 def _threads_line() -> List[str]:

@@ -283,6 +283,11 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                           note=f"총 {result.get('total_sec', '?')}s" + (f" · 오류 {result['error'][:80]}" if result.get("error") else ""))
         _last_tick.clear()
         _last_tick.update(result)
+        try:                                       # 순찰 106-F: /health 틱 나이(값만)
+            from src.utils.restart_log import note_tick as _note_tick
+            _note_tick()
+        except Exception:                          # noqa: BLE001
+            pass
         try:
             _tick_lock.release()
         except RuntimeError:                       # 이미 해제됨(방어)
