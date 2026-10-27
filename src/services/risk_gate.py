@@ -548,11 +548,18 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str
         return ex                                                # Y14: 글자만 — 사진은 앞 결정(글자 고치기)이 맡았다
     want = {(i["kind"], int(i["idx"])) for i in h.get("images") or []}
     label = f"위험 — {h['cat']}({', '.join(h['found'][:2])})"
+    import time as _time
+    t0, budget = _time.monotonic(), strip_budget_sec()
     for key, kind in (("images_ko", "gallery"), ("detail_images_ko", "detail"), ("sku_images_ko", "sku")):
         for e in ex.get(key) or []:
             if isinstance(e, dict) and (kind, int(e.get("idx", -1))) in want:
                 if _whole_prop(e) and not _prop_off(ex):
                     continue                     # Y11-O: 소품뿐인 사진은 절대 빼지 않는다(상표가 걸려도 「참고」 — 오너 2026-10-15)
+                if (erase_pixels or pixels == "restore") and _time.monotonic() - t0 >= budget:
+                    # 순찰 127 M1: 다시 그리기가 이 결정 하나에 `RISK_STRIP_BUDGET_SEC`(120초)를 넘겼다 — 남은 장은 그리지 않고
+                    #   사진째 뺀다(사유). 멈춘 그리기 하나가 잡 잠금을 쥐고 다음 일회성 작업까지 막던 길.
+                    e["risk_exclude"] = f"{label} — 사진째 뺌(시간 초과 — {int(budget)}초 안에 다 고치지 못함)"
+                    continue
                 if to and erase_pixels:
                     _retext_or_exclude(ex, kind, e, names, case, to, label)
                     continue
@@ -578,6 +585,16 @@ def strip_extra(extra: dict, h: dict, *, erase_pixels: bool = False, pixels: str
 
 
 RETEXT_MISS = "그 낱말이 든 번역 글자 상자를 못 찾음"
+
+
+def strip_budget_sec() -> float:
+    """「빼고 등록」 한 번이 사진을 다시 그리는 데 쓰는 전체 상한(초) — `RISK_STRIP_BUDGET_SEC`(120). 넘으면 남은 장은 사진째 뺀다."""
+    import os
+    try:
+        v = float(os.getenv("RISK_STRIP_BUDGET_SEC", "120") or 120)
+    except ValueError:
+        return 120.0
+    return v if v > 0 else 120.0
 
 
 def _retext_or_exclude(ex: dict, kind: str, e: dict, names, case: bool, to: str, label: str) -> None:
