@@ -122,9 +122,23 @@ def test_run_saves_review_detail(monkeypatch):
     assert rd["comment"] == "임시저장" and rd["routed"]["action"] == "request_approval" and len(rd["timeline"]) == 2
 
 
-def test_op_registered_and_review_status_requeues_on_reject():
+def test_op_registered_and_review_status_requeues_on_reject(monkeypatch):
     assert "reject_route" in OO.OPS
-    src = open("src/services/oneshot_ops.py", encoding="utf-8").read()
-    assert '"op": "reject_route"' in src and 'row.get("state") == "rejected"' in src
     assert OO._row_key({"op": "reject_route", "item_id": "i", "market": "coupang:gogane"}) != \
         OO._row_key({"op": "reject_route", "item_id": "i", "market": "coupang:woojoo"})
+    # 행동 계약: review_status가 반려 행을 보면 reject_route 줄을 넣는다(소스 글자 핀 아님)
+    from src.services import ocr_compare_diag as D
+    from src.seller_console import listing_status as MS
+    from src.seller_console import collect_history_store as store
+    item = {"id": "i1", "title": "t", "extra_json": json.dumps({"uploaded": [{"market": "coupang:gogane", "account": "gogane", "product_id": "99", "at": "2026-10-27"}]})}
+    monkeypatch.setattr(D, "_item", lambda iid: (item, "u1"))
+    monkeypatch.setattr(MS, "records", lambda ex: [{"market": "coupang:gogane", "product_id": "99"}])
+    monkeypatch.setattr(MS, "reset_cache", lambda: None)
+    monkeypatch.setattr(MS, "query", lambda rec: {"state": "rejected", "label": "승인반려", "status_raw": "승인반려", "comment": "c" * 900, "checked_at": "x"})
+    monkeypatch.setattr(MS, "remember", lambda ex, row: False)
+    monkeypatch.setattr(store, "merge_extra", lambda *a, **k: True)
+    got = []
+    monkeypatch.setattr(OO, "enqueue", lambda row: got.append(row) or True)
+    r = OO._review_status("i1", "coupang:gogane")
+    assert r["reject_route_queued"] is True and got[0]["op"] == "reject_route" and got[0]["market"] == "coupang:gogane"
+    assert len(r["comment"]) == 900                                # 200자 자르기 제거
