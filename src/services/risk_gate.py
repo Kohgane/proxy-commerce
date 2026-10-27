@@ -849,8 +849,18 @@ def decide(extra: dict, key: str, action: str, *, by: str = "", reason: str = ""
 
 
 def _auto_strippable(key: str) -> bool:
-    """오너(2026-10-13): 「빼고 등록」 자동 적용은 **상표/캐릭터/디자인** 토큰에만 — 인증·과장 카테고리는 매번 묻는다."""
-    return str(key or "").startswith("tm:")
+    """오너(2026-10-13): 「빼고 등록」 자동 적용은 **상표/캐릭터/디자인** 토큰에만 — 인증·과장 카테고리는 매번 묻는다.
+    순찰 123(오너 2026-10-26 「제품 하나하나 다 수정해 나가야 하냐」): **호환 표기**(Apple Watch → 스마트워치)도 자동 — 낱말을 일반명사로
+    바꾸는 되돌릴 수 있는 결정이라 사람에게 6개 마켓마다 묻지 않는다."""
+    k = str(key or "")
+    return k.startswith("tm:") or k.startswith("compat:")
+
+
+def auto_default_on() -> bool:
+    """순찰 123 — 보류 등급 상표·호환 표기는 **처음 보는 낱말도** 기본 「빼고 등록」으로 자동 처리한다(RISK_AUTO_STRIP=0이면 예전처럼
+    기억된 낱말만). 결정은 `risk_decisions`에 auto=True로 남아 카드에서 「그래도 등록」으로 되돌릴 수 있다."""
+    import os
+    return os.getenv("RISK_AUTO_STRIP", "1") != "0"
 
 
 def _learn(key: str, action: str, h: dict) -> None:
@@ -900,11 +910,13 @@ def auto_apply(extra: dict, *, by: str = "auto") -> List[str]:
             continue
         if h["decided"] or h["grade"] == "caution":
             continue
-        if _auto_strippable(h["key"]) and (mem.get(h["key"]) or {}).get("default") == "strip":
-            strip_extra(extra, h)
+        remembered = (mem.get(h["key"]) or {}).get("default") == "strip"
+        if _auto_strippable(h["key"]) and (remembered or auto_default_on()):
+            strip_extra(extra, h, erase_pixels=h["key"].startswith("compat:"))   # 호환 표기는 사진 글자도 고친다(사진째 빼지 않는다)
             extra.setdefault("risk_decisions", {})[h["key"]] = {
                 "action": "strip", "auto": True, "by": by, "at": datetime.now(timezone.utc).isoformat(), "found": h["found"][:6],
-                "label": h["label"], "cat": h["cat"], "names": list(h.get("names") or []), "case": bool(h.get("case"))}
+                "label": h["label"], "cat": h["cat"], "names": list(h.get("names") or []), "case": bool(h.get("case")),
+                "to": str(h.get("to") or ""), "default": "remembered" if remembered else "first_time"}
             done.append(h["label"])
     return done
 
