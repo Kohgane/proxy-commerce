@@ -12,6 +12,11 @@
 - 장마다 200ms 샘플러 피크를 `[RSS] stage=render:…_peak` 한 줄 + 운영 DB(`rss:recent`)에 남긴다(로그를 못 볼 때 보고용).
 - `busy()` = 그리는 중이거나 끝난 지 `RENDER_SETTLE_SEC`(기본 5초)가 안 됐다 — 사전검증은 이때 시작하지 않고 기다린다
   (「지금 RSS」가 아니라 「그리기 끝나고 5초 뒤 RSS」로 문지기를 본다).
+
+순찰 127 M2(운영 10-26 22:09 KST): 다듬기 8장을 그린 뒤 웹 워커 RSS가 182 → 245MB, 일 없이 12시간 그대로였다 — gc·malloc_trim으로도
+cv2·글꼴·화소 아레나가 안 돌아온다(로컬: 첫 장 뒤 +52MB 상주). 그래서 운영(gunicorn)에선 그리기를 **자식 프로세스 하나**에서 한다
+(`RENDER_PROCESS` — 기본 auto = gunicorn 아래서만 · 1 켬 · 0 끔). 줄이 `RENDER_PROC_IDLE_SEC`(60초) 비면 자식을 내려 메모리가 통째로
+운영체제에 돌아간다. 한 장이 상한을 넘거나 자식이 죽으면 자식을 죽이고(스레드는 못 죽이지만 프로세스는 죽인다) 그 장만 실패.
 """
 from __future__ import annotations
 
@@ -36,6 +41,55 @@ def settle_sec() -> float:
         return max(0.0, float(os.getenv("RENDER_SETTLE_SEC", "5") or 5))
     except (TypeError, ValueError):
         return 5.0
+
+
+def proc_enabled() -> bool:
+    """그리기를 자식 프로세스에서 — `RENDER_PROCESS` auto(기본: gunicorn 아래서만) · 1 · 0."""
+    v = str(os.getenv("RENDER_PROCESS", "auto")).strip().lower()
+    if v in ("0", "false", "no", "off"):
+        return False
+    if v in ("1", "true", "yes", "on"):
+        return True
+    try:
+        from src.utils import rss as _rss
+        return _rss.under_gunicorn()
+    except Exception:                                             # noqa: BLE001
+        return False
+
+
+def idle_sec() -> float:
+    try:
+        return max(1.0, float(os.getenv("RENDER_PROC_IDLE_SEC", "60") or 60))
+    except (TypeError, ValueError):
+        return 60.0
+
+
+def _new_pool():
+    import multiprocessing as _mp
+    # spawn — 8스레드 웹 프로세스를 fork하면 남의 스레드가 쥔 잠금(로깅·DB 풀)이 자식에 그대로 남는다
+    return _cf.ProcessPoolExecutor(max_workers=1, mp_context=_mp.get_context("spawn"))
+
+
+def _kill_pool(pool) -> None:
+    """멈춘·망가진 자식을 내린다 — shutdown은 돌고 있는 자식을 못 멈춘다."""
+    try:
+        for p in list(getattr(pool, "_processes", {}).values()):
+            p.kill()
+    except Exception:                                             # noqa: BLE001
+        pass
+    try:
+        pool.shutdown(wait=False, cancel_futures=True)
+    except Exception:                                             # noqa: BLE001
+        pass
+
+
+def child_pid() -> int:
+    """지금 살아 있는 그리기 자식 pid(없으면 0) — 진단·테스트용."""
+    pool = _STATE.get("pool")
+    try:
+        return int(next(iter(getattr(pool, "_processes", {}) or {}), 0) or 0) if pool else 0
+    except Exception:                                             # noqa: BLE001
+        return 0
 
 
 def enabled() -> bool:
@@ -107,15 +161,23 @@ def _loop(q: "queue.Queue", state: dict) -> None:
     me = threading.current_thread()
     while True:
         try:
-            item = q.get(timeout=60)
+            item = q.get(timeout=idle_sec() if state.get("pool") else 60)
         except queue.Empty:
             with _LOCK:
                 if q.empty():
+                    pool = state.pop("pool", None) if state.get("thread") is me else None
+                    if pool is not None:                   # 순찰 127 M2: 줄이 비었다 — 자식을 내려 메모리를 통째로 돌려준다
+                        try:
+                            pool.shutdown(wait=True, cancel_futures=True)
+                        except Exception:                  # noqa: BLE001
+                            _kill_pool(pool)
+                        logger.info("[RSS] stage=render_child_down idle_sec=%d", int(idle_sec()))
                     if state.get("thread") is me:          # 내가 지금 워커일 때만 자리를 비운다
                         state["thread"] = None
                     return
             continue
-        fn, a, kw, fut, name = item
+        fn, a, kw, fut, name = item[:5]
+        tmo = item[5] if len(item) > 5 else 180.0
         if not fut.set_running_or_notify_cancel():
             continue
         with _LOCK:
@@ -125,7 +187,17 @@ def _loop(q: "queue.Queue", state: dict) -> None:
         out, err = None, None
         try:
             with _smp.watch("render:" + name) as w:
-                out = fn(*a, **kw)
+                if proc_enabled():
+                    if state.get("pool") is None:
+                        state["pool"] = _new_pool()
+                    from concurrent.futures.process import BrokenProcessPool
+                    try:
+                        out = state["pool"].submit(fn, *a, **kw).result(timeout=tmo)
+                    except (_cf.TimeoutError, BrokenProcessPool):
+                        _kill_pool(state.pop("pool"))      # 멈춘·죽은 자식은 내리고 다음 장은 새 자식에서
+                        raise
+                else:
+                    out = fn(*a, **kw)
         except BaseException as exc:                              # noqa: BLE001 — 부른 쪽에 그대로
             err = exc
         a = kw = None                                             # noqa: F841 — 입력(바탕 그림 바이트) 참조를 놓는다
@@ -166,9 +238,9 @@ def run(fn: Callable, *a: Any, _name: str = "render", _timeout: float = 180.0, *
     if not enabled() or threading.current_thread() is _STATE["thread"]:
         return fn(*a, **kw)
     fut: _cf.Future = _cf.Future()
-    _Q.put((fn, a, kw, fut, _name))
+    _Q.put((fn, a, kw, fut, _name, _timeout))
     _ensure()
-    return fut.result(timeout=_timeout)
+    return fut.result(timeout=_timeout + 5)          # 자식은 워커가 `_timeout`에 내린다 — 여기선 그 결과(실패)를 기다린다
 
 
 def busy() -> bool:
