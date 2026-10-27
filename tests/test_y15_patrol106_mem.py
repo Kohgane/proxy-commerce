@@ -99,14 +99,20 @@ def test_gunicorn_freezes_gc_before_fork(monkeypatch):
             @staticmethod
             def warning(*a):
                 raise AssertionError(a)
-    gc.unfreeze()
-    try:
-        ns["pre_fork"](S, None)
-        assert gc.get_freeze_count() > 0
+    # Python 3.12: `gc.unfreeze()` 뒤 `gc.collect()`만 해도 `get_freeze_count()`가 0이 아니다(로컬 3.12 실측 0 → 375 — 얼리지 않아도).
+    #   pre_fork가 포크 전 collect를 하므로(순찰 135) 「0인가」가 아니라 「collect만 한 기준선보다 늘었나」로 잰다.
+    def _base():
         gc.unfreeze()
+        gc.collect()
+        return gc.get_freeze_count()
+    try:
+        base = _base()
+        ns["pre_fork"](S, None)
+        assert gc.get_freeze_count() > base
+        base = _base()
         monkeypatch.setenv("KGP_GC_FREEZE", "0")
         ns["pre_fork"](S, None)
-        assert gc.get_freeze_count() == 0
+        assert gc.get_freeze_count() == base                            # 끄면 얼리지 않는다
     finally:
         gc.unfreeze()
 
