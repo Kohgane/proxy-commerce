@@ -41,6 +41,18 @@ os.environ.setdefault('KGP_DEFER_BG_THREADS', '1')
 #   포크 직전에 지금 객체를 영구 세대로 옮긴다(`gc.freeze`) — gc가 다시 훑지 않아 공유가 유지된다(로컬 실측 합계 101→83MB).
 #   `KGP_GC_FREEZE=0`이면 끈다.
 def pre_fork(server, worker):
+    # 순찰 135(운영 10-27 08:40 UTC): 사전검증 끝 `release()`(malloc_trim)로 워커 RSS 183→143인데 합계는 228→224 · 마스터 PSS 84→102 —
+    #   워커가 놓은 쪽은 **포크 때 물려받은 마스터의 빈 힙**이었다(마스터가 풀었지만 운영체제에 안 돌려준 자리). 워커가 그 장을 놓으면
+    #   마스터가 혼자 떠안고(PSS 전액), 워커는 새 사유 장을 다시 받아 2시간에 143→199 → 합계 +52. 포크 **전에** 마스터가 빈 힙을 돌려주면
+    #   물려줄 빈 장이 없다(로컬 재현: 마스터 PSS 158 → 11). `KGP_PREFORK_TRIM=0`이면 안 한다.
+    if os.getenv('KGP_PREFORK_TRIM', '1') != '0':
+        try:
+            import gc as _gc0
+            _gc0.collect()
+            from src.utils.render_worker import trim as _trim
+            _trim()
+        except Exception as exc:                                 # noqa: BLE001 — 돌려주기 실패가 포크를 막지 않는다
+            server.log.warning('[부팅] malloc_trim 실패(계속): %s', exc)
     if os.getenv('KGP_GC_FREEZE', '1') == '0':
         return
     try:
