@@ -69,7 +69,7 @@ _CURRENT_ROW: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
        "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard",
-       "naver_find")
+       "naver_find", "naver_split_ok")
 
 
 def _now() -> str:
@@ -156,6 +156,8 @@ def _run(row: dict) -> Dict:
         return check_item(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "naver_resend":
         return _naver_resend(item_id, [str(m) for m in (row.get("markets") or []) if m])
+    if op == "naver_split_ok":
+        return _naver_split_ok(item_id, cancel=bool(row.get("cancel")))
     if op == "coupang_refresh":
         return _coupang_refresh(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_inspect":
@@ -1118,6 +1120,30 @@ def coupang_inspect(item_id: str, markets: List[str], make_up=None) -> Dict:
         rows.append(r)
     return {"ok": bool(rows) and not any(r.get("error") for r in rows), "rows": rows,
             "why": "" if rows else "쿠팡 등록 기록이 없어요"}
+
+
+def _naver_split_ok(item_id: str, *, cancel: bool = False) -> Dict:
+    """순찰 123b(오너 2026-10-27 「보내라」 — MOFT f2b5df5d 네이버 「옵션 가격 폭」 보류): 화면 「가격대별로 나눠 등록」 확인 버튼과
+    **같은 입구**(`collect_naver_split_ok`)를 그 상품 계정 세션으로 — 지금 계산한 묶음 서명을 남긴다. `cancel`이면 확인을 지운다."""
+    from src.services import ocr_compare_diag as D
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    if not uid:
+        return {"ok": False, "why": "상품 계정을 알 수 없어요(세션 없이 돌리지 않는다)"}
+    from flask import session
+    from src.order_webhook import app
+    from src.seller_console import views as V
+    iid = str(item.get("id") or item_id)
+    with app.test_request_context(f"/seller/collect/{iid}/naver-split-ok", method="POST", json={"cancel": True} if cancel else {}):
+        session["user_id"] = uid
+        resp = V.collect_naver_split_ok(iid)
+    r, code = (resp if isinstance(resp, tuple) else (resp, 200))
+    js = r.get_json() or {}
+    sp = js.get("split") or {}
+    return {"ok": bool(js.get("ok")), "status": code, "cancelled": bool(js.get("cancelled")),
+            "groups": [{k: g.get(k) for k in ("suffix", "min", "max")} | {"n": len(g.get("skus") or [])} for g in sp.get("groups") or []],
+            "why": str(js.get("error") or "")[:300]}
 
 
 def _naver_resend(item_id: str, markets: List[str]) -> Dict:
