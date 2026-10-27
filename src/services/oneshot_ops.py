@@ -36,6 +36,8 @@ P0-운영(오너 2026-10-23): 꺼낸 줄은 `ops:oneshot:inflight:<인스턴스:
 - `naver_find` {item_id, words:[…], stores?, max_pages?(기본 10 · 상한 30)} — 순찰 80: **읽기만** — 스마트스토어 전 상태(판매대기·승인대기·판매중지·반려 포함)에서
   상품명 검색. 스토어마다 다 훑었는지(`complete`)를 남긴다(다 못 훑었으면 「없음」이라 하지 않는다). `item_id`는 그 상품 주인 키로 돌리려고
 - `register` … `via_job:true` — 순찰 80: 화면 「등록」과 같은 잡(`_upload_start_job`)으로 보내고 끝날 때까지 기다린다(측정 = `reg_job`)
+- `reject_route` {item_id, market} — 순찰 137(오너 10-27 「반려 사유 상세 + 조치」): 쿠팡 이력 **전문**을 `extra.review_detail[market]`에 적고
+  유형별 자동 조치(승인 재요청·사진 교체 재제출·사전검증 재큐) 1회 — 같은 사유 재반려면 멈추고 보고. `review_status`가 반려를 보면 스스로 넣는다
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
   (리퍼러 없이 = 목록 `<img referrerpolicy=no-referrer>`와 같은 조건). 상태 코드·형식·크기만 남긴다 — 기록은 바꾸지 않는다
 """
@@ -69,7 +71,7 @@ _CURRENT_ROW: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
        "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard",
-       "naver_find", "naver_split_ok")
+       "naver_find", "naver_split_ok", "reject_route")
 
 
 def _now() -> str:
@@ -158,6 +160,9 @@ def _run(row: dict) -> Dict:
         return _naver_resend(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "naver_split_ok":
         return _naver_split_ok(item_id, cancel=bool(row.get("cancel")))
+    if op == "reject_route":
+        from src.services import reject_route as RR
+        return RR.run(item_id, str(row.get("market") or ""), enqueue=enqueue)
     if op == "coupang_refresh":
         return _coupang_refresh(item_id, [str(m) for m in (row.get("markets") or []) if m])
     if op == "coupang_inspect":
@@ -203,7 +208,8 @@ def _run(row: dict) -> Dict:
 
 
 def _row_key(r: dict) -> tuple:
-    return (str(r.get("op")), str(r.get("item_id")), tuple(sorted(r.get("markets") or [])))
+    ms = r.get("markets") or ([r.get("market")] if r.get("market") else [])   # 순찰 137: 한 마켓 줄(review_status·reject_route)도 마켓별로 따로
+    return (str(r.get("op")), str(r.get("item_id")), tuple(sorted(str(m) for m in ms)))
 
 
 def enqueue(row: dict) -> bool:
@@ -389,8 +395,11 @@ def _review_status(item_id: str, market: str) -> Dict:
     saved = False
     if MS.remember(ex, row):
         saved = store.merge_extra(item_id, lambda fresh: MS.remember(fresh, row), seller_ids={uid} if uid else None)
+    routed = False
+    if row.get("state") == "rejected" and not row.get("stale"):       # 순찰 137: 반려면 사유 전문 수집·자동 조치 줄을 스스로 넣는다
+        routed = enqueue({"op": "reject_route", "item_id": item_id, "market": market, "why": "review_status가 반려를 봄"})
     return {"ok": not row.get("error"), "market": market, "state": row.get("state"), "label": row.get("label"),
-            "status_raw": row.get("status_raw"), "comment": str(row.get("comment") or "")[:200],
+            "status_raw": row.get("status_raw"), "comment": str(row.get("comment") or "")[:2000], "reject_route_queued": routed,
             "checked_at": row.get("checked_at"), "stale": bool(row.get("stale")),
             "why": str(row.get("stale_note") or row.get("error") or "")[:200], "saved": bool(saved)}
 
