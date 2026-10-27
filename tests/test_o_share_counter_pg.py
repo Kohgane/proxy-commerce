@@ -37,10 +37,15 @@ def test_arrival_log_persists_on_postgres(pg_ready):
     assert len(rows) == 20 and rows[0]["at"] == "t21"
 
 
-def test_share_tickets_and_rate_limit_on_postgres(pg_ready):
+def test_share_tickets_and_rate_limit_on_postgres(pg_ready, monkeypatch):
     """P2 — 티켓·IP 레이트가 **워커 공유 저장소**(app_state)에서 돈다: 10건 뒤 상한 · 만료분 정리."""
+    from datetime import datetime, timezone
     from src.db import pg
     from src.seller_console import share_tickets as T
+    # 레이트 키는 분 단위 버킷 — 11번 만드는 사이 분이 바뀌면 카운트가 둘로 갈려 상한에 안 걸린다(CI 10-27 03:50:00 UTC).
+    #   이 분의 한가운데로 시각을 묶는다(만료 비교도 같은 `_now`라 그대로 맞다).
+    fixed = datetime.now(timezone.utc).replace(second=30, microsecond=0)
+    monkeypatch.setattr(T, "_now", lambda: fixed)
     with pg.tx() as cur:
         cur.execute("DELETE FROM app_state WHERE key LIKE %s OR key LIKE %s", ("share_ticket:%", "share_in_rl:%"))
     t = T.create("你好 https://e.tb.cn/h.x?tk=Z", ip="198.51.100.7")
