@@ -5073,6 +5073,22 @@ def _pv_prepare(data: dict, product_data: dict):
                 logger.warning("[사전검증] 등록 품질 검사 실패: %s", exc)
             # Y10: 리스크 게이트 — 기억된 「빼고 등록」은 바로 적용(저장) → 저장된 「빼고 등록」을 몸통에도 → 전 위치 검사
             product_data["_risk"] = _risk_scan_for(str(data["item_id"]), _sx, product_data)
+            # 순찰 123(오너 2026-10-26): 쿠팡 대표 사진에 글자 → 글자 없는 갤러리 장을 자동으로 대표로(사람에게 6번 묻지 않는다)
+            try:
+                from src.services.coupang_image_check import auto_rep_pick as _arp
+                _arp_res = _arp(_sx, images_effective=product_data.get("images") or product_data.get("images_effective"), by=_seller_id())
+                if _arp_res.get("changed"):
+                    collect_history_store.update(str(data["item_id"]), seller_ids=_seller_identities(),
+                                                 extra_json=json.dumps(_sx, ensure_ascii=False))
+                    from src.services import image_translate_store as _its2
+                    _eff2 = _its2.effective_images(_sx, item_id=str(data["item_id"]), originals=list(_sx.get("images") or []))
+                    if _eff2:
+                        product_data["images"] = _eff2                  # 등록과 같은 함수 — 대표(2번째 이후 글자 없는 장)가 맨 앞
+                        product_data["images_effective"] = _eff2
+                        product_data["thumbnail"] = _eff2[0]
+                    product_data["rep_auto_pick"] = _sx.get("rep_auto_pick")
+            except Exception as exc:                                  # noqa: BLE001
+                logger.warning("[사전검증] 대표 사진 자동 교체 실패(원래 대표로 잰다): %s", exc)
             from src.services import risk_gate as _rgk
             product_data["kc_notice_kinds"] = _rgk.notice_kinds(product_data["_risk"])    # Y10-B 본문 맨 위 KC 고지
             # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본

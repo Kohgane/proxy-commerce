@@ -17,6 +17,7 @@ import os
 import re
 import threading
 from collections import OrderedDict
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -375,3 +376,58 @@ def hold(pd: dict, market: str, cached_only: bool = False) -> Optional[Dict[str,
             "fix": "rep_image",
             "line": "쿠팡 대표 사진: " + " · ".join(f["line"] for f in bad)
                     + " — 「쿠팡 노출」 탭에서 다른 장을 대표로 고르거나 「그래도 등록」"}
+
+
+# ── 순찰 123(오너 2026-10-26 「제품 하나하나 다 수정해 나가야 하냐」): 대표 사진 글자 → 사람에게 묻지 않고 **글자 없는 갤러리 장을 자동으로 대표로** ──
+
+AUTO_REP_MAX_CANDIDATES = 5
+
+
+def auto_rep_pick(extra: dict, *, images_effective=None, by: str = "auto") -> dict:
+    """지금 대표(나갈 첫 장)에 「텍스트 있음」 판정이 있으면 다음 갤러리 장을 차례로 재서(최대 5장) 글자 없는 첫 장을 대표(`rep_image`,
+    원본 주소)로 적는다. `{changed, picked_idx, why}`. 못 찾으면 바꾸지 않는다(보류 줄은 그대로 사람에게).
+    오너가 이미 대표를 정했으면(`rep_image`가 사람 결정) 건드리지 않는다 — 자동 기록(`rep_auto_pick`)만 덮는다."""
+    out = {"changed": False, "picked_idx": -1, "why": ""}
+    if not enabled():
+        out["why"] = "판정 꺼짐"
+        return out
+    originals = [u for u in (extra.get("images") or []) if isinstance(u, str) and u.strip()]
+    if len(originals) < 2:
+        out["why"] = "후보 장 없음"
+        return out
+    prev = extra.get("rep_auto_pick") if isinstance(extra.get("rep_auto_pick"), dict) else {}
+    if extra.get("rep_image") and extra.get("rep_image") != prev.get("url"):
+        out["why"] = "사람이 정한 대표"
+        return out
+    eff = [u for u in (images_effective or []) if isinstance(u, str) and u.strip()]
+    rep = eff[0] if eff else originals[0]
+    try:
+        res = check_url(rep)
+    except Exception as exc:                                       # noqa: BLE001
+        out["why"] = f"대표 판정 실패: {str(exc)[:80]}"
+        return out
+    if not any(f.get("hold") and f.get("key") == "text" for f in res.get("flags") or []):
+        out["why"] = "대표에 글자 없음"
+        return out
+    excluded = {int(e.get("idx", -1)) for e in (extra.get("images_ko") or []) if isinstance(e, dict) and e.get("risk_exclude")}
+    tried = []
+    for i, u in enumerate(originals):
+        if i == 0 or i in excluded or u == rep or len(tried) >= AUTO_REP_MAX_CANDIDATES:
+            continue
+        try:
+            r = check_url(u)
+        except Exception as exc:                                   # noqa: BLE001
+            tried.append({"idx": i, "why": f"판정 실패: {str(exc)[:60]}"})
+            continue
+        bad = [f["key"] for f in r.get("flags") or [] if f.get("hold")]
+        tried.append({"idx": i, "flags": bad})
+        if not bad:
+            extra["rep_image"] = u
+            extra["rep_auto_pick"] = {"url": u, "idx": i, "from": rep, "by": by, "at": datetime.now(timezone.utc).isoformat(),
+                                      "reason": "원래 대표에 글자(반려 가능) — 글자 없는 장으로 자동 교체", "tried": tried}
+            out.update(changed=True, picked_idx=i, why="")
+            logger.info("[쿠팡 대표 사진] 자동 교체 %s → %d번째(글자 없음)", rep[-32:], i + 1)
+            return out
+    out["why"] = f"후보 {len(tried)}장 모두 글자가 있거나 못 쟀어요"
+    out["tried"] = tried
+    return out

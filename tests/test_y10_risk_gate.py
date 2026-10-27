@@ -221,7 +221,8 @@ def test_settings_lists_candidates_and_confirms():
 
 # ── 등록 입구·AI 순서 ──────────────────────────────────────────────────────────────────────
 
-def test_upload_refused_until_decided():
+def test_upload_refused_until_decided(monkeypatch):
+    monkeypatch.setenv("RISK_AUTO_STRIP", "0")     # 순찰 123: 기본은 자동 「빼고 등록」 — 이 계약은 「묻는 모드」(RISK_AUTO_STRIP=0)를 잰다
     sid = "y10-up"
     ex = _ex()
     iid = _item(sid, ex)
@@ -243,7 +244,8 @@ def test_upload_body_gets_strip_even_if_screen_is_stale():
 
 
 def test_ai_fixes_wait_until_risk_is_decided(monkeypatch):
-    """게이트가 먼저 — 결정 안 된 보류가 있으면 AI(반려 자동 수정·Y8)는 돌지 않고 카드에 위험 블록이 실린다."""
+    """게이트가 먼저 — 결정 안 된 보류가 있으면 AI(반려 자동 수정·Y8)는 돌지 않고 카드에 위험 블록이 실린다(묻는 모드)."""
+    monkeypatch.setenv("RISK_AUTO_STRIP", "0")     # 순찰 123: 기본은 자동 「빼고 등록」
     import src.seller_console.views as V
     from tests._pv_helper import prevalidate
     called = []
