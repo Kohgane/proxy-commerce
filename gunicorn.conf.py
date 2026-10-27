@@ -157,16 +157,45 @@ def _instance_over():
     return over, mb, lim
 
 
+# 순찰 106-A2(운영 10-26): 일 몰린 뒤 합계가 350MB에 12시간 붙어 있었다 — 문지기(420)·워커 상한(380) 아래라 아무도 안 갈아끼웠다.
+#   틱이 `rss.note_idle_floor`로 「일 없이 높은 틱」을 세고, 이어진 수가 차면 여기서 같은 길(잡 없음·간격)로 갈아끼운다.
+#   마스터 몫이면 갈아끼워도 안 내려가니 `INSTANCE_IDLE_RECYCLE_GAP_SEC`(6시간)에 한 번만 — 매 요청 갈아끼우는 고리 방지.
+_IDLE_STAMP = os.getenv('INSTANCE_IDLE_RECYCLE_STAMP', '/tmp/kgp_idle_recycle')
+_IDLE_GAP_SEC = int(os.getenv('INSTANCE_IDLE_RECYCLE_GAP_SEC', '21600') or 21600)
+
+
+def _idle_floor_due():
+    """`(갈아끼울 때인가, 사유 꼬리)` — 못 재면 아니오."""
+    try:
+        from src.utils import rss as _rss
+        due, mb, n = _rss.idle_recycle_due()
+    except Exception:
+        return False, ''
+    if not due:
+        return False, ''
+    import time as _t
+    try:
+        if _t.time() - os.path.getmtime(_IDLE_STAMP) < _IDLE_GAP_SEC:
+            return False, ''
+    except OSError:
+        pass
+    return True, f' · 쉬는 동안 합계 {mb} ≥ {_rss.idle_recycle_mb()} ({n}틱 연속)'
+
+
 def post_request(worker, req, environ, resp):
     if _RSS_LIMIT_MB <= 0 or not getattr(worker, 'alive', False):
         return
     rss = _worker_rss_mb()
     why = ''
+    idle = False
     if rss < _RSS_LIMIT_MB:
         over, inst, lim = _instance_over()
-        if not over:
-            return
-        why = f' · 인스턴스 합계 {inst} ≥ 문지기 {lim}'
+        if over:
+            why = f' · 인스턴스 합계 {inst} ≥ 문지기 {lim}'
+        else:
+            idle, why = _idle_floor_due()
+            if not idle:
+                return
     # Z10-B(오너 2026-10-11): 잡·크론이 도는 중이면 갈아끼우지 않는다 — 그 잡을 죽이면 카드가 「검증 못 함」으로 끝나고
     #   다시 누르면 같은 일을 처음부터 한다. 잡이 끝난 뒤 첫 요청에서 다시 본다.
     busy = _active_jobs()
@@ -186,12 +215,18 @@ def post_request(worker, req, environ, resp):
             fh.write(str(worker.pid))
     except OSError:
         pass
+    if idle:
+        try:
+            with open(_IDLE_STAMP, 'w') as fh:
+                fh.write(str(worker.pid))
+        except OSError:
+            pass
     worker.log.warning('[RSS] worker pid=%s rss_mb=%d (상한 %d%s) — 이 워커만 재시작(받던 요청은 끝내고)', worker.pid, rss, _RSS_LIMIT_MB, why)
     # 순찰 73: 사유·전후 MB를 운영 DB에(`rss:restart`) — 로그 없이도 「왜 바뀌었나」를 본다
     try:
         from src.utils import restart_log as _rl
-        _rl.note_exit('인스턴스 합계' if why else '워커 RSS', pid=worker.pid, worker_mb=rss, inst_mb=_inst_seen['mb'],
-                      worker_limit=_RSS_LIMIT_MB, inst_limit=_inst_seen['lim'])
+        _rl.note_exit('쉬는 동안 바닥' if idle else ('인스턴스 합계' if why else '워커 RSS'), pid=worker.pid, worker_mb=rss,
+                      inst_mb=_inst_seen['mb'], worker_limit=_RSS_LIMIT_MB, inst_limit=_inst_seen['lim'])
     except Exception:                                            # noqa: BLE001
         pass
     worker.alive = False

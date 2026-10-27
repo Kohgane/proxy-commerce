@@ -186,6 +186,7 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                 from src.utils import bg_job as _bgi, rss as _rssi
                 _okm, _cur, _lim = _rssi.start_ok()
                 _bgi._gate_log("tick-idle", _okm, _cur, _lim)
+                _rssi.note_idle_floor(_cur)          # 순찰 106-A2: 일 없이 높은 바닥이 이어지면 워커를 갈아끼운다(gunicorn post_request)
             except Exception:                      # noqa: BLE001 — 기록 실패가 틱을 막지 않는다
                 pass
             drain_budget = max(4.0, min(_drain_share_sec(), tick_budget - _PILOT_MIN_SEC))

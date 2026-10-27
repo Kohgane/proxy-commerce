@@ -144,4 +144,4 @@ def test_gate_row_records_where_the_total_comes_from(monkeypatch):
     assert (row["job"], row["mb"], row["pss"], row["cg"], row["w"]) == ("tick-idle", 240, 231, 240, 180)
     monkeypatch.undo()
     real = rss.instance_parts()                                  # 실제 함수(gunicorn 밖 = 이 프로세스 PSS · cgroup은 -1)
-    assert set(real) == {"pss", "cg", "w"} and real["pss"] > 0 and real["cg"] == -1
+    assert set(real) == {"pss", "cg", "w", "m"} and real["pss"] > 0 and real["cg"] == -1 and real["m"] == -1

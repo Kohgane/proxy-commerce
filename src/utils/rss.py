@@ -181,7 +181,50 @@ def instance_mb() -> int:
 def instance_parts() -> dict:
     """순찰 106-A: 합계가 어디서 오는지 — `{"pss": master+워커 PSS 합, "cg": cgroup 익명+shmem, "w": 이 워커 RSS}`(MB, 못 읽으면 -1).
     `rss:gate` 줄에 같이 남겨 바닥이 오를 때 워커 몫인지 마스터·공유 몫인지 숫자로 가른다."""
-    return {"pss": processes_pss_mb(), "cg": cgroup_mb() if under_gunicorn() else -1, "w": read_mb()[0]}
+    return {"pss": processes_pss_mb(), "cg": cgroup_mb() if under_gunicorn() else -1, "w": read_mb()[0], "m": master_pss_mb()}
+
+
+def master_pss_mb() -> int:
+    """순찰 106-A2: gunicorn 마스터 하나의 PSS(MB). 10-26 바닥이 223 → 353으로 올랐을 때 PSS 합 − 워커 RSS가 34 → 73 —
+    워커만 갈아끼워 내려가는 몫인지 마스터 몫인지 가르려고. gunicorn 밖이면 -1."""
+    if not under_gunicorn():
+        return -1
+    kb = _pss_kb(_os.getppid())
+    return kb // 1024 if kb >= 0 else -1
+
+
+# 순찰 106-A2(운영 10-26 22:09~22:13 KST): 새 상품 하나가 수집 → 사진 번역 → 다듬기 8장 → 사전검증 2번(네이버 사진 60장)을
+#   한꺼번에 지난 뒤 인스턴스 합계가 223 → 334MB, 그 뒤 12시간 일 없이 350~355MB(cgroup 익명도 345). 놓은 힙을 gc·malloc_trim으로도
+#   못 돌려받는 몫(cv2·Pillow·스레드 아레나)이다. 새 잡 문지기(420)·워커 RSS 상한(380)은 그 아래라 아무도 안 갈아끼웠다.
+#   → 일 없는 틱이 연달아 `INSTANCE_IDLE_RECYCLE_TICKS`(3)번 합계 ≥ `INSTANCE_IDLE_RECYCLE_MB`(300)이면 다음 요청 끝에 워커를 갈아끼운다
+#   (gunicorn `post_request` — 잡 도는 중이면 안 함 · 받던 요청은 끝내고). 마스터 몫이면 갈아끼워도 안 내려가니 `INSTANCE_IDLE_RECYCLE_GAP_SEC`
+#   (6시간)에 한 번만. 0이면 끈다.
+_IDLE_FLOOR = {"n": 0, "mb": -1}
+
+
+def idle_recycle_mb() -> int:
+    return _env_int("INSTANCE_IDLE_RECYCLE_MB", 300)
+
+
+def idle_recycle_ticks() -> int:
+    return max(1, _env_int("INSTANCE_IDLE_RECYCLE_TICKS", 3))
+
+
+def note_idle_floor(mb: int) -> int:
+    """일 없는 틱의 합계를 하나 적는다 — 상한 이상이 이어진 틱 수를 돌려준다(아래로 내려가면 0부터)."""
+    lim = idle_recycle_mb()
+    if lim <= 0 or mb < 0 or mb < lim:
+        _IDLE_FLOOR.update(n=0, mb=mb)
+    else:
+        _IDLE_FLOOR.update(n=_IDLE_FLOOR["n"] + 1, mb=mb)
+    return _IDLE_FLOOR["n"]
+
+
+def idle_recycle_due() -> tuple:
+    """`(갈아끼울 때인가, 마지막 합계 MB, 이어진 틱 수)`."""
+    lim = idle_recycle_mb()
+    n = _IDLE_FLOOR["n"]
+    return (lim > 0 and n >= idle_recycle_ticks()), _IDLE_FLOOR["mb"], n
 
 
 def _env_int(name: str, default: int) -> int:
