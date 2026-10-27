@@ -117,6 +117,109 @@
   </div>
 </div>
 
+<!-- 오너 지시 10-27 ①: 인증·허가 서류 — 넣어 두면 그 종류의 「인증」 보류 상품이 자동으로 통과 -->
+<div class="op-card border-0 shadow-sm mb-4" id="docs" data-role="docs-card">
+  <div class="op-card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+      <div style="max-width:620px">
+        <div class="console-kpi-label">인증·허가 서류</div>
+        <p class="small mb-0" style="color:var(--text-muted);">건강기능식품 판매업·수입판매업·화장품 책임판매업·KC 같은 서류 번호를 넣어 두면, 사전검증에서 그 종류로 「보류」된 상품이 자동으로 통과해요. 의약품처럼 법으로 막힌 품목은 서류로도 풀리지 않아요.</p>
+      </div>
+    </div>
+    {% if my_docs %}
+    <ul class="list-unstyled mb-3" data-role="docs-list">
+      {% for d in my_docs %}
+      <li class="d-flex flex-wrap align-items-center gap-2 py-2" style="border-top:1px solid var(--border);" data-role="doc-row" data-id="{{ d.id }}">
+        <span class="pc-badge {% if d.status == 'valid' %}pc-badge-on{% else %}pc-badge-off{% endif %}">{% if d.status == 'valid' %}유효{% else %}만료{% endif %}</span>
+        <strong class="small">{{ d.kind_label }}</strong>
+        <span class="small" style="color:var(--text-strong);">{{ d.number }}</span>
+        {% if d.issuer %}<span class="small" style="color:var(--text-muted);">· {{ d.issuer }}</span>{% endif %}
+        <span class="small" style="color:var(--text-muted);">· {% if d.valid_until %}{{ d.valid_until }}까지{% else %}기한 없음{% endif %}</span>
+        <button type="button" class="btn btn-ghost btn-sm ms-auto" data-role="doc-delete" data-id="{{ d.id }}" style="min-height:44px;">지우기</button>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="small mb-3" data-role="docs-empty" style="color:var(--text-muted);">아직 넣은 서류가 없어요.</p>
+    {% endif %}
+    <form class="row g-2 align-items-end" data-role="doc-form" onsubmit="return false;">
+      <div class="col-12 col-md-4">
+        <label class="form-label small mb-1" for="docKind">종류</label>
+        <select class="form-select" id="docKind" style="min-height:44px;">
+          {% for k, label in doc_kinds.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-1" for="docNumber">번호</label>
+        <input class="form-control" id="docNumber" placeholder="신고·등록·인증 번호" style="min-height:44px;">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1" for="docIssuer">발급 기관</label>
+        <input class="form-control" id="docIssuer" placeholder="예: 식약처" style="min-height:44px;">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1" for="docUntil">유효기간</label>
+        <input class="form-control" id="docUntil" type="date" style="min-height:44px;">
+      </div>
+      <div class="col-12 col-md-1 d-grid">
+        <button type="button" class="btn btn-primary" data-role="doc-add" style="min-height:44px;">추가</button>
+      </div>
+    </form>
+    {% if all_docs %}
+    <details class="mt-3" data-role="docs-admin">
+      <summary class="small" style="min-height:44px;line-height:44px;">관리자 — 전 셀러 서류 {{ all_docs|length }}건</summary>
+      <div class="table-responsive">
+        <table class="table table-sm small mb-0">
+          <thead><tr><th>셀러</th><th>종류</th><th>번호</th><th>발급</th><th>유효기간</th><th>상태</th></tr></thead>
+          <tbody>
+          {% for d in all_docs %}
+            <tr><td>{{ d.sid }}</td><td>{{ d.kind_label }}</td><td>{{ d.number }}</td><td>{{ d.issuer }}</td><td>{{ d.valid_until or '—' }}</td>
+                <td>{% if d.status == 'valid' %}유효{% elif d.status == 'expired' %}만료{% else %}지움{% endif %}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+</div>
+<script>
+(function () {
+  const card = document.getElementById('docs');
+  if (!card) return;
+  const add = card.querySelector('[data-role=doc-add]');
+  add.addEventListener('click', async function () {
+    add.disabled = true;
+    try {
+      const r = await fetch('/seller/me/docs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+        kind: document.getElementById('docKind').value, number: document.getElementById('docNumber').value,
+        issuer: document.getElementById('docIssuer').value, valid_until: document.getElementById('docUntil').value})});
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || '저장하지 못했어요');
+      pcToast('서류를 넣었어요 — 다음 사전검증부터 그 종류 보류가 풀려요', 'success');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) {
+      pcToast(e && e.message ? e.message : '저장하지 못했어요 — 다시 시도해 주세요', 'error');
+    } finally { add.disabled = false; }
+  });
+  card.querySelectorAll('[data-role=doc-delete]').forEach(function (b) {
+    b.addEventListener('click', async function () {
+      b.disabled = true;
+      try {
+        const r = await fetch('/seller/me/docs/' + encodeURIComponent(b.dataset.id) + '/delete', {method: 'POST'});
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || '지우지 못했어요');
+        pcToast('서류를 지웠어요 — 그 종류 상품은 다시 보류돼요', 'success');
+        setTimeout(() => location.reload(), 600);
+      } catch (e) {
+        pcToast(e && e.message ? e.message : '지우지 못했어요', 'error');
+        b.disabled = false;
+      }
+    });
+  });
+})();
+</script>
+
 <!-- 순찰 122b(오너 10-26): 고급 기능 — 관리자·Plus·Pro는 항상, 무료는 여기서 켠 사람만 메뉴에 보인다 -->
 <div class="op-card border-0 shadow-sm mb-4" id="advancedCard" data-role="advanced-card">
   <div class="op-card-body d-flex flex-wrap justify-content-between align-items-start gap-3">

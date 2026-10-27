@@ -235,6 +235,7 @@
     },
     {
       "key": "electric",
+      "docs": ["kc"],
       "label": "KC 고지문 넣음(전기용품)",
       "grade": "caution",
       "why": "구매대행 KC 고지문 + 110/220V 전압 안내를 본문 맨 위에 넣어요",
@@ -259,6 +260,7 @@
     },
     {
       "key": "kids",
+      "docs": ["kc"],
       "label": "KC 고지문 넣음(어린이제품)",
       "grade": "caution",
       "why": "구매대행 KC 고지문을 본문 맨 위에 넣어요",
@@ -276,6 +278,7 @@
     },
     {
       "key": "radio",
+      "docs": ["radio", "kc"],
       "label": "KC 고지문 넣음(전파·무선)",
       "grade": "caution",
       "why": "구매대행 KC 고지문을 본문 맨 위에 넣어요",
@@ -293,6 +296,7 @@
     },
     {
       "key": "food",
+      "docs": ["import_license", "mfds_food"],
       "label": "인증: 수입식품",
       "grade": "hold",
       "why": "수입식품 신고 대상인지 확인 필요",
@@ -320,6 +324,7 @@
     },
     {
       "key": "raw",
+      "docs": ["import_license", "mfds_food"],
       "label": "인증: 건기식 원료 수입",
       "grade": "hold",
       "why": "건강기능식품 원료(분말·추출물) 수입은 수입식품 신고 대상 — 완제품이 아니면 확인 필요",
@@ -334,6 +339,7 @@
     },
     {
       "key": "supplement",
+      "docs": ["mfds_food"],
       "label": "건강기능식품(인허가 보유)",
       "grade": "caution",
       "why": "인허가 보유 — 표시·광고 문구만 확인",
@@ -354,6 +360,7 @@
     },
     {
       "key": "cosmetic",
+      "docs": ["cosmetic"],
       "label": "화장품(인허가 보유)",
       "grade": "caution",
       "why": "인허가 보유 — 표시·광고 문구만 확인",

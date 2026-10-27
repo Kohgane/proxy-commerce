@@ -24,7 +24,9 @@ window.kgpRiskBlockHtml = window.kgpRiskBlockHtml || function (risk) {
     h += '<div class="kgp-risk-row" data-role="risk-row" data-key="' + esc(x.key) + '" data-grade="' + esc(x.grade) + '">' +
       '<div><span class="pc-badge ' + tone + '">' + esc(x.grade_label) + '</span> <b>' + esc(x.cat) + '</b>: ' + esc((x.found || []).join('·')) + '</div>' +
       (x.where_line ? '<div class="kgp-risk-where" data-role="risk-where">' + esc(x.where_line) + '</div>' : '') +
-      (x.why ? '<div class="kgp-risk-why">' + esc(x.why) + '</div>' : '');
+      (x.why ? '<div class="kgp-risk-why">' + esc(x.why) + '</div>' : '') +
+      // 오너 지시 10-27 ①: 서류로 풀리는 「인증」 보류 — 서류함으로 바로
+      (x.doc_hint && x.doc_hint.link ? '<div class="kgp-risk-why" data-role="risk-doc-hint"><a href="' + esc(x.doc_hint.link) + '" target="_top" style="color:var(--teal);font-weight:600;">인증·허가 서류 추가하러 가기</a></div>' : '');
     if (done) {
       h += '<div class="kgp-risk-done" data-role="risk-done">' + esc(done) + ' <button type="button" class="kgp-risk-btn" data-role="risk-act" data-key="' + esc(x.key) + '" data-action="reset">다시 고르기</button></div>';
     } else if (x.grade !== 'caution') {
