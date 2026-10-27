@@ -196,14 +196,15 @@ def master_pss_mb() -> int:
 # 순찰 106-A2(운영 10-26 22:09~22:13 KST): 새 상품 하나가 수집 → 사진 번역 → 다듬기 8장 → 사전검증 2번(네이버 사진 60장)을
 #   한꺼번에 지난 뒤 인스턴스 합계가 223 → 334MB, 그 뒤 12시간 일 없이 350~355MB(cgroup 익명도 345). 놓은 힙을 gc·malloc_trim으로도
 #   못 돌려받는 몫(cv2·Pillow·스레드 아레나)이다. 새 잡 문지기(420)·워커 RSS 상한(380)은 그 아래라 아무도 안 갈아끼웠다.
-#   → 일 없는 틱이 연달아 `INSTANCE_IDLE_RECYCLE_TICKS`(3)번 합계 ≥ `INSTANCE_IDLE_RECYCLE_MB`(300)이면 다음 요청 끝에 워커를 갈아끼운다
+#   → 일 없는 틱이 연달아 `INSTANCE_IDLE_RECYCLE_TICKS`(3)번 합계 ≥ `INSTANCE_IDLE_RECYCLE_MB`(260)이면 다음 요청 끝에 워커를 갈아끼운다
 #   (gunicorn `post_request` — 잡 도는 중이면 안 함 · 받던 요청은 끝내고). 마스터 몫이면 갈아끼워도 안 내려가니 `INSTANCE_IDLE_RECYCLE_GAP_SEC`
 #   (6시간)에 한 번만. 0이면 끈다.
 _IDLE_FLOOR = {"n": 0, "mb": -1}
 
 
 def idle_recycle_mb() -> int:
-    return _env_int("INSTANCE_IDLE_RECYCLE_MB", 300)
+    # 순찰 135(운영 10-27 09:20~10:50 UTC): 일 없는 바닥 271~280이 2시간 — 300 아래라 안 갈아끼웠다. 목표(260)를 그대로 상한으로.
+    return _env_int("INSTANCE_IDLE_RECYCLE_MB", 260)
 
 
 def idle_recycle_ticks() -> int:

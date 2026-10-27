@@ -99,16 +99,46 @@ def test_gunicorn_freezes_gc_before_fork(monkeypatch):
             @staticmethod
             def warning(*a):
                 raise AssertionError(a)
-    gc.unfreeze()
-    try:
-        ns["pre_fork"](S, None)
-        assert gc.get_freeze_count() > 0
+    # Python 3.12: `gc.unfreeze()` 뒤 `gc.collect()`만 해도 `get_freeze_count()`가 0이 아니다(로컬 3.12 실측 0 → 375 — 얼리지 않아도).
+    #   pre_fork가 포크 전 collect를 하므로(순찰 135) 「0인가」가 아니라 「collect만 한 기준선보다 늘었나」로 잰다.
+    def _base():
         gc.unfreeze()
+        gc.collect()
+        return gc.get_freeze_count()
+    try:
+        base = _base()
+        ns["pre_fork"](S, None)
+        assert gc.get_freeze_count() > base
+        base = _base()
         monkeypatch.setenv("KGP_GC_FREEZE", "0")
         ns["pre_fork"](S, None)
-        assert gc.get_freeze_count() == 0
+        assert gc.get_freeze_count() == base                            # 끄면 얼리지 않는다
     finally:
         gc.unfreeze()
+
+
+def test_gunicorn_returns_master_free_heap_before_fork(monkeypatch):
+    """순찰 135(운영 10-27 08:40 UTC): 워커의 `release()`가 포크 때 물려받은 마스터의 빈 힙을 놓으면 마스터가 그 장을 혼자 떠안는다
+    (PSS 84→102) — 포크 전에 마스터가 빈 힙을 운영체제에 돌려준다. 로컬 재현: 마스터 PSS 158 → 11."""
+    import os
+    import runpy
+    from src.utils import render_worker as RW
+    monkeypatch.setenv("KGP_DEFER_BG_THREADS", os.environ.get("KGP_DEFER_BG_THREADS", "1"))
+    monkeypatch.setenv("KGP_GC_FREEZE", "0")
+    ns = runpy.run_path("gunicorn.conf.py")
+    got = []
+    monkeypatch.setattr(RW, "trim", lambda: got.append("trim") or True)
+
+    class S:
+        class log:
+            @staticmethod
+            def warning(*a):
+                raise AssertionError(a)
+    ns["pre_fork"](S, None)
+    assert got == ["trim"]
+    monkeypatch.setenv("KGP_PREFORK_TRIM", "0")
+    ns["pre_fork"](S, None)
+    assert got == ["trim"]                                               # 끄면 안 한다
 
 
 def _mem_state(monkeypatch):
