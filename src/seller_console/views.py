@@ -5308,6 +5308,19 @@ def _pv_stub_rebuild(a: dict) -> bool:
     return (datetime.now(timezone.utc) - at).total_seconds() >= _PV_STUB_RETRY_HOURS * 3600
 
 
+def _pv_claim_refill_needed(product_data: dict) -> bool:
+    """오너 10-27 ②: 표시광고 문구를 빼면 상세가 반 아래로 줄고 채울 AI 초안이 아직 없다 — 사전검증이 초안부터 만든다
+    (등록은 그 초안으로 채운다 · `upload_dispatcher.strip_claims`)."""
+    if product_data.get("ai_detail_blocked"):
+        return False
+    try:
+        from .upload_dispatcher import strip_claims
+        probe = strip_claims({"description": product_data.get("description") or "", "detail_auto": product_data.get("detail_auto")})
+        return bool(probe.get("desc_refill_needed"))
+    except Exception:                                            # noqa: BLE001
+        return False
+
+
 def _pv_auto_detail(product_data: dict, data: dict, results, *, force: bool = False) -> tuple:
     """Y7-G(오너 2026-10-09): 네이버 「상세 본문 비어 있음」 보류는 보류 전에 **상세 초안부터** — `(info, product_data)`.
 
@@ -5946,7 +5959,8 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
                 _shr["isolated"] = mc.isolation_active()
                 _pv_update(job_id, shared_reason=_shr)
                 # Y7-J: 네이버로 나가는데 셀러 글이 없으면(초안이 없거나 옛 형식) 마켓 검증 **전에** 초안부터 — 본문 = 사진 위 · 글 아래
-                if data.get("item_id") and not _risk_open and _pv_needs_auto_text(product_data, markets):
+                if data.get("item_id") and not _risk_open and (_pv_needs_auto_text(product_data, markets)
+                                                               or _pv_claim_refill_needed(product_data)):
                     t0 = _time.monotonic()
                     _pv_update(job_id, auto_detail={"status": "running"})
                     with _rss.span("ai_draft"):

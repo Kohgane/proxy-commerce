@@ -404,6 +404,17 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None) -> dict:
         h = _hit("blacklist", "브랜드 블랙리스트", "브랜드 블랙리스트", "hold", bl, False, where_text, imgs,
                  "등록 금지 브랜드 목록에 있는 이름")
         if h:
+            # 오너 지시 10-27 ②: 블랙리스트 보류는 유지(서류로도 못 푼다) — 어느 낱말이 걸렸는지 원문 그대로
+            raw = []
+            for n in h["found"]:
+                for t in list(where_text.values()) + [x[3] for x in imgs]:
+                    m = _pat(n, False).search(str(t or ""))
+                    if m:
+                        raw.append(m.group(0))
+                        break
+                else:
+                    raw.append(n)
+            h["why"] = "등록 금지 브랜드 목록에 있는 이름 — 걸린 낱말: " + " · ".join(f"「{f}」" for f in list(dict.fromkeys(raw))[:6])
             hits.append(h)
     # Y11O-2(오너): 품목 주의(src/uploaders/item_caution.json) — 항공 운송 제한 품목(향수·캔들·레이저포인터…) = 주의(막지 않음)
     for it in _item_cautions():
@@ -432,14 +443,23 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None) -> dict:
     hits += [h for h in certs if h["key"].split(":", 1)[1] not in shadowed]
     try:                                                           # e: 표시광고 과장(Y7-J) — 주의
         from src.collectors import ko_polish as kp
-        claim = []
+        claim, at = [], []
         for w in ("상품명", "옵션", "본문"):
-            for frag in kp.ban_hits(where_text[w]) or []:
-                claim.append(str(frag))
+            got = [str(f) for f in kp.ban_hits(where_text[w]) or []]
+            claim += got
+            if got:
+                at.append(w)
         if claim:
+            # 오너 지시 10-27 ②: 문구가 그대로 나가지 않게 등록 전에 자동으로 고친다 — 본문은 빼고 보내고(반 넘게 줄면 AI 상세 초안),
+            #   상품명·옵션은 사전검증 표시광고 보류 → 반려 자동 수정이 고친다
+            how = []
+            if "본문" in at:
+                how.append("본문은 등록 전에 자동으로 빼고 보내요(남는 글이 반 아래면 AI 상세 초안으로 채워요)")
+            if "상품명" in at or "옵션" in at:
+                how.append("상품명·옵션은 사전검증에서 자동으로 고쳐요")
             hits.append({"key": "claim", "cat": "표시광고", "label": "과장·금칙 표현", "grade": "caution", "names": [],
-                         "found": list(dict.fromkeys(claim))[:6], "where": {}, "images": [],
-                         "why": "마켓 금칙어·과장 — 등록 전 문구 확인(기존 표시광고 검사가 마켓별로 따로 본다)"})
+                         "found": list(dict.fromkeys(claim))[:6], "where": {}, "images": [], "auto_fix": True,
+                         "why": " · ".join(how)})
     except Exception:                                              # noqa: BLE001
         pass
     dec = (ex.get("risk_decisions") or {}) if isinstance(ex.get("risk_decisions"), dict) else {}

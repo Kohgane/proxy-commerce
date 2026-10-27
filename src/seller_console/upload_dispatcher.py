@@ -190,9 +190,10 @@ def _market_desc_source(pd: Dict[str, Any]) -> str:
 def build_dispatch_payload(product_data: Dict[str, Any],
                            item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """S2: 아래 빌더 결과에 **마켓 상세 규칙**(한국어만·가게 줄 뺌)을 얹는다 — 단건·일괄·재등록 세 경로 공통."""
-    pd = apply_outbound_text(swap_stub_description(_build_dispatch_payload(product_data, item), item))
+    pd = swap_stub_description(_build_dispatch_payload(product_data, item), item)
     # Y13-H — 쿠팡 빈 설명 대체(`fill_empty_description`, 쿠팡 입력 정리 `prepared_input`에서)의 재료: 저장된 자동 초안.
     #   화면 등록은 몸통에 `detail_auto`를 싣지만 갱신·고치기 경로(`build_product`만)는 안 싣는다 — 사본 칸에만 둔다.
+    #   오너 10-27 ②: 표시광고 문구를 빼고 상세가 반 넘게 줄면 이 초안으로 채운다(`strip_claims`) — 그래서 글자 정리 **전에** 둔다.
     if not isinstance(pd.get("detail_auto"), dict) and item:
         try:
             _sa = (json.loads(item.get("extra_json") or "{}") or {}).get("detail_auto")
@@ -200,6 +201,7 @@ def build_dispatch_payload(product_data: Dict[str, Any],
                 pd["_detail_auto_saved"] = _sa
         except Exception:                                        # noqa: BLE001
             pass
+    pd = apply_outbound_text(pd)
     # Y1: 가게 아이콘·추적 픽셀은 마켓에 상세 이미지로 보내지 않는다(저장값은 그대로).
     try:
         from src.collectors.collect_status import real_detail_images
@@ -413,6 +415,10 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
         pd["description"] = market_description(_src)
     except Exception as exc:
         logger.warning("[등록] 상세 정리 실패(빌더 값 그대로): %s", exc)
+    try:                                                             # 오너 10-27 ②: 표시광고 과장·금칙 조각은 빼고 보낸다
+        pd = strip_claims(pd)
+    except Exception as exc:                                         # noqa: BLE001
+        logger.warning("[등록] 상세 표시광고 문구 빼기 실패(그대로): %s", exc)
     # Y11-S(오너 2026-10-16 07:46): 공통 상품명 — 중괄호 묶음(「VRSUK{비즈니스 시리즈}」)을 전 마켓 같은 규칙으로(쿠팡명 Y11-D와 같은 판단).
     #   저장된 번역 제목은 그대로 — 나가는 값만.
     try:
@@ -432,6 +438,61 @@ def apply_outbound_text(pd: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as exc:
         logger.warning("[등록] 검색어 정리 실패(빌더 값 그대로): %s", exc)
     return pd
+
+
+#: 남은 글이 원래의 이 비율보다 짧으면 AI 상세 초안으로 채운다(오너 10-27 ②).
+CLAIM_REFILL_RATIO = 0.5
+
+
+def _strip_claim_text(text: str) -> str:
+    """표시광고 위험 조각(`ko_polish` ban_ko·ban_cn)을 지우고, 조각만 남은 줄(기호·공백)은 줄째 뺀다."""
+    import re as _re
+    from src.collectors.ko_polish import rules as _rules
+    r = _rules()
+    s = str(text or "")
+    for p in list(r.get("ban_ko") or []) + list(r.get("ban_cn") or []):
+        s = _re.sub(p, "", s)
+    lines = []
+    for ln in s.split("\n"):
+        t = _re.sub(r"[ \t]{2,}", " ", ln).strip()
+        if t and not _re.fullmatch(r"[\s\W_]+", t):
+            lines.append(t)
+        elif not t and lines and lines[-1] != "":
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _desc_len(text: str) -> int:
+    import re as _re
+    return len(_re.sub(r"\s", "", str(text or "")))
+
+
+def strip_claims(pd: Dict[str, Any]) -> Dict[str, Any]:
+    """오너 지시 10-27 ②(「claim은 등록 전에 자동으로 고쳐 싣는다」) — 나가는 상세에서 표시광고 과장·금칙 조각을 뺀다.
+
+    상품명·옵션 값은 사전검증 `ad_claim_risk` 보류 → 반려 자동 수정(`reject_autofix`)이 고친다(그 길 그대로). 여기는 **상세 본문**:
+    조각을 지우고(`claim_removed`), 남은 글이 원래의 절반 아래면 저장된 AI 상세 초안(Anthropic·OpenAI, 같은 조각도 뺀 것)으로
+    채운다(`desc_refilled` = 제공자) — 보류가 아니다, 등록은 간다. 초안이 아직 없으면 `desc_refill_needed`(사전검증이 초안을 만든다).
+    저장값은 그대로(나가는 값만)."""
+    from src.collectors.ko_polish import ban_hits
+    out = dict(pd or {})
+    desc = str(out.get("description") or "")
+    frags = ban_hits(desc)
+    if not frags:
+        return out
+    cleaned = _strip_claim_text(desc)
+    out["description"] = cleaned
+    out["claim_removed"] = frags
+    if _desc_len(cleaned) >= CLAIM_REFILL_RATIO * _desc_len(desc):
+        return out
+    a = out.get("detail_auto") if isinstance(out.get("detail_auto"), dict) else out.get("_detail_auto_saved")
+    txt = _strip_claim_text(str((a or {}).get("text") or "")) if isinstance(a, dict) else ""
+    if isinstance(a, dict) and str(a.get("provider") or "") in ("anthropic", "openai") and txt and _desc_len(txt) > _desc_len(cleaned):
+        out["description"] = market_description(txt)
+        out["desc_refilled"] = str(a.get("provider"))
+    else:
+        out["desc_refill_needed"] = True
+    return out
 
 
 def drop_non_option_values(pd: Dict[str, Any]) -> Dict[str, Any]:
