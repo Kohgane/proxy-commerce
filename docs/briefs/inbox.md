@@ -101,3 +101,7 @@ A → B → D → F → C → E 순. 각 PR 전체 스위트·CI 5/5·캡처(화
 
 ### 순서·보고
 118b-① → U2(작고 빠름, 데스크톱 난잡함 즉시 해소) → U1(화면 단위 PR) → G → I. 각 PR 셀프 점검 체크리스트 + 캡처. outbox에 「122b 진행」 절로 PR 번호·캡처 경로. 모바일 캡처는 오너가 폰으로 볼 수 있게 PR 본문에 이미지 첨부.
+
+## 순찰 127 추가 (채팅 10-27 11:35) — 두 가지, 118b 앞에
+- **M1. owner_decision 멈춤**: 10-27 10:40 `owner_decision`(strip 「애플워치 호환 표기」, erase_pixels) 가 `imgedit:day` 1 올린 뒤 20분+ 무응답(ops:oneshot:last 안 바뀜, inflight running 고정) → bg 잡 락이 다음 oneshot까지 막음. 어디서 멎었나(retext → 다듬기 AI HTTP? render_worker? Cloudinary?) 타임아웃 없는 호출 찾아 상한(각 30s, 전체 120s) 넣고, 멎으면 「사진째 뺌」으로 떨어지게. 가드.
+- **M2. 바닥 280 고정**: 10-26 22:40 owner_decision 뒤 바닥 185→280MB로 올라 안 내려옴(재배포까지). `rss:gate` pss/cg/w 시간별로 어느 몫이 올랐는지 + 옵션 번역 16개·OCR 4장 중 뭐가 남는지(캐시? 모듈?). 260 아래로.
