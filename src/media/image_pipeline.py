@@ -293,12 +293,27 @@ def _cloudinary_configured() -> bool:
     )
 
 
+def upload_timeout_sec(*, long: bool = False) -> float:
+    """Cloudinary 업로드 한 번의 시간 상한(초) — 사진 60 · 동영상·파생본 300. 잘못 적힌 값이면 기본값."""
+    name, dflt = ("CLOUDINARY_UPLOAD_LONG_TIMEOUT_SEC", 300.0) if long else ("CLOUDINARY_UPLOAD_TIMEOUT_SEC", 60.0)
+    try:
+        v = float(os.getenv(name, "") or dflt)
+    except ValueError:
+        return dflt
+    return v if v > 0 else dflt
+
+
 def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
                  eager: Optional[list] = None, folder: str = "",
                  resource_type: str = "image", public_id: str = "",
                  context: Optional[Dict[str, str]] = None,
-                 label: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+                 label: Optional[Dict[str, str]] = None,
+                 timeout: Optional[float] = None) -> Dict[str, Any]:
     """바이트 → Cloudinary. **결과를 dict 그대로** 돌려준다 (F31).
+
+    순찰 127 M1(운영 10-27 10:40 KST): 이 업로드엔 시간 상한이 없었다(SDK 기본 = 무한 대기). 오너 결정 「빼고 등록」의 글자 고치기가
+    `imgedit:day`를 올린 뒤 20분+ 응답 없이 멈췄고, 잡 잠금이 다음 일회성 작업까지 막았다. 이제 `timeout`(초) — 안 주면
+    사진 `CLOUDINARY_UPLOAD_TIMEOUT_SEC`(60) · 동영상·파생본(eager) `CLOUDINARY_UPLOAD_LONG_TIMEOUT_SEC`(300). 넘기면 `error`에 사유.
 
     ## 왜 dict인가
 
@@ -364,7 +379,9 @@ def upload_bytes(image_bytes: bytes, *, prefer_webp: bool = False,
         base = os.getenv("CLOUDINARY_FOLDER", "proxy-commerce")
         # F48-b — 인보이스 같은 **서류**는 상품 이미지와 다른 폴더(섞이지 않게)·PDF 허용(auto).
         opts: Dict[str, Any] = {"folder": f"{base}/{folder}" if folder else base,
-                                "resource_type": resource_type or "image"}
+                                "resource_type": resource_type or "image",
+                                "timeout": float(timeout) if timeout else upload_timeout_sec(
+                                    long=(resource_type or "image") != "image" or bool(eager))}
         if prefer_webp:
             opts["format"] = "webp"
         # D3-6 ⓪ — 벤치 산출물은 **주소만 보고** 어느 열인지 알아야 채점이 된다.

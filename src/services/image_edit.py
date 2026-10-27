@@ -1031,6 +1031,16 @@ def render_local(raw: bytes, k: float, erase: List[Dict], texts: List[Tuple[Dict
             "colors": ["%02x%02x%02x" % tuple(x[4]["color"]) for x in typos], "weights": [x[4]["weight"] for x in typos]}
 
 
+def step_timeout_sec() -> float:
+    """순찰 127 M1(운영 10-27 10:40 KST — 「빼고 등록」 글자 고치기가 한도 1 올린 뒤 20분+ 멈춤): 편집 한 장의 그리기 기다림·업로드 각각의
+    상한(초) — `IMAGE_EDIT_STEP_TIMEOUT_SEC`(30). 넘기면 이 장은 실패로 돌아가고 부른 쪽이 사진째 뺀다(사유)."""
+    try:
+        v = float(os.getenv("IMAGE_EDIT_STEP_TIMEOUT_SEC", "30") or 30)
+    except ValueError:
+        return 30.0
+    return v if v > 0 else 30.0
+
+
 def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user", small=None) -> Dict:
     """`ops=[{id, action: erase|text, text?}]` → **새 편집본 하나**(지금 고른 버전 위에). 결과 `{ok, url, credits, erased, error?}`.
     사람이 상자를 탭해서 적용할 때(그리고 다듬기)만 부른다(자동 픽셀 변경 없음 — Y11-E). 저장은 호출부.
@@ -1073,7 +1083,7 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
         # Y11-O(오너): 그리기는 요청·다듬기 스레드가 아니라 **사진 그리기 워커 하나**에서(한 번에 한 장 · 장마다 gc·malloc_trim)
         from src.utils import render_worker as _rw
         rr = _rw.run(render_local, raw, k, erase, texts, others=p["boxes"], skip_tilted=(by == "polish"),
-                     restore=restore, orig_raw=orig_raw, _name=f"{by}:{kind}{idx}")
+                     restore=restore, orig_raw=orig_raw, _name=f"{by}:{kind}{idx}", _timeout=step_timeout_sec())
     except Exception as exc:                                    # noqa: BLE001
         logger.warning("[사진 편집] 그리기 실패 %s idx=%s: %s", kind, idx, exc)
         rr = {"ok": False, "why": type(exc).__name__}
@@ -1084,7 +1094,7 @@ def apply(extra: dict, kind: str, idx: int, ops: List[Dict], *, by: str = "user"
         return {"ok": False, "error": f"바꿀 상자가 없어요 — 기운 글자 {len(rr.get('tilted') or [])}곳은 텐센트 글자 그대로 둬요",
                 "tilted": rr.get("tilted") or []}
     from src.media.image_pipeline import upload_bytes
-    up = upload_bytes(rr["bytes"], folder="edit")
+    up = upload_bytes(rr["bytes"], folder="edit", timeout=step_timeout_sec())
     url = str(up.get("secure_url") or "") if up.get("ok") else ""
     if not url:
         return {"ok": False, "error": "편집본을 올리지 못했어요 — " + (up.get("error") or "주소를 받지 못했어요")}
