@@ -5136,7 +5136,7 @@ def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
     for k in ("title_ko", "coupang_name", "description", "description_ko", "keywords", "tags", "options", "detail_specs", "brand"):
         if product_data.get(k):
             view[k] = product_data[k]
-    return _rg.scan(view, pending_images=_risk_pending_images(item_id))
+    return _rg.scan(view, pending_images=_risk_pending_images(item_id), owner=_seller_identities())
 
 
 def _ocr_text_of(extra: dict) -> str:
@@ -6435,7 +6435,7 @@ def collect_risk_decision(item_id: str):
         upd["title"] = ex["title_ko"]
     if not collect_history_store.update(item_id, seller_ids=_seller_identities(), **upd):
         return jsonify({"ok": False, "error": "저장하지 못했습니다."}), 500
-    return jsonify({"ok": True, "action": action, "risk": _rg.card(_rg.scan(ex, pending_images=_risk_pending_images(item_id))),
+    return jsonify({"ok": True, "action": action, "risk": _rg.card(_rg.scan(ex, pending_images=_risk_pending_images(item_id), owner=_seller_identities())),
                     # Y11-O: 뺄 글자·사진이 없으면(소품뿐인 사진 등) 「변경 없음」 — 아무것도 안 뺐다고 정직하게
                     "image_line": ((_rg.strip_image_line(ex, r.get("hit")) if r.get("changed", True)
                                     else "변경 없음 — 뺄 글자나 사진이 없어요") if action == "strip" else ""),
@@ -8675,9 +8675,29 @@ def my_page():
         _adv_admin = False
     _adv_pref = _ag.pref_on(sid)
 
+    # 오너 지시 10-27 ①: 인증·허가 서류함(본인 것 · 관리자는 전 셀러 것도)
+    from . import user_docs as _ud
+    try:
+        my_docs = []
+        for _i in _seller_identities():
+            my_docs += _ud.list_docs(_i)
+        my_docs = list({d["id"]: d for d in my_docs}.values())
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("마이페이지 서류함 조회 실패: %s", exc)
+        my_docs = []
+    all_docs = []
+    if _adv_admin:
+        try:
+            all_docs = _ud.all_docs()
+        except Exception as exc:                                 # noqa: BLE001
+            logger.warning("마이페이지 전 셀러 서류 조회 실패: %s", exc)
+
     return render_template(
         "me.html",
         page="me",
+        doc_kinds=_ud.KINDS,
+        my_docs=my_docs,
+        all_docs=all_docs,
         advanced_summary=_ag.ADVANCED_SUMMARY,
         advanced_pref=_adv_pref,
         advanced_locked_open=bool(_adv_admin or _ag.is_paid(plan)),
@@ -8694,6 +8714,31 @@ def my_page():
         collected_count=collected_count,
     )
 
+
+
+@bp.post("/me/docs")
+def my_docs_add():
+    """오너 지시 10-27 ①: 인증·허가 서류 추가 — 번호는 셀러 본인이 넣는다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요해요"}), 401
+    from . import user_docs as _ud
+    data = request.get_json(silent=True) or {}
+    try:
+        doc = _ud.add_doc(_seller_id(), kind=data.get("kind"), number=data.get("number"), issuer=data.get("issuer") or "",
+                          valid_until=data.get("valid_until") or "", note=data.get("note") or "")
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "doc": doc})
+
+
+@bp.post("/me/docs/<doc_id>/delete")
+def my_docs_delete(doc_id: str):
+    """소프트 삭제 — 본인 서류만."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요해요"}), 401
+    from . import user_docs as _ud
+    ok = any(_ud.delete_doc(i, doc_id) for i in _seller_identities())
+    return jsonify({"ok": ok, "error": "" if ok else "지울 서류를 찾지 못했어요"}), (200 if ok else 404)
 
 
 @bp.post("/me/advanced")

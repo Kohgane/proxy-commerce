@@ -341,8 +341,35 @@ def _hit(key, cat, label, grade, names, case, where_text, imgs, why="") -> Optio
             "found": list(dict.fromkeys(found)), "where": where, "images": images, "why": why}
 
 
-def scan(extra: dict, *, pending_images: int = 0) -> dict:
-    """한 상품 전부 — `{hits, waiting, decided}`. `pending_images` = 아직 번역(OCR) 중인 장 수(「이미지 검사 대기 n장」)."""
+DOC_LINK = "/seller/me#docs"
+
+
+def _cert_by_doc(h: dict, c: dict, owner) -> None:
+    """`cert:` 보류 한 줄 — 셀러에게 그 종류의 유효한 서류가 있으면 주의(통과)로 내리고 근거를 남긴다. 없으면 「서류 추가」 안내."""
+    doc = None
+    if owner:
+        try:
+            from src.seller_console import user_docs as UD
+            doc = UD.valid_doc_for(owner, c.get("docs") or [])
+        except Exception:                                          # noqa: BLE001 — 서류함을 못 읽으면 보류 그대로(통과시키지 않는다)
+            doc = None
+    if doc:
+        h["grade"] = "caution"
+        h["passed_by"] = {"by": "user_doc", "doc_id": doc["id"], "kind": doc["kind"], "number": doc.get("number") or ""}
+        h["why"] = f"내 서류로 통과 — {doc.get('kind_label') or doc['kind']} {doc.get('number') or ''}".strip()
+        return
+    try:
+        from src.seller_console.user_docs import KINDS
+        need = " 또는 ".join(KINDS.get(k, k) for k in c.get("docs") or [])
+    except Exception:                                              # noqa: BLE001
+        need = ""
+    h["doc_hint"] = {"link": DOC_LINK, "need": need}
+    h["why"] = ((h.get("why") or "") + f" — 내 정보 › 인증·허가 서류에 {need}을(를) 추가하면 자동 통과").strip(" —")
+
+
+def scan(extra: dict, *, pending_images: int = 0, owner=None) -> dict:
+    """한 상품 전부 — `{hits, waiting, decided}`. `pending_images` = 아직 번역(OCR) 중인 장 수(「이미지 검사 대기 n장」).
+    `owner`(등록하는 셀러의 정체성들) — 오너 지시 10-27 ①: `cert:` 보류는 그 셀러의 유효한 서류(`user_docs`)가 있으면 주의(통과)."""
     ex = extra or {}
     where_text = fields(ex)
     props: list = []
@@ -397,6 +424,8 @@ def scan(extra: dict, *, pending_images: int = 0) -> dict:
             im = [(k, i, n, _drop_phrases(t, c["except"])) for k, i, n, t in imgs]
         h = _hit("cert:" + c["key"], c["label"], c["label"], c.get("grade") or "hold", c.get("names") or [], False,
                  wt, im, c.get("why") or "")
+        if h and h["grade"] == "hold" and c.get("docs"):
+            _cert_by_doc(h, c, owner)
         if h:
             certs.append(h)
             shadowed |= set(c.get("shadows") or [])
@@ -963,7 +992,8 @@ def card(sc: dict) -> dict:
     """화면용 — `{count, hits:[{key, cat, label, grade, grade_label, found, where_line, decided, can_allow, auto}], waiting, skip}`."""
     rows = []
     for h in sc.get("hits") or []:
-        rows.append({k: h.get(k) for k in ("key", "cat", "label", "grade", "grade_label", "found", "decided", "can_allow", "why")}
+        rows.append({k: h.get(k) for k in ("key", "cat", "label", "grade", "grade_label", "found", "decided", "can_allow", "why",
+                                            "doc_hint", "passed_by")}
                     | {"where_line": where_line(h)})
     return {"count": len(rows), "hits": rows, "waiting": sc.get("waiting") or 0, "skip": sc.get("skip") or {},
             "notes": [n["line"] for n in sc.get("notes") or []], "skip_hint": skip_hint(sc)}
