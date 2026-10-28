@@ -1,34 +1,53 @@
 {% extends "_base_app.html" %}
 {% block title %}레인 고르기{% endblock %}
 {% block og_title %}고가브릿지 — 로드 · 오션 · 레일{% endblock %}
+{# V41-4(오너 2026-10-28 18:14 「애플처럼 — 간결·군더더기 없이 고급스럽게」)
+   게이트 = 에디토리얼 한 장. 카드 0·테두리 0·버튼 0. 큰 세리프 문장 하나, 다리 라인아트 하나(화면당 1),
+   레인 셋은 헤어라인으로 나눈 행(01/02/03) — 행 전체가 링크다. 추천 레인만 키스톤(주황 점) 하나. #}
+{% block topnav %}{% endblock %}
+{% block main_class %}lane-gate-main{% endblock %}
 {% block content %}
-{# V41 레인 게이트(오너 2026-10-28 14:18·15:32) — 마스터 브랜드 하나 + 레인 셋(로드·오션·레일).
-   다리 마크는 셋 다 같고, 카드마다 세리프 워드마크 한 줄 + 악센트 라인 하나. 장식은 그게 전부다. #}
-<div class="lane-gate">
-  <header class="lane-gate-head">
-    <span class="console-kpi-label">레인 고르기 · Lanes</span>
-    <h1 class="lane-gate-title">운영할 방식을 선택하세요</h1>
-    <p class="lane-gate-sub">Choose your lane — 언제든 설정에서 바꿀 수 있어요.</p>
-    <hr class="pc-hairline">
+<header class="lane-gate-bar" data-role="lane-gate-bar">
+  <a href="/" class="lane-gate-brand" aria-label="고가브릿지 홈">
+    <span class="lane-gate-mark" aria-hidden="true"></span>
+    <span class="lane-gate-brand-name">{{ brand_name_ko|default('고가브릿지', true) }}</span>
+  </a>
+  {% if session.get('user_id') or session.get('user_email') %}<a href="/seller/" class="lane-gate-back">콘솔로 →</a>{% endif %}
+</header>
+
+<section class="lane-gate" data-role="lane-gate">
+  <header class="lane-gate-head pc-enter">
+    <p class="lane-gate-eyebrow">레인 고르기 · Lanes</p>
+    <h1 class="lane-gate-title">어느 다리를<br>건널까요.</h1>
+    <p class="lane-gate-sub">운영할 방식을 선택하세요 — 언제든 설정에서 바꿀 수 있어요.</p>
   </header>
 
-  <div class="lane-grid">
-    {% for key in ('import', 'export', 'rail') %}{% set l = lanes[key] %}
-    <a href="/lane/set?lane={{ l.id }}&next=/seller/" class="lane-card lane-card-{{ l.accent }} {% if l.id == suggested %}is-suggested{% endif %}" data-role="lane-card" data-lane="{{ l.id }}">
-      <span class="lane-card-accent" aria-hidden="true"></span>
-      <svg class="lane-card-mark" viewBox="0 0 64 40" aria-hidden="true" focusable="false">
-        <path d="M4 34 Q32 2 60 34" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-        <path d="M8 34 H56" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
-        <circle cx="32" cy="18" r="3.2" class="lane-card-keystone"/>
-      </svg>
-      <span class="lane-card-brand">고가브릿지</span>
-      <span class="lane-card-name">{{ l.name_ko }}</span>
-      <span class="lane-card-en">{{ l.name_en }} · {{ l.title_ko }} · {{ l.arrow_ko }}</span>
-      <p class="lane-card-desc">{{ l.desc_ko }}</p>
-      <span class="lane-card-meta">{{ '한국어' if l.lang == 'ko' else 'English' }} · {{ l.currency }}</span>
-      <span class="lane-card-cta">{% if l.id == suggested %}추천 · {% endif %}이 레인으로 시작</span>
-    </a>
+  <svg class="lane-gate-bridge" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+    <path d="M0 110 C 300 110, 420 18, 600 18 S 900 110, 1200 110" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M0 112 H1200" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/>
+    <g stroke="currentColor" stroke-width="1" opacity=".35">
+      <path d="M300 112 V72"/><path d="M450 112 V34"/><path d="M600 112 V18"/><path d="M750 112 V34"/><path d="M900 112 V72"/>
+    </g>
+  </svg>
+
+  <ol class="lane-grid" data-role="lane-list">
+    {% for key in ('import', 'export', 'rail') %}{% set l = lanes[key] %}{% set sug = (l.id == suggested) %}
+    <li class="lane-row">
+      <a href="/lane/set?lane={{ l.id }}&next=/seller/" class="lane-card lane-card-{{ l.accent }}{% if sug %} is-suggested{% endif %}" data-role="lane-card" data-lane="{{ l.id }}">
+        <span class="lane-card-no" aria-hidden="true">{{ '%02d' % loop.index }}</span>
+        <span class="lane-card-main">
+          <span class="lane-card-name">{{ l.name_ko }}<span class="lane-card-accent" aria-hidden="true"></span></span>
+          <span class="lane-card-en">{{ l.name_en }} · {{ l.title_ko }} · {{ l.arrow_ko }}</span>
+        </span>
+        <span class="lane-card-side">
+          <span class="lane-card-desc">{{ l.desc_ko }}</span>
+          <span class="lane-card-meta">{{ '한국어' if l.lang == 'ko' else 'English' }} · {{ l.currency }}</span>
+        </span>
+        <span class="lane-card-cta">{% if sug %}<span class="lane-card-keystone" aria-hidden="true"></span>추천{% else %}시작{% endif %}<span class="lane-card-arrow" aria-hidden="true">→</span></span>
+        <svg class="lane-card-mark" viewBox="0 0 64 40" aria-hidden="true" focusable="false"><path d="M4 34 Q32 2 60 34" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </a>
+    </li>
     {% endfor %}
-  </div>
-</div>
+  </ol>
+</section>
 {% endblock %}
