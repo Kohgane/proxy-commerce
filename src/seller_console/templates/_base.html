@@ -92,32 +92,15 @@
 <div class="console-shell" data-testid="seller-console-shell">
   <nav class="sidebar console-sidebar d-flex flex-column p-3" id="sidebarDrawer" data-testid="seller-sidebar">
     {# v87-S6: 로고=사이트 정문(랜딩 "/") — 콘솔 홈이 아니다(오너 확정). 대시보드 셸과 동일 규칙. #}
-    <a href="/" class="console-brand text-decoration-none mb-3">
-      <div class="small text-secondary">{{ brand_name_ko|default('고가브릿지', true) }}</div>
-      <strong><i class="bi bi-shop"></i> 셀러 콘솔 · {{ _brand_name }}</strong>
-    </a>
-
-    {# v34 P0: 개인화 헤더 — "내 작업공간"(로그인 계정·플랜) #}
-    {% if _user_email or _user_name %}
-    {% set _plan_label = {'free':'무료','plus':'플러스','pro':'프로'} %}
-    <a href="/seller/me" class="console-account text-decoration-none d-flex align-items-center gap-2 mb-3 p-2 rounded-3">
-      <span class="console-avatar d-inline-flex align-items-center justify-content-center flex-shrink-0">
-        {{ (_user_name or _user_email or '나')[:1]|upper }}
+    {# V41-1(오너 2026-10-28 「간결·임팩트」): 로고 = 다리 마크 + 고가브릿지 세리프 + 레인 워드마크 한 줄. 「셀러 콘솔」 꼬리표·아이콘 제거. #}
+    <a href="/" class="console-brand text-decoration-none mb-3" data-role="console-brand">
+      <span class="kgp-mt-mark console-brand-mark" aria-hidden="true"></span>
+      <span class="console-brand-text">
+        <strong class="console-brand-name">{{ brand_name_ko|default('고가브릿지', true) }}</strong>
+        {% if lane %}<span class="console-brand-lane console-brand-lane-{{ lane.accent or 'road' }}" data-role="brand-lane">{{ lane.name_ko or lane.title_ko }}</span>{% endif %}
+        <span class="visually-hidden">셀러 콘솔 · {{ _brand_name }}</span>
       </span>
-      <span class="flex-grow-1 text-truncate">
-        <span class="console-account-name d-block text-truncate fw-semibold">{{ _user_name or _user_email }}</span>
-        <span class="console-kpi-label console-account-plan">내 작업공간 · {{ _plan_label.get(account_plan, '무료') }}{% if account_plan in ('plus','pro') %} 활성{% endif %}</span>
-      </span>
-      <i class="bi bi-chevron-right text-muted small"></i>
     </a>
-    {% endif %}
-
-    {# v36 PART A: 모바일 드로어에서도 언어 전환 가능(공통 topbar가 모바일에서 숨겨지므로) #}
-    {# 순찰 122b-U1: 바텀시트에선 작은 알약 2개(큰 청록 버튼이 메뉴보다 커 보였다) #}
-    <div class="kgp-sheet-lang d-md-none mb-2" role="group" aria-label="{{ t('lang.label') }}">
-      <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'ko' else '' }}">한국어</a>
-      <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'en' else '' }}">EN</a>
-    </div>
 
     <div class="flex-grow-1">
     <!-- 핵심 메뉴(항상 노출) — 비기너 과부하 방지(v5). 나머지는 '고급 기능'으로 접음. -->
@@ -257,6 +240,35 @@
     {% endif %}
     </div>
 
+    {# V41-1: 계정·언어·앱 설치·로그아웃·관리자·정책·사업자 정보는 **접힌 「계정·더보기」** 안에 — 사이드바 첫 화면은 메뉴만. 요소는 그대로(모바일 로그아웃 F21·사업자 정보 L1·관리자 링크 F30 계약 유지), 자리만 접는다. #}
+    <details class="console-sidebar-more mt-2" id="sidebarMore" data-role="sidebar-more">
+      <summary class="console-sidebar-more-summary">
+        <span class="console-avatar console-avatar-sm">{{ (_user_name or _user_email or '나')[:1]|upper }}</span>
+        <span class="text-truncate">{{ _user_name or _user_email or '계정' }}</span>
+        <i class="bi bi-chevron-up ms-auto"></i>
+      </summary>
+    {# v34 P0: 개인화 헤더 — "내 작업공간"(로그인 계정·플랜) #}
+    {% if _user_email or _user_name %}
+    {% set _plan_label = {'free':'무료','plus':'플러스','pro':'프로'} %}
+    <a href="/seller/me" class="console-account text-decoration-none d-flex align-items-center gap-2 mb-3 p-2 rounded-3">
+      <span class="console-avatar d-inline-flex align-items-center justify-content-center flex-shrink-0">
+        {{ (_user_name or _user_email or '나')[:1]|upper }}
+      </span>
+      <span class="flex-grow-1 text-truncate">
+        <span class="console-account-name d-block text-truncate fw-semibold">{{ _user_name or _user_email }}</span>
+        <span class="console-kpi-label console-account-plan">내 작업공간 · {{ _plan_label.get(account_plan, '무료') }}{% if account_plan in ('plus','pro') %} 활성{% endif %}</span>
+      </span>
+      <i class="bi bi-chevron-right text-muted small"></i>
+    </a>
+    {% endif %}
+
+    {# v36 PART A: 모바일 드로어에서도 언어 전환 가능(공통 topbar가 모바일에서 숨겨지므로) #}
+    {# 순찰 122b-U1: 바텀시트에선 작은 알약 2개(큰 청록 버튼이 메뉴보다 커 보였다) #}
+    <div class="kgp-sheet-lang d-md-none mb-2" role="group" aria-label="{{ t('lang.label') }}">
+      <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'ko' else '' }}">한국어</a>
+      <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'en' else '' }}">EN</a>
+    </div>
+
     {# v36 PART B: PWA 설치 — 홈 화면에 앱처럼 추가(안드로이드: beforeinstallprompt, iOS: 공유→홈 화면에 추가 안내) #}
     <button type="button" id="pwaInstallBtn" class="btn btn-cta btn-sm w-100 mt-3 d-none" onclick="pwaInstall()">
       <i class="bi bi-phone"></i> 홈 화면에 앱 설치
@@ -298,13 +310,13 @@
        사이드바는 제 스크롤(100vh)이라 본문 높이를 늘리지 않는다(「한 화면」 계약 v40s6h·s6i 유지). 모바일은 드로어 안.
        단독 blueprint 앱(테스트)에선 조각이 없어도 렌더. #}
     <div class="mt-2 pt-2 border-top">{% set foot_dark = False %}{% set foot_links = False %}{% include "public/_site_footer.html" ignore missing %}</div>
+    </details>
   </nav>
 
   <div class="console-main">
     <header class="console-topbar">
       <div class="d-flex align-items-center gap-2">
-        <a href="/" class="console-topbar-brand text-decoration-none"><strong>{{ _brand_name }}</strong></a>
-        {% if _user_role == 'seller' %}<span class="pc-badge pc-badge-on">셀러</span>{% endif %}
+        <a href="/" class="console-topbar-brand text-decoration-none"><strong>{{ _brand_name }}</strong>{% if lane %}<span class="console-topbar-lane console-brand-lane-{{ lane.accent or 'road' }}">{{ lane.name_ko or lane.title_ko }}</span>{% endif %}</a>
       </div>
 
       <form class="console-search-wrap" action="/seller/catalog" method="get" role="search">
@@ -318,23 +330,23 @@
       <div class="d-flex align-items-center gap-2">
         {# v18 PART A: 운영 방식(수입형/수출형) 표시 + 전환(설정에서 언제든) #}
         {% if lane %}
-        <a href="/lane" class="btn btn-sm btn-ghost" title="운영 방식 전환 (수입형/수출형)">
-          {{ lane.title_ko }} ▾
+        <a href="/lane" class="btn btn-sm btn-ghost console-lane-switch" title="레인 바꾸기 (로드·오션·레일)" data-role="lane-switch">
+          {{ lane.name_ko or lane.title_ko }} ▾
         </a>
         {% endif %}
-        {# v15 i18n: 언어 토글(한국어/English) — 기존 /i18n/set 쿠키 단일소스 #}
-        <div class="btn-group btn-group-sm" role="group" aria-label="{{ t('lang.label') }}">
-          <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}"
-             class="btn {{ 'btn-primary' if current_lang == 'ko' else 'btn-ghost' }}">한국어</a>
-          <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}"
-             class="btn {{ 'btn-primary' if current_lang == 'en' else 'btn-ghost' }}">EN</a>
-        </div>
         {% if _user_id %}
         <div class="dropdown">
-          <button class="btn btn-ghost btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-            {{ _user_email or _user_name or '사용자' }}
+          {# V41-1: 계정 버튼 = 아바타 하나(이메일 노출 0). 언어 토글은 이 메뉴 안으로(탑바 강조 1개 유지). #}
+          <button class="btn btn-ghost btn-sm console-topbar-account" data-bs-toggle="dropdown" aria-expanded="false" aria-label="{{ _user_email or _user_name or '사용자' }}" title="{{ _user_email or _user_name or '사용자' }}">
+            <span class="console-avatar console-avatar-sm">{{ (_user_name or _user_email or '나')[:1]|upper }}</span>
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
+            <li class="px-3 py-1 console-kpi-label text-truncate">{{ _user_email or _user_name }}</li>
+            <li><div class="px-3 py-1 d-flex gap-1" role="group" aria-label="{{ t('lang.label') }}">
+              <a href="/i18n/set?lang=ko&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'ko' else '' }}">한국어</a>
+              <a href="/i18n/set?lang=en&next={{ request.full_path|urlencode }}" class="kgp-sheet-lang-pill {{ 'active' if current_lang == 'en' else '' }}">EN</a>
+            </div></li>
+            <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="/seller/me"><i class="bi bi-person-circle"></i> 내 프로필</a></li>
             <li><a class="dropdown-item" href="/seller/me/notifications"><i class="bi bi-gear"></i> 설정</a></li>
             <li><a class="dropdown-item" href="/seller/me/tokens"><i class="bi bi-fingerprint"></i> 패스키</a></li>
