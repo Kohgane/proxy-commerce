@@ -2622,3 +2622,55 @@ a.hb-tile:hover { border-color: var(--teal); }
 .lane-card-ocean { --lane-accent: var(--lane-ocean-accent); --lane-key: var(--lane-ocean-key); }
 .lane-card-rail { --lane-accent: var(--lane-rail-accent); --lane-key: var(--lane-rail-key); }
 @media (prefers-reduced-motion: reduce) { .lane-card { transition: none; } .lane-card:hover { transform: none; } }
+
+/* ===== V41-2 대시보드(오너 2026-10-28 「간결·임팩트」) — 숫자 하나 + 할 일 셋, 나머지는 접힘 ===== */
+.hb-grid { font-size: var(--body-lg); }                              /* 최소 글자 올림(14px 미만 0) */
+.hb-grid .hb-card { padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg); }
+.hb-hero { position: relative; overflow: hidden; }
+.hb-hero::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--gold); opacity: .9; }
+.hb-hero.is-alert { border-left: 1px solid var(--border); }          /* 왼쪽 주황 선 대신 큰 숫자가 신호다 — 강조 1색 */
+.hb-hero-head { display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-3); }
+.hb-hero-row { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.hb-hero-num { font-family: var(--font-display); font-weight: 700; font-size: clamp(56px, 8vw, 96px); line-height: .95; letter-spacing: -.03em; color: var(--text-strong); }
+.hb-hero-zero { color: var(--text-muted); }
+.hb-hero-unit { font-size: var(--body-lg); color: var(--text-muted); }
+.hb-hero-cta { margin-left: auto; min-height: 44px; border-radius: var(--radius-pill); padding: 0 var(--space-5); display: inline-flex; align-items: center; gap: .4rem; }
+.hb-grid .hb-meta { font-size: var(--small); margin-left: 0; }
+.hb-grid .hb-todo-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "t acts" "x acts"; padding: var(--space-3) 0; border-top: 1px solid var(--border); font-size: var(--body); }
+.hb-grid .hb-todo-t { grid-area: t; font-size: var(--body-lg); }
+.hb-grid .hb-todo-x { grid-area: x; font-size: var(--small); }
+.hb-grid .hb-todo-acts { grid-area: acts; }
+.hb-grid .hb-todo-go { min-height: 40px; border-radius: var(--radius-pill); font-size: var(--small); }
+.hb-todo-fold:not(.is-open) > .hb-todo-row:nth-child(n+4) { display: none; }   /* 할 일 셋만 — 나머지는 「더 보기」 */
+.hb-todo-more { display: block; width: 100%; margin-top: var(--space-2); min-height: 44px; border: 1px dashed var(--border); background: transparent; color: var(--text-muted); border-radius: var(--radius); font-size: var(--small); }
+.hb-todo-more:hover { color: var(--text-strong); border-color: var(--gold); }
+.hb-grid .hb-tile { padding: var(--space-3) var(--space-4); min-height: 84px; border-radius: var(--radius); }
+.hb-grid .hb-tile-k { font-size: var(--small); letter-spacing: .04em; }
+.hb-grid .hb-tile-v { font-family: var(--font-display); font-size: 2rem; font-weight: 700; }
+.hb-grid .hb-tile.is-alert { border-left: 1px solid var(--border); }
+.hb-grid .hb-tile.is-alert .hb-tile-v { color: var(--orange-strong, var(--orange)); }
+.hb-grid .hb-title { font-family: var(--font-display); font-size: var(--h3-size); }
+.hb-grid .hb-mtable { font-size: var(--body); }
+.hb-grid .hb-mtable th, .hb-grid .hb-mtable td { padding: var(--space-3) var(--space-2); }
+.hb-grid .hb-mtable thead th { font-size: var(--small); font-weight: 600; letter-spacing: .02em; }
+.hb-grid .hb-mtable tbody th { font-size: var(--body-lg); }
+.hb-grid .hb-mkt { font-size: var(--small); color: var(--text-muted); }
+.hb-grid .hb-mtime { font-size: var(--small); color: var(--text-muted); }
+.hb-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--border); margin-right: .35rem; vertical-align: 1px; }
+.hb-dot.is-on { background: var(--teal); }
+.hb-fold { border-top: 1px solid var(--border); }
+.hb-fold-sum { list-style: none; cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: .5rem; padding: var(--space-2) 0; color: var(--text-muted); font-size: var(--body); }
+.hb-fold-sum::-webkit-details-marker { display: none; }
+.hb-fold-sum::before { content: "▸"; font-size: .8em; }
+.hb-fold[open] > .hb-fold-sum::before { content: "▾"; }
+.hb-fold-sum b { color: var(--text-strong); }
+.hb-fold > .hb-card { margin-bottom: var(--space-2); }
+.hb-r-fold { order: 4; } .hb-d-fold { order: 5; } .hb-e-fold { order: 6; }     /* 접힌 것들은 기둥 맨 아래 */
+.hb-grid .hb-tile.is-alert .hb-tile-v { color: var(--text-strong); }            /* 강조 1색 = CTA 주황 하나. 숫자는 먹 */
+@media (max-width: 767.98px) {
+  .hb-grid .hb-todo-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "t" "x" "acts"; }
+  .hb-grid .hb-todo-t { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .hb-grid .hb-todo-acts { justify-content: flex-start; margin-top: var(--space-1); }
+  .hb-hero-num { font-size: 64px; }
+  .hb-hero-cta { margin-left: auto; }
+}
