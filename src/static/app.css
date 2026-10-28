@@ -2674,3 +2674,30 @@ a.hb-tile:hover { border-color: var(--teal); }
   .hb-hero-num { font-size: 64px; }
   .hb-hero-cta { margin-left: auto; }
 }
+
+/* ===== V41-3 수집한 상품 목록(오너 2026-10-28 「간결·임팩트」) — 행 72px · 썸네일 56 · 제목 16px · 마켓 뱃지 = 글자 하나 원 4개 ===== */
+@media (min-width: 768px) {
+  .ch-table td { padding-top: 10px; padding-bottom: 10px; }
+  .ch-c-img { width: 72px; }
+  .ch-c-img .ch-thumb.ch-thumb-lg { width: 56px; height: 56px; border-radius: var(--radius); }
+  .ch-title-1 { font-size: var(--body-lg); font-weight: 600; }
+  .ch-c-badges { width: 176px; }                                   /* 원 4개 = 한 줄, 글자 뱃지 8개 자리 반납 */
+  .ch-c-when { width: 210px; font-size: var(--small); }
+  .ch-c-when .ch-when-short { display: none; }                     /* short = 모바일용 짧은 시각 — 데스크톱은 시각 + 동작 한 마디 */
+  .ch-c-when .ch-when-text { display: inline; }
+  .mk-badges { gap: 6px; }
+  .mk-badge { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; justify-content: center; border-radius: var(--radius-pill); font-size: var(--small); font-weight: 700; }
+  .mk-badge .mk-full { display: none; }
+  .mk-badge .mk-short { display: inline; }
+  .mk-badge.kind-done { background: var(--teal); border-color: var(--teal); color: var(--on-accent); }   /* 등록됨 = 청록 채움 */
+  .mk-badge.kind-wait { border: 1px solid var(--text-muted); color: var(--text); }                      /* 대기 = 회색 테두리 */
+  .mk-badge.kind-none { border: 1px dashed var(--border); color: var(--text-muted); }
+  .mk-badge.kind-bad { border: 1px solid var(--danger); color: var(--danger); }                        /* 반려는 신호라 남긴다 */
+  .mk-chip.mk-chip-dup { height: 32px; }
+}
+@media (min-width: 768px) {
+  .mk-badge.kind-bad, .mk-badge.kind-fail { width: auto; min-width: 32px; padding: 0 10px; border-radius: var(--radius-pill); }
+}
+@media (min-width: 768px) {
+  .ch-c-when .ch-when-text::before { content: " · "; color: var(--text-muted); }
+}
