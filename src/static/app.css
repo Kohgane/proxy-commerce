@@ -2656,7 +2656,7 @@ a.hb-tile:hover { border-color: var(--teal); }
 .hb-grid .hb-mtable tbody th { font-size: var(--body-lg); }
 .hb-grid .hb-mkt { font-size: var(--small); color: var(--text-muted); }
 .hb-grid .hb-mtime { font-size: var(--small); color: var(--text-muted); }
-.hb-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--border); margin-right: .35rem; vertical-align: 1px; }
+.hb-dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--border); margin-right: .35rem; vertical-align: 1px; }
 .hb-dot.is-on { background: var(--teal); }
 .hb-fold { border-top: 1px solid var(--border); }
 .hb-fold-sum { list-style: none; cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: .5rem; padding: var(--space-2) 0; color: var(--text-muted); font-size: var(--body); }
