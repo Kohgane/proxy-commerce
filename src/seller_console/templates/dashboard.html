@@ -15,16 +15,21 @@
 <div class="hb-wrap hb-grid" data-role="home-bundles">
   <div class="hb-col hb-col-l">
   {% set a = h.attention or {} %}
-  <section class="hb-card hb-a{% if a.n %} is-alert{% endif %}" data-role="hb-attention">
-    <div class="hb-sum">
-      <span class="hb-title">오늘 할 일</span>
-      {% if a.error %}<span class="hb-num hb-num-muted">{{ a.error }}</span>
-      {% elif a.n %}<span class="hb-num" data-role="hb-attention-n">{{ a.n }}</span>{% endif %}
+  {# V41-2(오너 2026-10-28 「간결·임팩트」): 첫 화면 = 세리프 큰 숫자 하나(오늘 할 일) + 할 일 셋 + 「더보기」. 표는 아래로 접는다. #}
+  <section class="hb-card hb-a hb-hero{% if a.n %} is-alert{% endif %}" data-role="hb-attention">
+    <div class="hb-hero-head">
+      <span class="console-kpi-label">오늘 할 일 · {{ lane.name_ko if lane else '' }}</span>
+      <div class="hb-hero-row">
+        {% if a.error %}<span class="hb-num hb-num-muted">{{ a.error }}</span>
+        {% elif a.n %}<span class="hb-hero-num" data-role="hb-attention-n">{{ a.n }}</span><span class="hb-hero-unit">건</span>
+        {% else %}<span class="hb-hero-num hb-hero-zero">0</span><span class="hb-hero-unit">건 — 오늘은 손댈 게 없어요</span>{% endif %}
+        <a class="btn btn-cta hb-hero-cta" href="/seller/manual-collect" data-role="hb-hero-cta"><i class="bi bi-plus-lg"></i> 상품 수집</a>
+      </div>
       <span class="hb-meta" data-role="hb-last-check">마켓 상태 마지막 조회 {{ h.last_check or '기록 없음' }}</span>
     </div>
     {% if a.error %}
     {% elif a.n %}
-    <ul class="hb-todo" data-role="hb-todo">
+    <ul class="hb-todo{% if (a.todo or [])|length > 3 %} hb-todo-fold{% endif %}" data-role="hb-todo">
       {% for t in a.todo or [] %}
       <li class="hb-todo-row" data-kind="{{ t.kind }}"><span class="hb-todo-t text-truncate">{{ t.title or '(제목 없음)' }}</span><span class="hb-todo-x">{{ t.text }}</span>
         <span class="hb-todo-acts">
@@ -37,6 +42,7 @@
       {% endfor %}
       {% if a.more %}<li class="hb-todo-row hb-more"><a href="/seller/collect/history?attn=1&days=3650">나머지 {{ a.more }}줄 — 손댈 것만 보기</a></li>{% endif %}
     </ul>
+    {% if (a.todo or [])|length > 3 %}<button type="button" class="hb-todo-more" data-role="hb-todo-more" aria-expanded="false">할 일 {{ (a.todo or [])|length - 3 }}줄 더 보기</button>{% endif %}
     {% else %}
     <p class="hb-none" data-role="hb-attention-none">없음</p>
     {% endif %}
@@ -44,14 +50,17 @@
 
   {% set r = h.running or {} %}
   {% if r.n or r.error or r.show %}
+  <details class="hb-fold hb-r-fold"><summary class="hb-fold-sum">돌아가는 것{% if r.n %} <b>{{ r.n }}</b>{% endif %}</summary>
   <section class="hb-card hb-r" data-role="hb-running">
     <div class="hb-sum"><span class="hb-title">돌아가는 것</span>
       {% if r.error %}<span class="hb-num hb-num-muted">{{ r.error }}</span>{% else %}<span class="hb-num">{{ r.n }}</span>{% endif %}</div>
     <ul class="hb-groups">{% for ln in r.lines or [] %}<li>{{ ln }}</li>{% endfor %}</ul>
   </section>
+  </details>
   {% endif %}
 
   {% set rc = h.recent %}
+  <details class="hb-fold hb-d-fold"><summary class="hb-fold-sum">최근 동작</summary>
   <section class="hb-card hb-d" data-role="hb-recent">
     <div class="hb-sum"><span class="hb-title">최근 동작</span></div>
     {% if rc is mapping and rc.error %}<span class="hb-num hb-num-muted">{{ rc.error }}</span>
@@ -64,6 +73,7 @@
     </ol>
     {% else %}<p class="hb-none">기록 없음</p>{% endif %}
   </section>
+  </details>
 
   </div>
   <div class="hb-col hb-col-r">
@@ -98,7 +108,7 @@
           {% for col, n in (('sale', r.sale), ('wait', r.wait), ('rejected', r.rejected)) %}
           <td class="{{ 'is-bad' if col == 'rejected' and n }}">{% if n %}<a class="hb-mcell" data-role="hb-mcell" href="/seller/collect/history?mk={{ r.slot|urlencode }}&amp;mst={{ col }}&amp;days=3650">{{ n }}</a>{% else %}{{ n }}{% endif %}</td>
           {% endfor %}
-          <td class="{{ 'is-off' if r.connected is sameas false }}">{{ '연결' if r.connected else ('미연결' if r.connected is sameas false else '—') }}</td>
+          <td class="{{ 'is-off' if r.connected is sameas false }}"><span class="hb-dot{% if r.connected %} is-on{% endif %}" aria-hidden="true"></span>{{ '연결' if r.connected else ('미연결' if r.connected is sameas false else '—') }}</td>
           <td class="hb-mtime">{{ r.last_check or '—' }}</td>
         </tr>
         {% endfor %}
@@ -108,6 +118,7 @@
   </section>
 
   {% set t = h.today or {} %}
+  <details class="hb-fold hb-e-fold"><summary class="hb-fold-sum">오늘 쓴 것</summary>
   <section class="hb-card hb-e" data-role="hb-today">
     <div class="hb-sum"><span class="hb-title">오늘 쓴 것</span></div>
     {% if t.error %}<span class="hb-num hb-num-muted">{{ t.error }}</span>
@@ -118,9 +129,18 @@
     </div>
     {% endif %}
   </section>
+  </details>
   </div>
 </div>
 <script>
+(function () {
+  var more = document.querySelector('[data-role=hb-todo-more]'), list = document.querySelector('[data-role=hb-todo]');
+  if (more && list) more.addEventListener('click', function () {
+    var open = list.classList.toggle('is-open'); more.setAttribute('aria-expanded', open ? 'true' : 'false');
+    more.textContent = open ? '접기' : more.getAttribute('data-label') || '더 보기';
+  });
+  if (more) more.setAttribute('data-label', more.textContent);
+})();
 (function () {
   var box = document.querySelector('[data-role=hb-todo]');
   if (!box) return;
