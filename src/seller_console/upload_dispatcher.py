@@ -2489,6 +2489,13 @@ class UploadDispatcher:
     @staticmethod
     def _payload_for_market_core(product_data: Dict[str, Any], market: str) -> tuple[Dict[str, Any], bool]:
         payload = dict(product_data or {})
+        # 순찰 148 H-rep: 쿠팡만 — 대표 자리에 글자 지운 정리본(네이버·상세·다른 마켓은 원본/번역본 그대로)
+        if str(market or "").startswith("coupang"):
+            try:
+                from src.services import rep_auto_clean as _rac
+                payload = _rac.apply_to_coupang(payload)
+            except Exception as exc:                                 # noqa: BLE001 — 정리본 실패면 원래 대표 그대로
+                logger.warning("[등록] 쿠팡 대표 정리본 반영 실패(원래 대표): %s", exc)
         # v86-N: 드로어 '상세페이지 꾸미기' 블록(detail_blocks)을 이 마켓의 description_html로 렌더.
         #   블록이 있으면(셀러의 명시적 상세 구성) 그것을 상세설명 HTML로 채운다 → 채널 브리지
         #   (description_html or description)가 이를 사용해 실제 등록에 반영(coupang/smartstore/11st).

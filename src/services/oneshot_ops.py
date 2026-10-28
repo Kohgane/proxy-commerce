@@ -38,6 +38,8 @@ P0-운영(오너 2026-10-23): 꺼낸 줄은 `ops:oneshot:inflight:<인스턴스:
 - `register` … `via_job:true` — 순찰 80: 화면 「등록」과 같은 잡(`_upload_start_job`)으로 보내고 끝날 때까지 기다린다(측정 = `reg_job`)
 - `reject_route` {item_id, market} — 순찰 137(오너 10-27 「반려 사유 상세 + 조치」): 쿠팡 이력 **전문**을 `extra.review_detail[market]`에 적고
   유형별 자동 조치(승인 재요청·사진 교체 재제출·사전검증 재큐) 1회 — 같은 사유 재반려면 멈추고 보고. `review_status`가 반려를 보면 스스로 넣는다
+- `rep_clean` {item_id} — 순찰 148 H-rep: 「대표 사진 바꾸기 필요」(쿠팡 대표 후보 전부 글자) — 후보를 다시 재고 0상자 장이 없으면
+  최소 상자 장 글자를 지워 다시 잰다(0상자면 대표 · 쿠팡 대표 자리에만 정리본). 사전검증이 스스로 넣는다(상품마다 한 번)
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
   (리퍼러 없이 = 목록 `<img referrerpolicy=no-referrer>`와 같은 조건). 상태 코드·형식·크기만 남긴다 — 기록은 바꾸지 않는다
 """
@@ -55,7 +57,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 PER_TICK = 5
 #: 사전검증 잡을 띄우는 줄 — 한 틱에 `HEAVY_PER_TICK`개만(잡이 겹치면 메모리 상한에 걸린다 · Y14 10-21)
-HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item")
+HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item", "rep_clean")
 HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 #: 순찰 62 — 끝난 줄 최근 기록(덮어쓰지 않고 덧붙임 · `LOG_MAX`줄) · 한 줄이 `LOG_ROW_MAX`자를 넘으면 마켓별 성공·사유만
@@ -71,7 +73,7 @@ _CURRENT_ROW: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
        "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard",
-       "naver_find", "naver_split_ok", "reject_route")
+       "naver_find", "naver_split_ok", "reject_route", "rep_clean")
 
 
 def _now() -> str:
@@ -152,6 +154,8 @@ def _run(row: dict) -> Dict:
         return option_retry(item_id)
     if op == "undiscard":
         return _undiscard(item_id, str(row.get("why") or ""))
+    if op == "rep_clean":
+        return rep_clean(item_id)
     if op == "dims_fetch":
         return dims_fetch(item_id, onebound=row.get("onebound", True) is not False)
     if op == "check_item":
@@ -1006,6 +1010,10 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
             ex.pop("rep_need_change", None)
         out["rep"] = {"counts": {str(k): v for k, v in counts.items()}, "why": {str(k): v for k, v in whys.items()},
                       "picked": pick, "rule": "0상자 장 · 여럿이면 지정 장(prefer)"}
+        if ex.get("rep_need_change"):
+            # 순찰 148 H-rep: 0상자 장이 없으면 사람에게 넘기기 전에 최소 상자 장의 글자를 지워 다시 잰다(쿠팡 대표 자리에만)
+            from src.services import rep_auto_clean as RAC
+            out["rep"]["auto_clean"] = RAC.clean(ex, counts, by=uid)
     if fields:
         # Y14: 오너가 정한 나가는 값 — 상품명(오너 초안) · 검색어 · 상세 첫 줄 고정 문구. 앞 값은 기록에 남긴다(되돌리기 재료)
         prev = {}
@@ -1056,6 +1064,41 @@ def _owner_decision(item_id: str, rep: dict, strip: List[str], pixels: str, mark
     if not ok:
         return dict(out, ok=False, why="저장하지 못했어요")
     out["prevalidate"] = _prevalidate(iid, markets)
+    return out
+
+
+def rep_clean(item_id: str, *, ocr=None, prevalidate=None) -> Dict:
+    """순찰 148 H-rep — 「대표 사진 바꾸기 필요」 상품의 대표 후보를 다시 재고(0상자 장이 생겼으면 그 장) · 없으면 최소 상자 장 글자를
+    지워 0상자면 대표로. 저장 뒤 사전검증 다시(쿠팡 대표가 바뀌었을 때만). 사전검증이 「바꾸기 필요」이고 아직 시도 안 한 상품에 스스로 넣는다."""
+    import json
+    from src.seller_console import collect_history_store as store
+    from src.services import ocr_compare_diag as D
+    from src.services import rep_auto_clean as RAC
+    item, uid = D._item(item_id)
+    if not item:
+        return {"ok": False, "why": "상품을 찾지 못했어요"}
+    iid = str(item.get("id") or item_id)
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    originals = [u for u in ex.get("images") or [] if u]
+    counts = RAC.measure(ex, RAC.candidates(ex), ocr=ocr)
+    out: Dict = {"ok": True, "counts": {str(k): v for k, v in counts.items()}}
+    zero = pick_rep(counts)
+    if zero >= 0:
+        if zero > 0:
+            ex["rep_image"] = originals[zero]
+        else:
+            ex.pop("rep_image", None)
+        ex.pop("rep_need_change", None)
+        out.update(picked=zero, how="0상자 장")
+    elif counts and all(isinstance(n, int) for n in counts.values()):
+        res = RAC.clean(ex, counts, by="auto", ocr=ocr)
+        out.update(auto_clean=res, picked=res["idx"] if res.get("ok") else -1, how="글자 지우기")
+    else:
+        return dict(out, ok=False, why="후보를 재지 못했어요")
+    if not store.update(iid, seller_ids={uid} if uid else None, extra_json=json.dumps(ex, ensure_ascii=False)):
+        return dict(out, ok=False, why="저장하지 못했어요")
+    if out.get("picked", -1) >= 0:
+        out["prevalidate"] = (prevalidate or _prevalidate)(iid, [])
     return out
 
 

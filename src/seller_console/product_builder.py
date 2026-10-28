@@ -51,6 +51,14 @@ def _values_ko_map(options: list) -> Dict[str, str]:
     return out
 
 
+
+def _rep_clean_valid(ex: dict) -> bool:
+    try:
+        from src.services import rep_auto_clean as _rac
+        return bool(_rac.valid(ex))
+    except Exception:                                            # noqa: BLE001 — 판정 실패면 정리본을 안 쓴다(원래 대표)
+        return False
+
 def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_id: str = "") -> Dict[str, Any]:
     """저장된 수집 행 → 등록 몸통. `edits`(데스크톱 폼)가 준 키는 그 값이 이긴다(빈 값이어도 — 오너가 지운 것)."""
     it = item or {}
@@ -118,6 +126,9 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         # Y14(오너 2026-10-21 「치수 서버에서 수집」): 서버가 모은 치수(출처·신뢰) — 배송비 엔진이 읽은 치수가 없을 때 쓴다
         "dims_auto": dict(ex.get("dims_auto")) if isinstance(ex.get("dims_auto"), dict) else {},
         "rep_need_change": str(ex.get("rep_need_change") or ""),
+        # 순찰 148 H-rep: 쿠팡 대표 자동 정리본(쿠팡 대표 자리에만 쓴다 — `rep_auto_clean.coupang_rep_images`)
+        "rep_auto_clean": dict(ex.get("rep_auto_clean")) if isinstance(ex.get("rep_auto_clean"), dict) else {},
+        "rep_auto_clean_valid": _rep_clean_valid(ex),
         "child_product": str(ex.get("child_product") or "").strip(),     # Y15: 어린이제품 표시 → 등록 보류 「오너 확인」
         "coupang_attributes": list(ex.get("coupang_attributes") or []),
         "coupang_option_pick": dict(ex.get("coupang_option_pick") or {}),

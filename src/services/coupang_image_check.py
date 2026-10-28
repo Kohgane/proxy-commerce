@@ -310,11 +310,20 @@ def start_check(url: str) -> dict:
             "since": round(_t.time() - (started or _RUNNING.get(key) or _t.time()), 1)}
 
 
+def _coupang_imgs(pd: dict) -> list:
+    """쿠팡이 보낼 목록 — 순찰 148 H-rep 대표 정리본이 있으면 첫 장만 그것(등록 `_payload_for_market_core`와 같은 함수)."""
+    try:
+        from src.services.rep_auto_clean import coupang_rep_images
+        return coupang_rep_images(pd)
+    except Exception:                                              # noqa: BLE001
+        return [u for u in (pd.get("images_effective") or pd.get("images") or []) if isinstance(u, str) and u.strip()]
+
+
 def rep_url(pd: dict, market: str) -> str:
     """판정 대상 대표 장(등록이 보낼 첫 장) — 쿠팡 아님·꺼짐·이미지 0장·「그래도 등록」이면 ''."""
     if not str(market or "").startswith("coupang") or not enabled():
         return ""
-    imgs = [u for u in (pd.get("images_effective") or pd.get("images") or []) if isinstance(u, str) and u.strip()]
+    imgs = _coupang_imgs(pd)
     if not imgs:
         return ""
     ov = pd.get("rep_image_override") or {}
@@ -354,7 +363,7 @@ def hold(pd: dict, market: str, cached_only: bool = False) -> Optional[Dict[str,
     """
     if not str(market or "").startswith("coupang") or not enabled():
         return None
-    imgs = [u for u in (pd.get("images_effective") or pd.get("images") or []) if isinstance(u, str) and u.strip()]
+    imgs = _coupang_imgs(pd)
     if not imgs:
         return None
     rep = imgs[0]
