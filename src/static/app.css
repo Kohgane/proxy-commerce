@@ -2776,3 +2776,60 @@ a.hb-tile:hover { border-color: var(--teal); }
 @media (prefers-reduced-motion: reduce) {
   .lane-card, .lane-card-accent, .lane-card-arrow, .lane-card-mark { transition: none; }
 }
+
+/* ===== V41-5 대시보드 에디토리얼(오너 2026-10-28 18:14 「애플처럼」) — 상자 0 · 헤어라인 · 세리프 숫자 · 동사는 글자 링크 · 강조 = 주황 CTA 하나 ===== */
+.hb-grid { max-width: var(--content-max); row-gap: var(--space-6); }
+@media (min-width: 992px) { .hb-grid { column-gap: var(--space-8); } .hb-col { gap: var(--space-6); } }
+.hb-grid .hb-card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
+.hb-grid .hb-card.is-alert, .hb-grid .hb-hero.is-alert { border-left: 0; }
+.hb-grid .hb-hero::before { display: none; }
+.hb-grid .hb-hero { overflow: visible; }
+.hb-grid .console-kpi-label { font-family: var(--font-ui); font-size: var(--small); letter-spacing: .18em; text-transform: uppercase; color: var(--text-muted); }
+.hb-grid .hb-hero-num { font-size: clamp(72px, 9vw, 128px); line-height: .9; letter-spacing: -.04em; }
+.hb-grid .hb-hero-unit { font-family: var(--font-display); font-size: var(--h2-size); color: var(--text-strong); }
+.hb-grid .hb-hero-zero + .hb-hero-unit { color: var(--text-muted); font-size: var(--body-lg); font-family: var(--font-ui); }
+.hb-grid .hb-meta { font-size: var(--small); color: var(--text-muted); }
+.hb-grid .hb-hero-cta { font-weight: 600; }
+/* 할 일 줄 — 제목 큼직·이유 회색·동사는 글자 링크(알약 0) */
+.hb-grid .hb-todo { border-top: 1px solid var(--border); margin-top: var(--space-4); }
+.hb-grid .hb-todo-row { padding: var(--space-4) 0; border-top: 0; border-bottom: 1px solid var(--border); column-gap: var(--space-5); }
+.hb-grid .hb-todo-t { font-family: var(--font-display); font-weight: 700; font-size: var(--h3-size); letter-spacing: -.01em; color: var(--text-strong); white-space: normal; word-break: keep-all; }
+.hb-grid .hb-todo-x { color: var(--text-muted); }
+.hb-grid .hb-todo-acts { gap: var(--space-4); align-self: center; }
+.hb-grid .hb-todo-go { min-height: 44px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-strong); font-size: var(--body);
+  text-decoration: underline; text-underline-offset: 6px; text-decoration-color: var(--border); transition: text-decoration-color var(--dur) var(--ease); }
+.hb-grid .hb-todo-go:hover { text-decoration-color: var(--text-strong); }
+.hb-grid .hb-todo-more { margin-top: var(--space-3); border: 0; border-radius: 0; background: transparent; color: var(--text-muted); font-size: var(--small); letter-spacing: .04em; padding: var(--space-2) 0; text-align: left; }
+.hb-grid .hb-todo-more:hover { color: var(--text-strong); }
+.hb-grid .hb-more a { color: var(--text-muted); font-size: var(--small); }
+/* 상품 현황 — 타일 상자 → 숫자 한 줄(헤어라인 위아래) */
+.hb-grid .hb-c .hb-tiles { gap: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.hb-grid .hb-tile { border: 0; border-radius: 0; background: transparent; padding: var(--space-4) var(--space-3) var(--space-4) 0; min-height: 0; gap: var(--space-2); }
+.hb-grid .hb-c .hb-tile + .hb-tile { border-left: 1px solid var(--border); padding-left: var(--space-4); }
+.hb-grid .hb-tile.is-alert { border-left: 1px solid var(--border); }
+.hb-grid a.hb-tile:hover { border-color: var(--border); }
+.hb-grid a.hb-tile:hover .hb-tile-k { color: var(--text-strong); }
+.hb-grid .hb-tile-k { font-size: var(--caption); letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
+.hb-grid .hb-tile-v { font-family: var(--font-display); font-weight: 700; font-size: clamp(32px, 3vw, 44px); line-height: 1; letter-spacing: -.03em; color: var(--text-strong); }
+.hb-grid .hb-tile.is-alert .hb-tile-v { color: var(--text-strong); }
+/* 마켓별 현황 — 제목 세리프·표는 헤어라인만 */
+.hb-grid .hb-sum { margin-bottom: var(--space-3); }
+.hb-grid .hb-title { font-family: var(--font-display); font-weight: 700; font-size: var(--h3-size); letter-spacing: -.01em; color: var(--text-strong); }
+.hb-grid .hb-mtable { font-size: var(--body); }
+.hb-grid .hb-mtable th, .hb-grid .hb-mtable td { padding: var(--space-3) var(--space-1); }
+.hb-grid .hb-mtable thead th { font-size: var(--caption); letter-spacing: .1em; text-transform: uppercase; font-weight: 500; }
+.hb-grid .hb-mtable tbody th { font-family: var(--font-display); font-weight: 700; font-size: var(--body-lg); }
+.hb-grid .hb-mcell { color: var(--text-strong); text-decoration-color: var(--border); text-underline-offset: 5px; }
+.hb-grid .hb-mcell:hover { text-decoration-color: var(--text-strong); }
+.hb-grid .hb-mtable .is-off { color: var(--text-muted); }
+/* 접힘 — 소제목만 회색으로, 상자 없이 */
+.hb-grid .hb-fold-sum { font-size: var(--small); letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); padding: var(--space-2) 0; }
+.hb-grid .hb-fold[open] .hb-fold-sum { color: var(--text-strong); }
+.hb-grid .hb-fold .hb-card { padding-top: var(--space-3); }
+.hb-grid .hb-e .hb-tiles { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); gap: 0; }
+.hb-grid .hb-e .hb-tile + .hb-tile { border-left: 1px solid var(--border); padding-left: var(--space-4); }
+@media (max-width: 991.98px) {
+  .hb-grid { row-gap: var(--space-5); }
+  .hb-grid .hb-hero-num { font-size: clamp(64px, 20vw, 96px); }
+  .hb-grid .hb-todo-t { font-size: var(--body-lg); }
+}

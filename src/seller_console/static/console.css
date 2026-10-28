@@ -642,3 +642,20 @@ details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
 @keyframes kgp-more-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .console-sidebar-more[open] > :not(summary) { animation: none; } }
 .console-nav-link > span:not(.pc-badge) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ===== V41-5 콘솔 셸 에디토리얼(오너 2026-10-28 18:14 「애플처럼」) — 사이드바 = 글자만, 활성 = 먹 글자 + 금 선 · 탑바 = 밑줄 검색 ===== */
+.console-sidebar { background: var(--bg); }
+.console-nav-link { border-radius: 0; padding: .6rem 0 .6rem .9rem; margin-bottom: 0; font-size: var(--body); color: var(--text); border-left: 2px solid transparent; }
+.console-nav-link .bi { opacity: .55; font-size: 1rem; }
+.console-nav-link:hover, .console-nav-link:focus { background: transparent; color: var(--text-strong); }
+.console-nav-link:hover .bi, .console-nav-link.active .bi { opacity: 1; }
+.console-nav-link.active { background: transparent; color: var(--text-strong); font-weight: 700; border-left-color: var(--gold); }
+.console-nav-link.active .bi { color: var(--teal); }
+.console-topbar { background: var(--bg); border-bottom: 1px solid var(--border); padding: .65rem 1.25rem; }
+.console-topbar-brand strong { font-family: var(--font-display); font-weight: 700; letter-spacing: -.01em; }
+.console-search-wrap .form-control, .console-search-wrap .input-group-text { background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; }
+.console-search-wrap .form-control:focus { border-bottom-color: var(--text-strong); }
+.console-topbar .btn-ghost, .console-topbar .btn-outline-secondary, .console-topbar .btn-light { border: 0; background: transparent; color: var(--text-muted); box-shadow: none; }
+.console-topbar .btn-ghost:hover, .console-topbar .btn-outline-secondary:hover, .console-topbar .btn-light:hover { color: var(--text-strong); background: transparent; }
+.console-content { padding: var(--space-6) var(--space-7); }
+@media (max-width: 991.98px) { .console-content { padding: var(--space-4); } }
