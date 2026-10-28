@@ -2700,5 +2700,4 @@ a.hb-tile:hover { border-color: var(--teal); }
 }
 @media (min-width: 768px) {
   .ch-c-when .ch-when-short::before { content: " · "; color: var(--border); }
-  .ch-c-when { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
