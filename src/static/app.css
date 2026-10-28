@@ -2683,8 +2683,8 @@ a.hb-tile:hover { border-color: var(--teal); }
   .ch-title-1 { font-size: var(--body-lg); font-weight: 600; }
   .ch-c-badges { width: 176px; }                                   /* 원 4개 = 한 줄, 글자 뱃지 8개 자리 반납 */
   .ch-c-when { width: 150px; font-size: var(--small); }
-  .ch-c-when .ch-when-text { display: none; }                      /* 시각 + 한 단어만(전문은 title 툴팁) */
-  .ch-c-when .ch-when-short { display: inline; }
+  .ch-c-when .ch-when-short { display: none; }                     /* short = 모바일용 짧은 시각 — 데스크톱은 시각 + 동작 한 마디 */
+  .ch-c-when .ch-when-text { display: inline; }
   .mk-badges { gap: 6px; }
   .mk-badge { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; justify-content: center; border-radius: var(--radius-pill); font-size: var(--small); font-weight: 700; }
   .mk-badge .mk-full { display: none; }
@@ -2699,5 +2699,5 @@ a.hb-tile:hover { border-color: var(--teal); }
   .mk-badge.kind-bad, .mk-badge.kind-fail { width: auto; min-width: 32px; padding: 0 10px; border-radius: var(--radius-pill); }
 }
 @media (min-width: 768px) {
-  .ch-c-when .ch-when-short::before { content: " · "; color: var(--border); }
+  .ch-c-when .ch-when-text::before { content: " · "; color: var(--text-muted); }
 }

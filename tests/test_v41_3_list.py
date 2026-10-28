@@ -57,9 +57,9 @@ def test_badge_states_use_tokens_only():
 
 
 def test_when_column_short_word_only():
-    assert "display: none" in _rule(".ch-c-when .ch-when-text")
-    assert "display: inline" in _rule(".ch-c-when .ch-when-short")
-    assert '" · "' in _rule(".ch-c-when .ch-when-short::before")
+    assert "display: none" in _rule(".ch-c-when .ch-when-short")      # short = 짧은 시각(모바일용) — 데스크톱에선 시각 중복
+    assert "display: inline" in _rule(".ch-c-when .ch-when-text")     # 「10-28 18:38 · 쿠팡 등록」
+    assert '" · "' in _rule(".ch-c-when .ch-when-text::before")
 
 
 def test_rows_render_hooks(client):
