@@ -12,6 +12,8 @@ LANES = {
     "import": {
         "id": "import",
         "title_ko": "수입형", "title_en": "Import",
+        "name_ko": "로드", "name_en": "Road", "accent": "road",          # 오너 2026-10-28: 실크로드 — 해외 소싱이 국내로 오는 길
+        "tagline_ko": "해외 소싱이 국내 마켓으로 오는 길",
         "arrow_ko": "해외 → 국내", "arrow_en": "Overseas → Korea",
         "desc_ko": "타오바오·테무·아마존 등에서 소싱해 쿠팡·네이버·11번가 등 국내 마켓에 판매합니다.",
         "desc_en": "Source from Taobao/Temu/Amazon and sell on Coupang, Naver, 11st in Korea.",
@@ -22,6 +24,8 @@ LANES = {
     "export": {
         "id": "export",
         "title_ko": "수출형", "title_en": "Export",
+        "name_ko": "오션", "name_en": "Ocean", "accent": "ocean",        # 오너 2026-10-28: 바다 건너 — 한국 상품이 글로벌로
+        "tagline_ko": "한국 상품이 바다 건너 글로벌 마켓으로",
         "arrow_ko": "국내 → 해외", "arrow_en": "Korea → Global",
         "desc_ko": "한국 상품을 소싱해 Shopify·아마존US·쇼피·이베이 등 글로벌 마켓에 판매합니다.",
         "desc_en": "Source Korean products and sell on Shopify, Amazon US, Shopee, eBay globally.",
@@ -29,7 +33,22 @@ LANES = {
         "sourcing": "domestic",
         "target_markets": ["shopify", "amazon", "shopee", "ebay"],
     },
+    # 오너 2026-10-28 15:32 「레일은 셋째 레인으로」 — 국내 도매·브랜드 상품을 국내 멀티마켓에 한 번에.
+    # 수집·사전검증·등록은 수입 레인과 **같은 코드**를 탄다(분기 0) — sourcing=domestic이라 번역 단계만 비어 간다.
+    "rail": {
+        "id": "rail",
+        "title_ko": "국내형", "title_en": "Domestic",
+        "name_ko": "레일", "name_en": "Rail", "accent": "rail",
+        "tagline_ko": "한 번 올리면 국내 마켓 사이를 달린다",
+        "arrow_ko": "국내 → 국내 멀티마켓", "arrow_en": "Korea → Korean marketplaces",
+        "desc_ko": "국내 도매·브랜드 상품을 쿠팡·스마트스토어·11번가에 한 번에 등록하고 함께 관리합니다.",
+        "desc_en": "List Korean wholesale/brand products on Coupang, Naver and 11st at once.",
+        "lang": "ko", "currency": "KRW",
+        "sourcing": "domestic",
+        "target_markets": ["coupang", "smartstore", "elevenst"],
+    },
 }
+LANE_ORDER = ("import", "export", "rail")
 DEFAULT_LANE = "import"
 
 

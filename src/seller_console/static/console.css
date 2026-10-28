@@ -602,3 +602,43 @@ details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
 /* 순찰 122b-U2: 숨긴 고급 메뉴 자리의 「고급 기능 켜기」 — 회색 글자·점선 위 헤어라인으로 「메뉴가 아니라 입구」임을 보인다 */
 .console-nav-adv-off { color: var(--text-muted); border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 10px; border-radius: 0; }
 .console-nav-adv-off:hover { color: var(--text-strong); }
+
+/* ===== V41-1(오너 2026-10-28 「간결·임팩트」) — 사이드바 = 메뉴만, 로고 = 마크 + 세리프 + 레인 워드마크 ===== */
+.console-brand { display: flex; align-items: center; gap: .6rem; padding: .25rem .25rem; }
+.console-brand-mark {
+  display: inline-block; width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  background: var(--ink); position: relative; margin: 0;
+}
+.console-brand-mark::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: var(--orange, var(--gold));
+}
+.console-brand-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.console-brand-name { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; letter-spacing: -.015em; color: var(--text-strong); }
+.console-brand-lane, .console-topbar-lane {
+  font-family: var(--font-display); font-size: var(--small); letter-spacing: .14em; color: var(--text-muted);
+  padding-left: .55rem; border-left: 2px solid var(--lane-accent, var(--gold));
+}
+.console-brand-lane { margin-top: .15rem; }
+.console-topbar-lane { margin-left: .6rem; }
+.console-brand-lane-road { --lane-accent: var(--lane-road-accent); }
+.console-brand-lane-ocean { --lane-accent: var(--lane-ocean-accent); }
+.console-brand-lane-rail { --lane-accent: var(--lane-rail-accent); }
+.console-lane-switch { font-family: var(--font-display); }
+/* 탑바 계정 = 아바타 하나 */
+.console-topbar-account { padding: .15rem; border-radius: 50%; }
+.console-topbar-account::after { display: none; }
+.console-avatar-sm { width: 1.75rem; height: 1.75rem; font-size: .8rem; display: inline-flex; align-items: center; justify-content: center; }
+/* 「계정·더보기」 접이식 — 사이드바 첫 화면에서 메뉴 말고 다른 글자는 이 한 줄뿐 */
+.console-sidebar-more { border-top: 1px solid var(--hairline-color, var(--border)); padding-top: .5rem; }
+.console-sidebar-more-summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: .55rem; min-height: 44px;
+  padding: .35rem .5rem; border-radius: 10px; color: var(--text-strong); font-size: .9rem;
+}
+.console-sidebar-more-summary::-webkit-details-marker { display: none; }
+.console-sidebar-more-summary:hover { background: color-mix(in srgb, var(--gold) 8%, transparent); }
+.console-sidebar-more[open] .console-sidebar-more-summary .bi-chevron-up { transform: rotate(180deg); }
+.console-sidebar-more[open] > :not(summary) { animation: kgp-more-in .18s ease-out; }
+@keyframes kgp-more-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .console-sidebar-more[open] > :not(summary) { animation: none; } }
+.console-nav-link > span:not(.pc-badge) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

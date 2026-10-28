@@ -52,6 +52,11 @@
   --on-accent: #FFFFFF;
   /* 다크 'vault'(랜딩/로그인) */
   --vault-bg: #1A1714; --vault-surface: #241F1A; --vault-text: #F5EFE3; --vault-gold: #C9A24B;
+  /* V41 레인 악센트(오너 2026-10-28) — 로드(수입)=금·주황 관문, 오션(수출)=청록 바다, 레일(국내)=먹.
+     값은 기존 토큰 참조만(새 색 발명 0). 레인당 악센트 한 줄·시선 고정점 하나. */
+  --lane-road-accent: var(--gold); --lane-road-key: var(--orange);
+  --lane-ocean-accent: var(--teal); --lane-ocean-key: var(--teal);
+  --lane-rail-accent: var(--ink); --lane-rail-key: var(--gold);
 
   /* 타이포 — 디스플레이 Noto Serif KR, 본문/UI Pretendard(KR)+Inter(EN) */
   --font-display: "Noto Serif KR", 'Nanum Myeongjo', Georgia, 'Times New Roman', serif;
@@ -2590,3 +2595,30 @@ a.hb-tile:hover { border-color: var(--teal); }
 .hb-rtitle { flex: 1 1 100%; font-size: .76rem; color: var(--text-muted); }
 /* 목록 뱃지 빈 자리(Y12-C) — 미등록 계정 = 빈 점선 테두리로 자리만(고·우·셰·코 순서 고정) */
 .mk-badge.kind-none { background: transparent; border: 1px dashed var(--border); color: var(--text-muted); cursor: default; }
+
+/* ===== V41 레인 게이트(/lane) — 카드 3장, 같은 다리 마크, 레인마다 악센트 한 줄 ===== */
+.lane-gate { max-width: var(--content-max); margin: 0 auto; padding: var(--space-7) var(--space-5); }
+.lane-gate-head { text-align: center; margin-bottom: var(--space-6); }
+.lane-gate-title { font-family: var(--font-display); font-size: var(--h1-size); line-height: var(--h1-lh); color: var(--text-strong); letter-spacing: -.01em; margin: var(--space-2) 0 var(--space-1); }
+.lane-gate-sub { color: var(--text-muted); font-size: var(--body-lg); margin: 0 0 var(--space-4); }
+.lane-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-5); }
+.lane-card { position: relative; display: flex; flex-direction: column; gap: var(--space-2); text-decoration: none; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-6) var(--space-5) var(--space-5);
+  box-shadow: var(--shadow); overflow: hidden; transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.lane-card:hover, .lane-card:focus-visible { transform: translateY(-2px); box-shadow: var(--shadow-lg); color: var(--text); text-decoration: none; }
+.lane-card:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.lane-card-accent { position: absolute; left: 0; top: 0; right: 0; height: 4px; background: var(--lane-accent, var(--gold)); }
+.lane-card-mark { width: 64px; height: 40px; color: var(--lane-accent, var(--gold)); margin-bottom: var(--space-2); }
+.lane-card-keystone { fill: var(--lane-key, var(--orange)); }
+.lane-card-brand { font-family: var(--font-display); font-size: var(--small); letter-spacing: .12em; color: var(--text-muted); text-transform: uppercase; }
+.lane-card-name { font-family: var(--font-display); font-weight: 700; font-size: var(--h1-size); line-height: 1.1; color: var(--text-strong); letter-spacing: -.02em; }
+.lane-card-en { font-size: var(--small); color: var(--text-muted); }
+.lane-card-desc { font-size: var(--body); line-height: var(--line); color: var(--text); margin: var(--space-2) 0 var(--space-1); }
+.lane-card-meta { font-size: var(--caption); color: var(--text-muted); margin-bottom: var(--space-3); }
+.lane-card-cta { margin-top: auto; display: block; text-align: center; border-radius: var(--radius-pill); padding: var(--space-3); min-height: 44px;
+  font-weight: var(--w-semi); background: var(--ink); color: var(--on-accent); }
+.lane-card.is-suggested .lane-card-cta { background: var(--orange); }
+.lane-card-road { --lane-accent: var(--lane-road-accent); --lane-key: var(--lane-road-key); }
+.lane-card-ocean { --lane-accent: var(--lane-ocean-accent); --lane-key: var(--lane-ocean-key); }
+.lane-card-rail { --lane-accent: var(--lane-rail-accent); --lane-key: var(--lane-rail-key); }
+@media (prefers-reduced-motion: reduce) { .lane-card { transition: none; } .lane-card:hover { transform: none; } }
