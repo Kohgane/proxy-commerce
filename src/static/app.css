@@ -2686,7 +2686,7 @@ a.hb-tile:hover { border-color: var(--teal); }
   .ch-c-when .ch-when-text { display: none; }                      /* 시각 + 한 단어만(전문은 title 툴팁) */
   .ch-c-when .ch-when-short { display: inline; }
   .mk-badges { gap: 6px; }
-  .mk-badge { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; justify-content: center; border-radius: 50%; font-size: var(--small); font-weight: 700; }
+  .mk-badge { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; justify-content: center; border-radius: var(--radius-pill); font-size: var(--small); font-weight: 700; }
   .mk-badge .mk-full { display: none; }
   .mk-badge .mk-short { display: inline; }
   .mk-badge.kind-done { background: var(--teal); border-color: var(--teal); color: var(--on-accent); }   /* 등록됨 = 청록 채움 */
