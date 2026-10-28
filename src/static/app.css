@@ -2701,3 +2701,78 @@ a.hb-tile:hover { border-color: var(--teal); }
 @media (min-width: 768px) {
   .ch-c-when .ch-when-text::before { content: " · "; color: var(--text-muted); }
 }
+
+/* ===== V41-4 레인 게이트 — 에디토리얼(오너 2026-10-28 18:14 「애플처럼」) · 카드 0·테두리 0·버튼 0 · 행 전체가 링크 ===== */
+.lane-gate-main { padding: 0 0 var(--space-8); }
+.lane-gate-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  max-width: var(--content-max); margin: 0 auto; padding: var(--space-4) var(--space-5) 0; }
+.lane-gate-brand { display: inline-flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--text-strong); min-height: 44px; }
+.lane-gate-brand:hover, .lane-gate-brand:focus-visible { color: var(--text-strong); text-decoration: none; }
+.lane-gate-mark { display: inline-block; width: 26px; height: 26px; border-radius: var(--radius-sm); background: var(--ink); position: relative; flex-shrink: 0; }
+.lane-gate-mark::after { content: ""; position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+  border-radius: var(--radius-pill); background: var(--orange); }
+.lane-gate-brand-name { font-family: var(--font-display); font-weight: 700; font-size: var(--body-lg); letter-spacing: -.015em; }
+.lane-gate-back { font-size: var(--small); color: var(--text-muted); text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; letter-spacing: .02em; }
+.lane-gate-back:hover { color: var(--text-strong); }
+
+/* 머리: 아이브로 한 줄 + 거대 세리프 두 줄 + 회색 한 줄. 왼쪽 정렬 — 가운데 정렬 템플릿 냄새를 지운다 */
+.lane-gate { max-width: var(--content-max); margin: 0 auto; padding: var(--space-9) var(--space-5) 0; }
+.lane-gate-head { text-align: left; margin: 0; }
+.lane-gate-eyebrow { font-family: var(--font-ui); font-size: var(--small); letter-spacing: .18em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 var(--space-3); }
+.lane-gate-title { font-family: var(--font-display); font-weight: 700; font-size: var(--display-2-size); line-height: 1.02; letter-spacing: -.03em;
+  color: var(--text-strong); margin: 0; word-break: keep-all; }
+.lane-gate-sub { font-size: var(--body-lg); color: var(--text-muted); margin: var(--space-4) 0 0; max-width: 48ch; word-break: keep-all; }
+.lane-gate-main ~ footer a { color: var(--text-muted); }
+.lane-gate-main ~ footer a:hover { color: var(--text-strong); }
+
+/* 다리 하나 — 머리와 레인 사이를 잇는 구조선(장식 아님). 금, 가늘게 */
+.lane-gate-bridge { display: block; width: 100%; height: clamp(56px, 8vw, 120px); color: var(--gold); margin: var(--space-7) 0 0; }
+
+/* 레인 셋 = 헤어라인으로 나눈 행. 번호 · 이름 · 설명 · 동사 하나 */
+.lane-grid { list-style: none; margin: 0; padding: 0; display: block; border-top: 1px solid var(--border); }
+.lane-row { border-bottom: 1px solid var(--border); }
+.lane-card { position: relative; display: grid; grid-template-columns: 4ch minmax(0, 1.1fr) minmax(0, 1fr) auto; align-items: baseline; column-gap: var(--space-5);
+  padding: var(--space-6) 0; text-decoration: none; color: var(--text); background: transparent; border: 0; border-radius: 0; box-shadow: none; overflow: visible;
+  transition: background-color var(--dur) var(--ease); }
+.lane-card:hover, .lane-card:focus-visible { color: var(--text); text-decoration: none; transform: none; box-shadow: none; }
+.lane-card:focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
+.lane-card-no { font-family: var(--font-display); font-size: var(--small); letter-spacing: .1em; color: var(--text-muted); }
+.lane-card-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.lane-card-name { position: relative; display: inline-block; align-self: flex-start; font-family: var(--font-display); font-weight: 700;
+  font-size: clamp(34px, 4.4vw, 56px); line-height: 1.05; letter-spacing: -.03em; color: var(--text-strong); word-break: keep-all; padding-bottom: 6px; }
+.lane-card-accent { position: absolute; left: 0; right: auto; top: auto; bottom: 0; width: 0; height: 2px; background: var(--lane-accent, var(--gold));
+  transition: width var(--dur-slow) var(--ease); }
+.lane-card:hover .lane-card-accent, .lane-card:focus-visible .lane-card-accent, .lane-card.is-suggested .lane-card-accent { width: 100%; }
+.lane-card-en { font-size: var(--small); letter-spacing: .04em; color: var(--text-muted); }
+.lane-card-side { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.lane-card-desc { font-size: var(--body); line-height: var(--line); color: var(--text); margin: 0; max-width: 34ch; word-break: keep-all; }
+.lane-card-meta { font-size: var(--caption); color: var(--text-muted); margin: 0; letter-spacing: .02em; }
+.lane-card-cta { display: inline-flex; align-items: center; gap: .5rem; justify-self: end; margin: 0; padding: 0; min-height: 0; background: transparent; border: 0;
+  border-radius: 0; font-family: var(--font-ui); font-weight: 600; font-size: var(--body); color: var(--text-strong); white-space: nowrap; }
+.lane-card.is-suggested .lane-card-cta { background: transparent; color: var(--text-strong); }
+.lane-card-arrow { display: inline-block; transition: transform var(--dur) var(--ease); }
+.lane-card:hover .lane-card-arrow, .lane-card:focus-visible .lane-card-arrow { transform: translateX(6px); }
+.lane-card-keystone { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--orange); fill: var(--orange); }
+.lane-card-mark { position: absolute; right: 0; bottom: var(--space-2); width: 40px; height: 25px; color: var(--lane-accent, var(--gold)); margin: 0; opacity: 0;
+  transition: opacity var(--dur) var(--ease); }
+.lane-card:hover .lane-card-mark, .lane-card:focus-visible .lane-card-mark { opacity: .9; }
+.lane-card-road { --lane-accent: var(--lane-road-accent); }
+.lane-card-ocean { --lane-accent: var(--lane-ocean-accent); }
+.lane-card-rail { --lane-accent: var(--lane-rail-accent); }
+
+@media (max-width: 767.98px) {
+  .lane-gate { padding: var(--space-7) var(--space-4) 0; }
+  .lane-gate-title { font-size: clamp(40px, 12vw, 56px); }
+  .lane-gate-sub { font-size: var(--body); }
+  .lane-gate-bridge { margin-top: var(--space-5); }
+  .lane-card { grid-template-columns: 3ch minmax(0, 1fr); grid-template-areas: "no main" "no side" "no cta"; row-gap: var(--space-3); padding: var(--space-5) 0; align-items: start; }
+  .lane-card-no { grid-area: no; padding-top: .55rem; }
+  .lane-card-main { grid-area: main; }
+  .lane-card-side { grid-area: side; }
+  .lane-card-cta { grid-area: cta; justify-self: start; min-height: 44px; }
+  .lane-card-name { font-size: clamp(34px, 11vw, 48px); }
+  .lane-card-mark { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lane-card, .lane-card-accent, .lane-card-arrow, .lane-card-mark { transition: none; }
+}
