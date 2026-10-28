@@ -119,10 +119,11 @@ def test_pleats_set_unchanged():
 
 
 def test_health_supplement_is_caution_only():
-    """건기식(오너: 인허가 보유) — 주의만, 보류 0. 「식품」(수입식품 보류)이 「건강기능식품」 안에서 잡히지 않는다."""
+    """건기식(오너: 인허가 보유) — 오너 계정은 주의만, 보류 0. 「식품」(수입식품 보류)이 「건강기능식품」 안에서 잡히지 않는다.
+    순찰 139: 「인허가 보유」는 오너 계정(`default` = 잡 주인 없는 서버 포함)만 — 다른 셀러는 test_patrol139_cert_knife_docs."""
     from src.services import risk_gate as R
     ex = {"title_ko": "비타민C 1000 건강기능식품 120정", "description_ko": "하루 1정 섭취하는 영양제예요.", "keywords": ["비타민", "영양제"]}
-    sc = R.scan(ex)
+    sc = R.scan(ex, owner={"default"})
     assert {h["grade"] for h in sc["hits"]} == {"caution"}
     assert [h["label"] for h in sc["hits"]] == ["건강기능식품(인허가 보유)"]
     assert R.holds(sc) == []
@@ -287,7 +288,7 @@ def test_wireless_charger_is_caution_with_kc_notice_not_hold():
 
 def test_grades_after_y10b():
     from src.services import risk_gate as R
-    g = lambda t: {h["label"]: h["grade"] for h in R.scan({"title_ko": t})["hits"]}
+    g = lambda t: {h["label"]: h["grade"] for h in R.scan({"title_ko": t}, owner={"default"})["hits"]}   # 오너 계정(순찰 139)
     assert g("어린이 원목 블록 장난감") == {"KC 고지문 넣음(어린이제품)": "caution"}
     assert g("블루투스 스피커") == {"KC 고지문 넣음(전파·무선)": "caution"}
     assert g("가정용 의료기기 저주파 마사지기")["의약품·의료기기"] == "block"           # 차단 유지
