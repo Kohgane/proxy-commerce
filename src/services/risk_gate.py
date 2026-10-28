@@ -383,7 +383,7 @@ def _cert_by_doc(h: dict, c: dict, owner) -> None:
     h["why"] = ((h.get("why") or "") + f" — 내 정보 › 인증·허가 서류에 {need}을(를) 추가하면 자동 통과").strip(" —")
 
 
-def scan(extra: dict, *, pending_images: int = 0, owner=None) -> dict:
+def scan(extra: dict, *, pending_images: int = 0, owner=None, pending_eta_sec: int = 0) -> dict:
     """한 상품 전부 — `{hits, waiting, decided}`. `pending_images` = 아직 번역(OCR) 중인 장 수(「이미지 검사 대기 n장」).
     `owner`(등록하는 셀러의 정체성들) — 오너 지시 10-27 ①: `cert:` 보류는 그 셀러의 유효한 서류(`user_docs`)가 있으면 주의(통과)."""
     ex = extra or {}
@@ -501,7 +501,7 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None) -> dict:
                 if (nm, e["label"]) not in seen:
                     seen.add((nm, e["label"]))
                     notes.append({"label": e["label"], "found": f, "where": nm, "line": note_line(f, nm)})
-    return {"hits": hits, "notes": notes, "waiting": int(pending_images or 0),
+    return {"hits": hits, "notes": notes, "waiting": int(pending_images or 0), "waiting_eta_sec": int(pending_eta_sec or 0),
             "skip": (ex.get("risk_skip") or {}) if isinstance(ex.get("risk_skip"), dict) else {}}
 
 
@@ -545,8 +545,8 @@ def holds(sc: dict) -> List[dict]:
                     "fix": "risk_block" if h["grade"] == "block" else "risk", "code": "risk_" + h["grade"],
                     "line": f"{h['cat']}: {'·'.join(h['found'][:4])} — {where_line(h)}. {h['why']}"})
     if (sc or {}).get("waiting"):
-        out.append({"short": f"이미지 검사 대기 {sc['waiting']}장", "fix": "risk_wait", "code": "risk_wait",
-                    "line": f"사진 속 글자를 아직 읽는 중이에요({sc['waiting']}장) — 끝나면 위험 검사를 다시 해요."})
+        out.append({"short": f"이미지 검사 대기 {sc['waiting']}장{eta_word(sc.get('waiting_eta_sec'))}", "fix": "risk_wait", "code": "risk_wait",
+                    "line": f"사진 속 글자를 아직 읽는 중이에요({sc['waiting']}장{eta_word(sc.get('waiting_eta_sec'))}) — 끝나면 자동으로 다시 검증해요."})
     return out
 
 
@@ -1029,6 +1029,17 @@ def notice_kinds(sc: dict) -> dict:
     return {"kc": labs, "voltage": any(want[l].get("voltage") for l in labs)}
 
 
+def eta_word(sec) -> str:
+    """V42-1: 「 · 약 2분」 — 0이면 빈 문자열(모르면 안 적는다)."""
+    try:
+        sec = int(sec or 0)
+    except (TypeError, ValueError):
+        return ""
+    if sec <= 0:
+        return ""
+    return f" · 약 {max(1, (sec + 59) // 60)}분" if sec >= 45 else f" · 약 {sec}초"
+
+
 def card(sc: dict) -> dict:
     """화면용 — `{count, hits:[{key, cat, label, grade, grade_label, found, where_line, decided, can_allow, auto}], waiting, skip}`."""
     rows = []
@@ -1036,5 +1047,6 @@ def card(sc: dict) -> dict:
         rows.append({k: h.get(k) for k in ("key", "cat", "label", "grade", "grade_label", "found", "decided", "can_allow", "why",
                                             "doc_hint", "passed_by")}
                     | {"where_line": where_line(h)})
-    return {"count": len(rows), "hits": rows, "waiting": sc.get("waiting") or 0, "skip": sc.get("skip") or {},
+    return {"count": len(rows), "hits": rows, "waiting": sc.get("waiting") or 0, "waiting_eta_sec": sc.get("waiting_eta_sec") or 0,
+            "skip": sc.get("skip") or {},
             "notes": [n["line"] for n in sc.get("notes") or []], "skip_hint": skip_hint(sc)}

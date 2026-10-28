@@ -75,21 +75,79 @@ window.kgpQualityHtml = window.kgpQualityHtml || function (q, fixed) {
   if (left.length) h += left.map(function (l) { return '<div class="kgp-risk-why" data-role="quality-left">' + esc(l) + '</div>'; }).join('');
   return h + '</div>';
 };
-// 순찰 106-C — 등록 전 AI 검수: 접힌 줄 하나(펼치면 5줄 이내). AI는 제안만 — 버튼 없음(결정은 사람이).
-window.kgpAiReviewHtml = window.kgpAiReviewHtml || function (r) {
+// 순찰 106-C — 등록 전 AI 검수: 접힌 줄 하나(펼치면 5줄 이내).
+// V42-1(오너 2026-10-28 20:08 「수락·기각·편집 버튼 — 누르면 바로 수정」): 항목마다 동사 — 상품명 고침이 있으면 「수락」(바로 저장) ·
+//   「편집」(그 칸으로) · 「기각」(기록). 결정은 사람이 누른다 — AI가 스스로 고치지 않는다.
+window.kgpAiReviewHtml = window.kgpAiReviewHtml || function (r, itemId) {
   if (!r || !r.status || r.status === 'skip') return '';
   var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); };
-  var lines = r.lines || [];
-  var head = r.status === 'done' ? (lines.length ? 'AI 검수 · 짚을 점 ' + lines.length + '개' : 'AI 검수 · 이상한 점 없음')
+  var items = r.items || (r.lines || []).map(function (x) { return {issue: x, field: 'none', fix: null}; });
+  var dec = r.decisions || {};
+  var open = items.filter(function (_, i) { return !dec[String(i)]; });
+  var head = r.status === 'done' ? (open.length ? 'AI 검수 · 짚을 점 ' + open.length + '개' : (items.length ? 'AI 검수 · 다 봤어요' : 'AI 검수 · 이상한 점 없음'))
     : (r.status === 'running' ? 'AI 검수 · 아직이에요' : 'AI 검수 · 못 했어요');
-  var h = '<details class="kgp-risk kgp-ai-review" data-role="ai-review" data-status="' + esc(r.status) + '"' + (window._kgpAiReviewOpen ? ' open' : '') +
+  var h = '<details class="kgp-risk kgp-ai-review" data-role="ai-review" data-status="' + esc(r.status) + '" data-item="' + esc(itemId || '') + '"' +
+    (window._kgpAiReviewOpen || open.length ? ' open' : '') +
     '><summary><strong>' + esc(head) + '</strong>' +
     ' <span class="kgp-risk-sub">— AI 제안이에요, 결정은 직접</span></summary>';
-  if (lines.length) h += '<ul class="kgp-ai-review-list">' + lines.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
+  if (items.length) {
+    h += '<ul class="kgp-ai-review-list">' + items.map(function (x, i) {
+      var d = dec[String(i)];
+      var fieldWord = {title: '상품명', option: '옵션', description: '상세'}[x.field] || '';
+      var row = '<li data-role="ai-review-item" data-idx="' + i + '"' + (d ? ' class="is-decided"' : '') + '>' +
+        (fieldWord ? '<span class="kgp-ai-field">' + esc(fieldWord) + '</span> ' : '') + esc(x.issue);
+      if (x.fix) row += '<div class="kgp-ai-fix">→ ' + esc(x.fix) + '</div>';
+      if (d) {
+        row += '<div class="kgp-ai-decided">' + (d.action === 'accept' ? '수락했어요 — 상품명을 바꿨어요' : '기각했어요') + '</div>';
+      } else {
+        row += '<div class="kgp-risk-acts">' +
+          (x.fix ? '<button type="button" class="kgp-risk-btn is-main" data-role="ai-review-act" data-action="accept" data-idx="' + i + '">수락</button>' : '') +
+          (x.field !== 'none' ? '<button type="button" class="kgp-risk-btn" data-role="ai-review-edit" data-field="' + esc(x.field) + '">편집</button>' : '') +
+          '<button type="button" class="kgp-risk-btn" data-role="ai-review-act" data-action="reject" data-idx="' + i + '">기각</button></div>';
+      }
+      return row + '</li>';
+    }).join('') + '</ul>';
+  }
   if (r.why) h += '<div class="kgp-risk-why">' + esc(r.why) + '</div>';
   return h + '</details>';
 };
+window.kgpAiReviewAct = window.kgpAiReviewAct || function (itemId, idx, action) {
+  return fetch('/seller/collect/' + encodeURIComponent(itemId) + '/ai-review-act', {method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({idx: idx, action: action})})
+    .then(function (r) { return r.json(); })
+    .catch(function () { return {ok: false, error: '저장하지 못했어요 — 다시 눌러 주세요'}; });
+};
+// 「편집」 → 드로어의 그 칸으로(탭 전환 + 포커스). 탭 함수가 없으면 포커스만.
+window.kgpAiReviewEdit = window.kgpAiReviewEdit || function (field) {
+  var map = {title: ['basic', 'editTitle'], option: ['options', null], description: ['detail', 'editDescription']};
+  var m = map[field] || ['basic', null];
+  if (window.kgpEtab) { try { window.kgpEtab(m[0]); } catch (e) {} }
+  var el = m[1] && document.getElementById(m[1]);
+  if (el) { el.focus(); if (el.scrollIntoView) el.scrollIntoView({block: 'center', behavior: 'smooth'}); }
+};
+if (!window._kgpAiReviewClicks) {
+  window._kgpAiReviewClicks = true;
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest && e.target.closest('[data-role="ai-review-act"],[data-role="ai-review-edit"]');
+    if (!b) return;
+    var box = b.closest('[data-role="ai-review"]');
+    if (b.getAttribute('data-role') === 'ai-review-edit') { window.kgpAiReviewEdit(b.getAttribute('data-field')); return; }
+    var itemId = box && box.getAttribute('data-item');
+    if (!itemId) return;
+    var action = b.getAttribute('data-action'), idx = parseInt(b.getAttribute('data-idx'), 10);
+    b.disabled = true; b.textContent = action === 'accept' ? '고치는 중…' : '기록 중…';
+    window.kgpAiReviewAct(itemId, idx, action).then(function (d) {
+      if (!d.ok) { b.disabled = false; b.textContent = action === 'accept' ? '수락' : '기각'; if (window.pcToast) pcToast(d.error || '안 됐어요', 'warning'); return; }
+      window._kgpAiReview = d.ai_review || window._kgpAiReview;
+      var f = d.fields || {};
+      if (f.title_ko != null && document.getElementById('editTitle')) document.getElementById('editTitle').value = f.title_ko;
+      if (box && box.parentNode) { var tmp = document.createElement('div'); tmp.innerHTML = window.kgpAiReviewHtml(window._kgpAiReview, itemId); box.parentNode.replaceChild(tmp.firstChild, box); }
+      if (window.pcToast) pcToast(action === 'accept' ? '상품명을 바꿨어요 — 다시 검증할게요' : '기각했어요', 'info');
+      if (action === 'accept' && typeof runPrevalidate === 'function') { window._kgpRefreshFromStore = true; runPrevalidate(); }
+    });
+  }, true);
+}
 // 결과 카드는 폴링마다 다시 그려진다 — 펼친 상태를 기억해 다시 그려도 펼친 채로
 if (!window._kgpAiReviewToggle) {
   window._kgpAiReviewToggle = true;

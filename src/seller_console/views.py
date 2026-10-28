@@ -5130,6 +5130,18 @@ def _risk_pending_images(item_id: str) -> int:
         return 0
 
 
+def _risk_pending_eta_sec(n: int) -> int:
+    """V42-1(오너 2026-10-28 「언제 되는지 알려야」) — 남은 장 × 최근 장당 실측 시간(한 줄로 도는 워커). 실측이 없으면 장당 20초."""
+    if n <= 0:
+        return 0
+    try:
+        from src.db import image_translate_queue_pg as _q
+        per = float(_q.recent_seconds_per_page() or 0) or 20.0
+    except Exception:                                            # noqa: BLE001
+        per = 20.0
+    return int(round(n * max(2.0, min(per, 90.0))))
+
+
 def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
     """Y10 — 사전검증·등록 공용: 기억된 「빼고 등록」 자동 적용(저장) · 몸통에 저장된 결정 반영 · 검사 결과."""
     from src.services import risk_gate as _rg
@@ -5151,7 +5163,8 @@ def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
     for k in ("title_ko", "coupang_name", "description", "description_ko", "keywords", "tags", "options", "detail_specs", "brand"):
         if product_data.get(k):
             view[k] = product_data[k]
-    return _rg.scan(view, pending_images=_risk_pending_images(item_id), owner=_seller_identities())
+    _pend = _risk_pending_images(item_id)
+    return _rg.scan(view, pending_images=_pend, owner=_seller_identities(), pending_eta_sec=_risk_pending_eta_sec(_pend))
 
 
 def _ocr_text_of(extra: dict) -> str:
@@ -6214,6 +6227,24 @@ def collect_quality_fix(item_id: str):
     logger.info("[등록 품질] 자동 수정 item=%s 고침 %d · 남음 %d", item_id[:8], len(res["applied"]), len(res["left"]))
     return jsonify({"ok": True, **res, "fields": {"title_ko": ex.get("title_ko")} if res["changed"] else {},
                     "quality": _lq.card(_lq.checks(ex, pd))})
+
+
+@bp.post("/collect/<item_id>/ai-review-act")
+def collect_ai_review_act(item_id: str):
+    """V42-1(오너 2026-10-28 20:08) — AI 검수 항목에 「수락」(상품명이면 바로 고쳐 저장) · 「기각」(기록만). 되돌릴 수 있다(편집 칸)."""
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from . import collect_history_store as _chs
+    from src.services import ai_review as _ar
+    body = request.get_json(silent=True) or {}
+    res = _ar.decide(ex, body.get("idx", -1), str(body.get("action") or ""), by=_seller_id())
+    if not res["ok"]:
+        return jsonify({"ok": False, "error": res["why"]}), 400
+    if not _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
+        return jsonify({"ok": False, "error": "저장하지 못했어요 — 다시 눌러 주세요."}), 500
+    logger.info("[AI 검수] %s item=%s idx=%s changed=%s", body.get("action"), item_id[:8], body.get("idx"), list(res["changed"]))
+    return jsonify({"ok": True, "action": body.get("action"), "fields": res["changed"], "ai_review": _ar.card(ex.get(_ar.KEY))})
 
 
 def _image_edit_item(item_id: str):
