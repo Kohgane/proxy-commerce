@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#1a1714">
   <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
   <style>
     body { background: var(--pc-color-bg); color: var(--pc-color-text); padding-bottom: 76px; }
     .m-top { background: #1a1714; color: #f5efe3; padding: .9rem 1rem; display:flex; align-items:center; gap:.5rem; }

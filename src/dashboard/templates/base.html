@@ -13,7 +13,7 @@
   <link rel="manifest" href="/seller/static/manifest.webmanifest?v=183">
   <meta name="theme-color" content="#f8fafc">
   <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
   <link rel="stylesheet" href="/admin/static/css/style.css">
 </head>
 <body>

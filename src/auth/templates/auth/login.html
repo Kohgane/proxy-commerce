@@ -10,7 +10,7 @@
   <link rel="manifest" href="/seller/static/manifest.webmanifest?v=183">
   <meta name="theme-color" content="#1a1714">
   <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
   <style>
     /* 먹(ink) 다크 "vault" 무드 — 금빛 글로우 + 한지 텍스트 (KOHgogane 브리프 §2.2) */
     .auth-page {

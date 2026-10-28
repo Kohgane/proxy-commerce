@@ -31,7 +31,7 @@
         href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
   <link rel="stylesheet"
         href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
   {% block head %}{% endblock %}
 </head>
 <body class="bg-light">
