@@ -2982,6 +2982,12 @@ def _outbound_images(product_data: dict, item_id) -> tuple:
                 # Y8: 사전검증 AI 수정 — 등록도 사전검증이 본 값 그대로(화면이 새로고침 전 값을 보내도)
                 from src.services import ai_fix as _aif
                 _aif.overlay(product_data, _uex)
+                # 순찰 148 H-rep: 쿠팡 대표 자동 정리본·대표 바꾸기 필요는 저장본이 정본(등록·사전검증이 같은 값을 본다)
+                from src.services import rep_auto_clean as _rac
+                product_data["rep_need_change"] = str(_uex.get("rep_need_change") or "")
+                if isinstance(_uex.get("rep_auto_clean"), dict):
+                    product_data["rep_auto_clean"] = dict(_uex["rep_auto_clean"])
+                    product_data["rep_auto_clean_valid"] = bool(_rac.valid(_uex))
     except Exception as exc:
         logger.warning("[등록] 번역본 반영 실패(원본으로 계속): %s", exc)
 
@@ -5089,6 +5095,15 @@ def _pv_prepare(data: dict, product_data: dict):
                     product_data["rep_auto_pick"] = _sx.get("rep_auto_pick")
             except Exception as exc:                                  # noqa: BLE001
                 logger.warning("[사전검증] 대표 사진 자동 교체 실패(원래 대표로 잰다): %s", exc)
+            # 순찰 148 H-rep: 「대표 사진 바꾸기 필요」(후보 전부 글자)인데 자동 정리를 아직 안 해 봤으면 일회성 줄로 넣는다
+            #   (OCR·그리기는 잡 스레드에서 — 사전검증은 기다리지 않는다). 해 봤으면 다시 넣지 않는다(결과는 보류 사유에)
+            try:
+                if _sx.get("rep_need_change") and not isinstance(_sx.get("rep_auto_clean"), dict):
+                    from src.services import oneshot_ops as _oo_rc
+                    _oo_rc.enqueue({"op": "rep_clean", "item_id": str(data["item_id"]),
+                                    "reason": "사전검증 — 대표 후보 전부 글자(자동 정리)"})
+            except Exception as exc:                                  # noqa: BLE001
+                logger.warning("[사전검증] 대표 자동 정리 줄 넣기 실패(보류는 그대로): %s", exc)
             from src.services import risk_gate as _rgk
             product_data["kc_notice_kinds"] = _rgk.notice_kinds(product_data["_risk"])    # Y10-B 본문 맨 위 KC 고지
             # Y7-N: 저장된 상세설명이 가게 UI 글자면 편집 화면은 칸을 비워 보낸다 — 카드 사유 한 줄의 재료는 저장본
