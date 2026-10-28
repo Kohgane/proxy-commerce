@@ -44,7 +44,7 @@
   {# 순찰 95: Bootstrap·아이콘·웹폰트는 우리 서버(/static/vendor)에서 — 외부 CDN(jsdelivr·구글 폰트)은 중국에서 막혀 화면·「등록」 모달이 깨졌다. #}
   <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
   {# v87-S5: CSS에 캐시 키가 없어 max-age=604800(1주)로 굳어 있었다. 스타일만 고치면 최대
      일주일간 브라우저가 옛 파일을 써서, 로고 hover 반응처럼 CSS로만 고치는 건 사용자에게
      도달하지 못한다. 배포 커밋(build_sha)을 키로 걸면 배포할 때마다 자동 갱신되고,
