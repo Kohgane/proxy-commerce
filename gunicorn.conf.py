@@ -40,7 +40,33 @@ os.environ.setdefault('KGP_DEFER_BG_THREADS', '1')
 #   워커의 gc가 세대 2를 훑을 때마다 객체 머리(gc 헤더)에 써서 그 페이지가 워커 쪽으로 복사된다 → 마스터 사본 + 워커 사본 = 두 번 센다.
 #   포크 직전에 지금 객체를 영구 세대로 옮긴다(`gc.freeze`) — gc가 다시 훑지 않아 공유가 유지된다(로컬 실측 합계 101→83MB).
 #   `KGP_GC_FREEZE=0`이면 끈다.
+def when_ready(server):
+    # 순찰 118b: 마스터 준비 단계를 적고 부팅 감시(데몬 스레드 · 잠만 잔다)를 띄운다 — 포크 전 멈춤 · 워커 미준비 · 자기 /health 안 닿음이면
+    #   `boot_stuck` 한 줄 남기고 마스터가 나가 Render가 다시 띄운다(`src/utils/boot_watch.py`)
+    try:
+        from src.utils import boot_watch as _bw
+        _bw.start(server)
+    except Exception as exc:                                     # noqa: BLE001 — 감시 실패가 서비스를 막지 않는다
+        server.log.warning('[부팅] 부팅 감시 시작 실패(계속): %s', exc)
+
+
+def _boot_mark(stage, **kw):
+    try:
+        from src.utils import boot_watch as _bw
+        _bw.mark(stage, **kw)
+    except Exception:                                            # noqa: BLE001 — 단계 기록 실패가 포크를 막지 않는다
+        pass
+
+
 def pre_fork(server, worker):
+    _boot_mark('fork_start', age=getattr(worker, 'age', None))
+    try:
+        _pre_fork_body(server, worker)
+    finally:
+        _boot_mark('fork_done', age=getattr(worker, 'age', None))
+
+
+def _pre_fork_body(server, worker):
     # 순찰 135(운영 10-27 08:40 UTC): 사전검증 끝 `release()`(malloc_trim)로 워커 RSS 183→143인데 합계는 228→224 · 마스터 PSS 84→102 —
     #   워커가 놓은 쪽은 **포크 때 물려받은 마스터의 빈 힙**이었다(마스터가 풀었지만 운영체제에 안 돌려준 자리). 워커가 그 장을 놓으면
     #   마스터가 혼자 떠안고(PSS 전액), 워커는 새 사유 장을 다시 받아 2시간에 143→199 → 합계 +52. 포크 **전에** 마스터가 빈 힙을 돌려주면
@@ -73,8 +99,15 @@ def post_worker_init(worker):
     try:
         from src.utils import restart_log as _rl
         _cfg = getattr(worker, 'cfg', None)
+        _boot_mark('worker_ready', age=getattr(worker, 'age', None))   # 순찰 118b: 3단계 — 마스터 준비 · 포크 · 워커 준비
+        try:
+            from src.utils import boot_watch as _bw
+            _stages = _bw.summary()
+        except Exception:                                        # noqa: BLE001
+            _stages = {}
         _rl.note_boot(os.getpid(), _worker_rss_mb(), threads=getattr(_cfg, 'threads', None), timeout=getattr(_cfg, 'timeout', None),
-                      worker_class=str(getattr(_cfg, 'worker_class_str', '') or ''), workers=getattr(_cfg, 'workers', None))
+                      worker_class=str(getattr(_cfg, 'worker_class_str', '') or ''), workers=getattr(_cfg, 'workers', None),
+                      stages=_stages)
         _rl.arm_no_traffic()                                     # 순찰 106-F: 부팅 60초 안 요청 0이면 `no_traffic` 한 줄
     except Exception as exc:                                     # noqa: BLE001
         worker.log.warning('[부팅] 재시작 기록 실패(계속): %s', exc)
