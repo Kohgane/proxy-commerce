@@ -85,3 +85,27 @@ def send_admin_email(subject: str, html: str) -> bool:
         if send_email(email, subject, html):
             ok = True
     return ok
+
+
+def health_check() -> dict:
+    """/health/deep용 — 순찰 157(2026-10-28): 이 함수가 없어서 체크가 **항상 fail**이었다(import 오류를 삼킨 거짓 장애).
+    정직 판정: 키 없음 → skip(비활성) · 키 있음 → Resend `GET /domains`로 실제 인증 1회(타임아웃 5s). 값은 로그·응답에 안 적는다."""
+    if os.getenv("ADAPTER_DRY_RUN", "0") == "1":
+        return {"status": "skip", "detail": "dry-run — 발송 비활성"}
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        return {"status": "skip", "detail": "RESEND_API_KEY 미설정 — 이메일 알림 비활성"}
+    try:
+        import requests
+        r = requests.get("https://api.resend.com/domains", headers={"Authorization": f"Bearer {api_key}"}, timeout=5)
+    except Exception as exc:                                     # noqa: BLE001
+        return {"status": "fail", "detail": f"Resend 연결 실패 — {type(exc).__name__}"}
+    if r.status_code == 200:
+        try:
+            n = len((r.json() or {}).get("data") or [])
+        except Exception:                                        # noqa: BLE001
+            n = -1
+        return {"status": "ok", "detail": f"Resend 인증 OK · 도메인 {n}개" if n >= 0 else "Resend 인증 OK"}
+    if r.status_code in (401, 403):
+        return {"status": "fail", "detail": f"Resend 인증 실패 HTTP {r.status_code} — RESEND_API_KEY 확인"}
+    return {"status": "warn", "detail": f"Resend 응답 HTTP {r.status_code}"}
