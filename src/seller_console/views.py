@@ -5641,16 +5641,23 @@ def _pv_run_markets(job_id: str, product_data: dict, markets: list, dispatcher, 
     import copy as _copy
     import time as _time
     from src.utils import stall_guard as _sg
+    from src.utils import prevalidate_memory as _pvm
+    _probe = _pvm.begin()
     done_results = []
 
     def _one(m, pd):
         # Z9: 마켓별 스레드도 스톨 감시(10초) — 어느 마켓·어느 줄에서 멈췄는지 스택이 남게
         _sg.begin(f"pv_market:{m}:{job_id[:8]}")
         t0 = _time.monotonic()
+        _sample = _probe.start(m) if _probe is not None else None
+        _status = "error"
         try:
             rs = dispatcher.prevalidate(pd, [m])
+            _status = "returned"
             return rs, int((_time.monotonic() - t0) * 1000)
         finally:
+            if _probe is not None:
+                _probe.finish(_sample, _status)
             _sg.end()
 
     ex = _cf.ThreadPoolExecutor(max_workers=max(1, len(markets)))
@@ -5685,6 +5692,7 @@ def _pv_run_markets(job_id: str, product_data: dict, markets: list, dispatcher, 
     ex.shutdown(wait=False, cancel_futures=True)
     if orphans:
         _pv_update(job_id, stages={"orphans": orphans})
+    _pvm.record(_probe, job_id)
     return done_results
 
 
