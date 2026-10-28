@@ -10,7 +10,8 @@
   a 상표·캐릭터·디자인(`src/uploaders/risk_tokens.json` + `ko_polish_rules.json` trademarks의 replica·ip·drop)
   b 레플리카 신호(复刻·同款·平替·1:1…)가 a와 같이 나오면 「레플리카 의심」
   c 브랜드 블랙리스트(COUPANG_BLACKLIST85 · 소싱 판정과 같은 로더) — 허용 목록은 통과
-  d 인증(의약품·의료기기=차단 / 전기 KC·어린이·전파·수입식품=보류 / 건기식·화장품=주의: 인허가 보유)
+  d 인증(의약품·의료기기=차단 / 전기 KC·어린이·전파·수입식품·도검=보류 / 건기식·화장품=보류 — 오너 계정만 주의: 인허가 보유,
+    그 밖의 셀러는 `user_docs` 서류로 통과 · 순찰 139)
   e 표시광고 과장(Y7-J `ban_hits`) — 주의(보류는 기존 Y7-J가 마켓 판정에서 따로 건다)
 - `holds(scan)` — 사전검증 보류 줄(결정 안 된 보류·차단 · 이미지 검사 대기).
 - `apply(extra, key, action)` — 「빼고 등록」(낱말 제거 + 걸린 사진 제외) · 「그래도 등록」(기록) · 「등록 안 함」.
@@ -344,6 +345,21 @@ def _hit(key, cat, label, grade, names, case, where_text, imgs, why="") -> Optio
 DOC_LINK = "/seller/me#docs"
 
 
+#: 순찰 139 — 「인허가 보유 — 주의」를 그대로 받는 계정(오너 두 계정 · 공유 목록). `seller_shared_reason` 이유 중 이것들만
+_LICENSED_REASONS = ("owner", "ADMIN_USER_IDS", "FAMILY_EMAILS", "server")
+
+
+def _licensed_owner(owner) -> bool:
+    """`owner`(그 셀러의 정체성들) 중 하나가 오너 계정(정본 오너 · 공유 목록 · 잡 주인 없는 서버)인가. 모르면 False(닫는다)."""
+    if not owner:
+        return False
+    try:
+        from src.seller_console import market_credentials as mc
+        return any(mc.seller_shared_reason(s) in _LICENSED_REASONS for s in owner if s)
+    except Exception:                                              # noqa: BLE001 — 판정이 깨지면 보류 그대로
+        return False
+
+
 def _cert_by_doc(h: dict, c: dict, owner) -> None:
     """`cert:` 보류 한 줄 — 셀러에게 그 종류의 유효한 서류가 있으면 주의(통과)로 내리고 근거를 남긴다. 없으면 「서류 추가」 안내."""
     doc = None
@@ -427,7 +443,8 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None) -> dict:
     shadowed = set()
     certs = []
     for c in tokens().get("cert") or []:
-        if c["label"] in allow:
+        ok = c.get("shared_ok") or {}
+        if c["label"] in allow or (ok.get("label") and ok["label"] in allow):
             continue
         wt, im = where_text, imgs
         if c.get("except"):                                        # Y15: 그 이름이 든 예외 구절(「零食推车」 = 간식 카트)은 빼고 잰다
@@ -435,6 +452,10 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None) -> dict:
             im = [(k, i, n, _drop_phrases(t, c["except"])) for k, i, n, t in imgs]
         h = _hit("cert:" + c["key"], c["label"], c["label"], c.get("grade") or "hold", c.get("names") or [], False,
                  wt, im, c.get("why") or "")
+        if h and h["grade"] == "hold" and ok and _licensed_owner(owner):
+            # 순찰 139: 건기식·화장품 — 오너 계정은 「인허가 보유 — 주의」 그대로(오너가 번호를 넣을 때까지). 다른 셀러는 서류로만
+            h.update(grade="caution", label=ok.get("label") or h["label"], cat=ok.get("label") or h["cat"], why=ok.get("why") or h["why"],
+                     passed_by={"by": "licensed_owner"})
         if h and h["grade"] == "hold" and c.get("docs"):
             _cert_by_doc(h, c, owner)
         if h:

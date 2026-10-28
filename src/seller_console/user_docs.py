@@ -22,6 +22,7 @@ KINDS: Dict[str, str] = {
     "cosmetic": "화장품 책임판매업 등록",
     "kc": "KC 인증(전기·어린이제품)",
     "radio": "전파 적합성 평가(KC 전파)",
+    "knife_license": "도검 판매업 허가(경찰청)",
     "other": "기타 허가·등록증",
 }
 
