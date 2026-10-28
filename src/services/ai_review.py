@@ -42,8 +42,8 @@ def _text(pd: dict, ex: dict) -> str:
     except Exception:                                            # noqa: BLE001
         sell = 0
     src_price = f"{pd.get('price') or ''} {pd.get('currency') or ''}".strip()
-    if sell or src_price:
-        lines.append("가격: " + " · ".join(x for x in (f"판매가 약 {sell:,}원" if sell else "", f"원가 {src_price}" if src_price else "") if x))
+    if sell:
+        lines.append(f"판매가(시스템 계산값 — 화면엔 정확한 금액으로만 나감): {sell:,}원")   # V42-1: 「약」·원가 통화는 우리 표기라 검수 대상 아님
     imgs = [u for u in (pd.get("images_effective") or pd.get("images") or []) if u]
     det = [u for u in (pd.get("detail_images") or []) if u]
     lines.append(f"사진: 대표·갤러리 {len(imgs)}장 · 상세 {len(det)}장")
@@ -60,11 +60,16 @@ def _text(pd: dict, ex: dict) -> str:
     return "\n".join(lines)
 
 
+FIELDS = ("title", "option", "description", "none")        # V42-1: 짚은 점이 어디 것인지 — title만 「수락」으로 바로 고친다
+
+
 def _prompt(body: str) -> str:
-    return (body + f"\n\n위 상품이 한국 쇼핑몰에 올라가기 직전이에요. 한국 손님이 보기에 이상한 점을 **최대 {MAX_LINES}줄**로 짚으세요"
+    return (body + f"\n\n위 상품이 한국 쇼핑몰에 올라가기 직전이에요. 한국 손님이 보기에 이상한 점을 **최대 {MAX_LINES}개**로 짚으세요"
             "(번역투·뜻이 안 통하는 말·중국 가게 안내·숫자/단위 오류·옵션과 상품명 불일치·과장 표현 등). "
-            f"한 줄은 {LINE_MAX}자 이내, 어디가 왜 이상한지. 이상한 점이 없으면 빈 목록.\n"
-            '답 형식: {"lines": ["…", "…"]}')
+            f"issue는 {LINE_MAX}자 이내로 어디가 왜 이상한지. field는 그 점이 어디 것인지 — title(상품명)·option(옵션)·description(상세)·none(그 외). "
+            "field가 title이면 fix에 **고친 상품명 전체**(한 줄, 80자 이내)를 넣고, 그 외는 fix를 null로. "
+            "판매가·원가 줄은 시스템 값이라 표기 형식(약·통화)은 짚지 마세요. 이상한 점이 없으면 빈 목록.\n"
+            '답 형식: {"items": [{"issue": "…", "field": "title|option|description|none", "fix": "…" 또는 null}]}')
 
 
 def enabled() -> bool:
@@ -95,10 +100,66 @@ def run(pd: dict, ex: dict) -> Dict[str, Any]:
     if not r.get("text"):
         return {"status": "failed", "lines": [], "at": now, "why": str(r.get("error") or "빈 답")[:160]}
     js = llm.parse_json(r["text"]) or {}
-    raw = js.get("lines") if isinstance(js, dict) else None
-    lines: List[str] = [str(x).strip()[:LINE_MAX] for x in (raw or []) if str(x).strip()][:MAX_LINES]
-    return {"status": "done", "lines": lines, "at": now, "provider": r.get("provider"), "model": r.get("model"),
-            "usd": round(float(r.get("usd") or 0), 5)}
+    items = _parse_items(js)
+    return {"status": "done", "lines": [it["issue"] for it in items], "items": items, "at": now,
+            "provider": r.get("provider"), "model": r.get("model"), "usd": round(float(r.get("usd") or 0), 5)}
+
+
+def _parse_items(js) -> List[Dict[str, Any]]:
+    """`{"items":[{issue, field, fix}]}` → 정리된 목록. 옛 `{"lines":[…]}`도 받는다(field none)."""
+    out: List[Dict[str, Any]] = []
+    raw = js.get("items") if isinstance(js, dict) else None
+    if not isinstance(raw, list):
+        raw = [{"issue": x, "field": "none"} for x in ((js.get("lines") if isinstance(js, dict) else None) or [])]
+    for x in raw:
+        if isinstance(x, str):
+            x = {"issue": x, "field": "none"}
+        if not isinstance(x, dict):
+            continue
+        issue = str(x.get("issue") or "").strip()[:LINE_MAX]
+        if not issue:
+            continue
+        field = str(x.get("field") or "none").strip().lower()
+        field = field if field in FIELDS else "none"
+        fix = str(x.get("fix") or "").strip()[:120] if field == "title" else ""
+        out.append({"issue": issue, "field": field, "fix": fix or None})
+        if len(out) >= MAX_LINES:
+            break
+    return out
+
+
+def decide(ex: dict, idx: int, action: str, *, by: str = "") -> Dict[str, Any]:
+    """V42-1(오너 2026-10-28 20:08 「수락·기각 버튼이 있어서 누르면 바로 수정되게」) — 한 항목에 결정 기록.
+    accept + field=title → `title_ko`(·`coupang_name`이 있으면 같이) 를 fix로 바꾼다. 되돌리기 = 편집 칸에서 직접(원래 값은 `prev`에 남긴다).
+    반환 `{ok, changed:{필드: 새 값}, why}`."""
+    r = (ex or {}).get(KEY)
+    if not isinstance(r, dict) or r.get("status") != "done":
+        return {"ok": False, "changed": {}, "why": "AI 검수 결과가 없어요 — 사전검증을 먼저"}
+    items = r.get("items") or [{"issue": x, "field": "none", "fix": None} for x in (r.get("lines") or [])]
+    try:
+        it = items[int(idx)]
+    except (ValueError, TypeError, IndexError):
+        return {"ok": False, "changed": {}, "why": "그 항목이 없어요"}
+    if action not in ("accept", "reject"):
+        return {"ok": False, "changed": {}, "why": "accept 또는 reject"}
+    changed: Dict[str, Any] = {}
+    if action == "accept":
+        if it.get("field") != "title" or not it.get("fix"):
+            return {"ok": False, "changed": {}, "why": "이 항목은 자동으로 못 고쳐요 — 「편집」으로 직접"}
+        prev = {"title_ko": ex.get("title_ko"), "coupang_name": ex.get("coupang_name")}
+        ex["title_ko"] = it["fix"]
+        changed["title_ko"] = it["fix"]
+        if ex.get("coupang_name"):
+            ex["coupang_name"] = it["fix"]
+            changed["coupang_name"] = it["fix"]
+        ex.pop("pv_ready", None)                                 # 상품명이 바뀌었다 — 「등록 준비 완료」는 다시 검증 뒤에
+    dec = dict(r.get("decisions") or {})
+    dec[str(int(idx))] = {"action": action, "at": datetime.now(timezone.utc).isoformat(), "by": str(by or "")[:60],
+                          **({"prev": prev} if action == "accept" else {})}
+    r["decisions"] = dec
+    r["items"] = items
+    ex[KEY] = r
+    return {"ok": True, "changed": changed, "why": ""}
 
 
 def telegram_text(title: str, item_id: str, review: Dict[str, Any]) -> str:
@@ -110,4 +171,10 @@ def card(review: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """카드 모양 — 접힌 줄 「AI 검수」. 없으면 {}."""
     if not isinstance(review, dict) or review.get("status") not in ("done", "failed", "skip", "running"):
         return {}
-    return {k: review.get(k) for k in ("status", "lines", "at", "why", "cached") if review.get(k) is not None}
+    out = {k: review.get(k) for k in ("status", "lines", "at", "why", "cached", "decisions") if review.get(k) is not None}
+    items = review.get("items")
+    if items is None and review.get("lines"):
+        items = [{"issue": x, "field": "none", "fix": None} for x in review["lines"]]      # 옛 저장본
+    if items is not None:
+        out["items"] = items
+    return out

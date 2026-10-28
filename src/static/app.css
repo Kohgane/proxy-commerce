@@ -2867,3 +2867,12 @@ a.hb-tile:hover { border-color: var(--teal); }
 @media (max-width: 767.98px) {
   .ch-head h4 { font-size: var(--h1-size); }
 }
+
+/* ===== V42-1 AI 검수 동사(오너 2026-10-28 20:08) — 항목마다 수락·편집·기각 · 고친 값 미리보기 · 결정한 항목은 조용히 ===== */
+.kgp-ai-review-list > li { padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.kgp-ai-review-list > li:last-child { border-bottom: 0; }
+.kgp-ai-review-list > li.is-decided { color: var(--text-muted); }
+.kgp-ai-field { font-size: var(--caption); letter-spacing: .08em; color: var(--text-muted); text-transform: uppercase; }
+.kgp-ai-fix { margin-top: var(--space-1); font-weight: 600; color: var(--text-strong); word-break: keep-all; }
+.kgp-ai-decided { margin-top: var(--space-1); font-size: var(--small); color: var(--text-muted); }
+.kgp-ai-review-list .kgp-risk-acts { gap: var(--space-2); }

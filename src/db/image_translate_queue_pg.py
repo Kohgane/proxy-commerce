@@ -170,6 +170,18 @@ def counts(item_id: str = "") -> dict:
     return out
 
 
+def recent_seconds_per_page(limit: int = 20) -> float:
+    """V42-1: 최근 끝난 장의 평균 처리 시간(초 · 리스 잡힌 때→끝난 때). 기록 없으면 0."""
+    if not _enabled():
+        return 0.0
+    with pg.query() as cur:
+        cur.execute("SELECT avg(extract(epoch from (finished_at - started_at))) FROM ("
+                    "  SELECT started_at, finished_at FROM image_translate_queue"
+                    "  WHERE finished_at IS NOT NULL AND started_at IS NOT NULL ORDER BY finished_at DESC LIMIT %s) t", (int(limit),))
+        row = cur.fetchone()
+    return float(row[0] or 0) if row else 0.0
+
+
 def started_since(since) -> int:
     """`since` 이후 **시작한** 장 수(실패·재시도 포함 — 시작할 때마다 센다: 시도 수 합)."""
     if not _enabled():
