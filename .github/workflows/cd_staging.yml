@@ -29,6 +29,12 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      # The full pytest suite includes real-browser contracts. Install the pinned
+      # Playwright Chromium before running it; without this, CD failed with
+      # "Executable doesn't exist" even though the code and CI browser lane passed.
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
       - name: Run tests
         run: pytest --tb=short -q
         env:
