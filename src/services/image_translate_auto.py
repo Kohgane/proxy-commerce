@@ -392,15 +392,38 @@ def kick() -> None:
         th.start()
 
 
+def parallel_lanes() -> int:
+    """V42-3: 한 번에 도는 줄 수(`IMGKO_PARALLEL`, 기본 2 · 1~4). 장마다 메모리 문지기(`rss.start_ok`)는 그대로 — 여유 없으면 줄이 스스로 선다."""
+    try:
+        return max(1, min(4, int(os.getenv("IMGKO_PARALLEL", "2") or 2)))
+    except ValueError:
+        return 2
+
+
 def run_until_idle(max_pages: int = 10_000) -> int:
-    """W2: 서비스 간 단일 실행 — DB 리스를 잡은 한 곳만 돈다. 실행 기록은 서비스별로 남긴다."""
+    """W2: 서비스 간 단일 실행 — DB 리스를 잡은 한 곳만 돈다. 실행 기록은 서비스별로 남긴다.
+    V42-3: 그 한 곳 안에서 줄을 `parallel_lanes()`개 띄운다 — 각 줄이 `lease_next`(SKIP LOCKED)로 제 장을 잡으니 같은 장은 둘이 안 잡는다.
+    실측(10-28 20:01 KST): 17장 3분 12초, 번역 장 13~30초가 전부 직렬 — 2줄이면 절반."""
     from src.services import workers as _w
     if not _w.lease("imgko-auto"):
         logger.info("[이미지번역·자동] 다른 서비스가 돌리는 중 — 이번엔 건너뜀")
         return 0
     n = 0
     try:
-        n = _drain(max_pages)
+        lanes = parallel_lanes()
+        if lanes <= 1:
+            n = _drain(max_pages)
+            return n
+        counts = [0] * lanes
+
+        def _lane(i: int) -> None:
+            counts[i] = _drain(max_pages)
+        ths = [threading.Thread(target=_lane, args=(i,), daemon=True, name=f"imgko-auto-{i}") for i in range(lanes)]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join()
+        n = sum(counts)
         return n
     finally:
         _w.release("imgko-auto")
@@ -476,20 +499,26 @@ def _translate_job(job: dict) -> tuple:
     entry = translate_page(originals[idx], idx=idx, kind=kind, item_id=item_id, seller_id=uid,
                            title=str(extra.get("title_en") or extra.get("title") or row.get("title") or ""),
                            prop_exempt=_pt.exempt(extra))
-    # 저장 직전 다시 읽는다 — 그 사이 다른 장이 적혔을 수 있다(장별 병합).
-    row = store.get(item_id, seller_ids={uid}) or {}
-    try:
-        extra = _json.loads(row.get("extra_json") or "{}") or {}
-    except Exception:
-        extra = {}
-    by_idx = {int(e.get("idx", -1)): e for e in (extra.get(ko_key) or []) if isinstance(e, dict)}
-    if istore.has_boxes(by_idx.get(idx)):
-        return "skipped", istore.PROTECTED_REASON               # 번역하는 사이 상자 있는 번역본이 생겼다 — 덮지 않는다
-    istore.carry_versions(by_idx.get(idx), entry)               # Y11-E: 다시 번역해도 앞선 번역본·편집본은 버전으로 남는다
-    by_idx[idx] = entry
-    by_idx.pop(-1, None)
-    extra[ko_key] = [by_idx[k] for k in sorted(by_idx)]
-    store.update(item_id, seller_ids={uid}, extra_json=_json.dumps(extra, ensure_ascii=False))
+    # V42-3(오너 2026-10-28 「너무 오래 걸려」 → 워커 2줄): 저장은 **지금 DB 값에 이 장만 덧댄다**(merge_extra · 장별 병합).
+    #   예전엔 다시 읽고 전체를 썼다 — 같은 상품의 다른 장이 나란히 돌면 나중 쓴 쪽이 앞 장을 지울 수 있었다(10-17 VRSUK 패턴).
+    _box = {"protected": False, "extra": None}
+
+    def _apply(fresh: dict) -> None:
+        by_idx = {int(e.get("idx", -1)): e for e in (fresh.get(ko_key) or []) if isinstance(e, dict)}
+        if istore.has_boxes(by_idx.get(idx)):
+            _box["protected"] = True                                # 번역하는 사이 상자 있는 번역본이 생겼다 — 덮지 않는다
+            return
+        istore.carry_versions(by_idx.get(idx), entry)           # Y11-E: 다시 번역해도 앞선 번역본·편집본은 버전으로 남는다
+        by_idx[idx] = entry
+        by_idx.pop(-1, None)
+        fresh[ko_key] = [by_idx[k] for k in sorted(by_idx)]
+        _box["extra"] = fresh
+
+    if not store.merge_extra(item_id, _apply, seller_ids={uid}):
+        return "failed", "번역본을 저장하지 못했어요 — 다시 시도"
+    if _box["protected"]:
+        return "skipped", istore.PROTECTED_REASON
+    extra = _box["extra"] or extra
     try:
         istore.record_usage(uid, [entry], vendor="tencent")
     except Exception:
