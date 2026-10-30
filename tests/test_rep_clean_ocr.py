@@ -67,6 +67,42 @@ class FreshOcrTests(unittest.TestCase):
         for raw in (None, "url", b"", bytearray(b"x")):
             self.assertIsNone(fresh_text_count(raw))
 
+    def test_initial_candidate_measurement_keeps_ambiguous_detections(self):
+        from src.services import image_edit as IE, oneshot_ops as O, rep_auto_clean as R
+        self.body = {"TextDetections": [{"DetectedText": "logo", "Confidence": 12}, {}]}
+        extra = {"images": ["https://example.test/source.png"]}
+        with patch.object(IE, "work_bytes", return_value=(b"source bytes", "")):
+            counts = R.measure(extra, [0])
+        self.assertEqual(counts, {0: 2})
+        self.assertEqual(O.pick_rep(counts), -1)
+        self.assertEqual(self.sent, [b"source bytes"])
+
+    def test_initial_candidate_missing_response_is_not_selected(self):
+        from src.services import image_edit as IE, oneshot_ops as O
+        for body, expected in (({}, None), ({"TextDetections": None}, None),
+                               ({"TextDetections": []}, 0)):
+            self.body = body
+            with patch.object(IE, "work_bytes", return_value=(b"source bytes", "")):
+                n, why = O._ocr_box_count("https://example.test/source.png")
+            self.assertEqual(n, expected)
+            self.assertEqual(bool(why), expected is None)
+            self.assertEqual(O.pick_rep({0: n}), 0 if expected == 0 else -1)
+
+    def test_initial_download_failure_does_not_call_provider(self):
+        from src.services import image_edit as IE, oneshot_ops as O
+        with patch.object(IE, "work_bytes", return_value=(None, "download failed")):
+            self.assertEqual(O._ocr_box_count("https://example.test/missing"),
+                             (None, "download failed"))
+        self.assertEqual(self.sent, [])
+
+    def test_selection_requires_integer_zero_and_valid_index(self):
+        from src.services.oneshot_ops import pick_rep
+        for invalid in (False, 0.0, "0", None, -1):
+            self.assertEqual(pick_rep({0: invalid}), -1)
+            self.assertEqual(pick_rep({0: invalid, 1: 0}, prefer=0), 1)
+        self.assertEqual(pick_rep({"0": 0, -1: 0, 2: 0}), 2)
+        self.assertEqual(pick_rep({False: 0}), -1)
+
 
 if __name__ == "__main__":
     unittest.main()
