@@ -1,0 +1,47 @@
+{
+  "ok": false,
+  "why": "texture_check_failed",
+  "measurements": [
+    {
+      "ok": false,
+      "ratio": 21.499234176931218,
+      "before": 2293.950787582216,
+      "after": 106.6991860595498,
+      "why": "texture_changed",
+      "region": [
+        170,
+        95,
+        1260,
+        365
+      ],
+      "context": [
+        158,
+        83,
+        1272,
+        377
+      ]
+    },
+    {
+      "ok": false,
+      "ratio": 5.570817006704965,
+      "before": 2772.8749867482024,
+      "after": 497.7501474937706,
+      "why": "texture_changed",
+      "region": [
+        1150,
+        1360,
+        1390,
+        1420
+      ],
+      "context": [
+        1141,
+        1351,
+        1399,
+        1429
+      ]
+    }
+  ],
+  "protected_changed_pixels": 0,
+  "outside_changed_pixels": 0,
+  "requires_fresh_ocr": true
+}
