@@ -59,3 +59,11 @@ photo and exact pixel checks. Command:
 Added `measure_inpaint_quality`: same-frame RGB inputs, per-channel variance of each edited rectangle plus a 2–12px context rim, exact protection-pixel preservation, and no changes outside the declared edit bounds. Unknown protection, product overlap, changed coordinates or zero variance reject the candidate. Measuring only the unchanged exterior ring cannot detect a flattened rectangle, so this measurement includes the edited interior. This remains a numerical gate, not proof of OCR completion or semantic product safety.
 
 Targeted unittest now **22 passed, 0 skipped**. Six new cases use controlled raster arrays (not live inpaint evidence). No automatic pipeline wiring, product detector, or Tencent call was added. `image_edit.plan` supplies OCR/prop boxes and a version, but no product-protection regions. Production integration and the original merge checklist remain incomplete.
+
+## Verified candidate orchestration (2026-10-30)
+
+`rep_clean_candidate.crop_candidate` binds reviewed protection data to the exact source bytes (SHA256) and selected version, sends crop rendering through render_worker with a 30s limit, and calls fresh OCR on the output bytes. Only a strictly integer zero accepts the candidate; missing/stale evidence, worker failure, OCR exceptions, unmeasured or positive counts hold. Source boxes must not be reused after crop. This function has no upload, DB or item-mutation side effects.
+
+Targeted tests: **28 passed, 0 skipped** (six new contract-double cases). This is not live OCR proof. The caller supplying complete server-side product protection and the real OCR callback is still missing; `rep_auto_clean.clean` is not switched over. Do not interpret this entry point as production activation.
+
+Parent head a93539ec passed all five required CI gates. This commit requires its own gates and remains draft until the original integration/real-image acceptance checklist is complete.
