@@ -44,6 +44,18 @@ def fresh_text_count(raw):
 
 
 def crop_candidate(raw, text_regions, protection, *, version, ocr=fresh_text_count, worker=None):
+    return _candidate(raw, text_regions, protection, version=version, ocr=ocr, worker=worker, inpaint=False)
+
+
+def clean_candidate(raw, text_regions, protection, *, version, ocr=fresh_text_count, worker=None):
+    """Crop first; inpaint only when edge geometry cannot preserve the product."""
+    result = crop_candidate(raw, text_regions, protection, version=version, ocr=ocr, worker=worker)
+    if result.get("why") not in ("text_outside_edge_band", "crop_overlaps_product"):
+        return result
+    return _candidate(raw, text_regions, protection, version=version, ocr=ocr, worker=worker, inpaint=True)
+
+
+def _candidate(raw, text_regions, protection, *, version, ocr, worker, inpaint):
     """Return a candidate only after evidence, child rendering and fresh OCR.
 
     `ocr(png_bytes)` returns an integer box count or None. Integration must use
@@ -63,13 +75,14 @@ def crop_candidate(raw, text_regions, protection, *, version, ocr=fresh_text_cou
         return fail("product_protection_missing")
     if not callable(ocr):
         return fail("ocr_unavailable")
-    from src.services.rep_clean_geometry import render_edge_crop
+    from src.services.rep_clean_geometry import render_edge_crop, render_guarded_inpaint
     if worker is None:
         from src.utils.render_worker import run
         worker = run
     try:
-        rendered = worker(render_edge_crop, raw, text_regions, protection["regions"],
-                          _name="rep_crop_candidate", _timeout=30.0)
+        rendered = worker(render_guarded_inpaint if inpaint else render_edge_crop,
+                          raw, text_regions, protection["regions"],
+                          _name="rep_inpaint_candidate" if inpaint else "rep_crop_candidate", _timeout=30.0)
     except Exception:
         return fail("crop_worker_failed")
     if not isinstance(rendered, dict) or rendered.get("ok") is not True:
@@ -89,4 +102,4 @@ def crop_candidate(raw, text_regions, protection, *, version, ocr=fresh_text_cou
     return dict(rendered, boxes_after=0, requires_fresh_ocr=False,
                 source_sha256=protection["sha256"], source_version=version,
                 output_sha256=hashlib.sha256(output).hexdigest(),
-                coordinate_frame="cropped", reuse_source_boxes=False)
+                coordinate_frame="unchanged" if inpaint else "cropped", reuse_source_boxes=False)

@@ -67,3 +67,43 @@ Targeted unittest now **22 passed, 0 skipped**. Six new cases use controlled ras
 Targeted tests: **28 passed, 0 skipped** (six new contract-double cases). This is not live OCR proof. The caller supplying complete server-side product protection and the real OCR callback is still missing; `rep_auto_clean.clean` is not switched over. Do not interpret this entry point as production activation.
 
 Parent head a93539ec passed all five required CI gates. This commit requires its own gates and remains draft until the original integration/real-image acceptance checklist is complete.
+# 2026-10-30 automatic-path integration checkpoint
+
+`rep_auto_clean.clean` now invokes crop first, guarded TELEA when edge geometry
+is unsuitable, texture/product checks, fresh OCR, and verified PNG upload.
+Failed candidates advance in measured-box order; same source/review is not
+repeated. Both daily caps remain. Outbound original/translated selection is not
+changed; only a separately stored Coupang representative is selected.
+
+Targeted regression: **58 passed, 0 skipped, 20 subtests passed**. Tests include
+the actual lossless renderer plus transport/storage doubles; they are not live
+Tencent, Cloudinary, database or marketplace validation.
+
+## Actual rejected inpaint evidence
+
+Source: [existing lamp photo](../patrol148/before-d5af2185-p2.jpg).
+JPEG preview of output from the actual TELEA renderer, captured before the rejection gate (measurements use the lossless PNG before this preview compression):
+
+![Rejected lamp inpaint](lamp-inpaint-rejected-preview.jpg)
+
+[Measured values](inpaint-measurements.json): top rectangle variance ratio
+**21.4992**, bottom **5.5708** (limit <1.5). Protected lamp and outside-edit
+changed pixels: **0**. Visible top and bottom smearing therefore **fails**;
+this output is not accepted, uploaded, or marked OCR-zero. Coordinates are
+hand-reviewed fixture coordinates, not live product detector results.
+
+## Remaining release blockers
+
+- Production has no producer of complete reviewed product rectangles bound to
+  selected URL/version/work-bytes hash. Missing evidence holds before rendering.
+  Do not deploy this cutover until the producer and its trust boundary are wired;
+  otherwise all unreviewed representative candidates will hold.
+- No Tencent/Cloudinary credentials or production read connection in this
+  execution environment. Need isolated authorized validation credentials and
+  read-only product source/box records for the two live products; never paste
+  secrets into the vault or chat. No operational queue/market actions authorized.
+- Full suite and five CI gates must be rechecked on the new head. Local Chromium
+  installer returned a truncated archive, so local browser full-suite is not
+  verified. Targeted tests above did run on the complete repository checkout.
+
+The older checkpoints above are historical, not current release claims.

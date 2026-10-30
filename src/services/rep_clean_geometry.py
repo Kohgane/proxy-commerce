@@ -1,4 +1,4 @@
-"""H-rep2 crop/quality primitives; deliberately not wired to automatic cleaning yet.
+"""H-rep2 worker-only crop/inpaint and product/texture checks.
 
 Coordinates must describe the decoded current image, not an earlier edit/OCR
 frame. Protected regions are caller-supplied evidence, never inferred from the
@@ -186,3 +186,48 @@ def measure_inpaint_quality(before_raw, after_raw, edit_regions, protected_regio
                     "outside_changed_pixels": 0, "requires_fresh_ocr": True}
     except (OSError, ValueError, Image.DecompressionBombError):
         return {"ok": False, "why": "invalid_image_or_regions"}
+
+
+def render_guarded_inpaint(raw, text_regions, protected_regions):
+    """TELEA only in declared rectangles; reject product overlap before decoding.
+
+    No rectangle-color fallback. The lossless PNG must pass pixel/texture
+    checks here and independent fresh OCR in the caller before publication.
+    """
+    from io import BytesIO
+    from PIL import Image
+    try:
+        with Image.open(BytesIO(raw)) as source:
+            width, height = source.size
+            if max(width, height) > MAX_SIDE or max(width, height) < MIN_RETAINED_SIDE:
+                return {"ok": False, "why": "invalid_size"}
+            if source.mode != "RGB" or getattr(source, "n_frames", 1) != 1:
+                return {"ok": False, "why": "unsupported_image"}
+            if source.getexif().get(274, 1) != 1:
+                return {"ok": False, "why": "orientation_requires_new_coordinates"}
+            regions = _rects(text_regions, width, height)
+            protected = _rects(protected_regions, width, height)
+            if any(x0 < px1 and px0 < x1 and y0 < py1 and py0 < y1
+                   for x0, y0, x1, y1 in regions
+                   for px0, py0, px1, py1 in protected):
+                return {"ok": False, "why": "edit_overlaps_product"}
+            import cv2
+            import numpy as np
+            pixels = np.array(source)
+        mask = np.zeros((height, width), dtype=np.uint8)
+        for x0, y0, x1, y1 in regions:
+            mask[y0:y1, x0:x1] = 255
+        painted = cv2.inpaint(pixels, mask, 3, cv2.INPAINT_TELEA)
+        # Explicitly preserve every non-edited pixel, even across cv2 versions.
+        painted[mask == 0] = pixels[mask == 0]
+        buf = BytesIO()
+        with Image.fromarray(painted) as result:
+            result.save(buf, format="PNG")
+        output = buf.getvalue()
+        quality = measure_inpaint_quality(raw, output, regions, protected)
+        if not quality["ok"]:
+            return quality
+        return dict(quality, bytes=output, size=[width, height], method="inpaint",
+                    coordinate_frame="unchanged")
+    except (OSError, ValueError, ImportError, Image.DecompressionBombError):
+        return {"ok": False, "why": "inpaint_unavailable"}

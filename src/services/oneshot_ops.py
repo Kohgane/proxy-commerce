@@ -1092,7 +1092,7 @@ def rep_clean(item_id: str, *, ocr=None, prevalidate=None) -> Dict:
         out.update(picked=zero, how="0상자 장")
     elif counts and all(isinstance(n, int) for n in counts.values()):
         res = RAC.clean(ex, counts, by="auto", ocr=ocr)
-        out.update(auto_clean=res, picked=res["idx"] if res.get("ok") else -1, how="글자 지우기")
+        out.update(auto_clean=res, picked=res["idx"] if res.get("ok") else -1, how="대표 사진 정리")
     else:
         return dict(out, ok=False, why="후보를 재지 못했어요")
     if not store.update(iid, seller_ids={uid} if uid else None, extra_json=json.dumps(ex, ensure_ascii=False)):

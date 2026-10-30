@@ -29,23 +29,27 @@ def _extra():
 
 @pytest.fixture
 def fake_edit(monkeypatch):
+    # External render/upload boundary double; selection/storage logic stays real.
     from src.services import image_edit as IE
+    from src.services import rep_clean_edit as E
     calls = {"apply": []}
 
-    def plan(extra, kind, idx, **kw):
-        return {"boxes": [{"id": "t0"}, {"id": "t1"}, {"id": "t2"}, {"id": "t3"}], "why": ""}
+    def prepare(extra, idx):
+        return {"ok": True, "identity": E.identity(extra, idx), "idx": idx}
 
-    def apply(extra, kind, idx, ops, *, by="user", small=None):
-        calls["apply"].append((kind, idx, [o["id"] for o in ops], by))
-        e = IE._entry(extra, kind, idx, create=True)
-        IE._normalize(e)
-        n = len(e["edits"]) + 1
-        e["edits"].append({"n": n, "url": CLEAN, "base_key": IE.current_key(e), "ready": True, "by": by})
-        e.setdefault("status", "done")
-        IE.select(extra, kind, idx, f"edit:{n}")
+    def render(prepared):
+        return {"ok": True, "boxes_after": 0, "method": "edge_crop"}
+
+    def publish(extra, idx, prepared, result):
+        calls["apply"].append(("gallery", idx))
+        e = IE._entry(extra, "gallery", idx, create=True)
+        n = len(IE.edits(e)) + 1
+        e["edits"] = IE.edits(e) + [{"n": n, "url": CLEAN, "ready": True, "by": "rep_auto"}]
+        e.setdefault("vboxes", {})[f"edit:{n}"] = {"img": CLEAN, "boxes": [], "size": [750, 750]}
         return {"ok": True, "url": CLEAN, "version": f"edit:{n}"}
-    monkeypatch.setattr(IE, "plan", plan)
-    monkeypatch.setattr(IE, "apply", apply)
+    monkeypatch.setattr(E, "prepare", prepare)
+    monkeypatch.setattr(E, "render", render)
+    monkeypatch.setattr(E, "publish", publish)
     return calls
 
 
@@ -64,7 +68,7 @@ def test_clean_success_sets_coupang_rep_and_keeps_outbound_version(fake_edit):
     ex = _extra()
     out = R.clean(ex, {0: 9, 1: 9, 3: 4, 4: 9}, by="auto", ocr=lambda u: (0, "") if u == CLEAN else (9, ""))
     assert out["ok"] and out["idx"] == 3 and out["boxes_before"] == 4 and out["boxes_after"] == 0
-    assert fake_edit["apply"] == [("gallery", 3, ["t0", "t1", "t2", "t3"], "rep_auto")]   # 상자 전부 지우기
+    assert fake_edit["apply"] == [("gallery", 3)]
     assert ex["rep_image"] == ORIG[3] and "rep_need_change" not in ex
     assert ex["images"] == ORIG                                                   # 수집 원본 불변
     e = IE._entry(ex, "gallery", 3)
@@ -79,11 +83,13 @@ def test_clean_not_zero_keeps_hold_with_reason(fake_edit):
     ex = _extra()
     out = R.clean(ex, {0: 9, 1: 9, 3: 4, 4: 9}, ocr=lambda u: (2, ""))
     assert not out["ok"] and out["boxes_after"] == 2
-    assert ex["rep_need_change"].endswith("자동 정리 시도: 4번 4상자 → 2상자") and ex["rep_need_change"].startswith("후보 4장")
-    assert "rep_image" not in ex and ex["rep_auto_clean"]["ok"] is False and R.valid(ex) is None
+    assert "글자가 남아 있어요" in ex["rep_need_change"] and ex["rep_need_change"].startswith("후보 4장")
+    assert [i for _, i in fake_edit["apply"]] == [3, 0, 1, 4]
+    assert "rep_image" not in ex and R.valid(ex) is None
+    assert all(not e.get("edits") for e in ex["images_ko"])
     # 같은 장은 다시 하지 않는다(한 번만) — 사유도 두 번 붙지 않는다
     again = R.clean(ex, {0: 9, 1: 9, 3: 4, 4: 9}, ocr=lambda u: pytest.fail("다시 재면 안 된다"))
-    assert again["why"] == "이미 자동 정리를 해 본 장" and ex["rep_need_change"].count("자동 정리 시도") == 1
+    assert "이미 시도" in again["why"] and ex["rep_need_change"].count("자동 정리 시도") == 1
 
 
 def test_clean_skips_when_a_zero_box_candidate_exists(fake_edit):
@@ -139,7 +145,7 @@ def test_rep_clean_op_saves_and_prevalidates(fake_edit, monkeypatch):
     pv = []
     boxes = {ORIG[0]: 9, ORIG[1]: 9, ORIG[2]: 5, ORIG[3]: 4, ORIG[4]: 9, CLEAN: 0}
     out = O.rep_clean("i-1", ocr=lambda u: (boxes[u], ""), prevalidate=lambda iid, mk: pv.append(iid) or {"ok": True})
-    assert out["ok"] and out["how"] == "글자 지우기" and out["picked"] == 3 and pv == ["i-1"]
+    assert out["ok"] and out["how"] == "대표 사진 정리" and out["picked"] == 3 and pv == ["i-1"]
     assert saved["ex"]["rep_image"] == ORIG[3] and "rep_need_change" not in saved["ex"]
     # 0상자 장이 생겼으면(재수집 등) 지우지 않고 그 장
     boxes[ORIG[2]] = 0
