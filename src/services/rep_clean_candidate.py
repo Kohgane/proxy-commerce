@@ -9,14 +9,49 @@ from __future__ import annotations
 import hashlib
 
 
-def crop_candidate(raw, text_regions, protection, *, version, ocr, worker=None):
+def fresh_text_count(raw):
+    """Read exact rendered bytes; missing/malformed OCR is never measured zero.
+
+    Unlike read_boxes, do not discard detections without polygon coordinates
+    or low-confidence text. Neither is proof of a text-free representative.
+    Reuse the configured Tencent client, bounded request timeout and cleanup.
+    No image decode, resize, upload, cache or database write here.
+    """
+    if not isinstance(raw, bytes) or not raw:
+        return None
+    from src.services import ocr_tencent as provider
+    import base64
+    try:
+        if not provider.is_configured() or provider.unopened() or not provider._fits_as_is(raw):
+            return None
+        previous_language = getattr(provider._LANG, "value", "")
+        provider._LANG.value = "auto"
+        try:
+            body = provider._call(base64.b64encode(raw).decode("ascii"))
+        except Exception as exc:
+            return 0 if provider.no_text(exc) else None
+        finally:
+            provider._LANG.value = previous_language
+        if not isinstance(body, dict) or body.get("Error"):
+            return None
+        detections = body.get("TextDetections")
+        if not isinstance(detections, list):
+            return None
+        # Even an ambiguous detection prevents accepting this candidate.
+        return len(detections)
+    except Exception:
+        return None
+
+
+def crop_candidate(raw, text_regions, protection, *, version, ocr=fresh_text_count, worker=None):
     """Return a candidate only after evidence, child rendering and fresh OCR.
 
     `ocr(png_bytes)` returns an integer box count or None. Integration must use
     the real OCR service; callbacks in unit tests are only contract doubles.
     A crop has a new frame and must never inherit old edit/OCR coordinates.
     """
-    fail = lambda why: {"ok": False, "why": why}
+    def fail(why):
+        return {"ok": False, "why": why}
     if not isinstance(raw, bytes) or not raw or not isinstance(version, str) or not version:
         return fail("missing_image_identity")
     if not isinstance(protection, dict) or protection.get("reviewed_complete") is not True:
