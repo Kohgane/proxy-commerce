@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 import unittest
 
-from src.services.rep_clean_geometry import crop_plan, render_edge_crop, variance_check
+from src.services.rep_clean_geometry import crop_plan, render_edge_crop, variance_check, measure_inpaint_quality
 
 
 class CropPlanTests(unittest.TestCase):
@@ -123,6 +123,69 @@ class RasterTests(unittest.TestCase):
         dx, dy = result["offset"]
         self.assertEqual(actual.crop((570 + dx, 520 + dy, 770 + dx, 850 + dy)).tobytes(),
                          source.crop((570, 520, 770, 850)).tobytes())
+
+
+@unittest.skipUnless(importlib.util.find_spec("PIL") and importlib.util.find_spec("numpy"), "raster dependencies required")
+class InpaintQualityTests(unittest.TestCase):
+    @staticmethod
+    def raw(image):
+        buf = BytesIO()
+        image.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def image(self):
+        import numpy as np
+        from PIL import Image
+        a = np.random.default_rng(123).integers(50, 200, (100, 100, 3), dtype=np.uint8)
+        return Image.fromarray(a)
+
+    def check(self, before, after):
+        return measure_inpaint_quality(self.raw(before), self.raw(after),
+                                       [(10, 10, 60, 60)], [(70, 70, 90, 90)])
+
+    def test_flattened_box_fails_even_with_unchanged_exterior(self):
+        before = self.image()
+        after = before.copy()
+        after.paste((125, 125, 125), (10, 10, 60, 60))
+        result = self.check(before, after)
+        self.assertFalse(result["ok"])
+        self.assertGreater(result["measurements"][0]["ratio"], 1.5)
+        self.assertEqual(result["outside_changed_pixels"], 0)
+
+    def test_preserved_texture_passes_numeric_gate_but_still_requires_ocr(self):
+        before = self.image()
+        after = before.copy()
+        after.paste(before.crop((11, 10, 60, 60)), (10, 10))
+        result = self.check(before, after)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["requires_fresh_ocr"])
+
+    def test_product_damage_fails_before_variance(self):
+        before = self.image()
+        after = before.copy()
+        after.putpixel((80, 80), (0, 0, 0))
+        self.assertEqual(self.check(before, after)["why"], "product_pixels_changed")
+
+    def test_changed_background_outside_mask_fails(self):
+        before = self.image()
+        after = before.copy()
+        after.putpixel((65, 65), (0, 0, 0))
+        self.assertEqual(self.check(before, after)["why"], "pixels_changed_outside_edit")
+
+    def test_product_overlap_unknown_protection_and_changed_frame_fail(self):
+        before = self.raw(self.image())
+        result = measure_inpaint_quality(before, before, [(10, 10, 60, 60)], [(40, 40, 90, 90)])
+        self.assertEqual(result["why"], "edit_overlaps_product")
+        self.assertFalse(measure_inpaint_quality(before, before, [(10, 10, 60, 60)], [])["ok"])
+        cropped = self.raw(self.image().crop((0, 0, 90, 90)))
+        self.assertEqual(measure_inpaint_quality(before, cropped, [(10, 10, 60, 60)],
+                                                [(70, 70, 90, 90)])["why"], "coordinate_frame_changed")
+
+    def test_flat_color_is_not_texture_evidence(self):
+        from PIL import Image
+        before = Image.new("RGB", (100, 100), (200, 20, 10))
+        self.assertFalse(self.check(before, before)["ok"])
+        self.assertIsNone(self.check(before, before)["measurements"][0]["ratio"])
 
 
 if __name__ == "__main__":

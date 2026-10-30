@@ -53,3 +53,9 @@ photo and exact pixel checks. Command:
 - Add integration tests and compare actual candidate outcomes before/after.
 - Full suite and all five required CI gates, plus repository review checklist.
 - Do not automatically regenerate existing production edits or refresh listings.
+
+## Pixel quality follow-up (2026-10-30)
+
+Added `measure_inpaint_quality`: same-frame RGB inputs, per-channel variance of each edited rectangle plus a 2–12px context rim, exact protection-pixel preservation, and no changes outside the declared edit bounds. Unknown protection, product overlap, changed coordinates or zero variance reject the candidate. Measuring only the unchanged exterior ring cannot detect a flattened rectangle, so this measurement includes the edited interior. This remains a numerical gate, not proof of OCR completion or semantic product safety.
+
+Targeted unittest now **22 passed, 0 skipped**. Six new cases use controlled raster arrays (not live inpaint evidence). No automatic pipeline wiring, product detector, or Tencent call was added. `image_edit.plan` supplies OCR/prop boxes and a version, but no product-protection regions. Production integration and the original merge checklist remain incomplete.

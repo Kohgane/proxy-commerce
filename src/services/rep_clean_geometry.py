@@ -120,3 +120,69 @@ def render_edge_crop(raw, text_regions, protected_regions, *, margin=4):
                         requires_fresh_ocr=True)
     except (OSError, ValueError, Image.DecompressionBombError):
         return {"ok": False, "why": "invalid_image"}
+
+
+def measure_inpaint_quality(before_raw, after_raw, edit_regions, protected_regions):
+    """Worker-only measurement of a same-frame inpaint candidate, not approval.
+
+    Measures each edited rectangle plus a 15% context rim (2..12px). The edited
+    area must be included: an unchanged exterior ring alone cannot detect a
+    flattened fill. Per-channel variance avoids treating a solid colored patch
+    as texture. All protected pixels and all pixels outside declared edit
+    regions must remain identical. Compare lossless output before JPEG encoding.
+    OCR, protection provenance and visual review remain separate requirements.
+    """
+    from io import BytesIO
+    from PIL import Image
+    import numpy as np
+
+    try:
+        with Image.open(BytesIO(before_raw)) as before, Image.open(BytesIO(after_raw)) as after:
+            if before.size != after.size:
+                return {"ok": False, "why": "coordinate_frame_changed"}
+            width, height = before.size
+            if max(width, height) > MAX_SIDE:
+                return {"ok": False, "why": "invalid_size"}
+            for im in (before, after):
+                if im.mode != "RGB" or getattr(im, "n_frames", 1) != 1:
+                    return {"ok": False, "why": "unsupported_image"}
+                if im.getexif().get(274, 1) != 1:
+                    return {"ok": False, "why": "orientation_requires_new_coordinates"}
+            regions = _rects(edit_regions, width, height)
+            protected = _rects(protected_regions, width, height)
+            # A text box on merchandise is unsafe even if an inpaint happens to
+            # reproduce the same bytes. Do not erase product markings.
+            if any(x0 < px1 and px0 < x1 and y0 < py1 and py0 < y1
+                   for x0, y0, x1, y1 in regions
+                   for px0, py0, px1, py1 in protected):
+                return {"ok": False, "why": "edit_overlaps_product"}
+            a, b = np.asarray(before), np.asarray(after)
+            changed = np.any(a != b, axis=2)
+            protected_changed = sum(int(changed[y0:y1, x0:x1].sum())
+                                    for x0, y0, x1, y1 in protected)
+            if protected_changed:
+                return {"ok": False, "why": "product_pixels_changed",
+                        "protected_changed_pixels": protected_changed}
+            allowed = np.zeros((height, width), dtype=bool)
+            for x0, y0, x1, y1 in regions:
+                allowed[y0:y1, x0:x1] = True
+            outside_changed = int(changed[~allowed].sum())
+            if outside_changed:
+                return {"ok": False, "why": "pixels_changed_outside_edit",
+                        "outside_changed_pixels": outside_changed}
+            measurements = []
+            for x0, y0, x1, y1 in regions:
+                rim = max(2, min(12, math.ceil((y1 - y0) * 0.15)))
+                bounds = [max(0, x0 - rim), max(0, y0 - rim),
+                          min(width, x1 + rim), min(height, y1 + rim)]
+                xx0, yy0, xx1, yy1 = bounds
+                va = float(a[yy0:yy1, xx0:xx1].reshape(-1, 3).var(axis=0).mean())
+                vb = float(b[yy0:yy1, xx0:xx1].reshape(-1, 3).var(axis=0).mean())
+                measurements.append(dict(variance_check(va, vb), region=[x0, y0, x1, y1],
+                                         context=bounds))
+            ok = all(m["ok"] for m in measurements)
+            return {"ok": ok, "why": "" if ok else "texture_check_failed",
+                    "measurements": measurements, "protected_changed_pixels": 0,
+                    "outside_changed_pixels": 0, "requires_fresh_ocr": True}
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return {"ok": False, "why": "invalid_image_or_regions"}
