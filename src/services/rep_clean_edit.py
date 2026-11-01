@@ -36,6 +36,9 @@ def prepare(extra, idx):
     if (not isinstance(proof, dict) or proof.get("reviewed_complete") is not True
             or not proof.get("reviewer") or not proof.get("reviewed_at")):
         return {"ok": False, "why": "상품 보호 영역 검토 기록이 없어요"}
+    from src.services.rep_protection_review import verified
+    if not verified(proof):
+        return {"ok": False, "why": "상품 보호 영역의 검토 서명을 확인하지 못했어요"}
     if proof.get("version") != current["version"] or proof.get("url") != current["url"]:
         return {"ok": False, "why": "상품 보호 영역이 현재 사진 버전과 달라요"}
     raw, why = IE.work_bytes(current["url"])

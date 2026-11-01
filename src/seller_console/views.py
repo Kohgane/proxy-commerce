@@ -6297,6 +6297,33 @@ def _image_edit_drop_legacy(item_id: str, item: dict) -> list:
         return []
 
 
+@bp.route("/collect/<item_id>/rep-protection/<int:idx>", methods=["GET", "POST"])
+def collect_rep_protection(item_id: str, idx: int):
+    """Administrator review. GET never invokes the mutating image-edit plan."""
+    if not session.get("user_id") or not _is_admin_user():
+        return jsonify(ok=False, error="관리자 로그인이 필요합니다"), 403
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from src.services import rep_protection_review as review, image_edit as ie
+    if not ie._entry(ex, "gallery", idx):
+        return jsonify(ok=False, error="사진의 번역·편집 기록이 없어 아직 검토할 수 없어요"), 409
+    reviewer = str(session["user_id"])
+    try:
+        if request.method == "GET":
+            response = jsonify(review.snapshot(ex, idx, item_id=item_id, reviewer=reviewer))
+        else:
+            replacement = review.accept(ex, idx, request.get_json(silent=True), item_id=item_id, reviewer=reviewer)
+            from . import collect_history_store as store
+            if not store.save_rep_protection(item_id, ex, replacement, seller_ids=_seller_identities()):
+                return jsonify(ok=False, error="상품이 바뀌었거나 저장소에 연결되지 않았어요 — 다시 열어 주세요"), 409
+            response = jsonify(ok=True, message="상품 보호 영역을 저장했어요. 사진 변경·마켓 전송은 하지 않았어요.")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 409
+
+
 @bp.route("/collect/<item_id>/image-edit/<kind>/<int:idx>", methods=["GET", "POST"])
 def collect_image_edit(item_id: str, kind: str, idx: int):
     """Y11 사진 편집 — GET: 상자 목록(판촉·로고·일반·상표 위험 · 제품 영역 · 비용) · POST `{ops:[{id, action: erase|text, text?}]}`: 편집본.

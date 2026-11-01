@@ -411,3 +411,17 @@ def count_total(days: int = 3650, seller_id=None, seller_ids=None) -> int:
         cur.execute(f"SELECT count(*) FROM collect_history WHERE deleted_at IS NULL AND created_at >= %s AND {sc}",
                     [cutoff] + params)
         return int(cur.fetchone()[0])
+
+
+def compare_swap_extra(item_id, expected, replacement, *, seller_ids):
+    """Atomic review save. Never overwrite a concurrent edit or enqueue a send."""
+    if not seller_ids:
+        return False
+    sc, params = _scope(None, seller_ids)
+    with pg.tx() as cur:
+        cur.execute(
+            f"UPDATE collect_history SET extra_json=%s::jsonb WHERE id::text=%s "
+            f"AND deleted_at IS NULL AND {sc} AND extra_json=%s::jsonb RETURNING id",
+            [json.dumps(replacement, ensure_ascii=False), str(item_id)] + params +
+            [json.dumps(expected, ensure_ascii=False)])
+        return cur.fetchone() is not None

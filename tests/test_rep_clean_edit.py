@@ -8,6 +8,12 @@ from PIL import Image
 from src.services import image_edit as IE
 from src.services import rep_clean_edit as E
 from src.services import rep_auto_clean as R
+from src.services import rep_protection_review as Review
+
+
+@pytest.fixture(autouse=True)
+def review_secret(monkeypatch):
+    monkeypatch.setattr(Review, "_secret", lambda: "review-test-only-secret")
 
 
 def png():
@@ -21,6 +27,7 @@ def reviewed():
     proof = {"reviewed_complete": True, "reviewer": "unit-test-review", "reviewed_at": "2026-10-30",
              "sha256": hashlib.sha256(raw).hexdigest(), "url": "https://cdn/translated.png",
              "version": "translated", "regions": [[100, 250, 500, 550]]}
+    proof["signature"] = Review.sign(proof)
     ex = {"images": ["https://cdn/original.png"], "detail_images": ["https://cdn/detail.png"],
           "images_ko": [{"idx": 0, "status": "done", "use": True, "url": proof["url"],
                          "translated_url": proof["url"], "rep_protection": proof}]}
