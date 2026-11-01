@@ -142,6 +142,14 @@ jobs:
             echo "::error::인프라 skip 잔존 — 브라우저/노드/jsdom/Pillow 설치가 새는 지점 있음"; exit 1
           fi
 
+      - name: H-rep2 검토 화면 before-after 증거
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hrep2-review-${{ github.sha }}
+          path: artifacts/hrep2-review/*.png
+          if-no-files-found: error
+
   # v86-K: PG 계약 레인 — Postgres 서비스 + DATABASE_URL로 Supabase 이관 계약만 격리 실행(인메모리 레인과
   #   상호배타). 두 잡의 합집합이 전 계약을 커버 → CI 전체에서 조용한 skip 0.
   pg-suite:

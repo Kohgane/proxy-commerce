@@ -223,3 +223,5 @@ window.kgpImageEdit = window.kgpImageEdit || (function () {
   };
 })();
 </script>
+
+{% if is_admin %}<script src="{{ url_for('static', filename='rep-protection.js') }}?v=hrep2-review-1"></script>{% endif %}

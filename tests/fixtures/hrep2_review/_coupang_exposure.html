@@ -1,0 +1,243 @@
+{# Y7(오너 2026-10-04) — 「쿠팡 노출」: 쿠팡 검색 카드(대표 1장 정사각·상품명 2줄·가격) + 상세 상단 줄(대표+추가 이미지) +
+   대표 사진 자동 판정. 편집 화면 탭·폰 M5 공용. 데이터는 /seller/collect/<id>/coupang-exposure 하나(등록이 보낼 목록 그대로).
+   필요: cpx_item_id #}
+<section class="cpx" data-role="cpx" data-item="{{ cpx_item_id }}" aria-live="polite">
+  <div class="cpx-head">
+    <span class="cpx-legend">쿠팡 노출 미리보기</span>
+    <div class="cpx-view" role="group" aria-label="보기 전환">
+      <button type="button" class="cpx-vbtn is-on" data-view="out" data-role="cpx-view-out" aria-pressed="true">나갈 사진</button>
+      <button type="button" class="cpx-vbtn" data-view="orig" data-role="cpx-view-orig" aria-pressed="false">원본</button>
+    </div>
+  </div>
+  <div class="cpx-body" data-role="cpx-body">쿠팡 검색 카드로 만드는 중…</div>
+</section>
+<script>
+(function () {
+  var root = document.currentScript.previousElementSibling;
+  if (!root || root.getAttribute('data-role') !== 'cpx') return;
+  var itemId = root.getAttribute('data-item');
+  var body = root.querySelector('[data-role=cpx-body]');
+  var view = 'out', last = null;
+  var base = '/seller/collect/' + encodeURIComponent(itemId);
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  function won(n) { return Number(n).toLocaleString('ko-KR') + '원'; }
+  function call(url, payload) {
+    return fetch(url, payload === undefined ? {credentials: 'same-origin'} :
+      {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
+      .then(function (r) { return r.text().then(function (t) {
+        // M5 후속: 서버가 JSON 대신 HTML 오류 페이지를 돌려줘도 사유를 남긴다 — 「불러오지 못했어요」만으론 원인을 모른다.
+        try { return JSON.parse(t); } catch (e) {
+          return {ok: false, error: (r.status >= 500 ? '서버 오류·시간 초과' : '응답을 읽지 못했어요') + ' (HTTP ' + r.status + ')'};
+        } }); });
+  }
+  function checkLines(c) {
+    // Y6-C B: 대표 사진 판정(내려받기·OCR)은 요청 밖에서 돈다 — 재는 동안은 카드·사진 줄을 먼저 보여 주고 3초마다 묻는다.
+    if (c && c.state === 'pending') return '<li class="cpx-ck is-unk" data-role="cpx-check-pending">대표 사진을 재는 중이에요(글자·크기 판정) — 나머지는 그대로 보셔도 돼요</li>';
+    if (c && c.partial) return '<li class="cpx-ck is-unk" data-role="cpx-check-partial"><span class="pc-badge pc-badge-off">일부 생략</span> ' + esc(c.why) + '</li>';
+    if (!c || c.state !== 'ok') return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown">판정 못 함 — ' + esc((c && c.why) || '이미지를 읽지 못했어요') + '</li>';
+    var out = [];
+    out.push('<li class="cpx-ck ' + (c.small ? 'is-bad' : 'is-ok') + '" data-role="cpx-check-size">' +
+             (c.small ? '반려 예상 — 500px 미만(' : '크기 ') + c.w + '×' + c.h + 'px' + (c.small ? ')' : ' · 500px 이상') + '</li>');
+    out.push('<li class="cpx-ck ' + (c.square ? 'is-ok' : 'is-warn') + '" data-role="cpx-check-square">' +
+             (c.square ? '정사각' : '정사각 아님 — 검색 카드엔 가운데를 잘라 보여요(위 카드가 잘린 모습)') + '</li>');
+    // Y11-D: 소품(책등 등)의 작고 흐린 글자는 서버가 「주의」 깃발(text_small, 보류 아님)로 내린다 — 그 줄을 그대로 쓴다.
+    var minor = (c.flags || []).filter(function (f) { return f && f.key === 'text_small'; })[0];
+    // Y11-G: 소품(책등·책 표지·포장) 글자뿐인 사진 — 글자가 아니다. 줄 자체를 안 그린다.
+    if (!c.prop_only) out.push('<li class="cpx-ck ' + (minor ? 'is-warn' : (c.text ? 'is-bad' : (c.text === false ? 'is-ok' : 'is-unk'))) + '" data-role="cpx-check-text">' +
+             (minor ? esc(minor.line) : c.text ? '텍스트 있음 — 반려 가능(읽은 글자 「' + esc(c.seen) + '」)'
+                     : (c.text === false ? '글자·워터마크 안 보임'
+                                         : '글자 판정 못 함(' + esc(c.ocr_why || '텐센트 OCR 실패') + ') — 등록은 막지 않아요')) + '</li>');
+    out.push('<li class="cpx-ck ' + (c.white_pct == null ? 'is-unk' : 'is-info') + '" data-role="cpx-check-white">' +
+             (c.white_pct == null ? '흰 배경 못 잼 — ' + esc(c.decode_why || '사진을 풀지 않았어요') + '(등록은 막지 않아요)'
+                                  : '흰 배경 ' + c.white_pct + '%(가장자리 띠 기준)') + '</li>');
+    return out.join('');
+  }
+  function render(d) {
+    last = d;
+    if (!d || !d.ok) { body.textContent = '불러오지 못했어요 — ' + ((d && d.error) || '사유를 받지 못했어요'); return; }
+    var s0 = (d.strip || [])[0] || {};
+    var repSrc = view === 'orig' ? (s0.original || d.rep) : d.rep;
+    var card = '<div class="cpx-card" data-role="cpx-card">' +
+      '<div class="cpx-thumb">' + (repSrc ? '<img src="' + esc(repSrc) + '" alt="대표 사진" referrerpolicy="no-referrer">' : '<span>사진 없음</span>') + '</div>' +
+      '<div class="cpx-name" data-role="cpx-name">' + esc(d.name) + '</div>' +
+      '<div class="cpx-price" data-role="cpx-price">' + (d.price ? won(d.price) : '<span class="cpx-muted">가격 미산정 — ' + esc(d.price_why) + '</span>') + '</div></div>' +
+      '<p class="cpx-cap">쿠팡 검색 결과 카드(예상). ' + (view === 'orig' ? '지금은 <b>원본</b>을 보는 중 — 등록엔 「나갈 사진」이 나가요.' : '등록이 보낼 첫 장 그대로예요.') + '</p>';
+    var hold = '';
+    if (d.override) {
+      hold = '<p class="cpx-ov" data-role="cpx-override-done">그래도 등록 — 기록됨(' + esc(d.override.by) + ')</p>';
+    } else if (d.hold) {
+      hold = '<div class="cpx-hold" data-role="cpx-hold"><p>' + esc(d.hold.line) + '</p>' +
+             '<button type="button" class="btn btn-ghost btn-sm" data-role="cpx-override">그래도 등록</button></div>';
+    }
+    var strip = (d.strip || []).map(function (s, n) {
+      var src = view === 'orig' ? s.original : s.url;
+      return '<figure class="cpx-tile' + (s.rep ? ' is-rep' : '') + '" data-role="cpx-tile" data-idx="' + s.idx + '">' +
+        '<img src="' + esc(src) + '" alt="' + (n + 1) + '번째" referrerpolicy="no-referrer" loading="lazy">' +
+        '<figcaption>' + (s.rep ? '<span class="cpx-badge" data-role="cpx-rep-badge">대표</span>' : '<span class="cpx-n">' + (n + 1) + '</span>') +
+        (s.edited ? '<span class="cpx-src" data-role="cpx-edited">' + (s.edited === 'auto' ? '자동 편집' : '편집본') + '</span>'
+                  : (s.source === 'translated' ? '<span class="cpx-src">번역본</span>'
+                     : (s.capped ? '<span class="cpx-src" data-role="cpx-capped">상한 — 번역 안 됨(원본)</span>'
+                     : (s.fix_text ? '<span class="cpx-src" data-role="cpx-fixtext">거꾸로 번역 — 글자 고치기</span>' : '')))) + '</figcaption>' +
+        '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button>' +
+        (s.rep ? '' : '<button type="button" class="cpx-act" data-role="cpx-rep" data-idx="' + s.idx + '">이 장을 대표로</button>') +
+        (s.translatable ? '<button type="button" class="cpx-act" data-role="cpx-use" data-idx="' + s.idx + '" data-use="' + (s.use ? '0' : '1') + '">' +
+                          (s.use ? '원본으로' : '번역본으로') + '</button>' : '') +
+        '</figure>';
+    }).join('');
+    // M5 후속(실사용 1호): 이미지 번역이 안 됐으면 숨기지 않는다 — 공급사 원문 사유 + 「다시 번역」. 등록은 원본으로 계속된다.
+    var f = d.imgko_fail;
+    var fail = f ? '<p class="cpx-cap" data-role="cpx-imgko-fail" data-code="' + esc(f.code) + '">' +
+      '<span class="pc-badge pc-badge-danger">이미지 번역 실패: ' + esc(f.raw || f.label) + '</span> ' + esc(f.label) +
+      ' — 원본 사진으로 나가요(등록은 막지 않아요). ' +
+      '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' +
+      (f.cap ? ' <details class="d-inline"><summary>자세히</summary><span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(f.today) + '/' + esc(f.cap) + '장</span></details>' : '') + '</p>' : '';
+    // Y11-C2: 실패가 없어도 「다시 번역」은 늘 보인다 — 상자 없는 옛 번역본(대표사진 등)을 다시 받으려면 누를 곳이 있어야 한다
+    var st = d.imgko_status;
+    if (!fail && st) {
+      // Y11-D: 상한·대기는 실패가 아니다 — 같은 줄에서 「대기 중 n장 (…)」으로 말한다(빨간 배지·환경변수 이름 0)
+      var wait = st.in_line ? ' <span data-role="cpx-imgko-wait">대기 중 ' + esc(st.in_line) + '장 (' +
+        (st.cap_full ? '오늘 상한 도달 — 내일 0시 KST 이후 처리' : '10분 내 처리') + ')</span>' : '';
+      fail = '<p class="cpx-cap" data-role="cpx-imgko-line">이미지 번역 ' +
+        '<button type="button" class="cpx-act" data-role="cpx-imgko-retry">다시 번역</button>' + wait +
+        ' <details class="d-inline"><summary>자세히</summary><span data-role="cpx-imgko-cap">오늘 텐센트 호출 ' + esc(st.today) + '/' + esc(st.cap) + '장' +
+        (st.polish_cap ? ' · 다듬기 ' + esc(st.polish_today) + '/' + esc(st.polish_cap) + '회' : '') + '</span></details></p>';
+    }
+    // Y11: 등록에서 빠진 사진(판촉 의심·위험) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
+    var out = (d.left_out || []).map(function (s) {
+      return '<figure class="cpx-tile is-out" data-role="cpx-out-tile" data-idx="' + s.idx + '">' +
+        '<img src="' + esc(s.url || s.original) + '" alt="빠진 ' + (s.idx + 1) + '번 사진" referrerpolicy="no-referrer" loading="lazy">' +
+        '<figcaption><span class="cpx-n">' + (s.idx + 1) + '</span></figcaption>' +
+        '<p class="cpx-out-why">' + esc(s.reason) + '</p>' +
+        '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button></figure>';
+    }).join('');
+    // Y11-B: 예전 색 덩어리 검출로 지운 편집본(제품 일부가 지워짐)을 되돌렸으면 한 줄로 알린다
+    var rev = (d.edit_reverted || []).length ? '<p class="cpx-cap" data-role="cpx-edit-reverted">예전 자동 검출로 지웠던 사진 ' +
+      d.edit_reverted.map(function (r) { return (r.idx + 1) + '번'; }).join(', ') + '을 번역본으로 되돌렸어요(제품이 함께 지워졌어요).</p>' : '';
+    // Y11-K: 이 상품 버튼 — 상품 ID를 몰라도 폰에서 한 탭. 결과는 바로 아래 줄(눌렀다 떠나도 다시 열면 마지막 결과).
+    var diag = d.diag_ok ? '<p class="cpx-cap" data-role="cpx-diag">' +
+      '<button type="button" class="cpx-act" data-role="cpx-ocr-recheck">OCR 다시 판정(이 상품)</button> ' +
+      '<button type="button" class="cpx-act" data-role="cpx-polish">번역 다듬기(이 상품)</button></p>' +
+      '<p class="cpx-cap" data-role="cpx-ocr-line" hidden></p><details class="cpx-cap" data-role="cpx-ocr-detail" hidden><summary>자세히</summary><span></span></details>' +
+      '<p class="cpx-cap" data-role="cpx-polish-line" hidden></p><details class="cpx-cap" data-role="cpx-polish-detail" hidden><summary>자세히</summary><span></span></details>' : '';
+    // Y11-U(오너 14:58): 옵션(SKU) 사진 — 쿠팡 옵션 썸네일로 나간다. 번역본/원본/번역 중 · 판촉 글자면 「지우기 제안」 + 「사진 편집」
+    var OSRC = {translated: '번역본', original: '원본'};
+    var opts = (d.options || []).map(function (o) {
+      var st = o.source === 'translated' ? 'is-ok' : (o.status === 'queued' || o.status === 'running' ? 'is-wait' : (o.status === 'failed' ? 'is-bad' : 'is-orig'));
+      var lab = o.source === 'translated' ? '번역본' : (o.status === 'queued' || o.status === 'running' ? '번역 중' : (o.status === 'failed' ? '번역 실패' : '원본'));
+      return '<figure class="cpx-tile cpx-opt" data-role="cpx-opt-tile" data-idx="' + o.idx + '">' +
+        '<img src="' + esc(view === 'orig' ? o.original : o.url) + '" alt="옵션 사진 ' + (o.idx + 1) + '" referrerpolicy="no-referrer" loading="lazy">' +
+        '<figcaption><span class="cpx-osrc ' + st + '" data-role="cpx-opt-src">' + lab + '</span></figcaption>' +
+        (o.labels && o.labels.length ? '<p class="cpx-olab">' + esc(o.labels.join(' · ')) + '</p>' : '') +
+        (o.promo && o.promo.length ? '<p class="cpx-opromo" data-role="cpx-opt-promo">판촉 글자 — 지우기 제안(' + esc(o.promo.slice(0, 2).join(', ')) + ')</p>' : '') +
+        (o.status === 'failed' && o.reason ? '<p class="cpx-out-why">' + esc(o.reason) + '</p>' : '') +
+        '<button type="button" class="cpx-act" data-role="cpx-opt-edit" data-idx="' + o.idx + '">사진 편집</button></figure>';
+    }).join('');
+    var nOrig = (d.options || []).filter(function (o) { return o.source !== 'translated'; }).length;
+    var optBlock = opts ? '<div class="cpx-slabel" data-role="cpx-opt-label">옵션 사진 ' + (d.options || []).length + '장 — 쿠팡 옵션 썸네일' +
+      (nOrig ? ' · 원본 ' + nOrig + '장(「다시 번역」으로 번역)' : '') + '</div><div class="cpx-strip" data-role="cpx-opts">' + opts + '</div>' : '';
+    body.innerHTML = rev + fail + diag + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
+      '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>' +
+      (out ? '<div class="cpx-slabel" data-role="cpx-out-label">등록에서 빠진 사진 — 판촉 글자를 지우면 다시 들어가요</div><div class="cpx-strip" data-role="cpx-out">' + out + '</div>' : '') +
+      optBlock;
+  }
+  var pollTimer = null;
+  function pollCheck(d, n) {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    if (!d || !d.ok || !d.check || d.check.state !== 'pending') return;
+    if (n >= 20) {                                   // 3초 × 20 = 60초 — 그 뒤엔 「일부 생략」으로 끝낸다(등록은 막지 않는다)
+      d.check = {state: 'unknown', partial: true, why: '대표 사진 판정이 60초 안에 끝나지 않았어요 — 판정만 생략하고 나머지는 그대로예요'};
+      render(d); return;
+    }
+    pollTimer = setTimeout(function () {
+      call(base + '/coupang-exposure/check?rep=' + encodeURIComponent(d.rep || '')).then(function (r) {
+        if (last !== d) return;                      // 그 사이 다른 장을 대표로 바꿨다
+        if (r && r.ok && r.check && r.check.state !== 'pending') {
+          d.check = r.check; if (!d.override) d.hold = r.hold || null; render(d);
+        } else { pollCheck(d, n + 1); }
+      }).catch(function () { pollCheck(d, n + 1); });
+    }, 3000);
+  }
+  // Y11-K: 결과줄 — GET이 「…중」이면 4초마다 다시 묻는다(최대 3분)
+  var diagTimers = {}, diagRunning = {};
+  function diagLine(kind, n) {
+    var path = kind === 'ocr' ? '/ocr-recheck' : '/image-polish', role = kind === 'ocr' ? 'cpx-ocr-line' : 'cpx-polish-line';
+    if (diagTimers[kind]) { clearTimeout(diagTimers[kind]); diagTimers[kind] = null; }
+    call(base + path).then(function (t) {
+      var el = body.querySelector('[data-role=' + role + ']');
+      if (!el || !t) return;
+      var txt = t.ok ? (t.line || '') : (t.error || '');
+      el.textContent = txt; el.hidden = !txt;
+      // Y12-A: 결과줄은 한 문장 — 상자·AI 횟수·캐시·한자/라틴 수·사유는 「자세히」(접힘)
+      var dt = body.querySelector('[data-role=' + role.replace('-line', '-detail') + ']');
+      if (dt) { var dtxt = (t.ok && t.detail && t.detail !== txt) ? t.detail : ''; dt.querySelector('span').textContent = dtxt; dt.hidden = !dtxt; }
+      if (t.ok && t.running && n < 45) { diagRunning[kind] = true; diagTimers[kind] = setTimeout(function () { diagLine(kind, n + 1); }, 4000); return; }
+      // Y11-N(오너 09:31 캡처): 다듬기가 끝났는데 상세 타일·대표 줄은 서랍을 열 때 받은 옛 판(옛 렌더 주소)을 그대로 보였다 —
+      //   끝난 순간 판정표·노출 카드를 다시 읽는다(주소는 편집마다 새 public_id라 캐시 문제가 아니다).
+      if (kind === 'polish' && diagRunning.polish) {
+        diagRunning.polish = false;
+        if (window.kgpDetailPlanRefresh) window.kgpDetailPlanRefresh();
+        load();
+      }
+    });
+  }
+  function diagStart(kind, b) {
+    var path = kind === 'ocr' ? '/ocr-recheck' : '/image-polish', role = kind === 'ocr' ? 'cpx-ocr-line' : 'cpx-polish-line';
+    b.disabled = true;
+    call(base + path, {}).then(function (t) {
+      b.disabled = false;
+      var el = body.querySelector('[data-role=' + role + ']');
+      if (el) { el.textContent = (t && (t.line || t.error)) || '응답이 없어요'; el.hidden = false; }
+      if (t && t.ok && t.running) { diagRunning[kind] = true; diagTimers[kind] = setTimeout(function () { diagLine(kind, 1); }, 4000); }
+    });
+  }
+  function show(d) { render(d); pollCheck(d, 0); if (d && d.diag_ok) { diagLine('ocr', 0); diagLine('polish', 0); } }
+  function load() { body.textContent = '쿠팡 검색 카드로 만드는 중…'; call(base + '/coupang-exposure').then(show).catch(function (e) { body.textContent = '불러오지 못했어요 — 네트워크 오류: ' + ((e && e.message) || e); }); }
+  root.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button');
+    if (!b || !root.contains(b)) return;
+    var role = b.getAttribute('data-role');
+    if (b.hasAttribute('data-view')) {
+      view = b.getAttribute('data-view');
+      root.querySelectorAll('.cpx-vbtn').forEach(function (x) { var on = x === b; x.classList.toggle('is-on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+      render(last);
+    } else if (role === 'cpx-rep') {
+      b.disabled = true; b.textContent = '바꾸는 중…';
+      call(base + '/rep-image', {idx: +b.getAttribute('data-idx')}).then(show);
+    } else if (role === 'cpx-use') {
+      var f = {}; f[b.getAttribute('data-idx')] = b.getAttribute('data-use') === '1';
+      b.disabled = true;
+      call(base + '/image-use', {flags: f, kind: 'gallery'}).then(load);
+    } else if (role === 'cpx-imgko-retry') {
+      b.disabled = true; b.textContent = '다시 넣는 중…';
+      call(base + '/image-translate/retry', {}).then(function (t) {
+        var capEl = body.querySelector('[data-role=cpx-imgko-cap]'), waitEl = body.querySelector('[data-role=cpx-imgko-wait]');
+        if (capEl && t && t.message) capEl.remove();          // Y11-C: 응답 줄이 「오늘 텐센트 호출 n/상한」을 이미 말한다(두 번 쓰지 않는다)
+        if (waitEl && t && t.message) waitEl.remove();
+        b.insertAdjacentHTML('afterend', ' <span data-role="cpx-imgko-msg">' + esc((t && (t.message || t.error)) || '응답이 없어요') + '</span>');
+        b.textContent = '다시 번역'; b.disabled = false;
+      });
+    } else if (role === 'cpx-ocr-recheck') {
+      diagStart('ocr', b);
+    } else if (role === 'cpx-polish') {
+      diagStart('polish', b);
+    } else if (role === 'cpx-opt-edit') {
+      if (window.kgpImageEdit) window.kgpImageEdit.open(itemId, 'sku', +b.getAttribute('data-idx'), load);   // Y11-U — 옵션 사진
+    } else if (role === 'cpx-edit') {
+      if (window.kgpImageEdit) window.kgpImageEdit.open(itemId, 'gallery', +b.getAttribute('data-idx'), load);   // Y11 — 닫으면 다시 그린다
+    } else if (role === 'cpx-override') {
+      b.disabled = true; b.textContent = '기록하는 중…';
+      call(base + '/rep-image-override', {}).then(load);
+    }
+  });
+  // 보일 때 한 번(편집 화면은 탭이 숨어 있다 — 대표 사진 내려받기·OCR을 안 볼 때 돌리지 않는다)
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); load(); }
+    });
+    io.observe(root);
+  } else { load(); }
+  window.kgpCpxReload = load;
+})();
+</script>
+
+{% include "_image_edit.html" %}

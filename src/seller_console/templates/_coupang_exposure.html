@@ -79,6 +79,7 @@
                      : (s.capped ? '<span class="cpx-src" data-role="cpx-capped">상한 — 번역 안 됨(원본)</span>'
                      : (s.fix_text ? '<span class="cpx-src" data-role="cpx-fixtext">거꾸로 번역 — 글자 고치기</span>' : '')))) + '</figcaption>' +
         '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button>' +
+        {% if is_admin %}'<button type="button" class="cpx-act" data-role="cpx-protection" data-idx="' + s.idx + '">상품 보호 검토</button>' +{% endif %}
         (s.rep ? '' : '<button type="button" class="cpx-act" data-role="cpx-rep" data-idx="' + s.idx + '">이 장을 대표로</button>') +
         (s.translatable ? '<button type="button" class="cpx-act" data-role="cpx-use" data-idx="' + s.idx + '" data-use="' + (s.use ? '0' : '1') + '">' +
                           (s.use ? '원본으로' : '번역본으로') + '</button>' : '') +
@@ -222,6 +223,8 @@
       diagStart('polish', b);
     } else if (role === 'cpx-opt-edit') {
       if (window.kgpImageEdit) window.kgpImageEdit.open(itemId, 'sku', +b.getAttribute('data-idx'), load);   // Y11-U — 옵션 사진
+    } else if (role === 'cpx-protection') {
+      if (window.kgpRepProtection) window.kgpRepProtection.open(itemId, +b.getAttribute('data-idx'));
     } else if (role === 'cpx-edit') {
       if (window.kgpImageEdit) window.kgpImageEdit.open(itemId, 'gallery', +b.getAttribute('data-idx'), load);   // Y11 — 닫으면 다시 그린다
     } else if (role === 'cpx-override') {
