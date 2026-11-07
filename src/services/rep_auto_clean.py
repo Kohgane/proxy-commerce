@@ -64,6 +64,29 @@ def valid(extra: dict) -> Optional[dict]:
     return rc
 
 
+def needs_attempt(extra: dict) -> bool:
+    """A newly signed review can retry a prior hold, never the same failed input.
+
+    Pure scheduling decision: no image fetch, write or queue operation.
+    The worker still verifies source bytes, quotas and review before rendering.
+    """
+    if not extra.get("rep_need_change") or valid(extra):
+        return False
+    if not isinstance(extra.get("rep_auto_clean"), dict):
+        return True
+    from src.services import image_edit as IE, rep_protection_review as R
+    from src.services.rep_clean_edit import attempt_key, identity
+    history = extra.get("rep_clean_attempts") or {}
+    for idx in candidates(extra):
+        proof = (IE._entry(extra, KIND, idx) or {}).get("rep_protection")
+        current = identity(extra, idx)
+        if (isinstance(proof, dict) and R.verified(proof)
+                and proof.get("url") == current["url"] and proof.get("version") == current["version"]
+                and history.get(str(idx)) != attempt_key(extra, idx)):
+            return True
+    return False
+
+
 def coupang_rep_images(pd: dict) -> List[str]:
     """쿠팡이 보낼 이미지 목록 — 대표 자리(첫 장)만 정리본으로. 정리본이 없으면 그대로(새 목록)."""
     imgs = [u for u in (pd.get("images_effective") or pd.get("images") or []) if isinstance(u, str) and u.strip()]

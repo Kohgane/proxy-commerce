@@ -94,7 +94,8 @@
     node('close').disabled = false; node('close').focus(); paint(); message('현재 사진을 읽는 중…');
     try {
       var data = await request(state); if (ticket !== generation) return;
-      state.data = data; node('areas').setAttribute('viewBox', '0 0 ' + data.size.join(' '));
+      state.data = data; node('stage').style.setProperty('--rp-aspect', data.size[0] / data.size[1]);
+      node('areas').setAttribute('viewBox', '0 0 ' + data.size.join(' '));
       node('image').onload = function () {
         if (ticket !== generation) return;
         if (this.naturalWidth !== data.size[0] || this.naturalHeight !== data.size[1]) { message('사진 방향과 좌표계가 달라 검토할 수 없어요.'); return; }

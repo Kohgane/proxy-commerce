@@ -5098,7 +5098,8 @@ def _pv_prepare(data: dict, product_data: dict):
             # 순찰 148 H-rep: 「대표 사진 바꾸기 필요」(후보 전부 글자)인데 자동 정리를 아직 안 해 봤으면 일회성 줄로 넣는다
             #   (OCR·그리기는 잡 스레드에서 — 사전검증은 기다리지 않는다). 해 봤으면 다시 넣지 않는다(결과는 보류 사유에)
             try:
-                if _sx.get("rep_need_change") and not isinstance(_sx.get("rep_auto_clean"), dict):
+                from src.services.rep_auto_clean import needs_attempt as _rep_needs_attempt
+                if _rep_needs_attempt(_sx):
                     from src.services import oneshot_ops as _oo_rc
                     _oo_rc.enqueue({"op": "rep_clean", "item_id": str(data["item_id"]),
                                     "reason": "사전검증 — 대표 후보 전부 글자(자동 정리)"})
