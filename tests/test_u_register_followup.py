@@ -179,10 +179,11 @@ def test_u2_status_mapping_and_rejection_reason(monkeypatch):
 
 
 def _uploaded_item(seller="u-u2", market="coupang", account=""):
+    from datetime import datetime, timezone
     from src.seller_console import collect_history_store as S
     ex = json.loads(json.dumps(AE9))
     ex["uploaded"] = [{"market": market, "market_label": "쿠팡", "external_url": "https://www.coupang.com/vp/products/16401838524",
-                       "at": "2026-10-02T09:54:59+00:00", "account": account}]
+                       "at": datetime.now(timezone.utc).isoformat(), "account": account}]
     return S.append(source="extension", url="https://item.taobao.com/item.htm?id=999609404643", seller_id=seller,
                     title=ex["title_ko"], price="168", currency="CNY", extra=ex)
 
