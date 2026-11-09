@@ -63,7 +63,7 @@ def _add(uid, title, uploaded=None, extra=None, url="https://item.taobao.com/ite
     iid = S.append(source="share", url=url, seller_id=uid, title=title, price="10", currency="CNY", extra=ex)
     for r in S._in_memory:                                       # 수집은 9월(운영 VRSUK) — 최근 동작 맨 위가 「수집」이 되지 않게
         if r.get("id") == iid:
-            r["collected_at"] = "2026-09-27T11:05:20+00:00"
+            r["collected_at"] = "2026-11-08T11:05:20+00:00"
     return iid
 
 
