@@ -164,7 +164,7 @@ def test_popup_390px_shows_state_reason_and_wing(item, coupang):
     from urllib.parse import urlparse
     from playwright.sync_api import sync_playwright
     c = _client()
-    page = c.get("/seller/collect/history").get_data(as_text=True)
+    page = c.get("/seller/collect/history?days=90").get_data(as_text=True)
     exe = "/opt/pw-browsers/chromium" if os.path.exists("/opt/pw-browsers/chromium") else None
     with sync_playwright() as p:
         b = p.chromium.launch(**({"executable_path": exe} if exe else {}))
@@ -175,7 +175,7 @@ def test_popup_390px_shows_state_reason_and_wing(item, coupang):
             if (urlparse(u).hostname or "") != "kgp.test":
                 return route.fulfill(status=200, body=b"")
             path = u.split("kgp.test", 1)[-1]
-            if path == "/seller/collect/history":
+            if path == "/seller/collect/history?days=90":
                 return route.fulfill(status=200, content_type="text/html", body=page)
             r = c.open(path, method=route.request.method)
             return route.fulfill(status=r.status_code, content_type=r.content_type or "text/plain", body=r.get_data())
