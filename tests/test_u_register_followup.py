@@ -179,11 +179,10 @@ def test_u2_status_mapping_and_rejection_reason(monkeypatch):
 
 
 def _uploaded_item(seller="u-u2", market="coupang", account=""):
-    from datetime import datetime, timezone
     from src.seller_console import collect_history_store as S
     ex = json.loads(json.dumps(AE9))
     ex["uploaded"] = [{"market": market, "market_label": "쿠팡", "external_url": "https://www.coupang.com/vp/products/16401838524",
-                       "at": datetime.now(timezone.utc).isoformat(), "account": account}]
+                       "at": "2026-10-02T09:54:59+00:00", "account": account}]
     return S.append(source="extension", url="https://item.taobao.com/item.htm?id=999609404643", seller_id=seller,
                     title=ex["title_ko"], price="168", currency="CNY", extra=ex)
 
@@ -200,7 +199,7 @@ def test_u2_route_persists_review_and_list_badge(monkeypatch):
     assert d["ok"] and d["rows"][0]["sid"] == "16401838524" and d["rows"][0]["label"] == "승인대기"   # Y12-A: Wing 표기
     ex = json.loads(S.get(iid, seller_ids={"u-u2"})["extra_json"])
     assert ex["uploaded"][0]["review"]["state"] == "pending" and ex["uploaded"][0]["product_id"] == "16401838524"
-    h = c.get("/seller/collect/history").get_data(as_text=True)
+    h = c.get("/seller/collect/history?days=90").get_data(as_text=True)
     # M7 → Y12-A: 목록 뱃지 — 승인대기(pending)는 테두리만(wait), 누르면 M6 상태 팝업
     assert 'data-role="mk-chip"' in h and 'data-kind="wait"' in h and "승인대기" in h
 

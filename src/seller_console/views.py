@@ -5099,6 +5099,7 @@ def _pv_prepare(data: dict, product_data: dict):
             #   (OCR·그리기는 잡 스레드에서 — 사전검증은 기다리지 않는다). 해 봤으면 다시 넣지 않는다(결과는 보류 사유에)
             try:
                 from src.services.rep_auto_clean import needs_attempt as _rep_needs_attempt
+                _rep_contract_fields = ("rep_need_change", "rep_auto_clean")
                 if _rep_needs_attempt(_sx):
                     from src.services import oneshot_ops as _oo_rc
                     _oo_rc.enqueue({"op": "rep_clean", "item_id": str(data["item_id"]),
