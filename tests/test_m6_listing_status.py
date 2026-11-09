@@ -28,7 +28,7 @@ def _extra():
         {"market": "smartstore:chezgoga", "market_label": "스마트스토어 — 셰고가", "product_id": "12345", "account": "chezgoga",
          "at": "2026-10-08T07:30:00+00:00"},
         {"market": "coupang:woojoo", "market_label": "쿠팡 — 우주대행", "product_id": "16407690349", "account": "woojoo",
-         "at": "2026-10-08T07:26:18+00:00"},
+         "at": "2026-11-08T07:26:18+00:00"},
         {"market": "coupang", "market_label": "쿠팡", "external_url": "https://www.coupang.com/vp/products/16401838524",
          "at": "2026-10-02T09:54:59+00:00", "review": {"state": "approved", "label": "승인"}},
         {"market": "elevenst", "market_label": "11번가", "product_id": "9001", "at": "2026-10-08T08:00:00+00:00"},
@@ -164,7 +164,7 @@ def test_popup_390px_shows_state_reason_and_wing(item, coupang):
     from urllib.parse import urlparse
     from playwright.sync_api import sync_playwright
     c = _client()
-    page = c.get("/seller/collect/history?days=3650").get_data(as_text=True)
+    page = c.get("/seller/collect/history").get_data(as_text=True)
     exe = "/opt/pw-browsers/chromium" if os.path.exists("/opt/pw-browsers/chromium") else None
     with sync_playwright() as p:
         b = p.chromium.launch(**({"executable_path": exe} if exe else {}))
