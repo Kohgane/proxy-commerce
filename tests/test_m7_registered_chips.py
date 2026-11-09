@@ -68,7 +68,7 @@ def test_chip_labels_tones_and_backfill():
 def test_list_rows_render_chips_without_asking_markets():
     iid = _item("m7-own", UPLOADED)
     none = _item("m7-own", None, title="아직 안 올린 상품")
-    h = _client("m7-own").get("/seller/collect/history").get_data(as_text=True)
+    h = _client("m7-own").get("/seller/collect/history?days=90").get_data(as_text=True)
     row = h.split(f'value="{iid}"')[1].split("</tr>")[0]
     # Y12-A: 뱃지 = 이름 + 마켓 표기 상태 낱말(데스크톱) · 약자(모바일) — 모양으로 상태(완료 채움·대기 테두리·반려 글자)
     for full in ("고가네 승인반려", "우주대행 승인완료", "셰고가 등록됨", "고코스모스 등록됨", "11번가 등록됨", "멀티샵 등록됨"):

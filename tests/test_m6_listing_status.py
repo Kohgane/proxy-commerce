@@ -150,7 +150,7 @@ def test_route_is_owner_scoped(item):
 
 
 def test_list_badge_opens_popup(item):
-    h = _client().get("/seller/collect/history").get_data(as_text=True)
+    h = _client().get("/seller/collect/history?days=90").get_data(as_text=True)
     # M7: 목록은 마켓별 칩 — 칩이 팝업을 연다(data-market-status)
     assert 'data-role="mk-chip"' in h and 'data-market-status="coupang:woojoo"' in h and f'data-item="{item}"' in h
     assert 'id="kgpMarketStatus"' in h

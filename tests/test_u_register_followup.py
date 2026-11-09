@@ -199,7 +199,7 @@ def test_u2_route_persists_review_and_list_badge(monkeypatch):
     assert d["ok"] and d["rows"][0]["sid"] == "16401838524" and d["rows"][0]["label"] == "승인대기"   # Y12-A: Wing 표기
     ex = json.loads(S.get(iid, seller_ids={"u-u2"})["extra_json"])
     assert ex["uploaded"][0]["review"]["state"] == "pending" and ex["uploaded"][0]["product_id"] == "16401838524"
-    h = c.get("/seller/collect/history?days=90").get_data(as_text=True)
+    h = c.get("/seller/collect/history").get_data(as_text=True)
     # M7 → Y12-A: 목록 뱃지 — 승인대기(pending)는 테두리만(wait), 누르면 M6 상태 팝업
     assert 'data-role="mk-chip"' in h and 'data-kind="wait"' in h and "승인대기" in h
 
