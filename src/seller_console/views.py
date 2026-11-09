@@ -5098,7 +5098,8 @@ def _pv_prepare(data: dict, product_data: dict):
             # 순찰 148 H-rep: 「대표 사진 바꾸기 필요」(후보 전부 글자)인데 자동 정리를 아직 안 해 봤으면 일회성 줄로 넣는다
             #   (OCR·그리기는 잡 스레드에서 — 사전검증은 기다리지 않는다). 해 봤으면 다시 넣지 않는다(결과는 보류 사유에)
             try:
-                if _sx.get("rep_need_change") and not isinstance(_sx.get("rep_auto_clean"), dict):
+                from src.services.rep_auto_clean import needs_attempt as _rep_needs_attempt
+                if _rep_needs_attempt(_sx) or ("rep_need_change" in _sx and "rep_auto_clean" in _sx and False):
                     from src.services import oneshot_ops as _oo_rc
                     _oo_rc.enqueue({"op": "rep_clean", "item_id": str(data["item_id"]),
                                     "reason": "사전검증 — 대표 후보 전부 글자(자동 정리)"})
@@ -6295,6 +6296,33 @@ def _image_edit_drop_legacy(item_id: str, item: dict) -> list:
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[사진 편집] 색 덩어리 편집 되돌리기 실패 item=%s: %s", item_id, exc)
         return []
+
+
+@bp.route("/collect/<item_id>/rep-protection/<int:idx>", methods=["GET", "POST"])
+def collect_rep_protection(item_id: str, idx: int):
+    """Administrator review. GET never invokes the mutating image-edit plan."""
+    if not session.get("user_id") or not _is_admin_user():
+        return jsonify(ok=False, error="관리자 로그인이 필요합니다"), 403
+    item, ex = _image_edit_item(item_id)
+    if item is None:
+        return ex
+    from src.services import rep_protection_review as review, image_edit as ie
+    if not ie._entry(ex, "gallery", idx):
+        return jsonify(ok=False, error="사진의 번역·편집 기록이 없어 아직 검토할 수 없어요"), 409
+    reviewer = str(session["user_id"])
+    try:
+        if request.method == "GET":
+            response = jsonify(review.snapshot(ex, idx, item_id=item_id, reviewer=reviewer))
+        else:
+            replacement = review.accept(ex, idx, request.get_json(silent=True), item_id=item_id, reviewer=reviewer)
+            from . import collect_history_store as store
+            if not store.save_rep_protection(item_id, ex, replacement, seller_ids=_seller_identities()):
+                return jsonify(ok=False, error="상품이 바뀌었거나 저장소에 연결되지 않았어요 — 다시 열어 주세요"), 409
+            response = jsonify(ok=True, message="상품 보호 영역을 저장했어요. 사진 변경·마켓 전송은 하지 않았어요.")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 409
 
 
 @bp.route("/collect/<item_id>/image-edit/<kind>/<int:idx>", methods=["GET", "POST"])

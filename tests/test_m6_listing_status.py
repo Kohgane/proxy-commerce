@@ -28,7 +28,7 @@ def _extra():
         {"market": "smartstore:chezgoga", "market_label": "스마트스토어 — 셰고가", "product_id": "12345", "account": "chezgoga",
          "at": "2026-10-08T07:30:00+00:00"},
         {"market": "coupang:woojoo", "market_label": "쿠팡 — 우주대행", "product_id": "16407690349", "account": "woojoo",
-         "at": "2026-10-08T07:26:18+00:00"},
+         "at": "2026-11-08T07:26:18+00:00"},
         {"market": "coupang", "market_label": "쿠팡", "external_url": "https://www.coupang.com/vp/products/16401838524",
          "at": "2026-10-02T09:54:59+00:00", "review": {"state": "approved", "label": "승인"}},
         {"market": "elevenst", "market_label": "11번가", "product_id": "9001", "at": "2026-10-08T08:00:00+00:00"},
@@ -150,7 +150,7 @@ def test_route_is_owner_scoped(item):
 
 
 def test_list_badge_opens_popup(item):
-    h = _client().get("/seller/collect/history").get_data(as_text=True)
+    h = _client().get("/seller/collect/history?days=90").get_data(as_text=True)
     # M7: 목록은 마켓별 칩 — 칩이 팝업을 연다(data-market-status)
     assert 'data-role="mk-chip"' in h and 'data-market-status="coupang:woojoo"' in h and f'data-item="{item}"' in h
     assert 'id="kgpMarketStatus"' in h
@@ -175,7 +175,7 @@ def test_popup_390px_shows_state_reason_and_wing(item, coupang):
             if (urlparse(u).hostname or "") != "kgp.test":
                 return route.fulfill(status=200, body=b"")
             path = u.split("kgp.test", 1)[-1]
-            if path == "/seller/collect/history":
+            if path == "/seller/collect/history?days=3650":
                 return route.fulfill(status=200, content_type="text/html", body=page)
             r = c.open(path, method=route.request.method)
             return route.fulfill(status=r.status_code, content_type=r.content_type or "text/plain", body=r.get_data())

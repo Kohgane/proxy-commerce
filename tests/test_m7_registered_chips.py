@@ -68,7 +68,7 @@ def test_chip_labels_tones_and_backfill():
 def test_list_rows_render_chips_without_asking_markets():
     iid = _item("m7-own", UPLOADED)
     none = _item("m7-own", None, title="아직 안 올린 상품")
-    h = _client("m7-own").get("/seller/collect/history").get_data(as_text=True)
+    h = _client("m7-own").get("/seller/collect/history?days=90").get_data(as_text=True)
     row = h.split(f'value="{iid}"')[1].split("</tr>")[0]
     # Y12-A: 뱃지 = 이름 + 마켓 표기 상태 낱말(데스크톱) · 약자(모바일) — 모양으로 상태(완료 채움·대기 테두리·반려 글자)
     for full in ("고가네 승인반려", "우주대행 승인완료", "셰고가 등록됨", "고코스모스 등록됨", "11번가 등록됨", "멀티샵 등록됨"):
@@ -84,9 +84,9 @@ def test_filter_registered_and_unregistered():
     iid = _item("m7-flt", UPLOADED[:1])
     none = _item("m7-flt", None, title="미등록 상품")
     c = _client("m7-flt")
-    done = c.get("/seller/collect/history?reg=done").get_data(as_text=True)
+    done = c.get("/seller/collect/history?reg=done&days=90").get_data(as_text=True)
     assert f'value="{iid}"' in done and f'value="{none}"' not in done
-    und = c.get("/seller/collect/history?reg=none").get_data(as_text=True)
+    und = c.get("/seller/collect/history?reg=none&days=90").get_data(as_text=True)
     assert f'value="{none}"' in und and f'value="{iid}"' not in und
     assert 'data-reg="none"' in und and 'class="is-on" data-reg="none"' in und
 
@@ -159,7 +159,7 @@ def _browser(page_html, path, client, act):
 def test_chips_wrap_at_390px_without_overflow():
     iid = _item("m7-390", UPLOADED)
     c = _client("m7-390")
-    html = c.get("/seller/collect/history").get_data(as_text=True)
+    html = c.get("/seller/collect/history?days=90").get_data(as_text=True)
 
     def act(pg):
         sel = f'[data-role=mk-chip][data-item="{iid}"]'
@@ -170,7 +170,7 @@ def test_chips_wrap_at_390px_without_overflow():
         head = pg.eval_on_selector_all('.ch-card-table .op-card-head > span',
                                        "els => els.map(e => Math.round(e.getBoundingClientRect().height))")
         return tops, box, heights, head
-    tops, (sw, cw, right), heights, head = _browser(html, "/seller/collect/history", c, act)
+    tops, (sw, cw, right), heights, head = _browser(html, "/seller/collect/history?days=90", c, act)
     assert head and max(head) <= 26, head
     assert len(set(tops)) == 1                                                  # Y12-A: 390px에서 뱃지가 한 줄(약자)
     assert sw <= cw and right <= 390                                            # 가로 넘침 0

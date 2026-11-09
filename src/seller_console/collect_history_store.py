@@ -573,3 +573,31 @@ def distinct_domains(days: int = 90, seller_id: Optional[str] = None, seller_ids
         return _b.distinct_domains(days=days, seller_id=seller_id, seller_ids=seller_ids)
     items = list_items(days=days, seller_id=seller_id, seller_ids=seller_ids)
     return sorted({item.get("domain", "") for item in items if item.get("domain")})
+
+
+def save_rep_protection(item_id, expected, replacement, *, seller_ids):
+    """Review-only compare-and-swap; all other product fields must stay unchanged."""
+    import copy
+    import os
+    clean = copy.deepcopy(replacement)
+    old_entries = {e.get("idx"): e for e in expected.get("images_ko", []) if isinstance(e, dict)}
+    for entry in clean.get("images_ko", []):
+        old = old_entries.get(entry.get("idx"), {})
+        if "rep_protection" in old:
+            entry["rep_protection"] = old["rep_protection"]
+        else:
+            entry.pop("rep_protection", None)
+    if clean != expected or not seller_ids:
+        return False
+    backend = _pg_backend()
+    if backend:
+        return backend.compare_swap_extra(item_id, expected, replacement, seller_ids=seller_ids)
+    if os.getenv("APP_ENV") == "production":
+        return False
+    for row in _in_memory:
+        if row.get("id") == item_id and str(row.get("seller_id", "")) in seller_ids:
+            if json.loads(row.get("extra_json") or "{}") != expected:
+                return False
+            row["extra_json"] = json.dumps(replacement, ensure_ascii=False)
+            return True
+    return False

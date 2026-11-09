@@ -794,19 +794,22 @@ def _retranslate(item_id: str, pages: List[tuple]) -> Dict:
 def _ocr_box_count(url: str):
     """그 장의 텐센트 OCR 글자 상자 수 — `(n | None, 사유)`. 큰 장은 축소 사본으로 보낸다(Y13-D 3 — 원본을 풀지 않는다)."""
     from src.services import image_edit as IE
-    from src.services import ocr_tencent as O
+    from src.services.rep_clean_candidate import fresh_text_count
     raw, why = IE.work_bytes(url)
     if not raw:
         return None, why or "사진을 받지 못했어요"
-    got = O.read_boxes(raw)
-    if not got.get("ok"):
-        return None, str(got.get("why") or "OCR 실패")[:120]
-    return len(got.get("boxes") or []), ""
+    # Geometry extraction drops low-confidence/unlocated detections. An empty
+    # geometry list therefore cannot prove that a representative has no text.
+    n = fresh_text_count(raw)
+    if type(n) is not int or n < 0:
+        return None, "사진의 글자 유무를 확인하지 못했어요"
+    return n, ""
 
 
 def pick_rep(counts: Dict[int, object], prefer: int = -1) -> int:
     """0상자 장 중에서 — `prefer`가 그 안에 있으면 그것, 아니면 앞 번호. 0상자 장이 없으면 -1(대표를 바꾸지 않는다)."""
-    zero = [i for i, n in sorted(counts.items()) if n == 0]
+    zero = sorted(i for i, n in counts.items()
+                  if type(i) is int and i >= 0 and type(n) is int and n == 0)
     if not zero:
         return -1
     return prefer if prefer in zero else zero[0]
@@ -1092,7 +1095,7 @@ def rep_clean(item_id: str, *, ocr=None, prevalidate=None) -> Dict:
         out.update(picked=zero, how="0상자 장")
     elif counts and all(isinstance(n, int) for n in counts.values()):
         res = RAC.clean(ex, counts, by="auto", ocr=ocr)
-        out.update(auto_clean=res, picked=res["idx"] if res.get("ok") else -1, how="글자 지우기")
+        out.update(auto_clean=res, picked=res["idx"] if res.get("ok") else -1, how="대표 사진 정리")
     else:
         return dict(out, ok=False, why="후보를 재지 못했어요")
     if not store.update(iid, seller_ids={uid} if uid else None, extra_json=json.dumps(ex, ensure_ascii=False)):
