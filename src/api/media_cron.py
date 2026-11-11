@@ -72,7 +72,8 @@ def _drain() -> dict:
     from src.api.extension_api import _store_image_copies
     from src.seller_console import collect_history_store as store
     try:
-        rows = store.list_items(days=90, limit=500)
+        # 오너 긴급 11-12: 접수된(queued) 행만 SQL에서 — 500행 extra_json을 통째로 끌어 파이썬에서 거르지 않는다
+        rows = store.list_items(days=90, limit=500, extra_eq={"images_copy_state": "queued"})
     except Exception as exc:
         logger.warning("[이미지복사] 목록 조회 실패: %s", exc)
         return {"ok": False, "error": f"목록을 읽지 못했습니다: {type(exc).__name__}"}

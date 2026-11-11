@@ -11941,14 +11941,18 @@ def collect_history_since():
     except Exception:
         _current_lang = "ko"
     try:
-        from .collect_history_store import list_items
-        # 최신 60건만 훑어 커서 이후 신규 판정(폴링 경량 — 대량 스캔 회피).
-        recent = list_items(days=days, seller_ids=_seller_identities(), limit=60, offset=0)
+        from .collect_history_store import list_items, latest_created
+        # 오너 긴급 2026-11-12(Supabase 전송량 402): 폴링마다 최신 60행을 extra_json(평균 15KB)째 끌던 것이 전송량 1위였다 →
+        #   먼저 최신 수집 시각 한 칸만 묻고, 커서 뒤에 새 것이 있을 때만 그 행들을 목록용 축약 칸(lean)으로 읽는다.
+        server_max = latest_created(days=days, seller_ids=_seller_identities())
+        recent = []
+        if after and server_max and server_max > after:
+            recent = list_items(days=days, seller_ids=_seller_identities(), limit=20, offset=0, lean=True,
+                                created_after=after)
     except Exception as exc:
         logger.warning("[collect-history-since] 조회 실패: %s", exc)
         return jsonify({"ok": False, "error": "server"}), 200
     recent.sort(key=lambda r: r.get("collected_at", ""), reverse=True)
-    server_max = recent[0].get("collected_at", "") if recent else ""
     if not after:
         # 커서 미지정(첫 호출) — 기준선만 알려주고 신규 0(초기 화면과 중복 삽입 방지).
         return jsonify({"ok": True, "count": 0, "server_max": server_max, "html": ""})

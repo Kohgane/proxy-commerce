@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
@@ -141,7 +143,7 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
     domain = urlparse(url).netloc
     extra_json = json.dumps(extra or {}, ensure_ascii=False)
     item_id = None
-    with pg.tx() as cur:
+    with _wtx() as cur:
         if pkey:
             cur.execute(
                 """INSERT INTO collect_history
@@ -182,9 +184,61 @@ def append(*, source: str, url: str, title: str, image: str = "", price: str = "
 _ACTION_AT = "COALESCE(last_action_at, created_at)"
 
 
-def list_items(*, domain: str = "", source: str = "", days: int = 30,
-               seller_id=None, seller_ids=None, limit=None, offset=0, lean=False, order="created", attn_only=False,
-               refetch_only=False, discarded=None) -> list:
+# 오너 긴급 2026-11-12(Supabase 전송량 402): 목록 읽기 60초 프로세스 캐시 — 같은 프로세스의 쓰기(append·update·삭제·
+#   손댈 것·대표 보호)마다 세대를 올려 바로 무효. 다른 인스턴스의 쓰기는 최대 TTL초 늦게 보인다. `CH_LIST_CACHE_SEC=0`이면 끔.
+_LIST_CACHE: dict = {}
+_LIST_GEN = [0]
+_LIST_CACHE_MAX = 64
+
+
+def _bump() -> None:
+    _LIST_GEN[0] += 1
+    _LIST_CACHE.clear()
+
+
+import contextlib  # noqa: E402
+
+
+@contextlib.contextmanager
+def _wtx():
+    """쓰기 트랜잭션 — 커밋 앞뒤로 목록 캐시 세대를 올린다(커밋 전에 읽어 담은 옛 목록이 남지 않게)."""
+    _bump()
+    try:
+        with pg.tx() as cur:
+            yield cur
+    finally:
+        _bump()
+
+
+def _list_cache_sec() -> float:
+    try:
+        return max(0.0, float(os.getenv("CH_LIST_CACHE_SEC", "60") or 0))
+    except ValueError:
+        return 60.0
+
+
+def list_items(**kw) -> list:
+    """목록 — 같은 조건이면 `CH_LIST_CACHE_SEC`(60)초 안엔 DB를 다시 읽지 않는다(행은 매번 새 dict로 돌려준다)."""
+    ttl = _list_cache_sec()
+    if ttl <= 0:
+        return _list_items_db(**kw)
+    key = repr(sorted((k, (sorted(v) if isinstance(v, (set, frozenset)) else v)) for k, v in kw.items()))
+    now = time.monotonic()
+    hit = _LIST_CACHE.get(key)
+    if hit and hit[0] == _LIST_GEN[0] and now - hit[1] < ttl:
+        return [dict(r) for r in hit[2]]
+    gen = _LIST_GEN[0]
+    rows = _list_items_db(**kw)
+    if gen == _LIST_GEN[0]:                                     # 읽는 동안 쓰기가 끼었으면 담지 않는다
+        if len(_LIST_CACHE) >= _LIST_CACHE_MAX:
+            _LIST_CACHE.clear()
+        _LIST_CACHE[key] = (gen, now, [dict(r) for r in rows])
+    return rows
+
+
+def _list_items_db(*, domain: str = "", source: str = "", days: int = 30,
+                   seller_id=None, seller_ids=None, limit=None, offset=0, lean=False, order="created", attn_only=False,
+                   refetch_only=False, discarded=None, created_after=None, extra_eq=None) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)
     _cols = _SELECT_LEAN if lean else _SELECT      # 속도: 목록은 대형 컬럼 제외한 축약 projection
@@ -201,6 +255,10 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
         sql += " AND domain = %s"; args.append(domain)
     if source:
         sql += " AND source = %s"; args.append(source)
+    if created_after:                                          # 오너 긴급 11-12: 폴링은 커서 뒤 새 행만
+        sql += " AND created_at > %s"; args.append(created_after)
+    for _k, _v in (extra_eq or {}).items():                    # 오너 긴급 11-12: 그 상태인 행만(전부 끌어와 파이썬에서 거르지 않는다)
+        sql += " AND extra_json->>%s = %s"; args += [str(_k), str(_v)]
     sql += f" ORDER BY {_at} DESC"
     # 속도: 기본 뷰(최신순·필터없음)는 SQL LIMIT/OFFSET로 그 페이지만 가져온다(전체 스캔 회피).
     if limit is not None:
@@ -216,6 +274,17 @@ def list_items(*, domain: str = "", source: str = "", days: int = 30,
         d["_total"] = int(t[-1] or 0)
         out.append(d)
     return out
+
+
+def latest_created(*, days: int = 30, seller_ids=None):
+    """오너 긴급 11-12(Supabase 전송량): 스코프의 가장 최근 수집 시각 한 칸(datetime | None) — 폴링이 「새 것 있나」만 묻는다."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    sc, params = _scope(None, seller_ids)
+    with pg.query() as cur:
+        cur.execute(f"SELECT max(created_at) FROM collect_history WHERE deleted_at IS NULL AND created_at >= %s AND {sc}",
+                    [cutoff] + params)
+        r = cur.fetchone()
+    return r[0] if r else None
 
 
 def count_items(*, days: int = 30, seller_ids=None, order="action", attn_only=False, refetch_only=False,
@@ -280,7 +349,7 @@ def ids_for_attention_backfill(limit: int = 500) -> list:
 def set_attention(item_id: str, last_action_at, attn_n: int, attn: dict) -> bool:
     """Y12-A 일회성 — 열 두 개와 `extra.attn`만 바꾼다(그 밖의 extra 칸·수집 원본은 손대지 않는다).
     `attn`이 비면(None) 키를 지운다 — 빈 요약을 남기지 않는다."""
-    with pg.tx() as cur:
+    with _wtx() as cur:
         if attn:
             cur.execute("UPDATE collect_history SET last_action_at=%s, attn_n=%s, "
                         "extra_json = jsonb_set(extra_json, '{attn}', %s::jsonb, true) WHERE id::text=%s RETURNING id",
@@ -318,7 +387,7 @@ def delete_ids(item_ids, *, seller_id=None, seller_ids=None) -> list:
     if not ids:
         return []
     sc, params = _scope(seller_id, seller_ids)
-    with pg.tx() as cur:
+    with _wtx() as cur:
         cur.execute(f"UPDATE collect_history SET deleted_at=now() WHERE id::text = ANY(%s) AND deleted_at IS NULL AND {sc} RETURNING id::text",
                     [ids] + params)
         return [r[0] for r in cur.fetchall()]
@@ -356,7 +425,7 @@ def update(item_id: str, *, seller_id=None, seller_ids=None, **fields) -> bool:
             sets.append("extra_json = %s::jsonb"); args.append(v)
         else:
             sets.append(f"{k} = %s"); args.append(v)
-    with pg.tx() as cur:
+    with _wtx() as cur:
         cur.execute(f"UPDATE collect_history SET {', '.join(sets)} WHERE id::text=%s AND deleted_at IS NULL AND {sc} RETURNING id",
                     args + [str(item_id)] + params)
         return cur.fetchone() is not None
@@ -418,7 +487,7 @@ def compare_swap_extra(item_id, expected, replacement, *, seller_ids):
     if not seller_ids:
         return False
     sc, params = _scope(None, seller_ids)
-    with pg.tx() as cur:
+    with _wtx() as cur:
         cur.execute(
             f"UPDATE collect_history SET extra_json=%s::jsonb WHERE id::text=%s "
             f"AND deleted_at IS NULL AND {sc} AND extra_json=%s::jsonb RETURNING id",
