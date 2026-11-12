@@ -148,6 +148,7 @@ class _FakePool:
 def test_background_query_and_tx_borrow_from_the_separate_pool(monkeypatch):
     from src.db import pg
     pool = _FakePool()
+    monkeypatch.setattr(pg, "_request_read_conn", lambda: (None, False))     # 요청 밖(다른 테스트가 남긴 요청 문맥 무시)
     monkeypatch.setattr(pg, "_background_pool", lambda: pool)
     monkeypatch.setattr(pg, "_connect", lambda *a, **k: pytest.fail("1회용 연결을 열면 안 된다"))
     with pg.query() as cur:
@@ -159,6 +160,7 @@ def test_background_query_and_tx_borrow_from_the_separate_pool(monkeypatch):
 
 def test_background_pool_busy_falls_back_to_one_off(monkeypatch):
     from src.db import pg
+    monkeypatch.setattr(pg, "_request_read_conn", lambda: (None, False))
     monkeypatch.setattr(pg, "_background_pool", lambda: _FakePool(give=False))
     opened = []
 

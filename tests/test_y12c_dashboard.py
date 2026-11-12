@@ -97,7 +97,8 @@ def test_badge_slots_fixed_order_legacy_coupang_is_gogane_and_empty_kept():
 def test_list_row_badges_render_slots_and_unbraced_title():
     uid = "u-y12c-row"
     iid = _add(uid, "플리츠{미니멀} 여성 세트", [PLEATS[0], PLEATS[1], PLEATS[3]])
-    html = _client(uid).get("/seller/collect/history").get_data(as_text=True)
+    # 고정 날짜 픽스처(9~10월) — 기본 30일 창은 날짜가 지나면 이 행을 뺀다(11-09부터 빨강) → 창을 넓혀 잰다
+    html = _client(uid).get("/seller/collect/history?days=365").get_data(as_text=True)
     row = html[html.index(f'data-item-id="{iid}"'):]
     row = row[:row.index("</tr>")]
     assert re.findall(r'<span class="mk-short">([^<]*)</span>', row) == ["고", "우", "", "코"]
