@@ -1,0 +1,10 @@
+[Unit]
+Description=gogabridj DB daily backup — 매일 03:30 KST(18:30 UTC)
+
+[Timer]
+OnCalendar=*-*-* 18:30:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

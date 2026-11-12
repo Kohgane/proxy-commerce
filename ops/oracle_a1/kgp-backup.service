@@ -1,0 +1,7 @@
+[Unit]
+Description=gogabridj DB daily backup (pg_dump · 7일 · 외부 암호화 사본)
+After=network-online.target postgresql.service postgresql-16.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/kgp/backup_daily.sh
