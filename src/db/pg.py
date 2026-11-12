@@ -200,19 +200,98 @@ def _persistent_pool():
         return _pool
 
 
+_bg_pool = None
+_bg_pool_checked = False
+
+
+def bg_pool_wait_sec() -> float:
+    """백그라운드 풀 대여 대기(초) — 기본 1. 못 빌리면 기다리지 않고 1회용 연결(예전과 같음)."""
+    try:
+        return max(0.1, float(os.getenv("PG_BG_POOL_WAIT_SEC", "1") or 1))
+    except ValueError:
+        return 1.0
+
+
+def _background_pool():
+    """오너 긴급 2026-11-12(Supabase 전송량 402): 요청 밖(크론 틱·잡·백그라운드 스레드)의 query()/tx()가 쓰는 **따로 된 작은 풀**.
+
+    1회용 연결은 쿼리마다 TCP+TLS+인증(풀러 `pgbouncer.get_auth` 537k회 · 연결당 수 KB 전송)이었다. 요청 풀(5)과 **섞지 않는다**
+    (Z9 — 백그라운드가 요청 풀을 쥐면 요청이 5초씩 굶었다). 기본 2개 · 300초 놀면 닫음 · 못 빌리면 1회용(무회귀).
+    `PG_BG_POOL=0`이면 끈다. DB URL 없음(개발·테스트 인메모리)·라이브러리 없음·생성 실패면 None."""
+    global _bg_pool, _bg_pool_checked
+    if os.getenv("PG_BG_POOL", "1") != "1" or not db_url():
+        return None
+    if _bg_pool_checked:
+        return _bg_pool
+    from src.utils.locks import try_lock
+    with try_lock(_lock, code="pg_bg_pool_lock_timeout", what="DB 백그라운드 풀 만들기") as _got:
+        if not _got:
+            return None
+        if _bg_pool_checked:
+            return _bg_pool
+        _bg_pool_checked = True
+        try:
+            from psycopg_pool import ConnectionPool
+            _bg_pool = ConnectionPool(
+                conninfo=db_url(),
+                min_size=0,
+                max_size=int(os.getenv("PG_BG_POOL_SIZE", "2") or 2),
+                max_idle=float(os.getenv("PG_POOL_RECYCLE", "300") or 300),
+                kwargs={"prepare_threshold": None, "autocommit": True,
+                        "connect_timeout": int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10)},
+                timeout=bg_pool_wait_sec(),
+                check=ConnectionPool.check_connection,
+                open=True,
+                name="kgp-bg",
+            )
+            logger.info("DB 백그라운드 풀 활성(size=%s)", os.getenv("PG_BG_POOL_SIZE", "2"))
+        except Exception as exc:
+            logger.warning("백그라운드 풀 생성 실패 — 1회용 연결: %s", exc)
+            _bg_pool = None
+        return _bg_pool
+
+
+@contextlib.contextmanager
+def _bg_block(kind: str, *, write: bool = False):
+    """백그라운드 풀 연결 한 블록 — 못 빌리면 None을 낸다(호출부가 1회용). 쓰기는 명시 트랜잭션."""
+    pool = _background_pool()
+    conn = None
+    if pool is not None:
+        try:
+            conn = pool.getconn(timeout=bg_pool_wait_sec())
+        except Exception as exc:
+            logger.debug("[DB] 백그라운드 풀 대여 실패(%s) — 1회용", type(exc).__name__)
+            conn = None
+    if conn is None:
+        yield None
+        return
+    _perf_mark(kind, new_conn=False)
+    try:
+        with (conn.transaction() if write else contextlib.nullcontext()), conn.cursor() as cur, _timed_db():
+            yield cur
+    finally:
+        try:
+            pool.putconn(conn)                   # 깨졌거나 트랜잭션이 남았으면 풀이 버리거나 되돌린다
+        except Exception:
+            pass
+
+
 def reset_state():
     """테스트용 — 캐시된 가용성·풀 초기화."""
-    global _checked, _available, _pool, _pool_checked
+    global _checked, _available, _pool, _pool_checked, _bg_pool, _bg_pool_checked
     with _lock:
         _checked = False
         _available = False
-        try:
-            if _pool is not None:
-                _pool.close()
-        except Exception:
-            pass
+        for _p in (_pool, _bg_pool):
+            try:
+                if _p is not None:
+                    _p.close()
+            except Exception:
+                pass
         _pool = None
         _pool_checked = False
+        _bg_pool = None
+        _bg_pool_checked = False
 
 
 @contextlib.contextmanager
@@ -233,6 +312,10 @@ def tx():
         with _job_block(held, "db_write", write=True) as cur:
             yield cur
         return
+    with _bg_block("db_write", write=True) as cur:
+        if cur is not None:
+            yield cur
+            return
     _perf_mark("db_write")
     conn = _connect(db_url(), autocommit=False)
     try:
@@ -499,6 +582,10 @@ def query():
         with _job_block(held, "db_read") as cur:
             yield cur
         return
+    with _bg_block("db_read") as cur:
+        if cur is not None:
+            yield cur
+            return
     _perf_mark("db_read", new_conn=True)
     conn = _connect(db_url(), autocommit=True)
     try:
@@ -583,7 +670,8 @@ SCHEMA_FILES = ("schema_stage1.sql", "schema_stage2.sql", "schema_stage3.sql", "
                 "schema_stage16.sql",  # J1: 옵션 값·상품명 번역기 큐(수집하면 자동)
                 "schema_stage17.sql",  # Y11-D: 수집 주소 광고 링크(click.simba) → 정규 주소 + raw_url 보존
                 "schema_stage18.sql",  # F-PROXY-1: proxy_orders(구매대행 승인 큐 + 증빙 대장)
-                "schema_stage19.sql")  # Y12-A: collect_history.last_action_at·attn_n(목록 최신 동작순·손댈 것만)
+                "schema_stage19.sql",  # Y12-A: collect_history.last_action_at·attn_n(목록 최신 동작순·손댈 것만)
+                "schema_stage20.sql")  # 오너 긴급 11-12: app_state LIKE 인덱스 · 번역 큐·벤치·블롭 user_id 인덱스(전송량·순차 스캔)
 SCHEMA_KEY = "schema:applied"
 _SCHEMA_ADVISORY = 774_201_023          # 인스턴스 사이 「한 곳만 적용」 잠금 번호(아무 숫자 — 이 용도 전용)
 

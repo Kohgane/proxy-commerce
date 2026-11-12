@@ -165,6 +165,7 @@ def list_items(
     *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
     seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0, lean: bool = False,
     order: str = "created", attn_only: bool = False, refetch_only: bool = False, discarded: Optional[bool] = None,
+    created_after=None, extra_eq: Optional[dict] = None,
 ) -> list[dict]:
     """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만. lean=True면 대형 컬럼 제외(속도).
     Y12-A: `order="action"` = 마지막 동작 최신순(기간도 마지막 동작 기준) · `attn_only` = 「손댈 것만」.
@@ -175,7 +176,8 @@ def list_items(
     if _b:
         return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id,
                              seller_ids=seller_ids, limit=limit, offset=offset, lean=lean, order=order, attn_only=attn_only,
-                             refetch_only=refetch_only, discarded=discarded)
+                             refetch_only=refetch_only, discarded=discarded, created_after=created_after,
+                             extra_eq=extra_eq)
 
     from .attention import is_attn, refetch_stale
     from src.utils.test_accounts import is_test_account
@@ -198,6 +200,15 @@ def list_items(
             continue
         if source and row.get("source", "") != source:
             continue
+        if created_after and not str(row.get("collected_at", "") or "") > _iso_of(created_after):
+            continue
+        if extra_eq:
+            try:
+                _ex0 = json.loads(row.get("extra_json") or "{}") or {}
+            except Exception:
+                _ex0 = {}
+            if any(str(_ex0.get(k) if _ex0.get(k) is not None else "") != str(v) for k, v in extra_eq.items()):
+                continue
         _rsid = str(row.get("seller_id", "") or "")
         if seller_ids is not None:
             if _rsid not in seller_ids:
@@ -237,6 +248,19 @@ def list_items(
                 "coupang_detail_sync": _ex.get("coupang_detail_sync"), "attn": _ex.get("attn"),
             }, ensure_ascii=False)
     return result
+
+
+def _iso_of(v) -> str:
+    return v.astimezone(timezone.utc).isoformat() if isinstance(v, datetime) else str(v or "")
+
+
+def latest_created(*, days: int = 30, seller_ids: Optional[set] = None) -> str:
+    """오너 긴급 11-12: 스코프의 가장 최근 수집 시각(ISO, 없으면 '') — 폴링이 행을 끌지 않고 「새 것 있나」만 묻는다."""
+    _b = _pg_backend()
+    if _b:
+        return _iso_of(_b.latest_created(days=days, seller_ids=seller_ids))
+    rows = list_items(days=days, seller_ids=seller_ids, limit=1)
+    return str(rows[0].get("collected_at") or "") if rows else ""
 
 
 def count_items(*, days: int = 30, seller_ids: Optional[set] = None, order: str = "action", attn_only: bool = False,

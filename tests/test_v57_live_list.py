@@ -37,7 +37,8 @@ def _row(item_id, at, title="상품 " ):
 def test_since_no_cursor_returns_baseline_no_rows(client):
     """커서 미지정(첫 호출) → 신규 0 + server_max만(초기 화면과 중복 삽입 방지)."""
     rows = [_row("a", "2026-07-12T10:00:00"), _row("b", "2026-07-12T09:00:00")]
-    with patch("src.seller_console.collect_history_store.list_items", return_value=rows):
+    with patch("src.seller_console.collect_history_store.list_items", return_value=rows), \
+            patch("src.seller_console.collect_history_store.latest_created", return_value=max(r["collected_at"] for r in rows)):
         j = client.get("/seller/collect/history/since").get_json()
     assert j["ok"] is True and j["count"] == 0
     assert j["server_max"] == "2026-07-12T10:00:00" and j["html"] == ""
@@ -46,7 +47,8 @@ def test_since_no_cursor_returns_baseline_no_rows(client):
 def test_since_returns_only_newer_than_cursor(client):
     """커서 이후 신규만 반환 — 오래된 행은 제외(전체 리렌더 아님)."""
     rows = [_row("new", "2026-07-12T12:00:00"), _row("old", "2026-07-12T08:00:00")]
-    with patch("src.seller_console.collect_history_store.list_items", return_value=rows):
+    with patch("src.seller_console.collect_history_store.list_items", return_value=rows), \
+            patch("src.seller_console.collect_history_store.latest_created", return_value=max(r["collected_at"] for r in rows)):
         j = client.get("/seller/collect/history/since?after=2026-07-12T10:00:00").get_json()
     assert j["count"] == 1
     assert "g-new" in j["html"] and "g-old" not in j["html"]     # 신규 행만 렌더
@@ -56,7 +58,8 @@ def test_since_returns_only_newer_than_cursor(client):
 def test_since_none_new_when_cursor_current(client):
     """커서가 최신과 같으면 신규 0(중복 삽입 방지)."""
     rows = [_row("a", "2026-07-12T10:00:00")]
-    with patch("src.seller_console.collect_history_store.list_items", return_value=rows):
+    with patch("src.seller_console.collect_history_store.list_items", return_value=rows), \
+            patch("src.seller_console.collect_history_store.latest_created", return_value=max(r["collected_at"] for r in rows)):
         j = client.get("/seller/collect/history/since?after=2026-07-12T10:00:00").get_json()
     assert j["count"] == 0 and j["html"] == ""
 
