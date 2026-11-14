@@ -127,6 +127,26 @@ else
   done
   command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save || iptables-save > /etc/iptables/rules.v4
   echo "iptables: $(iptables -S INPUT | grep -c -- '--dport 5432') 규칙"
+  # 감독 11-15 「ufw로 5432는 두 대역만」: ufw가 켜져 있으면 ufw에도 같은 규칙. OCI 우분투는 iptables INPUT 맨 끝 REJECT 뒤에
+  #   ufw 체인이 붙어 **ufw 규칙만으론 5432가 안 열린다** — 그래서 위 iptables(REJECT 앞)가 실제 문이고 ufw는 같은 목록을 맞춰 둔다.
+  #   ufw를 새로 켜지는 않는다(OCI 기본 iptables와 겹치면 SSH가 막힐 수 있다) — 켜려면 KGP_UFW_ENABLE=1(22 허용 먼저).
+  if command -v ufw >/dev/null 2>&1; then
+    if [ "${KGP_UFW_ENABLE:-0}" = 1 ] && ! ufw status | grep -q "Status: active"; then
+      ufw allow 22/tcp >/dev/null && ufw --force enable >/dev/null
+    fi
+    if ufw status | grep -q "Status: active"; then
+      ufw status numbered | grep ' 5432/tcp' | grep -o '^\[ *[0-9]*\]' | tr -d '[] ' | sort -rn | while read -r n; do
+        ufw --force delete "$n" >/dev/null || true                              # 예전 5432 규칙은 지우고 다시
+      done
+      for c in "${CIDRS[@]}"; do
+        c="$(echo "$c" | tr -d ' ')"; [ -n "$c" ] || continue
+        ufw allow from "$c" to any port 5432 proto tcp >/dev/null
+      done
+      echo "ufw: $(ufw status | grep -c '5432/tcp') 규칙"
+    else
+      echo "ufw: 꺼져 있음 — iptables 규칙이 문(OCI 기본). 켜려면 KGP_UFW_ENABLE=1"
+    fi
+  fi
 fi
 
 echo

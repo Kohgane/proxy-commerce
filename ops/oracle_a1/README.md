@@ -29,6 +29,31 @@ Supabase 무료 조직 전송량 402(이번 주기 15.9GB/5GB) — 같은 조직
    하나**(키를 잃으면 외부 사본은 못 연다).
 6. **Render env 교체 — 오너 확인 필수(CC는 하지 않는다):** 아래 「전환」.
 
+## kg-a1 바로 실행 (감독 11-15 · SSH 되는 쪽에서 — CC 클라우드 세션은 22·5432 둘 다 샌드박스에서 막힘)
+
+대상 = **kg-a1 `146.56.110.40`**(A1 4코어·24GB). 옆 마이크로 `instance-20260824-1457`은 손대지 않는다. OCI 보안 목록
+(`vcn-20260602-1808` 기본)엔 감독이 5432 ← `74.220.52.0/24`·`74.220.60.0/24`를 넣었다.
+
+```bash
+# 1) 로컬(이 저장소 체크아웃)에서 키트를 올린다
+scp -r ops/oracle_a1 src/db/pg.py src/db/schema_stage*.sql <user>@146.56.110.40:~/kgp/
+ssh <user>@146.56.110.40
+# 2) kg-a1: 설치 · TLS · pg_hba(hostssl+scram, 두 대역만) · iptables(REJECT 앞) + ufw(켜져 있으면 같은 목록)
+cd ~/kgp/oracle_a1 && sudo RENDER_CIDRS="74.220.52.0/24,74.220.60.0/24" bash setup_pg16.sh
+# 3) 스키마 리허설(Supabase 없이 — 앱과 같은 스키마 파일)
+mkdir -p ~/kgp/repo/src/db && cp ~/kgp/pg.py ~/kgp/schema_stage*.sql ~/kgp/repo/src/db/
+sudo sh -c 'printf "postgresql://kgp_app:%s@localhost:5432/gogadb?sslmode=require\n" "$(cat /root/.kgp_db_pass)" > /root/.kgp_local_url; chmod 600 /root/.kgp_local_url'
+sudo DST_URL_FILE=/root/.kgp_local_url REPO=$HOME/kgp/repo bash rehearse_schema_from_repo.sh     # 「public 표 수: 21 · 인덱스 60」
+# 4) 확인
+sudo -u postgres psql -c "select ssl, version from pg_stat_ssl where pid = pg_backend_pid()"     # 로컬 소켓은 f(정상)
+sudo iptables -S INPUT | grep 5432 ; sudo ufw status | grep 5432
+```
+- `ufw`: OCI 우분투는 iptables INPUT 맨 끝 REJECT **뒤에** ufw 체인이 붙어, ufw 규칙만으론 5432가 열리지 않는다 — 스크립트는
+  iptables(REJECT 앞)를 실제 문으로 넣고, ufw가 켜져 있으면 같은 두 대역을 ufw에도 넣는다. ufw를 새로 켜려면 `KGP_UFW_ENABLE=1`(22 허용 먼저).
+- 리허설이 끝나면 `public 표 수: 21`(운영 22 = + `checklist`, 데이터 덤프가 옮김) · 인덱스 60.
+- **11/19 Supabase 풀리면 즉시:** `SRC_URL_FILE`(Supabase `DATABASE_URL_DIRECT` 한 줄) · `DST_URL_FILE=/root/.kgp_local_url`로
+  `sudo MODE=data bash migrate_from_supabase.sh` → 「건수 전부 같음 ✔」.
+
 ## 전환 (오너가 Render에서)
 
 바꿀 값 이름(서비스 env, 이 순서로 저장 후 한 번 재배포):
