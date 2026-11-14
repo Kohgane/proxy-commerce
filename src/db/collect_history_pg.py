@@ -71,6 +71,21 @@ _SELECT_LEAN = ("id, created_at, source, domain, url, title, image_url, price, c
                 "status, preview_url, " + _LEAN_EXTRA + ", user_id, last_action_at, attn_n")
 
 
+def _keys_select(keys) -> tuple:
+    """`(SELECT 칸, 인자)` — extra_json에서 `keys`만 뽑은 작은 객체. `images_count`는 이미지 장수(배열은 안 보낸다)."""
+    parts, args = [], []
+    for k in dict.fromkeys(str(k) for k in keys if str(k)):
+        if k == "images_count":
+            parts.append("'images_count', CASE WHEN jsonb_typeof(extra_json->'images')='array' "
+                         "THEN jsonb_array_length(extra_json->'images') ELSE 0 END")
+        else:
+            parts.append("%s::text, extra_json->%s")
+            args += [k, k]
+    cols = ("id, created_at, source, domain, url, title, image_url, price, currency, status, preview_url, "
+            f"jsonb_build_object({', '.join(parts)}) AS extra_json, user_id, last_action_at, attn_n")
+    return cols, args
+
+
 def _shape(t) -> dict:
     """DB 행 튜플 → Sheets 스토어와 동일 모양의 dict."""
     (rid, created_at, source, domain, url, title, image_url, price, currency,
@@ -238,16 +253,20 @@ def list_items(**kw) -> list:
 
 def _list_items_db(*, domain: str = "", source: str = "", days: int = 30,
                    seller_id=None, seller_ids=None, limit=None, offset=0, lean=False, order="created", attn_only=False,
-                   refetch_only=False, discarded=None, created_after=None, extra_eq=None) -> list:
+                   refetch_only=False, discarded=None, created_after=None, extra_eq=None, extra_keys=None) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     sc, params = _scope(seller_id, seller_ids)
     _cols = _SELECT_LEAN if lean else _SELECT      # 속도: 목록은 대형 컬럼 제외한 축약 projection
+    if extra_keys:                                 # 오너 긴급 11-14: 부른 쪽이 쓰는 칸만(나머지 extra_json은 안 끈다)
+        _cols, _kargs = _keys_select(extra_keys)
+    else:
+        _kargs = []
     _at = _ACTION_AT if order == "action" else "created_at"     # Y12-A: 마지막 동작 최신순(기간도 그 기준)
     # Y12-A: 페이지 조회면 같은 쿼리로 전체 건수(`count(*) OVER()`)도 받는다 — 건수 쿼리를 따로 늘리지 않는다(페이지 쿼리 ≤3)
     _tot = ", count(*) OVER()" if limit is not None else ""
     sql = (f"SELECT {_cols}{_tot} FROM collect_history WHERE deleted_at IS NULL "
            f"AND {_at} >= %s AND {sc}")
-    args = [cutoff] + params
+    args = _kargs + [cutoff] + params
     _fs, _fa = _flag_sql(attn_only, refetch_only, discarded)   # Y12-B·D: 손댈 것만 · 재수집 대기 · 버린 상품
     sql += _fs
     args += _fa

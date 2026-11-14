@@ -16,6 +16,10 @@ Supabase 무료 조직 전송량 402(이번 주기 15.9GB/5GB) — 같은 조직
 1. **OCI 콘솔(오너):** A1에 예약 공인 IP(Reserved Public IP) 붙이기 → VCN › 보안 목록(또는 NSG) 수신: TCP 5432, 원본 = Render
    아웃바운드 CIDR 각각(`0.0.0.0/0` 금지). Render 값: 대시보드 › 이 서비스 › **Connect › Outbound**(싱가포르) 목록.
 2. **A1:** `sudo RENDER_CIDRS="<위 목록, 쉼표>" bash setup_pg16.sh` → 비밀번호는 `/root/.kgp_db_pass`에 생긴다.
+   - **확정값(감독 11-14 · Render Outbound 싱가포르):** `74.220.52.0/24`, `74.220.60.0/24` — 그대로:
+     `sudo RENDER_CIDRS="74.220.52.0/24,74.220.60.0/24" bash setup_pg16.sh`
+   - OCI 보안 규칙(TCP 5432 · 원본 위 두 대역)은 감독이 콘솔에서 넣는다.
+   - CC 클라우드 세션은 A1에 SSH로 닿지 못한다(샌드박스 밖 TCP 막힘 · Remote Control 폴더 없음) — A1 실행은 SSH 되는 쪽에서.
 3. **A1 — 스키마 리허설(지금 가능):** `SRC_URL_FILE`(Supabase `DATABASE_URL_DIRECT` 한 줄) · `DST_URL_FILE`(A1 문자열 한 줄) 만들고
    `MODE=schema bash migrate_from_supabase.sh`. Supabase가 402로 연결을 막으면 대신 앱 스키마로: 배포된 앱이 부팅 때 같은 파일
    (`src/db/schema_stage1~20.sql`)을 적용한다 — 로컬 PG16 리허설에서 운영 public 스키마와 표·칸·타입 일치 확인(아래 기록).

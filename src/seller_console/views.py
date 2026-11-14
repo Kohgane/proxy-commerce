@@ -14446,7 +14446,11 @@ def media_queue():
     from . import collect_history_store
     rows = []
     try:
-        rows = collect_history_store.list_items(seller_ids=_seller_identities(), days=90, limit=500)
+        # 오너 긴급 11-14(전송량): 이 화면(enrich_axes + 표)이 읽는 칸만
+        rows = collect_history_store.list_items(seller_ids=_seller_identities(), days=90, limit=500,
+                                                extra_keys=_ENRICH_KEYS + ["title", "images_stored", "images_stored_note",
+                                                                           "uncollected", "price_list", "price_final",
+                                                                           "price_basis"])
     except Exception as exc:
         logger.warning("보강 현황 조회 실패: %s", exc)
 
@@ -17200,7 +17204,9 @@ def glossary_candidates():
     # 용어집 모듈은 등록 경로에서 `coupang_options` 한 곳만 연다(D3 계약) — 여기선 그 창구로 읽는다.
     from src.uploaders.coupang_options import color_ko as option_value_line, glossary_line_count
     out = []
-    for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=3650, limit=1000) or []:
+    # 오너 긴급 11-14(전송량): 이 화면이 읽는 칸 하나만 — 1000행 extra_json째 끌지 않는다
+    for row in collect_history_store.list_items(seller_ids=_seller_identities(), days=3650, limit=1000,
+                                                extra_keys=["glossary_candidates"]) or []:
         try:
             ex = json.loads(row.get("extra_json") or "{}")
         except Exception:
@@ -17260,6 +17266,10 @@ def collect_item_recollect(item_id: str):
                     "message": "새 탭에서 고가수집기 버튼을 누르면 이 항목이 갱신됩니다(15분 안)."})
 
 
+#: enrich_axes(collect_status)가 읽는 extra 칸 — 목록을 그 칸만 끌 때(오너 긴급 11-14 전송량)
+_ENRICH_KEYS = ["enrich_attempts", "enrich_blocked_reason", "enrich_rerun", "enrich_state", "enriched", "gate_ready", "images_count", "mode", "price"]
+
+
 def _enrich_queue_position(item_id: str) -> int:
     """Y3: 확장 폴러(`/enrich/pending`)가 보는 **같은 순서**로 이 항목이 몇 번째인지(없으면 0)."""
     try:
@@ -17267,7 +17277,8 @@ def _enrich_queue_position(item_id: str) -> int:
         from src.collectors.collect_status import enrich_axes
         from src.api.extension_api import ENRICH_MAX_ATTEMPTS
         n = 0
-        for row in list_items(seller_ids=_seller_identities(), days=90, limit=500):
+        # 오너 긴급 11-14(전송량): enrich_axes가 읽는 칸만(이미지는 장수만)
+        for row in list_items(seller_ids=_seller_identities(), days=90, limit=500, extra_keys=_ENRICH_KEYS):
             try:
                 ex = json.loads(row.get("extra_json") or "{}") or {}
             except Exception:

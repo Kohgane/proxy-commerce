@@ -749,7 +749,8 @@ def _handle_verdict(slug: str, chat_id: str, text: str, seller_id: str):
     item_id = ""
     try:
         from src.seller_console.collect_history_store import list_items
-        for row in list_items(seller_ids={seller_id}, days=365, limit=500):
+        # 오너 긴급 11-14(전송량): 상품번호 두 칸만(500행 extra_json째 끌지 않는다)
+        for row in list_items(seller_ids={seller_id}, days=365, limit=500, extra_keys=["item_id_taobao", "site_item_id"]):
             ex = json.loads(row.get("extra_json") or "{}") or {}
             if item_no in (str(ex.get("item_id_taobao") or ""),
                            str(ex.get("site_item_id") or "")) or item_no in (row.get("url") or ""):

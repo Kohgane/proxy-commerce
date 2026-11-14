@@ -165,7 +165,7 @@ def list_items(
     *, domain: str = "", source: str = "", days: int = 30, seller_id: Optional[str] = None,
     seller_ids: Optional[set] = None, limit: Optional[int] = None, offset: int = 0, lean: bool = False,
     order: str = "created", attn_only: bool = False, refetch_only: bool = False, discarded: Optional[bool] = None,
-    created_after=None, extra_eq: Optional[dict] = None,
+    created_after=None, extra_eq: Optional[dict] = None, extra_keys: Optional[list] = None,
 ) -> list[dict]:
     """수집 이력 목록 반환 (최신순). limit 지정 시 그 페이지만. lean=True면 대형 컬럼 제외(속도).
     Y12-A: `order="action"` = 마지막 동작 최신순(기간도 마지막 동작 기준) · `attn_only` = 「손댈 것만」.
@@ -177,7 +177,7 @@ def list_items(
         return _b.list_items(domain=domain, source=source, days=days, seller_id=seller_id,
                              seller_ids=seller_ids, limit=limit, offset=offset, lean=lean, order=order, attn_only=attn_only,
                              refetch_only=refetch_only, discarded=discarded, created_after=created_after,
-                             extra_eq=extra_eq)
+                             extra_eq=extra_eq, extra_keys=extra_keys)
 
     from .attention import is_attn, refetch_stale
     from src.utils.test_accounts import is_test_account
@@ -221,6 +221,20 @@ def list_items(
     result.sort(key=_key, reverse=True)
     if limit is not None:
         result = result[int(offset):int(offset) + int(limit)]
+    if extra_keys:                                   # PG `extra_keys`와 같은 모양 — 그 칸만(이미지는 장수만)
+        for _r in result:
+            try:
+                _ex = json.loads(_r.get("extra_json") or "{}") or {}
+            except Exception:
+                _ex = {}
+            _out = {}
+            for _k in extra_keys:
+                if _k == "images_count":
+                    _out[_k] = len(_ex.get("images") or []) if isinstance(_ex.get("images"), list) else 0
+                else:
+                    _out[_k] = _ex.get(_k)
+            _r["extra_json"] = json.dumps(_out, ensure_ascii=False)
+        return result
     if lean:
         # PG lean projection과 동일 모양: 목록 렌더에 필요한 작은 필드만 남긴다(대형 배열 제외).
         import json as _json
