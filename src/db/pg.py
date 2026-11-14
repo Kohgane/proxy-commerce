@@ -185,7 +185,7 @@ def _persistent_pool():
                 conninfo=db_url(),
                 min_size=int(os.getenv("PG_POOL_MIN", "1") or 1),
                 max_size=int(os.getenv("PG_POOL_SIZE", "5") or 5),
-                max_idle=float(os.getenv("PG_POOL_RECYCLE", "300") or 300),
+                max_idle=float(os.getenv("PG_POOL_RECYCLE", "1800") or 1800),     # 오너 긴급 11-14: 300→1800(재연결=TLS·인증)
                 # 풀러 호환 · Z8: 풀이 새로 여는 연결에도 connect_timeout(1회용 `_connect`와 같은 값)
                 kwargs={"prepare_threshold": None, "autocommit": True,
                         "connect_timeout": int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10)},
@@ -202,6 +202,7 @@ def _persistent_pool():
 
 _bg_pool = None
 _bg_pool_checked = False
+_bg_pool_pid = 0
 
 
 def bg_pool_wait_sec() -> float:
@@ -218,9 +219,12 @@ def _background_pool():
     1회용 연결은 쿼리마다 TCP+TLS+인증(풀러 `pgbouncer.get_auth` 537k회 · 연결당 수 KB 전송)이었다. 요청 풀(5)과 **섞지 않는다**
     (Z9 — 백그라운드가 요청 풀을 쥐면 요청이 5초씩 굶었다). 기본 2개 · 300초 놀면 닫음 · 못 빌리면 1회용(무회귀).
     `PG_BG_POOL=0`이면 끈다. DB URL 없음(개발·테스트 인메모리)·라이브러리 없음·생성 실패면 None."""
-    global _bg_pool, _bg_pool_checked
+    global _bg_pool, _bg_pool_checked, _bg_pool_pid
     if os.getenv("PG_BG_POOL", "1") != "1" or not db_url():
         return None
+    if _bg_pool_checked and _bg_pool_pid != os.getpid():
+        # preload: 마스터가 임포트 중에 만든 풀(스레드·연결)은 포크한 워커에선 죽은 것 — 닫지 말고(마스터 것) 버리고 새로
+        _bg_pool, _bg_pool_checked = None, False
     if _bg_pool_checked:
         return _bg_pool
     from src.utils.locks import try_lock
@@ -230,13 +234,15 @@ def _background_pool():
         if _bg_pool_checked:
             return _bg_pool
         _bg_pool_checked = True
+        _bg_pool_pid = os.getpid()
         try:
             from psycopg_pool import ConnectionPool
             _bg_pool = ConnectionPool(
                 conninfo=db_url(),
-                min_size=0,
+                # 오너 긴급 11-14: 틱마다 다시 열던 것(놀면 다 닫음 · 연결 1.3배) → 1개는 늘 들고 있고 1시간 놀면 닫는다
+                min_size=int(os.getenv("PG_BG_POOL_MIN", "1") or 0),
                 max_size=int(os.getenv("PG_BG_POOL_SIZE", "2") or 2),
-                max_idle=float(os.getenv("PG_POOL_RECYCLE", "300") or 300),
+                max_idle=float(os.getenv("PG_BG_POOL_IDLE", "3600") or 3600),
                 kwargs={"prepare_threshold": None, "autocommit": True,
                         "connect_timeout": int(os.getenv("PG_CONNECT_TIMEOUT", "10") or 10)},
                 timeout=bg_pool_wait_sec(),
