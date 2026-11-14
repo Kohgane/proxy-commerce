@@ -46,14 +46,11 @@ def test_enrich_axes_same_from_projection_as_full():
 @pytest.mark.parametrize("fn_name, must", [
     ("glossary_candidates", "glossary_candidates"),
     ("_enrich_queue_position", "_ENRICH_KEYS"),
-    ("sourcing_media_queue", "_ENRICH_KEYS"),
+    ("media_queue", "_ENRICH_KEYS"),
 ])
 def test_daily_list_callers_ask_only_their_keys(fn_name, must):
-    import inspect
     from src.seller_console import views as V
-    fn = getattr(V, fn_name, None)
-    if fn is None:                                                        # 라우트 함수 이름이 다르면 소스에서 찾는다
-        fn = next(f for n, f in inspect.getmembers(V, inspect.isfunction) if "보강 현황 조회 실패" in inspect.getsource(f))
+    fn = getattr(V, fn_name)
     from tests._ast_probe import names_in, string_constants_in
     assert must in (names_in(fn) | string_constants_in(fn))
 
