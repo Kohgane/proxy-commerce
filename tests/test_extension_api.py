@@ -151,6 +151,14 @@ class TestBulkCollectAPI:
         assert "job_id" in data
         assert data["total"] == 2
         assert data["status"] == "running"
+        # 테스트 격리: 이 잡은 진짜 백그라운드 스레드로 p1·p2를 수집 이력에 쓴다. 끝나기 전에 돌아가면 다음 파일
+        #   (test_extension_api_history — append를 목킹)이 그 쓰기를 받아 「append 3회」로 깨졌다(CI #1020 full-suite).
+        import time
+        from src.api import extension_api as E
+        deadline = time.time() + 60
+        while E._bulk_jobs.get(data["job_id"], {}).get("status") != "completed" and time.time() < deadline:
+            time.sleep(0.05)
+        assert E._bulk_jobs[data["job_id"]]["status"] == "completed"
 
     def test_bulk_empty_urls_400(self, client):
         with patch("src.api.extension_api._require_token") as mock_auth:
