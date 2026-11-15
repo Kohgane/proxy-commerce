@@ -1,3 +1,9 @@
 # 실측 스냅샷은 **바이트 원형이 채점 대상**이다 — EOL 변환이 일어나면 재현본이 아니게 된다.
 # (Windows 체크아웃에서 CRLF로 변형되면 오프라인 재현·해시 대조가 어긋난다.)
 fixtures/realpages/** -text
+
+# 감독 11-15: 윈도우에서 clone하면 .sh가 CRLF로 바뀌어 kg-a1에서 `set: pipefail` 실패 — 셸·SQL·systemd 유닛은 항상 LF.
+*.sh text eol=lf
+*.sql text eol=lf
+*.service text eol=lf
+*.timer text eol=lf

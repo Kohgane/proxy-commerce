@@ -5,7 +5,7 @@ Supabase 무료 조직 전송량 402(이번 주기 15.9GB/5GB) — 같은 조직
 
 | 파일 | 하는 일 | 어디서 |
 |---|---|---|
-| `setup_pg16.sh` | PostgreSQL 16 · 자체 서명 TLS(`ssl=on`, TLS1.2+) · `hostssl`+scram만 · 5432는 Render CIDR만(pg_hba + 호스트 방화벽) · 앱 계정/DB | A1 (root) |
+| `setup_pg16.sh` (+ `firewall_5432.sh`) | PostgreSQL 16 · 자체 서명 TLS(`ssl=on`, TLS1.2+) · `hostssl`+scram만 · 5432는 Render CIDR만(pg_hba + 호스트 방화벽) · 앱 계정/DB | A1 (root) |
 | `migrate_from_supabase.sh` | `MODE=schema` 스키마 리허설 · `MODE=data` 덤프→복원→**표별 건수 대조**(다르면 exit 2) | A1 |
 | `backup_daily.sh` + `kgp-backup.{service,timer}` | 매일 03:30 KST pg_dump · 로컬 7일 · **외부 암호화 사본 1곳**(GitHub 비공개 저장소 또는 HF 비공개 데이터셋) | A1 |
 
@@ -50,6 +50,12 @@ sudo iptables -S INPUT | grep 5432 ; sudo ufw status | grep 5432
 ```
 - `ufw`: OCI 우분투는 iptables INPUT 맨 끝 REJECT **뒤에** ufw 체인이 붙어, ufw 규칙만으론 5432가 열리지 않는다 — 스크립트는
   iptables(REJECT 앞)를 실제 문으로 넣고, ufw가 켜져 있으면 같은 두 대역을 ufw에도 넣는다. ufw를 새로 켜려면 `KGP_UFW_ENABLE=1`(22 허용 먼저).
+- **실행 기록(감독 11-15):** PG16 설치 OK · 리허설 표 21 · 인덱스 60 OK · `0.0.0.0:5432` 리슨. 버그 2건은 고쳤다:
+  ① 윈도우 clone은 `.sh`가 CRLF → `set: pipefail` 실패 → `.gitattributes`(`*.sh`·`*.sql`·`*.service`·`*.timer` eol=lf). 이미
+  윈도우에서 받은 사본은 다시 clone하거나 kg-a1에서 `sed -i 's/\r$//' *.sh`.
+  ② 6단계가 제목만 찍고 끝남 — `set -o pipefail` 아래 처음엔 5432 규칙이 없어 `grep`이 1 → 스크립트가 조용히 종료. 이제
+  `firewall_5432.sh`가 넣은 뒤 **검증**한다(대역마다 규칙 있음 · 첫 REJECT 앞 · `/etc/iptables/rules.v4` 저장) — 하나라도
+  빠지면 `6단계 실패`로 exit 1. 오너가 손으로 넣은 INPUT 1번 규칙 위에 다시 돌려도 된다(예전 5432 규칙 지우고 같은 두 대역만 다시 · 중복 0).
 - 리허설이 끝나면 `public 표 수: 21`(운영 22 = + `checklist`, 데이터 덤프가 옮김) · 인덱스 60.
 - **11/19 Supabase 풀리면 즉시:** `SRC_URL_FILE`(Supabase `DATABASE_URL_DIRECT` 한 줄) · `DST_URL_FILE=/root/.kgp_local_url`로
   `sudo MODE=data bash migrate_from_supabase.sh` → 「건수 전부 같음 ✔」.
