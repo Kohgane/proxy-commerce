@@ -57,7 +57,7 @@ def test_counts_name_the_real_caller_and_mode(C):
 
 
 def test_flush_upserts_one_row_per_worker(C, monkeypatch):
-    monkeypatch.setitem(C._CALLER_STATE, "flushed", 0)                 # 주기 지남
+    monkeypatch.setitem(C._CALLER_STATE, "flushed", C.time.monotonic() - 10 ** 6)   # 주기 지남(부팅 직후 러너도 — monotonic은 0부터가 아니다)
     a_view_that_lists(C, days=90, limit=200)
     assert len(C._t_writes) == 1
     sql, args = C._t_writes[0]
@@ -74,7 +74,7 @@ def test_flush_failure_does_not_break_the_list(C, monkeypatch):
         raise RuntimeError("db down")
         yield
     monkeypatch.setattr(C.pg, "tx", boom)
-    monkeypatch.setitem(C._CALLER_STATE, "flushed", 0)
+    monkeypatch.setitem(C._CALLER_STATE, "flushed", C.time.monotonic() - 10 ** 6)
     assert a_view_that_lists(C, days=90, limit=200) == []
 
 
