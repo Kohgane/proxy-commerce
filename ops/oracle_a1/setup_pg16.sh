@@ -106,48 +106,10 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" 
 sudo -u postgres psql -d "$DB_NAME" -qc "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
 unset PW
 
-echo "== 6) 호스트 방화벽 — 5432는 Render CIDR만"
-if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
-  firewall-cmd --permanent --list-rich-rules | grep 'port="5432"' | while read -r rule; do
-    firewall-cmd --permanent --remove-rich-rule="$rule" >/dev/null || true      # 예전 CIDR 규칙은 지우고 다시 넣는다
-  done
-  for c in "${CIDRS[@]}"; do
-    c="$(echo "$c" | tr -d ' ')"; [ -n "$c" ] || continue
-    firewall-cmd --permanent --add-rich-rule="rule family=\"ipv4\" source address=\"$c\" port port=\"5432\" protocol=\"tcp\" accept" >/dev/null
-  done
-  firewall-cmd --reload >/dev/null
-  echo "firewalld: $(firewall-cmd --list-rich-rules | grep -c 5432) 규칙"
-else
-  # 오라클 우분투 이미지: iptables 규칙 파일(/etc/iptables/rules.v4)이 맨 끝 REJECT — 그 앞에 넣는다
-  iptables -S INPUT | grep -- '--dport 5432' | sed 's/^-A/-D/' | while read -r rule; do iptables $rule || true; done
-  for c in "${CIDRS[@]}"; do
-    c="$(echo "$c" | tr -d ' ')"; [ -n "$c" ] || continue
-    pos="$(iptables -L INPUT --line-numbers -n | awk '/REJECT/{print $1; exit}')"   # 맨 끝 REJECT 바로 앞
-    iptables -I INPUT "${pos:-1}" -p tcp -s "$c" --dport 5432 -m state --state NEW -j ACCEPT
-  done
-  command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save || iptables-save > /etc/iptables/rules.v4
-  echo "iptables: $(iptables -S INPUT | grep -c -- '--dport 5432') 규칙"
-  # 감독 11-15 「ufw로 5432는 두 대역만」: ufw가 켜져 있으면 ufw에도 같은 규칙. OCI 우분투는 iptables INPUT 맨 끝 REJECT 뒤에
-  #   ufw 체인이 붙어 **ufw 규칙만으론 5432가 안 열린다** — 그래서 위 iptables(REJECT 앞)가 실제 문이고 ufw는 같은 목록을 맞춰 둔다.
-  #   ufw를 새로 켜지는 않는다(OCI 기본 iptables와 겹치면 SSH가 막힐 수 있다) — 켜려면 KGP_UFW_ENABLE=1(22 허용 먼저).
-  if command -v ufw >/dev/null 2>&1; then
-    if [ "${KGP_UFW_ENABLE:-0}" = 1 ] && ! ufw status | grep -q "Status: active"; then
-      ufw allow 22/tcp >/dev/null && ufw --force enable >/dev/null
-    fi
-    if ufw status | grep -q "Status: active"; then
-      ufw status numbered | grep ' 5432/tcp' | grep -o '^\[ *[0-9]*\]' | tr -d '[] ' | sort -rn | while read -r n; do
-        ufw --force delete "$n" >/dev/null || true                              # 예전 5432 규칙은 지우고 다시
-      done
-      for c in "${CIDRS[@]}"; do
-        c="$(echo "$c" | tr -d ' ')"; [ -n "$c" ] || continue
-        ufw allow from "$c" to any port 5432 proto tcp >/dev/null
-      done
-      echo "ufw: $(ufw status | grep -c '5432/tcp') 규칙"
-    else
-      echo "ufw: 꺼져 있음 — iptables 규칙이 문(OCI 기본). 켜려면 KGP_UFW_ENABLE=1"
-    fi
-  fi
-fi
+echo "== 6) 호스트 방화벽 — 5432는 Render CIDR만 (넣은 뒤 검증 · 빠지면 실패로 끝남)"
+# 감독 11-15: 예전 6단계는 `set -o pipefail` 아래 「맞는 줄 없음」 grep(1)으로 조용히 종료 → 규칙 0. 함수로 빼고 검증까지.
+. "$(dirname "$(readlink -f "$0")")/firewall_5432.sh"
+kgp_fw_5432 "${CIDRS[@]}"
 
 echo
 echo "끝. 남은 것(오너 · OCI 콘솔): VCN › 보안 목록(또는 NSG) 수신 규칙에 TCP 5432 · 원본 = 위 Render CIDR 각각(0.0.0.0/0 금지)."
