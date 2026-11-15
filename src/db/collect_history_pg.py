@@ -285,6 +285,7 @@ def _list_items_db(*, domain: str = "", source: str = "", days: int = 30,
     with pg.query() as cur:
         cur.execute(sql, args)
         rows = cur.fetchall()
+    _note_caller("keys" if extra_keys else ("lean" if lean else "full"), len(rows))
     if not _tot:
         return [_shape(t) for t in rows]
     out = []
@@ -293,6 +294,68 @@ def _list_items_db(*, domain: str = "", source: str = "", days: int = 30,
         d["_total"] = int(t[-1] or 0)
         out.append(d)
     return out
+
+
+# ── 감독 11-15(#1018 24h 역행): pg_stat_statements는 쿼리 모양(파스 트리)으로 묶어 **누가** 불렀는지 모른다
+#   (SQL 주석은 묶음을 못 가른다). 목록을 실제로 DB에서 읽을 때(캐시 미스)만 호출 함수별 호출·행 수를 세어
+#   10분마다 워커당 app_state 한 줄로 낸다 — `perf:chlist:<KST 날짜>:<워커>` = {"모듈.함수:full|lean|keys": [호출, 행]}.
+#   값은 코드 식별자와 숫자뿐(사용자 데이터 0). 쓰기 실패는 삼킨다(목록 읽기를 막지 않는다).
+_CALLER_SKIP = ("collect_history_pg", "collect_history_store")
+_CALLER_COUNTS: dict = {}
+_CALLER_STATE = {"flushed": time.monotonic(), "key": ""}
+
+
+def _caller_name() -> str:
+    import sys
+    f = sys._getframe(2)
+    for _ in range(12):
+        if f is None:
+            break
+        mod = str(f.f_globals.get("__name__") or "")
+        if not mod.rsplit(".", 1)[-1] in _CALLER_SKIP:
+            name = f"{mod.rsplit('.', 1)[-1]}.{f.f_code.co_name}"
+            return "".join(c for c in name if c.isalnum() or c in "._")[:80]
+        f = f.f_back
+    return "unknown"
+
+
+def _caller_flush_sec() -> float:
+    try:
+        return max(0.0, float(os.getenv("CH_CALLER_FLUSH_SEC", "600") or 0))
+    except ValueError:
+        return 600.0
+
+
+def _note_caller(mode: str, n_rows: int) -> None:
+    try:
+        k = f"{_caller_name()}:{mode}"
+        c = _CALLER_COUNTS.setdefault(k, [0, 0])
+        c[0] += 1
+        c[1] += int(n_rows)
+        if time.monotonic() - _CALLER_STATE["flushed"] >= _caller_flush_sec():
+            _flush_callers()
+    except Exception:                                           # 계측이 목록을 깨면 안 된다
+        logger.debug("[ch-callers] 계측 실패", exc_info=True)
+
+
+def _flush_callers() -> None:
+    import socket
+    _CALLER_STATE["flushed"] = time.monotonic()
+    day = (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y%m%d")
+    worker = f"{socket.gethostname()[:24]}-{os.getpid()}"
+    key = f"perf:chlist:{day}:{worker}"
+    if _CALLER_STATE["key"] and _CALLER_STATE["key"] != key:      # 날짜가 바뀌면 새 줄에서 0부터(이번 주기 몫은 버림)
+        _CALLER_COUNTS.clear()
+        _CALLER_STATE["key"] = key
+        return
+    _CALLER_STATE["key"] = key
+    try:
+        with pg.tx() as cur:
+            cur.execute("INSERT INTO app_state (key, value, updated_at) VALUES (%s, %s::jsonb, now()) "
+                        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()",
+                        (key, json.dumps(_CALLER_COUNTS)))
+    except Exception as exc:
+        logger.warning("[ch-callers] 기록 실패(%s) — 다음 주기에 다시", type(exc).__name__)
 
 
 def latest_created(*, days: int = 30, seller_ids=None):
