@@ -31,3 +31,6 @@ data/analytics_cache.jsonl
 node_modules/
 package.json
 package-lock.json
+
+# 테스트 부산물 — test_rep_protection_browser.py가 스위트마다 캡처를 쓴다(커밋 대상 아님)
+artifacts/
