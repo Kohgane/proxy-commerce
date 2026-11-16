@@ -17267,7 +17267,7 @@ def collect_item_recollect(item_id: str):
 
 
 #: enrich_axes(collect_status)가 읽는 extra 칸 — 목록을 그 칸만 끌 때(오너 긴급 11-14 전송량)
-_ENRICH_KEYS = ["enrich_attempts", "enrich_blocked_reason", "enrich_rerun", "enrich_state", "enriched", "gate_ready", "images_count", "mode", "price"]
+from .collect_history_store import ENRICH_AXES_KEYS as _ENRICH_KEYS  # noqa: E402
 
 
 def _enrich_queue_position(item_id: str) -> int:

@@ -268,6 +268,13 @@ def _iso_of(v) -> str:
     return v.astimezone(timezone.utc).isoformat() if isinstance(v, datetime) else str(v or "")
 
 
+#: `collect_status.enrich_axes`가 읽는 extra 칸 — 목록을 이 칸만 끌 때(`list_items(extra_keys=…)`, 오너 긴급 11-14 전송량).
+#:   `images_count`는 투영이 장수만 준다(갤러리 원본 배열 대신). 정본은 여기 하나(뷰·확장 API가 같이 쓴다).
+#:   여기 두는 이유: `src.collectors` 패키지를 부팅 때 import하면 사이트 어댑터까지 딸려 온다(z3 부팅 계약).
+ENRICH_AXES_KEYS = ["enrich_attempts", "enrich_blocked_reason", "enrich_rerun", "enrich_state", "enriched",
+                    "gate_ready", "images_count", "mode", "price"]
+
+
 def latest_created(*, days: int = 30, seller_ids: Optional[set] = None) -> str:
     """오너 긴급 11-12: 스코프의 가장 최근 수집 시각(ISO, 없으면 '') — 폴링이 행을 끌지 않고 「새 것 있나」만 묻는다."""
     _b = _pg_backend()
