@@ -153,3 +153,34 @@ def test_job_poll_returns_the_review_card():
                                                           "results": {}, "ai_review": {"status": "done", "lines": ["줄"]}})
     d = c.get("/seller/collect/prevalidate/job/jobrv").get_json()
     assert d["ok"] and d["ai_review"] == {"status": "done", "lines": ["줄"]}
+
+
+@pytest.mark.parametrize("urls, expected", [
+    ([], []),
+    (["https://a/d2.jpg"], ["상세 1번 사진 글자: SF 무료 배송"]),
+    (["https://a/d2.jpg", "https://a/d1.jpg"],
+     ["상세 1번 사진 글자: SF 무료 배송", "상세 2번 사진 글자: 발발"]),
+    (["https://a/replaced.jpg"], []),
+])
+def test_review_ocr_follows_payload_urls_not_stored_positions(urls, expected):
+    from src.services.ai_review import _text
+    text = _text({"detail_images": urls}, EX)
+    assert f"상세 {len(urls)}장" in text
+    rows = [line for line in text.splitlines() if "번 사진 글자:" in line]
+    assert len(rows) == len(expected)
+    assert all(row.startswith(prefix) for row, prefix in zip(rows, expected))
+
+
+def test_review_matches_active_translation_and_ignores_bad_or_orphan_indexes():
+    from src.services.ai_review import _text
+    ex = dict(EX, detail_images_ko=[
+        {"idx": "bad", "target_text": "BAD"},
+        {"idx": 99, "target_text": "ORPHAN"},
+        {"idx": 1, "status": "done", "use": True,
+         "url": "https://a/translated.jpg", "target_text": "현재 번역"},
+    ])
+    text = _text({"detail_images": ["https://a/translated.jpg"]}, ex)
+    assert "상세 1번 사진 글자: 현재 번역" in text
+    assert "BAD" not in text and "ORPHAN" not in text
+    ex["detail_images_ko"][-1]["use"] = False
+    assert "번 사진 글자:" not in _text({"detail_images": ["https://a/translated.jpg"]}, ex)
