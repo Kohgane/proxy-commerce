@@ -1462,6 +1462,10 @@ def market_reach(market: str) -> Dict[str, Any]:
         return {"ok": True, "ms": ms, "detail": f"HTTP {resp.status_code}"}
     except Exception as exc:                      # noqa: BLE001 — 사유 종류를 그대로 싣는다
         ms = int((_time.monotonic() - started) * 1000)
+        from src.utils.network_failure import failure_kind
+        # Only fixed labels: exception strings can contain proxy passwords/URLs.
+        logger.warning("[market-reach] market=%s reason=%s elapsed_ms=%d",
+                       market, failure_kind(exc), ms)
         return {"ok": False, "ms": ms, "detail": f"{type(exc).__name__}"}
 
 

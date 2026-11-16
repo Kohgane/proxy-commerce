@@ -6,6 +6,20 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def no_live_http(monkeypatch):
+    """Fail even when production code catches the blocked request exception."""
+    attempted = []
+    def blocked(*args, **kwargs):
+        attempted.append(True)
+        raise AssertionError("Live HTTP is forbidden in notification tests")
+    monkeypatch.setattr("requests.sessions.Session.request", blocked)
+    yield
+    assert not attempted, "Notification test escaped its HTTP mock"
+
 
 # ---------------------------------------------------------------------------
 # 샘플 데이터
@@ -106,7 +120,10 @@ class TestOrderAlertTelegramFlow:
         monkeypatch.setenv('TELEGRAM_CHAT_ID', '-100test')
         monkeypatch.setenv('TELEGRAM_ENABLED', '1')
 
-        with patch('src.utils.telegram.send_tele', return_value=None) as mock_tele:
+        with patch('requests.post') as mock_http, \
+             patch('src.notifications.hub._TELEGRAM_ENABLED', True), \
+             patch('src.notifications.hub._CUSTOMER_NOTIFY_ENABLED', False), \
+             patch('src.notifications.hub.NotificationHub._get_slack'):
             from src.notifications.hub import NotificationHub
             hub = NotificationHub(
                 telegram_token='123456:test-token',
@@ -122,7 +139,9 @@ class TestOrderAlertTelegramFlow:
             }
             result = hub.send_order_event(order_data, event='confirmed')
 
-        assert isinstance(result, dict)
+        assert result["telegram"] is True
+        mock_http.assert_called_once()
+        assert mock_http.call_args.kwargs["json"]["chat_id"] == "-100test"
 
     def test_order_tracker_prevents_duplicate_alerts(self, monkeypatch):
         """OrderTracker가 중복 주문 알림을 방지하는지 검증한다."""
@@ -188,7 +207,10 @@ class TestPriceChangeNotification:
         monkeypatch.setenv('TELEGRAM_BOT_TOKEN', '123456:test')
         monkeypatch.setenv('TELEGRAM_CHAT_ID', '-100test')
 
-        with patch('src.utils.telegram.send_tele', return_value=None) as mock_tele:
+        with patch('requests.post') as mock_http, \
+             patch('src.notifications.hub._TELEGRAM_ENABLED', True), \
+             patch('src.notifications.hub._CUSTOMER_NOTIFY_ENABLED', False), \
+             patch('src.notifications.hub.NotificationHub._get_slack'):
             from src.notifications.hub import NotificationHub
             hub = NotificationHub(
                 telegram_token='123456:test',
@@ -199,7 +221,9 @@ class TestPriceChangeNotification:
                 channels=['telegram'],
             )
 
-        assert isinstance(result, dict)
+        assert result["telegram"] is True
+        mock_http.assert_called_once()
+        assert "TEST-001" in mock_http.call_args.kwargs["json"]["text"]
 
 
 # ---------------------------------------------------------------------------
