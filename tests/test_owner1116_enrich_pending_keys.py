@@ -51,12 +51,12 @@ def test_pending_poll_reads_only_its_keys_and_answers_the_same(client, monkeypat
 
     assert lean == full and lean["ok"] and [i["title"] for i in lean["items"]] == ["링크만"]
     assert lean["items"][0]["uncollected"] == ["images", "price"] and lean["items"][0]["images_count"] == 1
-    from src.collectors.collect_status import ENRICH_AXES_KEYS
+    from src.seller_console.collect_history_store import ENRICH_AXES_KEYS
     assert seen and set(seen[0]) == set(ENRICH_AXES_KEYS) | {"title", "uncollected"}
     assert "images_ko" not in seen[0] and "images" not in seen[0]
 
 
 def test_one_source_of_truth_for_enrich_keys():
-    from src.collectors.collect_status import ENRICH_AXES_KEYS
+    from src.seller_console.collect_history_store import ENRICH_AXES_KEYS
     from src.seller_console import views as V
     assert V._ENRICH_KEYS is ENRICH_AXES_KEYS

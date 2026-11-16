@@ -213,7 +213,7 @@ def test_list_row_one_line_badges_and_time(monkeypatch):
     monkeypatch.setattr(MS, "query", lambda *a, **k: pytest.fail("목록 렌더가 마켓에 물었다"))
     uid = "u-y12a-row"
     iid = _seed(uid, UP4)
-    html = _client(uid).get("/seller/collect/history").get_data(as_text=True)
+    html = _client(uid).get("/seller/collect/history?days=365").get_data(as_text=True)
     row = html[html.index(f'data-item-id="{iid}"'):]
     row = row[:row.index("</tr>")]
     kinds = re.findall(r'data-role="mk-chip" data-kind="(\w+)"', row)
@@ -234,9 +234,9 @@ def test_list_default_sort_action_and_attn_filter(monkeypatch):
     calm = _seed(uid, [UP4[0]])
     hot = _seed(uid, UP4)
     c = _client(uid)
-    html = c.get("/seller/collect/history").get_data(as_text=True)
+    html = c.get("/seller/collect/history?days=365").get_data(as_text=True)
     assert 'data-role="attn-filter"' in html and "손댈 것만" in html
-    only = c.get("/seller/collect/history?attn=1").get_data(as_text=True)
+    only = c.get("/seller/collect/history?attn=1&days=365").get_data(as_text=True)
     assert f'data-item-id="{hot}"' in only and f'data-item-id="{calm}"' not in only
 
 

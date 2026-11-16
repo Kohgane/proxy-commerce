@@ -604,7 +604,7 @@ def collect_enrich_pending():
     out = []
     # 감독 11-16(#1021 계수 24h): 이 폴링 하나가 extra_json째 목록 271회·14,092행(행당 ≈50KB → ≈700MB/일)이었다.
     #   대기 판정(enrich_axes)·응답에 쓰는 칸만 끈다 — 갤러리 원본·번역 상자 등 큰 칸은 안 끈다.
-    from src.collectors.collect_status import ENRICH_AXES_KEYS as _EAK
+    from src.seller_console.collect_history_store import ENRICH_AXES_KEYS as _EAK
     for row in _list(seller_ids=ids or None, days=90, limit=500, extra_keys=_EAK + ["title", "uncollected"]):
         try:
             ex = _json.loads(row.get("extra_json") or "{}") or {}

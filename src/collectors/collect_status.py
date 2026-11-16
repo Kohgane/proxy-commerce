@@ -339,12 +339,6 @@ def humanize_block_reason(reason: Optional[str]) -> str:
     return txt
 
 
-#: enrich_axes가 읽는 extra 칸 — 목록을 이 칸만 끌 때(`list_items(extra_keys=…)`, 오너 긴급 11-14 전송량).
-#:   `images_count`는 투영이 장수만 준다(갤러리 원본 배열 대신). 정본은 여기 하나(뷰·확장 API가 같이 쓴다).
-ENRICH_AXES_KEYS = ["enrich_attempts", "enrich_blocked_reason", "enrich_rerun", "enrich_state", "enriched",
-                    "gate_ready", "images_count", "mode", "price"]
-
-
 def enrich_axes(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """저장된 `extra` → `{gate_ready, enrich_state, reason, attempts, is_draft}`.
 
