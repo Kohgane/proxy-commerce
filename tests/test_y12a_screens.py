@@ -209,7 +209,25 @@ UP4 = [{"market": "coupang:gogane", "market_label": "쿠팡 — 고가네", "pro
         "detail_sync": {"at": "2026-10-17T05:10:25+00:00", "ok": False}}]
 
 
-def test_list_row_one_line_badges_and_time(monkeypatch):
+
+@pytest.fixture
+def history_clock(monkeypatch):
+    """Keep the October screen scenario inside the real 30-day filter.
+
+    Do not widen/disable the production filter just to make old fixtures visible.
+    """
+    from src.seller_console import collect_history_store as S
+
+    class ScenarioDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = cls(2026, 10, 18, 0, 0, tzinfo=timezone.utc)
+            return fixed.astimezone(tz) if tz else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(S, "datetime", ScenarioDateTime)
+    monkeypatch.setattr(S, "_pg_backend", lambda: None)
+
+def test_list_row_one_line_badges_and_time(monkeypatch, history_clock):
     monkeypatch.setattr(MS, "query", lambda *a, **k: pytest.fail("목록 렌더가 마켓에 물었다"))
     uid = "u-y12a-row"
     iid = _seed(uid, UP4)
@@ -228,7 +246,7 @@ def test_list_row_one_line_badges_and_time(monkeypatch):
         assert gone not in re.sub(r'data-[\w-]+="[^"]*"|href="[^"]*"', "", row), gone
 
 
-def test_list_default_sort_action_and_attn_filter(monkeypatch):
+def test_list_default_sort_action_and_attn_filter(monkeypatch, history_clock):
     monkeypatch.setattr(MS, "query", lambda *a, **k: pytest.fail("목록 렌더가 마켓에 물었다"))
     uid = "u-y12a-filter"
     calm = _seed(uid, [UP4[0]])
