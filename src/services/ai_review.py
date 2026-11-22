@@ -49,12 +49,35 @@ def _text(pd: dict, ex: dict) -> str:
     lines.append(f"사진: 대표·갤러리 {len(imgs)}장 · 상세 {len(det)}장")
     try:
         from src.services import detail_image_plan as dip
-        by_idx = {int(e.get("idx", -1)): e for e in (ex.get("detail_images_ko") or []) if isinstance(e, dict)}
-        for i in sorted(by_idx)[:3]:
-            e = by_idx[i]
+        # The payload is the review snapshot. Stored OCR can include removed,
+        # reordered or replaced photos; never join it by the current position.
+        originals = [u for u in (ex.get("detail_images") or []) if u]
+        entries = {}
+        for e in ex.get("detail_images_ko") or []:
+            if not isinstance(e, dict):
+                continue
+            try:
+                idx = int(e.get("idx", -1))
+            except (ValueError, TypeError):
+                continue
+            if 0 <= idx < len(originals):
+                entries[idx] = e
+        matches = {}
+        for idx, e in entries.items():
+            urls = [originals[idx]]
+            if e.get("status") == "done" and e.get("use") and e.get("url"):
+                urls.append(e["url"])
+            for url in dict.fromkeys(dip.fix_url(str(u)) for u in urls):
+                matches.setdefault(dip.fix_url(str(url)), []).append(e)
+        for pos, url in enumerate(det[:3], 1):
+            candidates = matches.get(dip.fix_url(str(url)), [])
+            # Ambiguous/replaced URLs have no trustworthy OCR association.
+            if len(candidates) != 1:
+                continue
+            e = candidates[0]
             t = str(e.get("target_text") or "").strip() or dip.entry_text(e)
             if t:
-                lines.append(f"상세 {i + 1}번 사진 글자: {t[:300]}")
+                lines.append(f"상세 {pos}번 사진 글자: {t[:300]}")
     except Exception as exc:                                     # noqa: BLE001
         logger.debug("[AI 검수] 상세 글자 읽기 실패: %s", exc)
     return "\n".join(lines)
