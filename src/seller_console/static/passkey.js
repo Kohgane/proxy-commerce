@@ -71,7 +71,7 @@
     if (e.kgpFriendly) return e.message;                 // 이미 한국어로 바꾼 것
     var name = e.name || "";
     if (KGP_PK_MSG[name]) return KGP_PK_MSG[name];
-    if (name === "Error" && e.message) return e.message; // 우리 코드가 던진 한국어 사유
+    if (name === "Error" && e.message && /[가-힣]/.test(e.message)) return e.message; // 서버가 준 한국어 사유만 둔다
     return KGP_PK_FALLBACK;                               // 모르는 브라우저 예외 — 영어 원문 노출 금지
   }
   function wrapped(e) {
