@@ -1446,6 +1446,13 @@ try:
 except Exception as _ext_bp_exc:
     logger.warning("Extension API Blueprint 등록 실패: %s", _ext_bp_exc)
 
+# 앱 v1.1(오너 11-23): 아이폰 앱 — 공유용 개인 토큰 · APNs 기기 등록
+try:
+    from .api.app_api import app_api_bp
+    app.register_blueprint(app_api_bp)
+except Exception as _app_api_exc:
+    logger.warning("App API Blueprint 등록 실패: %s", _app_api_exc)
+
 # Phase 136: 자동 재가격 Cron Blueprint 등록 (/cron/reprice)
 try:
     from .pricing.cron import cron_bp

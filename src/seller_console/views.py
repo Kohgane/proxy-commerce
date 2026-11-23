@@ -197,12 +197,26 @@ def _canon_price(d) -> str:
     return canonical_price(d.get("price"), d.get("price_original"))
 
 
+def _bearer_uid() -> str:
+    """앱 v1.1(오너 11-23) — 이 요청만 쓰는 **개인 토큰 신원**(공유 확장 `Authorization: Bearer`).
+
+    세션 쿠키를 만들지 않는다(앱 공유 확장은 쿠키가 없다). `collect_share`가 토큰을 확인한 뒤에만
+    **이 요청의 environ**에 싣는다 — `g`는 바깥 앱 컨텍스트가 살아 있으면 요청을 넘어 남는다(전체 스위트에서 실측).
+    """
+    try:
+        return str(request.environ.get("kgp.bearer_uid") or "")
+    except Exception:
+        return ""
+
+
 def _check_auth() -> bool:
     """인증 확인. SELLER_CONSOLE_AUTH=1 이면 실제 로그인 세션을 요구한다.
 
     로그인 시스템(src.auth)이 세션에 user_id/user_email 을 채운다.
     미설정(기본)일 때는 단일 테넌트(오너) 모드로 항상 통과한다.
     """
+    if _bearer_uid():
+        return True
     if not _AUTH_ENABLED:
         return True
     # F21-3: 인증 구간도 잰다. 여기는 세션 dict만 읽으므로 **0에 가까워야** 정상이다 —
@@ -221,6 +235,8 @@ def _current_user_id() -> str | None:
     _check_auth() 통과 후에 호출할 것 — 인증 게이트가 먼저 실행되므로
     이 함수가 반환하는 None은 실제로 인증되지 않은 요청에서만 발생한다.
     """
+    if _bearer_uid():
+        return _bearer_uid()
     try:
         return session.get("user_id") or session.get("user_email") or None
     except Exception:
@@ -1880,6 +1896,16 @@ def collect_share():
         return render_template("collect_share_result.html", out={"ok": False,
                                "error": "다른 사이트에서 보낸 요청은 받지 않아요 — 앱 공유 시트에서 다시 보내 주세요."},
                                raw=""), 403
+    # 앱 v1.1(오너 11-23): 아이폰 앱 공유 확장은 **JSON**으로 받는다(`Accept: application/json` · `X-KG-Source: ios-share`).
+    #   인증은 세션 쿠키 또는 `Authorization: Bearer <개인 토큰>`. 미로그인은 로그인 화면(302) 대신 **401 JSON**.
+    _app_json = _share_wants_json()
+    if _app_json:
+        _auth_err = _share_bearer_auth()
+        if _auth_err:
+            return jsonify({"ok": False, "error": _auth_err, "login": "/auth/login"}), 401
+        if not _check_auth():
+            return jsonify({"ok": False, "error": "로그인이 풀렸어요 — 고가브릿지 앱을 열어 로그인해 주세요.",
+                            "login": "/auth/login"}), 401
     inp = _share_inputs()
     raw, src = _share_pick(inp)
     final_url = inp["final_url"]
@@ -1956,12 +1982,18 @@ def collect_share():
         stages[0]["detail"] = _TICKET_ERR.get(inp["ticket_err"], inp["ticket_err"])
         record_share_arrival({**_arrival, "authed": True, "route": _route, "stage": "ticket",
                               "reason": inp["ticket_err"]})
+        if _app_json:
+            return _share_app_json({"ok": False, "error": _TICKET_ERR.get(inp["ticket_err"], "공유 내용을 받지 못했어요 — "
+                                    "타오바오 앱에서 다시 공유해 주세요.")})
         return render_template("collect_share_result.html",
                                out={"ok": False, "error": _TICKET_ERR.get(inp["ticket_err"], "공유 내용을 받지 못했어요 — "
                                     "타오바오 앱에서 다시 공유해 주세요.")}, **ctx)
     if not url:
         record_share_arrival({**_arrival, "authed": True, "route": _route,
                               "stage": "recv" if not raw else "link", "reason": "빈 값" if not raw else "링크 없음"})
+        if _app_json:
+            return _share_app_json({"ok": False, "error": _share_empty_reason(src, raw, inp["v"]) or
+                                    link_failure_reason(raw, final_url)})
         return render_template("collect_share_result.html",
                                out={"ok": False, "error": _share_empty_reason(src, raw, inp["v"]) or
                                     link_failure_reason(raw, final_url)}, **ctx)
@@ -1986,6 +2018,8 @@ def collect_share():
             pass
     logger.info("[share] method=%s ok=%s dup=%s partial=%s item=%s", request.method, out.get("ok"),
                 out.get("duplicate"), out.get("partial"), out.get("item_id"))
+    if _app_json:
+        return _share_app_json(out)
     # M5: 담은 그 자리에서 미리보기 → 마켓 선택 → 사전검증 → 등록.
     if out.get("ok") and out.get("item_id"):
         try:
@@ -1995,6 +2029,69 @@ def collect_share():
         except Exception as exc:
             logger.warning("[M5] 결과 화면 등록 흐름 준비 실패(담기는 됨): %s", exc)
     return render_template("collect_share_result.html", out=out, **ctx)
+
+
+def _share_wants_json() -> bool:
+    """앱 공유 확장 요청인가 — `Accept: application/json` 또는 `X-KG-Source: ios-share`(둘 다 앱이 붙인다)."""
+    accept = str(request.headers.get("Accept", "") or "").lower()
+    return ("application/json" in accept or
+            str(request.headers.get("X-KG-Source", "") or "").strip().lower() == "ios-share")
+
+
+def _share_bearer_auth() -> str:
+    """`Authorization: Bearer <개인 토큰>`이 있으면 확인해 **이 요청만** 그 신원으로 본다. 반환 = 실패 사유(없으면 "").
+
+    헤더가 없으면 "" — 세션 쿠키로 판단한다. 헤더가 있는데 틀리면 사유(쿠키로 몰래 넘어가지 않는다).
+    """
+    hdr = str(request.headers.get("Authorization", "") or "")
+    if not hdr.strip():
+        return ""
+    from src.api.extension_api import _require_token, auth_failure_reason
+    user = _require_token(scopes=["collect.write"])
+    uid = str((user or {}).get("user_id") or "")
+    if not uid:
+        return auth_failure_reason()
+    request.environ["kgp.bearer_uid"] = uid
+    return ""
+
+
+def _share_thumb(item: dict) -> str:
+    """담은 상품의 대표 사진 한 장(절대 https) — 우리 저장본이 있으면 그것(소싱처 핫링크 차단을 안 탄다)."""
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") if isinstance(item.get("extra_json"), str) else \
+            (item.get("extra") or {})
+    except Exception:
+        extra = {}
+    for cand in list(extra.get("images_stored") or [])[:1] + [item.get("image_url") or ""] + \
+            list(extra.get("images") or [])[:1]:
+        c = str(cand or "").strip()
+        if c.startswith("//"):
+            c = "https:" + c
+        if c.startswith("https://"):
+            return c
+        if c.startswith("/"):
+            return request.url_root.rstrip("/") + c
+    return ""
+
+
+def _share_app_json(out: dict):
+    """앱 공유 확장 응답 — `{ok, item_id, title, thumb, path, dup}`.
+
+    수집 실패도 **200 + ok:false + 사람 말 사유**로 돌려준다 — 앱은 4xx를 「담지 못했어요 (코드)」로만 보여 사유가 묻힌다.
+    401은 로그인 풀림에만 쓴다(앱이 「로그인이 풀렸어요」로 안내).
+    """
+    iid = str(out.get("item_id") or "")
+    if out.get("ok") and iid:
+        try:
+            item = _get_owned_item(iid) or {}
+        except Exception:
+            item = {}
+        return jsonify({"ok": True, "item_id": iid,
+                        "title": str(out.get("title") or item.get("title") or ""),
+                        "thumb": _share_thumb(item), "path": f"/seller/m/item/{iid}",
+                        "dup": bool(out.get("duplicate")), "partial": bool(out.get("partial")),
+                        "message": str(out.get("message") or "")})
+    return jsonify({"ok": False, "dup": False, "error": str(out.get("error") or "담지 못했어요 — 다시 공유해 주세요.")})
 
 
 # P2: 티켓 갈래 → 사람 말.
@@ -3090,9 +3187,44 @@ def _upload_job(job_id: str, data: dict) -> None:
                    sec=round(_time.monotonic() - t0, 1), finished_at=datetime.now(timezone.utc).isoformat())
         st.state_set(_UP_JOB_KEY + job_id, cur)
         logger.info("[등록 잡] %s 끝 status=%s %.1fs(대기 %.1fs)", job_id[:8], code, cur["sec"], waited)
+        _push_upload_result(cur.get("owner"), cur.get("item_id"), body)
     finally:
         _oneshot_row_var.reset(_row_tok)
         _sg.end()
+
+
+def push_upload_text(body: dict) -> tuple:
+    """등록 잡 결과 → 알림 `(제목, 본문)`. 마켓이 확인한 결과만 말한다(성공 = `success: true`). 판정할 게 없으면 ("", "")."""
+    body = body if isinstance(body, dict) else {}
+    results = list(((body.get("result") or {}).get("results")) or [])
+    ok = [r for r in results if r.get("success")]
+    bad = [r for r in results if not r.get("success")]
+    from .upload_dispatcher import MARKET_LABELS as _ML
+    name = lambda r: (r.get("market_label") or _ML.get(str(r.get("market") or ""))  # noqa: E731
+                      or str(r.get("market") or "마켓"))
+    if results:
+        if ok and not bad:
+            return "등록됐어요", " · ".join(name(r) for r in ok) + "에 올렸어요"
+        if ok:
+            return "일부만 등록됐어요", (" · ".join(name(r) for r in ok) + " 성공 · " +
+                                     " · ".join(name(r) for r in bad) + " 실패 — 눌러서 사유 보기")
+        return "등록하지 못했어요", " · ".join(name(r) for r in bad) + " — 눌러서 사유 보기"
+    if body.get("ok") is False and (body.get("error") or body.get("risk")):
+        return "등록하지 못했어요", str(body.get("error") or "위험 검사에서 멈췄어요")[:120]
+    return "", ""
+
+
+def _push_upload_result(owner, item_id, body) -> None:
+    """앱 v1.1 — 등록 잡이 끝나면 폰에 알린다(키·기기 없으면 조용히). 화면을 떠나 있어도 결과를 안다."""
+    try:
+        title, text = push_upload_text(body)
+        if not title:
+            return
+        from src.notifications.apns import notify
+        iid = str(item_id or "")
+        notify(str(owner or ""), title, text, f"/seller/m/item/{iid}" if iid else "/seller/collect/history")
+    except Exception as exc:                                      # noqa: BLE001 — 알림이 등록 결과를 막지 않는다
+        logger.warning("[apns] 등록 알림 준비 실패: %s", exc)
 
 
 @bp.get("/collect/upload/job/<job_id>")
@@ -6073,10 +6205,35 @@ def _pv_job_body(job_id: str, data: dict, markets: list, dispatcher) -> None:
         cur = _pv_update(job_id, state="done", finished_at=datetime.now(timezone.utc).isoformat(),
                          elapsed_ms=elapsed, perf=perf)
         _pv_mark_ready(data, markets, cur, job_id)
+        _push_prevalidate_hold(cur, data.get("item_id"))
         # Z9: 잡 한 줄 — 요청 로그(slow_request)는 202로 이미 찍혀 이 시간이 어디에도 안 남는다.
         logger.info("[PV] job=%s done elapsed_ms=%d markets=%s stages=%s perf=%s", job_id[:8], elapsed, markets,
                     json.dumps(cur.get("stages") or {}, ensure_ascii=False), json.dumps(perf, ensure_ascii=False))
         # 반환(`rss.release`)은 바깥 `_pv_job`이 한다 — 몸통이 예외로 끝나도 거치게(Y14 10-21)
+
+
+def push_hold_text(results: dict) -> tuple:
+    """사전검증 결과 → 「보류」 알림 `(제목, 본문)`. 보류(hold)인 마켓이 없으면 ("", "") — 통과·검증 못 함은 알리지 않는다."""
+    held = [r for r in (results or {}).values() if isinstance(r, dict) and r.get("hold")]
+    if not held:
+        return "", ""
+    first = str(held[0].get("message") or "").strip()
+    names = " · ".join(str(r.get("market_label") or r.get("market") or "마켓") for r in held)
+    return "사전검증에서 멈췄어요", (f"{names} — {first}" if first else f"{names} — 눌러서 고칠 곳 보기")[:160]
+
+
+def _push_prevalidate_hold(cur: dict, item_id) -> None:
+    """앱 v1.1 — 사전검증 잡이 **보류**로 끝나면 폰에 알린다(키·기기 없으면 조용히). 판정은 바꾸지 않는다."""
+    try:
+        title, text = push_hold_text((cur or {}).get("results") or {})
+        if not title:
+            return
+        from src.notifications.apns import notify
+        iid = str(item_id or "")
+        notify(str((cur or {}).get("owner") or ""), title, text,
+               f"/seller/m/item/{iid}" if iid else "/seller/collect/history")
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("[apns] 사전검증 알림 준비 실패: %s", exc)
 
 
 def _pv_ai_review_start(job_id: str, product_data: dict, item_id: str):
@@ -9367,6 +9524,8 @@ def markets_integration_diagnostics_refresh():
 
 def _seller_id() -> str:
     """현재 셀러 식별자. 단일 테넌트(오너)/요청 컨텍스트 밖에서는 'default'."""
+    if _bearer_uid():
+        return _bearer_uid()
     try:
         return str(session.get("user_id") or session.get("user_email") or "default")
     except Exception:
@@ -9378,6 +9537,8 @@ def _seller_identities() -> set:
     이력 필터 seller_id가 별칭(user_id vs email)으로 어긋날 때도 본인 항목을 보이게
     하는 관용 매칭용(v9 P0). 모두 '본인' 값이라 타 셀러 누출 없음.
     """
+    if _bearer_uid():
+        return {_bearer_uid()}                     # 토큰 신원 한 사람 — 세션 값과 섞지 않는다
     ids = set()
     try:
         for v in (session.get("user_id"), session.get("user_email")):
