@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ current_lang|default('ko', true) }}">
+<html lang="{{ current_lang|default('ko', true) }}"{% if is_app %} class="kgp-app"{% endif %}>
 <head>
   {% set _brand_name = brand_name|default('gogabridj', true) %}
   <meta charset="utf-8">
@@ -22,7 +22,7 @@
     } catch (e) {}
   })();
   </script>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}셀러 콘솔{% endblock %} | {{ _brand_name }}</title>
   <meta property="og:site_name" content="{{ _brand_name }}">
   <meta property="og:title" content="{{ _brand_name }}">
@@ -45,6 +45,7 @@
   <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='m_shell.css') }}?v={{ build_sha }}">
   {# v87-S5: CSS에 캐시 키가 없어 max-age=604800(1주)로 굳어 있었다. 스타일만 고치면 최대
      일주일간 브라우저가 옛 파일을 써서, 로고 hover 반응처럼 CSS로만 고치는 건 사용자에게
      도달하지 못한다. 배포 커밋(build_sha)을 키로 걸면 배포할 때마다 자동 갱신되고,
@@ -57,8 +58,14 @@
   {"prefetch":[{"where":{"and":[{"href_matches":"/seller/*"},{"not":{"href_matches":"/*logout*"}},{"not":{"href_matches":"/*sign*out*"}},{"not":{"href_matches":"/*/delete*"}},{"not":{"href_matches":"/*bulk-delete*"}}]},"eagerness":"moderate"}]}
   </script>
 </head>
-<body class="console-body{% block body_class %}{% endblock %}">
 {% set _path = request.path if request is defined else '' %}
+{% import "partials/m_shell.html" as ms %}
+{% set _m_drawer = request is defined and request.args.get('drawer') %}
+{% set _m_tab = ms.active_tab(_path, request.args if request is defined else {})|trim %}
+{% set _m_roots = {'collect': '/seller/m', 'items': '/seller/collect/history', 'orders': '/seller/orders', 'more': '/seller/m?tab=more'} %}
+{% set _m_is_root = _path.rstrip('/') in ('/seller/collect/history', '/seller/orders', '/seller/m', '/seller', '/seller/dashboard') %}
+{% set _m_ptr = _path.startswith('/seller/collect/history') or _path.startswith('/seller/orders') %}
+<body class="console-body{% block body_class %}{% endblock %}"{% if _show_console_nav and not _m_drawer %} data-mshell="1"{% endif %}{% if _m_ptr and not _m_drawer %} data-ptr="1"{% endif %}>
 {# Y12-A(오너 2026-10-17): 대시보드·상품목록·드로어엔 「이번 업데이트」 배너·떠 있는 「처음이신가요?」 버튼을 띄우지 않는다
    (떠 있는 버튼이 상품 줄을 가렸다). 가이드는 사이드바 「시작 가이드」 한 곳 — 지우는 게 아니라 옮기는 것. #}
 {% set _quiet_chrome = _path in ('/seller/', '/seller') or _path.startswith('/seller/dashboard') or _path.startswith('/seller/collect/history')
@@ -72,13 +79,12 @@
    공통 console-topbar(검색/수출형/언어/계정 나열)는 모바일에서 숨김(CSS) → 맨텍스트 나열 제거. #}
 {# 순찰 122b-U1(오너 10-26 「앱스럽게」): 모바일 = 앱 셸. 상단은 로고·검색·계정만(햄버거는 하단 「더보기」 탭이 대신),
    하단 고정 탭 5개(홈·수집·상품·주문·더보기), 「더보기」는 사이드바 전체를 **바텀시트**로 연다(링크는 하나도 안 지운다). #}
-<div class="mobile-topbar d-flex align-items-center justify-content-between px-3 d-md-none">
-  <a href="/seller/" class="text-decoration-none fw-bold mobile-topbar-brand"><span class="kgp-mt-mark" aria-hidden="true"></span>{{ brand_name_ko|default('고가브릿지', true) }}</a>
-  <div class="d-flex align-items-center gap-1">
-    <button class="mobile-icon-btn" aria-label="상품 검색" onclick="toggleMobileSearch()"><i class="bi bi-search"></i></button>
-    <a href="/seller/me" class="mobile-account-avatar" aria-label="내 계정">{{ (_user_name or _user_email or '나')[:1]|upper }}</a>
-  </div>
-</div>
+{# 오너 11-23 「앱이 실제 앱처럼」: 폰·앱 웹뷰는 셸 하나(partials/m_shell.html) — 상단 얇은 바(뒤로·제목) + 하단 탭 4(수집·목록·주문·더보기).
+   PC 탑바·사이드바는 폰에서 안 보인다. 검색은 상단 바 오른쪽 아이콘(펼치면 아래 검색칸). 드로어(?drawer=1) 안에선 셸을 안 그린다. #}
+{% if not _m_drawer %}
+{{ ms.topbar(self.title(), back=(None if _m_is_root else _m_roots.get(_m_tab or 'collect')),
+             right='<button type="button" class="kgp-mtop-btn" aria-label="상품 검색" onclick="toggleMobileSearch()"><i class="bi bi-search" aria-hidden="true"></i></button>'|safe) }}
+{% endif %}
 <div class="mobile-search d-md-none" id="mobileSearch" hidden>
   <form action="/seller/catalog" method="get" role="search" class="px-3 pb-2">
     <div class="input-group">
@@ -270,10 +276,10 @@
     </div>
 
     {# v36 PART B: PWA 설치 — 홈 화면에 앱처럼 추가(안드로이드: beforeinstallprompt, iOS: 공유→홈 화면에 추가 안내) #}
-    <button type="button" id="pwaInstallBtn" class="btn btn-cta btn-sm w-100 mt-3 d-none" onclick="pwaInstall()">
+    <button type="button" id="pwaInstallBtn" class="btn btn-cta btn-sm w-100 mt-3 d-none kgp-web-only" onclick="pwaInstall()">
       <i class="bi bi-phone"></i> 홈 화면에 앱 설치
     </button>
-    <div id="pwaIosHint" class="small text-secondary mt-2 d-none">
+    <div id="pwaIosHint" class="small text-secondary mt-2 d-none kgp-web-only">
       <i class="bi bi-phone"></i> 앱처럼 쓰기: <strong>공유</strong> → <strong>홈 화면에 추가</strong>
     </div>
 
@@ -406,19 +412,8 @@
   </div>
 </div>
 
-{% if _show_console_nav and not (request is defined and request.args.get('drawer')) %}
-{# 순찰 122b-U1: 하단 고정 탭바(모바일만). 활성 탭 = 금 1색. 드로어(?drawer=1) 안에선 안 그린다. #}
-<nav class="kgp-tabbar d-md-none" data-role="mobile-tabbar" aria-label="주요 메뉴">
-  {% set _tab_home = _path in ('/seller/', '/seller') or _path.startswith('/seller/dashboard') %}
-  {% set _tab_collect = _path.startswith('/seller/manual-collect') or _path.startswith('/seller/sourcing') or _path == '/seller/collect' %}
-  {% set _tab_items = _path.startswith('/seller/collect/history') or _path.startswith('/seller/collect/preview') or _path.startswith('/seller/catalog') %}
-  {% set _tab_orders = _path.startswith('/seller/orders') %}
-  <a class="kgp-tab {% if _tab_home %}active{% endif %}" href="/seller/dashboard" {% if _tab_home %}aria-current="page"{% endif %}><i class="bi bi-house-door{% if _tab_home %}-fill{% endif %}"></i><span>홈</span></a>
-  <a class="kgp-tab {% if _tab_collect %}active{% endif %}" href="/seller/collect" {% if _tab_collect %}aria-current="page"{% endif %}><i class="bi bi-plus-circle{% if _tab_collect %}-fill{% endif %}"></i><span>수집</span></a>
-  <a class="kgp-tab {% if _tab_items %}active{% endif %}" href="/seller/collect/history" {% if _tab_items %}aria-current="page"{% endif %}><i class="bi bi-grid{% if _tab_items %}-fill{% endif %}"></i><span>상품</span></a>
-  <a class="kgp-tab {% if _tab_orders %}active{% endif %}" href="/seller/orders" {% if _tab_orders %}aria-current="page"{% endif %}><i class="bi bi-receipt{% if _tab_orders %}-cutoff{% endif %}"></i><span>주문</span></a>
-  <button type="button" class="kgp-tab" id="sidebarToggle" aria-label="더보기 메뉴" onclick="toggleSidebar()"><i class="bi bi-three-dots"></i><span>더보기</span></button>
-</nav>
+{% if _show_console_nav and not _m_drawer %}
+{{ ms.tabbar(_m_tab) }}
 {% endif %}
 
 <!-- 전역 토스트 컨테이너 (pcToast) — 모든 셀러 페이지 공용 비차단 알림 -->

@@ -1,4 +1,5 @@
 """Z7(2026-10-07) — 주문은 **누구의 것인가**: 공개 가입자가 오너 마켓 주문을 보거나 바꾸지 못한다.
+# 오너 11-23: /seller/m 주문 칸은 ?tab=orders(공용 셸 탭) — 아래 요청은 그 칸을 본다.
 
 L1(#837) 이후 누구나 가입한다. 주문 행(`orders`)은 오너 서버의 마켓 자격(전역 환경변수)으로 동기화된
 **오너 마켓 주문**이고 `user_id`가 비어 있다(오너 풀). 예전 `/seller/orders` 계열은 스코프가 없어서
@@ -135,7 +136,7 @@ def test_stranger_csv_export_only_own(orders_mem, stranger):
 
 
 def test_stranger_mobile_home_hides_owner_orders(orders_mem, stranger):
-    r = stranger.get("/seller/m")
+    r = stranger.get("/seller/m?tab=orders")
     body = r.get_data(as_text=True)
     # 예전엔 주문이 1건만 있어도 500(템플릿 `.get`이 UnifiedOrder에서 터짐) — 그 500이 누수를 가렸다.
     assert r.status_code == 200, "모바일 홈이 주문이 있으면 500"
@@ -145,13 +146,13 @@ def test_stranger_mobile_home_hides_owner_orders(orders_mem, stranger):
 
 def test_stranger_mobile_empty_state_does_not_promise_sync(orders_mem, stranger):
     orders_mem.rows[:] = [_row(OWNER_ROW, "")]
-    body = stranger.get("/seller/m").get_data(as_text=True)
+    body = stranger.get("/seller/m?tab=orders").get_data(as_text=True)
     assert "마켓을 연동하면 주문이 모여요" not in body, "동기화가 없는 계정에 「연동하면 모여요」 약속"
     assert "준비 중" in body
 
 
 def test_shared_mobile_home_renders_owner_orders(orders_mem, env):
-    r = _client("mom-1", "mom@example.com").get("/seller/m")
+    r = _client("mom-1", "mom@example.com").get("/seller/m?tab=orders")
     body = r.get_data(as_text=True)
     assert r.status_code == 200 and OWNER_ROW in body
     assert "결제완료" in body and ">paid<" not in body, "상태 영문 코드가 그대로 보인다"

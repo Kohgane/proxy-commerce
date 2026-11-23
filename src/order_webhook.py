@@ -204,7 +204,16 @@ except ImportError:
 @app.context_processor
 def inject_brand_name():
     from src.utils.build_info import get_build_sha
-    return {"brand_name": get_brand_name(), "brand_name_ko": get_brand_name_ko(), "build_sha": get_build_sha()}
+    from src.utils.app_shell import is_app_request
+    return {"brand_name": get_brand_name(), "brand_name_ko": get_brand_name_ko(), "build_sha": get_build_sha(),
+            "is_app": is_app_request(request)}
+
+
+@app.after_request
+def _remember_app_shell(response):
+    """오너 11-23: 앱 시작 주소 `?app=1` → 쿠키로 기억(이후 링크도 앱 셸로 렌더)."""
+    from src.utils.app_shell import remember_app
+    return remember_app(request, response)
 
 _AUTO_BLUEPRINT_CANDIDATE_MODULES = (
     "src.cs.inbox_routes",

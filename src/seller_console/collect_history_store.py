@@ -248,6 +248,8 @@ def list_items(
                 "title_ko": _ex.get("title_ko"), "title_en": _ex.get("title_en"), "title": _ex.get("title"),
                 "uploaded": _ex.get("uploaded"), "price_status": _ex.get("price_status"),
                 "warnings": _ex.get("warnings"), "images": _imgs[:1],
+                # 오너 11-23: 우리 저장본 첫 장(PG lean과 같은 모양) — 목록 썸네일이 원본 CDN보다 먼저 쓴다
+                "images_stored": (_ex.get("images_stored") or [])[:1] if isinstance(_ex.get("images_stored"), list) else [],
                 # C-F14: 보강 축을 목록이 알 수 있게(PG lean projection과 **같은 모양** 유지).
                 #   빠뜨리면 목록이 부분 초안을 완전 수집 잣대로 재고 「실패」라 적는다(실측).
                 "gate_ready": _ex.get("gate_ready"), "enrich_state": _ex.get("enrich_state"),

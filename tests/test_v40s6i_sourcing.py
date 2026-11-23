@@ -84,7 +84,7 @@ def _pw_ok():
 _BS = next((p for p in ("node_modules/bootstrap/dist/css/bootstrap.min.css",
                         "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
             if Path(p).exists()), None)
-CSS_FILES = tuple(x for x in (_BS, "src/static/app.css", "src/seller_console/static/seller.css",
+CSS_FILES = tuple(x for x in (_BS, "src/static/app.css", "src/static/m_shell.css", "src/seller_console/static/seller.css",
                               "src/seller_console/static/console.css") if x)
 
 PROBE = """() => {

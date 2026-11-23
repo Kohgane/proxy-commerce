@@ -24,10 +24,9 @@ def test_console_topbar_hidden_on_mobile():
 
 
 def test_mobile_header_single_and_touch_targets():
-    # 모바일 단일 헤더: 로고 + 검색 아이콘 + 계정 아바타 + 햄버거
-    assert "mobile-topbar-brand" in BASE
+    # 오너 11-23 개정: 모바일 헤더 = 공용 셸의 얇은 바(뒤로·제목·검색) — 로고·아바타는 빠졌다(계정은 「더보기」)
+    assert "ms.topbar(" in BASE
     assert "toggleMobileSearch()" in BASE
-    assert "mobile-account-avatar" in BASE
     assert 'id="mobileSearch"' in BASE
     # 44px 터치 타깃
     assert "width: 44px; height: 44px" in CONSOLE_CSS
@@ -37,5 +36,5 @@ def test_mobile_header_single_and_touch_targets():
 
 def test_dashboard_renders_with_mobile_header(client):
     html = client.get("/seller/dashboard").get_data(as_text=True)
-    assert "mobile-topbar" in html
+    assert 'class="kgp-mtop"' in html                                 # 오너 11-23: 공용 셸 얇은 바
     assert 'id="mobileSearch"' in html

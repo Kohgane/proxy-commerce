@@ -80,7 +80,7 @@ def _pw_ok():
 _BS_CANDIDATES = ("node_modules/bootstrap/dist/css/bootstrap.min.css",
                   "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
 BOOTSTRAP = next((p for p in _BS_CANDIDATES if Path(p).exists()), None)
-CSS_FILES = tuple(x for x in (BOOTSTRAP, "src/static/app.css",
+CSS_FILES = tuple(x for x in (BOOTSTRAP, "src/static/app.css", "src/static/m_shell.css",
                               "src/seller_console/static/seller.css",
                               "src/seller_console/static/console.css") if x)
 

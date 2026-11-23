@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko"{% if is_app %} class="kgp-app"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,66 +10,62 @@
   <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='m_shell.css') }}?v={{ build_sha }}">
   <style>
-    body { background: var(--pc-color-bg); color: var(--pc-color-text); padding-bottom: 76px; }
-    .m-top { background: #1a1714; color: #f5efe3; padding: .9rem 1rem; display:flex; align-items:center; gap:.5rem; }
-    .m-top .brand { font-family: var(--pc-font-display, serif); font-weight: 700; color:#ecdcb0; }
-    .m-beta { font-size:.62rem; letter-spacing:.1em; background:#c9a24b; color:#1a1714; border-radius:999px; padding:.1rem .45rem; font-weight:700; }
-    .m-tabpane { display:none; padding: 1rem; }
-    .m-tabpane.active { display:block; }
-    .m-card { background: var(--pc-color-surface); border:1px solid var(--pc-color-border); border-radius:14px; }
-    .m-tabbar { position: fixed; bottom:0; left:0; right:0; background:#1a1714; display:flex;
-      padding: .35rem .25rem calc(.35rem + env(safe-area-inset-bottom)); z-index:1030; }
-    .m-tab { flex:1; background:none; border:none; color:#9a8f7c; font-size:.7rem; padding:.4rem; display:flex; flex-direction:column; align-items:center; gap:2px; }
-    .m-tab i { font-size:1.25rem; }
-    .m-tab.active { color:#119a8e; }
-    .m-kpi { background: var(--pc-color-surface); border:1px solid var(--pc-color-border); border-radius:12px; text-align:center; padding:.7rem .2rem; }
-    .m-kpi .v { font-size:1.4rem; font-weight:700; }
+    /* 오너 11-23: 이 화면도 공용 셸(partials/m_shell.html) — 여기 스타일은 카드·KPI만(토큰만). */
+    body { background: var(--pc-color-bg); color: var(--pc-color-text); }
+    .m-pane { padding: var(--space-4); max-width: 640px; margin: 0 auto; }
+    .m-card { background: var(--pc-color-surface); border: 1px solid var(--pc-color-border); border-radius: var(--radius-lg); }
+    .m-kpi { background: var(--pc-color-surface); border: 1px solid var(--pc-color-border); border-radius: var(--radius); text-align: center; padding: .7rem .2rem; }
+    .m-kpi .v { font-size: 1.4rem; font-weight: 700; }
+    .m-beta { font-size: .62rem; letter-spacing: .1em; background: var(--gold); color: var(--ink); border-radius: var(--radius-pill); padding: .1rem .45rem; font-weight: 700; }
+    .m-row { min-height: 64px; }
+    .m-row img, .m-row .m-noimg { width: 52px; height: 52px; object-fit: cover; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 5%, transparent); flex: none; }
+    .m-noimg { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted, var(--muted)); }
+    .m-noimg[hidden] { display: none !important; }
   </style>
 </head>
-<body>
-<div class="m-top">
-  <span style="font-size:1.3rem"><i class="bi bi-bag-check"></i></span>
-  <span class="brand">고가브릿지</span>
-  <span class="m-beta">BETA</span>
-  <a href="/seller/dashboard" class="ms-auto text-decoration-none small" style="color:#c9bda6">데스크톱 →</a>
-</div>
+{% import "partials/m_shell.html" as ms %}
+{% set _pane = request.args.get('tab') if request.args.get('tab') in ('orders', 'more') else 'collect' %}
+<body data-mshell="1">
+{{ ms.topbar({'collect': '상품 수집', 'orders': '주문', 'more': '더보기'}[_pane],
+             right='<span class="m-beta kgp-web-only">BETA</span>'|safe) }}
 
-<!-- 수집 탭 -->
-<section class="m-tabpane active" id="pane-collect">
-  <h2 class="h5 fw-bold mb-2">상품 수집</h2>
-  <p class="text-muted small">상품 링크를 붙여넣거나, 쇼핑 앱에서 <strong>공유 → 고가브릿지</strong>로 보내면 바로 수집돼요.</p>
-  <form action="/seller/collect/quick" method="get" class="m-card p-3 mb-3">
-    <label class="form-label small fw-semibold" for="mUrl">상품 URL</label>
-    <input id="mUrl" name="u" type="url" class="form-control mb-2" placeholder="https://..." required inputmode="url">
-    <button type="submit" class="btn btn-cta w-100"><i class="bi bi-download"></i> 수집하기</button>
+{% if _pane == 'collect' %}
+<section class="m-pane" id="pane-collect" data-pane="collect">
+  <p class="text-muted mb-3">상품 링크를 붙여넣거나, 쇼핑 앱에서 <strong>공유 → 고가브릿지</strong>로 보내면 바로 수집돼요.</p>
+  <form action="/seller/collect/quick" method="get" class="m-card p-3 mb-3" data-role="m-collect-form">
+    <label class="form-label fw-semibold" for="mUrl">상품 링크</label>
+    <input id="mUrl" name="u" type="url" class="form-control mb-2" placeholder="https://..." required inputmode="url" autocomplete="off">
+    <button type="submit" class="btn btn-cta w-100"><i class="bi bi-download" aria-hidden="true"></i> 수집하기</button>
   </form>
   <div class="d-flex justify-content-between align-items-center mb-2">
-    <h3 class="h6 fw-bold mb-0">최근 수집</h3>
-    <a href="/seller/collect/history" class="small text-decoration-none">전체 보기 →</a>
+    <h2 class="h6 fw-bold mb-0">최근 수집</h2>
+    <a href="/seller/collect/history" class="text-decoration-none">전체 보기 →</a>
   </div>
   {% if recent %}
   <div class="vstack gap-2">
     {% for it in recent %}
-    <a href="/seller/collect/preview/{{ it.id }}" class="m-card p-2 d-flex align-items-center gap-2 text-decoration-none text-dark">
-      {% if it.thumb %}<img src="{{ it.thumb }}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px;background:#eee" onerror="this.style.visibility='hidden'">
-      {% else %}<span class="d-inline-flex align-items-center justify-content-center" style="width:48px;height:48px;border-radius:8px;background:#f1f3f5"><i class="bi bi-image"></i></span>{% endif %}
+    <a href="/seller/m/item/{{ it.id }}" class="m-card m-row p-2 d-flex align-items-center gap-2 text-decoration-none text-dark" data-role="m-recent">
+      {% if it.thumb %}<img src="{{ it.thumb }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-role="ch-thumb" data-alts="{{ it.thumb_alts|join(' ') }}"
+           onload="if(this.naturalWidth<=2)this.onerror()"
+           onerror="var a=(this.getAttribute('data-alts')||'').split(' ').filter(Boolean);if(a.length){this.setAttribute('data-alts',a.slice(1).join(' '));this.src=a[0];}else{this.style.display='none';var n=this.nextElementSibling;if(n)n.hidden=false;}">
+      <span class="m-noimg" data-role="ch-thumb-failed" aria-label="사진을 불러오지 못했어요" hidden><i class="bi bi-image"></i></span>
+      {% else %}<span class="m-noimg" aria-label="이미지 없음"><i class="bi bi-image"></i></span>{% endif %}
       <span class="flex-grow-1 text-truncate">
         <span class="d-block text-truncate fw-semibold">{{ it.title }}</span>
         <span class="small text-muted">{% if it.price %}{{ it.price }} {{ it.currency }}{% else %}{{ it.domain }}{% endif %}</span>
       </span>
-      <i class="bi bi-pencil-square text-muted"></i>
+      <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
     </a>
     {% endfor %}
   </div>
   {% else %}
-  <div class="m-card p-4 text-center text-muted small">아직 수집한 상품이 없어요. 위에 링크를 붙여넣어 보세요.</div>
+  <div class="m-card p-4 text-center text-muted">아직 수집한 상품이 없어요. 위에 링크를 붙여넣어 보세요.</div>
   {% endif %}
 </section>
-
-<!-- 주문 탭 -->
-<section class="m-tabpane" id="pane-orders">
-  <h2 class="h5 fw-bold mb-2">주문</h2>
+{% elif _pane == 'orders' %}
+<section class="m-pane" id="pane-orders" data-pane="orders">
   <div class="row g-2 mb-3">
     <div class="col-3"><div class="m-kpi"><div class="v">{{ kpi.today_new }}</div><div class="small text-muted">신규</div></div></div>
     <div class="col-3"><div class="m-kpi"><div class="v text-warning">{{ kpi.pending_ship }}</div><div class="small text-muted">배송대기</div></div></div>
@@ -90,41 +86,42 @@
   </div>
   {% else %}
   {% if can_sync is not defined or can_sync %}
-  <div class="m-card p-4 text-center text-muted small">표시할 주문이 없어요. 마켓을 연동하면 주문이 모여요.<br><a href="/seller/markets/connect">마켓 연동하기 →</a></div>
+  <div class="m-card p-4 text-center text-muted">표시할 주문이 없어요. 마켓을 연동하면 주문이 모여요.<br><a href="/seller/markets/connect">마켓 연동하기 →</a></div>
   {% else %}
   {# Z7: 이 계정은 주문 동기화가 아직 없다 — 「연동하면 모여요」는 거짓 약속이 된다. #}
-  <div class="m-card p-4 text-center text-muted small">표시할 주문이 없어요. 내 마켓 주문을 가져오는 기능은 준비 중이에요 — 그동안 각 마켓 판매자 센터에서 확인해 주세요.</div>
+  <div class="m-card p-4 text-center text-muted">표시할 주문이 없어요. 내 마켓 주문을 가져오는 기능은 준비 중이에요 — 그동안 각 마켓 판매자 센터에서 확인해 주세요.</div>
   {% endif %}
   {% endif %}
   <a href="/seller/orders" class="btn btn-ghost w-100 mt-2">주문 전체 관리 →</a>
 </section>
-
-<!-- 더보기 탭 -->
-<section class="m-tabpane" id="pane-more">
-  <h2 class="h5 fw-bold mb-3">더보기</h2>
-  <button id="installBtn" class="btn btn-cta w-100 mb-2 d-none" onclick="installApp()"><i class="bi bi-phone"></i> 고가브릿지 앱 설치</button>
+{% else %}
+<section class="m-pane" id="pane-more" data-pane="more">
+  <button id="installBtn" class="btn btn-cta w-100 mb-2 d-none kgp-web-only" onclick="installApp()"><i class="bi bi-phone"></i> 고가브릿지 앱 설치</button>
   <div class="vstack gap-2">
-    <a href="/seller/guide/iphone" class="m-card p-3 text-decoration-none text-dark" data-role="phone-guide-link"><i class="bi bi-phone"></i> 아이폰에서 수집하기</a>
-    <a href="/seller/start" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-stars"></i> For Beginners · 시작 가이드</a>
     <a href="/seller/markets/connect" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-shop"></i> 마켓 연동</a>
-    <a href="/seller/dashboard" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-display"></i> 데스크톱 전체 콘솔</a>
+    <a href="/seller/me" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-person-circle"></i> 내 작업공간·설정</a>
+    <a href="/seller/guide/iphone" class="m-card p-3 text-decoration-none text-dark kgp-web-only" data-role="phone-guide-link"><i class="bi bi-phone"></i> 아이폰에서 수집하기</a>
+    <a href="/seller/start" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-stars"></i> 시작 가이드</a>
+    <a href="/seller/dashboard" class="m-card p-3 text-decoration-none text-dark kgp-web-only"><i class="bi bi-display"></i> 데스크톱 전체 콘솔</a>
     <a href="/seller/about" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-info-circle"></i> 고가브릿지란?</a>
   </div>
-  <div class="m-card p-3 mt-3 small text-muted">
+  {% if session.get('user_id') %}
+  <form method="post" action="/auth/logout" class="mt-3">
+    <button type="submit" class="btn btn-ghost w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
+  </form>
+  {% endif %}
+  <div class="m-card p-3 mt-3 small text-muted kgp-web-only">
     <i class="bi bi-phone"></i> <strong>홈 화면에 추가</strong>하면 앱처럼 쓸 수 있어요. iOS: 공유 → ‘홈 화면에 추가’, 안드로이드: 메뉴 → ‘앱 설치’.
     <br>대량 편집·마켓 설정 등 풀기능은 데스크톱에서 더 편해요.
   </div>
+  <p class="small text-muted mt-3 mb-0"><a href="/privacy" class="text-muted">개인정보처리방침</a> · <a href="/terms" class="text-muted">이용약관</a></p>
 </section>
+{% endif %}
 
-<!-- 하단 탭바 -->
-<nav class="m-tabbar">
-  <button class="m-tab active" data-pane="collect"><i class="bi bi-plus-square"></i>수집</button>
-  <button class="m-tab" data-pane="orders"><i class="bi bi-receipt"></i>주문</button>
-  <button class="m-tab" data-pane="more"><i class="bi bi-grid"></i>더보기</button>
-</nav>
+{{ ms.tabbar(_pane) }}
 
 <script>
-// 설치형 PWA — 안드로이드: beforeinstallprompt로 '앱 설치' 버튼 노출. iOS: 공유→홈 화면에 추가 안내(더보기).
+// 설치형 PWA — 안드로이드: beforeinstallprompt로 '앱 설치' 버튼 노출(앱·설치형 안에선 kgp-web-only라 안 보인다).
 let _deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', function (e) {
   e.preventDefault();
@@ -140,19 +137,14 @@ function installApp() {
     var b = document.getElementById('installBtn'); if (b) b.classList.add('d-none');
   });
 }
-// 서비스워커 등록(설치 가능 조건)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/seller/static/sw.js', { scope: '/seller/' }).catch(function () {});
 }
-
-document.querySelectorAll('.m-tab').forEach(function (t) {
-  t.addEventListener('click', function () {
-    var pane = t.getAttribute('data-pane');
-    document.querySelectorAll('.m-tab').forEach(x => x.classList.toggle('active', x === t));
-    document.querySelectorAll('.m-tabpane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + pane));
-    window.scrollTo(0, 0);
-  });
-});
+// 수집 진행 한 줄 — 링크를 보내면 곧바로 「수집 중」을 띄운다(다음 화면이 결과·상품 카드)
+(function () {
+  var f = document.querySelector('[data-role="m-collect-form"]');
+  if (f) f.addEventListener('submit', function () { if (window.kgpJobLine) window.kgpJobLine.show('수집 중… 상품 정보를 읽고 있어요'); });
+})();
 </script>
 </body>
 </html>

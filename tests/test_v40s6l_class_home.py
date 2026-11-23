@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 
 TPL = Path("src/seller_console/templates")
-CSS_FILES = (Path("src/static/app.css"),
+CSS_FILES = (Path("src/static/app.css"), Path("src/static/m_shell.css"),
              Path("src/seller_console/static/console.css"),
              Path("src/seller_console/static/seller.css"))
 JS_FILES = (Path("src/seller_console/static/seller.js"),)

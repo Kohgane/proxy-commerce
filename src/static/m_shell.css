@@ -1,0 +1,93 @@
+/* m_shell.css — 오너 11-23 「앱이 실제 앱처럼」: 폰·앱 웹뷰 셸 전용 스타일(partials/m_shell.html 짝).
+   app.css 끝에 붙이지 않고 따로 둔다 — app.css의 화면별 구획 계약(「이 구획 아래에 표 문법 0」 등)이 끝까지를 한 구획으로 읽는다. */
+/* ── 오너 11-23 「앱이 실제 앱처럼」: 폰·앱 웹뷰 셸 하나(partials/m_shell.html) ─────────────────────────────────────
+   상단 얇은 바(뒤로·제목) + 하단 탭바(수집·목록·주문·더보기). PC(≥768px)에선 숨고, 앱 웹뷰(html.kgp-app)에선 폭과 무관하게 뼈대다.
+   토큰만 쓴다(hex 0). 터치 타깃 44px · 입력 16px(확대 방지) · safe-area 위·아래 · 100dvh · 탭 하이라이트 0. */
+* { -webkit-tap-highlight-color: transparent; }
+.kgp-mtop, .kgp-mtab, .kgp-jobline, .kgp-mskel { display: none; }
+.kgp-jobline[hidden], .kgp-mskel[hidden] { display: none !important; }
+@media (max-width: 767.98px) {
+  .kgp-mtop { display: flex; }
+  .kgp-mtab { display: flex; }
+  .kgp-jobline:not([hidden]) { display: flex; }
+  .kgp-mskel:not([hidden]) { display: block; }
+}
+html.kgp-app .kgp-mtop { display: flex; }
+html.kgp-app .kgp-mtab { display: flex; }
+html.kgp-app .kgp-jobline:not([hidden]) { display: flex; }
+html.kgp-app .kgp-mskel:not([hidden]) { display: block; }
+/* 앱·설치형(standalone) 안에선 웹 전용 안내(「데스크톱 →」·「홈 화면에 추가」·「BETA」·「풀기능은 데스크톱에서」)를 숨긴다 */
+html.kgp-app .kgp-web-only { display: none !important; }
+@media (display-mode: standalone) { .kgp-web-only { display: none !important; } }
+
+.kgp-mtop {
+  position: sticky; top: 0; z-index: 1035; align-items: center; gap: var(--space-2);
+  min-height: calc(48px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) var(--space-2) 0;
+  background: var(--ink); color: var(--cream);
+  border-bottom: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+}
+.kgp-mtop-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  background: transparent; border: 0; color: var(--cream); font-size: 1.35rem; text-decoration: none; border-radius: var(--radius); flex: none; }
+.kgp-mtop-btn:active { background: color-mix(in srgb, var(--cream) 10%, transparent); }
+.kgp-mtop-mark { width: 26px; height: 26px; margin: 0 var(--space-2); flex: none; border-radius: 7px;
+  background: url("/seller/static/favicon.svg?v=183") center / cover no-repeat; }
+.kgp-mtop-title { flex: 1; min-width: 0; margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--cream); letter-spacing: -.01em; }
+.kgp-mtop-right { display: inline-flex; align-items: center; min-width: 44px; justify-content: flex-end; }
+.kgp-mtop-right a, .kgp-mtop-right button { color: var(--cream); }
+
+.kgp-mtab {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1035;
+  padding: 4px var(--space-1) calc(4px + env(safe-area-inset-bottom, 0px));
+  background: var(--ink); border-top: 1px solid color-mix(in srgb, var(--gold) 26%, transparent);
+}
+.kgp-mtab-item { flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: color-mix(in srgb, var(--cream) 62%, transparent); text-decoration: none; font-size: .74rem; font-weight: 600; border-radius: var(--radius); }
+.kgp-mtab-item i { font-size: 1.3rem; line-height: 1; }
+.kgp-mtab-item.active { color: var(--gold); }
+.kgp-mtab-item:active { background: color-mix(in srgb, var(--cream) 8%, transparent); }
+
+.kgp-jobline { position: fixed; left: var(--space-3); right: var(--space-3); z-index: 1036; align-items: center; gap: var(--space-2);
+  bottom: calc(66px + env(safe-area-inset-bottom, 0px)); padding: var(--space-2) var(--space-3); border-radius: var(--radius-pill);
+  background: var(--ink-2); color: var(--cream); font-size: .92rem; box-shadow: var(--shadow); }
+.kgp-jobline-dot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--gold); flex: none; animation: kgp-pulse 1.2s ease-in-out infinite; }
+.kgp-jobline.ok .kgp-jobline-dot { background: var(--teal); animation: none; }
+.kgp-jobline.bad .kgp-jobline-dot { background: var(--danger); animation: none; }
+@keyframes kgp-pulse { 50% { opacity: .35; } }
+
+.kgp-mskel { position: fixed; z-index: 1034; left: 0; right: 0; top: calc(48px + env(safe-area-inset-top, 0px));
+  bottom: calc(60px + env(safe-area-inset-bottom, 0px)); padding: var(--space-4); background: var(--bg, var(--cream)); }
+.kgp-mskel div { height: 72px; margin-bottom: var(--space-3); border-radius: var(--radius);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ink) 6%, transparent) 25%, color-mix(in srgb, var(--ink) 11%, transparent) 50%, color-mix(in srgb, var(--ink) 6%, transparent) 75%);
+  background-size: 200% 100%; animation: kgp-shimmer 1.1s linear infinite; }
+@keyframes kgp-shimmer { to { background-position: -200% 0; } }
+
+.kgp-ptr { position: fixed; left: 50%; top: calc(52px + env(safe-area-inset-top, 0px)); z-index: 1036; width: 36px; height: 36px;
+  border-radius: var(--radius-pill); display: flex; align-items: center; justify-content: center; transform: translate(-50%, -48px);
+  background: var(--surface, var(--cream)); color: var(--ink); box-shadow: var(--shadow); transition: transform .15s ease, opacity .15s ease; pointer-events: none; opacity: 0; }
+.kgp-ptr.ready { color: var(--teal); }
+.kgp-ptr.spin i { animation: kgp-spin .8s linear infinite; }
+@keyframes kgp-spin { to { transform: rotate(360deg); } }
+
+/* 셸이 보이는 폭·앱: 본문이 탭바 밑에 깔리지 않게 · 화면 높이는 dvh · 고무줄 스크롤이 셸을 끌고 다니지 않게 · 입력 16px · 터치 44px */
+@media (max-width: 767.98px) {
+  body[data-mshell] { margin: 0; min-height: 100dvh; padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); overscroll-behavior-y: contain; }
+  input, select, textarea, .form-control, .form-select { font-size: 16px !important; }
+  .btn { min-height: 44px; }
+  .btn.btn-sm { min-height: 38px; }
+}
+html.kgp-app body[data-mshell] { margin: 0; min-height: 100dvh; padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); overscroll-behavior-y: contain; }
+html.kgp-app input, html.kgp-app select, html.kgp-app textarea { font-size: 16px !important; }
+@media (prefers-reduced-motion: reduce) {
+  .kgp-jobline-dot, .kgp-mskel div, .kgp-ptr.spin i { animation: none; }
+}
+/* 셸이 뼈대인 폭·앱에선 PC 상단 내비를 숨긴다(_base_app의 /seller/* 화면) */
+@media (max-width: 767.98px) { .kgp-pc-only { display: none !important; } }
+html.kgp-app .kgp-pc-only { display: none !important; }
+/* 폰·앱에선 PC 사이드바(옛 바텀시트)를 아예 그리지 않는다 — 「더보기」는 /seller/m?tab=more 화면. 화면 밖에 걸려 있던 393px 시트가
+   390px에서 가로 스크롤 2px을 만들었다(오너 11-23 390 실측). */
+@media (max-width: 767.98px) { body[data-mshell] #sidebarDrawer { display: none !important; } }
+html.kgp-app body[data-mshell] #sidebarDrawer { display: none !important; }
+/* 아래에 붙는 토스트 상자는 탭바 위로(390 실측: 주문 화면 토스트 상자가 「더보기」 탭을 덮었다) */
+@media (max-width: 767.98px) { body[data-mshell] .toast-container.bottom-0, body[data-mshell] .pc-toast-stack.bottom-0 { bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important; } }
+html.kgp-app body[data-mshell] .toast-container.bottom-0, body[data-mshell] .pc-toast-stack.bottom-0 { bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important; }

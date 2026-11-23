@@ -28,11 +28,13 @@ def _clear():
 
 def test_mobile_home_renders_tabs(client):
     html = client.get("/seller/m").get_data(as_text=True)
-    assert "고가브릿지" in html and "BETA" in html
-    # 하단 3탭(수집/주문/더보기)
+    assert "BETA" in html and 'class="m-beta kgp-web-only"' in html      # 오너 11-23: 앱·설치형 안에선 숨김
+    # 오너 11-23: 공용 셸 하단 4탭(수집·목록·주문·더보기) — 칸은 ?tab= 으로 서버가 고른다
+    for href in ("/seller/m", "/seller/collect/history", "/seller/orders", "/seller/m?tab=more"):
+        assert f'href="{href}"' in html
     assert 'data-pane="collect"' in html
-    assert 'data-pane="orders"' in html
-    assert 'data-pane="more"' in html
+    assert 'data-pane="orders"' in client.get("/seller/m?tab=orders").get_data(as_text=True)
+    assert 'data-pane="more"' in client.get("/seller/m?tab=more").get_data(as_text=True)
     # 수집 폼은 기존 quick 수집 경로로
     assert 'action="/seller/collect/quick"' in html
 
@@ -58,5 +60,5 @@ def test_mobile_home_orders_kpi_real(client):
     with patch("src.seller_console.orders.sync_service.OrderSyncService") as MockSvc:
         MockSvc.return_value.kpi_summary.return_value = fake
         MockSvc.return_value.list_orders.return_value = []
-        html = client.get("/seller/m").get_data(as_text=True)
+        html = client.get("/seller/m?tab=orders").get_data(as_text=True)
     assert ">4<" in html and ">9<" in html

@@ -62,6 +62,9 @@ _LEAN_EXTRA = (
     "'attn', extra_json->'attn',"
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
     "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END,"
+    # 오너 11-23(목록 썸네일 빈 상자): 우리 저장본(Cloudinary) 첫 장 — 원본 CDN(알리 등)이 막혀도 목록 사진은 우리 것으로.
+    "'images_stored', CASE WHEN jsonb_typeof(extra_json->'images_stored')='array' AND jsonb_array_length(extra_json->'images_stored')>0 "
+    "THEN jsonb_build_array(extra_json->'images_stored'->0) ELSE '[]'::jsonb END,"
     # lean은 이미지를 **첫 장만** 싣는다 → 개수를 세면 늘 1이다. 실제 장수는 SQL이 세서 보낸다.
     "'images_count', CASE WHEN jsonb_typeof(extra_json->'images')='array' "
     "THEN jsonb_array_length(extra_json->'images') ELSE 0 END"
