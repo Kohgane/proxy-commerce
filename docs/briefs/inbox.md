@@ -240,3 +240,14 @@ a3a35e92 쿠팡은 감독이 「그래도 등록」으로 큐에 넣었다(쿠�
 - `/lane` 카드 3장(로드·오션·레일), 쿠키 값 `rail` 허용, `default_lane_for` 불변. 레인별 악센트 토큰 셋.
 - 계약: 레인 3 · 기존 import/export 동작 불변 · rail 수집 1건이 번역 없이 사전검증까지 가는 e2e.
 순서: 사이드바·탑바(1) → 레인 3(쿠키·카드) → 대시보드(2) → 목록(3) → 모바일(4). H-rep2는 이 뒤로.
+
+
+## 2026-11-23 · 아이폰 앱(TestFlight) 패스키 연결 — apple-app-site-association (채팅 → CC)
+배경: 고가브릿지 아이폰 앱(번들 org.kohgane.gogabridj, 팀 J6TH5PRA9L)이 TestFlight에 올라갔음. 앱 안(WKWebView)에서 「패스키로 로그인」을 누르면
+"The request is not allowed by the user agent or the platform in the current context" 오류. 앱에는 associated-domains `webcredentials:kohganepercentiii.com` 을 넣어 다시 빌드 중.
+사이트 쪽 할 일(이것만):
+1. `GET https://kohganepercentiii.com/.well-known/apple-app-site-association` → 200, `Content-Type: application/json`, 리다이렉트 없이, 로그인 없이, 본문:
+   `{"webcredentials":{"apps":["J6TH5PRA9L.org.kohgane.gogabridj"]}}`
+2. WebAuthn rp.id 가 `kohganepercentiii.com` 인지 확인(서브도메인·www 아님).
+3. 회귀 없음 확인 후 배포. 확인: `curl -sI https://kohganepercentiii.com/.well-known/apple-app-site-association` 가 200 + json.
+참고: 애플 CDN이 캐시하므로 배포 후 앱을 지웠다 다시 깔면 동작. 앱 쪽은 채팅이 처리함.
