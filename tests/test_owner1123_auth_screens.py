@@ -120,7 +120,7 @@ def test_all_auth_templates_share_the_dark_vault():
         assert "<style>" not in src, p.name                                     # 스타일은 app.css 한 곳
         assert "🛒" not in src and "📧" not in src and "🔑" not in src, p.name
     css = Path("src/static/app.css").read_text(encoding="utf-8")
-    for sel in (".auth-page {", ".auth-panel {", ".auth-panel .text-muted", ".divider {"):
+    for sel in (".auth-page {", ".auth-panel {", ".auth-panel .text-muted", ".auth-panel .divider {"):
         assert sel in css
     assert re.search(r"--auth-muted:\s*#b7a98c", css)
 
@@ -145,3 +145,12 @@ def test_auth_muted_contrast_meets_aa():
 def test_landing_hero_breaks_by_word():
     src = Path("src/templates/landing.html").read_text(encoding="utf-8")
     assert ".hero h1, .hero .sub { word-break: keep-all;" in src
+
+
+def test_auth_css_is_scoped_and_does_not_leak():
+    """landing.html에도 `class="divider"`가 있다 — auth 블록의 공용 이름(divider·social-btn)은 .auth-panel 안에만."""
+    css = Path("src/static/app.css").read_text(encoding="utf-8")
+    block = css[css.index("/* ── 감독 11-23: /auth/*"):]
+    for line in block.splitlines():
+        if line.lstrip().startswith((".divider", ".social-btn")):
+            pytest.fail("범위 없는 auth 규칙: " + line)
