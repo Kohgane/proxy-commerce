@@ -80,6 +80,9 @@ def test_public_templates_use_cache_busted_favicon_links():
     ]
     for path in targets:
         text = path.read_text(encoding="utf-8")
+        # 감독 11-23: /auth/* 머리(아이콘·테마색)는 공용 `auth/_auth_head.html` 한 곳 — include하는 화면은 그 머리를 본다
+        if '{% include "auth/_auth_head.html" %}' in text:
+            text += Path("src/auth/templates/auth/_auth_head.html").read_text(encoding="utf-8")
         assert "favicon.svg?v=183" in text
         assert "favicon.ico?v=183" in text
         assert "apple-touch-icon.png?v=183" in text

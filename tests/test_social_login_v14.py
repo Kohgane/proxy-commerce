@@ -38,6 +38,9 @@ def test_apple_in_provider_registry():
 
 def test_login_page_has_four_social():
     html = Path("src/auth/templates/auth/login.html").read_text(encoding="utf-8")
+    # 감독 11-23: 소셜 버튼은 login·signup 공용 매크로(auth/_auth_macros.html)로 옮겼다 — login이 그 매크로를 부른다
+    assert "am.social_buttons(" in html
+    html += Path("src/auth/templates/auth/_auth_macros.html").read_text(encoding="utf-8")
     assert "/auth/google/start" in html
     assert "/auth/naver/start" in html
     assert "/auth/kakao/start" in html
