@@ -1195,6 +1195,12 @@ def apply_enrich(item_id: str, ids: set, seller_id_val: str, data: dict) -> tupl
             _df.maybe_queue(item_id, extra)
         except Exception as exc:                                    # noqa: BLE001
             logger.warning("[enrich] 치수 수집 줄 실패 item=%s: %s", item_id, exc)
+    if ok and changed.get("enrich_state"):
+        try:                                                        # 앱 v1.1: 사진까지 채워졌으면 폰에 알린다(키·기기 없으면 조용히)
+            from src.notifications.apns import notify as _push
+            _push(seller_id_val, "사진까지 담았어요", str(item.get("title") or "")[:60], f"/seller/m/item/{item_id}")
+        except Exception:                                           # noqa: BLE001
+            pass
     st = extra.get("collect_status") or {}
     # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
     logger.info("[enrich] item=%s changed=%s status=%s rep=%s", item_id, changed, st.get("status"), bool(rep))

@@ -107,17 +107,17 @@ final class ShareViewController: UIViewController {
             }
             if code >= 400 { return self.show("담지 못했어요 (\(code))", sub: "잠시 뒤 다시 공유해 주세요.", ok: false) }
             // JSON 이면 상품 정보를, 아니면(HTML 결과 화면) 담김으로만 본다
-            var name = "담았어요", sub = "수집 목록에 들어갔어요", img: String?
+            var name = "담았어요", sub = "수집 목록에 들어갔어요", img: String?, okFlag = true
             if let d = data, let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
                 let obj = (j["item"] as? [String: Any]) ?? j
                 if let t = obj["title"] as? String, !t.isEmpty { sub = t }
                 img = (obj["thumb"] ?? obj["thumbnail"] ?? obj["image"]) as? String
                 if let p = (obj["path"] ?? obj["url"]) as? String, p.hasPrefix("/") { self.openPath = p }
                 else if let id = obj["item_id"] ?? obj["id"] ?? obj["iid"] { self.openPath = "/seller/m/item/\(id)" }
-                if (j["ok"] as? Bool) == false { name = (j["error"] as? String) ?? "담지 못했어요" }
+                if (j["ok"] as? Bool) == false { name = "담지 못했어요"; sub = (j["error"] as? String) ?? "잠시 뒤 다시 공유해 주세요."; okFlag = false }
                 if (j["dup"] as? Bool) == true || (j["state"] as? String) == "dup" { name = "이미 담은 상품이에요" }
             } else if let u = resp?.url, u.path.hasPrefix("/seller/") { self.openPath = u.path }
-            self.show(name, sub: sub, ok: name != "담지 못했어요")
+            self.show(name, sub: sub, ok: okFlag)
             if let s = img, let iu = URL(string: s, relativeTo: KG.base) {
                 URLSession.shared.dataTask(with: iu.absoluteURL) { d, _, _ in
                     if let d = d, let im = UIImage(data: d) { DispatchQueue.main.async { self.thumb.image = im } }
