@@ -913,6 +913,28 @@ class CoupangUploader(BaseUploader):
                 saved = str((product or {}).get('category_id', '') or '') if isinstance(product, dict) else ''
                 return saved, ('saved' if saved else ''), f'쿠팡 예측이 「{_path or _leaf}」인데 상품명에 책 낱말이 없어요'
         if cid:
+            # ISBN1123(오너 11-23 「카테고리를 애초에 왜 잘못 설정하냐」): 영어 상품명이면 예측이 외국도서 리프(「Fashion & Accessories」
+            #   「General」 — 경로가 「도서」로 안 잡혀 위 거름을 지나감)로 간다 → ISBN 필수라 승인 뒤 상세·옵션 저장이 막히고 카테고리는
+            #   PUT 으로 못 바꾼다. 메타에 ISBN 필수인데 상품명에 책 낱말이 없으면 한글 상품명으로 다시 묻고, 그래도면 쓰지 않는다.
+            if self.requires_isbn(cid) and not self._is_book_title(title):
+                alt = ''
+                if isinstance(product, dict):
+                    for k in ('title_ko', 'coupang_name', 'name_ko'):
+                        v = strip_gift(str(product.get(k) or '')).strip()
+                        if v and v != title:
+                            alt = v
+                            break
+                cid2 = self.predict_category(alt) if alt else ''
+                if cid2 and not self.requires_isbn(cid2):
+                    logger.warning('쿠팡 카테고리 예측 %s 은 ISBN 필수(책 아님) — 한글 상품명으로 다시 물어 %s', cid, cid2)
+                    cid = cid2
+                else:
+                    logger.warning('쿠팡 카테고리 예측 %s 은 ISBN 필수인데 상품명에 책 낱말이 없음 — 쓰지 않음', cid)
+                    saved = str((product or {}).get('category_id', '') or '') if isinstance(product, dict) else ''
+                    if saved and self.requires_isbn(saved):
+                        saved = ''
+                    return saved, ('saved' if saved else ''), f'쿠팡 예측 카테고리 {cid} 은 ISBN 필수(도서)인데 상품명에 책 낱말이 없어요'
+        if cid:
             # Y11O-1(오너): 상품명 리클라이너·라운지·안락·오토만 + 의자류 예측 → 안락의자(되돌리면 규칙 끔)
             from src.uploaders.category_rules import coupang_fix
             fx = coupang_fix(product if isinstance(product, dict) else {}, cid)
@@ -924,6 +946,22 @@ class CoupangUploader(BaseUploader):
         why = str((self._predict_cache.get((title.strip(), '')) or {}).get('why') or '예측 없음')
         saved = str((product or {}).get('category_id', '') or '') if isinstance(product, dict) else ''
         return saved, ('saved' if saved else ''), why
+
+    @staticmethod
+    def _is_book_title(title: str) -> bool:
+        from src.uploaders.naver_categories import _BOOK_SIGNAL
+        return bool(_BOOK_SIGNAL.search(str(title or '')))
+
+    def requires_isbn(self, code) -> bool:
+        """ISBN1123 — 그 카테고리 메타에 ISBN 이 필수(MANDATORY) 속성으로 있으면 참(도서 리프). 메타를 못 읽으면 거짓(막지 않음)."""
+        try:
+            meta = self.get_category_meta(str(code or '')) or {}
+        except Exception:
+            return False
+        for a in meta.get('attributes') or []:
+            if 'ISBN' in str((a or {}).get('attributeTypeName') or '').upper() and str((a or {}).get('required') or '').upper() == 'MANDATORY':
+                return True
+        return False
 
     def predict_category(self, product_name: str, description: str = '') -> str:
         """쿠팡 카테고리 예측 API로 상품명 → **실 카테고리ID**(리프). 실패/미지원 시 '' (폴백 CATEGORY_MAP)."""
