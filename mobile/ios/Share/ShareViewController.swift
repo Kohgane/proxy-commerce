@@ -131,9 +131,15 @@ final class ShareViewController: UIViewController {
         guard !openB.isHidden else { return }
         var c = URLComponents(); c.scheme = KG.scheme; c.host = "open"; c.queryItems = [URLQueryItem(name: "path", value: openPath)]
         if let u = c.url {
+            // 확장에선 UIApplication.open 을 직접 못 부른다 → 응답 사슬에서 앱 객체를 찾아 런타임으로 부른다
+            let sel = NSSelectorFromString("openURL:options:completionHandler:")
             var r: UIResponder? = self
             while let x = r {
-                if let app = x as? UIApplication { app.open(u, options: [:], completionHandler: nil); break }
+                if x.responds(to: sel), let imp = x.method(for: sel) {
+                    typealias OpenFn = @convention(c) (AnyObject, Selector, NSURL, NSDictionary, AnyObject?) -> Void
+                    unsafeBitCast(imp, to: OpenFn.self)(x, sel, u as NSURL, NSDictionary(), nil)
+                    break
+                }
                 r = x.next
             }
         }

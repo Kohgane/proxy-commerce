@@ -77,4 +77,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.kohgane.gogabridj.share
-        APPLICATION_EXTENSION_API_ONLY: "NO"
+        APPLICATION_EXTENSION_API_ONLY: "YES"
