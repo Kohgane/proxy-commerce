@@ -1668,10 +1668,16 @@ def well_known_assetlinks():
 
 @app.get('/.well-known/apple-app-site-association')
 def well_known_aasa():
-    """iOS(고가브릿지 App Store 앱) Universal Links 연동(apple-app-site-association). 확장자 없음·application/json."""
+    """iOS(고가브릿지 App Store 앱) Universal Links 연동(apple-app-site-association). 확장자 없음·application/json.
+
+    감독 11-23(TestFlight): 앱 WKWebView의 「패스키로 로그인」은 associated-domains `webcredentials:` 가 이 파일의
+    `webcredentials.apps`에 앱 ID가 있어야 허용된다(없으면 "not allowed by the user agent or the platform").
+    applinks는 그대로. IOS_APP_ID 미설정이면 둘 다 빈 목록(가짜 연동 금지).
+    """
     app_id = os.getenv("IOS_APP_ID", "").strip()
     details = [{"appID": app_id, "paths": ["/seller/*", "/auth/*"]}] if app_id else []
-    payload = {"applinks": {"apps": [], "details": details}}
+    payload = {"applinks": {"apps": [], "details": details},
+               "webcredentials": {"apps": [app_id] if app_id else []}}
     return jsonify(payload)
 
 

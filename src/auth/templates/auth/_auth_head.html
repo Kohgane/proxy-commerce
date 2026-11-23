@@ -1,0 +1,11 @@
+{# 감독 11-23 — /auth/* 공용 머리: 아이콘·테마색·스타일(먹색 vault는 app.css auth 블록 한 곳). #}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=183">
+  <link rel="icon" type="image/x-icon" href="/seller/static/favicon.ico?v=183">
+  <link rel="apple-touch-icon" href="/seller/static/apple-touch-icon.png?v=183">
+  <link rel="manifest" href="/seller/static/manifest.webmanifest?v=183">
+  <meta name="theme-color" content="#1a1714">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">

@@ -76,5 +76,7 @@ def test_google_oauth_still_present():
     # 구글 OAuth(병행) 보존
     op = Path("src/auth/oauth_provider.py").read_text(encoding="utf-8")
     assert "'google'" in op and "accounts.google.com" in op
+    # 감독 11-23: 소셜 버튼은 login·signup 공용 매크로(_auth_macros.html)로 옮겼다 — login이 그 매크로를 부른다.
     login = Path("src/auth/templates/auth/login.html").read_text(encoding="utf-8")
-    assert "/auth/google/start" in login
+    macros = Path("src/auth/templates/auth/_auth_macros.html").read_text(encoding="utf-8")
+    assert "am.social_buttons(" in login and "/auth/google/start" in macros

@@ -35,6 +35,8 @@
     border: 1px solid color-mix(in srgb, var(--gold-bright) 30%, transparent); background: color-mix(in srgb, var(--gold-bright) 6%, transparent); padding: 7px 16px; border-radius: var(--radius-pill); }
   .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
   .hero h1 { font-size: clamp(42px, 6.6vw, 82px); line-height: 1.02; letter-spacing: -.04em; margin: 26px 0 0; font-weight: 900; color: #fff; }
+  /* 감독 11-23: 390px에서 「판매까/지.」로 끊겼다 — 한국어는 어절 단위로만 줄바꿈(keep-all), 아주 긴 한 단어만 예외로 접는다. */
+  .hero h1, .hero .sub { word-break: keep-all; overflow-wrap: break-word; }
   .hero h1 .g { color: var(--gold-bright); }
   .hero h1 .t { color: var(--teal-bright); }
   .hero .sub { font-size: clamp(17px, 2vw, 21px); color: color-mix(in srgb, var(--cream-on-dark) 80%, transparent); max-width: 600px; margin: 22px auto 0; }

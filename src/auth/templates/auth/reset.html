@@ -1,25 +1,15 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% include "auth/_auth_head.html" %}
   <title>비밀번호 재설정 — 고가브릿지</title>
-  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=183">
-  <link rel="icon" type="image/x-icon" href="/seller/static/favicon.ico?v=183">
-  <link rel="apple-touch-icon" href="/seller/static/apple-touch-icon.png?v=183">
-  <link rel="manifest" href="/seller/static/manifest.webmanifest?v=183">
-  <meta name="theme-color" content="#020010">
-  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
-  <style>
-    body { background: #f5f7fa; }
-    .auth-card { max-width: 420px; margin: 80px auto; }
-  </style>
 </head>
-<body>
+{% import "auth/_auth_macros.html" as am %}
+<body class="auth-page">
 <div class="auth-card">
-  <div class="card shadow-sm border-0">
+  <div class="card auth-panel border-0">
     <div class="card-body p-4">
-      <h5 class="fw-bold mb-3">🔑 비밀번호 재설정</h5>
+      {{ am.brand('비밀번호 재설정') }}
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat, msg in messages %}
@@ -30,17 +20,17 @@
       <form method="post" action="/auth/reset">
         <input type="hidden" name="token" value="{{ token }}">
         <div class="mb-3">
-          <label class="form-label small">새 비밀번호 (8자 이상)</label>
-          <input type="password" name="password" class="form-control" required minlength="8">
+          <label class="form-label small" for="reset-password">새 비밀번호 (8자 이상)</label>
+          <input id="reset-password" type="password" name="password" class="form-control" required minlength="8" autocomplete="new-password">
         </div>
         <div class="mb-3">
-          <label class="form-label small">비밀번호 확인</label>
-          <input type="password" name="confirm" class="form-control" required minlength="8">
+          <label class="form-label small" for="reset-confirm">비밀번호 확인</label>
+          <input id="reset-confirm" type="password" name="confirm" class="form-control" required minlength="8" autocomplete="new-password">
         </div>
         <button type="submit" class="btn btn-primary w-100">비밀번호 변경</button>
       </form>
-      <div class="text-center mt-3 small">
-        <a href="/auth/login">← 로그인으로 돌아가기</a>
+      <div class="auth-foot text-center mt-3 small">
+        <a href="/auth/login" class="text-decoration-none">← 로그인으로 돌아가기</a>
       </div>
     </div>
   </div>

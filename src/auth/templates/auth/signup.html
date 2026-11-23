@@ -1,29 +1,17 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% include "auth/_auth_head.html" %}
   <title>회원가입 — 고가브릿지</title>
-  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=183">
-  <link rel="icon" type="image/x-icon" href="/seller/static/favicon.ico?v=183">
-  <link rel="apple-touch-icon" href="/seller/static/apple-touch-icon.png?v=183">
-  <link rel="manifest" href="/seller/static/manifest.webmanifest?v=183">
-  <meta name="theme-color" content="#020010">
-  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
-  <style>
-    body { background: #f5f7fa; }
-    .auth-card { max-width: 420px; margin: 80px auto; }
-    .social-btn { font-size: 1rem; padding: 0.6rem 1.2rem; }
-    .divider { display: flex; align-items: center; gap: 12px; color: #aaa; margin: 1rem 0; }
-    .divider::before, .divider::after { content: ''; flex: 1; border-top: 1px solid #ddd; }
-  </style>
 </head>
-<body>
+{% import "auth/_auth_macros.html" as am %}
+{% set providers = [('kakao', kakao_status, '카카오'), ('google', google_status, 'Google'), ('naver', naver_status, '네이버')] %}
+{% set any_social = kakao_status.is_configured or google_status.is_configured or naver_status.is_configured %}
+<body class="auth-page">
 <div class="auth-card">
-  <div class="card shadow-sm border-0">
+  <div class="card auth-panel border-0">
     <div class="card-body p-4">
-      <h4 class="fw-bold text-center mb-1">🛒 고가브릿지</h4>
-      <p class="text-center text-muted small mb-4">셀러 콘솔 회원가입</p>
+      {{ am.brand('셀러 콘솔 회원가입') }}
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat, msg in messages %}
@@ -36,42 +24,10 @@
       </div>
       {% endif %}
 
-      <!-- 소셜 가입 버튼 -->
-      {% if kakao_status.is_configured %}
-      <a href="/auth/kakao/start" class="btn w-100 social-btn mb-2"
-         style="background:#FEE500;color:#000;border:none;">
-        <img src="https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png"
-             height="20" class="me-2" alt="kakao">카카오로 가입
-      </a>
-      {% else %}
-      <button type="button" class="btn w-100 social-btn mb-1" style="background:#f0f0f0;color:#666;border:none;" disabled>
-        카카오 가입 (설정 필요)
-      </button>
-      <div class="small text-muted mb-2">{{ kakao_status.reason }} <a href="{{ kakao_status.setup_url }}">설정 경로</a></div>
-      {% endif %}
-      {% if google_status.is_configured %}
-      <a href="/auth/google/start" class="btn btn-outline-danger w-100 social-btn mb-2">
-        Google로 가입
-      </a>
-      {% else %}
-      <button type="button" class="btn btn-outline-secondary w-100 social-btn mb-1" disabled>
-        Google 가입 (설정 필요)
-      </button>
-      <div class="small text-muted mb-2">{{ google_status.reason }} <a href="{{ google_status.setup_url }}">설정 경로</a></div>
-      {% endif %}
-      {% if naver_status.is_configured %}
-      <a href="/auth/naver/start" class="btn w-100 social-btn mb-2"
-         style="background:#03C75A;color:#fff;border:none;">
-        <strong>N</strong>&nbsp;네이버로 가입
-      </a>
-      {% else %}
-      <button type="button" class="btn w-100 social-btn mb-1" style="background:#eaf8ef;color:#666;border:none;" disabled>
-        네이버 가입 (설정 필요)
-      </button>
-      <div class="small text-muted mb-2">{{ naver_status.reason }} <a href="{{ naver_status.setup_url }}">설정 경로</a></div>
-      {% endif %}
+      <!-- 소셜 가입 — 설정된 것만. 미설정은 아래 운영자 진단 안에서만(감독 11-23). -->
+      {{ am.social_buttons(providers, '가입') }}
 
-      {% if kakao_status.is_configured or google_status.is_configured or naver_status.is_configured %}
+      {% if any_social %}
       <div class="divider">또는 이메일로 가입</div>
       {% endif %}
 
@@ -79,26 +35,39 @@
       <form method="post" action="/auth/signup">
         <input type="hidden" name="next" value="{{ next_url or '' }}">
         <div class="mb-3">
-          <label class="form-label small">이름</label>
-          <input type="text" name="name" class="form-control" placeholder="홍길동" autocomplete="name" value="{{ auth_name_value or '' }}">
+          <label class="form-label small" for="signup-name">이름</label>
+          <input id="signup-name" type="text" name="name" class="form-control" placeholder="홍길동" autocomplete="name" value="{{ auth_name_value or '' }}">
         </div>
         <div class="mb-3">
-          <label class="form-label small">이메일</label>
-          <input type="email" name="email" class="form-control" placeholder="you@example.com" required autocomplete="email" value="{{ auth_email_value or '' }}">
+          <label class="form-label small" for="signup-email">이메일</label>
+          <input id="signup-email" type="email" name="email" class="form-control" placeholder="you@example.com" required autocomplete="email" value="{{ auth_email_value or '' }}">
         </div>
         <div class="mb-3">
-          <label class="form-label small">비밀번호 (8자 이상)</label>
-          <input type="password" name="password" class="form-control" placeholder="••••••••" required minlength="8" autocomplete="new-password">
+          <label class="form-label small" for="signup-password">비밀번호 (8자 이상)</label>
+          <input id="signup-password" type="password" name="password" class="form-control" placeholder="••••••••" required minlength="8" autocomplete="new-password">
         </div>
         <button type="submit" class="btn btn-primary w-100">이메일로 가입</button>
         <p class="small text-muted mt-2 mb-0">가입하면 바로 로그인됩니다.</p>
       </form>
 
-      <div class="text-center mt-3 small">
+      <div class="auth-foot text-center mt-3 small">
         <a href="/auth/login{% if next_url and next_url != '/seller/dashboard' %}?next={{ next_url|urlencode }}{% endif %}" class="text-decoration-none">이미 계정이 있으신가요? 로그인</a>
       </div>
+
+      {% if oauth_runtime %}
+      <details class="auth-diag mt-3 pt-3">
+        <summary class="text-muted small" style="cursor:pointer;"><i class="bi bi-wrench-adjustable me-1" aria-hidden="true"></i>소셜 가입 설정 상태 (운영자용)</summary>
+        <div class="mt-2 small text-muted">
+          {{ am.unconfigured_social(providers, '가입') }}
+          <p class="mb-0 mt-1">콜백 URI·Client ID는 <a href="/auth/login?diag=1">로그인 진단</a>에서 확인하세요.</p>
+        </div>
+      </details>
+      {% endif %}
     </div>
   </div>
+  <p class="auth-foot text-center small mt-3">
+    <a href="/" class="text-decoration-none">← 메인으로</a>
+  </p>
 </div>
 </body>
 </html>
