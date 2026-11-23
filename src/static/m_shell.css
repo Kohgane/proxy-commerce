@@ -91,3 +91,6 @@ html.kgp-app body[data-mshell] #sidebarDrawer { display: none !important; }
 /* 아래에 붙는 토스트 상자는 탭바 위로(390 실측: 주문 화면 토스트 상자가 「더보기」 탭을 덮었다) */
 @media (max-width: 767.98px) { body[data-mshell] .toast-container.bottom-0, body[data-mshell] .pc-toast-stack.bottom-0 { bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important; } }
 html.kgp-app body[data-mshell] .toast-container.bottom-0, body[data-mshell] .pc-toast-stack.bottom-0 { bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important; }
+/* 오너 11-23 B: M5 실패 줄의 「원문」(영어 원문·예외 코드)은 접어 둔다 — 본문은 한국어 사유 */
+.m5-raw { margin-top: 4px; font-size: var(--caption); color: var(--text-muted); word-break: break-all; }
+.m5-raw summary { cursor: pointer; }

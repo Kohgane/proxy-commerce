@@ -30,11 +30,21 @@
           return {ok: false, error: (r.status >= 500 ? '서버 오류·시간 초과' : '응답을 읽지 못했어요') + ' (HTTP ' + r.status + ')'};
         } }); });
   }
+  // 오너 11-23 B(같은 유형): 판정 못 함 사유에 붙은 파이썬 예외 이름(`(URLError)` 등)은 사람 글이 아니다 —
+  //   보이는 글에선 빼고(HTTP 상태는 남김), 원문은 title(길게 누르기·마우스)에 둔다.
+  function cpxWhy(s) {
+    var t = String(s || '');
+    var v = t.replace(/\s*\(([A-Za-z_.]*(?:Error|Exception|Timeout|Refused)[A-Za-z_]*)(?:\s*·\s*(HTTP \d{3}))?\)/g,
+                      function (_m, _e, h) { return h ? ' (' + h + ')' : ''; });
+    return {text: v.trim() || t, raw: v === t ? '' : t};
+  }
   function checkLines(c) {
     // Y6-C B: 대표 사진 판정(내려받기·OCR)은 요청 밖에서 돈다 — 재는 동안은 카드·사진 줄을 먼저 보여 주고 3초마다 묻는다.
     if (c && c.state === 'pending') return '<li class="cpx-ck is-unk" data-role="cpx-check-pending">대표 사진을 재는 중이에요(글자·크기 판정) — 나머지는 그대로 보셔도 돼요</li>';
     if (c && c.partial) return '<li class="cpx-ck is-unk" data-role="cpx-check-partial"><span class="pc-badge pc-badge-off">일부 생략</span> ' + esc(c.why) + '</li>';
-    if (!c || c.state !== 'ok') return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown">판정 못 함 — ' + esc((c && c.why) || '이미지를 읽지 못했어요') + '</li>';
+    if (!c || c.state !== 'ok') { var _w = cpxWhy((c && c.why) || '이미지를 읽지 못했어요');
+      return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown"' + (_w.raw ? ' title="' + esc(_w.raw) + '"' : '') +
+             '>판정 못 함 — ' + esc(_w.text) + '</li>'; }
     var out = [];
     out.push('<li class="cpx-ck ' + (c.small ? 'is-bad' : 'is-ok') + '" data-role="cpx-check-size">' +
              (c.small ? '반려 예상 — 500px 미만(' : '크기 ') + c.w + '×' + c.h + 'px' + (c.small ? ')' : ' · 500px 이상') + '</li>');

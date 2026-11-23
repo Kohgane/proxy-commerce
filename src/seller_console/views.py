@@ -1727,6 +1727,12 @@ def collect_quick():
     url = parse_share_text(_raw).get("url", "")
 
     res = _quick_collect(url, source="bookmarklet", share_raw=_raw)
+    # 오너 11-23 B: 폰 수집 탭은 같은 화면에서 진행을 보이고 끝나면 그 상품 카드(M5)로 — JSON으로 받는다(북마클릿 화면은 그대로).
+    if request.args.get("fmt") == "json":
+        iid = res.get("item_id") or ""
+        return jsonify({"ok": bool(res["ok"]), "message": res.get("message") or "", "item_id": iid,
+                        "limit_reached": bool(res.get("limit_reached")),
+                        "next": (f"/seller/m/item/{iid}" if res["ok"] and iid else "")}), res["status"]
     # 북마클릿은 편집 페이지로 바로 안 보내고 '수집됨'만 표시(오너 결정, Phase 219).
     return render_template(
         "collect_quick_result.html", ok=res["ok"], message=res["message"],

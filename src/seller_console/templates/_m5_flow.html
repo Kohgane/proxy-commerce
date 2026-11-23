@@ -387,6 +387,37 @@
   var okMarkets = [];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  // 오너 11-23 B 「실패는 원문 사유 + 다음 행동 버튼 하나 — 영어 원문·코드만 덜렁 금지」: 보이는 글자만 바꾼다(판정·전송은 그대로).
+  //   아는 영어 조각은 한국어로, 예외 클래스 이름(URLError 등)은 빼고, 원문은 「원문」에 접어 둔다.
+  var KO_REASON = [
+    [/Missing Coupang API credentials/gi, '쿠팡 API 키가 연결돼 있지 않아요'],
+    [/Missing (?:Naver|SmartStore|Smartstore) API credentials/gi, '스마트스토어 API 키가 연결돼 있지 않아요'],
+    [/\bHTTP\s*401\b|\bUnauthorized\b/gi, '마켓이 인증을 거절했어요(키 확인)'],
+    [/\bHTTP\s*403\b|\bForbidden\b/gi, '마켓이 접근을 막았어요(허용 IP·권한 확인)'],
+    [/\bHTTP\s*429\b|\bToo Many Requests\b/gi, '마켓 요청 한도에 걸렸어요 — 잠시 뒤 다시'],
+    [/\bRead timed out\b|\btimed out\b/gi, '응답이 늦어 끊겼어요'],
+  ];
+  function humanReason(t) {
+    var raw = String(t == null ? '' : t), s = raw;
+    KO_REASON.forEach(function (p) { s = s.replace(p[0], p[1]); });
+    s = s.replace(/\(\s*[A-Z][A-Za-z]*(?:Error|Exception)(?:\s*·\s*HTTP\s*\d+)?\s*\)/g, '')
+         .replace(/\b[A-Z][A-Za-z]*(?:Error|Exception)\b:?/g, '').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+    var latin = (s.match(/[A-Za-z]/g) || []).length, hangul = (s.match(/[가-힣]/g) || []).length;
+    if (s && latin > 12 && latin > hangul * 2) s = '마켓이 받아들이지 않았어요 — 아래 「원문」을 확인해 주세요';
+    return { text: s || (raw ? '' : ''), raw: raw && raw !== s ? raw : '' };
+  }
+  function reasonHtml(t) {
+    var h = humanReason(t);
+    return esc(h.text) + (h.raw ? '<details class="m5-raw" data-role="m5-raw"><summary>원문</summary>' + esc(h.raw) + '</details>' : '');
+  }
+  // 막힘·보류 줄에 고칠 버튼이 하나도 없으면 다음 행동 하나: 키 문제면 그 마켓 연동, 아니면 그 마켓만 다시 사전검증.
+  function nextAction(r) {
+    var all = [r.message, r.hint].concat(r.details || []).join(' ');
+    if (/credentials|API 키|키 사용 안 함|\bHTTP\s*401\b|Unauthorized|인증/i.test(all)) {
+      return '<div><a class="m5-fix" data-role="m5-next" href="/seller/markets/connect/' + esc(r.market) + '">마켓 키 연결하기 →</a></div>';
+    }
+    return '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 사전검증</button></div>';
+  }
   // Z10-C: 잡조차 못 띄운 줄(메모리 여유 없음 등)도 사람 이름으로 — 코드(「coupang:woojoo」)를 그대로 보이지 않는다
   function mkLabel(m) {
     var el = root.querySelector('label.m5-mk[data-market="' + m + '"] .m5-mk-body > span');
@@ -452,7 +483,7 @@
           '<div class="m5-cp-price" data-role="m5-cp-price">' + price + '</div>' + sel +
           '<div class="m5-cp-ship" data-role="m5-cp-ship">' + esc(d.shipping) + '</div>' + det +
           (notes.length ? '<ul class="m5-note m5-cp-notes">' +
-            notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>' : '');
+            notes.map(function (n) { return '<li>' + reasonHtml(n) + '</li>'; }).join('') + '</ul>' : '');   // 영어 원문은 「원문」에 접는다
       })
       .catch(function (e) { cpBody.textContent = '네트워크 오류 — ' + ((e && e.message) || e); });
   }
@@ -492,7 +523,7 @@
     }
     if (r.transport) {
       return '<div class="m5-res is-bad" data-market="' + esc(r.market) + '" data-ok="0" data-role="m5-transport" data-transport="' + esc(r.transport) + '">' +
-        '<b>' + esc(r.market_label) + ' — 검증 못 함</b>' + esc(r.message || '') +
+        '<b>' + esc(r.market_label) + ' — 검증 못 함</b>' + reasonHtml(r.message || '') +
         '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 시도</button> ' +
         '<button type="button" class="m5-fix" data-role="m5-uncheck-market" data-market="' + esc(r.market) + '">이 마켓 빼기</button></div></div>';
     }
@@ -505,8 +536,8 @@
     var h = '<div class="m5-res ' + (r.ok ? 'is-ok' : (r.hold ? 'is-hold' : 'is-bad')) + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '"' +
          (r.hold ? ' data-role="m5-hold"' : '') + '>' +
          '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
-         (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
-         ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+         (r.ok ? '' : reasonHtml(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + reasonHtml(r.hint) + '</div>' : '')) +
+         ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + reasonHtml(x) + '</li>'; }).join('') + '</ul>' : '') +
          // Y7-M: 「주의」 칩 — 보류 아님(등록 막지 않음)
          (r.cautions || []).map(function (x) { return '<div class="m5-note" data-role="m5-caution"><span class="pc-badge pc-badge-caution">주의</span> ' + esc(x) + '</div>'; }).join('') +
          catLine(r) +
@@ -535,6 +566,7 @@
          // Y7-O: 선주문(옵션 값 「2-3周发货」) — 오너 방침상 등록 버튼이 저절로 풀지 않는다(OVERRIDES 밖). 이 버튼만 푼다.
          (r.hold && (r.fixes || []).indexOf('lead_time') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-leadtime-override" data-override="lead-time-override" data-label="선주문 그래도 등록">선주문 그래도 등록</button></div>' : '');
+    if (!r.ok && h.indexOf('class="m5-fix"') < 0 && h.indexOf('data-role="m5-cat-pick"') < 0) h += nextAction(r);   // 오너 11-23: 다음 행동 하나
     return h + '</div>';
   }
   function autoFixHtml(a) {
@@ -619,7 +651,18 @@
     hint(n ? '' : (pvState === 'running' ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
       : (anyHold ? '보류된 마켓을 보강하거나 「그래도 등록」을 누르면 등록할 수 있어요.'
         : '통과한 마켓이 없어요 — 위 사유를 고친 뒤 다시 사전검증해 주세요.')));
+    // 오너 11-23 A: 잡 진행 한 줄(셸) — 사전검증 중·대기 · 끝나면 결과 한 마디(같은 상태는 다시 안 띄운다)
+    if (window.kgpJobLine && pvOrder.length) {
+      var line = pvState === 'running'
+        ? (pvQueue ? '사전검증 대기 — ' + pvQueue : '사전검증 중 — 마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳')
+        : (n ? '사전검증 끝 — 등록할 수 있는 마켓 ' + n + '곳' : '사전검증 끝 — 통과한 마켓이 없어요');
+      if (line !== pvJobLine) {
+        pvJobLine = line;
+        if (pvState === 'running') window.kgpJobLine.show(line); else if (n) window.kgpJobLine.done(line); else window.kgpJobLine.fail(line);
+      }
+    }
   }
+  var pvJobLine = '';
   var pvQueue = '';
   function pvPoll(jobNo, url) {
     if (jobNo !== pvJob) return;
@@ -760,6 +803,7 @@
     if (!targets.length) return;
     goBtn.disabled = true; checkBtn.disabled = true;
     doneEl.hidden = false; doneEl.innerHTML = '<div class="m5-note">등록하는 중… 쿠팡은 SKU마다 따로 올라가 조금 걸릴 수 있어요.</div>';
+    if (window.kgpJobLine) window.kgpJobLine.show('등록 중 — ' + targets.length + '곳');
     // 보류 중 「그래도 등록」으로 풀리는 마켓을 같이 올리면, 그 확인(사유 기록)을 먼저 남긴다 — 버튼 글자에 적어 둔 그대로.
     var fixes = {};
     held.forEach(function (m) { ((pvRows[m] || {}).fixes || []).forEach(function (f) { if (OVERRIDES[f]) fixes[f] = 1; }); });
@@ -785,7 +829,8 @@
       }
       if (!d.ok) {
         var bad = (d.unreachable || []).map(function (u) { return '<li>' + esc(u.label || u.url) + ' — ' + esc(u.reason || u.status) + '</li>'; }).join('');
-        doneEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-register-error">' + esc(d.error || '등록하지 못했어요') +
+        if (window.kgpJobLine) window.kgpJobLine.fail('등록하지 못했어요');
+        doneEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-register-error">' + reasonHtml(d.error || '등록하지 못했어요') +
           (d.message ? '<div class="m5-note">' + esc(d.message) + '</div>' : '') + (bad ? '<ul>' + bad + '</ul>' : '') + '</div>';
         goBtn.disabled = false; return;
       }
@@ -800,7 +845,7 @@
                 // M6: 등록한 마켓은 전부 「검토 상태 보기」 → 상태 팝업(마켓에 그때 묻는다 · statusName·반려 사유·Wing/판매자센터).
                 '<div><button type="button" class="m5-fix" data-role="m5-review-btn" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">마켓 상태</button>' +
                 (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>'
-              : esc(r.message || '') +
+              : reasonHtml(r.message || '') +
                 // Y7-F: 「사유 2건(아래)」면 아래에 그 사유를 한 줄씩(예전엔 문장만 있고 목록이 없었다)
                 ((r.details || []).length > 1 ? '<ul data-role="m5-result-details">' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
                 (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
@@ -812,6 +857,8 @@
       doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
       // 쿠팡은 결과 줄 옆에 마지막 상태 배지를 바로 채운다(팝업은 버튼이 연다 — _market_status.html 위임 클릭).
       if (doneEl.querySelector('[data-role=m5-review]')) reviewStatus(0);
+      var _ok = rs.filter(function (r) { return r.success; }).length;
+      if (window.kgpJobLine) { if (_ok) window.kgpJobLine.done('등록 끝 — ' + _ok + '곳 등록됨'); else window.kgpJobLine.fail('등록 끝 — 등록된 마켓이 없어요'); }
       if (rs.some(function (r) { return r.success; })) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; }
       else { goBtn.disabled = false; }
     });
