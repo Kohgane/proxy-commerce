@@ -14,7 +14,10 @@
 |---|---|
 | 셀러 콘솔 앱 셸: 시작 `/seller/m`, 배경·상태바 `#1a1714`, safe-area, 뒤로 스와이프, 당겨서 새로고침, 오프라인 화면, 바깥 링크는 시스템 브라우저 | `App/GogabridjApp.swift` |
 | 구글·카카오·네이버 로그인 = `ASWebAuthenticationSession` (웹뷰 차단 회피) | 같은 파일 `startOAuth` |
-| 공유 확장: 타오바오·사파리·쿠팡 → 「공유 → 고가브릿지」 → `/seller/collect/share` | `Share/ShareViewController.swift` |
+| 공유 확장: 타오바오·사파리·쿠팡 → 「공유 → 고가브릿지」 → `/seller/collect/share` · 「담았어요 ✓」 1초 뒤 자동 닫힘 | `Share/ShareViewController.swift` |
+| 끊기면 폰에 보관(키체인 `outbox`, 최대 50건) → 앱 열 때 자동 재전송 「보관해 둔 N개를 보냈어요」 | `Shared/Shared.swift` `Outbox` · `ShellModel.flushOutbox` |
+| 클립보드에 상품 링크 → 앱 열자마자 「이 상품 담을까요?」(먼저 링크인지만 감지, 내용은 「담기」 때 읽음) | `ShellModel.checkClipboard` |
+| 첫 실행 한 장: 타오바오 「更多」 → 아이폰 공유 목록 → 고가브릿지 그림 안내 | `TaobaoGuide` |
 | 본앱 ↔ 확장 로그인 공유(키체인 공유 그룹 `…org.kohgane.gogabridj.shared`) | `Shared/Shared.swift` |
 | 푸시(APNs) 토큰 등록, 알림 누르면 `path` 화면으로 | `AppDelegate` |
 | 패스키: `webcredentials:kohganepercentiii.com` | `project.yml` entitlements |

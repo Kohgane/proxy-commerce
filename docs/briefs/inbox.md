@@ -267,3 +267,10 @@ a3a35e92 쿠팡은 감독이 「그래도 등록」으로 큐에 넣었다(쿠�
 검수: 오너 실기기 ①타오바오 공유→담김 ②앱에서 그 상품 ③마켓 선택→사전검증→등록 직전.
 
 - 2026-11-23 22:1x [채팅] Render(kohganeProxxxxy_singapore) env 넣음(저장만, 재배포 안 함): APNS_KEY_P8(PEM 여러 줄 그대로) · APNS_KEY_ID · APNS_TEAM_ID=J6TH5PRA9L · APNS_TOPIC=org.kohgane.gogabridj · IOS_APP_ID=J6TH5PRA9L.org.kohgane.gogabridj — 다음 배포부터 적용. 위 서버 약속 4·5번에 그대로 쓰면 된다.
+
+
+## 2026-11-23 · 고가브릿지 아이폰 앱 v1.2 — 서버 쪽 확인 (채팅 → CC)
+앱 v1.2 가 /seller/collect/share 를 세 군데서 부른다: 공유 확장 · 앱 열 때 보관분 재전송 · 클립보드 「이 상품 담을까요?」. 같은 요청 형식(form text/url/title/src=ios-share, Accept json).
+- 같은 상품이 두 번 와도 되게 **중복이면 {"ok":true,"dup":true,…}** 로 답해 줄 것(재전송 때 생김).
+- 5xx 는 앱이 「보관 후 재전송」으로 처리한다. 4xx(401 제외)는 버린다 → 형식 오류만 4xx 로.
+- 푸시 이벤트 4종(수집 완료·사전검증 보류·등록 성공/실패·주문) 발송은 서버 몫 — APNs 키(.p8 5VPPQ65R9N)는 오너가 받았다.
