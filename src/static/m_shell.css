@@ -42,7 +42,7 @@ html.kgp-app .kgp-web-only { display: none !important; }
   background: var(--ink); border-top: 1px solid color-mix(in srgb, var(--gold) 26%, transparent);
 }
 .kgp-mtab-item { flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  color: color-mix(in srgb, var(--cream) 62%, transparent); text-decoration: none; font-size: .74rem; font-weight: 600; border-radius: var(--radius); }
+  color: color-mix(in srgb, var(--cream) 62%, transparent); text-decoration: none; font-size: var(--caption); font-weight: 600; border-radius: var(--radius); }
 .kgp-mtab-item i { font-size: 1.3rem; line-height: 1; }
 .kgp-mtab-item.active { color: var(--gold); }
 .kgp-mtab-item:active { background: color-mix(in srgb, var(--cream) 8%, transparent); }
