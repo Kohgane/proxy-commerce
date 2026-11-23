@@ -1436,3 +1436,14 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 - 캡처(390×844, 왼쪽 main · 오른쪽 PR1): `docs/screens/owner1123/pr1/lap-1-collect · lap-2-list · lap-3-item-tap · lap-4-m5-precheck`. 샌드박스는 외부 사진을 못 받아 1·2행은 실패 아이콘, 3행은 찍을 때 아직 받는 중이었다(빈 상자 = 로딩, 실패 아님).
 - 전체 스위트(PR1 워크트리, main 564c9ae 기준) **17007 passed · 54 skipped**. #1026(ISBN 카테고리) 위로 올린 조합은 CI가 다시 돈다.
 - 마켓 전송 로직·사전검증 판정 불변. 실기기 확인은 오너(TestFlight).
+
+## 2026-11-23 · 앱 v1.1 서버 약속 PR(공유 확장 「설정 0」의 전제) — CI 대기
+- 오너 「CC는 A·B·C만」으로 잠시 보류했다가, 공유 확장 보강 지시(설정 0)가 이 서버 입구 없이는 안 돌아서 재개.
+- **공유 JSON**: `POST /seller/collect/share` + `Accept: application/json`/`X-KG-Source: ios-share` → `{ok,item_id,title,thumb,path,dup}`. 세션 쿠키 또는 `Bearer` 개인 토큰. 미로그인 401 JSON. 수집 실패는 200+ok:false+사람 말 사유. 브라우저·단축어 길 불변.
+  - item_id 는 숫자가 아니라 문자열(우리 id 형식) — 앱은 `path`를 쓰므로 영향 없음.
+- **토큰**: `POST /api/app/token` → 공유용 토큰(이름 저장 칸은 표에 없어 응답에만 "iPhone 공유").
+- **앱 로그인**: `?app=1` → `gogabridj://auth?code=`(60초·1회) → `/auth/app/exchange` → 웹뷰 세션.
+- **APNs**: 기기 등록 + 발송(사진까지 담김·사전검증 보류·등록 성공/실패). 키 없으면 조용히 건너뜀. **주문 알림은 아직** — 주문 동기화가 새 주문/갱신을 가르지 않아 근거 없이 「새 주문」이라 할 수 없다.
+- 전체 스위트 중 실제 결함 1건 잡음: 토큰 신원을 `g`에 두면 바깥 앱 컨텍스트가 살아 있을 때 다음 요청으로 새어 **남의 신원으로 담길 수 있었다** → `request.environ`으로(회귀 계약 = 고치기 전 실패·후 통과).
+- 전체 스위트(main+PR1 위) **17034 passed · 54 skipped · exit 0** · 계약 22.
+- 화면 변경 없음(JSON 입구) — 캡처 대신 계약 테스트. 실기기(공유→담김)는 오너, 배포 뒤.
