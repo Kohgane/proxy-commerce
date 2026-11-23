@@ -1,28 +1,21 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Diagnostic Token 발급됨</title>
-  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=183">
-  <link rel="icon" type="image/x-icon" href="/seller/static/favicon.ico?v=183">
-  <link rel="apple-touch-icon" href="/seller/static/apple-touch-icon.png?v=183">
-  <link rel="manifest" href="/seller/static/manifest.webmanifest?v=183">
-  <meta name="theme-color" content="#020010">
-  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
+  {% include "auth/_auth_head.html" %}
+  <title>비상 진입 링크 발급됨 — 고가브릿지</title>
 </head>
-<body class="bg-light">
-<main class="container py-5" style="max-width:900px;">
+<body class="auth-page">
+<main class="auth-card auth-card-wide">
   {% if env.get('DIAGNOSTIC_REVEAL') == '1' %}
   <div class="alert alert-warning">
-    ⚠️ <b>비상 진입 모드 ON</b> — 운영 안정화 완료 시
+    <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i><b>비상 진입 모드 ON</b> — 운영 안정화 완료 시
     <code>DIAGNOSTIC_REVEAL=0</code>으로 되돌리는 것을 권장합니다.
   </div>
   {% endif %}
-  <div class="alert alert-danger fw-semibold fs-5">⚠️ 본인만 사용. 1회용. {{ ttl_minutes }}분 유효.</div>
-  <div class="card shadow-sm">
+  <div class="alert alert-danger fw-semibold fs-5"><i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>본인만 사용. 1회용. {{ ttl_minutes }}분 유효.</div>
+  <div class="card auth-panel border-0">
     <div class="card-body p-4">
-      <h1 class="h4 mb-3">🆘 비상 진입용 링크가 발급되었습니다</h1>
+      <h1 class="auth-brand h4 mb-3 justify-content-start">비상 진입용 링크가 발급되었습니다</h1>
       <p class="text-muted mb-3">발급 IP: <code>{{ issuer_ip or "-" }}</code></p>
       <a href="{{ redeem_url }}" class="btn btn-danger btn-lg w-100 py-3 mb-3">→ Admin 세션 시작</a>
       <p class="small mb-1">직접 복사:</p>

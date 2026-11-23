@@ -503,20 +503,7 @@ def _login_page(*, status: int = 200, error: str = "", error_code: str = "", not
     전엔 오류를 flash에 싣고 302로 되돌렸다. flash는 세션 쿠키를 타므로 쿠키가 어긋나면
     오류까지 사라져 「그냥 새로고침」처럼 보인다. 이제 POST 실패는 같은 응답에서 원인 코드와 함께 보인다.
     """
-    show_diag = request.args.get("diag") == "1"
-    if not show_diag:
-        try:
-            from .admin_resolver import is_admin_session
-            show_diag = is_admin_session(session)[0]
-        except Exception:
-            show_diag = False
-    oauth_runtime = None
-    if show_diag:
-        oauth_runtime = {
-            "kakao": _oauth_runtime("kakao"),
-            "google": _oauth_runtime("google"),
-            "naver": _oauth_runtime("naver"),
-        }
+    oauth_runtime = _oauth_diag()
     return render_template(
         "auth/login.html",
         next_url=next_url,
@@ -530,10 +517,32 @@ def _login_page(*, status: int = 200, error: str = "", error_code: str = "", not
     ), status
 
 
+def _oauth_diag():
+    """운영자 진단(OAuth 런타임 값 · 미설정 소셜 사유) — `?diag=1` 또는 관리자 세션일 때만, 아니면 None.
+
+    감독 11-23: 미설정 소셜 버튼(「… (설정 필요)」+ 사유 + 설정 경로)도 이 안으로 — 일반 방문자에겐 안 보인다.
+    """
+    show_diag = request.args.get("diag") == "1"
+    if not show_diag:
+        try:
+            from .admin_resolver import is_admin_session
+            show_diag = is_admin_session(session)[0]
+        except Exception:
+            show_diag = False
+    if not show_diag:
+        return None
+    return {
+        "kakao": _oauth_runtime("kakao"),
+        "google": _oauth_runtime("google"),
+        "naver": _oauth_runtime("naver"),
+    }
+
+
 def _signup_page(*, status: int = 200, error: str = "", error_code: str = "", email: str = "",
                  name: str = "", next_url: str = ""):
     return render_template(
         "auth/signup.html",
+        oauth_runtime=_oauth_diag(),
         kakao_status=_provider_status("kakao"),
         google_status=_provider_status("google"),
         naver_status=_provider_status("naver"),

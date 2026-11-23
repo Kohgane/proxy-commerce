@@ -55,7 +55,10 @@ class TestAuthRoutes:
         monkeypatch.delenv("NAVER_OAUTH_CLIENT_ID", raising=False)
         monkeypatch.delenv("NAVER_OAUTH_CLIENT_SECRET", raising=False)
 
-        resp = client.get("/auth/login")
+        # 감독 11-23: 미설정 소셜은 일반 방문자에게 숨기고 운영자 진단(?diag=1·관리자) 안에서만 사유·설정 경로를 보인다.
+        plain = client.get("/auth/login").get_data(as_text=True)
+        assert "(설정 필요)" not in plain and "/admin/oauth-setup" not in plain
+        resp = client.get("/auth/login?diag=1")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
         assert "카카오 로그인 (설정 필요)" in html

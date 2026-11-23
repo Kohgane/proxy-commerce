@@ -38,6 +38,9 @@ def test_passkey_card_states_privacy():
 
 def test_google_login_primary_passkey_optional():
     login = Path("src/auth/templates/auth/login.html").read_text(encoding="utf-8")
+    # 감독 11-23: 소셜 버튼은 login·signup 공용 매크로(auth/_auth_macros.html)로 옮겼다 — login이 그 매크로를 부른다
+    assert "am.social_buttons(" in login
+    login += Path("src/auth/templates/auth/_auth_macros.html").read_text(encoding="utf-8")
     # 구글 로그인(중심) + 패스키(선택) 병행
     assert "/auth/google/start" in login
     assert "패스키로 로그인" in login

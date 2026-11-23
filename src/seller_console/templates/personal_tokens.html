@@ -442,7 +442,7 @@ async function kgpPasskeyRegister() {
     _pkMsg('패스키가 등록됐어요. 다음부턴 지문·Face·PIN으로 로그인하세요.', true);
     kgpLoadPasskeys();
   } catch (e) {
-    _pkMsg((e && e.message) || '패스키 등록 실패', false);
+    _pkMsg(window.kgpPasskey && window.kgpPasskey.friendlyError ? window.kgpPasskey.friendlyError(e) : '패스키 등록을 마치지 못했어요.', false);
   } finally {
     if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
   }

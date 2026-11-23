@@ -1380,3 +1380,20 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 - 행 **수**는 그대로다(확장 폴링 주기는 안 건드림) — 줄인 건 행 **크기**. 폴링 주기·대기 0일 때 백오프는 필요하면 다음 손.
 - 지난 보고의 1/10 목표(행 수 기준)는 행 수로는 못 맞추지만, 전송량(바이트)은 1/60 아래.
 - 오라클 A1: 11/19 Supabase 풀리면 kg-a1 `MODE=data` + 건수 대조 · `DATABASE_URL` 교체는 오너 확인.
+
+## 2026-11-23 · PR0 — TestFlight 로그인 화면 정리 8건 + AASA(감독 11-23 브리프 · 오너 「앱처럼」 지시의 D)
+| # | 항목 | 결과 |
+|---|---|---|
+| 1 | AASA `webcredentials.apps` | `IOS_APP_ID` 있으면 `{"webcredentials":{"apps":["<IOS_APP_ID>"]}}` 같이 냄 · applinks 불변 · 미설정이면 빈 목록(가짜 연동 0) · 로그인·리다이렉트 없음(계약) |
+| 2 | 패스키 오류 한국어 | NotAllowed → 「패스키 인증이 취소됐거나 이 기기에 등록된 패스키가 없어요. 다른 로그인을 쓰세요.」 · Abort·Security·InvalidState·NotSupported·네트워크도 한국어 · 영어 `e.message` 노출 0(서버가 준 한국어 사유는 그대로) — node로 실제 passkey.js 실행 계약 |
+| 3 | 먹색 패널 회색 글씨 | `--auth-muted #b7a98c` → 패널 위 **7.05:1**(AA 4.5 이상, 실측) · 「비밀번호 찾기」 포함 · 입력칸 placeholder 4.88:1 |
+| 4 | 「… (설정 필요)」 소셜 | 일반 방문자 0 · 운영자 진단(?diag=1·관리자) 안에서만 사유·설정 경로 · 설정된 버튼은 그대로(href 동일 확인) |
+| 5 | /auth/* 통일 | login·signup·magic-link·magic-link 폴백·reset·비상 진입 6장 = 공용 `_auth_head` + `app.css` auth 블록(인라인 `<style>` 0) · 배경이 페이지 끝까지(전엔 아래 흰 띠) |
+| 6 | magic-link 부제 | 「비밀번호 없이 메일로 받은 링크로 로그인합니다.」 |
+| 7 | G 로고·다리 마크 | 가입 Google 버튼 G 로고(공용 매크로) · 🛒·📧·🔑 → 다리 마크(favicon.svg)·bi 아이콘 |
+| 8 | 랜딩 「판매까/지.」 | `word-break: keep-all` → 390·360 둘 다 「수집에서 / 판매까지.」(부제 「멀티마/켓」도 같이 해결) |
+
+- 캡처(390·360 전후): `docs/screens/owner1123/login-390.png` · `login-360.png` · `signup-390/360.png` · `magic-390/360.png` · `reset-390/360.png` · `landing-hero-390-360.png`
+- **WebAuthn rp.id:** 코드는 `WEBAUTHN_RP_ID` env가 있으면 그 값, 없으면 요청 호스트. `www.`로 들어오면 rp.id가 `www.kohganepercentiii.com`이 된다 — 앱 associated-domains(`webcredentials:kohganepercentiii.com`)와 맞추려면 Render에 `WEBAUTHN_RP_ID=kohganepercentiii.com`(env 변경 = **오너 확인**). 지금 값은 이 세션에서 못 본다.
+- **`IOS_APP_ID=J6TH5PRA9L.org.kohgane.gogabridj`** 도 Render env(오너 확인) — 없으면 AASA는 빈 목록이라 앱 패스키가 계속 막힌다.
+- 머지 뒤 AASA curl: 이 세션은 kohganepercentiii.com 바깥 연결이 정책 403(에이전트 프록시) — 직접 curl 못 함. 결과는 아래 줄에 따로 적는다.
