@@ -265,3 +265,5 @@ a3a35e92 쿠팡은 감독이 「그래도 등록」으로 큐에 넣었다(쿠�
 5. **AASA** — `/.well-known/apple-app-site-association` 에 `webcredentials.apps=["J6TH5PRA9L.org.kohgane.gogabridj"]` 추가(applinks 는 지금처럼 IOS_APP_ID). 리다이렉트 없이 200 json.
 + `/seller/m` 이 앱 셸 시작점. `window.KG_APP` / `html.kg-app` 로 앱 안인지 안다(앱 안에선 설치 배너·「앱으로 열기」 숨김).
 검수: 오너 실기기 ①타오바오 공유→담김 ②앱에서 그 상품 ③마켓 선택→사전검증→등록 직전.
+
+- 2026-11-23 22:1x [채팅] Render(kohganeProxxxxy_singapore) env 넣음(저장만, 재배포 안 함): APNS_KEY_P8(PEM 여러 줄 그대로) · APNS_KEY_ID · APNS_TEAM_ID=J6TH5PRA9L · APNS_TOPIC=org.kohgane.gogabridj · IOS_APP_ID=J6TH5PRA9L.org.kohgane.gogabridj — 다음 배포부터 적용. 위 서버 약속 4·5번에 그대로 쓰면 된다.
