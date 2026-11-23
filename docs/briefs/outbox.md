@@ -1397,3 +1397,11 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 - **WebAuthn rp.id:** 코드는 `WEBAUTHN_RP_ID` env가 있으면 그 값, 없으면 요청 호스트. `www.`로 들어오면 rp.id가 `www.kohganepercentiii.com`이 된다 — 앱 associated-domains(`webcredentials:kohganepercentiii.com`)와 맞추려면 Render에 `WEBAUTHN_RP_ID=kohganepercentiii.com`(env 변경 = **오너 확인**). 지금 값은 이 세션에서 못 본다.
 - **`IOS_APP_ID=J6TH5PRA9L.org.kohgane.gogabridj`** 도 Render env(오너 확인) — 없으면 AASA는 빈 목록이라 앱 패스키가 계속 막힌다.
 - 머지 뒤 AASA curl: 이 세션은 kohganepercentiii.com 바깥 연결이 정책 403(에이전트 프록시) — 직접 curl 못 함. 결과는 아래 줄에 따로 적는다.
+
+
+## 2026-11-23 · [채팅] 고가브릿지 아이폰 앱 v1.1 (빌드 101~) 소스 반영
+- 소스: `mobile/ios` (XcodeGen, 앱 + 공유 확장). 빌드·업로드: 볼트 `.github/workflows/gogabridj-testflight.yml`, 빌드 번호 = 100 + 실행 번호.
+- 변경: 웹뷰 셸 → 앱 셸(시작 /seller/m, #1a1714 배경·밝은 상태바, safe-area, 뒤로 스와이프, 당겨서 새로고침, 오프라인 화면, 바깥 링크 시스템 브라우저) ·
+  공유 확장(공유 → 고가브릿지 → /seller/collect/share, 담았어요+썸네일, 누르면 그 상품) · 로그인 공유(키체인 공유 그룹) ·
+  구글/카카오/네이버 = ASWebAuthenticationSession · APNs 등록·알림 탭 이동 · 패스키 webcredentials · 딥링크 gogabridj://open?path=…
+- 서버 쪽 남은 일은 inbox 같은 날짜 절(5개).

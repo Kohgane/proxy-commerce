@@ -1,0 +1,80 @@
+name: Gogabridj
+options:
+  bundleIdPrefix: org.kohgane
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.1"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+targets:
+  Gogabridj:
+    type: application
+    platform: iOS
+    sources: [App, Shared]
+    scheme: {}
+    entitlements:
+      path: App/Gogabridj.entitlements
+      properties:
+        aps-environment: production
+        com.apple.developer.associated-domains: ["webcredentials:kohganepercentiii.com", "applinks:kohganepercentiii.com"]
+        keychain-access-groups: ["$(AppIdentifierPrefix)org.kohgane.gogabridj.shared"]
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: 고가브릿지
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        KGAppIdPrefix: $(AppIdentifierPrefix)
+        UILaunchScreen: {UIColorName: LaunchBG}
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: org.kohgane.gogabridj
+            CFBundleURLSchemes: [gogabridj]
+        NSCameraUsageDescription: 상품 사진을 찍어 올릴 때 카메라를 씁니다
+        NSPhotoLibraryUsageDescription: 상품 사진을 골라 올릴 때 사진 보관함을 씁니다
+        NSPhotoLibraryAddUsageDescription: 상품 이미지를 사진 보관함에 저장할 때 씁니다
+        NSMicrophoneUsageDescription: 영상을 올릴 때 마이크를 씁니다
+        NSFaceIDUsageDescription: 패스키(Face ID)로 로그인할 때 씁니다
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.kohgane.gogabridj
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UILaunchScreen_Generation: "NO"
+    dependencies:
+      - target: GogabridjShare
+  GogabridjShare:
+    type: app-extension
+    platform: iOS
+    sources: [Share, Shared]
+    entitlements:
+      path: Share/GogabridjShare.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)org.kohgane.gogabridj.shared"]
+    info:
+      path: Share/Info.plist
+      properties:
+        CFBundleDisplayName: 고가브릿지
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        KGAppIdPrefix: $(AppIdentifierPrefix)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.kohgane.gogabridj.share
+        APPLICATION_EXTENSION_API_ONLY: "NO"

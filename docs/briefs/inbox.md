@@ -251,3 +251,17 @@ a3a35e92 쿠팡은 감독이 「그래도 등록」으로 큐에 넣었다(쿠�
 2. WebAuthn rp.id 가 `kohganepercentiii.com` 인지 확인(서브도메인·www 아님).
 3. 회귀 없음 확인 후 배포. 확인: `curl -sI https://kohganepercentiii.com/.well-known/apple-app-site-association` 가 200 + json.
 참고: 애플 CDN이 캐시하므로 배포 후 앱을 지웠다 다시 깔면 동작. 앱 쪽은 채팅이 처리함.
+
+
+## 2026-11-23 · 고가브릿지 아이폰 앱 v1.1 — 서버가 맞춰 줄 것 (채팅 → CC)
+앱 소스는 `mobile/ios` 에 들어갔다(README 참고). 빌드는 볼트의 gogabridj-testflight 워크플로가 한다. 앱 쪽은 끝났고 서버 약속 5개만 남았다:
+1. **소셜 로그인 앱 모드** — `/auth/<google|kakao|naver>/start?app=1&next=/seller/m` 로 시작하면 콜백 끝에서 `gogabridj://auth?code=<1회용·60초>` 로 302.
+   `GET /auth/app/exchange?code=…&next=…` 는 그 코드로 세션 쿠키를 심고 `next` 로 302. (앱은 이 버튼만 ASWebAuthenticationSession 으로 연다 — 구글은 웹뷰를 막음)
+2. **공유 수집 JSON** — `POST /seller/collect/share` (form `text`,`url`,`title`,`src=ios-share`, 헤더 `Accept: application/json`, `X-KG-Source: ios-share`)
+   → `{"ok":true,"item_id":123,"title":"…","thumb":"https://…","path":"/seller/m/item/123","dup":false}`. 인증: 세션 쿠키 또는 `Authorization: Bearer <개인토큰>`. 미로그인 401 JSON. 타오바오 复制链接 원문 그대로 온다.
+3. **개인 토큰** — `POST /api/app/token` (로그인 세션) → `{"token":"…"}` (personal_tokens 재사용, 이름 "iPhone 공유").
+4. **APNs** — `POST /api/push/apns/register` `{token, env, bundle}` 저장(사용자별 여러 기기). 발송: 수집 완료·사전검증 보류·등록 성공/실패·주문, payload `{"aps":{"alert":{…},"sound":"default"},"path":"/seller/…"}`.
+   발송 키는 env `APNS_KEY_P8`·`APNS_KEY_ID`·`APNS_TEAM_ID=J6TH5PRA9L`·`APNS_TOPIC=org.kohgane.gogabridj` (오너가 개발자 계정 Keys 에서 APNs 키를 만들어 넣는다). 키 없으면 조용히 건너뛴다.
+5. **AASA** — `/.well-known/apple-app-site-association` 에 `webcredentials.apps=["J6TH5PRA9L.org.kohgane.gogabridj"]` 추가(applinks 는 지금처럼 IOS_APP_ID). 리다이렉트 없이 200 json.
++ `/seller/m` 이 앱 셸 시작점. `window.KG_APP` / `html.kg-app` 로 앱 안인지 안다(앱 안에선 설치 배너·「앱으로 열기」 숨김).
+검수: 오너 실기기 ①타오바오 공유→담김 ②앱에서 그 상품 ③마켓 선택→사전검증→등록 직전.
