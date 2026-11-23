@@ -59,9 +59,82 @@ let kgBG = UIColor(red: 0x1a / 255.0, green: 0x17 / 255.0, blue: 0x14 / 255.0, a
 final class ShellModel: ObservableObject {
     @Published var progress: Double = 0
     @Published var offline = false
+    @Published var toast: String?
+    @Published var askClip = false
+    @Published var showGuide = !UserDefaults.standard.bool(forKey: "guide_taobao_v1")
     weak var web: WKWebView?
+    private var clipCC = 0
+    private var flushing = false
     func load(_ path: String) { web?.load(URLRequest(url: URL(string: path, relativeTo: KG.base)!.absoluteURL)) }
     func reload() { offline = false; if web?.url == nil { load(KG.startPath) } else { web?.reload() } }
+    func flash(_ t: String) {
+        toast = t
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in if self?.toast == t { self?.toast = nil } }
+    }
+    func onActive() { flushOutbox(); checkClipboard() }
+
+    // 공유 확장이 연결 못 해 보관해 둔 것 → 지금 다시 보낸다
+    func flushOutbox() {
+        let items = Outbox.all()
+        guard !items.isEmpty, !flushing, Vault.loggedIn else { return }
+        flushing = true
+        var left: [ShareItem] = []; var sent = 0
+        let g = DispatchGroup(); let lock = NSLock()
+        for it in items {
+            g.enter()
+            Collect.post(it) { r in
+                lock.lock()
+                switch r {
+                case .ok: sent += 1
+                case .fail: break
+                default: left.append(it)
+                }
+                lock.unlock(); g.leave()
+            }
+        }
+        g.notify(queue: .main) { [weak self] in
+            guard let self = self else { return }
+            Outbox.save(left); self.flushing = false
+            if sent > 0 { self.flash("보관해 둔 \(sent)개를 보냈어요 ✓"); self.load("/seller/collect") }
+        }
+    }
+
+    // 클립보드에 상품 링크가 있으면 「이 상품 담을까요?」 (먼저 내용은 안 읽고 링크인지만 본다)
+    func checkClipboard() {
+        guard !showGuide, !askClip, Vault.loggedIn else { return }
+        let pb = UIPasteboard.general
+        let cc = pb.changeCount
+        guard cc != UserDefaults.standard.integer(forKey: "clip_cc") else { return }
+        pb.detectPatterns(for: [.probableWebURL]) { [weak self] res in
+            guard case .success(let found) = res, found.contains(.probableWebURL) else { return }
+            DispatchQueue.main.async { self?.clipCC = cc; self?.askClip = true }
+        }
+    }
+    func skipClip() { UserDefaults.standard.set(clipCC, forKey: "clip_cc") }
+    func takeClip() {
+        UserDefaults.standard.set(clipCC, forKey: "clip_cc")
+        let pb = UIPasteboard.general
+        let s = pb.string ?? pb.url?.absoluteString ?? ""
+        guard !s.isEmpty else { return }
+        let it = ShareItem(text: s, url: "", title: "", ts: Date().timeIntervalSince1970)
+        Collect.post(it) { [weak self] r in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch r {
+                case .ok(let d, let u):
+                    self.flash("담았어요 ✓")
+                    self.load(Collect.itemPath(d, u) ?? "/seller/collect")
+                case .offline:
+                    Outbox.add(it); self.flash("담아 뒀어요, 연결되면 보낼게요")
+                case .auth:
+                    self.flash("먼저 로그인해 주세요")
+                case .fail(let c):
+                    self.flash("담지 못했어요 (\(c))")
+                }
+            }
+        }
+    }
 }
 
 struct ShellScreen: View {
@@ -84,6 +157,101 @@ struct ShellScreen: View {
                 }
                 .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(kgBG))
             }
+            if let t = m.toast {
+                VStack {
+                    Spacer()
+                    Text(t).font(.subheadline.weight(.semibold)).foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.89))
+                        .padding(.horizontal, 18).padding(.vertical, 12)
+                        .background(Capsule().fill(Color(red: 0.13, green: 0.12, blue: 0.11)).overlay(Capsule().stroke(Color(red: 0.79, green: 0.64, blue: 0.29).opacity(0.6), lineWidth: 1)))
+                        .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
+                        .padding(.bottom, 40)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .allowsHitTesting(false)
+            }
+        }
+        .animation(.spring(duration: 0.35), value: m.toast)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in m.onActive() }
+        .alert("이 상품 담을까요?", isPresented: $m.askClip) {
+            Button("담기") { m.takeClip() }
+            Button("아니요", role: .cancel) { m.skipClip() }
+        } message: {
+            Text("복사해 둔 링크를 고가브릿지 수집함에 넣습니다.")
+        }
+        .fullScreenCover(isPresented: $m.showGuide) {
+            TaobaoGuide {
+                UserDefaults.standard.set(true, forKey: "guide_taobao_v1")
+                m.showGuide = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { m.onActive() }
+            }
+        }
+    }
+}
+
+// 첫 실행 한 장: 타오바오는 자체 공유창에서 「更多」를 눌러야 아이폰 공유 목록이 나온다
+struct TaobaoGuide: View {
+    var done: () -> Void
+    let gold = Color(red: 0.79, green: 0.64, blue: 0.29)
+    let ink = Color(red: 0.10, green: 0.09, blue: 0.08)
+    var body: some View {
+        ZStack {
+            Color(kgBG).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 22) {
+                Text("타오바오에서 담는 법").font(.title2.weight(.bold)).foregroundStyle(.white)
+                Text("한 번만 보시면 됩니다.").font(.subheadline).foregroundStyle(.secondary)
+                step(1, "상품 화면에서 공유(分享) 버튼")
+                phone {
+                    HStack(spacing: 14) {
+                        ForEach(["微信", "QQ", "微博", "复制链接"], id: \.self) { t in chip(t, hi: false) }
+                        chip("更多", hi: true)
+                    }
+                }
+                step(2, "타오바오 공유창 맨 끝 「更多」")
+                phone {
+                    HStack(spacing: 14) {
+                        appIcon("메시지", Color.green, hi: false)
+                        appIcon("메일", Color.blue, hi: false)
+                        appIcon("고가브릿지", gold, hi: true)
+                        appIcon("메모", Color.yellow, hi: false)
+                    }
+                }
+                step(3, "아이폰 공유 목록에서 「고가브릿지」 → 1초면 담깁니다")
+                Text("팁: 아이폰 공유 목록 끝 「더 보기 → 편집」에서 고가브릿지를 즐겨찾기에 넣으면 맨 앞에 나옵니다.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Button(action: done) {
+                    Text("알겠어요").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(Capsule().fill(gold)).foregroundStyle(ink)
+                }
+            }
+            .padding(24)
+        }
+        .preferredColorScheme(.dark)
+    }
+    func step(_ n: Int, _ t: String) -> some View {
+        HStack(spacing: 10) {
+            Text("\(n)").font(.subheadline.weight(.bold)).foregroundStyle(ink).frame(width: 26, height: 26).background(Circle().fill(gold))
+            Text(t).font(.body.weight(.semibold)).foregroundStyle(.white)
+        }
+    }
+    func phone<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        c().padding(.vertical, 16).padding(.horizontal, 12).frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 18).fill(Color.white.opacity(0.06)).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.08))))
+    }
+    func chip(_ t: String, hi: Bool) -> some View {
+        VStack(spacing: 6) {
+            Circle().fill(hi ? Color.orange : Color.white.opacity(0.18)).frame(width: 40, height: 40)
+                .overlay(Image(systemName: hi ? "ellipsis" : "circle.fill").font(.system(size: hi ? 18 : 6, weight: .bold)).foregroundStyle(.white))
+                .overlay(Circle().stroke(gold, lineWidth: hi ? 3 : 0).padding(-5))
+            Text(t).font(.caption2).foregroundStyle(hi ? gold : .secondary)
+        }
+    }
+    func appIcon(_ t: String, _ c: Color, hi: Bool) -> some View {
+        VStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 12).fill(c.opacity(hi ? 1 : 0.55)).frame(width: 48, height: 48)
+                .overlay(Text(hi ? "고" : "").font(.title3.weight(.heavy)).foregroundStyle(ink))
+                .overlay(RoundedRectangle(cornerRadius: 15).stroke(gold, lineWidth: hi ? 3 : 0).padding(-5))
+            Text(t).font(.caption2).foregroundStyle(hi ? gold : .secondary)
         }
     }
 }
