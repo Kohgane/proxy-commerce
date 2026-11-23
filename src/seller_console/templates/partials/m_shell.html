@@ -1,0 +1,43 @@
+{#- 오너 11-23 「앱이 실제 앱처럼」 — 폰(<768px)·앱 웹뷰의 뼈대는 이것 하나.
+    상단 얇은 바(뒤로·제목) + 하단 탭바(수집·목록·주문·더보기). _base(콘솔)·_base_app(M5·공유 결과 등)·/seller/m 이 같이 쓴다.
+    PC(≥768px)에선 안 보인다(CSS) — 앱 웹뷰(html.kgp-app)에선 폭과 무관하게 이 셸이 뼈대다. -#}
+
+{% macro active_tab(path, args) -%}
+{%- set _tab = (args.get('tab') if args else '') or '' -%}
+{%- if path.startswith('/seller/m/item') or path.startswith('/seller/collect/history') or path.startswith('/seller/collect/preview') or path.startswith('/seller/catalog') -%}items
+{%- elif path.startswith('/seller/orders') or (path in ('/seller/m', '/seller/m/') and _tab == 'orders') -%}orders
+{%- elif path in ('/seller/m', '/seller/m/') and _tab == 'more' -%}more
+{%- elif path in ('/seller/m', '/seller/m/') or path == '/seller/collect' or path.startswith('/seller/collect/quick') or path.startswith('/seller/collect/share') or path.startswith('/seller/manual-collect') -%}collect
+{%- endif -%}
+{%- endmacro %}
+
+{# title: 화면 이름 · back: 뒤로가 없을 때(직접 진입) 갈 곳 — 탭 루트 화면이면 None(뒤로 버튼 없음) #}
+{% macro topbar(title, back=None, right=None) -%}
+<header class="kgp-mtop" data-role="m-topbar">
+  {% if back %}
+  <a class="kgp-mtop-btn" href="{{ back }}" data-role="m-back" data-fallback="{{ back }}" aria-label="뒤로"><i class="bi bi-chevron-left" aria-hidden="true"></i></a>
+  {% else %}
+  <span class="kgp-mtop-mark" aria-hidden="true"></span>
+  {% endif %}
+  <h1 class="kgp-mtop-title" data-role="m-title">{{ title }}</h1>
+  <span class="kgp-mtop-right">{{ right or '' }}</span>
+</header>
+{%- endmacro %}
+
+{% macro tabbar(active) -%}
+<nav class="kgp-mtab" data-role="m-tabbar" aria-label="주요 메뉴">
+  {% for key, href, icon, icon_on, label in [('collect', '/seller/m', 'bi-plus-circle', 'bi-plus-circle-fill', '수집'),
+                                                ('items', '/seller/collect/history', 'bi-grid', 'bi-grid-fill', '목록'),
+                                                ('orders', '/seller/orders', 'bi-receipt', 'bi-receipt-cutoff', '주문'),
+                                                ('more', '/seller/m?tab=more', 'bi-three-dots', 'bi-three-dots', '더보기')] %}
+  {% set on = active == key %}
+  <a class="kgp-mtab-item{% if on %} active{% endif %}" href="{{ href }}" data-tab="{{ key }}" {% if on %}aria-current="page"{% endif %}>
+    <i class="bi {{ icon_on if on else icon }}" aria-hidden="true"></i><span>{{ label }}</span>
+  </a>
+  {% endfor %}
+</nav>
+{# 잡 진행 한 줄(수집·사전검증·등록) — m_shell.js `kgpJobLine.show(text)/done(text)/fail(text)` #}
+<div class="kgp-jobline" data-role="m-jobline" role="status" aria-live="polite" hidden><span class="kgp-jobline-dot" aria-hidden="true"></span><span data-role="m-jobline-text"></span></div>
+<div class="kgp-mskel" data-role="m-skeleton" aria-hidden="true" hidden><div></div><div></div><div></div></div>
+<script src="/seller/static/m_shell.js?v={{ build_sha }}" defer></script>
+{%- endmacro %}

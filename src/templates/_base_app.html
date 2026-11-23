@@ -1,11 +1,11 @@
 <!doctype html>
 {# 공통 베이스 템플릿 #}
-<html lang="ko">
+<html lang="ko"{% if is_app %} class="kgp-app"{% endif %}>
 <head>
   {% set _brand_name = brand_name|default('gogabridj', true) %}
   <meta charset="utf-8">
   <meta name="build" content="{{ build_sha|default('unknown', true) }}">{# v53 STEP0: 라이브 배포 커밋 판정 #}
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}gogabridj{% endblock %} | {{ _brand_name }}</title>
   {# v16 P1: 링크 공유 카드 브랜딩 — 이름·소개·이미지가 제대로 뜨도록 OG/트위터 정비 #}
   {% set _og_base = (request.url_root.rstrip('/') if request else '') %}
@@ -32,10 +32,20 @@
   <link rel="stylesheet"
         href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='m_shell.css') }}?v={{ build_sha }}">
   {% block head %}{% endblock %}
 </head>
-<body class="bg-light">
-  {% block topnav %}{% include "partials/topnav.html" %}{% endblock %}
+{# 오너 11-23 「앱이 실제 앱처럼」: /seller/* 화면(M5 등록·공유 결과·마켓 설정 등)은 폰·앱 웹뷰에서 공용 셸(partials/m_shell.html).
+   PC 상단 내비는 폰에서 숨는다. 랜딩·오류 화면(/seller 밖)은 그대로. #}
+{% set _m_path = request.path if request else '' %}
+{% set _m_seller = _m_path.startswith('/seller/') %}
+{% if _m_seller %}{% import "partials/m_shell.html" as ms %}{% set _m_tab = ms.active_tab(_m_path, request.args)|trim %}{% endif %}
+<body class="bg-light"{% if _m_seller %} data-mshell="1"{% endif %}>
+  {% if _m_seller %}
+  {{ ms.topbar(self.title()|replace(' — 고가브릿지', '')|replace('고가브릿지 · ', ''),
+               back={'items': '/seller/collect/history', 'orders': '/seller/orders', 'more': '/seller/m?tab=more'}.get(_m_tab, '/seller/m')) }}
+  {% endif %}
+  {% block topnav %}{% if _m_seller %}<div class="kgp-pc-only">{% include "partials/topnav.html" %}</div>{% else %}{% include "partials/topnav.html" %}{% endif %}{% endblock %}
   <main class="{% block main_class %}container-fluid py-4{% endblock %}">
     {% block content %}{% endblock %}
   </main>
@@ -48,6 +58,7 @@
     </div>
   </footer>
   {% endblock %}
+  {% if _m_seller %}{{ ms.tabbar(_m_tab) }}{% endif %}
   <script src="/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js"></script>
   {% block scripts %}{% endblock %}
 </body>

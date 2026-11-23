@@ -140,7 +140,9 @@ def test_todo_lines_with_view_link_and_none_when_zero():
 
 def test_list_page_opens_drawer_from_open_param():
     html = _client("u-y12c-open").get("/seller/collect/history?open=abc").get_data(as_text=True)
-    assert "new URLSearchParams(location.search).get('open')" in html and "openItemDrawer(_o" in html
+    # 오너 11-23: 「?open=」은 PC에선 서랍, 폰·앱에선 셸 안 M5(/seller/m/item/<id>) — 갈래는 _chOpen 하나
+    assert "new URLSearchParams(location.search).get('open')" in html and "_chOpen(_o" in html
+    assert "openItemDrawer(id, title, url)" in html and "'/seller/m/item/' + encodeURIComponent(id)" in html
 
 
 # ── B 마켓별 현황 ───────────────────────────────────────────────────────────────────────────────────

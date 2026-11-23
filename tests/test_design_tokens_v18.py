@@ -63,6 +63,8 @@ def test_component_baseline_uses_tokens():
 def test_base_chrome_uses_icon_set_not_emoji():
     # v18 §8: 사이드바/탑바 등 영속 chrome은 이모지 아이콘 0, 단일 아이콘셋(bi-*) 사용.
     base = Path("src/seller_console/templates/_base.html").read_text(encoding="utf-8")
+    # 오너 11-23: 폰 탭바(bi-three-dots 등)는 공용 셸 파셜로 옮겼다 — chrome = _base + 셸
+    base += Path("src/seller_console/templates/partials/m_shell.html").read_text(encoding="utf-8")
     # v36 PART A: '모바일 앱'(bi-phone) 버튼은 콘솔 반응형화로 헤더에서 제거됨 → 아이콘셋 검증에서 제외
     # Y12-A: 사이드바 「관리자 패널」(bi-tools)은 「진단」(bi-activity) 화면 안으로 · 「시작 가이드」(bi-play-circle) 추가
     for ic in ("bi-shop", "bi-search", "bi-three-dots", "bi-person", "bi-box-arrow-right", "bi-activity", "bi-play-circle"):

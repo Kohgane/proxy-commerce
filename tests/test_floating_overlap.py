@@ -106,7 +106,7 @@ PROBE = """() => {
 _BS_CANDIDATES = ("node_modules/bootstrap/dist/css/bootstrap.min.css",
                   "/tmp/bsdl/node_modules/bootstrap/dist/css/bootstrap.min.css")
 CSS_FILES = tuple([p for p in _BS_CANDIDATES if Path(p).exists()][:1]
-                  + ["src/static/app.css", "src/seller_console/static/seller.css",
+                  + ["src/static/app.css", "src/static/m_shell.css", "src/seller_console/static/seller.css",
                      "src/seller_console/static/console.css"])
 
 

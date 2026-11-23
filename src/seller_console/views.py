@@ -9663,19 +9663,17 @@ def mobile_home():
     recent = []
     try:
         from .collect_history_store import list_items
-        items = list_items(days=14, seller_id=sid)[:8]
+        # 오너 11-23: 최근 8장만 · 쓰는 칸만(전엔 14일치 extra_json째) · 썸네일은 목록과 같은 순서(저장본 우선)
+        items = list_items(days=14, seller_ids=_seller_identities(), limit=8, lean=True)[:8]
         for it in items:
-            thumb = (it.get("image_url") or "").strip()
-            if not thumb:
-                try:
-                    ex = json.loads(it.get("extra_json") or "{}")
-                    imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
-                    thumb = (imgs[0] if imgs else "") or ""
-                except Exception:
-                    thumb = ""
+            try:
+                ex = json.loads(it.get("extra_json") or "{}")
+            except Exception:
+                ex = {}
+            thumb, alts = thumb_candidates(it.get("image_url"), ex)
             recent.append({"id": it.get("id"), "title": it.get("title") or "(제목 없음)",
                            "price": it.get("price"), "currency": it.get("currency"),
-                           "thumb": thumb, "domain": it.get("domain")})
+                           "thumb": thumb, "thumb_alts": alts, "domain": it.get("domain")})
     except Exception as exc:
         logger.debug("모바일 최근 수집 조회 실패: %s", exc)
 
@@ -11462,6 +11460,35 @@ def _row_flags(item: dict, extra: Optional[dict] = None) -> list:
     return out
 
 
+def _cdn_thumb(url: str, px: int = 128) -> str:
+    """우리 Cloudinary 저장본이면 목록용 작은 판(c_fill·자동 포맷·자동 화질) 주소 — 아니면 그대로."""
+    u = str(url or "").strip()
+    if "res.cloudinary.com/" in u and "/image/upload/" in u and "/image/upload/c_" not in u:
+        return u.replace("/image/upload/", f"/image/upload/c_fill,w_{px},h_{px},q_auto,f_auto/", 1)
+    return u
+
+
+def thumb_candidates(image_url, ex) -> tuple:
+    """목록·폰 카드 썸네일 `(대표, [대신 띄울 것…])` — 오너 11-23 「목록 썸네일 빈 상자」.
+
+    순서: ① 우리 저장본(Cloudinary, 작은 판) ② 수집 대표(원본 CDN) ③ 갤러리 첫 장. 원본 CDN(알리·라쿠텐 등)은
+    핫링크·지역 차단으로 빈 그림(오류 없이 1×1)을 줄 때가 있어, 받을 수 있는 우리 사본을 먼저 쓴다. 없는 장은 지어내지 않는다.
+    """
+    ex = ex if isinstance(ex, dict) else {}
+    stored = [str(u).strip() for u in (ex.get("images_stored") if isinstance(ex.get("images_stored"), list) else []) if str(u or "").strip()]
+    imgs = [str(u).strip() for u in (ex.get("images") if isinstance(ex.get("images"), list) else []) if str(u or "").strip()]
+    rep_orig = str(image_url or "").strip() if " " not in str(image_url or "") else ""
+    if not rep_orig and imgs:
+        rep_orig = imgs[0]
+    gallery_alt = next((u for u in imgs if u != rep_orig and " " not in u), "")   # Y12-D: 갤러리 대신 장은 1장(목록 다이어트)
+    if stored:
+        rep = _cdn_thumb(stored[0])
+        alts = [u for u in (rep_orig, gallery_alt) if u and u != rep]
+    else:
+        rep, alts = rep_orig, ([gallery_alt] if gallery_alt else [])
+    return (rep, alts) if rep else ("", [])
+
+
 def _shape_collect_items(items, current_lang):
     """수집이력 행 파셜(collect_history_rows.html)이 기대하는 필드로 item dict를 in-place 가공.
     목록 렌더(collect_history)와 실시간 증분(collect_history_since)이 동일 모양을 쓰게 단일소스.
@@ -11471,18 +11498,9 @@ def _shape_collect_items(items, current_lang):
             ex = json.loads(it.get("extra_json") or "{}")
         except Exception:
             ex = {}
-        rep = (it.get("image_url") or "").strip()
-        if not rep:                                   # 대표 없으면 수집 이미지 첫 장
-            imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
-            for u in imgs:
-                u = (str(u) or "").strip()
-                if u:
-                    rep = u
-                    break
+        rep, _alts = thumb_candidates(it.get("image_url"), ex)   # 오너 11-23: 저장본 → 원본 대표 → 갤러리 첫 장
         it["thumbs"] = [rep] if rep else []           # 목록=대표 1장
-        _imgs = ex.get("images") if isinstance(ex.get("images"), list) else []
-        it["thumb_alts"] = [u for u in (str(x or "").strip() for x in _imgs)
-                            if u and u != rep and " " not in u][:1]   # Y12-D: 대표를 못 받으면 대신 띄울 갤러리 1장(목록 페이로드 다이어트 — 1장만)
+        it["thumb_alts"] = _alts                      # Y12-D: 대표를 못 받으면 대신 띄울 것(최대 2)
         _tko = (str(ex.get("title_ko") or "").strip()) or (str(it.get("title") or "").strip())
         _ten = str(ex.get("title_en") or ex.get("title") or it.get("title") or "").strip()
         _translated = bool(_tko) and bool(_ten) and _tko != _ten

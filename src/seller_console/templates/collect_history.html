@@ -595,17 +595,25 @@ function closeItemDrawer() {
 // v55 STEP4: 인스턴트 내비 스왑마다 재바인딩되어 중복(→클릭 이중발화) 되던 것을 kgpInitOnce로 1회만 바인딩
 //   (document 위임이라 스왑 후에도 현재 DOM에 동작). 이하 document/window 리스너 동일.
 function _chOnce(k) { return !window.kgpInitOnce || window.kgpInitOnce('ch_' + k); }
+// 오너 11-23 「앱이 실제 앱처럼」: 폰·앱 웹뷰에선 상품 하나 = 셸 안의 M5 화면(/seller/m/item/<id>) — 3,330줄 편집 서랍은 PC 전용.
+function _chPhone() {
+  return document.documentElement.classList.contains('kgp-app') || (window.matchMedia && window.matchMedia('(max-width: 767.98px)').matches);
+}
+function _chOpen(id, title, url) {
+  if (_chPhone()) { location.href = '/seller/m/item/' + encodeURIComponent(id); return; }
+  openItemDrawer(id, title, url);
+}
 // Y12-C: 대시보드 「오늘 할 일」 [보기] — `?open=<상품 id>`로 들어오면 그 상품 드로어를 바로 연다
 (function () {
   var _o = new URLSearchParams(location.search).get('open');
-  if (_o) openItemDrawer(_o, '', '');
+  if (_o) _chOpen(_o, '', '');
 })();
 if (_chOnce('drawer_click'))
 document.addEventListener('click', function (e) {
   const el = e.target.closest('.kgp-open-drawer');
   if (!el) return;
   e.preventDefault();
-  openItemDrawer(el.getAttribute('data-id'), el.getAttribute('data-title'), el.getAttribute('data-url'));
+  _chOpen(el.getAttribute('data-id'), el.getAttribute('data-title'), el.getAttribute('data-url'));
 });
 // v53 STEP3: 드로어 데이터 hover 선행 로드 — 행에 마우스 올리면 해당 상품 상세를 미리 fetch(동시 1건)로
 //   서버 렌더 경로(DB 풀·템플릿)를 워밍 → 클릭 시 iframe 로드 체감 단축. 저장 스테일 방지 위해 iframe의
@@ -613,7 +621,7 @@ document.addEventListener('click', function (e) {
 if (_chOnce('hover_warm')) (function () {
   var warmed = {}, inflight = false;
   function warm(id) {
-    if (!id || warmed[id] || inflight) return;
+    if (!id || warmed[id] || inflight || _chPhone()) return;   // 폰은 서랍을 안 여니 미리 받지 않는다(무거운 페이지)
     inflight = true; warmed[id] = 1;
     fetch('/seller/collect/preview/' + encodeURIComponent(id) + '?drawer=1&warm=1',
           { credentials: 'same-origin', headers: { 'X-KGP-Prefetch': '1' } })

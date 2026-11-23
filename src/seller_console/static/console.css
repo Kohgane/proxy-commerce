@@ -594,8 +594,9 @@ details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal;
     font-size: .98rem; line-height: 1.35; font-weight: 600; color: var(--text-strong);
   }
-  .console-content .ch-table tr.ch-row > td.ch-c-badges { flex: 1 1 auto; order: 10; padding-left: calc(64px + 10px + 22px + 10px); }
-  .console-content .ch-table tr.ch-row > td.ch-c-when { flex: none; order: 11; margin-left: auto; align-self: center; color: var(--text-muted); font-size: .78rem; }
+  /* 오너 11-23(390 실측): 뱃지 칸이 첫 줄에 들어가 제목이 4px로 눌렸다(「]」 한 글자) — 뱃지는 **제 줄**(100%), 시각은 제목 옆 */
+  .console-content .ch-table tr.ch-row > td.ch-c-badges { flex: 1 1 100%; order: 10; padding-left: calc(64px + 10px + 22px + 10px); }
+  .console-content .ch-table tr.ch-row > td.ch-c-when { flex: none; order: 5; align-self: center; color: var(--text-muted); font-size: .78rem; }
   .console-content .mk-badge { min-width: 26px; min-height: 26px; font-size: .74rem; border-radius: 8px; }
 }
 
