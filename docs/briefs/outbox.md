@@ -1405,3 +1405,5 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
   공유 확장(공유 → 고가브릿지 → /seller/collect/share, 담았어요+썸네일, 누르면 그 상품) · 로그인 공유(키체인 공유 그룹) ·
   구글/카카오/네이버 = ASWebAuthenticationSession · APNs 등록·알림 탭 이동 · 패스키 webcredentials · 딥링크 gogabridj://open?path=…
 - 서버 쪽 남은 일은 inbox 같은 날짜 절(5개).
+
+- 2026-11-23 [채팅] 빌드 102 TestFlight 업로드 완료(앱 셸+공유 확장). 101은 공유 확장 APPLICATION_EXTENSION_API_ONLY 규칙으로 실패 → YES 로 고치고 앱 열기는 런타임 호출로 바꿈.
