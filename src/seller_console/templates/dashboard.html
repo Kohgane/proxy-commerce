@@ -96,24 +96,27 @@
   <section class="hb-card hb-b" data-role="hb-markets">
     <div class="hb-sum"><span class="hb-title">마켓별 현황</span></div>
     {% if m.error %}<span class="hb-num hb-num-muted">{{ m.error }}</span>{% else %}
-    <table class="hb-mtable">
-      <colgroup><col class="c-name"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-on"><col class="c-t"></colgroup>
-      <thead><tr><th scope="col">계정</th><th scope="col">판매중</th><th scope="col">승인대기</th><th scope="col">반려</th>
-        <th scope="col">연결</th><th scope="col">마지막 조회</th></tr></thead>
-      <tbody>
-        {% for r in m.rows or [] %}
-        <tr data-role="hb-market-row" data-slot="{{ r.slot }}">
-          <th scope="row"><span class="hb-mname text-truncate">{{ r.name }}</span><span class="hb-mkt">{{ r.market_ko }}</span></th>
-          {# Y12-D 5: 숫자를 누르면 그 칸의 상품 목록(0이면 링크 없음) #}
-          {% for col, n in (('sale', r.sale), ('wait', r.wait), ('rejected', r.rejected)) %}
-          <td class="{{ 'is-bad' if col == 'rejected' and n }}">{% if n %}<a class="hb-mcell" data-role="hb-mcell" href="/seller/collect/history?mk={{ r.slot|urlencode }}&amp;mst={{ col }}&amp;days=3650">{{ n }}</a>{% else %}{{ n }}{% endif %}</td>
+    {# 감독 11-23 V41 마무리(오너 10-28 원칙 2): 마켓별 현황 = 계정 4칸 카드(이름·판매중 큰 숫자·연결 점) — 표 폐기.
+       승인대기·반려·마지막 조회는 카드 아래 작은 줄. 숫자를 누르면 그 칸의 상품 목록(0이면 링크 없음, Y12-D 5 그대로). #}
+    <div class="hb-mcards" role="list">
+      {% for r in m.rows or [] %}
+      {% set _cells = {'sale': r.sale, 'wait': r.wait, 'rejected': r.rejected} %}
+      <div class="hb-mcard{% if r.connected is sameas false %} is-off{% endif %}" role="listitem" data-role="hb-market-row" data-slot="{{ r.slot }}">
+        <div class="hb-mcard-head">
+          <span class="hb-dot{% if r.connected %} is-on{% endif %}" aria-hidden="true"></span>
+          <span class="hb-mname text-truncate">{{ r.name }}</span>
+        </div>
+        <div class="hb-mkt">{{ r.market_ko }} · {{ '연결' if r.connected else ('미연결' if r.connected is sameas false else '—') }}</div>
+        <div class="hb-mcard-n">{% if r.sale %}<a class="hb-mcell" data-role="hb-mcell" href="/seller/collect/history?mk={{ r.slot|urlencode }}&amp;mst=sale&amp;days=3650">{{ r.sale }}</a>{% else %}{{ r.sale }}{% endif %}<span class="hb-mcard-k">판매중</span></div>
+        <div class="hb-mcard-sub">
+          {% for col, lab in (('wait', '승인대기'), ('rejected', '반려')) %}{% set n = _cells[col] %}
+          <span class="{{ 'is-bad' if col == 'rejected' and n }}">{{ lab }} {% if n %}<a class="hb-mcell" data-role="hb-mcell" href="/seller/collect/history?mk={{ r.slot|urlencode }}&amp;mst={{ col }}&amp;days=3650">{{ n }}</a>{% else %}{{ n }}{% endif %}</span>
           {% endfor %}
-          <td class="{{ 'is-off' if r.connected is sameas false }}"><span class="hb-dot{% if r.connected %} is-on{% endif %}" aria-hidden="true"></span>{{ '연결' if r.connected else ('미연결' if r.connected is sameas false else '—') }}</td>
-          <td class="hb-mtime">{{ r.last_check or '—' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </div>
+        <div class="hb-mtime">마지막 조회 {{ r.last_check or '—' }}</div>
+      </div>
+      {% endfor %}
+    </div>
     {% endif %}
   </section>
 
