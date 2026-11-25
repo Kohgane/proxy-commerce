@@ -112,7 +112,8 @@ def test_m5_precheck_and_register_drive_the_job_line():
     assert "'사전검증 중 — 마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳'" in src
     assert "window.kgpJobLine.show('등록 중 — ' + targets.length + '곳')" in src
     assert "window.kgpJobLine.done('등록 끝 — ' + _ok + '곳 등록됨')" in src
-    assert "reasonHtml(d.error || '등록하지 못했어요')" in src and "reasonHtml(r.message || '')" in src
+    # 11-25 ①c: 마켓마다 한 줄 — 요청 실패도 그 마켓 줄의 사유(reasonHtml)로 그린다
+    assert "message: (d.error || '등록하지 못했어요')" in src and "reasonHtml(r.message || '')" in src
 
 
 def test_coupang_preview_notes_use_korean_reason_too():

@@ -1729,6 +1729,20 @@ class UploadDispatcher:
                           "line": "대표 이미지가 0장이에요 — 마켓은 사진 없는 상품을 받지 않아요."})
             if market == "smartstore":
                 holds[-1]["code"] = "naver_required_representativeImage"     # Y7-F: 네이버 필수 칸 사유코드
+        # 오너 11-25 ②: 사진이 전부 작다 — 전 마켓 보류(사전검증 준비가 크기를 재 둔다 `_imgs_all_small`)
+        _small = pd.get("_imgs_all_small")
+        if isinstance(_small, dict):
+            holds.append({"short": "사진이 작아요", "fix": "small_images", "code": "images_all_small",
+                          "line": f"사진이 작아요 — 나갈 사진 {_small.get('n')}장이 모두 긴 변 {_small.get('max')}px(500px 미만)이라 흐리게 보여요. "
+                                  "다시 가져오기나 사진 올리기로 큰 사진을 넣어 주세요."})
+        # 오너 11-25 ③④: 판매수수료율을 모르는 마켓(멀티샵 WC 등)은 등록 단계에서야 「commission_unknown」으로 떨어졌다 —
+        #   사전검증에서 보류한다(판정은 등록 `_commission_guard`와 같은 함수 · 셀러가 판매가를 적었으면 통과). 유저 글에 env 이름 없음.
+        #   판정값은 사전검증 준비(`_pv_prepare`)가 등록 `_price_gate`와 같은 함수(`commission_pct`)로 재 둔 `_commission_probe`.
+        _cp = pd.get("_commission_probe")
+        if isinstance(_cp, dict) and market in _cp:
+            holds.append({"short": "이 마켓은 아직 준비 중", "fix": "not_ready", "code": "commission_unknown",
+                          "line": "이 마켓은 아직 준비 중이에요(판매수수료율 미정) — 이번 등록에서 빼 주세요.",
+                          "admin_why": _cp.get(market) or ""})
         # 오너 11-23 23:58 ⑤: 쿠팡 판매자 상품코드(SKU)는 원본 상품 주소에서 뽑는다 — 못 뽑으면 **사전검증에서** 보류한다.
         #   예전엔 사전검증은 통과시키고 전송 직전 「SKU 추출 실패」로 떨어져 스스·쿠팡이 반쪽 등록됐다.
         #   `_sku_probe`는 사전검증 준비(`_pv_prepare`)가 등록과 같은 빌더(`build_dispatch_payload`)로 재 둔 값이다.

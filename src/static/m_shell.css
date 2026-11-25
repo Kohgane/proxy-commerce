@@ -77,6 +77,8 @@ html.kgp-app .kgp-web-only { display: none !important; }
   .btn.btn-sm { min-height: 38px; }
 }
 html.kgp-app body[data-mshell] { margin: 0; min-height: 100dvh; padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); overscroll-behavior-y: contain; }
+/* 오너 11-25 ⑥: 잡 진행 한 줄(탭바 위 알약)이 떠 있으면 본문 여백을 알약 높이(약 52px)만큼 더 — 가리지 않게 */
+body[data-mshell].kgp-jobline-on { padding-bottom: calc(72px + 56px + env(safe-area-inset-bottom, 0px)); }
 html.kgp-app input, html.kgp-app select, html.kgp-app textarea { font-size: 16px !important; }
 @media (prefers-reduced-motion: reduce) {
   .kgp-jobline-dot, .kgp-mskel div, .kgp-ptr.spin i { animation: none; }

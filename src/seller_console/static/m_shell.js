@@ -72,11 +72,13 @@
   // ⑤ 잡 진행 한 줄
   var line = null, txt = null, timer = null;
   function el() { line = line || q('[data-role="m-jobline"]'); txt = txt || q('[data-role="m-jobline-text"]'); return line; }
+  // 오너 11-25 ⑥: 한 줄이 떠 있는 동안 본문 아래 여백을 그 높이만큼 더 준다 — 마지막 버튼·글이 알약 밑에 깔리지 않게.
+  function vis(on) { line.hidden = !on; document.body.classList.toggle('kgp-jobline-on', !!on); }
   window.kgpJobLine = {
-    show: function (t) { if (!el()) return; clearTimeout(timer); line.className = 'kgp-jobline'; txt.textContent = t; line.hidden = false; },
-    done: function (t) { if (!el()) return; line.className = 'kgp-jobline ok'; txt.textContent = t; line.hidden = false;
-      clearTimeout(timer); timer = setTimeout(function () { line.hidden = true; }, 2600); },
-    fail: function (t) { if (!el()) return; clearTimeout(timer); line.className = 'kgp-jobline bad'; txt.textContent = t; line.hidden = false; },
-    hide: function () { if (el()) line.hidden = true; },
+    show: function (t) { if (!el()) return; clearTimeout(timer); line.className = 'kgp-jobline'; txt.textContent = t; vis(true); },
+    done: function (t) { if (!el()) return; line.className = 'kgp-jobline ok'; txt.textContent = t; vis(true);
+      clearTimeout(timer); timer = setTimeout(function () { vis(false); }, 2600); },
+    fail: function (t) { if (!el()) return; clearTimeout(timer); line.className = 'kgp-jobline bad'; txt.textContent = t; vis(true); },
+    hide: function () { if (el()) vis(false); },
   };
 })();
