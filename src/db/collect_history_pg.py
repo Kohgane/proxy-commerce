@@ -579,3 +579,14 @@ def compare_swap_extra(item_id, expected, replacement, *, seller_ids):
             [json.dumps(replacement, ensure_ascii=False), str(item_id)] + params +
             [json.dumps(expected, ensure_ascii=False)])
         return cur.fetchone() is not None
+
+
+def find_by_text(needle: str, limit: int = 5) -> list:
+    """관리자 진단 전용(읽기) — `extra_json`·`url` 원문에 `needle`이 든 행(마켓 상품번호로 수집 행 찾기). 스코프 없음 — 호출부가 관리자만."""
+    n = str(needle or "").strip()
+    if len(n) < 6:
+        return []
+    with pg.query() as cur:
+        cur.execute(f"SELECT {_SELECT} FROM collect_history WHERE deleted_at IS NULL AND (extra_json::text LIKE %s OR url LIKE %s) "
+                    "ORDER BY created_at DESC LIMIT %s", [f"%{n}%", f"%{n}%", int(limit)])
+        return [_shape(r) for r in cur.fetchall()]

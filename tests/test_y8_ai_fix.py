@@ -80,6 +80,9 @@ def _fake_market(seen):
 
 
 def _setup(monkeypatch, seen):
+    # 오너 11-25 ④: 판매수수료율을 모르는 마켓은 「아직 준비 중」으로 잠긴다 — 운영처럼 수수료율이 정해진 상태로 잰다.
+    for _mk in ("SMARTSTORE", "ELEVENST", "SHOPIFY", "WOOCOMMERCE"):
+        monkeypatch.setenv(f"MARKET_COMMISSION_PCT_{_mk}", "5")
     import src.seller_console.views as V
     from src.seller_console.upload_dispatcher import UploadDispatcher
     monkeypatch.setattr(V, "_outbound_images", lambda pd, iid: (pd, [], None))

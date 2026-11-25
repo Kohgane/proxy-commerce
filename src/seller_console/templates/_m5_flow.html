@@ -133,6 +133,21 @@
     <a class="btn btn-primary m5-btn" href="#m5Markets" data-role="m5-to-register">등록으로</a>
   </section>
 
+  {% if m5.incomplete %}
+  {# 오너 11-25 ③: 반쪽 수집은 등록 단계로 보내지 않는다 — 무엇이 덜 왔고 어떻게 채우나 #}
+  <section class="m5-incomplete" data-role="m5-incomplete">
+    <b>수집이 덜 됐어요</b>
+    <ul>{% for r in m5.incomplete %}<li data-code="{{ r.code }}">{{ r.line }}</li>{% endfor %}</ul>
+    <div class="m5-incomplete-acts">
+      <button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>
+      {% if m5.incomplete|selectattr('code', 'equalto', 'no_source_url')|list %}
+      <div class="m5-src"><input type="url" inputmode="url" class="form-control" data-role="m5-incomplete-url" placeholder="https://item.taobao.com/item.htm?id=…" autocomplete="off">
+        <button type="button" class="m5-fix" data-role="m5-incomplete-url-save">주소 넣기</button></div>
+      {% endif %}
+    </div>
+    <div class="m5-note" data-role="m5-incomplete-state" aria-live="polite"></div>
+  </section>
+  {% endif %}
   <fieldset class="m5-markets" id="m5Markets" data-role="m5-markets">
     <legend class="m5-legend">등록할 마켓</legend>
     {# Z5 후속(오너 2026-10-06): 연결된 마켓 전부·전부 토글 — 처음 체크가 어디서 왔는지 한 줄(지난 등록 → 설정 → 우주대행 묶음) #}
@@ -145,9 +160,10 @@
     {% if m.group and m.group != _g.last %}<div class="m5-group" data-role="m5-group">{{ m.group_label }}</div>{% endif %}
     {% if not m.group and _g.last %}<div class="m5-group" data-role="m5-group">그 밖의 마켓</div>{% endif %}
     {% set _g.last = m.group or '' %}
-    <label class="m5-mk{% if m.pending %} is-pending{% endif %}" data-market="{{ m.code }}">
-      <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked %}checked{% endif %}{% if m.registered %} data-registered="1"{% endif %} autocomplete="off">
+    <label class="m5-mk{% if m.pending %} is-pending{% endif %}{% if m.not_ready %} is-off{% endif %}" data-market="{{ m.code }}">
+      <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked and not m.not_ready %}checked{% endif %}{% if m.not_ready %} disabled data-not-ready="1"{% endif %}{% if m.registered %} data-registered="1"{% endif %} autocomplete="off">
       <span class="m5-mk-body"><span>{{ m.label }}</span>
+        {% if m.not_ready %}<span class="m5-mk-note" data-role="m5-market-not-ready">{{ m.not_ready }}</span>{% endif %}
         {% if m.note %}<span class="m5-mk-note" data-role="m5-market-note">{{ m.note }}</span>{% endif %}
         {% if m.limit_text %}<span class="m5-mk-note" data-role="m5-market-limit">{{ m.limit_text }}</span>{% endif %}
         {% if m.registered %}<span class="mk-dup" data-role="mk-dup">{{ m.registered.line }}</span>{% endif %}</span>
@@ -173,6 +189,7 @@
      이제 검증 전엔 「사전검증부터」 모드 — 누르면 고른 마켓으로 사전검증을 돌리고, 통과한 마켓이 생기면 「등록 (N곳)」.
      검증 없이 바로 등록되는 길은 여전히 없다. 막힌 이유는 버튼 밑 한 줄로 말한다. #}
   <button type="button" class="btn btn-primary m5-btn" id="m5Go" data-role="m5-register" data-mode="check"{% if m5.blocked %} disabled{% endif %}>등록</button>
+  <button type="button" class="btn btn-ghost m5-btn" id="m5GoHeld" data-role="m5-register-held" hidden>보류도 그래도 등록</button>
   <div class="m5-note" id="m5GoHint" data-role="m5-go-hint" aria-live="polite">{{ m5.blocked or '누르면 사전검증부터 해요 — 통과한 마켓에만 등록돼요.' }}</div>
   <div id="m5Done" class="m5-done" data-role="m5-done" aria-live="polite" hidden></div>
   <script type="application/json" id="m5Product">{{ m5.product|tojson }}</script>
@@ -232,6 +249,13 @@
   .m5-mk-body { display: flex; flex-direction: column; min-width: 0; padding: 8px 0; }
   .m5-mk-note { color: var(--text-muted); font-size: .84rem; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }   /* 긴 영문 토큰(키 이름)이 390px 카드를 밀지 않게 */
   .m5-mk.is-pending { border-style: dashed; }
+  .m5-mk.is-off { opacity: .55; }                                                        /* 오너 11-25 ④: 아직 준비 중인 마켓 — 고를 수 없음 */
+  .m5-res.is-off { opacity: .6; border-style: dashed; }                                   /* ①a: 뺀 마켓 */
+  .m5-incomplete { margin: 0 0 var(--space-3); padding: var(--space-3); border: 1px solid var(--warn); border-radius: var(--radius); background: var(--surface); }
+  .m5-incomplete ul { margin: 6px 0; padding-left: 1.1rem; }
+  .m5-incomplete-acts { display: flex; flex-direction: column; gap: var(--space-2); }
+  .m5-off-row { margin-top: 4px; }
+  .m5-fix-quiet { color: var(--text-muted); border-color: var(--border); }
   .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
   .m5-btn.btn-ghost { border: 1px solid var(--border); background: var(--surface); font-weight: 600; }
   .m5-fix { display: inline-block; margin-top: 4px; }
@@ -301,7 +325,9 @@
   var product = JSON.parse(document.getElementById('m5Product').textContent || '{}');
   var itemId = root.getAttribute('data-item');
   var blocked = root.getAttribute('data-blocked') === '1';
-  var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go');
+  var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go'), heldBtn = document.getElementById('m5GoHeld');
+  var pvOff = {};          // 오너 11-25 ①a: 결과 카드에서 「이 마켓 빼기」로 뺀 마켓(회색 + 「다시 넣기」)
+  var withHeld = false;    // ①b: 이번 등록에 보류 마켓도 「그래도 등록」으로 싣나(보조 버튼일 때만)
   var checksEl = document.getElementById('m5Checks'), doneEl = document.getElementById('m5Done');
 
   // Z6: 해운/항공 토글 · 무게·크기 직접 넣기 — 저장하고 다시 그린다(같은 엔진이 다시 잰다).
@@ -385,6 +411,26 @@
     } catch (e) { optSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
     optSave.disabled = false;
   });
+  // 오너 11-25 ③: 「수집이 덜 됐어요」 — 다시 가져오기(서버 재수집 줄) · 주소 넣기(원본 주소 저장 → 다시 그림)
+  root.addEventListener('click', async function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-incomplete-refetch],[data-role=m5-incomplete-url-save]') : null;
+    if (!b) return;
+    var st = root.querySelector('[data-role=m5-incomplete-state]'), isUrl = b.getAttribute('data-role') === 'm5-incomplete-url-save';
+    var body = {mode: 'queue'}, url = '/seller/collect/' + encodeURIComponent(itemId) + '/recollect';
+    if (isUrl) {
+      var u = (root.querySelector('[data-role=m5-incomplete-url]') || {}).value || '';
+      if (!u.trim()) { st.textContent = '원본 상품 주소를 넣어 주세요.'; return; }
+      url = '/seller/collect/' + encodeURIComponent(itemId) + '/source-url'; body = {url: u.trim()};
+    }
+    b.disabled = true; st.textContent = isUrl ? '확인하는 중…' : '요청하는 중…';
+    try {
+      var r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
+      if (d.ok) { st.textContent = isUrl ? '원본 주소를 넣었어요 — 다시 그립니다' : (d.message || '다시 가져오기 줄에 넣었어요'); if (isUrl) setTimeout(function () { location.reload(); }, 700); }
+      else st.textContent = (isUrl ? '' : '요청하지 못했어요 — ') + (d.error || '사유 없음');
+    } catch (err) { st.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
+    b.disabled = false;
+  });
   // F: 옵션 값 상표 — 「제안대로 바꾸기」(서버가 같은 판정으로 다시 골라 적용) → 다시 그린다.
   var brandBtn = root.querySelector('[data-role=m5-brand-fix]'), brandSt = root.querySelector('[data-role=m5-brand-state]');
   if (brandBtn) brandBtn.addEventListener('click', async function () {
@@ -450,11 +496,11 @@
   var goHint = document.getElementById('m5GoHint');
   function hint(t) { if (goHint) goHint.textContent = t; }
   // 검증 전 = 「사전검증부터」 모드(눌리는 버튼). 등록은 통과·보류 결과가 있을 때만 「go」 모드에서.
-  function resetGo() { okMarkets = []; goBtn.dataset.mode = 'check'; goBtn.disabled = blocked; goBtn.textContent = '등록'; goBtn.dataset.held = '';
+  function resetGo() { okMarkets = []; sentDone = false; goBtn.dataset.mode = 'check'; goBtn.disabled = blocked; goBtn.textContent = '등록'; goBtn.dataset.held = ''; if (heldBtn) heldBtn.hidden = true;
     hint(blocked ? (root.querySelector('[data-role=m5-blocked]') || {}).textContent || '' : '누르면 사전검증부터 해요 — 통과한 마켓에만 등록돼요.'); }
   var pickCount = root.querySelector('[data-role=m5-pick-count]');
   function recount() { if (pickCount) pickCount.textContent = String(picked().length); }
-  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvJob++; checkBtn.disabled = false; recount(); } });
+  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvLastHtml = ''; pvOff = {}; pvJob++; checkBtn.disabled = false; recount(); } });
   // 뒤로 가기·새로고침으로 브라우저가 체크 상태를 되살려도 글은 지금 상태를 말한다
   window.addEventListener('pageshow', recount);
   recount();
@@ -576,6 +622,17 @@
     return !r.ok && r.hold && (r.fixes || []).length && (r.fixes || []).every(function (f) { return OVERRIDES[f]; });
   }
   function pvRowHtml(m) {
+    if (pvOff[m]) {
+      return '<div class="m5-res is-off" data-market="' + esc(m) + '" data-ok="0" data-role="m5-off">' +
+        '<b>' + esc(mkLabel(m)) + ' — 뺐어요</b><div class="m5-note">이번 등록에서 빠져요.</div>' +
+        '<div><button type="button" class="m5-fix" data-role="m5-readd-market" data-market="' + esc(m) + '">다시 넣기</button></div></div>';
+    }
+    var h0 = pvRowHtmlCore(m);
+    if (!pvRows[m]) return h0;
+    // ①a: 어떤 결과든(통과·보류·막힘·검증 못 함) 그 마켓을 이번 등록에서 뺄 수 있다
+    return h0.replace(/<\/div>$/, '<div class="m5-off-row"><button type="button" class="m5-fix m5-fix-quiet" data-role="m5-off-market" data-market="' + esc(m) + '">이 마켓 빼기</button></div></div>');
+  }
+  function pvRowHtmlCore(m) {
     var r = pvRows[m];
     if (!r) {
       var lab = root.querySelector('label[data-market="' + m + '"] .m5-mk-body > span');
@@ -584,8 +641,7 @@
     if (r.transport) {
       return '<div class="m5-res is-bad" data-market="' + esc(r.market) + '" data-ok="0" data-role="m5-transport" data-transport="' + esc(r.transport) + '">' +
         '<b>' + esc(r.market_label) + ' — 검증 못 함</b>' + reasonHtml(r.message || '') +
-        '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 시도</button> ' +
-        '<button type="button" class="m5-fix" data-role="m5-uncheck-market" data-market="' + esc(r.market) + '">이 마켓 빼기</button></div></div>';
+        '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 시도</button></div></div>';
     }
     // M8-7: 이미 등록 기록이 있는 마켓 — 「이미 등록됨 {번호}」(업로드 대상에서 빠짐) + 그 마켓 상태 팝업(기록 빼기)
     if (r.registered_no) {
@@ -711,18 +767,23 @@
     // 오너 11-23 ①: 3초 폴링마다 통째로 다시 그리면 누르는 순간 버튼이 갈려 눌림이 날아간다 — 내용이 같으면 그대로 둔다.
     //   그 줄 아래 입력칸(편집·주소 넣기)을 쓰는 동안도 미룬다(글자를 지우지 않게) — 닫히면 다시 그린다.
     if (h !== pvLastHtml && !m5Editing()) { checksEl.innerHTML = h; pvLastHtml = h; }
-    okMarkets = pvOrder.filter(function (m) { return pvRows[m] && pvRows[m].ok; });
-    var held = pvOrder.filter(function (m) { return pvRows[m] && overridable(pvRows[m]); });
-    var anyHold = pvOrder.some(function (m) { return pvRows[m] && pvRows[m].hold; });
+    okMarkets = pvOrder.filter(function (m) { return !pvOff[m] && pvRows[m] && pvRows[m].ok; });
+    var held = pvOrder.filter(function (m) { return !pvOff[m] && pvRows[m] && overridable(pvRows[m]); });
+    var anyHold = pvOrder.some(function (m) { return !pvOff[m] && pvRows[m] && pvRows[m].hold; });
     goBtn.dataset.held = held.join(',');
-    var n = okMarkets.length + held.length;
+    // 오너 11-25 ①b: 한 버튼에 묶지 않는다 — 주 버튼 「통과한 N곳만 등록」 · 보조 「보류 M곳도 그래도 등록」
+    var n = okMarkets.length;
     goBtn.dataset.mode = n ? 'go' : 'check';
     goBtn.disabled = blocked || (!n && pvState === 'running');
-    goBtn.textContent = n
-      ? '등록 (' + n + '곳' + (held.length ? ' · 보류 ' + held.length + '곳은 그래도 등록' : '') + ')'
-      : (pvState === 'running' ? '확인하는 중…' : '다시 사전검증');
-    hint(n ? '' : (pvState === 'running' ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
-      : (anyHold ? '보류된 마켓을 보강하거나 「그래도 등록」을 누르면 등록할 수 있어요.'
+    goBtn.textContent = n ? '통과한 ' + n + '곳만 등록' : (pvState === 'running' ? '확인하는 중…' : (held.length ? '통과한 마켓 없음' : '다시 사전검증'));
+    if (!n && held.length && pvState !== 'running') goBtn.disabled = true;
+    if (heldBtn) {
+      heldBtn.hidden = !held.length || pvState === 'running' || sentDone;
+      heldBtn.disabled = blocked;
+      heldBtn.textContent = '보류 ' + held.length + '곳도 그래도 등록' + (n ? '(통과 ' + n + '곳과 함께)' : '');
+    }
+    hint(n ? (held.length ? '보류 마켓은 빠지고 통과한 곳만 나가요.' : '') : (pvState === 'running' ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
+      : (anyHold ? '보류된 마켓을 보강하거나 「보류도 그래도 등록」을 누르면 등록할 수 있어요.'
         : '통과한 마켓이 없어요 — 위 사유를 고친 뒤 다시 사전검증해 주세요.')));
     // 오너 11-23 A: 잡 진행 한 줄(셸) — 사전검증 중·대기 · 끝나면 결과 한 마디(같은 상태는 다시 안 띄운다)
     if (window.kgpJobLine && pvOrder.length) {
@@ -843,6 +904,15 @@
     if (!b) return;
     var role = b.getAttribute('data-role') || '';
     if (role === 'm5-retry-market') { runCheck([b.getAttribute('data-market')], true); return; }
+    // 오너 11-25 ①a: 이 마켓 빼기 → 회색 + 「다시 넣기」(체크도 같이 풀고/넣는다 — 다시 사전검증해도 빠진 채)
+    if (role === 'm5-off-market' || role === 'm5-readd-market') {
+      var mm = b.getAttribute('data-market'), on = role === 'm5-off-market';
+      if (on) pvOff[mm] = 1; else delete pvOff[mm];
+      var bx = root.querySelector('input[name=m5-market][value="' + mm + '"]'); if (bx) bx.checked = !on;
+      recount(); pvRender();
+      if (!on && !pvRows[mm]) runCheck([mm], true);
+      return;
+    }
     // 오너 11-23 ④: 대표로 쓸 장을 탭 → 저장(기존 「이 장을 대표로」 API) → 쿠팡 계정 전부 다시 확인(한 번 고르면 둘 다)
     if (role === 'm5-rep-apply') {
       repPick = parseInt(b.getAttribute('data-idx'), 10); pvRender();
@@ -961,76 +1031,133 @@
       }).catch(function () {});
   }
 
-  function register(confirmWarn, confirmDup) {
-    var held = (goBtn.dataset.held || '').split(',').filter(Boolean);
-    var targets = okMarkets.concat(held);
+  // 등록 결과 한 줄(성공 = 번호·마켓 상태·「이 마켓에서 내리기」 · 실패 = 사람 말 사유 · 취소 = 안 보냄)
+  function resultRowHtml(r) {
+    if (r.cancelled) return '<div class="m5-res is-off" data-role="m5-result" data-market="' + esc(r.market) + '" data-cancelled="1"><b>' + esc(r.market_label) + ' — 취소함</b><div class="m5-note">보내지 않았어요.</div></div>';
+    return '<div class="m5-res ' + (r.success ? 'is-ok' : 'is-bad') + '" data-role="m5-result" data-market="' + esc(r.market) + '">' +
+         '<b>' + esc(r.market_label) + ' — ' + (r.success ? '등록됨' : (r.queued ? '대기열에 들어감' : '실패')) + '</b>' +
+         // 오너 2026-10-10: 네이버는 채널 상품번호만 보인다(원상품번호는 로그·DB 내부용)
+         (r.success ? '마켓 상품번호: <strong data-role="m5-ext-id">' + esc(r.channel_product_no || r.external_product_id || '(마켓이 번호를 돌려주지 않았어요)') + '</strong>' +
+            (r.channel_product_no && r.external_url ? ' · <a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">구매자 화면</a>' : '') +
+            // U2·M6: 등록한 마켓은 전부 「마켓 상태」 → 상태 팝업(마켓에 그때 묻는다)
+            '<div><button type="button" class="m5-fix" data-role="m5-review-btn" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">마켓 상태</button>' +
+            (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>' +
+            // 오너 11-25 ①c: 이미 나간 마켓 — 판매중지(확인 한 번)
+            '<div class="m5-off-row" data-role="m5-takedown-box"><button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown" data-market="' + esc(r.market) + '">이 마켓에서 내리기</button></div>'
+          : reasonHtml(r.message || '') +
+            // Y7-F: 「사유 2건(아래)」면 아래에 그 사유를 한 줄씩
+            ((r.details || []).length > 1 ? '<ul data-role="m5-result-details">' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+            (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
+            (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
+              (r.action_label ? esc(r.action_label) : (['category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기')) +
+              '</a></div>' : '')) + '</div>';
+  }
+  var sendCancel = {}, sentDone = false;
+  function register(confirmWarn, confirmDup, onlyMarkets) {
+    var held = withHeld ? (goBtn.dataset.held || '').split(',').filter(Boolean) : [];
+    var targets = onlyMarkets || okMarkets.concat(held);
     if (!targets.length) return;
-    goBtn.disabled = true; checkBtn.disabled = true;
+    goBtn.disabled = true; checkBtn.disabled = true; if (heldBtn) heldBtn.disabled = true;
     doneEl.hidden = false; doneEl.innerHTML = '<div class="m5-note">등록하는 중… 쿠팡은 SKU마다 따로 올라가 조금 걸릴 수 있어요.</div>';
     if (window.kgpJobLine) window.kgpJobLine.show('등록 중 — ' + targets.length + '곳');
     // 보류 중 「그래도 등록」으로 풀리는 마켓을 같이 올리면, 그 확인(사유 기록)을 먼저 남긴다 — 버튼 글자에 적어 둔 그대로.
     var fixes = {};
-    held.forEach(function (m) { ((pvRows[m] || {}).fixes || []).forEach(function (f) { if (OVERRIDES[f]) fixes[f] = 1; }); });
+    held.filter(function (m) { return targets.indexOf(m) >= 0; }).forEach(function (m) { ((pvRows[m] || {}).fixes || []).forEach(function (f) { if (OVERRIDES[f]) fixes[f] = 1; }); });
     Object.keys(fixes).reduce(function (p, f) {
       return p.then(function () { return post('/seller/collect/' + encodeURIComponent(itemId) + '/' + OVERRIDES[f][0], {}); });
-    }, Promise.resolve()).then(function () {
-    var upBody = {product: product, markets: targets, item_id: itemId, confirm_warn: !!confirmWarn, confirm_duplicate: !!confirmDup};
-    // 순찰 77: 등록 = 잡(202 + 폴링 — seller.js `kgpUploadJob`, 끝나면 예전과 같은 응답). 없으면 예전 동기 호출
-    return window.kgpUploadJob ? window.kgpUploadJob(upBody) : post('/seller/collect/upload', upBody); }).then(function (d) {
-      checkBtn.disabled = false;
-      // Y7-K: 이미 등록된 마켓 — 서버가 확인 없이 다시 올리지 않는다(같은 상품이 하나 더 생긴다)
-      if (d.needs_dup_confirm) {
-        doneEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-dup-confirm">' + esc(d.error) + '</div>' +
-          '<button type="button" class="btn btn-ghost m5-btn" data-role="m5-dup-yes">중복 등록 — 하나 더 올리기</button>';
-        doneEl.querySelector('[data-role=m5-dup-yes]').addEventListener('click', function () { register(confirmWarn, true); });
-        goBtn.disabled = false; return;
-      }
-      if (d.needs_confirm) {
-        doneEl.innerHTML = '<div class="m5-res is-bad">' + esc(d.error) + '</div>' +
-          '<button type="button" class="btn btn-ghost m5-btn" data-role="m5-confirm">확인했어요 — 그대로 등록</button>';
-        doneEl.querySelector('[data-role=m5-confirm]').addEventListener('click', function () { register(true, confirmDup); });
-        return;
-      }
-      if (!d.ok) {
-        var bad = (d.unreachable || []).map(function (u) { return '<li>' + esc(u.label || u.url) + ' — ' + esc(u.reason || u.status) + '</li>'; }).join('');
-        if (window.kgpJobLine) window.kgpJobLine.fail('등록하지 못했어요');
-        doneEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-register-error">' + reasonHtml(d.error || '등록하지 못했어요') +
-          (d.message ? '<div class="m5-note">' + esc(d.message) + '</div>' : '') + (bad ? '<ul>' + bad + '</ul>' : '') + '</div>';
-        goBtn.disabled = false; return;
-      }
-      var rs = ((d.result || {}).results || []), h = '';
-      rs.forEach(function (r) {
-        h += '<div class="m5-res ' + (r.success ? 'is-ok' : 'is-bad') + '" data-role="m5-result" data-market="' + esc(r.market) + '">' +
-             '<b>' + esc(r.market_label) + ' — ' + (r.success ? '등록됨' : (r.queued ? '대기열에 들어감' : '실패')) + '</b>' +
-             // 오너 2026-10-10: 네이버는 채널 상품번호만 보인다(원상품번호는 로그·DB 내부용)
-             (r.success ? '마켓 상품번호: <strong data-role="m5-ext-id">' + esc(r.channel_product_no || r.external_product_id || '(마켓이 번호를 돌려주지 않았어요)') + '</strong>' +
-                (r.channel_product_no && r.external_url ? ' · <a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">구매자 화면</a>' : '') +
-                // U2: 쿠팡 셀러 상품번호 주소(vp/products)는 승인 전엔 「상품을 찾을 수 없습니다」 — 대신 검토 상태를 묻는다.
-                // M6: 등록한 마켓은 전부 「검토 상태 보기」 → 상태 팝업(마켓에 그때 묻는다 · statusName·반려 사유·Wing/판매자센터).
-                '<div><button type="button" class="m5-fix" data-role="m5-review-btn" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">마켓 상태</button>' +
-                (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>'
-              : reasonHtml(r.message || '') +
-                // Y7-F: 「사유 2건(아래)」면 아래에 그 사유를 한 줄씩(예전엔 문장만 있고 목록이 없었다)
-                ((r.details || []).length > 1 ? '<ul data-role="m5-result-details">' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
-                (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
-                (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
-                  (r.action_label ? esc(r.action_label) :                                      // Y7-F: 서버 매퍼(필드별) 글자
-                   (['category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기')) +
-                  '</a></div>' : '')) + '</div>';
+    }, Promise.resolve()).then(function () { sendSeq(targets, confirmWarn, confirmDup); });
+  }
+  // 오너 11-25 ①c: 한 마켓씩 보낸다 — 아직 안 나간 마켓은 그 줄의 「취소」로 뺀다(누른 마켓은 보내지 않음).
+  function sendSeq(targets, confirmWarn, confirmDup) {
+    sendCancel = {};
+    var rs = [], left = targets.slice(), cur = null;
+    function rows() {
+      doneEl.innerHTML = targets.map(function (m) {
+        var r = rs.filter(function (x) { return x.market === m; })[0];
+        if (r) return resultRowHtml(r);
+        if (m === cur) return '<div class="m5-res is-hold" data-role="m5-send-row" data-market="' + esc(m) + '"><b>' + esc(mkLabel(m)) + ' — 보내는 중…</b></div>';
+        return '<div class="m5-res is-hold" data-role="m5-send-row" data-market="' + esc(m) + '"><b>' + esc(mkLabel(m)) + ' — 대기 중</b>' +
+               '<div><button type="button" class="m5-fix" data-role="m5-send-cancel" data-market="' + esc(m) + '">취소</button></div></div>';
+      }).join('');
+    }
+    function step() {
+      if (!left.length) return finish();
+      var m = left.shift();
+      if (sendCancel[m]) { rs.push({market: m, market_label: mkLabel(m), success: false, cancelled: true}); rows(); return step(); }
+      cur = m; rows();
+      if (window.kgpJobLine) window.kgpJobLine.show('등록 중 — ' + mkLabel(m) + ' (' + (targets.length - left.length) + '/' + targets.length + ')');
+      var upBody = {product: product, markets: [m], item_id: itemId, confirm_warn: !!confirmWarn, confirm_duplicate: !!confirmDup};
+      // 순찰 77: 등록 = 잡(202 + 폴링 — seller.js `kgpUploadJob`, 끝나면 예전과 같은 응답). 없으면 예전 동기 호출
+      (window.kgpUploadJob ? window.kgpUploadJob(upBody) : post('/seller/collect/upload', upBody)).then(function (d) {
+        cur = null;
+        var rest = [m].concat(left);
+        if (d.needs_dup_confirm || d.needs_confirm) {
+          // Y7-K: 이미 등록된 마켓 · 경고 확인 — 서버가 확인 없이 다시 올리지 않는다. 확인하면 **남은 마켓만** 이어서 보낸다.
+          rows();
+          doneEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="' + (d.needs_dup_confirm ? 'm5-dup-confirm' : 'm5-warn-confirm') + '">' + esc(d.error) + '</div>' +
+            '<button type="button" class="btn btn-ghost m5-btn" data-role="' + (d.needs_dup_confirm ? 'm5-dup-yes' : 'm5-confirm') + '">' +
+            (d.needs_dup_confirm ? '중복 등록 — 하나 더 올리기' : '확인했어요 — 그대로 등록') + '</button>');
+          doneEl.querySelector(d.needs_dup_confirm ? '[data-role=m5-dup-yes]' : '[data-role=m5-confirm]').addEventListener('click', function () {
+            register(d.needs_confirm ? true : confirmWarn, d.needs_dup_confirm ? true : confirmDup, rest); });
+          checkBtn.disabled = false; goBtn.disabled = false; return;
+        }
+        if (!d.ok) {
+          var bad = (d.unreachable || []).map(function (u) { return '<li>' + esc(u.label || u.url) + ' — ' + esc(u.reason || u.status) + '</li>'; }).join('');
+          rs.push({market: m, market_label: mkLabel(m), success: false, message: (d.error || '등록하지 못했어요') + (d.message ? ' — ' + d.message : '')});
+          if (bad) rs[rs.length - 1].details = (d.unreachable || []).map(function (u) { return (u.label || u.url) + ' — ' + (u.reason || u.status); });
+          rows(); return step();
+        }
+        var got = ((d.result || {}).results || []);
+        if (!got.length) got = [{market: m, market_label: mkLabel(m), success: false, message: '마켓이 결과를 돌려주지 않았어요.'}];
+        got.forEach(function (r) { rs.push(r); });
+        rows(); step();
       });
-      doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
+    }
+    function finish() {
+      rows();
+      checkBtn.disabled = false;
       // 쿠팡은 결과 줄 옆에 마지막 상태 배지를 바로 채운다(팝업은 버튼이 연다 — _market_status.html 위임 클릭).
       if (doneEl.querySelector('[data-role=m5-review]')) reviewStatus(0);
       var _ok = rs.filter(function (r) { return r.success; }).length;
       if (window.kgpJobLine) { if (_ok) window.kgpJobLine.done('등록 끝 — ' + _ok + '곳 등록됨'); else window.kgpJobLine.fail('등록 끝 — 등록된 마켓이 없어요'); }
-      if (rs.some(function (r) { return r.success; })) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; }
-      else { goBtn.disabled = false; }
-    });
+      // 끝나면 보조 버튼(「보류도 그래도 등록 — 통과와 함께」)을 숨긴다 — 누르면 이미 나간 마켓을 또 보낸다. 보류 마켓은 다시 사전검증부터.
+      sentDone = !!_ok;
+      if (heldBtn) { heldBtn.hidden = sentDone; heldBtn.disabled = sentDone; }
+      withHeld = false;
+      if (_ok) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; } else { goBtn.disabled = false; }
+    }
+    step();
   }
+  // ①c: 대기 중 「취소」 · 「이 마켓에서 내리기」(확인 한 번 → 판매중지 → 마켓에서 다시 읽어 확인)
+  doneEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-send-cancel],[data-role=m5-takedown],[data-role=m5-takedown-yes],[data-role=m5-takedown-no]') : null;
+    if (!b) return;
+    var role = b.getAttribute('data-role'), m = b.getAttribute('data-market');
+    if (role === 'm5-send-cancel') {
+      sendCancel[m] = 1; b.disabled = true; b.textContent = '취소함 — 보내지 않아요'; return;
+    }
+    var box = b.closest('[data-role=m5-takedown-box]');
+    if (role === 'm5-takedown') {
+      box.innerHTML = '<div class="m5-note" data-role="m5-takedown-ask">' + esc(mkLabel(m)) + '에서 판매중지할까요? (지우지 않아요 — 판매자센터에서 다시 켤 수 있어요)</div>' +
+        '<button type="button" class="m5-fix" data-role="m5-takedown-yes" data-market="' + esc(m) + '">내리기</button> ' +
+        '<button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown-no" data-market="' + esc(m) + '">그만두기</button>';
+      return;
+    }
+    if (role === 'm5-takedown-no') {
+      box.innerHTML = '<button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown" data-market="' + esc(m) + '">이 마켓에서 내리기</button>'; return;
+    }
+    b.disabled = true; b.textContent = '내리는 중…';
+    post('/seller/collect/' + encodeURIComponent(itemId) + '/take-down', {market: m, confirm: true}).then(function (d) {
+      box.innerHTML = d.ok ? '<div class="m5-note" data-role="m5-takedown-done">내렸어요 — 판매중지(마켓에서 다시 읽어 확인)</div>'
+        : '<div class="m5-note" data-role="m5-takedown-fail">' + esc(d.error || '내리지 못했어요') + '</div>' +
+          '<button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown" data-market="' + esc(m) + '">다시 시도</button>';
+    });
+  });
   goBtn.addEventListener('click', function () {
     if (goBtn.dataset.mode !== 'go') { checkBtn.click(); return; }   // 검증 전·전부 막힘 → 사전검증부터
-    register(false);
+    withHeld = false; register(false);                               // ①b: 통과한 곳만
   });
+  if (heldBtn) heldBtn.addEventListener('click', function () { withHeld = true; register(false); });   // ①b: 보류도 그래도 등록
 })();
 </script>
 {% include "_market_status.html" %}

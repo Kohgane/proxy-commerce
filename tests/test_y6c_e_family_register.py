@@ -116,8 +116,11 @@ def test_legacy_own_key_still_read_when_shared_empty():
     assert SR.account_route("owner-e", shared=True) == "forwarder"
 
 
-def test_family_card_market_rows_follow_owner_setting():
-    """오너가 정한 「기본 등록 마켓」(공유 한 벌)이 가족 카드의 처음 체크 — 키는 오너 서버 값으로 연결됨."""
+def test_family_card_market_rows_follow_owner_setting(monkeypatch):
+    """오너가 정한 「기본 등록 마켓」(공유 한 벌)이 가족 카드의 처음 체크 — 키는 오너 서버 값으로 연결됨.
+
+    11-25 ④: 판매수수료율이 정해진 마켓만 체크된다(미정이면 「아직 준비 중」·비활성) — 여기선 오너가 수수료율을 정한 경우."""
+    monkeypatch.setenv("MARKET_COMMISSION_PCT_WOOCOMMERCE", "3")
     _client("owner").post("/seller/settings", data={"codes": ["woocommerce"]})
     _iid, h = _card("fam", "fam-e")
     assert re.search(r'value="woocommerce" checked', h)
@@ -137,9 +140,10 @@ def test_register_button_is_live_before_check_and_hint_says_why():
 @pytest.mark.skipif(not os.path.exists("/opt/pw-browsers/chromium") and not os.environ.get("KGP_REQUIRE_BROWSER"),
                     reason="브라우저 없음")
 def test_family_tap_register_runs_prevalidate_then_enables(monkeypatch):
-    """실브라우저(390px): 가족 카드에서 「등록」을 먼저 누르면 → 사전검증 POST(등록 POST 0) → 통과 → 「등록 (1곳)」 켜짐."""
+    """실브라우저(390px): 가족 카드에서 「등록」을 먼저 누르면 → 사전검증 POST(등록 POST 0) → 통과 → 「통과한 1곳만 등록」 켜짐."""
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
+    monkeypatch.setenv("MARKET_COMMISSION_PCT_WOOCOMMERCE", "3")   # 11-25 ④: 수수료율이 정해진 마켓이라야 체크된다
     _client("owner").post("/seller/settings", data={"codes": ["woocommerce"]})
     iid, html = _card("fam", "fam-e")
     seen = []
@@ -170,12 +174,12 @@ def test_family_tap_register_runs_prevalidate_then_enables(monkeypatch):
         assert pg.evaluate("document.getElementById('m5Go').disabled") is False
         pg.click("#m5Go")
         for _ in range(60):
-            if pg.inner_text("#m5Go").startswith("등록 ("):
+            if pg.inner_text("#m5Go").startswith("통과한 "):
                 break
             pg.wait_for_timeout(100)
         text, disabled = pg.inner_text("#m5Go"), pg.evaluate("document.getElementById('m5Go').disabled")
         mode, hint = pg.evaluate("document.getElementById('m5Go').dataset.mode"), pg.inner_text("#m5GoHint")
         b.close()
-    assert text == "등록 (1곳)" and disabled is False and mode == "go" and hint == ""
+    assert text == "통과한 1곳만 등록" and disabled is False and mode == "go" and hint == ""
     assert ("POST", "/seller/collect/prevalidate") in seen
     assert not any(u.endswith("/seller/collect/upload") for _m, u in seen)          # 첫 탭은 검증만 — 등록 0회

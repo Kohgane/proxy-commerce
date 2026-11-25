@@ -2146,6 +2146,47 @@ def _sku_label(sku) -> str:
     return str(sku.get("name") or sku.get("title") or sku.get("sku_id") or "")
 
 
+def _incomplete_reasons(item: dict, product: dict, has_price: bool) -> list:
+    """오너 11-25 ③ — 「수집이 덜 됐어요」 사유(저장본만 본다 · 네트워크 0). 하나라도 있으면 등록 단계로 보내지 않는다.
+    · 원본 주소로 상품번호(SKU)를 못 냄(공유 짧은 링크만) — 등록과 같은 빌더(`build_dispatch_payload`)
+    · 옵션은 있는데 옵션별 가격·재고(SKU) 행이 0
+    · 판매가를 낼 원가가 없음"""
+    out = []
+    try:
+        # 주소가 아예 없거나, 공유용 짧은 링크(`e.tb.cn` 등)만 있고 읽어 둔 상품번호·넣은 주소도 없을 때만 — 다른 소싱처 주소는
+        #   SKU 규칙이 없어도 멀쩡한 원본 주소다(막지 않는다).
+        from src.collectors.share_text import is_short_link
+        from .upload_dispatcher import share_item_url
+        row_url = str((item or {}).get("url") or "").strip()
+        if not row_url or (is_short_link(row_url) and not share_item_url(item)):
+            out.append({"code": "no_source_url", "line": "원본 상품 주소가 없어요(공유용 짧은 링크만 있어요) — 주소를 넣거나 다시 가져와 주세요."})
+    except Exception as exc:                                     # noqa: BLE001 — 판정 실패는 막는 사유가 아니다
+        logger.warning("[M5] 원본 주소 판정 실패: %s", exc)
+    opts = [o for o in ((product or {}).get("options") or []) if isinstance(o, dict) and (o.get("values") or [])]
+    if opts and not ((product or {}).get("skus") or []):
+        out.append({"code": "no_skus", "line": "옵션은 있는데 옵션별 가격·재고(SKU)를 못 가져왔어요 — 다시 가져와 주세요."})
+    if not has_price:
+        out.append({"code": "no_price", "line": "판매가를 낼 원가가 없어요 — 다시 가져와 주세요."})
+    return out
+
+
+def _mark_not_ready(markets: list, product: dict) -> None:
+    """오너 11-25 ④ — 판매수수료율을 모르는 마켓(멀티샵 WC 등)은 **고를 수 없게**. 셀러가 판매가를 직접 적었으면 그 값이 이긴다(등록과 같은 판정).
+    유저 화면엔 「이 마켓은 아직 준비 중」만, 관리자에겐 무엇을 설정할지(원문)."""
+    from src.price import commission_pct
+    try:
+        if float((product or {}).get("sell_price_krw") or 0) > 0:
+            return
+    except (TypeError, ValueError):
+        pass
+    admin = _is_admin_user()
+    for m in markets:
+        rate, why = commission_pct(str(m.get("code") or "").split(":")[0])     # 계정 접미어(coupang:gogane)는 떼고 마켓으로 판정
+        if rate is None:
+            m["checked"] = False
+            m["not_ready"] = why if admin else "이 마켓은 아직 준비 중"
+
+
 def mobile_list_ctx(item: dict) -> dict:
     """M5(오너 2026-09-30) — 폰에서 **미리보기 → 마켓 선택 → 사전검증 → 등록** 한 흐름의 재료.
 
@@ -2266,6 +2307,9 @@ def mobile_list_ctx(item: dict) -> dict:
     blocked = ""
     if ax["is_draft"] and not ax["gate_ready"]:
         blocked = "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다."
+    incomplete = _incomplete_reasons(item, product, has_price)       # 오너 11-25 ③: 반쪽 수집은 등록 단계로 보내지 않는다
+    if incomplete and not blocked:
+        blocked = "수집이 덜 됐어요 — " + incomplete[0]["line"]
 
     connected = {}
     try:
@@ -2278,6 +2322,7 @@ def mobile_list_ctx(item: dict) -> dict:
                 "checked": False} for m in _M5_MARKETS]
     markets, market_pick = _market_rows(markets, product)
     _mark_registered(markets, ex)                       # M7: 이미 등록한 마켓은 기본 체크 해제 + 경고
+    _mark_not_ready(markets, product)                   # 오너 11-25 ④: 수수료율 모르는 마켓 = 체크박스 비활성(유저엔 env 이름 없이)
     from .listing_status import records as _mk_records
     from .listing_status import chips as _mk_chips
     market_chips = _mk_chips(ex)                         # Y7-K: 마켓당 칩 하나 + 중복 배지
@@ -2290,7 +2335,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "plug_note": plug_note, "excluded_count": excluded_count,
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
-            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick,
+            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick, "incomplete": incomplete,
             "market_chips": market_chips,
             "market_records": _market_records(ex),       # M8: 「마켓 등록본」 — 데스크톱과 같은 줄
             "product": product,
@@ -4524,7 +4569,9 @@ def coupang_exposure_data(item: dict) -> dict:
     originals = list(product.get("images") or [])
     plan = {p["idx"]: p for p in its.effective_plan(ex, originals=originals, item_id=iid)}
     eff = its.effective_images(ex, originals=originals, item_id=iid)
-    order = [i for i, _u in its.rep_first([(p["idx"], p) for p in plan.values() if not p.get("promo_excluded")]
+    _user_x = set(str(u) for u in (ex.get("images_excluded") or []) if u)          # 오너 11-25 ①d: 유저가 뺀 장
+    order = [i for i, _u in its.rep_first([(p["idx"], p) for p in plan.values() if not p.get("promo_excluded")
+                                           and str(p.get("original") or "") not in _user_x]
                                           or [(p["idx"], p) for p in plan.values()], originals, ex)]
     from src.services.image_translate_auto import per_item_cap as _cap
     _gal_cap = _cap("gallery")
@@ -4541,7 +4588,9 @@ def coupang_exposure_data(item: dict) -> dict:
     # Y11: 등록에서 빠진 갤러리 사진(판촉 의심·위험 제외) — 「사진 편집」으로 판촉 글자를 지우면 다시 들어간다
     _risk_x = {int(e.get("idx", -1)) for e in (ex.get("images_ko") or []) if isinstance(e, dict) and e.get("risk_exclude")}
     left_out = [{"idx": i, "original": plan[i]["original"], "url": plan[i]["url"],
-                 "reason": "위험 항목으로 뺌" if i in _risk_x else "프로모션 의심 — " + ", ".join((plan[i].get("promo") or [])[:3])}
+                 "user": str(plan[i]["original"]) in _user_x,
+                 "reason": ("직접 뺐어요 — 등록에서만 빠져요(원본은 그대로)" if str(plan[i]["original"]) in _user_x else
+                            "위험 항목으로 뺌" if i in _risk_x else "프로모션 의심 — " + ", ".join((plan[i].get("promo") or [])[:3]))}
                 for i in sorted(plan) if i not in order or i in _risk_x]
     price, why = UploadDispatcher.sell_price_in(dict(product), "KRW", "coupang")
     rep = eff[0] if eff else ""
@@ -4826,6 +4875,26 @@ def collect_rep_image(item_id):
     return jsonify(coupang_exposure_data(_get_owned_item(item_id) or item))
 
 
+@bp.get("/admin/diag/stores")
+def admin_diag_stores():
+    """오너 11-25 ⑦ — **읽기 전용**: 스스 키마다 실제 스토어(채널)·상태별 상품 수·지정 상품번호가 어느 스토어에 있나. 관리자만.
+    `?nos=13894618263,13894618371`. 쓰기·전송 0."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from src.services.admin_diag import store_audit
+    nos = [n.strip() for n in str(request.args.get("nos") or "").split(",") if n.strip().isdigit()][:5]
+    return jsonify({"ok": True, **store_audit(nos)})
+
+
+@bp.get("/admin/diag/item/<market_no>")
+def admin_diag_item(market_no):
+    """오너 11-25 ② — **읽기 전용**: 마켓 상품번호로 수집 행 → url·raw_url·수집 경로·images[] 원문과 실제 픽셀 크기. 관리자만."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from src.services.admin_diag import item_audit
+    return jsonify({"ok": True, **item_audit(str(market_no)[:20])})
+
+
 @bp.get("/collect/<item_id>/rep-candidates")
 def collect_rep_candidates(item_id):
     """오너 11-23 23:58 ④ — 쿠팡 대표 500px 보류를 그 자리에서: 갤러리 장마다 크기(머리만 읽음) + 가장 알맞은 장 하나.
@@ -4892,6 +4961,71 @@ def collect_source_url(item_id):
         return jsonify({"ok": False, "error": "저장하지 못했어요 — 다시 눌러 주세요."}), 502
     logger.info("[원본 주소] item=%s 넣음 sku=%s", item_id[:8], sku)
     return jsonify({"ok": True, "url": url, "sku": sku})
+
+
+@bp.post("/collect/<item_id>/take-down")
+def collect_take_down(item_id):
+    """오너 11-25 ①c 「이 마켓에서 내리기」 — 이미 나간 마켓을 판매중지(오너가 누르고 확인 한 번 뒤에만). `{market, confirm: true}`.
+    결과는 마켓에서 **다시 읽어** 확인한 것만 「내렸어요」. 기록(`takedowns`)을 남긴다. 지우지 않는다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    body = request.get_json(silent=True) or {}
+    if body.get("confirm") is not True:
+        return jsonify({"ok": False, "error": "확인이 필요해요."}), 400
+    market = str(body.get("market") or "")
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    recs = [u for u in (ex.get("uploaded") or []) if isinstance(u, dict) and u.get("market") == market]
+    if not recs:
+        return jsonify({"ok": False, "error": "이 마켓에 등록한 기록이 없어요."}), 404
+    from src.services.market_takedown import take_down
+    out = take_down(recs[-1])
+    from . import collect_history_store as _chs
+    ex.setdefault("takedowns", []).append({"market": market, "at": datetime.now(timezone.utc).isoformat(),
+                                           "by": str(session.get("email") or _seller_id()), "ok": bool(out.get("ok")),
+                                           "error": str(out.get("error") or "")[:200]})
+    _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False))
+    return jsonify(out), (200 if out.get("ok") else 502)
+
+
+@bp.post("/collect/<item_id>/image-exclude")
+def collect_image_exclude(item_id):
+    """오너 11-25 ①d 「이 사진 빼기」 — 그 장을 **등록에서만** 뺀다(원본 주소 `images_excluded`에 적음 · 원본 배열·번역본 불변).
+    `{idx, on}` — on=false면 「다시 넣기」. 마지막 한 장은 뺄 수 없다(사진 0장 상품이 된다). 대표 장을 빼면 대표 지정도 푼다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    originals = [u for u in (ex.get("images") or []) if u]
+    body = request.get_json(silent=True) or {}
+    try:
+        idx = int(body.get("idx"))
+    except (TypeError, ValueError):
+        idx = -1
+    if not 0 <= idx < len(originals):
+        return jsonify({"ok": False, "error": "그 장을 찾지 못했어요."}), 400
+    url = originals[idx]
+    cur = [u for u in (ex.get("images_excluded") or []) if u in originals]
+    if body.get("on", True):
+        if url not in cur:
+            if len([u for u in originals if u not in cur]) <= 1:
+                return jsonify({"ok": False, "error": "마지막 한 장은 뺄 수 없어요 — 다른 사진을 먼저 넣어 주세요."}), 400
+            cur.append(url)
+        if ex.get("rep_image") == url:
+            ex.pop("rep_image", None)
+    else:
+        cur = [u for u in cur if u != url]
+    ex["images_excluded"] = cur
+    ex.pop("pv_ready", None)
+    from . import collect_history_store as _chs
+    if not _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
+        return jsonify({"ok": False, "error": "저장하지 못했어요."}), 502
+    logger.info("[사진 빼기] item=%s %d번 %s (뺀 장 %d)", item_id[:8], idx + 1, "뺌" if body.get("on", True) else "다시 넣음", len(cur))
+    return jsonify(coupang_exposure_data(_get_owned_item(item_id) or item))
 
 
 @bp.post("/collect/<item_id>/rep-image-override")
@@ -5324,6 +5458,36 @@ def _pv_prepare(data: dict, product_data: dict):
             pass
     if data.get("refresh_from_store") and data.get("item_id"):
         product_data = _merge_stored_translation(product_data, str(data["item_id"]))
+    # 오너 11-25 ②: 나갈 사진이 **전부** 긴 변 500px 미만이면 전 마켓 보류(흐린 사진으로 스스에 올라갔다). 크기만 잰다(머리만 · 예산 8초).
+    try:
+        import time as _t
+        from src.services import coupang_image_check as _cic
+        _imgs = [u for u in (product_data.get("images_effective") or product_data.get("images") or []) if u][:8]
+        _t0, _sizes = _t.time(), []
+        for _u in _imgs:
+            if _t.time() - _t0 > 8.0:
+                break
+            _sz = _cic.size_of(_u)
+            if _sz.get("long_side"):
+                _sizes.append(int(_sz["long_side"]))
+        if _imgs and len(_sizes) == len(_imgs) and max(_sizes) < _cic.MIN_LONG_SIDE:
+            product_data["_imgs_all_small"] = {"max": max(_sizes), "n": len(_sizes)}
+    except Exception as exc:                                     # noqa: BLE001 — 못 재면 막지 않는다
+        logger.warning("[사전검증] 사진 크기 재기 실패: %s", exc)
+    # 오너 11-25 ④: 판매수수료율을 모르는 마켓은 사전검증에서 보류 — 등록 `_price_gate`와 같은 판정(셀러 판매가가 있으면 통과).
+    try:
+        _sell_krw = float(product_data.get("sell_price_krw") or 0)
+    except (TypeError, ValueError):
+        _sell_krw = 0.0
+    if _sell_krw <= 0:
+        from src.price import commission_pct as _cpct
+        _unk = {}
+        for _m in (data.get("markets") or []):
+            _rate, _why = _cpct(str(_m).split(":")[0])
+            if _rate is None:
+                _unk[str(_m)] = _why
+        if _unk:
+            product_data["_commission_probe"] = _unk
     # 오너 11-23 23:58 ⑤: 쿠팡 SKU를 등록과 같은 빌더로 미리 재 둔다(전송 0) — 못 뽑으면 사전검증이 「원본 주소 넣기」로 보류.
     if data.get("item_id") and any(str(m).startswith("coupang") for m in (data.get("markets") or [])):
         try:
