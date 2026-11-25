@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -151,6 +152,75 @@ def _parse_items(js) -> List[Dict[str, Any]]:
     return out
 
 
+# ── 오너 11-23 23:58 ③: 「고침」이 없는 짚을 점에도 동사를 준다 ─────────────────────────────────────────────
+#   · 상세 사진 0장 → 「상세 사진 가져오기」(서버 재수집 줄) · 「사진 올리기」(폰 업로드) — `verbs`
+#   · 용량·크기·재질이 상품명에 없음 → **원문에 실제로 있는** 값만 골라 고침안(`fix`) — 「수락」이 상품명을 바꾼다.
+#     원문에 그 값이 없거나 옵션마다 달라 하나로 못 정하면 고침안을 만들지 않는다(「편집」만 · 지어내기 금지).
+_DETAIL_ZERO = re.compile(r"상세\s*(?:이미지|사진|페이지\s*이미지)[^\n]{0,12}?(?:0\s*장|없|비어)")
+_SPEC_MISS = re.compile(r"(?:용량|크기|사이즈|치수|규격|재질|소재|무게|중량)[^\n]{0,30}?(?:상품명|제목)|(?:상품명|제목)[^\n]{0,20}?(?:용량|크기|사이즈|치수|규격|재질|소재|무게|중량)")
+_SPEC_PATTERNS = (
+    ("용량", re.compile(r"(?<![\d.])(\d{1,5}(?:\.\d{1,2})?)\s?(ml|mL|ML|L|리터)(?![A-Za-z])")),
+    ("무게", re.compile(r"(?<![\d.])(\d{1,5}(?:\.\d{1,2})?)\s?(kg|KG|g)(?![A-Za-z])")),
+    ("크기", re.compile(r"(?<![\d.])(\d{1,4}(?:\.\d)?)\s?[x×X*]\s?(\d{1,4}(?:\.\d)?)(?:\s?[x×X*]\s?(\d{1,4}(?:\.\d)?))?\s?(cm|mm|CM|MM)")),
+    ("재질", re.compile(r"(?:재질|소재)\s*[:：]?\s*([가-힣A-Za-z]{2,12})")),
+)
+
+
+def _source_text(ex: dict) -> str:
+    """원문 재료 — 옵션 값(원문·번역) · 상세 설명 · 상세 사진에서 읽은 글자. 상품명은 넣지 않는다(이미 있는 값을 다시 붙이지 않게)."""
+    parts: List[str] = []
+    for key in ("options", "options_src"):
+        for o in (ex or {}).get(key) or []:
+            if isinstance(o, dict):
+                parts += [str(v) for v in (o.get("values") or []) if v]
+                parts += [str(v) for v in (o.get("values_ko") or []) if v]
+    for key in ("description_ko", "description"):
+        if (ex or {}).get(key):
+            parts.append(str(ex[key])[:4000])
+    for e in (ex or {}).get("detail_images_ko") or []:
+        if isinstance(e, dict) and e.get("target_text"):
+            parts.append(str(e["target_text"])[:1000])
+    return "\n".join(parts)
+
+
+def spec_tokens(ex: dict, title: str) -> List[str]:
+    """원문에 **한 가지 값으로** 있는 용량·무게·크기·재질만(상품명에 이미 있으면 뺀다). 옵션마다 다르면 그 종류는 고르지 않는다."""
+    text, out = _source_text(ex), []
+    norm_title = re.sub(r"\s+", "", str(title or "")).lower()
+    for _kind, pat in _SPEC_PATTERNS:
+        vals = []
+        for m in pat.finditer(text):
+            v = re.sub(r"\s+", "", m.group(0))
+            v = re.sub(r"^(?:재질|소재)[:：]?", "", v)
+            if v and v not in vals:
+                vals.append(v)
+        if len(vals) == 1 and vals[0].lower() not in norm_title:
+            out.append(vals[0])
+    return out
+
+
+def annotate(items: List[Dict[str, Any]], ex: dict) -> List[Dict[str, Any]]:
+    """짚을 점에 동사 재료를 붙인다(저장해도 되는 순수 함수). 이미 고침안이 있는 항목은 그대로."""
+    out = []
+    title = str((ex or {}).get("title_ko") or (ex or {}).get("title") or "").strip()
+    has_detail = bool([u for u in ((ex or {}).get("detail_images") or []) if u])
+    for it in items or []:
+        x = dict(it)
+        issue = str(x.get("issue") or "")
+        if not x.get("fix") and not has_detail and _DETAIL_ZERO.search(issue):
+            x["verbs"] = ["detail_refetch", "photo_upload"]
+        elif not x.get("fix") and _SPEC_MISS.search(issue):
+            toks = spec_tokens(ex, title)
+            x["field"] = "title"
+            if toks and title:
+                x["fix"] = (title + " " + " ".join(toks)).strip()[:100]
+                x["fix_from"] = "원문에 있는 값: " + " · ".join(toks)
+            else:
+                x["fix_note"] = "원문에서 용량·크기·재질 값을 하나로 찾지 못해 고침안을 만들지 않았어요 — 「편집」으로 직접 넣어 주세요."
+        out.append(x)
+    return out
+
+
 def decide(ex: dict, idx: int, action: str, *, by: str = "") -> Dict[str, Any]:
     """V42-1(오너 2026-10-28 20:08 「수락·기각 버튼이 있어서 누르면 바로 수정되게」) — 한 항목에 결정 기록.
     accept + field=title → `title_ko`(·`coupang_name`이 있으면 같이) 를 fix로 바꾼다. 되돌리기 = 편집 칸에서 직접(원래 값은 `prev`에 남긴다).
@@ -158,7 +228,7 @@ def decide(ex: dict, idx: int, action: str, *, by: str = "") -> Dict[str, Any]:
     r = (ex or {}).get(KEY)
     if not isinstance(r, dict) or r.get("status") != "done":
         return {"ok": False, "changed": {}, "why": "AI 검수 결과가 없어요 — 사전검증을 먼저"}
-    items = r.get("items") or [{"issue": x, "field": "none", "fix": None} for x in (r.get("lines") or [])]
+    items = annotate(r.get("items") or [{"issue": x, "field": "none", "fix": None} for x in (r.get("lines") or [])], ex)
     try:
         it = items[int(idx)]
     except (ValueError, TypeError, IndexError):
@@ -190,8 +260,8 @@ def telegram_text(title: str, item_id: str, review: Dict[str, Any]) -> str:
     return f"🧐 등록 전 AI 검수(가족 상품)\n{str(title)[:60]} ({str(item_id)[:8]})\n{body}\n— AI 제안이에요. 결정은 사람이."
 
 
-def card(review: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """카드 모양 — 접힌 줄 「AI 검수」. 없으면 {}."""
+def card(review: Optional[Dict[str, Any]], ex: Optional[dict] = None) -> Dict[str, Any]:
+    """카드 모양 — 접힌 줄 「AI 검수」. 없으면 {}. `ex`가 있으면 짚을 점에 동사 재료(`annotate`)를 붙인다."""
     if not isinstance(review, dict) or review.get("status") not in ("done", "failed", "skip", "running"):
         return {}
     out = {k: review.get(k) for k in ("status", "lines", "at", "why", "cached", "decisions") if review.get(k) is not None}
@@ -199,5 +269,5 @@ def card(review: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if items is None and review.get("lines"):
         items = [{"issue": x, "field": "none", "fix": None} for x in review["lines"]]      # 옛 저장본
     if items is not None:
-        out["items"] = items
+        out["items"] = annotate(items, ex) if isinstance(ex, dict) else items
     return out

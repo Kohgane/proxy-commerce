@@ -555,6 +555,47 @@ def _build_dispatch_payload(product_data: Dict[str, Any],
     들어 있으면 `draft_url`은 「있다」고 답하고, 행에 멀쩡한 정규형 주소가 있어도 안 쓴다 →
     SKU가 빈 채로 나간다. **행 주소가 SKU를 내는데 페이로드 것이 못 내면 행이 이긴다.**
     """
+    out = _build_dispatch_payload_core(product_data, item)
+    if str(out.get("sku") or "").strip() or not item:
+        return out
+    # 오너 11-23 23:58 ⑤: 폰 공유(공유 확장·단축어)로 담긴 초안은 행 주소가 `e.tb.cn/h.…` 단축 링크다 — 그 주소엔 상품번호가 없어
+    #   SKU가 빈 채로 쿠팡 전송 직전에 실패했다(스스는 이미 올라가 반쪽 등록). 공유 글·링크 펴기에서 **실제로 읽은** 타오바오 상품번호
+    #   (`item_id_taobao`)가 있으면 그 정규형 주소로 채운다. 번호가 없으면 지어내지 않는다(사전검증이 「원본 주소 넣기」로 잡는다).
+    alt = share_item_url(item)
+    if alt:
+        from src.collectors.product_key import vendor_sku
+        if vendor_sku(alt):
+            prev = draft_url(out)
+            out = dict(out)
+            for k in DRAFT_URL_KEYS:                 # 앞 이름의 단축 링크가 먼저 걸리지 않게 — 쓸 수 없는 값만 걷는다
+                v = str(out.get(k) or "").strip()
+                if v and not vendor_sku(v):
+                    out.pop(k, None)
+            out["url"] = alt
+            logger.info("[등록] 공유 초안 — 타오바오 상품번호로 주소를 채웠다 item=%s url=%s 이전=%s",
+                        item.get("id") or item.get("item_id") or "?", alt, prev or "(없음)")
+            return _fill_sku(out)
+    return out
+
+
+def share_item_url(item: Optional[Dict[str, Any]]) -> str:
+    """행 주소로 SKU를 못 낼 때 쓸 **실제로 받은** 주소 — ① 오너가 「원본 주소 넣기」로 넣은 `source_url_manual`
+    ② 공유 글·링크 펴기에서 읽은 `item_id_taobao`(숫자) → 타오바오 정규형. 없으면 ''(지어내지 않는다)."""
+    if not item:
+        return ""
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        return ""
+    manual = str((ex or {}).get("source_url_manual") or "").strip()
+    if manual.startswith(("http://", "https://")):
+        return manual
+    tid = str((ex or {}).get("item_id_taobao") or "").strip()
+    return f"https://item.taobao.com/item.htm?id={tid}" if re.fullmatch(r"\d{6,20}", tid) else ""
+
+
+def _build_dispatch_payload_core(product_data: Dict[str, Any],
+                                 item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     from src.collectors.product_key import vendor_sku
 
     pd = dict(product_data or {})
@@ -1688,6 +1729,14 @@ class UploadDispatcher:
                           "line": "대표 이미지가 0장이에요 — 마켓은 사진 없는 상품을 받지 않아요."})
             if market == "smartstore":
                 holds[-1]["code"] = "naver_required_representativeImage"     # Y7-F: 네이버 필수 칸 사유코드
+        # 오너 11-23 23:58 ⑤: 쿠팡 판매자 상품코드(SKU)는 원본 상품 주소에서 뽑는다 — 못 뽑으면 **사전검증에서** 보류한다.
+        #   예전엔 사전검증은 통과시키고 전송 직전 「SKU 추출 실패」로 떨어져 스스·쿠팡이 반쪽 등록됐다.
+        #   `_sku_probe`는 사전검증 준비(`_pv_prepare`)가 등록과 같은 빌더(`build_dispatch_payload`)로 재 둔 값이다.
+        _probe = pd.get("_sku_probe")
+        if str(market or "").startswith("coupang") and isinstance(_probe, dict) and not _probe.get("ok"):
+            holds.append({"short": "원본 상품 주소 없음", "fix": "source_url", "code": "coupang_sku_missing",
+                          "line": "원본 상품 주소가 없어 쿠팡 상품코드를 만들 수 없어요 — 아래에 원본 주소를 넣으면 바로 다시 확인해요."
+                                  + (f" (지금 주소: {_probe['chosen'][:60]})" if _probe.get("chosen") else "")})
         price_raw = pd.get("price") or pd.get("price_original")
         try:
             price = float(price_raw) if price_raw not in (None, "") else None

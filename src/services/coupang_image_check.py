@@ -440,3 +440,48 @@ def auto_rep_pick(extra: dict, *, images_effective=None, by: str = "auto") -> di
     out["why"] = f"후보 {len(tried)}장 모두 글자가 있거나 못 쟀어요"
     out["tried"] = tried
     return out
+
+
+# ── 오너 11-23 23:58 ④: 대표 500px 보류를 그 자리에서 고치는 재료 — 갤러리 장 **크기만**(글자 판정 없음) ─────────────
+_SIZE: "OrderedDict[str, dict]" = OrderedDict()
+_SIZE_MAX = 512
+
+
+def size_of(url: str) -> Dict[str, Any]:
+    """`{w, h, long_side, ok}` — 재 둔 판정이 있으면 그 크기, 없으면 내려받아 머리만 읽는다(픽셀 풀기 0). 못 읽으면 `{why}`."""
+    key = str(url or "")
+    if not key:
+        return {"why": "주소 없음"}
+    with _LOCK:
+        if key in _SIZE:
+            return _SIZE[key]
+    have = cached(key) or {}
+    if have.get("w") and have.get("h"):
+        w, h = int(have["w"]), int(have["h"])
+    else:
+        raw, why = _bytes_for(key)
+        if not raw:
+            return {"why": why or "이미지를 읽지 못했어요"}
+        from src.collectors.image_norm import image_head
+        _fmt, w, h = image_head(raw)
+        del raw
+        if not w or not h:
+            return {"why": "크기를 읽지 못했어요"}
+    res = {"w": w, "h": h, "long_side": max(w, h), "ok": max(w, h) >= MIN_LONG_SIDE,
+           "text": bool([f for f in (have.get("flags") or []) if f.get("key") == "text" and f.get("hold")])}
+    with _LOCK:
+        _SIZE[key] = res
+        while len(_SIZE) > _SIZE_MAX:
+            _SIZE.popitem(last=False)
+    return res
+
+
+def best_rep(cands: list) -> int:
+    """500px 이상 장 중 쿠팡 대표로 가장 알맞은 장의 idx(없으면 -1) — 글자 없음 > 정사각에 가까움 > 큰 장. 지금 대표는 고르지 않는다."""
+    ok = [c for c in cands if c.get("ok") and not c.get("is_rep")]
+    if not ok:
+        return -1
+    def _score(c):
+        w, h = c["w"], c["h"]
+        return (0 if c.get("text") else 1, -abs(1 - (min(w, h) / max(w, h))), c["long_side"])
+    return max(ok, key=_score)["idx"]

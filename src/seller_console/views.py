@@ -4826,6 +4826,74 @@ def collect_rep_image(item_id):
     return jsonify(coupang_exposure_data(_get_owned_item(item_id) or item))
 
 
+@bp.get("/collect/<item_id>/rep-candidates")
+def collect_rep_candidates(item_id):
+    """오너 11-23 23:58 ④ — 쿠팡 대표 500px 보류를 그 자리에서: 갤러리 장마다 크기(머리만 읽음) + 가장 알맞은 장 하나.
+    한 번에 다 못 재면(시간 예산 6초) `pending` 수를 돌려준다 — 화면이 다시 묻는다(잰 장은 프로세스 캐시). 바꾸는 건 유저(자동 변경 0)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    import time as _time
+    from src.services import coupang_image_check as _cic
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    originals = [u for u in (ex.get("images") or []) if u][:12]
+    rep_idx = originals.index(ex["rep_image"]) if ex.get("rep_image") in originals else 0
+    t0, out, pending = _time.time(), [], 0
+    for i, u in enumerate(originals):
+        if _time.time() - t0 > 6.0:
+            pending += 1
+            out.append({"idx": i, "url": u, "is_rep": i == rep_idx, "pending": True})
+            continue
+        sz = _cic.size_of(u)
+        out.append({"idx": i, "url": u, "is_rep": i == rep_idx, **sz})
+    best = _cic.best_rep([c for c in out if c.get("w")])
+    return jsonify({"ok": True, "candidates": out, "best": best, "pending": pending, "min_side": _cic.MIN_LONG_SIDE})
+
+
+@bp.get("/m/item/<item_id>/product")
+def mobile_item_product(item_id):
+    """오너 11-23 23:58 ①②: 폰 카드가 들고 있는 등록 몸통을 저장본으로 다시 받는다 — 수락·편집·대표 바꾸기 뒤 화면이 낡은 값을
+    등록에 싣지 않게(등록은 화면 몸통을 「편집값」으로 얹는다). 카드 렌더와 같은 빌더."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    from .product_builder import build_product as _bp
+    return jsonify({"ok": True, "product": _bp(item, seller_id=_seller_id())})
+
+
+@bp.post("/collect/<item_id>/source-url")
+def collect_source_url(item_id):
+    """오너 11-23 23:58 ⑤ 「원본 주소 넣기」 — 쿠팡 상품코드(SKU)를 못 만든 항목에 원본 상품 주소를 적는다(행 주소는 그대로).
+    등록과 같은 규칙(`vendor_sku`)으로 상품번호가 나오는 주소만 받는다 — 못 뽑으면 사람 말로 돌려준다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    url = str((request.get_json(silent=True) or {}).get("url") or "").strip()
+    from src.collectors.share_text import parse_share_text
+    url = parse_share_text(url).get("url", "") or url             # 공유 글을 통째로 붙여 넣어도 링크만
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "주소가 아니에요 — 상품 상세 페이지 주소(https://…)를 넣어 주세요."}), 400
+    from src.collectors.product_key import vendor_sku
+    sku = vendor_sku(url)
+    if not sku:
+        return jsonify({"ok": False, "error": "이 주소에서 상품번호를 못 찾았어요 — 공유용 짧은 링크 말고 상품 상세 페이지 주소를 넣어 주세요."}), 400
+    ex = json.loads(item.get("extra_json") or "{}") or {}
+    ex["source_url_manual"] = url
+    ex.pop("pv_ready", None)
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    if not ok:
+        return jsonify({"ok": False, "error": "저장하지 못했어요 — 다시 눌러 주세요."}), 502
+    logger.info("[원본 주소] item=%s 넣음 sku=%s", item_id[:8], sku)
+    return jsonify({"ok": True, "url": url, "sku": sku})
+
+
 @bp.post("/collect/<item_id>/rep-image-override")
 def collect_rep_image_override(item_id):
     """Y7: 대표 사진 보류(500px 미만·텍스트 있음)를 **그래도 등록**으로 푼다 — 그 장에만(대표를 바꾸면 다시 잰다)."""
@@ -5256,6 +5324,14 @@ def _pv_prepare(data: dict, product_data: dict):
             pass
     if data.get("refresh_from_store") and data.get("item_id"):
         product_data = _merge_stored_translation(product_data, str(data["item_id"]))
+    # 오너 11-23 23:58 ⑤: 쿠팡 SKU를 등록과 같은 빌더로 미리 재 둔다(전송 0) — 못 뽑으면 사전검증이 「원본 주소 넣기」로 보류.
+    if data.get("item_id") and any(str(m).startswith("coupang") for m in (data.get("markets") or [])):
+        try:
+            from .upload_dispatcher import build_dispatch_payload as _bdp, draft_url as _du
+            _probe_pd = _bdp(dict(product_data), _get_owned_item(str(data["item_id"])))
+            product_data["_sku_probe"] = {"ok": bool(str(_probe_pd.get("sku") or "").strip()), "chosen": _du(_probe_pd)}
+        except Exception as exc:                                 # noqa: BLE001 — 못 재면 보류하지 않는다(등록 쪽 판정이 그대로 남는다)
+            logger.warning("[사전검증] 쿠팡 SKU 미리 재기 실패: %s", exc)
     return product_data, _rc
 
 
@@ -6253,7 +6329,7 @@ def _pv_ai_review_start(job_id: str, product_data: dict, item_id: str):
         return None
     have = _ar.cached(ex)
     if have:
-        _pv_update(job_id, ai_review=_ar.card(dict(have, cached=True)))
+        _pv_update(job_id, ai_review=_ar.card(dict(have, cached=True), ex))
         return None
     if not _ar.enabled():
         return None
@@ -6267,6 +6343,7 @@ def _pv_ai_review_start(job_id: str, product_data: dict, item_id: str):
         except Exception as exc:                                 # noqa: BLE001 — 검수 실패는 등록을 막지 않는다
             rv = {"status": "failed", "lines": [], "why": f"{type(exc).__name__}"}
         box["r"] = rv
+        box["ex"] = ex
         if rv.get("status") != "done":
             return
         try:
@@ -6298,7 +6375,7 @@ def _pv_ai_review_finish(job_id: str, handle, deadline_ts: float) -> None:
     try:
         t.join(timeout=max(0.0, min(15.0, deadline_ts + 10 - _time.time())))
         r = box.get("r") or {"status": "running", "lines": [], "why": "AI 검수가 아직이에요 — 다음 사전검증 때 보여요"}
-        _pv_update(job_id, ai_review=_ar.card(r))
+        _pv_update(job_id, ai_review=_ar.card(r, box.get("ex")))
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[AI 검수] 카드 실패 job=%s: %s", job_id[:8], exc)
 
@@ -6416,7 +6493,7 @@ def collect_ai_review_act(item_id: str):
     if not _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)):
         return jsonify({"ok": False, "error": "저장하지 못했어요 — 다시 눌러 주세요."}), 500
     logger.info("[AI 검수] %s item=%s idx=%s changed=%s", body.get("action"), item_id[:8], body.get("idx"), list(res["changed"]))
-    return jsonify({"ok": True, "action": body.get("action"), "fields": res["changed"], "ai_review": _ar.card(ex.get(_ar.KEY))})
+    return jsonify({"ok": True, "action": body.get("action"), "fields": res["changed"], "ai_review": _ar.card(ex.get(_ar.KEY), ex)})
 
 
 def _image_edit_item(item_id: str):
