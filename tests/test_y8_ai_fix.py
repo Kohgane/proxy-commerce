@@ -80,6 +80,12 @@ def _fake_market(seen):
 
 
 def _setup(monkeypatch, seen):
+    # 사진 크기는 재지 않는다(테스트 사진 주소는 가짜 — CI에선 내려받혀 작게 재져 11-25 「사진 전부 작음」 보류가 끼었다). 못 읽으면 보류 안 함이 계약.
+    from src.services import coupang_image_check as _cic
+    monkeypatch.setattr(_cic, "size_of", lambda u: {"why": "테스트 — 네트워크 0"})
+    # 오너 11-25 ④: 판매수수료율을 모르는 마켓은 「아직 준비 중」으로 잠긴다 — 운영처럼 수수료율이 정해진 상태로 잰다.
+    for _mk in ("SMARTSTORE", "ELEVENST", "SHOPIFY", "WOOCOMMERCE"):
+        monkeypatch.setenv(f"MARKET_COMMISSION_PCT_{_mk}", "5")
     import src.seller_console.views as V
     from src.seller_console.upload_dispatcher import UploadDispatcher
     monkeypatch.setattr(V, "_outbound_images", lambda pd, iid: (pd, [], None))

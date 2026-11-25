@@ -213,6 +213,213 @@ def resolve_short_link(url: str, *, timeout: int = RESOLVE_TIMEOUT_SEC) -> dict:
     return out
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 오너 11-25 15:56 「짧은 링크를 서버가 푼다」 — 아마존·알리 공유 단축 주소.
+#   표본: 쿠팡 보류 「원본 상품 주소 없음 (지금 주소: https://a.co/d/00RG5ThB)」 — 이 주소엔 ASIN이 없어 SKU가 비었다.
+#   아마존·알리 단축 주소는 **리다이렉트(Location)** 에 상품 주소를 싣는다(타오바오는 본문). 그래서 펴는 법이 다르다 —
+#   하지만 **부르는 곳은 한 곳**(`resolve_share_link`)이다. 상품 페이지 본문은 받지 않는다(봇 차단 · 필요 없음):
+#   Location에서 상품번호가 읽히는 순간 멈춘다.
+#
+# 허용목록이 곧 안전장치다 — 단축 호스트에서 출발하고, 따라가는 홉도 그 마켓 도메인 안에서만 간다(열린 프록시 금지).
+SHARE_SHORT_HOSTS = {
+    "a.co": "amazon", "amzn.to": "amazon", "amzn.asia": "amazon", "amzn.eu": "amazon", "amzn.com": "amazon",
+    "a.aliexpress.com": "aliexpress", "s.click.aliexpress.com": "aliexpress", "click.aliexpress.com": "aliexpress",
+}
+_HOP_SUFFIXES = {
+    "amazon": ("a.co", "amzn.to", "amzn.asia", "amzn.eu", "amzn.com", "amazon.com", "amazon.co.jp", "amazon.co.uk",
+               "amazon.de", "amazon.fr", "amazon.it", "amazon.es", "amazon.ca", "amazon.com.au", "amazon.in",
+               "amazon.com.mx", "amazon.sg", "amazon.ae", "amazon.com.br", "amazon.nl", "amazon.se", "amazon.pl"),
+    "aliexpress": ("aliexpress.com", "aliexpress.us", "aliexpress.ru"),
+}
+_ALI_ITEM_RE = re.compile(r"https?://(?:[a-z0-9-]+\.)*aliexpress\.(?:com|us|ru)/item/(\d{6,20})\.html", re.I)
+_ALI_BODY_ID_RE = re.compile(r"(?:productId|productIds|item_id)[\"'=:\s]+(\d{10,20})", re.I)
+
+
+def _host_of(url: str) -> str:
+    return (urlparse(url or "").hostname or "").lower()
+
+
+def _under(host: str, suffixes) -> bool:
+    return any(host == s or host.endswith("." + s) for s in suffixes)
+
+
+def short_link_market(url: str) -> str:
+    """`url`이 공유 단축 주소면 그 마켓(`taobao`·`amazon`·`aliexpress`), 아니면 ''."""
+    from src.collectors.share_text import is_short_link
+    if is_short_link(url):
+        return "taobao"
+    return SHARE_SHORT_HOSTS.get(_host_of(url), "")
+
+
+def _item_from_url(market: str, url: str) -> tuple:
+    """`(상품번호, 정규형 주소)` — 못 읽으면 `('', '')`. 지어내지 않는다."""
+    from src.collectors.product_key import extract_asin
+    host = _host_of(url)
+    if market == "amazon" and _under(host, _HOP_SUFFIXES["amazon"]) and "amazon." in host:
+        asin = extract_asin(url)
+        if asin:
+            return asin, f"https://{host}/dp/{asin}"
+    if market == "aliexpress":
+        m = _ALI_ITEM_RE.search(url or "")
+        if m:
+            return m.group(1), f"https://www.aliexpress.com/item/{m.group(1)}.html"
+    return "", ""
+
+
+_RESOLVED: dict = {}          # 같은 요청 흐름(중복 확인 → 수집 → 사전검증)에서 두 번 나가지 않게 — 성공만 10분
+_RESOLVED_TTL = 600.0
+
+
+def resolve_share_link(url: str, *, timeout: int = RESOLVE_TIMEOUT_SEC) -> dict:
+    """공유 단축 주소(타오바오·아마존·알리) → 정본 주소. **한 입구.** 성공한 결과는 10분 기억한다."""
+    key = str(url or "").strip()
+    hit = _RESOLVED.get(key)
+    if hit and time.time() - hit[0] < _RESOLVED_TTL:
+        return dict(hit[1], cached=True)
+    out = _resolve_share_link(key, timeout=timeout)
+    if out.get("ok"):
+        if len(_RESOLVED) > 256:
+            _RESOLVED.clear()
+        _RESOLVED[key] = (time.time(), dict(out))
+    return out
+
+
+def _resolve_share_link(url: str, *, timeout: int = RESOLVE_TIMEOUT_SEC) -> dict:
+    """공유 단축 주소(타오바오·아마존·알리) → 정본 주소. **한 입구.**
+
+    반환 `{ok, market, item_id, canonical_url, reason, hops, elapsed_ms}`.
+    `hops`는 `[{status, host}]`만 — 쿼리(추적값)는 싣지 않는다. 실패 사유는 갈래 그대로(`http_403`·`timeout`·
+    `no_item_in_location`·`error:<예외>`·`not_short_link`·`disabled`).
+    """
+    market = short_link_market(url)
+    out = {"ok": False, "market": market, "item_id": "", "canonical_url": "", "reason": "", "hops": [], "elapsed_ms": 0}
+    if not market:
+        out["reason"] = "not_short_link"
+        return out
+    if market == "taobao":
+        r = resolve_short_link(url, timeout=timeout)
+        out.update({"ok": bool(r.get("ok")), "item_id": r.get("item_id", ""), "canonical_url": r.get("canonical_url", ""),
+                    "reason": r.get("reason", ""), "elapsed_ms": r.get("elapsed_ms", 0),
+                    "price": r.get("price", ""), "currency": r.get("currency", "")})
+        return out
+    if os.getenv("KGP_SHORT_LINK_RESOLVE", "1").strip() == "0":
+        out["reason"] = "disabled"
+        return out
+    import requests
+    t0, deadline = time.time(), time.monotonic() + float(timeout)
+    headers = {"User-Agent": _IOS_SAFARI_UA, "Accept": "text/html,application/xhtml+xml,*/*",
+               "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8"}
+    cur = url
+    try:
+        for _n in range(MAX_HOPS):
+            left = deadline - time.monotonic()
+            if left <= 0.3:
+                out["reason"] = "timeout"
+                break
+            if not _under(_host_of(cur), _HOP_SUFFIXES[market]):
+                out["reason"] = f"off_host:{_host_of(cur)}"          # 마켓 밖으로 보내면 따라가지 않는다
+                break
+            resp = requests.get(cur, headers=headers, allow_redirects=False,
+                                timeout=(min(CONNECT_TIMEOUT_SEC, left), left), stream=True)
+            loc = resp.headers.get("Location", "") or ""
+            out["hops"].append({"status": int(resp.status_code), "host": _host_of(cur)})
+            if 300 <= resp.status_code < 400 and loc:
+                resp.close()
+                cur = urljoin(cur, loc)
+                iid, canon = _item_from_url(market, cur)
+                if iid:
+                    out.update({"ok": True, "item_id": iid, "canonical_url": canon, "reason": "ok"})
+                    break
+                continue
+            # 리다이렉트가 끝났다 — 지금 주소에서, 그다음 본문 앞부분에서 한 번 더 찾는다(알리는 JS로 넘길 때가 있다).
+            iid, canon = _item_from_url(market, cur)
+            if not iid and resp.status_code == 200:
+                head = ""
+                try:
+                    head = next(resp.iter_content(BODY_SCAN_CAP, decode_unicode=False), b"").decode("utf-8", "ignore")
+                except Exception:                                     # noqa: BLE001
+                    head = ""
+                m = _ALI_ITEM_RE.search(head) if market == "aliexpress" else None
+                if m:
+                    iid, canon = _item_from_url(market, m.group(0))
+                elif market == "amazon":
+                    from src.collectors.product_key import extract_asin
+                    a = extract_asin(head[:BODY_SCAN_CAP]) if "/dp/" in head else ""
+                    if a:
+                        iid, canon = a, f"https://{_host_of(cur)}/dp/{a}"
+            resp.close()
+            if iid:
+                out.update({"ok": True, "item_id": iid, "canonical_url": canon, "reason": "ok"})
+            else:
+                out["reason"] = "no_item_in_location" if resp.status_code == 200 else f"http_{resp.status_code}"
+            break
+        else:
+            out["reason"] = out["reason"] or "too_many_hops"
+    except Exception as exc:                                          # noqa: BLE001 — 사유를 그대로
+        out["reason"] = f"error:{type(exc).__name__}"
+    out["elapsed_ms"] = int((time.time() - t0) * 1000)
+    logger.info("[단축링크 펴기] %s host=%s → %s 상품번호=%s %sms", market, _host_of(url), out["reason"],
+                out["item_id"] or "-", out["elapsed_ms"])
+    return out
+
+
+_BOT_MARKERS = ("captcha", "robot check", "are you a robot", "punish", "x5sec", "slide to verify", "/errors/validatecaptcha",
+                "_____tmd_____", "verify you are human", "unusual traffic")
+
+
+def share_diag(url: str) -> dict:
+    """오너 11-25 15:56 ④ — 아마존·알리 링크를 **서버가 어디까지 읽나** 실측(링크 진단 화면에서 오너가 누른다).
+
+    ① 단축 주소 펴기(`resolve_share_link`) ② 정본 주소 GET 한 번(상태·최종 호스트·제목·차단 표식) ③ 수집기(dispatcher)
+    결과(제목·사진 수·가격 또는 실패 원문). 본문 원문은 돌려주지 않는다(길이·제목·표식만). 허용 호스트 밖은 안 간다."""
+    out = {"market": "", "resolve": None, "page": None, "collector": None}
+    market = short_link_market(url)
+    host = _host_of(url)
+    if not market:
+        market = "amazon" if "amazon." in host else ("aliexpress" if "aliexpress." in host else "")
+    out["market"] = market
+    if market not in ("amazon", "aliexpress"):
+        return out
+    canon = url
+    if short_link_market(url):
+        out["resolve"] = resolve_share_link(url)
+        canon = out["resolve"].get("canonical_url") or ""
+    if not canon:
+        return out
+    try:
+        import requests
+        cur, page = canon, {"status": 0, "host": "", "title": "", "body_len": 0, "blocked": [], "hops": 0}
+        for _n in range(4):
+            if not _under(_host_of(cur), _HOP_SUFFIXES[market]):
+                page["host"] = _host_of(cur); page["off_host"] = True
+                break
+            resp = requests.get(cur, headers={"User-Agent": _IOS_SAFARI_UA, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8"},
+                                allow_redirects=False, timeout=(CONNECT_TIMEOUT_SEC, TIMEOUT_SEC))
+            page.update({"status": int(resp.status_code), "host": _host_of(cur), "hops": _n + 1})
+            loc = resp.headers.get("Location", "") or ""
+            if 300 <= resp.status_code < 400 and loc:
+                cur = urljoin(cur, loc)
+                continue
+            body = resp.text[:BODY_SCAN_CAP] if resp.status_code == 200 else (resp.text or "")[:20000]
+            t = _TITLE_TAG_RE.search(body)
+            low = body.lower()
+            page.update({"title": re.sub(r"\s+", " ", t.group(1)).strip()[:160] if t else "", "body_len": len(body),
+                         "blocked": [m for m in _BOT_MARKERS if m in low]})
+            break
+        out["page"] = page
+    except Exception as exc:                                          # noqa: BLE001 — 원문 그대로
+        out["page"] = {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+    try:
+        from src.collectors.dispatcher import collect as _dcollect
+        res = _dcollect(canon)
+        out["collector"] = {"title": (getattr(res, "title", "") or "")[:120], "images": len(getattr(res, "images", []) or []),
+                            "price": str(getattr(res, "price", "") or ""), "currency": str(getattr(res, "currency", "") or ""),
+                            "error": str(getattr(res, "error", "") or "")[:200]}
+    except Exception as exc:                                          # noqa: BLE001
+        out["collector"] = {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+    return out
+
+
 def _probe(url: str, *, ua_label: str, user_agent: str,
            max_hops: int, timeout: int, deadline: float | None = None) -> dict:
     """한 UA로 리다이렉트 체인을 **직접 따라가며** 기록한다. 한 번의 측정 = 이 함수 한 번."""

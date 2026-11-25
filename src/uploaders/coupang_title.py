@@ -98,6 +98,28 @@ _BRACKET_GROUP = re.compile(r"[{\[(（【]([^{}\[\]()（）【】]*)[}\])）】]
 _HANGUL_ANY = re.compile(r"[가-힣]")
 
 
+# 오너 11-25 ⑤(tomtoc 40L 실측: 「여행 백팩 휴대 가방 비행 승인 프리」 — 브랜드·용량이 빠짐): 제목 맨 앞 라틴 낱말(「tomtoc 여행 …」)도
+#   브랜드다. 흔한 영어 낱말(new·mini·pro·usb…)은 브랜드가 아니다 — 그건 안 잡는다(지어내지 않음).
+_BRAND_LEAD = re.compile(r"^\s*([A-Za-z][A-Za-z0-9&\-.]{1,30})(?=\s|[가-힣\u4e00-\u9fff]|$)")
+_NOT_BRAND = frozenset(("new mini pro max plus ultra super the a an usb led lcd hd 4k 5g wifi type diy mm cm xl xxl l m s for and with "
+                        "ipad iphone apple airpods airpod galaxy macbook samsung switch nintendo ps5 xbox android ios").split())   # 기기 이름 = 겸용 대상
+_SPEC = re.compile(r"(?<![\w.])(\d{1,4}(?:\.\d{1,2})?\s?(?:L|l|ml|mL|ML|리터|인치|inch|cm|mm|kg|KG))(?![A-Za-z])")
+
+
+def spec_tokens(product: Dict[str, Any]) -> List[str]:
+    """제목(번역·원문)에 **실제로 있는** 핵심 스펙(용량·크기·무게) — 앞에서부터 최대 2개, 같은 것은 한 번."""
+    out: List[str] = []
+    for key in ("title_ko", "title", "title_src", "title_original"):
+        for m in _SPEC.finditer(str(product.get(key) or "")):
+            v = re.sub(r"\s+", "", m.group(1))
+            v = v[:-1] + "L" if v.endswith("l") and not v.endswith("ml") else v
+            if v.lower() not in [x.lower() for x in out]:
+                out.append(v)
+            if len(out) >= 2:
+                return out
+    return out
+
+
 def brand_of(product: Dict[str, Any]) -> str:
     b = str(product.get("brand") or "").strip()
     if b:
@@ -109,6 +131,10 @@ def brand_of(product: Dict[str, Any]) -> str:
     for key in ("title_ko", "title"):
         m = _BRAND_GLUED.match(str(product.get(key) or ""))
         if m:
+            return m.group(1).strip()
+    for key in ("title_ko", "title", "title_src"):                 # 영문 제목(title_original)은 맨 앞이 상품 명사인 일이 많다 — 안 본다
+        m = _BRAND_LEAD.match(str(product.get(key) or ""))
+        if m and m.group(1).lower() not in _NOT_BRAND and not _SPEC.fullmatch(m.group(1)) and not m.group(1).isdigit():
             return m.group(1).strip()
     return ""
 
@@ -327,6 +353,12 @@ def build_name(product: Dict[str, Any], brand_pos: str = "front") -> Dict[str, A
         return {"name": "", "parts": parts, "source": "rule",
                 "warnings": ["제목에서 제품 유형을 찾지 못했어요 — 쿠팡 상품명을 직접 적어 주세요"]}
     core = _dedupe(attrs + ptype.split())
+    core = _drop_dangling(" ".join(core)).split() or core            # 오너 11-25 ⑤: 끝에 홀로 남은 조각(「프리」)은 뺀다
+    # 오너 11-25 ⑤: 핵심 스펙(40L 등)은 축약에서 버리지 않는다 — 제목에 있는 값만, 이름에 아직 없으면 유형 뒤에
+    specs = [x for x in spec_tokens(product) if x.lower() not in " ".join(core).lower()]
+    if specs:
+        parts["specs"] = specs
+        core = core + specs
     body = " ".join(core)
     tail = f" ({'·'.join(compat)} 겸용)" if compat else ""
     pos = parts["brand_pos"]

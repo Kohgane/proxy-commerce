@@ -30,11 +30,21 @@
           return {ok: false, error: (r.status >= 500 ? '서버 오류·시간 초과' : '응답을 읽지 못했어요') + ' (HTTP ' + r.status + ')'};
         } }); });
   }
+  // 오너 11-23 B(같은 유형): 판정 못 함 사유에 붙은 파이썬 예외 이름(`(URLError)` 등)은 사람 글이 아니다 —
+  //   보이는 글에선 빼고(HTTP 상태는 남김), 원문은 title(길게 누르기·마우스)에 둔다.
+  function cpxWhy(s) {
+    var t = String(s || '');
+    var v = t.replace(/\s*\(([A-Za-z_.]*(?:Error|Exception|Timeout|Refused)[A-Za-z_]*)(?:\s*·\s*(HTTP \d{3}))?\)/g,
+                      function (_m, _e, h) { return h ? ' (' + h + ')' : ''; });
+    return {text: v.trim() || t, raw: v === t ? '' : t};
+  }
   function checkLines(c) {
     // Y6-C B: 대표 사진 판정(내려받기·OCR)은 요청 밖에서 돈다 — 재는 동안은 카드·사진 줄을 먼저 보여 주고 3초마다 묻는다.
     if (c && c.state === 'pending') return '<li class="cpx-ck is-unk" data-role="cpx-check-pending">대표 사진을 재는 중이에요(글자·크기 판정) — 나머지는 그대로 보셔도 돼요</li>';
     if (c && c.partial) return '<li class="cpx-ck is-unk" data-role="cpx-check-partial"><span class="pc-badge pc-badge-off">일부 생략</span> ' + esc(c.why) + '</li>';
-    if (!c || c.state !== 'ok') return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown">판정 못 함 — ' + esc((c && c.why) || '이미지를 읽지 못했어요') + '</li>';
+    if (!c || c.state !== 'ok') { var _w = cpxWhy((c && c.why) || '이미지를 읽지 못했어요');
+      return '<li class="cpx-ck is-unk" data-role="cpx-check-unknown"' + (_w.raw ? ' title="' + esc(_w.raw) + '"' : '') +
+             '>판정 못 함 — ' + esc(_w.text) + '</li>'; }
     var out = [];
     out.push('<li class="cpx-ck ' + (c.small ? 'is-bad' : 'is-ok') + '" data-role="cpx-check-size">' +
              (c.small ? '반려 예상 — 500px 미만(' : '크기 ') + c.w + '×' + c.h + 'px' + (c.small ? ')' : ' · 500px 이상') + '</li>');
@@ -81,6 +91,7 @@
         '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button>' +
         {% if is_admin %}'<button type="button" class="cpx-act" data-role="cpx-protection" data-idx="' + s.idx + '">상품 보호 검토</button>' +{% endif %}
         (s.rep ? '' : '<button type="button" class="cpx-act" data-role="cpx-rep" data-idx="' + s.idx + '">이 장을 대표로</button>') +
+        '<button type="button" class="cpx-act" data-role="cpx-exclude" data-idx="' + s.idx + '">이 사진 빼기</button>' +   // 오너 11-25 ①d: 등록에서만 빠짐
         (s.translatable ? '<button type="button" class="cpx-act" data-role="cpx-use" data-idx="' + s.idx + '" data-use="' + (s.use ? '0' : '1') + '">' +
                           (s.use ? '원본으로' : '번역본으로') + '</button>' : '') +
         '</figure>';
@@ -109,7 +120,8 @@
         '<img src="' + esc(s.url || s.original) + '" alt="빠진 ' + (s.idx + 1) + '번 사진" referrerpolicy="no-referrer" loading="lazy">' +
         '<figcaption><span class="cpx-n">' + (s.idx + 1) + '</span></figcaption>' +
         '<p class="cpx-out-why">' + esc(s.reason) + '</p>' +
-        '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button></figure>';
+        (s.user ? '<button type="button" class="cpx-act" data-role="cpx-include" data-idx="' + s.idx + '">다시 넣기</button>'
+                : '<button type="button" class="cpx-act" data-role="cpx-edit" data-idx="' + s.idx + '">사진 편집</button>') + '</figure>';
     }).join('');
     // Y11-B: 예전 색 덩어리 검출로 지운 편집본(제품 일부가 지워짐)을 되돌렸으면 한 줄로 알린다
     var rev = (d.edit_reverted || []).length ? '<p class="cpx-cap" data-role="cpx-edit-reverted">예전 자동 검출로 지웠던 사진 ' +
@@ -138,7 +150,9 @@
       (nOrig ? ' · 원본 ' + nOrig + '장(「다시 번역」으로 번역)' : '') + '</div><div class="cpx-strip" data-role="cpx-opts">' + opts + '</div>' : '';
     body.innerHTML = rev + fail + diag + card + '<ul class="cpx-checks" data-role="cpx-checks">' + checkLines(d.check) + '</ul>' + hold +
       '<div class="cpx-slabel">상세 상단 — 대표 + 추가 이미지(나가는 순서)</div><div class="cpx-strip" data-role="cpx-strip">' + strip + '</div>' +
-      (out ? '<div class="cpx-slabel" data-role="cpx-out-label">등록에서 빠진 사진 — 판촉 글자를 지우면 다시 들어가요</div><div class="cpx-strip" data-role="cpx-out">' + out + '</div>' : '') +
+      (out ? '<div class="cpx-slabel" data-role="cpx-out-label">' + ((d.left_out || []).every(function (s) { return s.user; })
+        ? '등록에서 뺀 사진 — 「다시 넣기」로 되돌려요(원본은 그대로예요)'
+        : '등록에서 빠진 사진 — 판촉 글자는 지우면 다시 들어가고, 직접 뺀 장은 「다시 넣기」로 되돌려요') + '</div><div class="cpx-strip" data-role="cpx-out">' + out + '</div>' : '') +
       optBlock;
   }
   var pollTimer = null;
@@ -201,6 +215,13 @@
       view = b.getAttribute('data-view');
       root.querySelectorAll('.cpx-vbtn').forEach(function (x) { var on = x === b; x.classList.toggle('is-on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
       render(last);
+    } else if (role === 'cpx-exclude' || role === 'cpx-include') {
+      b.disabled = true; b.textContent = role === 'cpx-exclude' ? '빼는 중…' : '넣는 중…';
+      call(base + '/image-exclude', {idx: +b.getAttribute('data-idx'), on: role === 'cpx-exclude'}).then(function (d) {
+        if (d && d.ok === false) { b.disabled = false; b.textContent = role === 'cpx-exclude' ? '이 사진 빼기' : '다시 넣기';
+          b.insertAdjacentHTML('afterend', ' <span class="cpx-cap" data-role="cpx-exclude-err">' + esc(d.error || '안 됐어요') + '</span>'); return; }
+        show(d);
+      });
     } else if (role === 'cpx-rep') {
       b.disabled = true; b.textContent = '바꾸는 중…';
       call(base + '/rep-image', {idx: +b.getAttribute('data-idx')}).then(show);

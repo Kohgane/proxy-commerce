@@ -1195,6 +1195,12 @@ def apply_enrich(item_id: str, ids: set, seller_id_val: str, data: dict) -> tupl
             _df.maybe_queue(item_id, extra)
         except Exception as exc:                                    # noqa: BLE001
             logger.warning("[enrich] 치수 수집 줄 실패 item=%s: %s", item_id, exc)
+    if ok and changed.get("enrich_state"):
+        try:                                                        # 앱 v1.1: 사진까지 채워졌으면 폰에 알린다(키·기기 없으면 조용히)
+            from src.notifications.apns import notify as _push
+            _push(seller_id_val, "사진까지 담았어요", str(item.get("title") or "")[:60], f"/seller/m/item/{item_id}")
+        except Exception:                                           # noqa: BLE001
+            pass
     st = extra.get("collect_status") or {}
     # v66 STEP3: 보강 판정 회수 — 큐가 돌았는지/필드를 채웠는지 서버 로그로 특정(어느 쪽인지 PR 근거).
     logger.info("[enrich] item=%s changed=%s status=%s rep=%s", item_id, changed, st.get("status"), bool(rep))
@@ -1903,6 +1909,15 @@ def share_collect_core(raw: str, *, url: str, seller_id: str, seller_ids, final_
     그래서 한 벌만 둔다. 반환 `(out, res)`: `out`은 화면·JSON이 쓰는 모양, `res`는 `collect_input` 원 결과.
     """
     from src.collectors.share_text import parse_share_text
+    # 오너 11-25 15:56: 아마존·알리 단축 주소는 먼저 펴서 **정본 주소로** 중복을 본다(같은 상품이 짧은 주소로 또 쌓이지 않게).
+    try:
+        from src.collectors.link_diag import resolve_share_link, short_link_market
+        if short_link_market(url) in ("amazon", "aliexpress"):
+            _r = resolve_share_link(url)
+            if _r.get("ok") and _r.get("canonical_url"):
+                url = _r["canonical_url"]
+    except Exception as exc:                       # noqa: BLE001 — 못 펴면 원래 주소로 간다
+        logger.warning("단축 주소 펴기 실패(중복 확인 전): %s", exc)
     try:
         from src.seller_console.collect_history_store import find_by_product_key
         dup = find_by_product_key(url, seller_ids=seller_ids)
@@ -2018,13 +2033,21 @@ def _dispatcher_collect():
         return UniversalScraper().fetch
 
 
-def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> dict:
+def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk", raw_url: str = "") -> dict:
     """URL 1건 수집 → 이력 저장. **벌크와 단건(M1-1)이 공유하는 단일 코어**.
 
     반환 {url, ok, item_id?, title?, error?}. 영속 저장(durable)이 확인될 때만 ok=True —
     가짜 성공 금지(v38 P0). 이 함수를 두 번 만들지 않는다: 벌크 안에 갇혀 있던 내부 함수를
     끌어올린 것이고, 모바일 단건 엔드포인트가 같은 것을 부른다(이중 구현 금지).
     """
+    # 오너 11-25 15:56: 아마존·알리 공유 단축 주소(`a.co`·`a.aliexpress.com` …)는 **여기서 먼저 편다** —
+    #   주소에 상품번호가 없어 SKU가 비고, 사전검증에서 「원본 주소 없음」으로 막혔다. 원래 주소는 `raw_url`로 남긴다.
+    from src.collectors.link_diag import resolve_share_link as _rsl, short_link_market as _slm
+    if _slm(url) in ("amazon", "aliexpress"):
+        _r = _rsl(url)
+        if _r.get("ok") and _r.get("canonical_url"):
+            raw_url = raw_url or url
+            url = _r["canonical_url"]
     # C-F8: 코어에서 멈춘다(호출부마다 두면 입구가 늘 때마다 샌다 — 실측 6곳 중 2곳만 서 있었다).
     from src.collectors.share_text import is_short_link as _is_short
     from src.collectors.share_text import is_taobao_family as _is_tb
@@ -2084,7 +2107,8 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk") -> d
                 image=images[0] if images else "", price=price, currency=currency,
                 status="ok", seller_id=str(seller_id or ""),
                 extra={"title": title, "title_ko": title, "images": images,
-                       "price": price, "currency": currency},
+                       "price": price, "currency": currency,
+                       **({"raw_url": raw_url} if raw_url and raw_url != url else {})},
             )
         except _ULR as _lim:                                      # Y15: 이번 달 한도 — 항목별 정직 사유
             return {"url": url, "ok": False, "error": _lim.message, "limit_reached": True,

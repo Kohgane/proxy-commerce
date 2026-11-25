@@ -63,7 +63,7 @@
   --font-ui: "Pretendard", "Pretendard Variable", "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --display-size: clamp(40px, 6vw, 72px); --display-lh: 1.1;
   --h1-size: 32px; --h1-lh: 1.2; --h2-size: 26px; --h2-lh: 1.25; --h3-size: 20px; --h3-lh: 1.3;
-  --body-lg: 17px; --body: 15px; --small: 13px; --caption: 12px; --line: 1.6;
+  --body-lg: 17px; --body: 15px; --small: 14px; --caption: 13px; --line: 1.6;   /* 오너 10-28 원칙: 최소 14px·캡션 13px(감독 11-23 V41 마무리) */
   --w-reg: 400; --w-med: 500; --w-semi: 600;
 
   /* 간격 — 8px 그리드(모든 패딩/마진/갭은 이 배수만) */
@@ -924,7 +924,7 @@ main:has(> .op-shell) > .op-shell { flex: 1 1 auto; height: auto; min-height: 0;
   font-family: var(--font-display); font-weight: var(--w-semi);
   font-size: 1.5rem; line-height: 1.1; color: var(--text-strong);
 }
-.op-tile-sub { font-size: .74rem; color: var(--text-muted); line-height: 1.5; }
+.op-tile-sub { font-size: var(--caption); color: var(--text-muted); line-height: 1.5; }
 
 /* ── 6-j: 숫자 KPI 공용 문법 (`.op-tile`과 역할이 다르다 — 타일은 칸, KPI는 **한 줄 스트립**) ──
    6-h(`.rw-kpi`)와 6-i(`.si-kpi`)가 같은 선언을 각자 복사해 갖고 있었다.
@@ -1809,7 +1809,7 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--ink) 3%, var(--surface));
 }
-.od-stat-k { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.od-stat-k { font-size: var(--caption); letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 .od-stat-v {
   font-family: var(--font-display); font-weight: var(--w-semi);
   font-size: 1.9rem; line-height: 1.1; color: var(--text-strong);
@@ -2342,6 +2342,9 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* Y7-K: 같은 상품·같은 마켓 2건 이상 — 칩 옆 「중복 n건 — 정리」(주황 = 고칠 것, 누르면 상태 팝업) */
 .mk-chip.mk-chip-dup { background: color-mix(in srgb, var(--orange) 16%, transparent); border-color: color-mix(in srgb, var(--orange) 45%, transparent);
   color: var(--orange-strong, var(--orange)); font-weight: 600; }
+/* 오너 11-25 15:56 ③: 반쪽 등록 「쿠팡 남음」 — 할 일이 남았다는 뜻(금 테두리 · 누르면 이어서) */
+.mk-chip.mk-chip-left { background: color-mix(in srgb, var(--gold) 14%, transparent); border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+  color: var(--text); text-decoration: none; }
 .mk-chip.tone-ok { background: color-mix(in srgb, var(--success) 16%, transparent); border-color: color-mix(in srgb, var(--success) 40%, transparent); color: var(--success); }
 .mk-chip.tone-bad { background: color-mix(in srgb, var(--danger) 14%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
 .mk-chip.tone-fail { background: color-mix(in srgb, var(--orange) 16%, transparent); border-color: color-mix(in srgb, var(--orange) 45%, transparent); color: var(--orange-strong); }
@@ -2578,9 +2581,9 @@ button.hb-todo-go { background: transparent; cursor: pointer; }
   border-radius: var(--radius, 12px); background: var(--bg); color: var(--text); text-decoration: none; }
 a.hb-tile:hover { border-color: var(--teal); }
 .hb-tile.is-alert { border-left: 3px solid var(--orange); }
-.hb-tile-k { font-size: .78rem; color: var(--text-muted); }
+.hb-tile-k { font-size: var(--caption); color: var(--text-muted); }
 .hb-tile-v { font-size: 1.35rem; font-weight: 800; line-height: 1.1; }
-.hb-tile-v small { font-size: .8rem; font-weight: 600; color: var(--text-muted); }
+.hb-tile-v small { font-size: var(--caption); font-weight: 600; color: var(--text-muted); }
 /* B 마켓별 현황 표 */
 .hb-mtable { width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }
 .hb-mtable th, .hb-mtable td { padding: 6px 4px; border-top: 1px solid var(--border); text-align: right; white-space: nowrap; }
@@ -2606,7 +2609,7 @@ a.hb-tile:hover { border-color: var(--teal); }
 .hb-recent li { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 5px 0; border-top: 1px solid var(--border); }
 .hb-recent time { color: var(--text-muted); flex: none; }
 .hb-rtext { flex: 1 1 auto; }
-.hb-rtitle { flex: 1 1 100%; font-size: .76rem; color: var(--text-muted); }
+.hb-rtitle { flex: 1 1 100%; font-size: var(--caption); color: var(--text-muted); }
 /* 목록 뱃지 빈 자리(Y12-C) — 미등록 계정 = 빈 점선 테두리로 자리만(고·우·셰·코 순서 고정) */
 .mk-badge.kind-none { background: transparent; border: 1px dashed var(--border); color: var(--text-muted); cursor: default; }
 
@@ -2708,6 +2711,7 @@ a.hb-tile:hover { border-color: var(--teal); }
   .mk-badge.kind-none { border: 1px dashed var(--border); color: var(--text-muted); }
   .mk-badge.kind-bad { border: 1px solid var(--danger); color: var(--danger); }                        /* 반려는 신호라 남긴다 */
   .mk-chip.mk-chip-dup { height: 32px; }
+  .mk-chip.mk-chip-left { height: 32px; display: inline-flex; align-items: center; }
 }
 @media (min-width: 768px) {
   .mk-badge.kind-bad, .mk-badge.kind-fail { width: auto; min-width: 32px; padding: 0 10px; border-radius: var(--radius-pill); }

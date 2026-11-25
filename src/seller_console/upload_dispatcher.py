@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 #   행의 `url` 컬럼(= 「원본 보기」가 읽는 그 값)은 정규형이지만 **extra에는 없다.**
 DRAFT_URL_KEYS = ("url", "final_url", "source_url", "product_url")
 
+# 오너 11-25 15:56: 짧은 링크를 못 편 갈래 → 사람 말(원문 사유 코드는 그대로 둔다)
+SHORT_RESOLVE_WHY = {
+    "timeout": "시간 안에 답이 오지 않았어요",
+    "http_403": "그 사이트가 서버 요청을 막았어요(403)",
+    "http_404": "링크가 만료됐어요(404)",
+    "no_item_in_location": "넘어간 주소에 상품번호가 없었어요",
+    "no_item_in_body": "넘어간 페이지에 상품번호가 없었어요",
+    "too_many_hops": "넘어가는 단계가 너무 많았어요",
+    "off_host": "다른 사이트로 넘어가서 멈췄어요",
+    "error": "연결 오류가 났어요",
+    "disabled": "서버 링크 펴기가 꺼져 있어요",
+}
+
 # F42d: 한글이 섞여 있으면 영문 제목이 아니다 — 글자로 재는 판정(짐작 0).
 _HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
 # Shopify 캐너리 사전 점검(2026-09-28): 영문 제목 판정이 **한글만** 봤다 — 수행방패처럼 원문이 중국어면
@@ -555,6 +568,51 @@ def _build_dispatch_payload(product_data: Dict[str, Any],
     들어 있으면 `draft_url`은 「있다」고 답하고, 행에 멀쩡한 정규형 주소가 있어도 안 쓴다 →
     SKU가 빈 채로 나간다. **행 주소가 SKU를 내는데 페이로드 것이 못 내면 행이 이긴다.**
     """
+    out = _build_dispatch_payload_core(product_data, item)
+    if str(out.get("sku") or "").strip() or not item:
+        return out
+    # 오너 11-23 23:58 ⑤: 폰 공유(공유 확장·단축어)로 담긴 초안은 행 주소가 `e.tb.cn/h.…` 단축 링크다 — 그 주소엔 상품번호가 없어
+    #   SKU가 빈 채로 쿠팡 전송 직전에 실패했다(스스는 이미 올라가 반쪽 등록). 공유 글·링크 펴기에서 **실제로 읽은** 타오바오 상품번호
+    #   (`item_id_taobao`)가 있으면 그 정규형 주소로 채운다. 번호가 없으면 지어내지 않는다(사전검증이 「원본 주소 넣기」로 잡는다).
+    alt = share_item_url(item)
+    if alt:
+        from src.collectors.product_key import vendor_sku
+        if vendor_sku(alt):
+            prev = draft_url(out)
+            out = dict(out)
+            for k in DRAFT_URL_KEYS:                 # 앞 이름의 단축 링크가 먼저 걸리지 않게 — 쓸 수 없는 값만 걷는다
+                v = str(out.get(k) or "").strip()
+                if v and not vendor_sku(v):
+                    out.pop(k, None)
+            out["url"] = alt
+            logger.info("[등록] 공유 초안 — 타오바오 상품번호로 주소를 채웠다 item=%s url=%s 이전=%s",
+                        item.get("id") or item.get("item_id") or "?", alt, prev or "(없음)")
+            return _fill_sku(out)
+    return out
+
+
+def share_item_url(item: Optional[Dict[str, Any]]) -> str:
+    """행 주소로 SKU를 못 낼 때 쓸 **실제로 받은** 주소 — ① 오너가 「원본 주소 넣기」로 넣은 `source_url_manual`
+    ② 공유 글·링크 펴기에서 읽은 `item_id_taobao`(숫자) → 타오바오 정규형. 없으면 ''(지어내지 않는다)."""
+    if not item:
+        return ""
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        return ""
+    manual = str((ex or {}).get("source_url_manual") or "").strip()
+    if manual.startswith(("http://", "https://")):
+        return manual
+    # 오너 11-25 15:56: 서버가 짧은 링크를 펴 둔 정본 주소(`a.co` → `amazon.com/dp/…`)
+    resolved = str((ex or {}).get("source_url_resolved") or "").strip()
+    if resolved.startswith(("http://", "https://")):
+        return resolved
+    tid = str((ex or {}).get("item_id_taobao") or "").strip()
+    return f"https://item.taobao.com/item.htm?id={tid}" if re.fullmatch(r"\d{6,20}", tid) else ""
+
+
+def _build_dispatch_payload_core(product_data: Dict[str, Any],
+                                 item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     from src.collectors.product_key import vendor_sku
 
     pd = dict(product_data or {})
@@ -1688,6 +1746,36 @@ class UploadDispatcher:
                           "line": "대표 이미지가 0장이에요 — 마켓은 사진 없는 상품을 받지 않아요."})
             if market == "smartstore":
                 holds[-1]["code"] = "naver_required_representativeImage"     # Y7-F: 네이버 필수 칸 사유코드
+        # 오너 11-25 ②: 사진이 전부 작다 — 전 마켓 보류(사전검증 준비가 크기를 재 둔다 `_imgs_all_small`)
+        _small = pd.get("_imgs_all_small")
+        if isinstance(_small, dict):
+            holds.append({"short": "사진이 작아요", "fix": "small_images", "code": "images_all_small",
+                          "line": f"사진이 작아요 — 나갈 사진 {_small.get('n')}장이 모두 긴 변 {_small.get('max')}px(500px 미만)이라 흐리게 보여요. "
+                                  "다시 가져오기나 사진 올리기로 큰 사진을 넣어 주세요."})
+        # 오너 11-25 ③④: 판매수수료율을 모르는 마켓(멀티샵 WC 등)은 등록 단계에서야 「commission_unknown」으로 떨어졌다 —
+        #   사전검증에서 보류한다(판정은 등록 `_commission_guard`와 같은 함수 · 셀러가 판매가를 적었으면 통과). 유저 글에 env 이름 없음.
+        #   판정값은 사전검증 준비(`_pv_prepare`)가 등록 `_price_gate`와 같은 함수(`commission_pct`)로 재 둔 `_commission_probe`.
+        _cp = pd.get("_commission_probe")
+        if isinstance(_cp, dict) and market in _cp:
+            holds.append({"short": "이 마켓은 아직 준비 중", "fix": "not_ready", "code": "commission_unknown",
+                          "line": "이 마켓은 아직 준비 중이에요(판매수수료율 미정) — 이번 등록에서 빼 주세요.",
+                          "admin_why": _cp.get(market) or ""})
+        # 오너 11-23 23:58 ⑤: 쿠팡 판매자 상품코드(SKU)는 원본 상품 주소에서 뽑는다 — 못 뽑으면 **사전검증에서** 보류한다.
+        #   예전엔 사전검증은 통과시키고 전송 직전 「SKU 추출 실패」로 떨어져 스스·쿠팡이 반쪽 등록됐다.
+        #   `_sku_probe`는 사전검증 준비(`_pv_prepare`)가 등록과 같은 빌더(`build_dispatch_payload`)로 재 둔 값이다.
+        _probe = pd.get("_sku_probe")
+        if str(market or "").startswith("coupang") and isinstance(_probe, dict) and not _probe.get("ok"):
+            # 오너 11-25 15:56: 사실대로 — 짧은 링크면 「주소 없음」이 아니다. 서버가 이미 펴 보았고, 못 편 사유를 그대로 싣는다.
+            if _probe.get("short"):
+                _why = SHORT_RESOLVE_WHY.get(str(_probe.get("resolve_reason") or "").split(":")[0], _probe.get("resolve_reason") or "")
+                holds.append({"short": "짧은 링크 — 상품번호 못 읽음", "fix": "source_url", "code": "coupang_sku_short_link",
+                              "market_src": _probe.get("market", ""),
+                              "line": "짧은 링크라 상품번호를 못 읽었어요 — 서버가 펴 보았지만 " + (_why or "상품 주소가 나오지 않았어요")
+                                      + ". 아래에 상품 페이지 주소를 넣으면 바로 다시 확인해요."})
+            else:
+                holds.append({"short": "원본 상품 주소 없음", "fix": "source_url", "code": "coupang_sku_missing",
+                              "line": "원본 상품 주소가 없어 쿠팡 상품코드를 만들 수 없어요 — 아래에 원본 주소를 넣으면 바로 다시 확인해요."
+                                      + (f" (지금 주소: {_probe['chosen'][:60]})" if _probe.get("chosen") else "")})
         price_raw = pd.get("price") or pd.get("price_original")
         try:
             price = float(price_raw) if price_raw not in (None, "") else None

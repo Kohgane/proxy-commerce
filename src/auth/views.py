@@ -839,6 +839,8 @@ def oauth_start(provider: str):
     )
     # 자동 로그인 선호를 콜백까지 전달
     session[f"oauth_remember_{provider}"] = str(request.args.get("remember", "")).lower() in ("1", "on", "true", "yes")
+    # 앱 v1.1(오너 11-23): 아이폰 앱이 연 로그인(`?app=1`)은 콜백 끝에서 세션 대신 1회용 코드를 앱 스킴으로 돌려준다.
+    session[f"oauth_app_{provider}"] = str(request.args.get("app", "")).strip() == "1"
 
     redirect_uri = _callback_uri(provider)
     auth_url = p.get_authorize_url(state=state, redirect_uri=redirect_uri)
@@ -1001,6 +1003,17 @@ def oauth_callback(provider: str):
             store.update(user)
 
         remember = bool(session.pop(f"oauth_remember_{provider}", False))
+        if session.pop(f"oauth_app_{provider}", False):
+            # 앱 모드: 이 창(ASWebAuthenticationSession)엔 세션을 열지 않는다 — 앱 웹뷰가 코드를 바꿔 연다.
+            from .app_login import app_callback_url, issue
+            user.role = role
+            code = issue(user)
+            try:
+                store.update_last_login(user.user_id)
+            except Exception:
+                pass
+            logger.info("oauth_callback app_mode provider=%s → 앱 스킴으로 1회용 코드", provider)
+            return redirect(app_callback_url(code, next_url))
         establish_session(user, role=role, remember=remember)
 
         store.update_last_login(user.user_id)
@@ -1016,6 +1029,26 @@ def oauth_callback(provider: str):
         logger.warning("oauth_callback 오류 (%s): %s", provider, exc)
         flash("로그인 중 오류가 발생했습니다.", "danger")
         return redirect(url_for("auth.login"))
+
+
+@auth_bp.get("/app/exchange")
+def app_exchange():
+    """앱 v1.1 — 1회용 코드(60초·한 번) → **이 웹뷰에** 세션 쿠키 → `next`.
+
+    앱은 계속 쓰는 기기라 자동 로그인(영구 세션)으로 연다. 코드가 틀림·지남·이미 씀이면 로그인 화면 + 사유.
+    """
+    from .app_login import take
+    got = take(request.args.get("code", ""))
+    next_url = _safe_next_url(request.args.get("next", ""), default="/seller/m")
+    if not got:
+        logger.info("app_exchange 실패(코드 없음·지남·이미 씀)")
+        flash("로그인 확인 시간이 지났어요 — 다시 로그인해 주세요.", "auth_oauth")
+        return redirect(url_for("auth.login", next=next_url))
+    from .models import User
+    user = User(user_id=got["user_id"], email=got.get("email", ""), name=got.get("name", ""),
+                avatar_url="", role=got.get("role") or "seller", email_verified=True, active=True)
+    establish_session(user, role=user.role, remember=True)
+    return redirect(next_url)
 
 
 @auth_bp.get("/whoami")

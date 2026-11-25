@@ -43,7 +43,7 @@
 .console-topbar-brand:hover { opacity: 0.82; }
 
 .console-nav-group-title {
-  font-size: 0.72rem;
+  font-size: var(--caption);
   font-weight: 700;
   color: var(--console-muted);
   margin: 0.95rem 0 0.45rem;
@@ -660,3 +660,17 @@ details[open] > .console-nav-adv-summary::after { transform: rotate(180deg); }
 .console-topbar .btn-ghost:hover, .console-topbar .btn-outline-secondary:hover, .console-topbar .btn-light:hover { color: var(--text-strong); background: transparent; }
 .console-content { padding: var(--space-6) var(--space-7); }
 @media (max-width: 991.98px) { .console-content { padding: var(--space-4); } }
+
+/* 감독 11-23 V41 마무리 — 대시보드 「마켓별 현황」 계정 카드(표 폐기). 토큰만 · 캡션 13px 이상. */
+.hb-mcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: var(--space-2); }
+.hb-mcard { padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); min-width: 0; }
+.hb-mcard.is-off { background: transparent; }
+.hb-mcard-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.hb-mcard .hb-mname { font-family: var(--font-display); font-weight: 600; font-size: var(--small); color: var(--text-strong); }
+.hb-mcard .hb-mkt { font-size: var(--caption); color: var(--text-muted); margin-top: 2px; }
+.hb-mcard-n { font-family: var(--font-display); font-size: 2rem; line-height: 1.1; margin-top: var(--space-2); color: var(--text-strong); }
+.hb-mcard-n a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--gold); }
+.hb-mcard-k { display: block; font-family: var(--font-ui); font-size: var(--caption); color: var(--text-muted); }
+.hb-mcard-sub { display: flex; flex-wrap: wrap; gap: 2px var(--space-2); margin-top: var(--space-2); font-size: var(--caption); color: var(--text-muted); }
+.hb-mcard-sub .is-bad, .hb-mcard-sub .is-bad a { color: var(--danger); }
+.hb-mcard .hb-mtime { font-size: var(--caption); color: var(--text-muted); margin-top: 2px; }

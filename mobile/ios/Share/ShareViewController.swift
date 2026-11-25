@@ -22,9 +22,9 @@ final class ShareViewController: UIViewController {
         view.addSubview(card)
         thumb.contentMode = .scaleAspectFill; thumb.clipsToBounds = true; thumb.layer.cornerRadius = 10
         thumb.backgroundColor = UIColor(white: 1, alpha: 0.06); thumb.translatesAutoresizingMaskIntoConstraints = false
-        titleL.font = .systemFont(ofSize: 17, weight: .semibold); titleL.textColor = UIColor(red: 0.96, green: 0.94, blue: 0.89, alpha: 1); titleL.numberOfLines = 2
+        titleL.font = .systemFont(ofSize: 17, weight: .semibold); titleL.textColor = UIColor(red: 0.96, green: 0.94, blue: 0.89, alpha: 1); titleL.numberOfLines = 0   // 오너 11-25: 잘리지 않게(두 줄 말줄임 금지)
         titleL.text = "담는 중…"
-        subL.font = .systemFont(ofSize: 13); subL.textColor = UIColor(white: 1, alpha: 0.55); subL.numberOfLines = 2
+        subL.font = .systemFont(ofSize: 13); subL.textColor = UIColor(white: 1, alpha: 0.7); subL.numberOfLines = 0
         openB.setTitle("앱에서 보기", for: .normal); openB.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
         openB.tintColor = UIColor(red: 0.79, green: 0.64, blue: 0.29, alpha: 1); openB.isHidden = true
         openB.addTarget(self, action: #selector(openApp), for: .touchUpInside)
@@ -88,42 +88,55 @@ final class ShareViewController: UIViewController {
 
     private func send(text: String, url: String, title: String) {
         if text.isEmpty && url.isEmpty { return show("담을 내용이 없어요", sub: "상품 링크나 공유 글을 보내 주세요.", ok: false) }
-        var req = URLRequest(url: KG.base.appendingPathComponent("/seller/collect/share"))
-        req.httpMethod = "POST"; req.timeoutInterval = 45
-        req.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("ios-share", forHTTPHeaderField: "X-KG-Source")
-        if let c = Vault.cookieHeader, !c.isEmpty { req.setValue(c, forHTTPHeaderField: "Cookie") }
-        if let t = Vault.token, !t.isEmpty { req.setValue("Bearer " + t, forHTTPHeaderField: "Authorization") }
-        var f = URLComponents(); f.queryItems = [URLQueryItem(name: "text", value: text), URLQueryItem(name: "url", value: url),
-                                                 URLQueryItem(name: "title", value: title), URLQueryItem(name: "src", value: "ios-share")]
-        req.httpBody = (f.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B").data(using: .utf8)
-        URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+        let item = ShareItem(text: text, url: url, title: title, ts: Date().timeIntervalSince1970)
+        Collect.post(item) { [weak self] r in
             guard let self = self else { return }
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if err != nil || code == 0 { return self.show("연결이 안 돼요", sub: "인터넷을 확인한 뒤 다시 공유해 주세요.", ok: false) }
-            if code == 401 || code == 403 || (resp?.url?.path.contains("/login") ?? false) {
-                return self.show("로그인이 풀렸어요", sub: "고가브릿지 앱을 한 번 열어 로그인해 주세요.", ok: false)
+            switch r {
+            case .offline:
+                // 중국 셀룰러 등으로 끊기면 폰에 보관 → 앱을 열 때 자동으로 다시 보낸다
+                Outbox.add(item)
+                self.show("담아 뒀어요", sub: "연결되면 보낼게요 — 고가브릿지 앱을 열면 자동으로 보냅니다.", ok: false)
+                self.autoClose(1.6)
+            case .auth:
+                self.show("앱에서 먼저 로그인해 주세요", sub: "고가브릿지 앱을 한 번 열어 로그인하면 끝입니다.", ok: false)
+            case .fail(let code):
+                self.show("담지 못했어요 (\(code))", sub: "잠시 뒤 다시 공유해 주세요.", ok: false)
+            case .ok(let data, let final):
+                // 오너 11-25 15:56 ④: 문구는 **서버가 담긴 그대로** 만든다(headline·sub) — 「수집 목록에 들어갔어요」를
+                //   기본값으로 깔지 않는다(실패·빈 초안에도 그 말이 남았다). 주소만 담겼으면 다음 행동 버튼 하나.
+                var name = "담았어요 ✓", sub = "", img: String?, icon: String?, next: String?
+                var good = true
+                if let p = Collect.itemPath(data, final) { self.openPath = p }
+                if let d = data, let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                    let obj = (j["item"] as? [String: Any]) ?? j
+                    if let t = obj["title"] as? String, !t.isEmpty { sub = t }
+                    img = (obj["thumb"] ?? obj["thumbnail"] ?? obj["image"]) as? String
+                    if (j["ok"] as? Bool) == false { name = (j["error"] as? String) ?? "담지 못했어요"; sub = ""; good = false }
+                    if (j["dup"] as? Bool) == true || (j["state"] as? String) == "dup" { name = "이미 담은 상품이에요 ✓" }
+                    if let h = j["headline"] as? String, !h.isEmpty { name = h }
+                    if let s2 = j["sub"] as? String, !s2.isEmpty { sub = s2 }
+                    if let ic = j["source_icon"] as? String, !ic.isEmpty { icon = ic }
+                    if let n = j["next_label"] as? String, !n.isEmpty { next = n }
+                    if let np = j["next_path"] as? String, !np.isEmpty, next != nil { self.openPath = np }
+                }
+                self.show(name, sub: sub, ok: good)
+                if let n = next { DispatchQueue.main.async { self.openB.setTitle(n, for: .normal) } }
+                // 썸네일이 없으면 빈 상자 대신 소싱처 아이콘
+                if let s = img ?? icon, let iu = URL(string: s, relativeTo: KG.base) {
+                    URLSession.shared.dataTask(with: iu.absoluteURL) { d, _, _ in
+                        if let d = d, let im = UIImage(data: d) { DispatchQueue.main.async { self.thumb.image = im } }
+                    }.resume()
+                } else {
+                    DispatchQueue.main.async { self.thumb.image = UIImage(systemName: "shippingbox"); self.thumb.tintColor = UIColor(red: 0.79, green: 0.64, blue: 0.29, alpha: 1); self.thumb.contentMode = .center }
+                }
+                // 다 담겼으면 1초 뒤 저절로 닫혀 원래 앱으로 — 주소만 담겼으면 다음 행동을 고를 때까지 둔다
+                if good && next == nil { self.autoClose(1.1) }
             }
-            if code >= 400 { return self.show("담지 못했어요 (\(code))", sub: "잠시 뒤 다시 공유해 주세요.", ok: false) }
-            // JSON 이면 상품 정보를, 아니면(HTML 결과 화면) 담김으로만 본다
-            var name = "담았어요", sub = "수집 목록에 들어갔어요", img: String?
-            if let d = data, let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
-                let obj = (j["item"] as? [String: Any]) ?? j
-                if let t = obj["title"] as? String, !t.isEmpty { sub = t }
-                img = (obj["thumb"] ?? obj["thumbnail"] ?? obj["image"]) as? String
-                if let p = (obj["path"] ?? obj["url"]) as? String, p.hasPrefix("/") { self.openPath = p }
-                else if let id = obj["item_id"] ?? obj["id"] ?? obj["iid"] { self.openPath = "/seller/m/item/\(id)" }
-                if (j["ok"] as? Bool) == false { name = (j["error"] as? String) ?? "담지 못했어요" }
-                if (j["dup"] as? Bool) == true || (j["state"] as? String) == "dup" { name = "이미 담은 상품이에요" }
-            } else if let u = resp?.url, u.path.hasPrefix("/seller/") { self.openPath = u.path }
-            self.show(name, sub: sub, ok: name != "담지 못했어요")
-            if let s = img, let iu = URL(string: s, relativeTo: KG.base) {
-                URLSession.shared.dataTask(with: iu.absoluteURL) { d, _, _ in
-                    if let d = d, let im = UIImage(data: d) { DispatchQueue.main.async { self.thumb.image = im } }
-                }.resume()
-            }
-        }.resume()
+        }
+    }
+
+    private func autoClose(_ s: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + s) { [weak self] in self?.done() }
     }
 
     // 본앱의 그 상품 화면으로 (확장에서는 응답 사슬로 openURL 을 찾아 부른다)
@@ -145,5 +158,12 @@ final class ShareViewController: UIViewController {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.done() }
     }
-    @objc private func done() { extensionContext?.completeRequest(returningItems: nil) }
+    private var finished = false
+    @objc private func done() {
+        DispatchQueue.main.async {
+            guard !self.finished else { return }
+            self.finished = true
+            self.extensionContext?.completeRequest(returningItems: nil)
+        }
+    }
 }

@@ -42,7 +42,7 @@ html.kgp-app .kgp-web-only { display: none !important; }
   background: var(--ink); border-top: 1px solid color-mix(in srgb, var(--gold) 26%, transparent);
 }
 .kgp-mtab-item { flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  color: color-mix(in srgb, var(--cream) 62%, transparent); text-decoration: none; font-size: .74rem; font-weight: 600; border-radius: var(--radius); }
+  color: color-mix(in srgb, var(--cream) 62%, transparent); text-decoration: none; font-size: var(--caption); font-weight: 600; border-radius: var(--radius); }
 .kgp-mtab-item i { font-size: 1.3rem; line-height: 1; }
 .kgp-mtab-item.active { color: var(--gold); }
 .kgp-mtab-item:active { background: color-mix(in srgb, var(--cream) 8%, transparent); }
@@ -77,6 +77,8 @@ html.kgp-app .kgp-web-only { display: none !important; }
   .btn.btn-sm { min-height: 38px; }
 }
 html.kgp-app body[data-mshell] { margin: 0; min-height: 100dvh; padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); overscroll-behavior-y: contain; }
+/* 오너 11-25 ⑥: 잡 진행 한 줄(탭바 위 알약)이 떠 있으면 본문 여백을 알약 높이(약 52px)만큼 더 — 가리지 않게 */
+body[data-mshell].kgp-jobline-on { padding-bottom: calc(72px + 56px + env(safe-area-inset-bottom, 0px)); }
 html.kgp-app input, html.kgp-app select, html.kgp-app textarea { font-size: 16px !important; }
 @media (prefers-reduced-motion: reduce) {
   .kgp-jobline-dot, .kgp-mskel div, .kgp-ptr.spin i { animation: none; }
@@ -91,3 +93,6 @@ html.kgp-app body[data-mshell] #sidebarDrawer { display: none !important; }
 /* 아래에 붙는 토스트 상자는 탭바 위로(390 실측: 주문 화면 토스트 상자가 「더보기」 탭을 덮었다) */
 @media (max-width: 767.98px) { body[data-mshell] .toast-container.bottom-0, body[data-mshell] .pc-toast-stack.bottom-0 { bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important; } }
 html.kgp-app body[data-mshell] .toast-container.bottom-0, body[data-mshell] .pc-toast-stack.bottom-0 { bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important; }
+/* 오너 11-23 B: M5 실패 줄의 「원문」(영어 원문·예외 코드)은 접어 둔다 — 본문은 한국어 사유 */
+.m5-raw { margin-top: 4px; font-size: var(--caption); color: var(--text-muted); word-break: break-all; }
+.m5-raw summary { cursor: pointer; }

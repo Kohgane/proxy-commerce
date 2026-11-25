@@ -108,8 +108,10 @@ def test_screens_say_hold_and_repeat_the_pc_line():
     # M5 후속(오너 2026-10-07): 통과 또는 「그래도 등록」으로 풀리는 보류가 하나도 없으면 등록 닫힘(전송 실패는 잠그지 않음)
     # Y6-C E(2026-10-07) 갱신: 잠긴 버튼 대신 「사전검증부터」 모드 — 통과·보류가 0이면 등록(go) 모드가 아니고,
     #   누르면 다시 사전검증만 한다(등록 0회). 막힌 이유는 버튼 밑 한 줄(m5-go-hint).
-    assert "goBtn.dataset.mode = n ? 'go' : 'check';" in m5 and "var n = okMarkets.length + held.length;" in m5
+    # 오너 11-25 ①b: 주 버튼은 「통과한 N곳만」 — 보류는 보조 버튼 「보류 M곳도 그래도 등록」(m5GoHeld)으로만 나간다.
+    assert "goBtn.dataset.mode = n ? 'go' : 'check';" in m5 and "var n = okMarkets.length;" in m5
+    assert 'id="m5GoHeld"' in m5 and "withHeld = true; register(false);" in m5
     assert "if (goBtn.dataset.mode !== 'go') { checkBtn.click(); return; }" in m5
-    assert "보류된 마켓을 보강하거나 「그래도 등록」을 누르면 등록할 수 있어요." in m5
+    assert "보류된 마켓을 보강하거나 「보류도 그래도 등록」을 누르면 등록할 수 있어요." in m5
     pv = Path("src/seller_console/templates/collect_preview.html").read_text(encoding="utf-8")
     assert 'data-role="prevalidate-hold">보류' in pv

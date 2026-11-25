@@ -133,6 +133,44 @@
     <a class="btn btn-primary m5-btn" href="#m5Markets" data-role="m5-to-register">등록으로</a>
   </section>
 
+  {% if m5.incomplete %}
+  {# 오너 11-25 ③: 반쪽 수집은 등록 단계로 보내지 않는다 — 무엇이 덜 왔고 어떻게 채우나 #}
+  <section class="m5-incomplete" data-role="m5-incomplete">
+    <b>수집이 덜 됐어요</b>
+    <ul>{% for r in m5.incomplete %}<li data-code="{{ r.code }}">{{ r.line }}</li>{% endfor %}</ul>
+    <div class="m5-incomplete-acts">
+      <button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>
+      {% if m5.incomplete|selectattr('code', 'equalto', 'no_source_url')|list %}
+      <div class="m5-src"><input type="url" inputmode="url" class="form-control" data-role="m5-incomplete-url" placeholder="{{ m5.src_example }}" autocomplete="off">
+        <button type="button" class="m5-fix" data-role="m5-incomplete-url-save">주소 넣기</button></div>
+      {% endif %}
+    </div>
+    <div class="m5-note" data-role="m5-incomplete-state" aria-live="polite"></div>
+  </section>
+  {% endif %}
+  {% if m5.rejected %}
+  {# 오너 11-25 15:56 ③: 쿠팡이 **실제로** 반려한 마켓 — 사유 원문 그대로 + 사람 말 한 줄 + 「고쳐서 다시 올리기」(사전검증이 지난 반려 사유를
+     자동으로 고치고(Y8) 고친 것 → 바뀐 값을 보인다 · 등록은 오너가 누를 때만) #}
+  <section class="m5-reject" id="m5Rejected" data-role="m5-rejected">
+    {% for r in m5.rejected %}
+    <div class="m5-res is-bad" data-role="m5-reject-row" data-market="{{ r.market }}">
+      <b>{{ r.label }} — 반려{% if r.product_id %} · {{ r.product_id }}{% endif %}</b>
+      <div class="m5-reject-sum" data-role="m5-reject-summary">{{ r.summary }}</div>
+      <div class="m5-note">쿠팡이 보낸 사유(원문):</div>
+      <pre class="m5-reject-raw" data-role="m5-reject-raw">{{ r.comment or '(사유 없음)' }}</pre>
+      <button type="button" class="m5-fix" data-role="m5-reject-fix" data-market="{{ r.market }}">고쳐서 다시 올리기</button>
+    </div>
+    {% endfor %}
+    <p class="m5-note">누르면 그 마켓만 사전검증해요 — 지난 반려 사유는 자동으로 고치고 「고친 것 → 바뀐 값」을 보여 줘요. 등록은 직접 누를 때만 나가요.</p>
+  </section>
+  {% endif %}
+  {% if m5.left %}
+  {# 오너 11-25 15:56 ③: 반쪽 등록 — 지난번 고른 마켓 중 안 올라간 곳. 「등록 끝」으로 닫지 않고 남겨 둔다 #}
+  <section class="m5-left" id="m5Left" data-role="m5-left" data-markets="{{ m5.left|join(',') }}">
+    <b>{{ m5.left_label }}</b> — 지난번에 안 올라간 마켓이에요.
+    <button type="button" class="m5-fix" data-role="m5-left-resume">이어서 올리기</button>
+  </section>
+  {% endif %}
   <fieldset class="m5-markets" id="m5Markets" data-role="m5-markets">
     <legend class="m5-legend">등록할 마켓</legend>
     {# Z5 후속(오너 2026-10-06): 연결된 마켓 전부·전부 토글 — 처음 체크가 어디서 왔는지 한 줄(지난 등록 → 설정 → 우주대행 묶음) #}
@@ -145,9 +183,10 @@
     {% if m.group and m.group != _g.last %}<div class="m5-group" data-role="m5-group">{{ m.group_label }}</div>{% endif %}
     {% if not m.group and _g.last %}<div class="m5-group" data-role="m5-group">그 밖의 마켓</div>{% endif %}
     {% set _g.last = m.group or '' %}
-    <label class="m5-mk{% if m.pending %} is-pending{% endif %}" data-market="{{ m.code }}">
-      <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked %}checked{% endif %}{% if m.registered %} data-registered="1"{% endif %} autocomplete="off">
+    <label class="m5-mk{% if m.pending %} is-pending{% endif %}{% if m.not_ready %} is-off{% endif %}" data-market="{{ m.code }}">
+      <input type="checkbox" name="m5-market" value="{{ m.code }}" {% if m.checked and not m.not_ready %}checked{% endif %}{% if m.not_ready %} disabled data-not-ready="1"{% endif %}{% if m.registered %} data-registered="1"{% endif %} autocomplete="off">
       <span class="m5-mk-body"><span>{{ m.label }}</span>
+        {% if m.not_ready %}<span class="m5-mk-note" data-role="m5-market-not-ready">{{ m.not_ready }}</span>{% endif %}
         {% if m.note %}<span class="m5-mk-note" data-role="m5-market-note">{{ m.note }}</span>{% endif %}
         {% if m.limit_text %}<span class="m5-mk-note" data-role="m5-market-limit">{{ m.limit_text }}</span>{% endif %}
         {% if m.registered %}<span class="mk-dup" data-role="mk-dup">{{ m.registered.line }}</span>{% endif %}</span>
@@ -173,6 +212,7 @@
      이제 검증 전엔 「사전검증부터」 모드 — 누르면 고른 마켓으로 사전검증을 돌리고, 통과한 마켓이 생기면 「등록 (N곳)」.
      검증 없이 바로 등록되는 길은 여전히 없다. 막힌 이유는 버튼 밑 한 줄로 말한다. #}
   <button type="button" class="btn btn-primary m5-btn" id="m5Go" data-role="m5-register" data-mode="check"{% if m5.blocked %} disabled{% endif %}>등록</button>
+  <button type="button" class="btn btn-ghost m5-btn" id="m5GoHeld" data-role="m5-register-held" hidden>보류도 그래도 등록</button>
   <div class="m5-note" id="m5GoHint" data-role="m5-go-hint" aria-live="polite">{{ m5.blocked or '누르면 사전검증부터 해요 — 통과한 마켓에만 등록돼요.' }}</div>
   <div id="m5Done" class="m5-done" data-role="m5-done" aria-live="polite" hidden></div>
   <script type="application/json" id="m5Product">{{ m5.product|tojson }}</script>
@@ -232,6 +272,19 @@
   .m5-mk-body { display: flex; flex-direction: column; min-width: 0; padding: 8px 0; }
   .m5-mk-note { color: var(--text-muted); font-size: .84rem; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }   /* 긴 영문 토큰(키 이름)이 390px 카드를 밀지 않게 */
   .m5-mk.is-pending { border-style: dashed; }
+  .m5-mk.is-off { opacity: .55; }                                                        /* 오너 11-25 ④: 아직 준비 중인 마켓 — 고를 수 없음 */
+  .m5-res.is-off { opacity: .6; border-style: dashed; }                                   /* ①a: 뺀 마켓 */
+  .m5-incomplete { margin: 0 0 var(--space-3); padding: var(--space-3); border: 1px solid var(--warn); border-radius: var(--radius); background: var(--surface); }
+  .m5-incomplete ul { margin: 6px 0; padding-left: 1.1rem; }
+  .m5-incomplete-acts { display: flex; flex-direction: column; gap: var(--space-2); }
+  .m5-off-row { margin-top: 4px; }
+  .m5-reject, .m5-left { margin: 0 0 var(--space-3); }
+  .m5-reject-sum { font-weight: 600; margin: 4px 0; }
+  .m5-reject-raw { white-space: pre-wrap; word-break: break-word; font-size: .9rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: var(--space-2); margin: 4px 0 var(--space-2); max-height: 14rem; overflow: auto; }
+  .m5-left { padding: var(--space-3); border: 1px solid var(--gold); border-radius: var(--radius); background: var(--surface); }
+  .m5-hold-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 4px; }
+  .m5-fix-quiet { color: var(--text-muted); border-color: var(--border); }
   .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
   .m5-btn.btn-ghost { border: 1px solid var(--border); background: var(--surface); font-weight: 600; }
   .m5-fix { display: inline-block; margin-top: 4px; }
@@ -278,6 +331,20 @@
   .m5-res.is-hold { border-color: var(--warn); }
   .m5-res b { display: block; margin-bottom: 2px; }
   .m5-res ul { margin: 4px 0 0; padding-left: 1.1rem; }
+  /* 오너 11-23 ④⑤②: 보류 카드 안에서 바로 고치기 — 대표 사진 고르기 · 원본 주소 넣기 · 편집 입력칸(토큰만) */
+  .m5-rep-pick { margin-top: var(--space-2); }
+  .m5-rep-ask { display: flex; gap: var(--space-2); align-items: center; }
+  .m5-rep-ask img { width: 64px; height: 64px; object-fit: cover; border-radius: var(--radius-sm); flex: none; background: var(--surface); }
+  .m5-rep-ask span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .m5-rep-row { display: flex; gap: var(--space-2); overflow-x: auto; padding: 4px 0; -webkit-overflow-scrolling: touch; }
+  .m5-rep-th { flex: none; width: 84px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; }
+  .m5-rep-th img { width: 82px; height: 82px; object-fit: cover; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+  .m5-rep-th span { font-size: var(--caption); color: var(--text-muted); padding-bottom: 4px; }
+  .m5-src { display: flex; gap: var(--space-2); margin-top: var(--space-2); flex-wrap: wrap; }
+  .m5-src .form-control { flex: 1 1 200px; min-width: 0; }
+  .m5-ai-edit { margin-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+  .m5-ai-opt { display: flex; gap: var(--space-2); }
+  .m5-ai-opt .form-control:first-child { flex: 0 0 34%; }
 </style>
 {% include "_risk_block.html" %}
 <script>
@@ -286,8 +353,11 @@
   if (!root) return;
   var product = JSON.parse(document.getElementById('m5Product').textContent || '{}');
   var itemId = root.getAttribute('data-item');
+  var SRC_EXAMPLE = {{ (m5.src_example or '상품 페이지 주소(https://…)')|tojson }};   // 오너 11-25 15:56: 소싱처에 맞는 예시
   var blocked = root.getAttribute('data-blocked') === '1';
-  var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go');
+  var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go'), heldBtn = document.getElementById('m5GoHeld');
+  var pvOff = {};          // 오너 11-25 ①a: 결과 카드에서 「이 마켓 빼기」로 뺀 마켓(회색 + 「다시 넣기」)
+  var withHeld = false;    // ①b: 이번 등록에 보류 마켓도 「그래도 등록」으로 싣나(보조 버튼일 때만)
   var checksEl = document.getElementById('m5Checks'), doneEl = document.getElementById('m5Done');
 
   // Z6: 해운/항공 토글 · 무게·크기 직접 넣기 — 저장하고 다시 그린다(같은 엔진이 다시 잰다).
@@ -371,6 +441,26 @@
     } catch (e) { optSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
     optSave.disabled = false;
   });
+  // 오너 11-25 ③: 「수집이 덜 됐어요」 — 다시 가져오기(서버 재수집 줄) · 주소 넣기(원본 주소 저장 → 다시 그림)
+  root.addEventListener('click', async function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-incomplete-refetch],[data-role=m5-incomplete-url-save]') : null;
+    if (!b) return;
+    var st = root.querySelector('[data-role=m5-incomplete-state]'), isUrl = b.getAttribute('data-role') === 'm5-incomplete-url-save';
+    var body = {mode: 'queue'}, url = '/seller/collect/' + encodeURIComponent(itemId) + '/recollect';
+    if (isUrl) {
+      var u = (root.querySelector('[data-role=m5-incomplete-url]') || {}).value || '';
+      if (!u.trim()) { st.textContent = '원본 상품 주소를 넣어 주세요.'; return; }
+      url = '/seller/collect/' + encodeURIComponent(itemId) + '/source-url'; body = {url: u.trim()};
+    }
+    b.disabled = true; st.textContent = isUrl ? '확인하는 중…' : '요청하는 중…';
+    try {
+      var r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
+      if (d.ok) { st.textContent = isUrl ? '원본 주소를 넣었어요 — 다시 그립니다' : (d.message || '다시 가져오기 줄에 넣었어요'); if (isUrl) setTimeout(function () { location.reload(); }, 700); }
+      else st.textContent = (isUrl ? '' : '요청하지 못했어요 — ') + (d.error || '사유 없음');
+    } catch (err) { st.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
+    b.disabled = false;
+  });
   // F: 옵션 값 상표 — 「제안대로 바꾸기」(서버가 같은 판정으로 다시 골라 적용) → 다시 그린다.
   var brandBtn = root.querySelector('[data-role=m5-brand-fix]'), brandSt = root.querySelector('[data-role=m5-brand-state]');
   if (brandBtn) brandBtn.addEventListener('click', async function () {
@@ -387,6 +477,83 @@
   var okMarkets = [];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  // 오너 11-23 B 「실패는 원문 사유 + 다음 행동 버튼 하나 — 영어 원문·코드만 덜렁 금지」: 보이는 글자만 바꾼다(판정·전송은 그대로).
+  //   아는 영어 조각은 한국어로, 예외 클래스 이름(URLError 등)은 빼고, 원문은 「원문」에 접어 둔다.
+  var KO_REASON = [
+    [/Missing Coupang API credentials/gi, '쿠팡 API 키가 연결돼 있지 않아요'],
+    [/Missing (?:Naver|SmartStore|Smartstore) API credentials/gi, '스마트스토어 API 키가 연결돼 있지 않아요'],
+    [/\bHTTP\s*401\b|\bUnauthorized\b/gi, '마켓이 인증을 거절했어요(키 확인)'],
+    [/\bHTTP\s*403\b|\bForbidden\b/gi, '마켓이 접근을 막았어요(허용 IP·권한 확인)'],
+    [/\bHTTP\s*429\b|\bToo Many Requests\b/gi, '마켓 요청 한도에 걸렸어요 — 잠시 뒤 다시'],
+    [/\bRead timed out\b|\btimed out\b/gi, '응답이 늦어 끊겼어요'],
+  ];
+  function humanReason(t) {
+    var raw = String(t == null ? '' : t), s = raw;
+    KO_REASON.forEach(function (p) { s = s.replace(p[0], p[1]); });
+    s = s.replace(/\(\s*[A-Z][A-Za-z]*(?:Error|Exception)(?:\s*·\s*HTTP\s*\d+)?\s*\)/g, '')
+         .replace(/\b[A-Z][A-Za-z]*(?:Error|Exception)\b:?/g, '').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+    var latin = (s.match(/[A-Za-z]/g) || []).length, hangul = (s.match(/[가-힣]/g) || []).length;
+    if (s && latin > 12 && latin > hangul * 2) s = '마켓이 받아들이지 않았어요 — 아래 「원문」을 확인해 주세요';
+    return { text: s || (raw ? '' : ''), raw: raw && raw !== s ? raw : '' };
+  }
+  function reasonHtml(t) {
+    var h = humanReason(t);
+    return esc(h.text) + (h.raw ? '<details class="m5-raw" data-role="m5-raw"><summary>원문</summary>' + esc(h.raw) + '</details>' : '');
+  }
+  // 막힘·보류 줄에 고칠 버튼이 하나도 없으면 다음 행동 하나: 키 문제면 그 마켓 연동, 아니면 그 마켓만 다시 사전검증.
+  function nextAction(r) {
+    var all = [r.message, r.hint].concat(r.details || []).join(' ');
+    if (/credentials|API 키|키 사용 안 함|\bHTTP\s*401\b|Unauthorized|인증/i.test(all)) {
+      return '<div><a class="m5-fix" data-role="m5-next" href="/seller/markets/connect/' + esc(r.market) + '">마켓 키 연결하기 →</a></div>';
+    }
+    return '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 사전검증</button></div>';
+  }
+  // 오너 11-25 15:56 ②: 보류는 「막혔다」로 끝나지 않는다 — 코드마다 **그 카드 안에서** 고치는 길(입력칸·버튼). 이미 전용 버튼이
+  //   있는 코드(번역·대표 사진·원본 주소·선주문·전압·배송비 비율·네이버 카테고리·가격대 나누기)는 그 버튼이 그대로 쓰인다.
+  //   표 = outbox 2026-11-25 「보류 코드별 고쳐서 등록」.
+  function holdFixHtml(r, already) {
+    var f = r.fixes || [], msg = String(r.message || '') + ' ' + String(r.hint || ''), out = [], seen = {};
+    function btn(act, label) {
+      if (seen[act + label]) return; seen[act + label] = 1;
+      out.push('<button type="button" class="m5-fix" data-role="m5-hold-act" data-act="' + act + '" data-market="' + esc(r.market) + '">' + label + '</button>');
+    }
+    function has(c) { return f.indexOf(c) >= 0; }
+    if (has('small_images') || (has('pc') && /이미지|사진/.test(msg)) || (has('naver_required') && /이미지|사진|Image/i.test(msg))) { btn('photo', '사진 올리기'); btn('refetch', '다시 가져오기'); }
+    if (has('pc') && /판매가|가격|원가/.test(msg)) btn('price', '원가 넣기');
+    if (has('trademark') || has('risk') || has('risk_block')) { btn('risk', '위험 낱말 고르기(빼고 등록)'); btn('edit-title', '상품명 고치기'); }
+    if (has('risk_skip')) btn('risk', '「등록 안 함」 풀기');
+    if (has('option_short') || has('price') || (has('naver_required') && !/이미지|사진|Image/i.test(msg))) btn('edit-option', '옵션 고치기');
+    if (has('detail_blank')) { btn('edit-desc', '상세 설명 쓰기'); btn('refetch', '상세 다시 가져오기'); }
+    if (has('ship_dims')) btn('ship', '무게·크기 넣기');
+    if (has('naver_kc')) btn('docs', '인증 서류 올리기');
+    if (has('risk_wait')) out.push('<div class="m5-note" data-role="m5-hold-wait">사진 글자를 다 읽으면 저절로 다시 확인해요.</div>');
+    if (has('not_ready')) out.push('<div class="m5-note">판매수수료율이 정해지면 저절로 열려요.</div>');
+    if (has('block')) { out.push('<div class="m5-note">등록하지 않는 품목이에요(위 사유) — 이 상품은 내려 두는 게 맞아요.</div>'); btn('discard', '목록에서 버리기'); }
+    return out.length ? '<div class="m5-hold-acts" data-role="m5-hold-acts">' + out.join(' ') + '</div>' : '';
+  }
+  // 보류 카드 안 입력칸(상품명·옵션·상세) — AI 검수 「편집」과 같은 저장 입구·같은 다시 검증(저장 핸들러 하나)
+  function openRowEditor(btn, field) {
+    var row = btn.closest('[data-role=m5-hold-acts]');
+    var open = row.parentNode.querySelector('[data-role=m5-ai-edit]');
+    if (open) { open.remove(); pvRender(); return; }
+    var form = document.createElement('div');
+    form.className = 'm5-ai-edit'; form.setAttribute('data-role', 'm5-ai-edit'); form.setAttribute('data-field', field);
+    if (field === 'title') {
+      form.innerHTML = '<label class="m5-note">상품명</label><input class="form-control" data-role="m5-ai-edit-title" maxlength="100" value="' + esc(product.title_ko || product.title || '') + '">';
+    } else if (field === 'option') {
+      var opts = product.options || [];
+      form.innerHTML = (opts.length ? opts : [{name: '', values: []}]).map(function (o) {
+        return '<div class="m5-ai-opt" data-role="m5-ai-edit-opt"><input class="form-control" data-k="name" placeholder="옵션 이름" value="' + esc(o.name || '') + '">' +
+               '<input class="form-control" data-k="values" placeholder="값(쉼표로 구분)" value="' + esc((o.values || []).join(', ')) + '"></div>';
+      }).join('');
+    } else {
+      form.innerHTML = '<label class="m5-note">상세 설명</label><textarea class="form-control" rows="6" data-role="m5-ai-edit-desc">' + esc(product.description_ko || product.description || '') + '</textarea>';
+    }
+    form.innerHTML += '<div class="kgp-risk-acts"><button type="button" class="kgp-risk-btn is-main" data-role="m5-ai-edit-save">저장</button>' +
+      '<button type="button" class="kgp-risk-btn" data-role="m5-ai-edit-cancel">닫기</button></div><div class="m5-note" data-role="m5-ai-edit-state" aria-live="polite"></div>';
+    row.parentNode.insertBefore(form, row.nextSibling);
+    var first = form.querySelector('input,textarea'); if (first) first.focus();
+  }
   // Z10-C: 잡조차 못 띄운 줄(메모리 여유 없음 등)도 사람 이름으로 — 코드(「coupang:woojoo」)를 그대로 보이지 않는다
   function mkLabel(m) {
     var el = root.querySelector('label.m5-mk[data-market="' + m + '"] .m5-mk-body > span');
@@ -405,11 +572,11 @@
   var goHint = document.getElementById('m5GoHint');
   function hint(t) { if (goHint) goHint.textContent = t; }
   // 검증 전 = 「사전검증부터」 모드(눌리는 버튼). 등록은 통과·보류 결과가 있을 때만 「go」 모드에서.
-  function resetGo() { okMarkets = []; goBtn.dataset.mode = 'check'; goBtn.disabled = blocked; goBtn.textContent = '등록'; goBtn.dataset.held = '';
+  function resetGo() { okMarkets = []; sentDone = false; goBtn.dataset.mode = 'check'; goBtn.disabled = blocked; goBtn.textContent = '등록'; goBtn.dataset.held = ''; if (heldBtn) heldBtn.hidden = true;
     hint(blocked ? (root.querySelector('[data-role=m5-blocked]') || {}).textContent || '' : '누르면 사전검증부터 해요 — 통과한 마켓에만 등록돼요.'); }
   var pickCount = root.querySelector('[data-role=m5-pick-count]');
   function recount() { if (pickCount) pickCount.textContent = String(picked().length); }
-  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvJob++; checkBtn.disabled = false; recount(); } });
+  root.addEventListener('change', function (e) { if (e.target && e.target.name === 'm5-market') { resetGo(); checksEl.innerHTML = ''; pvLastHtml = ''; pvOff = {}; pvJob++; checkBtn.disabled = false; recount(); } });
   // 뒤로 가기·새로고침으로 브라우저가 체크 상태를 되살려도 글은 지금 상태를 말한다
   window.addEventListener('pageshow', recount);
   recount();
@@ -452,7 +619,7 @@
           '<div class="m5-cp-price" data-role="m5-cp-price">' + price + '</div>' + sel +
           '<div class="m5-cp-ship" data-role="m5-cp-ship">' + esc(d.shipping) + '</div>' + det +
           (notes.length ? '<ul class="m5-note m5-cp-notes">' +
-            notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>' : '');
+            notes.map(function (n) { return '<li>' + reasonHtml(n) + '</li>'; }).join('') + '</ul>' : '');   // 영어 원문은 「원문」에 접는다
       })
       .catch(function (e) { cpBody.textContent = '네트워크 오류 — ' + ((e && e.message) || e); });
   }
@@ -461,6 +628,49 @@
   loadCoupang();
 
   var refreshFromStore = false;
+  // 오너 11-23 23:58 ①②④⑤: 고친 뒤엔 **저장본으로 몸통을 다시 받고** 다시 검증한다 — 등록은 이 화면 몸통을 「편집값」으로 얹으므로
+  //   낡은 몸통을 들고 있으면 방금 고친 상품명·대표 사진이 등록에서 되돌아간다.
+  function refreshProduct() {
+    return fetch('/seller/m/item/' + encodeURIComponent(itemId) + '/product', {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok && d.product) product = d.product; return d; })
+      .catch(function () { return {ok: false}; });
+  }
+  function recheckAll(markets) {
+    var ms = (markets && markets.length) ? markets : (pvOrder.length ? pvOrder.slice() : picked());
+    if (!ms.length) return;
+    refreshProduct().then(function () { refreshFromStore = true; resetGo(); runCheck(ms, !!(markets && markets.length)); });
+  }
+  var repCands = null, repLoading = false, repPick = -1;     // ④ 대표로 쓸 수 있는 장(크기) · 지금 고르는 중인 장
+  function loadRepCands(round) {
+    if (repLoading) return;
+    repLoading = true;
+    fetch('/seller/collect/' + encodeURIComponent(itemId) + '/rep-candidates', {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); }).then(function (d) {
+        repLoading = false;
+        repCands = (d && d.ok) ? d : {ok: false, error: (d && d.error) || '사진 크기를 읽지 못했어요', candidates: [], best: -1};
+        pvRender();
+        if (d && d.ok && d.pending && (round || 0) < 5) setTimeout(function () { repCands = null; loadRepCands((round || 0) + 1); }, 1500);
+      }).catch(function () { repLoading = false; repCands = {ok: false, error: '네트워크 오류 — 다시 사전검증해 주세요', candidates: [], best: -1}; pvRender(); });
+  }
+  function repHasBig() { return !!(repCands && (repCands.candidates || []).some(function (c) { return c.ok && !c.is_rep; })); }
+  var repShownOnce = false;
+  function repPickHtml(r) {
+    if (repShownOnce) return '<div class="m5-note" data-role="m5-rep-same">위에서 대표 사진을 고르면 이 계정에도 같이 적용돼요.</div>';
+    repShownOnce = true;
+    if (!repCands) { loadRepCands(0); return '<div class="m5-note" data-role="m5-rep-pick" data-state="loading">500px 이상인 사진을 찾는 중…</div>'; }
+    var big = (repCands.candidates || []).filter(function (c) { return c.ok && !c.is_rep; });
+    if (!big.length) {
+      return '<div class="m5-note" data-role="m5-rep-pick" data-state="none">' +
+        (repCands.ok ? (repCands.pending ? '사진 크기를 아직 다 못 쟀어요 — 잠시 뒤 다시 보여 드려요.' : '500px 이상인 사진이 없어요 — 큰 사진을 올리거나 「그래도 등록」') : esc(repCands.error || '')) + '</div>';
+    }
+    var best = big.filter(function (c) { return c.idx === repCands.best; })[0] || big[0];
+    return '<div class="m5-rep-pick" data-role="m5-rep-pick" data-state="ready">' +
+      '<div class="m5-rep-ask"><img src="' + esc(best.url) + '" alt="" referrerpolicy="no-referrer"><span><b>' + (best.idx + 1) + '번째 사진(' + best.w + '×' + best.h + ')으로 바꿀까요?</b>' +
+      '<button type="button" class="m5-fix" data-role="m5-rep-apply" data-idx="' + best.idx + '"' + (repPick >= 0 ? ' disabled' : '') + '>' + (repPick === best.idx ? '바꾸는 중…' : '이 장으로 바꾸기') + '</button></span></div>' +
+      (big.length > 1 ? '<div class="m5-note">다른 장을 고르려면 탭하세요</div><div class="m5-rep-row" data-role="m5-rep-row">' + big.map(function (c) {
+        return '<button type="button" class="m5-rep-th" data-role="m5-rep-apply" data-idx="' + c.idx + '"' + (repPick >= 0 ? ' disabled' : '') + '><img src="' + esc(c.url) + '" alt="' + (c.idx + 1) + '번째" referrerpolicy="no-referrer" loading="lazy">' +
+               '<span>' + (c.idx + 1) + '번 · ' + c.long_side + 'px</span></button>'; }).join('') + '</div>' : '') + '</div>';
+  }
   // M5 후속(오너 2026-10-07, 실사용 1호 「HTTP 502」): 사전검증은 비동기 — 202 + 작업 번호를 받고 3초마다 물어
   //   마켓별로 도착하는 대로 그린다. 전송 실패(시간 초과·오류)는 「검증 못 함 — 다시 시도」 · 그 마켓만 체크 해제 제안.
   //   등록 버튼: 통과 또는 「그래도 등록」으로 풀리는 보류가 하나라도 있으면 켠다(전송 실패가 전체를 잠그지 않는다).
@@ -483,8 +693,22 @@
     }
     return '';
   }
-  function overridable(r) { return !r.ok && r.hold && (r.fixes || []).length && (r.fixes || []).every(function (f) { return OVERRIDES[f]; }); }
+  function overridable(r) {
+    if ((r.fixes || []).indexOf('rep_image') >= 0 && repHasBig()) return false;     // 오너 11-23 ④: 큰 장이 있으면 고르기가 먼저(그래도 등록은 큰 장이 없을 때만)
+    return !r.ok && r.hold && (r.fixes || []).length && (r.fixes || []).every(function (f) { return OVERRIDES[f]; });
+  }
   function pvRowHtml(m) {
+    if (pvOff[m]) {
+      return '<div class="m5-res is-off" data-market="' + esc(m) + '" data-ok="0" data-role="m5-off">' +
+        '<b>' + esc(mkLabel(m)) + ' — 뺐어요</b><div class="m5-note">이번 등록에서 빠져요.</div>' +
+        '<div><button type="button" class="m5-fix" data-role="m5-readd-market" data-market="' + esc(m) + '">다시 넣기</button></div></div>';
+    }
+    var h0 = pvRowHtmlCore(m);
+    if (!pvRows[m]) return h0;
+    // ①a: 어떤 결과든(통과·보류·막힘·검증 못 함) 그 마켓을 이번 등록에서 뺄 수 있다
+    return h0.replace(/<\/div>$/, '<div class="m5-off-row"><button type="button" class="m5-fix m5-fix-quiet" data-role="m5-off-market" data-market="' + esc(m) + '">이 마켓 빼기</button></div></div>');
+  }
+  function pvRowHtmlCore(m) {
     var r = pvRows[m];
     if (!r) {
       var lab = root.querySelector('label[data-market="' + m + '"] .m5-mk-body > span');
@@ -492,9 +716,8 @@
     }
     if (r.transport) {
       return '<div class="m5-res is-bad" data-market="' + esc(r.market) + '" data-ok="0" data-role="m5-transport" data-transport="' + esc(r.transport) + '">' +
-        '<b>' + esc(r.market_label) + ' — 검증 못 함</b>' + esc(r.message || '') +
-        '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 시도</button> ' +
-        '<button type="button" class="m5-fix" data-role="m5-uncheck-market" data-market="' + esc(r.market) + '">이 마켓 빼기</button></div></div>';
+        '<b>' + esc(r.market_label) + ' — 검증 못 함</b>' + reasonHtml(r.message || '') +
+        '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 시도</button></div></div>';
     }
     // M8-7: 이미 등록 기록이 있는 마켓 — 「이미 등록됨 {번호}」(업로드 대상에서 빠짐) + 그 마켓 상태 팝업(기록 빼기)
     if (r.registered_no) {
@@ -505,8 +728,8 @@
     var h = '<div class="m5-res ' + (r.ok ? 'is-ok' : (r.hold ? 'is-hold' : 'is-bad')) + '" data-market="' + esc(r.market) + '" data-ok="' + (r.ok ? '1' : '0') + '"' +
          (r.hold ? ' data-role="m5-hold"' : '') + '>' +
          '<b>' + esc(r.market_label) + ' — ' + (r.ok ? '통과' : (r.hold ? '보류' : '막힘')) + '</b>' +
-         (r.ok ? '' : esc(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + esc(r.hint) + '</div>' : '')) +
-         ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+         (r.ok ? '' : reasonHtml(r.message || '') + (r.hint ? '<div class="' + (r.hold ? 'm5-needs' : 'm5-note') + '"' + (r.hold ? ' data-role="m5-hold-pc"' : '') + '>' + reasonHtml(r.hint) + '</div>' : '')) +
+         ((r.details || []).length ? '<ul>' + r.details.map(function (x) { return '<li>' + reasonHtml(x) + '</li>'; }).join('') + '</ul>' : '') +
          // Y7-M: 「주의」 칩 — 보류 아님(등록 막지 않음)
          (r.cautions || []).map(function (x) { return '<div class="m5-note" data-role="m5-caution"><span class="pc-badge pc-badge-caution">주의</span> ' + esc(x) + '</div>'; }).join('') +
          catLine(r) +
@@ -530,11 +753,18 @@
          (r.hold && (r.fixes || []).indexOf('voltage') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-voltage-override" data-override="voltage-override" data-label="전압·플러그 그래도 등록">전압·플러그 그래도 등록</button></div>' : '') +
          // Y7: 쿠팡 대표 사진 보류(500px 미만·텍스트) — 위 「쿠팡 노출」에서 대표를 바꾸거나 여기서 「그래도 등록」
-         (r.hold && (r.fixes || []).indexOf('rep_image') >= 0
-           ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override" data-override="rep-image-override" data-label="대표 사진 그래도 등록">대표 사진 그래도 등록</button></div>' : '') +
+         (r.hold && (r.fixes || []).indexOf('rep_image') >= 0 ? repPickHtml(r) +
+           (repCands && !repHasBig() && !repCands.pending
+             ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override" data-override="rep-image-override" data-label="대표 사진 그래도 등록">대표 사진 그래도 등록</button></div>' : '') : '') +
+         // 오너 11-23 ⑤: 원본 주소가 없어 쿠팡 상품코드를 못 만든다 — 그 자리에서 주소를 넣고 다시 확인
+         (r.hold && (r.fixes || []).indexOf('source_url') >= 0
+           ? '<div class="m5-src" data-role="m5-source-url"><input type="url" inputmode="url" class="form-control" data-role="m5-source-url-in" placeholder="' + esc(SRC_EXAMPLE) + '" autocomplete="off">' +
+             '<button type="button" class="m5-fix" data-role="m5-source-url-save" data-market="' + esc(r.market) + '">원본 주소 넣기</button></div>' : '') +
          // Y7-O: 선주문(옵션 값 「2-3周发货」) — 오너 방침상 등록 버튼이 저절로 풀지 않는다(OVERRIDES 밖). 이 버튼만 푼다.
          (r.hold && (r.fixes || []).indexOf('lead_time') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-leadtime-override" data-override="lead-time-override" data-label="선주문 그래도 등록">선주문 그래도 등록</button></div>' : '');
+    if (r.hold) h += holdFixHtml(r, h);                                             // 오너 11-25 15:56 ②: 보류마다 그 자리에서 고치는 길
+    if (!r.ok && h.indexOf('class="m5-fix"') < 0 && h.indexOf('data-role="m5-cat-pick"') < 0) h += nextAction(r);   // 오너 11-23: 다음 행동 하나
     return h + '</div>';
   }
   function autoFixHtml(a) {
@@ -573,7 +803,13 @@
     if (fails.length) h += '<div class="m5-note" data-role="m5-ai-fix-fail">AI 자동수정 — ' + esc(fails.join(' · ')) + '</div>';
     return h;
   }
+  var pvLastHtml = '';
+  function m5Editing() {
+    var a = document.activeElement;
+    return !!(checksEl.querySelector('[data-role=m5-ai-edit]') || (a && checksEl.contains(a) && /INPUT|TEXTAREA/.test(a.tagName) && a.value));
+  }
   function pvRender() {
+    repShownOnce = false;
     var h = '';
     if (pvAuto) {
       h += '<div class="m5-note" data-role="m5-auto-translate">' + (pvAuto.status === 'done' || pvAuto.status === 'queued'
@@ -600,26 +836,48 @@
     if (window.kgpImgEditNote) h += window.kgpImgEditNote(pvImgEdit);          // Y11 자동 판촉 지우기 결과
     h += aiFixHtml(pvAiFix);
     pvOrder.forEach(function (m) { h += pvRowHtml(m); });
-    if (window.kgpAiReviewHtml) h += window.kgpAiReviewHtml(pvAiReview);      // 순찰 106-C: 카드 아래 접힌 줄
-    if (pvState === 'running') h += pvQueue
+    if (window.kgpAiReviewHtml) h += window.kgpAiReviewHtml(pvAiReview, itemId);      // 순찰 106-C · 오너 11-23 ①: 상품 번호를 넘긴다(빠지면 수락·기각이 죽는다)
+    if (pvBusy()) h += pvQueue
       // Z10: 줄 서는 중(프로세스당 사전검증 1개 — 메모리 보호)
       ? '<div class="m5-note" data-role="m5-check-progress" data-queued="1">' + esc(pvQueue) + '</div>'
       : '<div class="m5-note" data-role="m5-check-progress">마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳 확인됨 — 나머지는 오는 대로 보여 드려요.</div>';
-    checksEl.innerHTML = h;
-    okMarkets = pvOrder.filter(function (m) { return pvRows[m] && pvRows[m].ok; });
-    var held = pvOrder.filter(function (m) { return pvRows[m] && overridable(pvRows[m]); });
-    var anyHold = pvOrder.some(function (m) { return pvRows[m] && pvRows[m].hold; });
+    // 오너 11-23 ①: 3초 폴링마다 통째로 다시 그리면 누르는 순간 버튼이 갈려 눌림이 날아간다 — 내용이 같으면 그대로 둔다.
+    //   그 줄 아래 입력칸(편집·주소 넣기)을 쓰는 동안도 미룬다(글자를 지우지 않게) — 닫히면 다시 그린다.
+    if (h !== pvLastHtml && !m5Editing()) { checksEl.innerHTML = h; pvLastHtml = h; }
+    okMarkets = pvOrder.filter(function (m) { return !pvOff[m] && pvRows[m] && pvRows[m].ok; });
+    var held = pvOrder.filter(function (m) { return !pvOff[m] && pvRows[m] && overridable(pvRows[m]); });
+    var anyHold = pvOrder.some(function (m) { return !pvOff[m] && pvRows[m] && pvRows[m].hold; });
     goBtn.dataset.held = held.join(',');
-    var n = okMarkets.length + held.length;
+    // 오너 11-25 ①b: 한 버튼에 묶지 않는다 — 주 버튼 「통과한 N곳만 등록」 · 보조 「보류 M곳도 그래도 등록」
+    var n = okMarkets.length;
     goBtn.dataset.mode = n ? 'go' : 'check';
-    goBtn.disabled = blocked || (!n && pvState === 'running');
-    goBtn.textContent = n
-      ? '등록 (' + n + '곳' + (held.length ? ' · 보류 ' + held.length + '곳은 그래도 등록' : '') + ')'
-      : (pvState === 'running' ? '확인하는 중…' : '다시 사전검증');
-    hint(n ? '' : (pvState === 'running' ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
-      : (anyHold ? '보류된 마켓을 보강하거나 「그래도 등록」을 누르면 등록할 수 있어요.'
+    goBtn.disabled = blocked || (!n && pvBusy());
+    goBtn.textContent = n ? '통과한 ' + n + '곳만 등록' : (pvBusy() ? '확인하는 중…' : (held.length ? '통과한 마켓 없음' : '다시 사전검증'));
+    if (!n && held.length && !pvBusy()) goBtn.disabled = true;
+    if (heldBtn) {
+      heldBtn.hidden = !held.length || pvBusy() || sentDone;
+      heldBtn.disabled = blocked;
+      heldBtn.textContent = '보류 ' + held.length + '곳도 그래도 등록' + (n ? '(통과 ' + n + '곳과 함께)' : '');
+    }
+    hint(n ? (held.length ? '보류 마켓은 빠지고 통과한 곳만 나가요.' : '') : (pvBusy() ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
+      : (anyHold ? '보류된 마켓을 보강하거나 「보류도 그래도 등록」을 누르면 등록할 수 있어요.'
         : '통과한 마켓이 없어요 — 위 사유를 고친 뒤 다시 사전검증해 주세요.')));
+    // 오너 11-23 A: 잡 진행 한 줄(셸) — 사전검증 중·대기 · 끝나면 결과 한 마디(같은 상태는 다시 안 띄운다)
+    if (window.kgpJobLine && pvOrder.length) {
+      var line = pvBusy()
+        ? (pvQueue ? '사전검증 대기 — ' + pvQueue : '사전검증 중 — 마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳')
+        : '사전검증 끝 — 통과 ' + n + ' · 보류 ' + pvOrder.filter(function (m) { return !pvOff[m] && pvRows[m] && pvRows[m].hold; }).length +
+          (pvState === 'running' ? ' (자동 보강은 이어서 해요)' : '');
+      if (line !== pvJobLine) {
+        pvJobLine = line;
+        if (pvBusy()) window.kgpJobLine.show(line); else if (n) window.kgpJobLine.done(line); else window.kgpJobLine.fail(line);
+      }
+    }
   }
+  var pvJobLine = '';
+  // 오너 11-25 15:56 ⑤: 마켓 결과가 다 오면 「끝」이다 — 서버 작업이 자동 보강(번역·AI 검수)으로 아직 running이어도
+  //   「사전검증 중 — 4/4곳」으로 남기지 않는다. 폴링은 이어서 한다(보강 결과가 오면 다시 그린다).
+  function pvBusy() { return pvState === 'running' && (!pvOrder.length || pvPending.length > 0); }
   var pvQueue = '';
   function pvPoll(jobNo, url) {
     if (jobNo !== pvJob) return;
@@ -652,6 +910,117 @@
       pvPoll(jobNo, d.poll);
     });
   }
+  // 오너 11-23 23:58 ① — 수락·기각 뒤 이 화면의 다시 검증(PC 함수 runPrevalidate에 묶이지 않게 훅 하나로)
+  window.kgpAiReviewAfter = function (d, action) {
+    pvAiReview = d.ai_review || pvAiReview;
+    if (action === 'accept') { window.kgpNotice('상품명을 바꿨어요 — 다시 검증할게요', 'info'); recheckAll(); }
+    else { pvRender(); window.kgpNotice('기각했어요', 'info'); }
+  };
+  // ② 「편집」 — 폰엔 서랍 칸이 없다: 그 줄 바로 아래에 입력칸을 펼친다(상품명·옵션·상세) → 저장 → 자동 다시 검증. 다른 화면으로 안 보낸다.
+  window.kgpAiReviewEditInline = function (btn, field, idx) {
+    if (!root.contains(btn)) return false;
+    var li = btn.closest('[data-role=ai-review-item]');
+    if (!li) return false;
+    var open = li.querySelector('[data-role=m5-ai-edit]');
+    if (open) { open.remove(); pvRender(); return true; }
+    var item = ((pvAiReview || {}).items || [])[idx] || {};
+    var form = document.createElement('div');
+    form.className = 'm5-ai-edit'; form.setAttribute('data-role', 'm5-ai-edit'); form.setAttribute('data-field', field);
+    if (field === 'title') {
+      form.innerHTML = '<label class="m5-note">상품명</label><input class="form-control" data-role="m5-ai-edit-title" maxlength="100" value="' +
+        esc(item.fix || product.title_ko || product.title || '') + '">';
+    } else if (field === 'option') {
+      var opts = product.options || [];
+      form.innerHTML = (opts.length ? opts : [{name: '', values: []}]).map(function (o) {
+        return '<div class="m5-ai-opt" data-role="m5-ai-edit-opt"><input class="form-control" data-k="name" placeholder="옵션 이름" value="' + esc(o.name || '') + '">' +
+               '<input class="form-control" data-k="values" placeholder="값(쉼표로 구분)" value="' + esc((o.values || []).join(', ')) + '"></div>';
+      }).join('');
+    } else {
+      form.innerHTML = '<label class="m5-note">상세 설명</label><textarea class="form-control" rows="6" data-role="m5-ai-edit-desc">' +
+        esc(product.description_ko || product.description || '') + '</textarea>';
+    }
+    form.innerHTML += '<div class="kgp-risk-acts"><button type="button" class="kgp-risk-btn is-main" data-role="m5-ai-edit-save">저장</button>' +
+      '<button type="button" class="kgp-risk-btn" data-role="m5-ai-edit-cancel">닫기</button></div><div class="m5-note" data-role="m5-ai-edit-state" aria-live="polite"></div>';
+    li.appendChild(form);
+    var first = form.querySelector('input,textarea'); if (first) first.focus();
+    return true;
+  };
+  checksEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-ai-edit-save],[data-role=m5-ai-edit-cancel]') : null;
+    if (!b) return;
+    var form = b.closest('[data-role=m5-ai-edit]'), st = form.querySelector('[data-role=m5-ai-edit-state]');
+    if (b.getAttribute('data-role') === 'm5-ai-edit-cancel') { form.remove(); pvRender(); return; }
+    var field = form.getAttribute('data-field'), body = {};
+    if (field === 'title') body.title = (form.querySelector('[data-role=m5-ai-edit-title]').value || '').trim();
+    else if (field === 'option') body.options = Array.prototype.map.call(form.querySelectorAll('[data-role=m5-ai-edit-opt]'), function (row) {
+      return {name: row.querySelector('[data-k=name]').value.trim(), values: row.querySelector('[data-k=values]').value}; }).filter(function (o) { return o.name; });
+    else body.description = form.querySelector('[data-role=m5-ai-edit-desc]').value;
+    if (field === 'title' && !body.title) { st.textContent = '상품명이 비어 있어요.'; return; }
+    b.disabled = true; st.textContent = '저장하는 중…';
+    post('/seller/collect/preview/' + encodeURIComponent(itemId) + '/save', body).then(function (d) {
+      if (!d.ok) { b.disabled = false; st.textContent = '저장하지 못했어요 — ' + (d.error || '사유 없음'); return; }
+      form.remove(); window.kgpNotice('저장했어요 — 다시 검증할게요', 'info'); recheckAll();
+    });
+  });
+  checksEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('button[data-role=m5-hold-act]') : null;
+    if (!b) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'docs') { location.href = '/seller/me#docs'; return; }                // 인증 서류는 내 정보의 서류 칸(한 곳)
+    if (act === 'photo' || act === 'price') { var man = root.querySelector('[data-role=m5-manual]'); if (man) man.hidden = false; }   // 숨어 있던 「폰에서 사진·옵션 넣기」를 연다
+    if (act === 'photo') { var inp = document.getElementById('m5Photos'); if (inp) inp.click(); else window.kgpNotice('이 화면에서 사진을 올릴 수 없어요.', 'warning'); return; }
+    if (act === 'edit-title' || act === 'edit-option' || act === 'edit-desc') { openRowEditor(b, act === 'edit-title' ? 'title' : (act === 'edit-option' ? 'option' : 'description')); return; }
+    if (act === 'price' || act === 'ship' || act === 'risk') {
+      var el = act === 'price' ? document.getElementById('m5OptPrice') : root.querySelector(act === 'ship' ? '[data-role=m5-ship-input]' : '[data-role=risk-block]');
+      if (!el) { window.kgpNotice('고칠 칸을 찾지 못했어요 — 다시 사전검증해 주세요.', 'warning'); return; }
+      if (el.tagName === 'DETAILS') el.open = true;
+      if (el.getAttribute && el.getAttribute('data-open') !== null) el.setAttribute('data-open', '1');
+      el.scrollIntoView({block: 'center'}); if (el.focus) el.focus();
+      return;
+    }
+    if (act === 'refetch' || act === 'discard') {
+      b.disabled = true; var lb = b.textContent; b.textContent = '요청하는 중…';
+      post('/seller/collect/' + encodeURIComponent(itemId) + (act === 'refetch' ? '/recollect' : '/discard'), act === 'refetch' ? {mode: 'queue'} : {}).then(function (d) {
+        b.disabled = false; b.textContent = lb;
+        window.kgpNotice(d.ok ? (d.message || (act === 'refetch' ? '다시 가져오기 줄에 넣었어요 — 끝나면 다시 확인해요' : '목록에서 버렸어요(되살릴 수 있어요)')) : (d.error || '요청하지 못했어요'), d.ok ? 'info' : 'warning');
+      });
+    }
+  });
+  // 오너 11-25 15:56 ③: 「고쳐서 다시 올리기」·「이어서 올리기」 — 그 마켓만 골라 사전검증(전송 0). 이미 등록된 마켓이라 등록 때 중복 확인을 한 번 더 묻는다.
+  function pickOnly(ms) {
+    root.querySelectorAll('input[name=m5-market]').forEach(function (i) {
+      var on = ms.indexOf(i.value) >= 0;
+      if (on) { i.disabled = false; i.removeAttribute('data-not-ready'); i.setAttribute('data-dup-ok', '1'); }
+      i.checked = on; i.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+  }
+  root.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-reject-fix],[data-role=m5-left-resume]') : null;
+    if (!b) return;
+    var ms = b.getAttribute('data-role') === 'm5-reject-fix' ? [b.getAttribute('data-market')]
+      : (root.querySelector('[data-role=m5-left]').getAttribute('data-markets') || '').split(',').filter(Boolean);
+    pickOnly(ms);
+    resetGo(); runCheck(ms, false);
+    checksEl.scrollIntoView({block: 'start'});
+  });
+  (function () {            // 푸시·목록 칩에서 왔으면 그 칸으로
+    var q = location.search;
+    var el = /[?&]rej=1/.test(q) ? root.querySelector('[data-role=m5-rejected]') : (/[?&]resume=1/.test(q) ? root.querySelector('[data-role=m5-left]') : null);
+    if (el) setTimeout(function () { el.scrollIntoView({block: 'start'}); }, 200);
+  })();
+  // ③ 「상세 사진 가져오기」(서버 다시 수집 줄) · 「사진 올리기」(이 카드의 사진 올리기와 같은 길)
+  window.kgpAiReviewVerb = function (verb, iid, btn) {
+    if (verb === 'photo_upload') {
+      var inp = document.getElementById('m5Photos');
+      if (inp) { inp.click(); return; }
+      window.kgpNotice('이 화면에서 사진을 올릴 수 없어요 — 상품 편집 화면에서 올려 주세요.', 'warning'); return;
+    }
+    btn.disabled = true; btn.textContent = '요청하는 중…';
+    post('/seller/collect/' + encodeURIComponent(itemId) + '/recollect', {mode: 'queue'}).then(function (d) {
+      btn.disabled = false; btn.textContent = '상세 사진 가져오기';
+      window.kgpNotice(d.ok ? (d.message || '다시 수집 줄에 넣었어요') : (d.error || '요청하지 못했어요'), d.ok ? 'info' : 'warning');
+    });
+  };
   checkBtn.addEventListener('click', function () {
     var markets = picked();
     if (!markets.length) { checksEl.innerHTML = '<div class="m5-res is-bad">등록할 마켓을 하나 이상 골라 주세요.</div>'; return; }
@@ -662,6 +1031,41 @@
     if (!b) return;
     var role = b.getAttribute('data-role') || '';
     if (role === 'm5-retry-market') { runCheck([b.getAttribute('data-market')], true); return; }
+    // 오너 11-25 ①a: 이 마켓 빼기 → 회색 + 「다시 넣기」(체크도 같이 풀고/넣는다 — 다시 사전검증해도 빠진 채)
+    if (role === 'm5-off-market' || role === 'm5-readd-market') {
+      var mm = b.getAttribute('data-market'), on = role === 'm5-off-market';
+      if (on) pvOff[mm] = 1; else delete pvOff[mm];
+      var bx = root.querySelector('input[name=m5-market][value="' + mm + '"]'); if (bx) bx.checked = !on;
+      recount(); pvRender();
+      if (!on && !pvRows[mm]) runCheck([mm], true);
+      return;
+    }
+    // 오너 11-23 ④: 대표로 쓸 장을 탭 → 저장(기존 「이 장을 대표로」 API) → 쿠팡 계정 전부 다시 확인(한 번 고르면 둘 다)
+    if (role === 'm5-rep-apply') {
+      repPick = parseInt(b.getAttribute('data-idx'), 10); pvRender();
+      post('/seller/collect/' + encodeURIComponent(itemId) + '/rep-image', {idx: repPick}).then(function (d) {
+        var picked_ = repPick; repPick = -1;
+        if (!d.ok) { pvRender(); window.kgpNotice(d.error || '대표를 바꾸지 못했어요', 'warning'); return; }
+        repCands = null;
+        if (window.kgpCpxReload) window.kgpCpxReload();
+        window.kgpNotice((picked_ + 1) + '번째 사진을 대표로 바꿨어요 — 다시 확인할게요', 'info');
+        recheckAll(pvOrder.filter(function (m) { return String(m).indexOf('coupang') === 0; }));
+      });
+      return;
+    }
+    // 오너 11-23 ⑤: 원본 주소 넣기 → 저장 → 쿠팡 다시 확인
+    if (role === 'm5-source-url-save') {
+      var inp = b.parentNode.querySelector('[data-role=m5-source-url-in]'), u = (inp && inp.value || '').trim();
+      if (!u) { window.kgpNotice('원본 상품 주소를 넣어 주세요.', 'warning'); return; }
+      b.disabled = true; b.textContent = '확인하는 중…';
+      post('/seller/collect/' + encodeURIComponent(itemId) + '/source-url', {url: u}).then(function (d) {
+        if (!d.ok) { b.disabled = false; b.textContent = '원본 주소 넣기'; b.insertAdjacentHTML('afterend', '<div class="m5-note" data-role="m5-source-url-err">' + esc(d.error || '저장하지 못했어요') + '</div>'); return; }
+        if (inp) inp.value = '';
+        window.kgpNotice('원본 주소를 넣었어요(상품번호 ' + d.sku + ') — 쿠팡을 다시 확인할게요', 'info');
+        recheckAll(pvOrder.filter(function (m) { return String(m).indexOf('coupang') === 0; }));
+      });
+      return;
+    }
     if (role === 'm5-autofix-undo') {
       b.disabled = true;
       post('/seller/collect/' + encodeURIComponent(itemId) + '/reject-autofix/undo', {}).then(function (d) {
@@ -754,72 +1158,142 @@
       }).catch(function () {});
   }
 
-  function register(confirmWarn, confirmDup) {
-    var held = (goBtn.dataset.held || '').split(',').filter(Boolean);
-    var targets = okMarkets.concat(held);
+  // 등록 결과 한 줄(성공 = 번호·마켓 상태·「이 마켓에서 내리기」 · 실패 = 사람 말 사유 · 취소 = 안 보냄)
+  function resultRowHtml(r) {
+    if (r.cancelled) return '<div class="m5-res is-off" data-role="m5-result" data-market="' + esc(r.market) + '" data-cancelled="1"><b>' + esc(r.market_label) + ' — 취소함</b><div class="m5-note">보내지 않았어요.</div></div>';
+    return '<div class="m5-res ' + (r.success ? 'is-ok' : 'is-bad') + '" data-role="m5-result" data-market="' + esc(r.market) + '">' +
+         '<b>' + esc(r.market_label) + ' — ' + (r.success ? '등록됨' : (r.queued ? '대기열에 들어감' : '실패')) + '</b>' +
+         // 오너 2026-10-10: 네이버는 채널 상품번호만 보인다(원상품번호는 로그·DB 내부용)
+         (r.success ? '마켓 상품번호: <strong data-role="m5-ext-id">' + esc(r.channel_product_no || r.external_product_id || '(마켓이 번호를 돌려주지 않았어요)') + '</strong>' +
+            (r.channel_product_no && r.external_url ? ' · <a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">구매자 화면</a>' : '') +
+            // U2·M6: 등록한 마켓은 전부 「마켓 상태」 → 상태 팝업(마켓에 그때 묻는다)
+            '<div><button type="button" class="m5-fix" data-role="m5-review-btn" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">마켓 상태</button>' +
+            (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>' +
+            // 오너 11-25 ①c: 이미 나간 마켓 — 판매중지(확인 한 번)
+            '<div class="m5-off-row" data-role="m5-takedown-box"><button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown" data-market="' + esc(r.market) + '">이 마켓에서 내리기</button></div>'
+          : reasonHtml(r.message || '') +
+            // Y7-F: 「사유 2건(아래)」면 아래에 그 사유를 한 줄씩
+            ((r.details || []).length > 1 ? '<ul data-role="m5-result-details">' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+            (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
+            (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
+              (r.action_label ? esc(r.action_label) : (['category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기')) +
+              '</a></div>' : '')) + '</div>';
+  }
+  var sendCancel = {}, sentDone = false;
+  function register(confirmWarn, confirmDup, onlyMarkets) {
+    var held = withHeld ? (goBtn.dataset.held || '').split(',').filter(Boolean) : [];
+    var targets = onlyMarkets || okMarkets.concat(held);
     if (!targets.length) return;
-    goBtn.disabled = true; checkBtn.disabled = true;
+    goBtn.disabled = true; checkBtn.disabled = true; if (heldBtn) heldBtn.disabled = true;
     doneEl.hidden = false; doneEl.innerHTML = '<div class="m5-note">등록하는 중… 쿠팡은 SKU마다 따로 올라가 조금 걸릴 수 있어요.</div>';
+    if (window.kgpJobLine) window.kgpJobLine.show('등록 중 — ' + targets.length + '곳');
     // 보류 중 「그래도 등록」으로 풀리는 마켓을 같이 올리면, 그 확인(사유 기록)을 먼저 남긴다 — 버튼 글자에 적어 둔 그대로.
     var fixes = {};
-    held.forEach(function (m) { ((pvRows[m] || {}).fixes || []).forEach(function (f) { if (OVERRIDES[f]) fixes[f] = 1; }); });
+    held.filter(function (m) { return targets.indexOf(m) >= 0; }).forEach(function (m) { ((pvRows[m] || {}).fixes || []).forEach(function (f) { if (OVERRIDES[f]) fixes[f] = 1; }); });
     Object.keys(fixes).reduce(function (p, f) {
       return p.then(function () { return post('/seller/collect/' + encodeURIComponent(itemId) + '/' + OVERRIDES[f][0], {}); });
-    }, Promise.resolve()).then(function () {
-    var upBody = {product: product, markets: targets, item_id: itemId, confirm_warn: !!confirmWarn, confirm_duplicate: !!confirmDup};
-    // 순찰 77: 등록 = 잡(202 + 폴링 — seller.js `kgpUploadJob`, 끝나면 예전과 같은 응답). 없으면 예전 동기 호출
-    return window.kgpUploadJob ? window.kgpUploadJob(upBody) : post('/seller/collect/upload', upBody); }).then(function (d) {
-      checkBtn.disabled = false;
-      // Y7-K: 이미 등록된 마켓 — 서버가 확인 없이 다시 올리지 않는다(같은 상품이 하나 더 생긴다)
-      if (d.needs_dup_confirm) {
-        doneEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-dup-confirm">' + esc(d.error) + '</div>' +
-          '<button type="button" class="btn btn-ghost m5-btn" data-role="m5-dup-yes">중복 등록 — 하나 더 올리기</button>';
-        doneEl.querySelector('[data-role=m5-dup-yes]').addEventListener('click', function () { register(confirmWarn, true); });
-        goBtn.disabled = false; return;
-      }
-      if (d.needs_confirm) {
-        doneEl.innerHTML = '<div class="m5-res is-bad">' + esc(d.error) + '</div>' +
-          '<button type="button" class="btn btn-ghost m5-btn" data-role="m5-confirm">확인했어요 — 그대로 등록</button>';
-        doneEl.querySelector('[data-role=m5-confirm]').addEventListener('click', function () { register(true, confirmDup); });
-        return;
-      }
-      if (!d.ok) {
-        var bad = (d.unreachable || []).map(function (u) { return '<li>' + esc(u.label || u.url) + ' — ' + esc(u.reason || u.status) + '</li>'; }).join('');
-        doneEl.innerHTML = '<div class="m5-res is-bad" data-role="m5-register-error">' + esc(d.error || '등록하지 못했어요') +
-          (d.message ? '<div class="m5-note">' + esc(d.message) + '</div>' : '') + (bad ? '<ul>' + bad + '</ul>' : '') + '</div>';
-        goBtn.disabled = false; return;
-      }
-      var rs = ((d.result || {}).results || []), h = '';
-      rs.forEach(function (r) {
-        h += '<div class="m5-res ' + (r.success ? 'is-ok' : 'is-bad') + '" data-role="m5-result" data-market="' + esc(r.market) + '">' +
-             '<b>' + esc(r.market_label) + ' — ' + (r.success ? '등록됨' : (r.queued ? '대기열에 들어감' : '실패')) + '</b>' +
-             // 오너 2026-10-10: 네이버는 채널 상품번호만 보인다(원상품번호는 로그·DB 내부용)
-             (r.success ? '마켓 상품번호: <strong data-role="m5-ext-id">' + esc(r.channel_product_no || r.external_product_id || '(마켓이 번호를 돌려주지 않았어요)') + '</strong>' +
-                (r.channel_product_no && r.external_url ? ' · <a href="' + esc(r.external_url) + '" target="_blank" rel="noopener">구매자 화면</a>' : '') +
-                // U2: 쿠팡 셀러 상품번호 주소(vp/products)는 승인 전엔 「상품을 찾을 수 없습니다」 — 대신 검토 상태를 묻는다.
-                // M6: 등록한 마켓은 전부 「검토 상태 보기」 → 상태 팝업(마켓에 그때 묻는다 · statusName·반려 사유·Wing/판매자센터).
-                '<div><button type="button" class="m5-fix" data-role="m5-review-btn" data-market-status="' + esc(r.market) + '" data-item="' + esc(itemId) + '">마켓 상태</button>' +
-                (String(r.market || '').indexOf('coupang') === 0 ? ' <span data-role="m5-review" data-market="' + esc(r.market) + '"></span>' : '') + '</div>'
-              : esc(r.message || '') +
-                // Y7-F: 「사유 2건(아래)」면 아래에 그 사유를 한 줄씩(예전엔 문장만 있고 목록이 없었다)
-                ((r.details || []).length > 1 ? '<ul data-role="m5-result-details">' + r.details.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
-                (r.hint ? '<div class="m5-note">' + esc(r.hint) + '</div>' : '') +
-                (r.action_url ? '<div><a class="m5-fix" data-role="m5-result-action" href="' + esc(r.action_url) + '">' +
-                  (r.action_label ? esc(r.action_label) :                                      // Y7-F: 서버 매퍼(필드별) 글자
-                   (['category_not_leaf', 'category_unset'].indexOf(r.error_code) >= 0 ? '카테고리 지정 →' : '고치러 가기')) +
-                  '</a></div>' : '')) + '</div>';
+    }, Promise.resolve()).then(function () { sendSeq(targets, confirmWarn, confirmDup); });
+  }
+  // 오너 11-25 ①c: 한 마켓씩 보낸다 — 아직 안 나간 마켓은 그 줄의 「취소」로 뺀다(누른 마켓은 보내지 않음).
+  function sendSeq(targets, confirmWarn, confirmDup) {
+    sendCancel = {};
+    var rs = [], left = targets.slice(), cur = null;
+    function rows() {
+      doneEl.innerHTML = targets.map(function (m) {
+        var r = rs.filter(function (x) { return x.market === m; })[0];
+        if (r) return resultRowHtml(r);
+        if (m === cur) return '<div class="m5-res is-hold" data-role="m5-send-row" data-market="' + esc(m) + '"><b>' + esc(mkLabel(m)) + ' — 보내는 중…</b></div>';
+        return '<div class="m5-res is-hold" data-role="m5-send-row" data-market="' + esc(m) + '"><b>' + esc(mkLabel(m)) + ' — 대기 중</b>' +
+               '<div><button type="button" class="m5-fix" data-role="m5-send-cancel" data-market="' + esc(m) + '">취소</button></div></div>';
+      }).join('');
+    }
+    function step() {
+      if (!left.length) return finish();
+      var m = left.shift();
+      if (sendCancel[m]) { rs.push({market: m, market_label: mkLabel(m), success: false, cancelled: true}); rows(); return step(); }
+      cur = m; rows();
+      if (window.kgpJobLine) window.kgpJobLine.show('등록 중 — ' + mkLabel(m) + ' (' + (targets.length - left.length) + '/' + targets.length + ')');
+      var upBody = {product: product, markets: [m], item_id: itemId, confirm_warn: !!confirmWarn, confirm_duplicate: !!confirmDup};
+      // 순찰 77: 등록 = 잡(202 + 폴링 — seller.js `kgpUploadJob`, 끝나면 예전과 같은 응답). 없으면 예전 동기 호출
+      (window.kgpUploadJob ? window.kgpUploadJob(upBody) : post('/seller/collect/upload', upBody)).then(function (d) {
+        cur = null;
+        var rest = [m].concat(left);
+        if (d.needs_dup_confirm || d.needs_confirm) {
+          // Y7-K: 이미 등록된 마켓 · 경고 확인 — 서버가 확인 없이 다시 올리지 않는다. 확인하면 **남은 마켓만** 이어서 보낸다.
+          rows();
+          doneEl.insertAdjacentHTML('beforeend', '<div class="m5-res is-bad" data-role="' + (d.needs_dup_confirm ? 'm5-dup-confirm' : 'm5-warn-confirm') + '">' + esc(d.error) + '</div>' +
+            '<button type="button" class="btn btn-ghost m5-btn" data-role="' + (d.needs_dup_confirm ? 'm5-dup-yes' : 'm5-confirm') + '">' +
+            (d.needs_dup_confirm ? '중복 등록 — 하나 더 올리기' : '확인했어요 — 그대로 등록') + '</button>');
+          doneEl.querySelector(d.needs_dup_confirm ? '[data-role=m5-dup-yes]' : '[data-role=m5-confirm]').addEventListener('click', function () {
+            register(d.needs_confirm ? true : confirmWarn, d.needs_dup_confirm ? true : confirmDup, rest); });
+          checkBtn.disabled = false; goBtn.disabled = false; return;
+        }
+        if (!d.ok) {
+          var bad = (d.unreachable || []).map(function (u) { return '<li>' + esc(u.label || u.url) + ' — ' + esc(u.reason || u.status) + '</li>'; }).join('');
+          rs.push({market: m, market_label: mkLabel(m), success: false, message: (d.error || '등록하지 못했어요') + (d.message ? ' — ' + d.message : '')});
+          if (bad) rs[rs.length - 1].details = (d.unreachable || []).map(function (u) { return (u.label || u.url) + ' — ' + (u.reason || u.status); });
+          rows(); return step();
+        }
+        var got = ((d.result || {}).results || []);
+        if (!got.length) got = [{market: m, market_label: mkLabel(m), success: false, message: '마켓이 결과를 돌려주지 않았어요.'}];
+        got.forEach(function (r) { rs.push(r); });
+        rows(); step();
       });
-      doneEl.innerHTML = h || '<div class="m5-res is-bad">마켓이 결과를 돌려주지 않았어요.</div>';
+    }
+    function finish() {
+      rows();
+      checkBtn.disabled = false;
       // 쿠팡은 결과 줄 옆에 마지막 상태 배지를 바로 채운다(팝업은 버튼이 연다 — _market_status.html 위임 클릭).
       if (doneEl.querySelector('[data-role=m5-review]')) reviewStatus(0);
-      if (rs.some(function (r) { return r.success; })) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; }
-      else { goBtn.disabled = false; }
-    });
+      var _ok = rs.filter(function (r) { return r.success; }).length;
+      if (window.kgpJobLine) { if (_ok) window.kgpJobLine.done('등록 끝 — ' + _ok + '곳 등록됨'); else window.kgpJobLine.fail('등록 끝 — 등록된 마켓이 없어요'); }
+      // 끝나면 보조 버튼(「보류도 그래도 등록 — 통과와 함께」)을 숨긴다 — 누르면 이미 나간 마켓을 또 보낸다. 보류 마켓은 다시 사전검증부터.
+      sentDone = !!_ok;
+      // 오너 11-25 15:56 ③: 반쪽 등록 — 고른 마켓(뺀 것·취소한 것 제외) 중 안 올라간 곳을 「남음」으로 남긴다(목록 칩·필터·이어서 올리기)
+      var _okM = rs.filter(function (r) { return r.success; }).map(function (r) { return r.market; });
+      var _left = pvOrder.filter(function (m) { return !pvOff[m] && !sendCancel[m] && _okM.indexOf(m) < 0; });
+      if (_okM.length || _left.length) {
+        post('/seller/collect/' + encodeURIComponent(itemId) + '/left-markets', {markets: _left}).then(function (d) {
+          if (d.ok && d.label) doneEl.insertAdjacentHTML('beforeend', '<div class="m5-note" data-role="m5-left-note">' + esc(d.label) +
+            ' — 목록에 남겨 뒀어요. 고친 뒤 「이어서 올리기」로 마저 올려요.</div>');
+        });
+      }
+      if (heldBtn) { heldBtn.hidden = sentDone; heldBtn.disabled = sentDone; }
+      withHeld = false;
+      if (_ok) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; } else { goBtn.disabled = false; }
+    }
+    step();
   }
+  // ①c: 대기 중 「취소」 · 「이 마켓에서 내리기」(확인 한 번 → 판매중지 → 마켓에서 다시 읽어 확인)
+  doneEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-send-cancel],[data-role=m5-takedown],[data-role=m5-takedown-yes],[data-role=m5-takedown-no]') : null;
+    if (!b) return;
+    var role = b.getAttribute('data-role'), m = b.getAttribute('data-market');
+    if (role === 'm5-send-cancel') {
+      sendCancel[m] = 1; b.disabled = true; b.textContent = '취소함 — 보내지 않아요'; return;
+    }
+    var box = b.closest('[data-role=m5-takedown-box]');
+    if (role === 'm5-takedown') {
+      box.innerHTML = '<div class="m5-note" data-role="m5-takedown-ask">' + esc(mkLabel(m)) + '에서 판매중지할까요? (지우지 않아요 — 판매자센터에서 다시 켤 수 있어요)</div>' +
+        '<button type="button" class="m5-fix" data-role="m5-takedown-yes" data-market="' + esc(m) + '">내리기</button> ' +
+        '<button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown-no" data-market="' + esc(m) + '">그만두기</button>';
+      return;
+    }
+    if (role === 'm5-takedown-no') {
+      box.innerHTML = '<button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown" data-market="' + esc(m) + '">이 마켓에서 내리기</button>'; return;
+    }
+    b.disabled = true; b.textContent = '내리는 중…';
+    post('/seller/collect/' + encodeURIComponent(itemId) + '/take-down', {market: m, confirm: true}).then(function (d) {
+      box.innerHTML = d.ok ? '<div class="m5-note" data-role="m5-takedown-done">내렸어요 — 판매중지(마켓에서 다시 읽어 확인)</div>'
+        : '<div class="m5-note" data-role="m5-takedown-fail">' + esc(d.error || '내리지 못했어요') + '</div>' +
+          '<button type="button" class="m5-fix m5-fix-quiet" data-role="m5-takedown" data-market="' + esc(m) + '">다시 시도</button>';
+    });
+  });
   goBtn.addEventListener('click', function () {
     if (goBtn.dataset.mode !== 'go') { checkBtn.click(); return; }   // 검증 전·전부 막힘 → 사전검증부터
-    register(false);
+    withHeld = false; register(false);                               // ①b: 통과한 곳만
   });
+  if (heldBtn) heldBtn.addEventListener('click', function () { withHeld = true; register(false); });   // ①b: 보류도 그래도 등록
 })();
 </script>
 {% include "_market_status.html" %}

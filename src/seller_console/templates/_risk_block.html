@@ -98,12 +98,17 @@ window.kgpAiReviewHtml = window.kgpAiReviewHtml || function (r, itemId) {
       var row = '<li data-role="ai-review-item" data-idx="' + i + '"' + (d ? ' class="is-decided"' : '') + '>' +
         (fieldWord ? '<span class="kgp-ai-field">' + esc(fieldWord) + '</span> ' : '') + esc(x.issue);
       if (x.fix) row += '<div class="kgp-ai-fix">→ ' + esc(x.fix) + '</div>';
+      if (x.fix_from) row += '<div class="kgp-risk-why" data-role="ai-review-from">' + esc(x.fix_from) + '</div>';      // 오너 11-23 ③: 고침안의 근거(원문 값)
+      if (x.fix_note) row += '<div class="kgp-risk-why" data-role="ai-review-note">' + esc(x.fix_note) + '</div>';
       if (d) {
         row += '<div class="kgp-ai-decided">' + (d.action === 'accept' ? '수락했어요 — 상품명을 바꿨어요' : '기각했어요') + '</div>';
       } else {
         row += '<div class="kgp-risk-acts">' +
           (x.fix ? '<button type="button" class="kgp-risk-btn is-main" data-role="ai-review-act" data-action="accept" data-idx="' + i + '">수락</button>' : '') +
-          (x.field !== 'none' ? '<button type="button" class="kgp-risk-btn" data-role="ai-review-edit" data-field="' + esc(x.field) + '">편집</button>' : '') +
+          (x.field !== 'none' ? '<button type="button" class="kgp-risk-btn" data-role="ai-review-edit" data-field="' + esc(x.field) + '" data-idx="' + i + '">편집</button>' : '') +
+          // 오너 11-23 ③: 고침이 없는 짚을 점에도 동사 — 상세 사진 0장 → 가져오기·올리기
+          ((x.verbs || []).indexOf('detail_refetch') >= 0 ? '<button type="button" class="kgp-risk-btn is-main" data-role="ai-review-verb" data-verb="detail_refetch">상세 사진 가져오기</button>' : '') +
+          ((x.verbs || []).indexOf('photo_upload') >= 0 ? '<button type="button" class="kgp-risk-btn" data-role="ai-review-verb" data-verb="photo_upload">사진 올리기</button>' : '') +
           '<button type="button" class="kgp-risk-btn" data-role="ai-review-act" data-action="reject" data-idx="' + i + '">기각</button></div>';
       }
       return row + '</li>';
@@ -118,33 +123,66 @@ window.kgpAiReviewAct = window.kgpAiReviewAct || function (itemId, idx, action) 
     .then(function (r) { return r.json(); })
     .catch(function () { return {ok: false, error: '저장하지 못했어요 — 다시 눌러 주세요'}; });
 };
-// 「편집」 → 드로어의 그 칸으로(탭 전환 + 포커스). 탭 함수가 없으면 포커스만.
+// 오너 11-23 23:58 ①: 죽은 버튼 0 — 조용히 끝내지 않고 이유를 말한다(토스트 → 잡 진행 한 줄 → 알림창 순).
+window.kgpNotice = window.kgpNotice || function (msg, kind) {
+  if (window.pcToast) { window.pcToast(msg, kind || 'info'); return; }
+  if (window.kgpJobLine) { (kind === 'warning' || kind === 'danger') ? window.kgpJobLine.fail(msg) : window.kgpJobLine.done(msg); return; }
+  try { window.alert(msg); } catch (e) {}
+};
+// 「편집」 → 드로어의 그 칸으로(탭 전환 + 포커스). 그 칸이 없는 화면(폰 카드)은 그 화면이 `kgpAiReviewEditInline`을 둔다.
 window.kgpAiReviewEdit = window.kgpAiReviewEdit || function (field) {
-  var map = {title: ['basic', 'editTitle'], option: ['options', null], description: ['detail', 'editDescription']};
+  var map = {title: ['basic', 'editTitle'], option: ['options', 'optionRows'], description: ['detail', 'editDescription']};
   var m = map[field] || ['basic', null];
   if (window.kgpEtab) { try { window.kgpEtab(m[0]); } catch (e) {} }
   var el = m[1] && document.getElementById(m[1]);
-  if (el) { el.focus(); if (el.scrollIntoView) el.scrollIntoView({block: 'center', behavior: 'smooth'}); }
+  if (el) { if (el.focus) el.focus(); if (el.scrollIntoView) el.scrollIntoView({block: 'center', behavior: 'smooth'}); return true; }
+  window.kgpNotice('이 화면엔 그 칸이 없어요 — 상품 편집 화면에서 고쳐 주세요.', 'warning');
+  return false;
+};
+// 수락·기각이 저장된 뒤 — 화면마다 다시 검증하는 길이 다르다. 폰 카드(M5)는 `kgpAiReviewAfter`를 덮어쓴다(훅 하나).
+window.kgpAiReviewAfter = window.kgpAiReviewAfter || function (d, action, itemId, box) {
+  var f = d.fields || {};
+  if (f.title_ko != null && document.getElementById('editTitle')) document.getElementById('editTitle').value = f.title_ko;
+  if (box && box.parentNode) { var tmp = document.createElement('div'); tmp.innerHTML = window.kgpAiReviewHtml(window._kgpAiReview, itemId); box.parentNode.replaceChild(tmp.firstChild, box); }
+  window.kgpNotice(action === 'accept' ? '상품명을 바꿨어요 — 다시 검증할게요' : '기각했어요', 'info');
+  if (action === 'accept' && typeof runPrevalidate === 'function') { window._kgpRefreshFromStore = true; runPrevalidate(); }
+};
+// 「상세 사진 가져오기」(서버 재수집 줄) · 「사진 올리기」 — 폰 카드는 `kgpAiReviewVerb`를 덮어쓴다.
+window.kgpAiReviewVerb = window.kgpAiReviewVerb || function (verb, itemId, btn) {
+  if (verb === 'detail_refetch') {
+    btn.disabled = true; btn.textContent = '요청하는 중…';
+    fetch('/seller/collect/' + encodeURIComponent(itemId) + '/recollect', {method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: 'queue'})})
+      .then(function (r) { return r.json(); }).catch(function () { return {ok: false, error: '네트워크 오류 — 다시 눌러 주세요'}; })
+      .then(function (d) { btn.disabled = false; btn.textContent = '상세 사진 가져오기';
+        window.kgpNotice(d.ok ? (d.message || '다시 수집 줄에 넣었어요') : (d.error || '요청하지 못했어요'), d.ok ? 'info' : 'warning'); });
+    return;
+  }
+  if (window.kgpEtab) { try { window.kgpEtab('thumb'); } catch (e) {} }
+  window.kgpNotice('「썸네일」 탭에서 사진을 올려 주세요.', 'info');
 };
 if (!window._kgpAiReviewClicks) {
   window._kgpAiReviewClicks = true;
   document.addEventListener('click', function (e) {
-    var b = e.target && e.target.closest && e.target.closest('[data-role="ai-review-act"],[data-role="ai-review-edit"]');
+    var b = e.target && e.target.closest && e.target.closest('[data-role="ai-review-act"],[data-role="ai-review-edit"],[data-role="ai-review-verb"]');
     if (!b) return;
     var box = b.closest('[data-role="ai-review"]');
-    if (b.getAttribute('data-role') === 'ai-review-edit') { window.kgpAiReviewEdit(b.getAttribute('data-field')); return; }
     var itemId = box && box.getAttribute('data-item');
-    if (!itemId) return;
+    var role = b.getAttribute('data-role');
+    if (role === 'ai-review-edit') {
+      var fld = b.getAttribute('data-field'), ix = parseInt(b.getAttribute('data-idx'), 10);
+      if (window.kgpAiReviewEditInline && window.kgpAiReviewEditInline(b, fld, ix, itemId)) return;     // 폰 카드: 그 줄 아래 입력칸
+      window.kgpAiReviewEdit(fld); return;
+    }
+    // 오너 11-23 23:58 ①: 상품 번호가 없으면 조용히 끝내지 않는다 — 무엇이 안 됐는지 말한다(죽은 버튼 0).
+    if (!itemId) { window.kgpNotice('이 상품의 번호를 못 찾아 저장하지 못했어요 — 화면을 새로 고친 뒤 다시 눌러 주세요.', 'warning'); return; }
+    if (role === 'ai-review-verb') { window.kgpAiReviewVerb(b.getAttribute('data-verb'), itemId, b); return; }
     var action = b.getAttribute('data-action'), idx = parseInt(b.getAttribute('data-idx'), 10);
     b.disabled = true; b.textContent = action === 'accept' ? '고치는 중…' : '기록 중…';
     window.kgpAiReviewAct(itemId, idx, action).then(function (d) {
-      if (!d.ok) { b.disabled = false; b.textContent = action === 'accept' ? '수락' : '기각'; if (window.pcToast) pcToast(d.error || '안 됐어요', 'warning'); return; }
+      if (!d.ok) { b.disabled = false; b.textContent = action === 'accept' ? '수락' : '기각'; window.kgpNotice(d.error || '안 됐어요', 'warning'); return; }
       window._kgpAiReview = d.ai_review || window._kgpAiReview;
-      var f = d.fields || {};
-      if (f.title_ko != null && document.getElementById('editTitle')) document.getElementById('editTitle').value = f.title_ko;
-      if (box && box.parentNode) { var tmp = document.createElement('div'); tmp.innerHTML = window.kgpAiReviewHtml(window._kgpAiReview, itemId); box.parentNode.replaceChild(tmp.firstChild, box); }
-      if (window.pcToast) pcToast(action === 'accept' ? '상품명을 바꿨어요 — 다시 검증할게요' : '기각했어요', 'info');
-      if (action === 'accept' && typeof runPrevalidate === 'function') { window._kgpRefreshFromStore = true; runPrevalidate(); }
+      window.kgpAiReviewAfter(d, action, itemId, box);
     });
   }, true);
 }

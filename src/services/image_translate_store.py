@@ -571,7 +571,10 @@ def effective_images(extra: dict, *, kind: str = "gallery", originals=None,
         pairs = [(sidx[p], u) if sidx[p] >= 0 else (len(stored) + p, u) for p, u in enumerate(out)]
         return [u for _i, u in _dip.arrange(pairs, by_idx, stored)]
     # Y10: 리스크 게이트 「빼고 등록」으로 뺀 장(상표·디자인이 사진 속 글자에 있던 장)도 뺀다
-    drop = {p for p in range(len(originals)) if promo_excluded(by_idx.get(sidx[p]) or {}) or (by_idx.get(sidx[p]) or {}).get("risk_exclude")}
+    # 오너 11-25 ①d: 유저가 「이 사진 빼기」로 뺀 장(원본 주소 `images_excluded`) — 등록에서만 뺀다(원본 배열 불변 · 「다시 넣기」로 되돌림)
+    user_x = set(str(u) for u in (ex.get("images_excluded") or []) if u)
+    drop = {p for p in range(len(originals)) if promo_excluded(by_idx.get(sidx[p]) or {}) or (by_idx.get(sidx[p]) or {}).get("risk_exclude")
+            or str(originals[p]) in user_x}
     pairs = list(enumerate(out))
     if drop and len(drop) < len(out):
         pairs = [(i, u) for i, u in pairs if i not in drop]

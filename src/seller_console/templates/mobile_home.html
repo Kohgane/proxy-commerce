@@ -34,10 +34,12 @@
 {% if _pane == 'collect' %}
 <section class="m-pane" id="pane-collect" data-pane="collect">
   <p class="text-muted mb-3">상품 링크를 붙여넣거나, 쇼핑 앱에서 <strong>공유 → 고가브릿지</strong>로 보내면 바로 수집돼요.</p>
-  <form action="/seller/collect/quick" method="get" class="m-card p-3 mb-3" data-role="m-collect-form">
+  <form action="/seller/collect/quick" method="get" class="m-card p-3 mb-3" data-role="m-collect-form" novalidate>
     <label class="form-label fw-semibold" for="mUrl">상품 링크</label>
     <input id="mUrl" name="u" type="url" class="form-control mb-2" placeholder="https://..." required inputmode="url" autocomplete="off">
-    <button type="submit" class="btn btn-cta w-100"><i class="bi bi-download" aria-hidden="true"></i> 수집하기</button>
+    <button type="submit" class="btn btn-cta w-100" data-role="m-collect-go"><i class="bi bi-download" aria-hidden="true"></i> 수집하기</button>
+    {# 실패는 그 자리에 한국어 사유 + 다음 행동 하나 #}
+    <div class="mt-2" data-role="m-collect-result" role="alert" hidden></div>
   </form>
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h2 class="h6 fw-bold mb-0">최근 수집</h2>
@@ -140,10 +142,46 @@ function installApp() {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/seller/static/sw.js', { scope: '/seller/' }).catch(function () {});
 }
-// 수집 진행 한 줄 — 링크를 보내면 곧바로 「수집 중」을 띄운다(다음 화면이 결과·상품 카드)
+// 오너 11-23 B: 링크 붙여넣기 → 같은 화면에서 진행 한 줄 → 끝나면 그 상품 카드(M5 /seller/m/item/<id>).
+//   실패는 그 자리에 한국어 사유 + 다음 행동 하나. 자바스크립트가 없으면 예전처럼 결과 화면으로 간다(form GET).
 (function () {
   var f = document.querySelector('[data-role="m-collect-form"]');
-  if (f) f.addEventListener('submit', function () { if (window.kgpJobLine) window.kgpJobLine.show('수집 중… 상품 정보를 읽고 있어요'); });
+  if (!f || !window.fetch) return;
+  var box = f.querySelector('[data-role="m-collect-result"]'), go = f.querySelector('[data-role="m-collect-go"]'), inp = f.querySelector('#mUrl');
+  function say(html) { box.innerHTML = html; box.hidden = false; }
+  function esc(t) { return String(t || '').replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  f.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var u = (inp.value || '').trim();
+    box.hidden = true;
+    if (!u) { say('<div class="pc-status pc-status-warning">상품 링크를 붙여넣어 주세요.</div>'); inp.focus(); return; }
+    go.disabled = true;
+    if (window.kgpJobLine) window.kgpJobLine.show('수집 중… 상품 정보를 읽고 있어요');
+    fetch('/seller/collect/quick?fmt=json&u=' + encodeURIComponent(u), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) {
+        if (r.status === 401 || r.redirected && /\/auth\/login/.test(r.url)) { location.href = '/auth/login?next=' + encodeURIComponent('/seller/m'); return null; }
+        return r.json().catch(function () { return { ok: false, message: '서버 응답을 읽지 못했어요.' }; });
+      })
+      .then(function (d) {
+        if (!d) return;
+        go.disabled = false;
+        if (d.ok && d.next) {
+          if (window.kgpJobLine) window.kgpJobLine.done('수집했어요 — 상품 카드로 갈게요');
+          location.href = d.next; return;
+        }
+        if (window.kgpJobLine) window.kgpJobLine.fail('수집하지 못했어요');
+        var act = d.limit_reached ? '<a class="btn btn-ghost w-100 mt-2" href="/seller/billing">요금제 보기</a>'
+                                  : '<button type="button" class="btn btn-ghost w-100 mt-2" data-role="m-collect-retry">다시 수집</button>';
+        say('<div class="pc-status pc-status-danger">' + esc(d.message || '수집하지 못했어요.') + '</div>' + act);
+      })
+      .catch(function () {
+        go.disabled = false;
+        if (window.kgpJobLine) window.kgpJobLine.fail('연결이 끊겼어요');
+        say('<div class="pc-status pc-status-danger">연결이 끊겼어요 — 네트워크를 확인하고 다시 눌러 주세요.</div>' +
+            '<button type="button" class="btn btn-ghost w-100 mt-2" data-role="m-collect-retry">다시 수집</button>');
+      });
+  });
+  box.addEventListener('click', function (e) { if (e.target.closest('[data-role="m-collect-retry"]')) f.requestSubmit ? f.requestSubmit() : f.submit(); });
 })();
 </script>
 </body>

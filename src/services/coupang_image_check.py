@@ -54,6 +54,24 @@ def _read_text(raw: bytes):
         return P.all_text(raw)
 
 
+_FACE = {"c": None}
+
+
+def _faces(img) -> int:
+    """오너 11-25 ②: 사람이 나온 사진인가 — OpenCV 얼굴 검출(줄인 사진에서 · 정면 얼굴). 못 재면 0(막지 않음)."""
+    try:
+        import cv2
+        import numpy as np
+        if _FACE["c"] is None:
+            _FACE["c"] = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        g = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2GRAY)
+        side = max(g.shape[:2])
+        found = _FACE["c"].detectMultiScale(g, scaleFactor=1.1, minNeighbors=6, minSize=(max(20, side // 12), max(20, side // 12)))
+        return int(len(found))
+    except Exception:                                              # noqa: BLE001
+        return 0
+
+
 def check_bytes(raw: bytes) -> Dict[str, Any]:
     """`{state, w, h, square, long_side, small, white_pct, text, seen, flags[]}` — state: ok|unknown."""
     # Z10-B(오너 2026-10-11 02:24 — 사전검증 3초 사이 +261MB): 예전엔 `draft`(JPEG 전용) 뒤 `load`·`convert("RGB")`를
@@ -68,6 +86,7 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
     square = abs(w - h) <= SQUARE_TOL * long_side
     small, _f, _w, _h, decode_why = open_small(raw, max(1, long_side // 4) if long_side > 400 else long_side)
     white_pct = None
+    faces = 0
     if small is not None:
         sw, sh = small.size
         sbw, sbh = max(1, int(sw * BORDER_FRAC)), max(1, int(sh * BORDER_FRAC))
@@ -81,6 +100,7 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
                 total += 1
                 white += r >= WHITE_MIN and g >= WHITE_MIN and b >= WHITE_MIN
         white_pct = round(white / total * 100) if total else 0
+        faces = _faces(small)
         small.close()
         del px
     text, seen = _read_text(raw)
@@ -104,11 +124,14 @@ def check_bytes(raw: bytes) -> Dict[str, Any]:
         ocr_why = last_unavailable() or "텐센트 OCR 실패"
         flags.append({"key": "ocr_unavailable", "code": "ocr_unavailable", "hold": False,
                       "line": f"글자 판정 못 함({ocr_why}) — 등록은 막지 않아요"})
+    if faces:
+        # 오너 11-25 ②: 보류는 아니다 — 대표 자동 고르기·대표 제안이 제품 단독 컷을 먼저 고르는 재료
+        flags.append({"key": "person", "hold": False, "line": "사람이 나온 사진 — 대표는 제품 단독 컷이 좋아요"})
     if not square:
         flags.append({"key": "not_square", "hold": False,
                       "line": f"정사각 아님({w}×{h}) — 쿠팡 검색 카드엔 가운데를 잘라 보여요"})
     return {"state": "ok", "w": w, "h": h, "square": square, "long_side": long_side,
-            "small": long_side < MIN_LONG_SIDE, "white_pct": white_pct, "decode_why": decode_why,
+            "small": long_side < MIN_LONG_SIDE, "white_pct": white_pct, "decode_why": decode_why, "person": bool(faces),
             "text": (False if (text and geom.get("prop_only")) else text), "seen": seen, "flags": flags,
             "ocr": "unavailable" if text is None else "ok", "ocr_why": ocr_why,
             "text_geometry": {k: v for k, v in geom.items() if k != "all"},
@@ -415,8 +438,9 @@ def auto_rep_pick(extra: dict, *, images_effective=None, by: str = "auto") -> di
     except Exception as exc:                                       # noqa: BLE001
         out["why"] = f"대표 판정 실패: {str(exc)[:80]}"
         return out
-    if not any(f.get("hold") and f.get("key") == "text" for f in res.get("flags") or []):
-        out["why"] = "대표에 글자 없음"
+    rep_person = bool(res.get("person"))
+    if not any(f.get("hold") and f.get("key") == "text" for f in res.get("flags") or []) and not rep_person:
+        out["why"] = "대표에 글자·사람 없음"
         return out
     excluded = {int(e.get("idx", -1)) for e in (extra.get("images_ko") or []) if isinstance(e, dict) and e.get("risk_exclude")}
     tried = []
@@ -428,7 +452,7 @@ def auto_rep_pick(extra: dict, *, images_effective=None, by: str = "auto") -> di
         except Exception as exc:                                   # noqa: BLE001
             tried.append({"idx": i, "why": f"판정 실패: {str(exc)[:60]}"})
             continue
-        bad = [f["key"] for f in r.get("flags") or [] if f.get("hold")]
+        bad = [f["key"] for f in r.get("flags") or [] if f.get("hold")] + (["person"] if r.get("person") else [])
         tried.append({"idx": i, "flags": bad})
         if not bad:
             extra["rep_image"] = u
@@ -440,3 +464,49 @@ def auto_rep_pick(extra: dict, *, images_effective=None, by: str = "auto") -> di
     out["why"] = f"후보 {len(tried)}장 모두 글자가 있거나 못 쟀어요"
     out["tried"] = tried
     return out
+
+
+# ── 오너 11-23 23:58 ④: 대표 500px 보류를 그 자리에서 고치는 재료 — 갤러리 장 **크기만**(글자 판정 없음) ─────────────
+_SIZE: "OrderedDict[str, dict]" = OrderedDict()
+_SIZE_MAX = 512
+
+
+def size_of(url: str) -> Dict[str, Any]:
+    """`{w, h, long_side, ok}` — 재 둔 판정이 있으면 그 크기, 없으면 내려받아 머리만 읽는다(픽셀 풀기 0). 못 읽으면 `{why}`."""
+    key = str(url or "")
+    if not key:
+        return {"why": "주소 없음"}
+    with _LOCK:
+        if key in _SIZE:
+            return _SIZE[key]
+    have = cached(key) or {}
+    if have.get("w") and have.get("h"):
+        w, h = int(have["w"]), int(have["h"])
+    else:
+        raw, why = _bytes_for(key)
+        if not raw:
+            return {"why": why or "이미지를 읽지 못했어요"}
+        from src.collectors.image_norm import image_head
+        _fmt, w, h = image_head(raw)
+        del raw
+        if not w or not h:
+            return {"why": "크기를 읽지 못했어요"}
+    res = {"w": w, "h": h, "long_side": max(w, h), "ok": max(w, h) >= MIN_LONG_SIDE,
+           "text": bool([f for f in (have.get("flags") or []) if f.get("key") == "text" and f.get("hold")]),
+           "person": bool(have.get("person"))}
+    with _LOCK:
+        _SIZE[key] = res
+        while len(_SIZE) > _SIZE_MAX:
+            _SIZE.popitem(last=False)
+    return res
+
+
+def best_rep(cands: list) -> int:
+    """500px 이상 장 중 쿠팡 대표로 가장 알맞은 장의 idx(없으면 -1) — 글자 없음 > 사람 없음(제품 단독 컷) > 정사각에 가까움 > 큰 장."""
+    ok = [c for c in cands if c.get("ok") and not c.get("is_rep")]
+    if not ok:
+        return -1
+    def _score(c):
+        w, h = c["w"], c["h"]
+        return (0 if c.get("text") else 1, 0 if c.get("person") else 1, -abs(1 - (min(w, h) / max(w, h))), c["long_side"])
+    return max(ok, key=_score)["idx"]
