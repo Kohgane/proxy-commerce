@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 #   행의 `url` 컬럼(= 「원본 보기」가 읽는 그 값)은 정규형이지만 **extra에는 없다.**
 DRAFT_URL_KEYS = ("url", "final_url", "source_url", "product_url")
 
+# 오너 11-25 15:56: 짧은 링크를 못 편 갈래 → 사람 말(원문 사유 코드는 그대로 둔다)
+SHORT_RESOLVE_WHY = {
+    "timeout": "시간 안에 답이 오지 않았어요",
+    "http_403": "그 사이트가 서버 요청을 막았어요(403)",
+    "http_404": "링크가 만료됐어요(404)",
+    "no_item_in_location": "넘어간 주소에 상품번호가 없었어요",
+    "no_item_in_body": "넘어간 페이지에 상품번호가 없었어요",
+    "too_many_hops": "넘어가는 단계가 너무 많았어요",
+    "off_host": "다른 사이트로 넘어가서 멈췄어요",
+    "error": "연결 오류가 났어요",
+    "disabled": "서버 링크 펴기가 꺼져 있어요",
+}
+
 # F42d: 한글이 섞여 있으면 영문 제목이 아니다 — 글자로 재는 판정(짐작 0).
 _HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
 # Shopify 캐너리 사전 점검(2026-09-28): 영문 제목 판정이 **한글만** 봤다 — 수행방패처럼 원문이 중국어면
@@ -590,6 +603,10 @@ def share_item_url(item: Optional[Dict[str, Any]]) -> str:
     manual = str((ex or {}).get("source_url_manual") or "").strip()
     if manual.startswith(("http://", "https://")):
         return manual
+    # 오너 11-25 15:56: 서버가 짧은 링크를 펴 둔 정본 주소(`a.co` → `amazon.com/dp/…`)
+    resolved = str((ex or {}).get("source_url_resolved") or "").strip()
+    if resolved.startswith(("http://", "https://")):
+        return resolved
     tid = str((ex or {}).get("item_id_taobao") or "").strip()
     return f"https://item.taobao.com/item.htm?id={tid}" if re.fullmatch(r"\d{6,20}", tid) else ""
 
@@ -1748,9 +1765,17 @@ class UploadDispatcher:
         #   `_sku_probe`는 사전검증 준비(`_pv_prepare`)가 등록과 같은 빌더(`build_dispatch_payload`)로 재 둔 값이다.
         _probe = pd.get("_sku_probe")
         if str(market or "").startswith("coupang") and isinstance(_probe, dict) and not _probe.get("ok"):
-            holds.append({"short": "원본 상품 주소 없음", "fix": "source_url", "code": "coupang_sku_missing",
-                          "line": "원본 상품 주소가 없어 쿠팡 상품코드를 만들 수 없어요 — 아래에 원본 주소를 넣으면 바로 다시 확인해요."
-                                  + (f" (지금 주소: {_probe['chosen'][:60]})" if _probe.get("chosen") else "")})
+            # 오너 11-25 15:56: 사실대로 — 짧은 링크면 「주소 없음」이 아니다. 서버가 이미 펴 보았고, 못 편 사유를 그대로 싣는다.
+            if _probe.get("short"):
+                _why = SHORT_RESOLVE_WHY.get(str(_probe.get("resolve_reason") or "").split(":")[0], _probe.get("resolve_reason") or "")
+                holds.append({"short": "짧은 링크 — 상품번호 못 읽음", "fix": "source_url", "code": "coupang_sku_short_link",
+                              "market_src": _probe.get("market", ""),
+                              "line": "짧은 링크라 상품번호를 못 읽었어요 — 서버가 펴 보았지만 " + (_why or "상품 주소가 나오지 않았어요")
+                                      + ". 아래에 상품 페이지 주소를 넣으면 바로 다시 확인해요."})
+            else:
+                holds.append({"short": "원본 상품 주소 없음", "fix": "source_url", "code": "coupang_sku_missing",
+                              "line": "원본 상품 주소가 없어 쿠팡 상품코드를 만들 수 없어요 — 아래에 원본 주소를 넣으면 바로 다시 확인해요."
+                                      + (f" (지금 주소: {_probe['chosen'][:60]})" if _probe.get("chosen") else "")})
         price_raw = pd.get("price") or pd.get("price_original")
         try:
             price = float(price_raw) if price_raw not in (None, "") else None

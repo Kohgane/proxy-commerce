@@ -50,6 +50,7 @@ tier1 추출 → 초안 병합. 퍼센티가 같은 구조인 이유다.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Optional
 
@@ -61,7 +62,7 @@ UNCOLLECTED_FIELDS = ("price", "images", "options", "description")
 
 def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "share_text",
                             translate: bool = True,
-                            final_url: str = "") -> dict:
+                            final_url: str = "", resolved_url: str = "", raw_url: str = "") -> dict:
     """공유 텍스트 한 덩어리 → 수집 초안 1건.
 
     반환 `{ok, item_id?, url, title, title_ko, item_id_taobao, price, currency, uncollected,
@@ -101,12 +102,24 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             # 저장 URL = 정규형. 추적 파라미터를 안 남기고, 같은 상품이 한 키로 합쳐진다.
             url = canonical_item_url(r["item_id"]) or url
     share["resolve_reason"] = resolve_reason
+    # 오너 11-25 15:56: 아마존·알리 단축 주소를 편 정본 주소가 있으면 그걸 저장 주소로(원래 주소는 `raw_url`).
+    if resolved_url:
+        url = resolved_url
+        # 타오바오 공유 글 파서는 아마존·알리 글에서 제목을 못 뽑는다 — 주소·【…】 머리말을 걷어낸 나머지가 공유한 상품 이름이다.
+        if not share.get("title"):
+            _t = re.sub(r"https?://\S+", " ", raw or "")
+            _t = re.sub(r"[【\[][^】\]]{0,20}[】\]]", " ", _t)
+            _t = re.sub(r"\s+", " ", _t).strip(" -|·,")
+            if 2 <= len(_t) <= 200:
+                share["title"] = _t
 
     # 제목도 상품번호도 없으면 **이어갈 실마리가 없다** — 빈 행을 만들지 않는다.
     #   단 이 검사는 **해석 뒤**에 온다: 실측(C-F11) 뒤로는 서버가 단축 링크를 펴서
     #   상품번호를 만들어 낼 수 있으므로, 먼저 거절하면 그 실마리를 못 쓴다.
     #   (실측: 맨 URL을 넣었더니 빈 항목이 '수집됨'으로 앉아 편집 화면까지 넘어갔다.)
-    if not share.get("title") and not share.get("item_id"):
+    # 오너 11-25 15:56 ④: 아마존·알리 단축 주소를 **펴서 상품 주소가 확보됐으면** 제목이 없어도 「주소만 담은」 초안을 세운다 —
+    #   상품번호가 있으니 실마리가 있다(사진·가격은 PC 확장·다시 가져오기로). 공유 시트는 「주소만 담았어요」라고 사실대로 말한다.
+    if not share.get("title") and not share.get("item_id") and not resolved_url:
         return {"ok": False, "url": url, "resolve_reason": resolve_reason,
                 "error": ("이 링크에서 상품을 찾지 못했습니다. 앱 공유 글을 통째로 보내 주시거나, "
                           "상품 페이지에서 고가수집기로 수집해 주세요.")}
@@ -139,7 +152,7 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     uncollected = [f for f in UNCOLLECTED_FIELDS if not (f == "price" and price)]
     # 폰이 펴 준 최종 URL이 있으면 그쪽이 더 정확한 소스다. 단 **정규형으로** 저장한다 —
     #   원문엔 `suid`·`un`·`wxsign`이 붙어 오고, 파라미터가 다르면 같은 상품이 여러 행으로 갈린다.
-    if share.get("item_id"):
+    if share.get("item_id") and not resolved_url:
         url = canonical_item_url(share["item_id"]) or share.get("final_url") or url
 
     from src.seller_console.collect_history_store import append as history_append
@@ -174,6 +187,7 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
                 # 보강은 **이미지가 실제로 들어왔을 때만** done이다. 가격이 왔다고 보강이 끝난 게 아니다.
                 "enrich_state": "pending",
                 "share_raw": share.get("raw", "")[:500],
+                **({"raw_url": raw_url} if raw_url and raw_url != url else {}),
             },
         )
     except UsageLimitReached as lim:                              # Y15: 이번 달 한도 — 정직 사유 + 요금제 링크
@@ -200,7 +214,10 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             #   보강(이미지·옵션)은 아직 안 됐으므로 `enrich_state`는 `pending`이다.
             "gate_ready": bool(price), "enrich_state": "pending",
             # 서버가 **본 것만** 담는다: 최종 URL이 왔나 · 상품번호가 있었나 · 가격이 있었나.
-            "resolve_gap": resolve_gap(share), "message": gap_message(share),
+            "resolve_gap": resolve_gap(share),
+            # 오너 11-25 15:56 ④: 아마존·알리는 링크를 **편** 경우다 — 타오바오 문구(「펴진 링크가 오지 않아」)를 쓰지 않는다.
+            "message": (("주소만 담았어요 — 상품 주소는 읽었어요(" + url + "). 사진·가격·옵션은 PC 확장이나 「다시 가져오기」로 채워요.")
+                        if resolved_url else gap_message(share)),
             # 어디서 오래 걸렸는지 — 원문은 안 싣고 **밀리초만** 싣는다.
             "timings": timings,
             # O-5: 단축 링크 펴기 결과(결과 화면 단계 표시) — 서버가 본 갈래 그대로.
@@ -321,15 +338,24 @@ def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
             r["alt_key_url"] = alt_key_url      # 호출부 중복 조회용(같은 상품의 단축 링크 형태)
         return r
 
+    # 오너 11-25 15:56: 아마존·알리 공유 단축 주소 — 수집 전에 편다(정본 주소로 저장 · 원래 주소는 `raw_url`).
+    raw_short = ""
+    from src.collectors.link_diag import resolve_share_link, short_link_market
+    if short_link_market(url) in ("amazon", "aliexpress"):
+        _rr = resolve_share_link(url)
+        if _rr.get("ok") and _rr.get("canonical_url"):
+            raw_short, url = url, _rr["canonical_url"]
     from src.api.extension_api import collect_one_url
-    r = collect_one_url(url, seller_id=seller_id, source=source)
+    r = collect_one_url(url, seller_id=seller_id, source=source, **({"raw_url": raw_short} if raw_short else {}))
     if r.get("ok"):
         r["kind"] = "collected"
         return r
     # 못 읽었지만 공유 글에 제목이 있으면 초안이라도 세운다(빈손으로 돌려보내지 않는다).
-    if share.get("title"):
+    #   오너 11-25 15:56 ④: 아마존·알리 단축 주소를 편 경우(상품 주소 확보)도 「주소만 담은」 초안을 세운다.
+    if share.get("title") or raw_short:
         r2 = collect_from_share_text(raw, seller_id=seller_id, source=source,
-                                     translate=translate, final_url=final_url)
+                                     translate=translate, final_url=final_url,
+                                     resolved_url=url if raw_short else "", raw_url=raw_short)
         if r2.get("ok"):
             r2["kind"] = "share_draft"
             return r2

@@ -2092,12 +2092,62 @@ def _share_app_json(out: dict):
             item = _get_owned_item(iid) or {}
         except Exception:
             item = {}
+        _thumb = _share_thumb(item)
+        _say = share_sheet_words(out, item, _thumb)
         return jsonify({"ok": True, "item_id": iid,
                         "title": str(out.get("title") or item.get("title") or ""),
-                        "thumb": _share_thumb(item), "path": f"/seller/m/item/{iid}",
+                        "thumb": _thumb, "path": f"/seller/m/item/{iid}",
                         "dup": bool(out.get("duplicate")), "partial": bool(out.get("partial")),
-                        "message": str(out.get("message") or "")})
-    return jsonify({"ok": False, "dup": False, "error": str(out.get("error") or "담지 못했어요 — 다시 공유해 주세요.")})
+                        "message": str(out.get("message") or ""), **_say})
+    _err = str(out.get("error") or "담지 못했어요 — 다시 공유해 주세요.")
+    return jsonify({"ok": False, "dup": False, "error": _err, "headline": "담지 못했어요", "sub": _err,
+                    "source_icon": _source_icon(str(out.get("url") or ""))})
+
+
+def _source_icon(url: str) -> str:
+    """공유 시트 썸네일이 없을 때 쓸 **소싱처 아이콘**(빈 상자 대신). 호스트 파비콘 — 못 정하면 ''."""
+    from urllib.parse import urlparse as _up
+    host = (_up(url or "").hostname or "").lower()
+    if not host:
+        return ""
+    for short, real in (("a.co", "amazon.com"), ("amzn.", "amazon.com"), ("aliexpress", "aliexpress.com"),
+                        ("tb.cn", "taobao.com"), ("taobao", "taobao.com"), ("tmall", "tmall.com")):
+        if short in host:
+            host = real
+            break
+    return f"https://www.google.com/s2/favicons?domain={host}&sz=128"
+
+
+def share_sheet_words(out: dict, item: dict, thumb: str = "") -> dict:
+    """오너 11-25 15:56 ④ — 공유 시트 문구를 **담긴 그대로** 만든다(앱은 이 문장을 잘리지 않게 그대로 보인다).
+
+    「수집 목록에 들어갔어요」인데 실제론 빈 초안이던 걸 사실대로: 사진·가격이 없으면 「주소만 담았어요」 +
+    다음 행동 하나(「다시 가져오기」 → 그 상품 카드). 반환 `{headline, sub, next_label, next_path, source_icon}`."""
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") if isinstance(item.get("extra_json"), str) else (item.get("extra") or {})
+    except Exception:                                            # noqa: BLE001
+        ex = {}
+    title = str(out.get("title") or item.get("title") or "").strip()
+    if title == "(제목 없음)":
+        title = ""
+    n_img = len([u for u in (ex.get("images") or []) if u]) or (1 if thumb or item.get("image_url") else 0)
+    has_price = bool(str(item.get("price") or ex.get("price") or "").strip())
+    iid = str(out.get("item_id") or "")
+    words = {"source_icon": "" if thumb else _source_icon(str(item.get("url") or out.get("url") or "")),
+             "next_label": "", "next_path": f"/seller/m/item/{iid}"}
+    if out.get("duplicate"):
+        words.update({"headline": "이미 담은 상품이에요 ✓", "sub": title})
+    elif not n_img and not has_price:
+        words.update({"headline": "주소만 담았어요",
+                      "sub": (title + " — " if title else "") + "사진·가격·옵션은 아직 없어요. PC 확장이나 「다시 가져오기」로 채워요.",
+                      "next_label": "다시 가져오기"})
+    elif not n_img:
+        words.update({"headline": "제목·가격만 담았어요",
+                      "sub": (title + " — " if title else "") + "사진·옵션은 아직 없어요. 「다시 가져오기」로 채워요.",
+                      "next_label": "다시 가져오기"})
+    else:
+        words.update({"headline": "담았어요 ✓", "sub": title or f"사진 {n_img}장"})
+    return words
 
 
 # P2: 티켓 갈래 → 사람 말.
@@ -2144,6 +2194,27 @@ def _sku_label(sku) -> str:
     if isinstance(props, list) and props:
         return " / ".join(str((p or {}).get("value") or (p or {}).get("name") or p) for p in props)
     return str(sku.get("name") or sku.get("title") or sku.get("sku_id") or "")
+
+
+def source_url_example(url: str) -> str:
+    """오너 11-25 15:56 — 「원본 주소 넣기」 입력칸 예시는 **그 상품의 소싱처**에 맞게(타오바오 고정 금지)."""
+    from urllib.parse import urlparse as _up
+    from src.collectors.link_diag import short_link_market
+    host = (_up(url or "").hostname or "").lower() if url else ""
+    mk = short_link_market(url) if url else ""
+    if mk == "amazon" or "amazon." in host:
+        return "https://www.amazon.com/dp/B0…"
+    if mk == "aliexpress" or "aliexpress." in host:
+        return "https://www.aliexpress.com/item/1005….html"
+    if "1688." in host:
+        return "https://detail.1688.com/offer/….html"
+    if "temu." in host:
+        return "https://www.temu.com/…-g-6017….html"
+    if "tmall." in host:
+        return "https://detail.tmall.com/item.htm?id=…"
+    if mk == "taobao" or "taobao." in host or host.endswith("tb.cn"):
+        return "https://item.taobao.com/item.htm?id=…"
+    return "상품 페이지 주소(https://…)"
 
 
 def _incomplete_reasons(item: dict, product: dict, has_price: bool) -> list:
@@ -2336,6 +2407,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick, "incomplete": incomplete,
+            "src_example": source_url_example(str(item.get("url") or "")),
             "market_chips": market_chips,
             "market_records": _market_records(ex),       # M8: 「마켓 등록본」 — 데스크톱과 같은 줄
             "product": product,
@@ -5492,8 +5564,32 @@ def _pv_prepare(data: dict, product_data: dict):
     if data.get("item_id") and any(str(m).startswith("coupang") for m in (data.get("markets") or [])):
         try:
             from .upload_dispatcher import build_dispatch_payload as _bdp, draft_url as _du
-            _probe_pd = _bdp(dict(product_data), _get_owned_item(str(data["item_id"])))
-            product_data["_sku_probe"] = {"ok": bool(str(_probe_pd.get("sku") or "").strip()), "chosen": _du(_probe_pd)}
+            _probe_item = _get_owned_item(str(data["item_id"]))
+            _probe_pd = _bdp(dict(product_data), _probe_item)
+            _sku_ok = bool(str(_probe_pd.get("sku") or "").strip())
+            _resolve = {}
+            # 오너 11-25 15:56: 짧은 링크(`a.co`·`a.aliexpress.com`·`e.tb.cn`)라 SKU가 비면 **그 자리에서 펴서** 다시 잰다 —
+            #   유저에게 묻지 않는다. 편 정본 주소는 `source_url_resolved`(원래 주소는 행 `url` 그대로 = raw).
+            if not _sku_ok and _probe_item:
+                from src.collectors.link_diag import resolve_share_link, short_link_market
+                _row_url = str(_probe_item.get("url") or "").strip()
+                if short_link_market(_row_url):
+                    _resolve = resolve_share_link(_row_url)
+                    if _resolve.get("ok") and _resolve.get("canonical_url"):
+                        from . import collect_history_store as _chs
+                        _canon = _resolve["canonical_url"]
+
+                        def _put(ex, _c=_canon, _r=_row_url):
+                            ex["source_url_resolved"] = _c
+                            ex.setdefault("raw_url", _r)
+                            return ex
+                        _chs.merge_extra(str(data["item_id"]), _put, seller_ids=_seller_identities())
+                        _probe_item = _get_owned_item(str(data["item_id"])) or _probe_item
+                        _probe_pd = _bdp(dict(product_data), _probe_item)
+                        _sku_ok = bool(str(_probe_pd.get("sku") or "").strip())
+            product_data["_sku_probe"] = {"ok": _sku_ok, "chosen": _du(_probe_pd),
+                                          "short": bool(_resolve), "resolve_reason": _resolve.get("reason", ""),
+                                          "market": _resolve.get("market", "")}
         except Exception as exc:                                 # noqa: BLE001 — 못 재면 보류하지 않는다(등록 쪽 판정이 그대로 남는다)
             logger.warning("[사전검증] 쿠팡 SKU 미리 재기 실패: %s", exc)
     return product_data, _rc
@@ -12038,9 +12134,13 @@ def collect_link_diag_page():
         if raw:
             from src.collectors.share_text import parse_share_text
             asked = parse_share_text(raw).get("url", "") or raw
-            from src.collectors.link_diag import diagnose_link
+            from src.collectors.link_diag import diagnose_link, share_diag
+            sd = share_diag(asked)
+            # 오너 11-25 15:56 ④: 아마존·알리는 타오바오 진단(본문 펴기)이 아니라 **펴기 → 페이지 → 수집기** 세 칸을 잰다
+            if sd.get("market") in ("amazon", "aliexpress"):
+                return render_template("collect_link_diag.html", asked=asked, result=None, share=sd)
             result = diagnose_link(asked)
-    return render_template("collect_link_diag.html", asked=asked, result=result)
+    return render_template("collect_link_diag.html", asked=asked, result=result, share=None)
 
 
 @bp.get("/collect/history")

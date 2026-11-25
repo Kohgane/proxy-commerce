@@ -72,9 +72,12 @@ def test_share_json_with_bearer_collects_as_token_user(app_client, auth_on, fake
                         headers={**_SHARE_HDR, "Authorization": "Bearer " + tok})
     assert r.status_code == 200
     d = r.get_json()
-    assert d == {"ok": True, "item_id": "abc123", "title": "접이식 책상",
-                 "thumb": "https://res.cloudinary.com/x/y.jpg",                    # 우리 저장본이 1순위
-                 "path": "/seller/m/item/abc123", "dup": False, "partial": True, "message": "담았어요"}
+    base = {k: d[k] for k in ("ok", "item_id", "title", "thumb", "path", "dup", "partial", "message")}
+    assert base == {"ok": True, "item_id": "abc123", "title": "접이식 책상",
+                    "thumb": "https://res.cloudinary.com/x/y.jpg",                 # 우리 저장본이 1순위
+                    "path": "/seller/m/item/abc123", "dup": False, "partial": True, "message": "담았어요"}
+    # 오너 11-25 15:56 ④: 공유 시트 문구는 서버가 담긴 그대로(사진이 있으면 「담았어요 ✓」, 소싱처 아이콘은 썸네일 없을 때만)
+    assert d["headline"] == "담았어요 ✓" and d["source_icon"] == "" and d["next_label"] == ""
     assert fake_collect["seller_id"] == "u-iphone" and fake_collect["seller_ids"] == {"u-iphone"}
     assert "Set-Cookie" not in r.headers or "session=" not in r.headers.get("Set-Cookie", "")   # 토큰 길은 세션을 안 만든다
 

@@ -141,7 +141,7 @@
     <div class="m5-incomplete-acts">
       <button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>
       {% if m5.incomplete|selectattr('code', 'equalto', 'no_source_url')|list %}
-      <div class="m5-src"><input type="url" inputmode="url" class="form-control" data-role="m5-incomplete-url" placeholder="https://item.taobao.com/item.htm?id=…" autocomplete="off">
+      <div class="m5-src"><input type="url" inputmode="url" class="form-control" data-role="m5-incomplete-url" placeholder="{{ m5.src_example }}" autocomplete="off">
         <button type="button" class="m5-fix" data-role="m5-incomplete-url-save">주소 넣기</button></div>
       {% endif %}
     </div>
@@ -255,6 +255,7 @@
   .m5-incomplete ul { margin: 6px 0; padding-left: 1.1rem; }
   .m5-incomplete-acts { display: flex; flex-direction: column; gap: var(--space-2); }
   .m5-off-row { margin-top: 4px; }
+  .m5-hold-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 4px; }
   .m5-fix-quiet { color: var(--text-muted); border-color: var(--border); }
   .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
   .m5-btn.btn-ghost { border: 1px solid var(--border); background: var(--surface); font-weight: 600; }
@@ -324,6 +325,7 @@
   if (!root) return;
   var product = JSON.parse(document.getElementById('m5Product').textContent || '{}');
   var itemId = root.getAttribute('data-item');
+  var SRC_EXAMPLE = {{ (m5.src_example or '상품 페이지 주소(https://…)')|tojson }};   // 오너 11-25 15:56: 소싱처에 맞는 예시
   var blocked = root.getAttribute('data-blocked') === '1';
   var checkBtn = document.getElementById('m5Check'), goBtn = document.getElementById('m5Go'), heldBtn = document.getElementById('m5GoHeld');
   var pvOff = {};          // 오너 11-25 ①a: 결과 카드에서 「이 마켓 빼기」로 뺀 마켓(회색 + 「다시 넣기」)
@@ -477,6 +479,52 @@
       return '<div><a class="m5-fix" data-role="m5-next" href="/seller/markets/connect/' + esc(r.market) + '">마켓 키 연결하기 →</a></div>';
     }
     return '<div><button type="button" class="m5-fix" data-role="m5-retry-market" data-market="' + esc(r.market) + '">다시 사전검증</button></div>';
+  }
+  // 오너 11-25 15:56 ②: 보류는 「막혔다」로 끝나지 않는다 — 코드마다 **그 카드 안에서** 고치는 길(입력칸·버튼). 이미 전용 버튼이
+  //   있는 코드(번역·대표 사진·원본 주소·선주문·전압·배송비 비율·네이버 카테고리·가격대 나누기)는 그 버튼이 그대로 쓰인다.
+  //   표 = outbox 2026-11-25 「보류 코드별 고쳐서 등록」.
+  function holdFixHtml(r, already) {
+    var f = r.fixes || [], msg = String(r.message || '') + ' ' + String(r.hint || ''), out = [], seen = {};
+    function btn(act, label) {
+      if (seen[act + label]) return; seen[act + label] = 1;
+      out.push('<button type="button" class="m5-fix" data-role="m5-hold-act" data-act="' + act + '" data-market="' + esc(r.market) + '">' + label + '</button>');
+    }
+    function has(c) { return f.indexOf(c) >= 0; }
+    if (has('small_images') || (has('pc') && /이미지|사진/.test(msg)) || (has('naver_required') && /이미지|사진|Image/i.test(msg))) { btn('photo', '사진 올리기'); btn('refetch', '다시 가져오기'); }
+    if (has('pc') && /판매가|가격|원가/.test(msg)) btn('price', '원가 넣기');
+    if (has('trademark') || has('risk') || has('risk_block')) { btn('risk', '위험 낱말 고르기(빼고 등록)'); btn('edit-title', '상품명 고치기'); }
+    if (has('risk_skip')) btn('risk', '「등록 안 함」 풀기');
+    if (has('option_short') || has('price') || (has('naver_required') && !/이미지|사진|Image/i.test(msg))) btn('edit-option', '옵션 고치기');
+    if (has('detail_blank')) { btn('edit-desc', '상세 설명 쓰기'); btn('refetch', '상세 다시 가져오기'); }
+    if (has('ship_dims')) btn('ship', '무게·크기 넣기');
+    if (has('naver_kc')) btn('docs', '인증 서류 올리기');
+    if (has('risk_wait')) out.push('<div class="m5-note" data-role="m5-hold-wait">사진 글자를 다 읽으면 저절로 다시 확인해요.</div>');
+    if (has('not_ready')) out.push('<div class="m5-note">판매수수료율이 정해지면 저절로 열려요.</div>');
+    if (has('block')) { out.push('<div class="m5-note">등록하지 않는 품목이에요(위 사유) — 이 상품은 내려 두는 게 맞아요.</div>'); btn('discard', '목록에서 버리기'); }
+    return out.length ? '<div class="m5-hold-acts" data-role="m5-hold-acts">' + out.join(' ') + '</div>' : '';
+  }
+  // 보류 카드 안 입력칸(상품명·옵션·상세) — AI 검수 「편집」과 같은 저장 입구·같은 다시 검증(저장 핸들러 하나)
+  function openRowEditor(btn, field) {
+    var row = btn.closest('[data-role=m5-hold-acts]');
+    var open = row.parentNode.querySelector('[data-role=m5-ai-edit]');
+    if (open) { open.remove(); pvRender(); return; }
+    var form = document.createElement('div');
+    form.className = 'm5-ai-edit'; form.setAttribute('data-role', 'm5-ai-edit'); form.setAttribute('data-field', field);
+    if (field === 'title') {
+      form.innerHTML = '<label class="m5-note">상품명</label><input class="form-control" data-role="m5-ai-edit-title" maxlength="100" value="' + esc(product.title_ko || product.title || '') + '">';
+    } else if (field === 'option') {
+      var opts = product.options || [];
+      form.innerHTML = (opts.length ? opts : [{name: '', values: []}]).map(function (o) {
+        return '<div class="m5-ai-opt" data-role="m5-ai-edit-opt"><input class="form-control" data-k="name" placeholder="옵션 이름" value="' + esc(o.name || '') + '">' +
+               '<input class="form-control" data-k="values" placeholder="값(쉼표로 구분)" value="' + esc((o.values || []).join(', ')) + '"></div>';
+      }).join('');
+    } else {
+      form.innerHTML = '<label class="m5-note">상세 설명</label><textarea class="form-control" rows="6" data-role="m5-ai-edit-desc">' + esc(product.description_ko || product.description || '') + '</textarea>';
+    }
+    form.innerHTML += '<div class="kgp-risk-acts"><button type="button" class="kgp-risk-btn is-main" data-role="m5-ai-edit-save">저장</button>' +
+      '<button type="button" class="kgp-risk-btn" data-role="m5-ai-edit-cancel">닫기</button></div><div class="m5-note" data-role="m5-ai-edit-state" aria-live="polite"></div>';
+    row.parentNode.insertBefore(form, row.nextSibling);
+    var first = form.querySelector('input,textarea'); if (first) first.focus();
   }
   // Z10-C: 잡조차 못 띄운 줄(메모리 여유 없음 등)도 사람 이름으로 — 코드(「coupang:woojoo」)를 그대로 보이지 않는다
   function mkLabel(m) {
@@ -682,11 +730,12 @@
              ? '<div><button type="button" class="m5-fix" data-role="m5-rep-override" data-override="rep-image-override" data-label="대표 사진 그래도 등록">대표 사진 그래도 등록</button></div>' : '') : '') +
          // 오너 11-23 ⑤: 원본 주소가 없어 쿠팡 상품코드를 못 만든다 — 그 자리에서 주소를 넣고 다시 확인
          (r.hold && (r.fixes || []).indexOf('source_url') >= 0
-           ? '<div class="m5-src" data-role="m5-source-url"><input type="url" inputmode="url" class="form-control" data-role="m5-source-url-in" placeholder="https://item.taobao.com/item.htm?id=…" autocomplete="off">' +
+           ? '<div class="m5-src" data-role="m5-source-url"><input type="url" inputmode="url" class="form-control" data-role="m5-source-url-in" placeholder="' + esc(SRC_EXAMPLE) + '" autocomplete="off">' +
              '<button type="button" class="m5-fix" data-role="m5-source-url-save" data-market="' + esc(r.market) + '">원본 주소 넣기</button></div>' : '') +
          // Y7-O: 선주문(옵션 값 「2-3周发货」) — 오너 방침상 등록 버튼이 저절로 풀지 않는다(OVERRIDES 밖). 이 버튼만 푼다.
          (r.hold && (r.fixes || []).indexOf('lead_time') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-leadtime-override" data-override="lead-time-override" data-label="선주문 그래도 등록">선주문 그래도 등록</button></div>' : '');
+    if (r.hold) h += holdFixHtml(r, h);                                             // 오너 11-25 15:56 ②: 보류마다 그 자리에서 고치는 길
     if (!r.ok && h.indexOf('class="m5-fix"') < 0 && h.indexOf('data-role="m5-cat-pick"') < 0) h += nextAction(r);   // 오너 11-23: 다음 행동 하나
     return h + '</div>';
   }
@@ -760,7 +809,7 @@
     h += aiFixHtml(pvAiFix);
     pvOrder.forEach(function (m) { h += pvRowHtml(m); });
     if (window.kgpAiReviewHtml) h += window.kgpAiReviewHtml(pvAiReview, itemId);      // 순찰 106-C · 오너 11-23 ①: 상품 번호를 넘긴다(빠지면 수락·기각이 죽는다)
-    if (pvState === 'running') h += pvQueue
+    if (pvBusy()) h += pvQueue
       // Z10: 줄 서는 중(프로세스당 사전검증 1개 — 메모리 보호)
       ? '<div class="m5-note" data-role="m5-check-progress" data-queued="1">' + esc(pvQueue) + '</div>'
       : '<div class="m5-note" data-role="m5-check-progress">마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳 확인됨 — 나머지는 오는 대로 보여 드려요.</div>';
@@ -774,29 +823,33 @@
     // 오너 11-25 ①b: 한 버튼에 묶지 않는다 — 주 버튼 「통과한 N곳만 등록」 · 보조 「보류 M곳도 그래도 등록」
     var n = okMarkets.length;
     goBtn.dataset.mode = n ? 'go' : 'check';
-    goBtn.disabled = blocked || (!n && pvState === 'running');
-    goBtn.textContent = n ? '통과한 ' + n + '곳만 등록' : (pvState === 'running' ? '확인하는 중…' : (held.length ? '통과한 마켓 없음' : '다시 사전검증'));
-    if (!n && held.length && pvState !== 'running') goBtn.disabled = true;
+    goBtn.disabled = blocked || (!n && pvBusy());
+    goBtn.textContent = n ? '통과한 ' + n + '곳만 등록' : (pvBusy() ? '확인하는 중…' : (held.length ? '통과한 마켓 없음' : '다시 사전검증'));
+    if (!n && held.length && !pvBusy()) goBtn.disabled = true;
     if (heldBtn) {
-      heldBtn.hidden = !held.length || pvState === 'running' || sentDone;
+      heldBtn.hidden = !held.length || pvBusy() || sentDone;
       heldBtn.disabled = blocked;
       heldBtn.textContent = '보류 ' + held.length + '곳도 그래도 등록' + (n ? '(통과 ' + n + '곳과 함께)' : '');
     }
-    hint(n ? (held.length ? '보류 마켓은 빠지고 통과한 곳만 나가요.' : '') : (pvState === 'running' ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
+    hint(n ? (held.length ? '보류 마켓은 빠지고 통과한 곳만 나가요.' : '') : (pvBusy() ? '마켓마다 확인하는 중이에요 — 통과하는 대로 등록 버튼이 켜져요.'
       : (anyHold ? '보류된 마켓을 보강하거나 「보류도 그래도 등록」을 누르면 등록할 수 있어요.'
         : '통과한 마켓이 없어요 — 위 사유를 고친 뒤 다시 사전검증해 주세요.')));
     // 오너 11-23 A: 잡 진행 한 줄(셸) — 사전검증 중·대기 · 끝나면 결과 한 마디(같은 상태는 다시 안 띄운다)
     if (window.kgpJobLine && pvOrder.length) {
-      var line = pvState === 'running'
+      var line = pvBusy()
         ? (pvQueue ? '사전검증 대기 — ' + pvQueue : '사전검증 중 — 마켓 ' + (pvOrder.length - pvPending.length) + '/' + pvOrder.length + '곳')
-        : (n ? '사전검증 끝 — 등록할 수 있는 마켓 ' + n + '곳' : '사전검증 끝 — 통과한 마켓이 없어요');
+        : '사전검증 끝 — 통과 ' + n + ' · 보류 ' + pvOrder.filter(function (m) { return !pvOff[m] && pvRows[m] && pvRows[m].hold; }).length +
+          (pvState === 'running' ? ' (자동 보강은 이어서 해요)' : '');
       if (line !== pvJobLine) {
         pvJobLine = line;
-        if (pvState === 'running') window.kgpJobLine.show(line); else if (n) window.kgpJobLine.done(line); else window.kgpJobLine.fail(line);
+        if (pvBusy()) window.kgpJobLine.show(line); else if (n) window.kgpJobLine.done(line); else window.kgpJobLine.fail(line);
       }
     }
   }
   var pvJobLine = '';
+  // 오너 11-25 15:56 ⑤: 마켓 결과가 다 오면 「끝」이다 — 서버 작업이 자동 보강(번역·AI 검수)으로 아직 running이어도
+  //   「사전검증 중 — 4/4곳」으로 남기지 않는다. 폴링은 이어서 한다(보강 결과가 오면 다시 그린다).
+  function pvBusy() { return pvState === 'running' && (!pvOrder.length || pvPending.length > 0); }
   var pvQueue = '';
   function pvPoll(jobNo, url) {
     if (jobNo !== pvJob) return;
@@ -880,6 +933,30 @@
       if (!d.ok) { b.disabled = false; st.textContent = '저장하지 못했어요 — ' + (d.error || '사유 없음'); return; }
       form.remove(); window.kgpNotice('저장했어요 — 다시 검증할게요', 'info'); recheckAll();
     });
+  });
+  checksEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('button[data-role=m5-hold-act]') : null;
+    if (!b) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'docs') { location.href = '/seller/me#docs'; return; }                // 인증 서류는 내 정보의 서류 칸(한 곳)
+    if (act === 'photo' || act === 'price') { var man = root.querySelector('[data-role=m5-manual]'); if (man) man.hidden = false; }   // 숨어 있던 「폰에서 사진·옵션 넣기」를 연다
+    if (act === 'photo') { var inp = document.getElementById('m5Photos'); if (inp) inp.click(); else window.kgpNotice('이 화면에서 사진을 올릴 수 없어요.', 'warning'); return; }
+    if (act === 'edit-title' || act === 'edit-option' || act === 'edit-desc') { openRowEditor(b, act === 'edit-title' ? 'title' : (act === 'edit-option' ? 'option' : 'description')); return; }
+    if (act === 'price' || act === 'ship' || act === 'risk') {
+      var el = act === 'price' ? document.getElementById('m5OptPrice') : root.querySelector(act === 'ship' ? '[data-role=m5-ship-input]' : '[data-role=risk-block]');
+      if (!el) { window.kgpNotice('고칠 칸을 찾지 못했어요 — 다시 사전검증해 주세요.', 'warning'); return; }
+      if (el.tagName === 'DETAILS') el.open = true;
+      if (el.getAttribute && el.getAttribute('data-open') !== null) el.setAttribute('data-open', '1');
+      el.scrollIntoView({block: 'center'}); if (el.focus) el.focus();
+      return;
+    }
+    if (act === 'refetch' || act === 'discard') {
+      b.disabled = true; var lb = b.textContent; b.textContent = '요청하는 중…';
+      post('/seller/collect/' + encodeURIComponent(itemId) + (act === 'refetch' ? '/recollect' : '/discard'), act === 'refetch' ? {mode: 'queue'} : {}).then(function (d) {
+        b.disabled = false; b.textContent = lb;
+        window.kgpNotice(d.ok ? (d.message || (act === 'refetch' ? '다시 가져오기 줄에 넣었어요 — 끝나면 다시 확인해요' : '목록에서 버렸어요(되살릴 수 있어요)')) : (d.error || '요청하지 못했어요'), d.ok ? 'info' : 'warning');
+      });
+    }
   });
   // ③ 「상세 사진 가져오기」(서버 다시 수집 줄) · 「사진 올리기」(이 카드의 사진 올리기와 같은 길)
   window.kgpAiReviewVerb = function (verb, iid, btn) {
