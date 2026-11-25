@@ -48,6 +48,8 @@
       {% endfor %}
     </div>
     {% endif %}
+    {# 오너 11-25 15:56 ③: 반쪽 등록 — 고른 마켓 중 안 올라간 곳(「등록 끝」으로 닫지 않는다) → 누르면 그 카드에서 이어서 #}
+    {% if it.left_label %}<a class="mk-chip mk-chip-left" data-role="mk-left" href="/seller/m/item/{{ it.id }}?resume=1" title="이어서 올리기">{{ it.left_label }}</a>{% endif %}
   </td>
   <td class="ch-c-when" data-label="마지막 동작" title="{{ it.last_action.line if it.last_action else '' }}">
     {% if it.last_action and it.last_action.line %}

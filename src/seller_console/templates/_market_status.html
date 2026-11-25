@@ -342,6 +342,9 @@
   document.addEventListener('change', function (ev) {
     var box = ev.target;
     if (!box || !box.matches || !box.matches('input[type=checkbox][data-registered="1"]') || !box.checked || dupOk) return;
+    // 오너 11-25 15:56 ③: 「고쳐서 다시 올리기」·「이어서 올리기」로 고른 칸은 이미 그 마켓을 다시 올리겠다고 누른 것 —
+    //   여기서 또 묻지 않는다(실제 전송 때 서버가 「중복 등록」 확인을 한 번 더 받는다).
+    if (box.getAttribute('data-dup-ok') === '1') return;
     box.checked = false;
     var host = box.closest('label') || box.parentNode;
     if (!host || (host.nextElementSibling && host.nextElementSibling.matches('[data-role=dup-confirm]'))) return;

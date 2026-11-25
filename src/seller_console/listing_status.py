@@ -480,3 +480,57 @@ def remember(extra: dict, row: dict) -> bool:
 def reset_cache() -> None:
     with _LOCK:
         _CACHE.clear()
+
+
+# ── 오너 11-25 15:56 ③ — 쿠팡이 **실제로** 반려한 상품 · 반쪽 등록(남은 마켓) ───────────────────────────────
+#: 반려 사유 원문 → 사람 말 한 줄(무엇 때문에 · 무엇을 고치면 되나). 원문은 그대로 따로 보인다 — 이건 요약일 뿐이다.
+_REJECT_HINTS = (
+    (("상품명", "노출상품명", "title", "productname"), "상품명 때문에 반려됐어요 — 금지어·과장·중복 낱말을 고쳐 다시 올려요."),
+    (("이미지", "사진", "대표", "image", "썸네일"), "사진 때문에 반려됐어요 — 대표 사진(글자·크기·배경)을 바꿔 다시 올려요."),
+    (("카테고리", "category"), "카테고리가 맞지 않아 반려됐어요 — 카테고리를 다시 골라 올려요."),
+    (("옵션", "option", "단위"), "옵션 때문에 반려됐어요 — 옵션 이름·값을 고쳐 다시 올려요."),
+    (("상표", "브랜드", "지식재산", "trademark", "brand"), "상표·브랜드 문제로 반려됐어요 — 상표 낱말을 빼고 다시 올려요."),
+    (("표시광고", "광고", "효능", "의료", "과장"), "광고 문구 때문에 반려됐어요 — 효능·과장 표현을 빼고 다시 올려요."),
+    (("고시", "인증", "kc", "필수"), "필수 정보(고시·인증)가 빠져 반려됐어요 — 빠진 칸을 채워 다시 올려요."),
+    (("가격", "price"), "가격 때문에 반려됐어요 — 판매가를 확인해 다시 올려요."),
+)
+
+
+def reject_summary(comment: str) -> str:
+    """반려 사유 원문 → 한 줄. 못 가르면 「반려 사유(원문)를 보고 고쳐 다시 올려요」 — 지어내지 않는다."""
+    low = str(comment or "").lower()
+    if not low.strip():
+        return "쿠팡이 사유를 보내지 않았어요 — WING에서 반려 사유를 확인해 주세요."
+    for keys, line in _REJECT_HINTS:
+        if any(k.lower() in low for k in keys):
+            return line
+    return "반려 사유(원문)를 보고 고쳐 다시 올려요."
+
+
+def rejected(extra: dict) -> List[Dict]:
+    """마켓마다 **가장 최근 등록이 반려**인 것 — `[{market, label, product_id, comment, summary, checked_at}]`."""
+    out = []
+    for r in chips(extra):
+        rv = r.get("review") or {}
+        if str(rv.get("state") or "") == "rejected":
+            out.append({"market": r["market"], "label": r["label"], "product_id": r.get("shown_no") or r.get("product_id") or "",
+                        "comment": str(rv.get("comment") or ""), "summary": reject_summary(rv.get("comment") or ""),
+                        "checked_at": str(rv.get("checked_at") or "")})
+    return out
+
+
+def left_markets(extra: dict) -> List[str]:
+    """반쪽 등록 — 고른 마켓 중 아직 안 올라간 곳(`extra.left_markets`). 그 마켓에 등록 기록이 생기면 빠진다."""
+    done = {r["market"] for r in records(extra)}
+    return [m for m in ((extra or {}).get("left_markets") or []) if isinstance(m, str) and m and m not in done]
+
+
+def left_label(markets: List[str]) -> str:
+    """「쿠팡 남음」 · 「쿠팡·스마트스토어 남음」 — 사람 이름으로(계정은 묶는다)."""
+    names = []
+    for m in markets:
+        n = {"coupang": "쿠팡", "smartstore": "스마트스토어", "elevenst": "11번가", "shopify": "Shopify",
+             "woocommerce": "멀티샵"}.get(str(m).partition(":")[0], str(m))
+        if n not in names:
+            names.append(n)
+    return ("·".join(names) + " 남음") if names else ""

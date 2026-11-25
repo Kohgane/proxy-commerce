@@ -260,6 +260,7 @@ def list_items(
                 # F49-T 5부: 목록 타일 보강 여부(enrich_axes가 읽는다) · 이미지 완료 기준(「이미지 부족」 배지).
                 "enriched": _ex.get("enriched"), "image_check": _ex.get("image_check"),
                 "risk_skip": _ex.get("risk_skip"),   # Y10 목록 칩 「등록 보류: 사유」
+                "left_markets": _ex.get("left_markets"),   # 오너 11-25 15:56 ③: 반쪽 등록 칩 「쿠팡 남음」
                 # Y12-A: 목록 「마지막 동작」·뱃지 「실패」·「손댈 것」(작은 값만)
                 "coupang_detail_sync": _ex.get("coupang_detail_sync"), "attn": _ex.get("attn"),
             }, ensure_ascii=False)
