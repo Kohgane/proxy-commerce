@@ -2342,6 +2342,9 @@ main:has(> .rp-shell) > .rp-shell { flex: 1 1 auto; height: auto; min-height: 0;
 /* Y7-K: 같은 상품·같은 마켓 2건 이상 — 칩 옆 「중복 n건 — 정리」(주황 = 고칠 것, 누르면 상태 팝업) */
 .mk-chip.mk-chip-dup { background: color-mix(in srgb, var(--orange) 16%, transparent); border-color: color-mix(in srgb, var(--orange) 45%, transparent);
   color: var(--orange-strong, var(--orange)); font-weight: 600; }
+/* 오너 11-25 15:56 ③: 반쪽 등록 「쿠팡 남음」 — 할 일이 남았다는 뜻(금 테두리 · 누르면 이어서) */
+.mk-chip.mk-chip-left { background: color-mix(in srgb, var(--gold) 14%, transparent); border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+  color: var(--text); text-decoration: none; }
 .mk-chip.tone-ok { background: color-mix(in srgb, var(--success) 16%, transparent); border-color: color-mix(in srgb, var(--success) 40%, transparent); color: var(--success); }
 .mk-chip.tone-bad { background: color-mix(in srgb, var(--danger) 14%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
 .mk-chip.tone-fail { background: color-mix(in srgb, var(--orange) 16%, transparent); border-color: color-mix(in srgb, var(--orange) 45%, transparent); color: var(--orange-strong); }
@@ -2708,6 +2711,7 @@ a.hb-tile:hover { border-color: var(--teal); }
   .mk-badge.kind-none { border: 1px dashed var(--border); color: var(--text-muted); }
   .mk-badge.kind-bad { border: 1px solid var(--danger); color: var(--danger); }                        /* 반려는 신호라 남긴다 */
   .mk-chip.mk-chip-dup { height: 32px; }
+  .mk-chip.mk-chip-left { height: 32px; display: inline-flex; align-items: center; }
 }
 @media (min-width: 768px) {
   .mk-badge.kind-bad, .mk-badge.kind-fail { width: auto; min-width: 32px; padding: 0 10px; border-radius: var(--radius-pill); }

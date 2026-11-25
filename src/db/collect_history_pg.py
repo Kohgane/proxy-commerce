@@ -60,6 +60,7 @@ _LEAN_EXTRA = (
     # Y12-A: 목록 「마지막 동작」·뱃지 「실패」·「손댈 것」 — 작은 값만
     "'coupang_detail_sync', extra_json->'coupang_detail_sync',"
     "'attn', extra_json->'attn',"
+    "'left_markets', extra_json->'left_markets',"   # 오너 11-25 15:56 ③: 반쪽 등록 칩 「쿠팡 남음」
     "'images', CASE WHEN jsonb_typeof(extra_json->'images')='array' AND jsonb_array_length(extra_json->'images')>0 "
     "THEN jsonb_build_array(extra_json->'images'->0) ELSE '[]'::jsonb END,"
     # 오너 11-23(목록 썸네일 빈 상자): 우리 저장본(Cloudinary) 첫 장 — 원본 CDN(알리 등)이 막혀도 목록 사진은 우리 것으로.
@@ -399,6 +400,7 @@ def dashboard_rows(*, seller_ids=None) -> list:
            "'uploaded', extra_json->'uploaded', "
            "'coupang_detail_sync', extra_json->'coupang_detail_sync', "
            "'attn', extra_json->'attn', "
+           "'left_markets', extra_json->'left_markets', "   # 오너 11-25 15:56 ③: 반쪽 등록 칩 「쿠팡 남음」
            "'risk_skip', extra_json->'risk_skip', "
            f"'_polish_ats', (SELECT COALESCE(jsonb_agg(e->'polish'->>'at'), '[]'::jsonb) FROM jsonb_array_elements({_KO_ARR}) e "
            "WHERE jsonb_typeof(e->'polish')='object' AND e->'polish' ? 'at' AND e->'polish' ? 'version')) "

@@ -386,6 +386,44 @@ def refresh_item(item: dict, *, seller_id: str = "", markets: Optional[List[str]
     return out
 
 
+def notify_rejected(q: Dict, st: Dict) -> bool:
+    """오너 11-25 15:56 ③ — 쿠팡 반려를 **처음 본 순간** 한 번: 등록 기록(`uploaded[].review`)에 반려·사유를 적고
+    푸시 「쿠팡 반려 1건 — 고쳐서 다시 올리기」(탭하면 그 상품 카드 `?rej=1`). 같은 상품번호로 다시 보지 않는다(`reject_pushed`).
+    반환 = 이번에 보냈나. 실패해도 큐를 막지 않는다."""
+    try:
+        from src.seller_console import collect_history_store as _chs
+        sid_owner = str(q.get("seller_id") or "")
+        sent = {"v": False}
+        title_box = {"t": ""}
+
+        def _put(ex):
+            for u in ex.get("uploaded") or []:
+                if not isinstance(u, dict) or u.get("market") != q.get("market"):
+                    continue
+                if str(u.get("product_id") or "") not in ("", str(q.get("sid") or "")):
+                    continue
+                rv = u.get("review") if isinstance(u.get("review"), dict) else {}
+                already = rv.get("reject_pushed") == str(q.get("sid") or "")
+                rv.update({"state": "rejected", "comment": str(st.get("comment") or rv.get("comment") or ""),
+                           "label": st.get("label") or "승인반려", "status_raw": st.get("status_raw") or rv.get("status_raw") or "",
+                           "checked_at": datetime.now(timezone.utc).isoformat()})
+                if not already:
+                    rv["reject_pushed"] = str(q.get("sid") or "")
+                    sent["v"] = True
+                u["review"] = rv
+            title_box["t"] = str(ex.get("title_ko") or ex.get("title") or "")
+            return ex
+        _chs.merge_extra(str(q["item_id"]), _put, seller_ids={sid_owner} if sid_owner else None)
+        if sent["v"]:
+            from src.notifications.apns import notify
+            notify(sid_owner, "쿠팡 반려 1건 — 고쳐서 다시 올리기", (title_box["t"] or "상품")[:80] + " · 눌러서 사유 보기",
+                   f"/seller/m/item/{q['item_id']}?rej=1")
+        return sent["v"]
+    except Exception as exc:                                       # noqa: BLE001
+        logger.warning("[쿠팡 반려 알림] 실패: %s", exc)
+        return False
+
+
 def drain(get_item: Callable[[str, str], Optional[dict]], save_for: Callable[[str, str], Callable[[dict], None]],
           make_up: Optional[Callable[[str], object]] = None, budget: int = 10) -> Dict:
     """큐를 비운다 — 번역 대기는 다시 만들어 보고, 승인 대기는 상태를 물어 승인됐으면 보낸다. `{picked, sent, ok, left, rows}`."""
@@ -407,6 +445,8 @@ def drain(get_item: Callable[[str, str], Optional[dict]], save_for: Callable[[st
         with job_market_env(q.get("seller_id") or ""):
             if q.get("reason") != "번역 대기":
                 st = make_up(q["account"]).review_status(q["sid"])
+                if st.get("state") == "rejected":
+                    notify_rejected(q, st)                        # 오너 11-25 15:56 ③: 반려 — 그 상품 카드로 가는 푸시(한 번)
                 if st.get("state") not in ("approved", "saved", "rejected"):
                     out["rows"].append({**q, "waiting": st.get("state") or "unknown"})
                     continue                                      # 아직 검토 중 — 다음 회전에

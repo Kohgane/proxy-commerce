@@ -148,6 +148,29 @@
     <div class="m5-note" data-role="m5-incomplete-state" aria-live="polite"></div>
   </section>
   {% endif %}
+  {% if m5.rejected %}
+  {# 오너 11-25 15:56 ③: 쿠팡이 **실제로** 반려한 마켓 — 사유 원문 그대로 + 사람 말 한 줄 + 「고쳐서 다시 올리기」(사전검증이 지난 반려 사유를
+     자동으로 고치고(Y8) 고친 것 → 바뀐 값을 보인다 · 등록은 오너가 누를 때만) #}
+  <section class="m5-reject" id="m5Rejected" data-role="m5-rejected">
+    {% for r in m5.rejected %}
+    <div class="m5-res is-bad" data-role="m5-reject-row" data-market="{{ r.market }}">
+      <b>{{ r.label }} — 반려{% if r.product_id %} · {{ r.product_id }}{% endif %}</b>
+      <div class="m5-reject-sum" data-role="m5-reject-summary">{{ r.summary }}</div>
+      <div class="m5-note">쿠팡이 보낸 사유(원문):</div>
+      <pre class="m5-reject-raw" data-role="m5-reject-raw">{{ r.comment or '(사유 없음)' }}</pre>
+      <button type="button" class="m5-fix" data-role="m5-reject-fix" data-market="{{ r.market }}">고쳐서 다시 올리기</button>
+    </div>
+    {% endfor %}
+    <p class="m5-note">누르면 그 마켓만 사전검증해요 — 지난 반려 사유는 자동으로 고치고 「고친 것 → 바뀐 값」을 보여 줘요. 등록은 직접 누를 때만 나가요.</p>
+  </section>
+  {% endif %}
+  {% if m5.left %}
+  {# 오너 11-25 15:56 ③: 반쪽 등록 — 지난번 고른 마켓 중 안 올라간 곳. 「등록 끝」으로 닫지 않고 남겨 둔다 #}
+  <section class="m5-left" id="m5Left" data-role="m5-left" data-markets="{{ m5.left|join(',') }}">
+    <b>{{ m5.left_label }}</b> — 지난번에 안 올라간 마켓이에요.
+    <button type="button" class="m5-fix" data-role="m5-left-resume">이어서 올리기</button>
+  </section>
+  {% endif %}
   <fieldset class="m5-markets" id="m5Markets" data-role="m5-markets">
     <legend class="m5-legend">등록할 마켓</legend>
     {# Z5 후속(오너 2026-10-06): 연결된 마켓 전부·전부 토글 — 처음 체크가 어디서 왔는지 한 줄(지난 등록 → 설정 → 우주대행 묶음) #}
@@ -255,6 +278,11 @@
   .m5-incomplete ul { margin: 6px 0; padding-left: 1.1rem; }
   .m5-incomplete-acts { display: flex; flex-direction: column; gap: var(--space-2); }
   .m5-off-row { margin-top: 4px; }
+  .m5-reject, .m5-left { margin: 0 0 var(--space-3); }
+  .m5-reject-sum { font-weight: 600; margin: 4px 0; }
+  .m5-reject-raw { white-space: pre-wrap; word-break: break-word; font-size: .9rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: var(--space-2); margin: 4px 0 var(--space-2); max-height: 14rem; overflow: auto; }
+  .m5-left { padding: var(--space-3); border: 1px solid var(--gold); border-radius: var(--radius); background: var(--surface); }
   .m5-hold-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 4px; }
   .m5-fix-quiet { color: var(--text-muted); border-color: var(--border); }
   .m5-btn { width: 100%; min-height: 52px; font-size: 1.08rem; border-radius: 14px; margin-top: 10px; }
@@ -958,6 +986,28 @@
       });
     }
   });
+  // 오너 11-25 15:56 ③: 「고쳐서 다시 올리기」·「이어서 올리기」 — 그 마켓만 골라 사전검증(전송 0). 이미 등록된 마켓이라 등록 때 중복 확인을 한 번 더 묻는다.
+  function pickOnly(ms) {
+    root.querySelectorAll('input[name=m5-market]').forEach(function (i) {
+      var on = ms.indexOf(i.value) >= 0;
+      if (on) { i.disabled = false; i.removeAttribute('data-not-ready'); i.setAttribute('data-dup-ok', '1'); }
+      i.checked = on; i.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+  }
+  root.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-reject-fix],[data-role=m5-left-resume]') : null;
+    if (!b) return;
+    var ms = b.getAttribute('data-role') === 'm5-reject-fix' ? [b.getAttribute('data-market')]
+      : (root.querySelector('[data-role=m5-left]').getAttribute('data-markets') || '').split(',').filter(Boolean);
+    pickOnly(ms);
+    resetGo(); runCheck(ms, false);
+    checksEl.scrollIntoView({block: 'start'});
+  });
+  (function () {            // 푸시·목록 칩에서 왔으면 그 칸으로
+    var q = location.search;
+    var el = /[?&]rej=1/.test(q) ? root.querySelector('[data-role=m5-rejected]') : (/[?&]resume=1/.test(q) ? root.querySelector('[data-role=m5-left]') : null);
+    if (el) setTimeout(function () { el.scrollIntoView({block: 'start'}); }, 200);
+  })();
   // ③ 「상세 사진 가져오기」(서버 다시 수집 줄) · 「사진 올리기」(이 카드의 사진 올리기와 같은 길)
   window.kgpAiReviewVerb = function (verb, iid, btn) {
     if (verb === 'photo_upload') {
@@ -1199,6 +1249,15 @@
       if (window.kgpJobLine) { if (_ok) window.kgpJobLine.done('등록 끝 — ' + _ok + '곳 등록됨'); else window.kgpJobLine.fail('등록 끝 — 등록된 마켓이 없어요'); }
       // 끝나면 보조 버튼(「보류도 그래도 등록 — 통과와 함께」)을 숨긴다 — 누르면 이미 나간 마켓을 또 보낸다. 보류 마켓은 다시 사전검증부터.
       sentDone = !!_ok;
+      // 오너 11-25 15:56 ③: 반쪽 등록 — 고른 마켓(뺀 것·취소한 것 제외) 중 안 올라간 곳을 「남음」으로 남긴다(목록 칩·필터·이어서 올리기)
+      var _okM = rs.filter(function (r) { return r.success; }).map(function (r) { return r.market; });
+      var _left = pvOrder.filter(function (m) { return !pvOff[m] && !sendCancel[m] && _okM.indexOf(m) < 0; });
+      if (_okM.length || _left.length) {
+        post('/seller/collect/' + encodeURIComponent(itemId) + '/left-markets', {markets: _left}).then(function (d) {
+          if (d.ok && d.label) doneEl.insertAdjacentHTML('beforeend', '<div class="m5-note" data-role="m5-left-note">' + esc(d.label) +
+            ' — 목록에 남겨 뒀어요. 고친 뒤 「이어서 올리기」로 마저 올려요.</div>');
+        });
+      }
       if (heldBtn) { heldBtn.hidden = sentDone; heldBtn.disabled = sentDone; }
       withHeld = false;
       if (_ok) { goBtn.disabled = true; goBtn.textContent = '등록 끝'; } else { goBtn.disabled = false; }

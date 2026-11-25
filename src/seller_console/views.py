@@ -2396,6 +2396,7 @@ def mobile_list_ctx(item: dict) -> dict:
     _mark_not_ready(markets, product)                   # 오너 11-25 ④: 수수료율 모르는 마켓 = 체크박스 비활성(유저엔 env 이름 없이)
     from .listing_status import records as _mk_records
     from .listing_status import chips as _mk_chips
+    from .listing_status import rejected as _ls_rejected, left_markets as _ls_left, left_label as _ls_left_label
     market_chips = _mk_chips(ex)                         # Y7-K: 마켓당 칩 하나 + 중복 배지
     return {"item_id": str(item.get("id") or ""), "title": product["title"] or "(제목 없음)",
             "thumb": product["thumbnail"], "images_count": len(images),
@@ -2408,6 +2409,8 @@ def mobile_list_ctx(item: dict) -> dict:
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
             "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick, "incomplete": incomplete,
             "src_example": source_url_example(str(item.get("url") or "")),
+            # 오너 11-25 15:56 ③: 쿠팡이 실제로 반려한 마켓(원문+한 줄) · 반쪽 등록으로 남은 마켓
+            "rejected": _ls_rejected(ex), "left": _ls_left(ex), "left_label": _ls_left_label(_ls_left(ex)),
             "market_chips": market_chips,
             "market_records": _market_records(ex),       # M8: 「마켓 등록본」 — 데스크톱과 같은 줄
             "product": product,
@@ -3656,6 +3659,13 @@ def _persist_upload_status(item_id, result_dict) -> None:
                 else:
                     uploaded[same] = {**uploaded[same], **{k: v for k, v in rec.items() if v}}
                 changed = True
+                # 오너 11-25 15:56 ③: 쿠팡은 반려가 나중에 온다 — 승인 결과를 지켜보는 줄에 세운다(읽기만 · 반려면 푸시 1번)
+                if rec["market"].startswith("coupang") and rec["product_id"]:
+                    try:
+                        from src.services import coupang_review_watch as _crw
+                        _crw.add(str(item_id), rec["market"], rec["product_id"], seller_id=str(item.get("seller_id") or ""))
+                    except Exception as _wexc:                                   # noqa: BLE001
+                        logger.warning("[쿠팡 승인 지켜보기] 줄 세우기 실패: %s", _wexc)
                 # Y11-P: 네이버 가격대별 분할 등록 — 첫 상품 말고 나머지도 각자 기록(번호가 다르니 쌓인다)
                 for sp in (r.get("split_products") or [])[1:]:
                     pid = str(sp.get("product_id") or "")
@@ -3667,6 +3677,10 @@ def _persist_upload_status(item_id, result_dict) -> None:
         if not changed:
             return
         extra["uploaded"] = uploaded
+        # 오너 11-25 15:56 ③: 반쪽 등록으로 남겨 둔 마켓이 이번에 올라갔으면 「남음」에서 뺀다
+        _ok_m = {str(r.get("market")) for r in (result_dict.get("results") or []) if r.get("success")}
+        if extra.get("left_markets"):
+            extra["left_markets"] = [m for m in extra["left_markets"] if m not in _ok_m]
         from .collect_history_store import update as _update
         _update(str(item_id), seller_ids=_seller_identities(),
                 extra_json=json.dumps(extra, ensure_ascii=False))
@@ -5033,6 +5047,31 @@ def collect_source_url(item_id):
         return jsonify({"ok": False, "error": "저장하지 못했어요 — 다시 눌러 주세요."}), 502
     logger.info("[원본 주소] item=%s 넣음 sku=%s", item_id[:8], sku)
     return jsonify({"ok": True, "url": url, "sku": sku})
+
+
+@bp.post("/collect/<item_id>/left-markets")
+def collect_left_markets(item_id):
+    """오너 11-25 15:56 ③ — 반쪽 등록: 고른 마켓 중 이번에 안 올라간 곳을 「남음」으로 적는다(`{markets: [...]}` · 빈 목록 = 지움).
+    목록 칩 「쿠팡 남음」·필터 「남은 마켓」·카드 「이어서 올리기」의 재료. 등록하면 저절로 빠진다(`_persist_upload_status`)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    body = request.get_json(silent=True) or {}
+    ms = [str(m)[:40] for m in (body.get("markets") or []) if str(m).strip()][:12]
+    from . import collect_history_store as _chs
+
+    def _put(ex, _ms=ms):
+        if _ms:
+            ex["left_markets"] = _ms
+        else:
+            ex.pop("left_markets", None)
+        return ex
+    if not _chs.merge_extra(str(item_id), _put, seller_ids=_seller_identities()):
+        return jsonify({"ok": False, "error": "저장하지 못했어요."}), 502
+    from .listing_status import left_label
+    return jsonify({"ok": True, "left": ms, "label": left_label(ms)})
 
 
 @bp.post("/collect/<item_id>/take-down")
@@ -12030,6 +12069,10 @@ def _shape_collect_items(items, current_lang):
         from .listing_status import chips as _mk_chips, badge_slots as _mk_slots
         it["market_chips"] = _mk_chips(ex)              # Y7-K: 마켓당 칩 하나 + 중복 배지
         it["market_slots"] = _mk_slots(ex)              # Y12-C: 고·우·셰·코 고정 자리(빈 자리 = 빈 테두리)
+        # 오너 11-25 15:56 ③: 반려 배지 · 반쪽 등록 「쿠팡 남음」
+        from .listing_status import rejected as _rej, left_markets as _lm, left_label as _ll
+        it["rejected_n"] = len(_rej(ex))
+        it["left_label"] = _ll(_lm(ex))
         # Y12-A: 한 줄 = 썸네일 · 상품명 · 뱃지 4 · 마지막 동작(「10-17 14:10 쿠팡 상세 보냄」 KST)
         from .attention import last_action as _last_action, items as _attn_items
         it["last_action"] = _last_action(ex, it.get("collected_at") or "")
@@ -12175,6 +12218,8 @@ def collect_history():
     mst_f = request.args.get("mst", "").strip()
     mst_f = mst_f if (mk_f and mst_f in ("sale", "wait", "rejected")) else ""
     disc_f = request.args.get("discarded", "").strip() == "1"      # Y12-D: 버린 상품만(기본은 숨김 — 드로어에서 되살리기)
+    rej_f = request.args.get("rej", "").strip() == "1"             # 오너 11-25 15:56 ③: 쿠팡 등 실제 반려만
+    left_f = request.args.get("left", "").strip() == "1"           # 오너 11-25 15:56 ③: 반쪽 등록(남은 마켓)만
     per_page = request.args.get("per_page", 50, type=int)
     if per_page not in (20, 50, 100):
         per_page = 50
@@ -12186,7 +12231,7 @@ def collect_history():
     # 속도: 기본 뷰(최신순·필터 없음)는 목록을 SQL LIMIT/OFFSET로 그 페이지만 가져온다
     #   (전체 스캔 회피 — 상품 많아도 첫 페이지 비용 고정). 필터/타 정렬은 기존 전체 로드 경로.
     _sql_page = (sort in ("newest", "action") and not q and not status_f and not group_f and not domain and not source
-                 and not hygiene_f and not reg_f and not mk_f)
+                 and not hygiene_f and not reg_f and not mk_f and not rej_f and not left_f)
     _order = "action" if sort == "action" else "created"
 
     items = []
@@ -12269,6 +12314,20 @@ def collect_history():
         if mk_f:
             from .home_bundles import in_market_cell as _in_cell
             items = [it for it in items if _in_cell(it, mk_f, mst_f)]
+
+        # 오너 11-25 15:56 ③: 「반려」 · 「남은 마켓」 — 등록 기록·마지막 상태만 본다(마켓에 묻지 않는다)
+        if rej_f or left_f:
+            from .listing_status import rejected as _rej, left_markets as _lm
+
+            def _ex_of(it):
+                try:
+                    return json.loads(it.get("extra_json") or "{}") or {}
+                except Exception:
+                    return {}
+            if rej_f:
+                items = [it for it in items if _rej(_ex_of(it))]
+            if left_f:
+                items = [it for it in items if _lm(_ex_of(it))]
 
         # 검색(제목/도메인/URL 부분일치)
         if q:
@@ -12365,7 +12424,8 @@ def collect_history():
         fs_buckets=fs_buckets,
         filters={"domain": domain, "source": source, "days": days,
                  "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page,
-                 "hygiene": hygiene_f, "reg": reg_f, "attn": attn_f, "discarded": disc_f, "mk": mk_f, "mst": mst_f},
+                 "hygiene": hygiene_f, "reg": reg_f, "attn": attn_f, "discarded": disc_f, "mk": mk_f, "mst": mst_f,
+                 "rej": rej_f, "left": left_f},
         mk_label=(" · ".join(x for x in (next((f"{r[1]} {r[2]}" for r in _MKR if r[0] == mk_f), ""),
                                           {"sale": "판매중", "wait": "승인대기", "rejected": "반려"}.get(mst_f, "")) if x)
                   if mk_f else ""),

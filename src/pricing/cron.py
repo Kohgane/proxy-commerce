@@ -236,6 +236,15 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                     result["option_carry_kick"] = bool(_started)
             except Exception as exc:               # noqa: BLE001 — 이월 깨우기 실패가 번역 틱을 막지 않는다
                 logger.warning("쿠팡 옵션 이월 깨우기 실패(틱은 계속): %s", exc)
+            # 오너 11-25 15:56 ③: 쿠팡 승인 결과 지켜보기(읽기만 · 줄이 있을 때만 · 최대 10건) — 반려면 그 상품 카드로 푸시 1번
+            try:
+                from src.services import coupang_review_watch as _crw
+                if _crw.rows():
+                    from src.utils import bg_job as _bg
+                    _started, _st = _bg.start("coupang-review-watch", _crw.tick)
+                    result["review_watch_kick"] = bool(_started)
+            except Exception as exc:               # noqa: BLE001 — 지켜보기 실패가 번역 틱을 막지 않는다
+                logger.warning("쿠팡 승인 지켜보기 깨우기 실패(틱은 계속): %s", exc)
             # Y11X(오너 2026-10-17): 한 장짜리 일회성 작업(이 장만 다시 다듬기 · 이 장만 OCR 다시 판정) — 줄이 있을 때만.
             try:
                 from src.services import oneshot_ops as _one

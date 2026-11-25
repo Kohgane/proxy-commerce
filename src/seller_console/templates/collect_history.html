@@ -24,6 +24,11 @@
     </form>
     <a class="mk-attn-toggle{% if filters.attn %} is-on{% endif %}" data-role="attn-filter"
        href="{{ '/seller/collect/history' if filters.attn else '/seller/collect/history?attn=1' }}"{% if filters.attn %} aria-current="page"{% endif %}>손댈 것만</a>
+    {# 오너 11-25 15:56 ③: 쿠팡 등 실제 반려 · 반쪽 등록(남은 마켓)만 #}
+    <a class="mk-attn-toggle{% if filters.rej %} is-on{% endif %}" data-role="rej-filter"
+       href="{{ '/seller/collect/history' if filters.rej else '/seller/collect/history?rej=1' }}"{% if filters.rej %} aria-current="page"{% endif %}>반려</a>
+    <a class="mk-attn-toggle{% if filters.left %} is-on{% endif %}" data-role="left-filter"
+       href="{{ '/seller/collect/history' if filters.left else '/seller/collect/history?left=1' }}"{% if filters.left %} aria-current="page"{% endif %}>남은 마켓</a>
   </div>
   {# Y12-D(오너 2026-10-18): 「버리기」 한 상품은 목록에서 숨는다(DB 삭제 아님) — 여기서 모아 보고 드로어에서 되살린다 #}
   {% if filters.discarded %}
