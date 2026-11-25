@@ -85,7 +85,7 @@ def test_passkey_browser_errors_become_korean(name, expect):
 
 def test_passkey_server_reason_kept():
     js = Path("src/seller_console/static/passkey.js").read_text(encoding="utf-8")
-    assert 'if (name === "Error" && e.message) return e.message;' in js
+    assert 'if (name === "Error" && e.message && /[가-힣]/.test(e.message)) return e.message;' in js
     tpl = (AUTH_TPL / "login.html").read_text(encoding="utf-8")
     assert "friendlyError(e)" in tpl and "(e && e.message)" not in tpl
 
