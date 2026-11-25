@@ -1594,15 +1594,6 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 
 ## 11-26 07:3x · 고가브릿지 아이폰 앱 새 빌드 — TestFlight 104 (채팅)
 
-- 소스: proxy-commerce `11cec581` 의 `mobile/ios` (바뀐 파일은 `Share/ShareViewController.swift` 하나뿐 — 나머지 8개 파일은 볼트 `apps/gogabridj-ios` 와 바이트 크기 일치 확인).
-- 볼트 커밋 `e4775d8` → `gogabridj-testflight` 실행 #4 성공(1분 44초) → **빌드 번호 104** (= 100 + 실행 번호).
-- 들어간 것: 공유 시트 제목·부제 말줄임 없음 · 서버 문구(headline/sub/next_label/next_path/source_icon) 그대로 · 썸네일 없으면 소싱처 아이콘(없으면 상자 아이콘) · 다음 행동 버튼 있으면 자동으로 안 닫힘.
-- 실기기 확인(오너): ① 알리 짧은 링크 공유 → 「주소만 담았어요」+「다시 가져오기」 ② 아마존 a.co 공유 → 담김 ③ 쿠팡 반려 푸시 탭 → 그 카드(`?rej=1`).
-- 참고: 블루호스트 잡(볼트 복사)이 막혀 있어 이번엔 깃허브 웹 편집으로 볼트에 직접 반영함. CC가 `mobile/ios` 를 또 고치면 채팅에 알려 주면 같은 방식으로 올린다.
-
-
-## 11-26 07:3x · 고가브릿지 아이폰 앱 새 빌드 — TestFlight 104 (채팅)
-
 - 소스: proxy-commerce `11cec581` 의 `mobile/ios` (바뀐 파일은 `Share/ShareViewController.swift` 하나뿐 — 나머지 파일은 볼트 `apps/gogabridj-ios` 와 바이트 크기 일치 확인).
 - 볼트 커밋 `e4775d8` → `gogabridj-testflight` 실행 #4 성공(1분 44초) → **빌드 번호 104** (= 100 + 실행 번호).
 - 들어간 것: 공유 시트 제목·부제 말줄임 없음 · 서버 문구(headline/sub/next_label/next_path/source_icon) 그대로 · 썸네일 없으면 소싱처 아이콘(없으면 상자 아이콘) · 다음 행동 버튼 있으면 자동으로 안 닫힘.
