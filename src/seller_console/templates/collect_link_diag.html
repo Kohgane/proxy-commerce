@@ -32,6 +32,29 @@
     </div>
   </div>
 
+  {% if share %}
+  {# 오너 11-25 15:56 ④: 아마존·알리 — 서버가 어디까지 읽나(원문 그대로) #}
+  <section class="mb-4" data-role="share-diag" data-market="{{ share.market }}">
+    <h2 class="pc-h3">{{ '아마존' if share.market == 'amazon' else '알리익스프레스' }} — 서버가 읽은 만큼</h2>
+    {% if share.resolve %}
+    <p data-role="share-diag-resolve"><strong>① 짧은 링크 펴기:</strong>
+      {% if share.resolve.ok %}<span class="pc-badge pc-badge-on">펴짐</span> 상품번호 {{ share.resolve.item_id }} → {{ share.resolve.canonical_url }}
+      {% else %}<span class="pc-badge pc-badge-off">못 폄</span> 사유 <code>{{ share.resolve.reason }}</code>{% endif %}
+      · 홉 {% for h in share.resolve.hops %}{{ h.host }} {{ h.status }}{% if not loop.last %} → {% endif %}{% endfor %} · {{ share.resolve.elapsed_ms }}ms</p>
+    {% endif %}
+    {% if share.page %}
+    <p data-role="share-diag-page"><strong>② 상품 페이지:</strong>
+      {% if share.page.error %}<code>{{ share.page.error }}</code>
+      {% else %}HTTP {{ share.page.status }} · {{ share.page.host }} · 본문 {{ share.page.body_len }}자{% if share.page.title %} · 제목 「{{ share.page.title }}」{% endif %}
+        {% if share.page.blocked %} · <span class="pc-badge pc-badge-off">차단 표식: {{ share.page.blocked|join(', ') }}</span>{% endif %}{% endif %}</p>
+    {% endif %}
+    {% if share.collector %}
+    <p data-role="share-diag-collector"><strong>③ 수집기:</strong>
+      {% if share.collector.error and not share.collector.title %}<code>{{ share.collector.error }}</code>
+      {% else %}제목 「{{ share.collector.title or '없음' }}」 · 사진 {{ share.collector.images }}장 · 가격 {{ share.collector.price or '없음' }} {{ share.collector.currency }}{% endif %}</p>
+    {% endif %}
+  </section>
+  {% endif %}
   {% if result %}
   <div class="op-card console-card">
     {# 뱃지 색은 한 줄로 정해 둔다 — class 속성 안에 중첩 삼항을 쓰면 읽기 어렵고,
