@@ -236,6 +236,15 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                     result["option_carry_kick"] = bool(_started)
             except Exception as exc:               # noqa: BLE001 — 이월 깨우기 실패가 번역 틱을 막지 않는다
                 logger.warning("쿠팡 옵션 이월 깨우기 실패(틱은 계속): %s", exc)
+            # 오너 11-25 감독 2: 타오바오 자동 보강 줄 — 스레드가 죽었거나 시작 못 한 초안을 틱이 마저 돌린다(최대 3건 · 켜져 있을 때만)
+            try:
+                from src.services import taobao_auto as _tba
+                if _tba.enabled() and _tba.queue_rows():
+                    from src.utils import bg_job as _bg
+                    _started, _st = _bg.start("taobao-auto-drain", _tba.drain)
+                    result["taobao_auto_kick"] = bool(_started)
+            except Exception as exc:               # noqa: BLE001 — 보강 줄 깨우기 실패가 번역 틱을 막지 않는다
+                logger.warning("타오바오 자동 보강 줄 깨우기 실패(틱은 계속): %s", exc)
             # 오너 11-25 15:56 ③: 쿠팡 승인 결과 지켜보기(읽기만 · 줄이 있을 때만 · 최대 10건) — 반려면 그 상품 카드로 푸시 1번
             try:
                 from src.services import coupang_review_watch as _crw

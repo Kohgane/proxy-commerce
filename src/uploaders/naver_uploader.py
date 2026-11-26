@@ -513,6 +513,23 @@ class NaverSmartStoreUploader(BaseUploader):
         out.pop('before', None)
         return out
 
+    def update_images(self, origin_no: str, naver_urls) -> dict:
+        """오너 11-25 감독 3 — 등록된 상품의 **사진만** 바꾼다(대표 1 + 추가 최대 9 · 네이버 CDN 주소만). 다른 칸은 조회한 값 그대로.
+        반환에 `before_n`·`after_n`(보낸 장 수)."""
+        urls = [str(u) for u in (naver_urls or []) if str(u or '').strip()][:10]
+        if not urls:
+            return {'success': False, 'error': '보낼 사진이 없어요'}
+        box = {}
+
+        def _mut(op):
+            imgs = op.get('images') if isinstance(op.get('images'), dict) else {}
+            box['before_n'] = (1 if (imgs.get('representativeImage') or {}).get('url') else 0) + len(imgs.get('optionalImages') or [])
+            box['after_n'] = len(urls)
+            return {'images': {'representativeImage': {'url': urls[0]}, 'optionalImages': [{'url': u} for u in urls[1:]]}}
+        out = self._modify_origin(origin_no, _mut)
+        out.pop('before', None)
+        return {**out, **box}
+
     def update_name(self, origin_no: str, transform) -> dict:
         """Y11-S(오너 2026-10-16 07:46) — 등록된 상품의 **상품명만** 바꾼다. `transform(지금 이름)` → 새 이름(같으면 보내지 않음).
         반환에 `before_name`·`after_name`·네이버 응답 원문(`raw`)."""

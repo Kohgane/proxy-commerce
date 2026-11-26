@@ -111,6 +111,8 @@
       links += '<button type="button" class="mst-resend" data-role="mst-resend" data-market="' + esc(r.market) + '">본문 다시 보내기</button>';
       // Y11-S: 상품명만(중괄호 묶음 정리) — 네이버 응답 원문을 이 줄 아래에
       links += '<button type="button" class="mst-resend" data-role="mst-name-fix" data-market="' + esc(r.market) + '">상품명 다시 보내기</button>';
+      // 오너 11-25 감독 3: 흐린 사진으로 올라간 상품 — 사진만 다시(두 번 눌러야 보냄 · 사진이 아직 작으면 서버가 안 보냄)
+      links += '<button type="button" class="mst-resend" data-role="mst-photo-resend" data-market="' + esc(r.market) + '">사진 다시 보내기</button>';
     }
     // Y11-R 보강(오너 2026-10-16): 쿠팡 등록본 — 크론을 기다리지 않고 그 자리에서 상세 갱신 1건(두 번 눌러야 보냄 — 쿠팡 재심사)
     if (String(r.market || '').indexOf('coupang') === 0 && r.product_id)
@@ -190,6 +192,31 @@
           (res.raw ? '<pre class="mst-raw" data-role="mst-name-fix-raw">' + esc(res.raw) + '</pre>' : '');
       }).catch(function (e) { btn.disabled = false; btn.textContent = '상품명 다시 보내기';
         if (out) { out.hidden = false; out.innerHTML = '<div class="mst-err">네트워크 오류 — ' + esc((e && e.message) || e) + '</div>'; } });
+  }
+  // 오너 11-25 감독 3: 「사진 다시 보내기」 — 첫 탭은 확인 글로 바뀌고, 두 번째 탭에 보낸다(마켓 전송 = 오너 탭)
+  function photoResend(btn) {
+    var rowEl = btn.closest('[data-role=mst-row]');
+    var out = rowEl && rowEl.querySelector('[data-role=mst-resend-out]');
+    if (btn.getAttribute('data-armed') !== '1') {
+      btn.setAttribute('data-armed', '1'); btn.textContent = '한 번 더 누르면 네이버 사진을 바꿔요';
+      return;
+    }
+    btn.disabled = true; btn.textContent = '보내는 중…';
+    if (out) { out.hidden = false; out.className = 'mst-meta'; out.textContent = '사진을 네이버에 올리고 바꾸는 중…'; }
+    fetch('/seller/collect/' + encodeURIComponent(curItem) + '/naver-resend-photos', {
+      method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({market: btn.getAttribute('data-market'), confirm: true})
+    }).then(function (r) { return r.text().then(function (t) {
+      try { return JSON.parse(t); } catch (e) { return {ok: false, error: '응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; } }); })
+      .then(function (d) {
+        btn.disabled = false; btn.removeAttribute('data-armed'); btn.textContent = '사진 다시 보내기';
+        if (!out) return;
+        out.hidden = false;
+        out.className = 'mst-meta ' + (d && d.ok ? 'mst-ok' : 'mst-err');
+        out.setAttribute('data-role', 'mst-resend-out');
+        out.textContent = d && d.ok ? (d.message || '보냈어요') : ('보내지 못했어요 — ' + ((d && d.error) || '사유 미상'));
+      }).catch(function (e) { btn.disabled = false; btn.removeAttribute('data-armed'); btn.textContent = '사진 다시 보내기';
+        if (out) { out.hidden = false; out.className = 'mst-err'; out.textContent = '네트워크 오류 — ' + ((e && e.message) || e); } });
   }
   function resend(btn) {
     var rowEl = btn.closest('[data-role=mst-row]');
@@ -311,6 +338,8 @@
     if (nf) { ev.preventDefault(); nameFix(nf); return; }
     var rn = ev.target.closest && ev.target.closest('[data-role=mst-refresh-now]');
     if (rn) { ev.preventDefault(); refreshNow(rn); return; }
+    var pr = ev.target.closest && ev.target.closest('[data-role=mst-photo-resend]');
+    if (pr) { ev.preventDefault(); photoResend(pr); return; }
     var rs = ev.target.closest && ev.target.closest('[data-role=mst-resend]');
     if (rs) { ev.preventDefault(); resend(rs); return; }
     var dr = ev.target.closest && ev.target.closest('[data-role=mst-dup-remove]');

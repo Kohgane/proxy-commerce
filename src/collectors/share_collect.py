@@ -198,6 +198,16 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
     if not item_id or not durable:
         return {"ok": False, "url": url, "error": "저장 영속화 실패(재시도 필요)"}
 
+    # 오너 11-25 감독 2: 타오바오 초안이면 **입구가 어디든** 여기서 자동 보강을 시작한다(예전엔 `collect_input` 하나만 —
+    #   공유 글 미리보기·맨 단축 링크 수집으로 만든 초안은 보강이 한 번도 안 돌았다). 꺼져 있으면 카드에 「꺼짐」이 남는다.
+    auto_enrich = False
+    try:
+        from src.collectors.share_text import is_taobao_family as _is_tb
+        if _is_tb(url) or share.get("item_id"):
+            from src.services import taobao_auto as _ta
+            auto_enrich = _ta.kick(seller_id, str(item_id))
+    except Exception as exc:                                    # noqa: BLE001 — 보강 시작 실패가 담기를 막지 않는다
+        logger.warning("[Z3 자동] 시작 실패: %s", exc)
     # 가격 없이 통화만 있으면 「가격=-CNY」(음수처럼 읽힘)가 됐다 — 가격·통화를 칸으로 가른다.
     logger.info("공유 수집 stage=saved item=%s url=%s item_id=%s 가격=%s 통화=%s 미수집=%s 게이트=%s",
                 item_id, url, share.get("item_id") or item_id_site or "-",
@@ -222,6 +232,7 @@ def collect_from_share_text(raw: str, *, seller_id: str = "", source: str = "sha
             "timings": timings,
             # O-5: 단축 링크 펴기 결과(결과 화면 단계 표시) — 서버가 본 갈래 그대로.
             "resolve_reason": share.get("resolve_reason", ""),
+            "auto_enrich": auto_enrich,
             }
 
 
@@ -327,22 +338,16 @@ def collect_input(raw: str, *, seller_id: str = "", source: str = "input",
         r = collect_from_share_text(raw, seller_id=seller_id, source=source,
                                     translate=translate, final_url=final_url)
         r["kind"] = "share_draft" if r.get("ok") else "failed"   # timings는 r에 이미 실려 있다
-        # Z3 자동 경로(오너 2026-10-05): 켜져 있으면 서버가 mtop으로 사진·옵션을 채운다(백그라운드, 실패 시 (c) 수동 사유)
-        if r.get("ok") and r.get("item_id"):
-            try:
-                from src.services import taobao_auto as _ta
-                r["auto_enrich"] = _ta.kick(seller_id, str(r["item_id"]))
-            except Exception as exc:                            # noqa: BLE001
-                logger.warning("[Z3 자동] 시작 실패: %s", exc)
+        # Z3 자동 경로 시작은 `collect_from_share_text`가 한다(입구가 어디든 한 번 — 오너 11-25 감독 2)
         if alt_key_url:
             r["alt_key_url"] = alt_key_url      # 호출부 중복 조회용(같은 상품의 단축 링크 형태)
         return r
 
     # 오너 11-25 15:56: 아마존·알리 공유 단축 주소 — 수집 전에 편다(정본 주소로 저장 · 원래 주소는 `raw_url`).
     raw_short = ""
-    from src.collectors.link_diag import resolve_share_link, short_link_market
+    from src.collectors.link_diag import resolve_with_hint, short_link_market
     if short_link_market(url) in ("amazon", "aliexpress"):
-        _rr = resolve_share_link(url)
+        _rr = resolve_with_hint(url, final_url)
         if _rr.get("ok") and _rr.get("canonical_url"):
             raw_short, url = url, _rr["canonical_url"]
     from src.api.extension_api import collect_one_url
