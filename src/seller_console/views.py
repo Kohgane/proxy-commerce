@@ -12792,7 +12792,7 @@ def _photo_fix_bundle(ids: set) -> dict:
 
         def _exo(it):
             try:
-                return json.loads(it.get("extra_json") or "{}") or {}
+                return json.loads(str(it.get("extra_json") or "{}")) or {}
             except Exception:
                 return {}
         out = _pf.bundle(rows, _exo)

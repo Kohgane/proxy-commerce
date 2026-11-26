@@ -72,5 +72,5 @@ def test_card_js_renders_inputs_and_account_links(client):
     h = client.get(f"/seller/m/item/{iid}").get_data(as_text=True)
     for needle in ("function cpFieldsHtml", "data-role=\"m5-cp-fields\"", "m5-cp-save", "/coupang-fields", "쿠팡 출고지 넣기(마켓 연동)",
                    "구매대행 인보이스 주소는 계정 설정이에요", "has('cp_category')", "runCheck([b.getAttribute('data-market')], true)",
-                   "if (r.hold || r.error_code === 'coupang_hold') h += holdFixHtml(r, h);"):
+                   "else if (r.error_code === 'coupang_hold') h += holdFixHtml(r, h);"):
         assert needle in h, needle
