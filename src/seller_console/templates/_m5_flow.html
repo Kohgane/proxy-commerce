@@ -181,7 +181,7 @@
       {% for t in _rr.resend %}
       <button type="button" class="m5-fix" data-role="m5-photo-resend" data-market="{{ t.market }}">바뀐 사진을 {{ t.label }}에 다시 보내기</button>
       {% endfor %}
-      {% if _rr.state == 'small' and _rr.can_refetch %}<button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>{% endif %}
+      {% if _rr.state == 'small' and _rr.can_refetch and not m5.incomplete %}<button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>{% endif %}
     </div>
     <div class="m5-note" data-role="m5-refetch-state" aria-live="polite"></div>
   </section>
@@ -918,7 +918,8 @@
          // Y7-O: 선주문(옵션 값 「2-3周发货」) — 오너 방침상 등록 버튼이 저절로 풀지 않는다(OVERRIDES 밖). 이 버튼만 푼다.
          (r.hold && (r.fixes || []).indexOf('lead_time') >= 0
            ? '<div><button type="button" class="m5-fix" data-role="m5-leadtime-override" data-override="lead-time-override" data-label="선주문 그래도 등록">선주문 그래도 등록</button></div>' : '');
-    if (r.hold) h += holdFixHtml(r, h);                                             // 오너 11-25 15:56 ②: 보류마다 그 자리에서 고치는 길
+    // 오너 11-25 15:56 ②: 보류마다 그 자리에서 고치는 길 · 11-26 저녁 ③: 쿠팡 판정 멈춤(coupang_hold)도 같은 자리에서
+    if (r.hold || r.error_code === 'coupang_hold') h += holdFixHtml(r, h);
     if (!r.ok && h.indexOf('class="m5-fix"') < 0 && h.indexOf('data-role="m5-cat-pick"') < 0) h += nextAction(r);   // 오너 11-23: 다음 행동 하나
     return h + '</div>';
   }
