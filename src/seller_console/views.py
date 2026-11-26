@@ -2244,6 +2244,24 @@ def _incomplete_reasons(item: dict, product: dict, has_price: bool) -> list:
                 out.append({"code": "no_photos", "line": f"사진 {len(_imgs)}장 중 쓸 만한 건 {_good}장이에요(나머지는 썸네일·배지·추천 상품) — 다시 가져와 주세요."})
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[M5] 사진 판정 실패: %s", exc)
+    try:                                                         # 오너 11-26 오후 ①: 아마존 옵션별 가격(자식 ASIN)
+        _ex = json.loads((item or {}).get("extra_json") or "{}") or {}
+    except Exception:                                            # noqa: BLE001
+        _ex = {}
+    _fill = _ex.get("sku_fill") if isinstance(_ex.get("sku_fill"), dict) else {}
+    _miss = [m for m in (_ex.get("sku_missing") or []) if isinstance(m, dict)]
+    if _fill.get("state") == "pending":
+        out.append({"code": "sku_filling", "line": f"옵션별 가격을 읽는 중이에요(조합 {len((_ex.get('amazon_variants') or {}).get('values_by_asin') or {})}개) — 잠시 뒤 다시 열어 주세요."})
+        return out
+    if _miss and not _ex.get("sku_missing_ack"):
+        _k = len([x for x in (_ex.get("skus") or []) if isinstance(x, dict)])
+        _ex1 = " · ".join(f"{' / '.join(map(str, m.get('spec') or []))}({m.get('why')})" for m in _miss[:3])
+        if _k:
+            out.append({"code": "sku_partial", "n": len(_miss),
+                        "line": f"옵션 조합 {len(_miss)}개는 가격이 없어요 — {_ex1}{' 외' if len(_miss) > 3 else ''}. 빼고 등록하면 가격 있는 {_k}개만 올라가요."})
+        else:
+            out.append({"code": "sku_none", "line": f"옵션 조합 {len(_miss)}개 모두 가격을 못 읽었어요 — {_ex1}. 다시 가져와 주세요."})
+        return out
     opts = [o for o in ((product or {}).get("options") or []) if isinstance(o, dict) and (o.get("values") or [])]
     if opts and not ((product or {}).get("skus") or []):
         out.append({"code": "no_skus", "line": "옵션은 있는데 옵션별 가격·재고(SKU)를 못 가져왔어요 — 다시 가져와 주세요."})
@@ -4570,6 +4588,45 @@ def collect_manual_options(item_id):
                     "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+@bp.post("/collect/<item_id>/drop-unpriced")
+def collect_drop_unpriced(item_id):
+    """오너 11-26 오후 ① — 「가격 없음 n개 — 빼고 등록」: 가격을 못 읽은 옵션 조합을 등록에서 뺀다(가격 있는 SKU만 남김).
+    축마다 어느 SKU에도 안 남는 값은 옵션에서도 뺀다. 무엇을 뺐는지 남긴다. 마켓 전송 0."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if not item:
+        return jsonify({"ok": False, "error": "상품을 찾지 못했어요."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    skus = [k for k in (ex.get("skus") or []) if isinstance(k, dict) and k.get("spec")]
+    miss = [m for m in (ex.get("sku_missing") or []) if isinstance(m, dict)]
+    if not skus:
+        return jsonify({"ok": False, "error": "가격 있는 조합이 하나도 없어요 — 다시 가져와 주세요."}), 400
+    kept_vals = [set() for _ in range(max(len(k["spec"]) for k in skus))]
+    for k in skus:
+        for i, v in enumerate(k["spec"]):
+            kept_vals[i].add(str(v))
+    dropped_vals = []
+    opts = []
+    for i, o in enumerate([o for o in (ex.get("options") or []) if isinstance(o, dict)]):
+        if i < len(kept_vals):
+            vals = [v for v in (o.get("values") or []) if str(v) in kept_vals[i]]
+            dropped_vals += [f"{o.get('name')}: {v}" for v in (o.get("values") or []) if str(v) not in kept_vals[i]]
+            opts.append({**o, "values": vals})
+        else:
+            opts.append(o)
+    ex["options"] = opts
+    ex["sku_missing_ack"] = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": str(session.get("email") or _seller_id()),
+                             "dropped_combos": len(miss), "dropped_values": dropped_vals}
+    from . import collect_history_store as _chs
+    ok = bool(_chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(ex, ensure_ascii=False)))
+    return jsonify({"ok": ok, "kept": len(skus), "dropped": len(miss), "dropped_values": dropped_vals,
+                    "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+
+
 @bp.post("/collect/<item_id>/ship-ratio-override")
 def collect_ship_ratio_override(item_id):
     """Z5: 「배송비 비율 n% — 보류」를 **그래도 등록**으로 푼다(오너·그 분 모두). 누가·언제·무슨 사유였는지 남긴다."""
@@ -5256,6 +5313,46 @@ def admin_smartstore_relist():
                            skip_rows=[x for x in rows if x.get("action") != "on"][:40])
 
 
+@bp.get("/admin/diag/prevalidate/<item_id>")
+def admin_diag_prevalidate(item_id):
+    """오너 11-26 오후 ② — **읽기 전용** 사전검증: 등록과 같은 몸통·같은 사전검증(실제 마켓 API 조회까지)을 돌리되 행에 쓰지 않는다.
+    `?markets=coupang:gogane,coupang:woojoo`(기본 쿠팡 두 계정). 관리자만. 전송 0 · 저장 0(리드타임·리스크 자동 적용·대표 교체·일회성 줄 건너뜀)."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from flask import g as _g
+    from .product_builder import build_product
+    from .upload_dispatcher import UploadDispatcher
+    item = _get_owned_item(str(item_id))
+    if not item:
+        return jsonify({"ok": False, "error": "그 상품을 못 찾았어요(내 상품만)."}), 404
+    markets = [m.strip() for m in str(request.args.get("markets") or "coupang:gogane,coupang:woojoo").split(",") if m.strip()][:6]
+    import time as _time
+    _g.kgp_pv_dry = True
+    t0 = _time.time()
+    try:
+        pd = build_product(item, seller_id=str(item.get("seller_id") or _seller_id()))
+        pd, _rc = _pv_prepare({"item_id": str(item_id)}, pd)
+        res = UploadDispatcher().prevalidate(pd, markets)
+    finally:
+        _g.kgp_pv_dry = False
+    rows = []
+    for r in getattr(res, "results", None) or (res if isinstance(res, list) else []):
+        rows.append({"market": getattr(r, "market", ""), "ok": bool(getattr(r, "ok", False)), "hold": bool(getattr(r, "hold", False)),
+                     "code": str(getattr(r, "error_code", "") or ""), "message": str(getattr(r, "message", "") or ""),
+                     "hint": str(getattr(r, "hint", "") or ""), "fixes": list(getattr(r, "fixes", None) or [])[:8],
+                     "details": [str(x)[:300] for x in (getattr(r, "details", None) or [])][:12],
+                     "reach": getattr(r, "reach_ok", None)})
+    data = {"item_id": str(item_id), "title": str(item.get("title") or ""), "url": str(item.get("url") or ""), "markets": markets,
+            "secs": round(_time.time() - t0, 1), "rows": rows,
+            "skus": len(pd.get("skus") or []), "options": [o.get("name") for o in (pd.get("options") or []) if isinstance(o, dict)],
+            "images": len(pd.get("images") or [])}
+    passed = sum(1 for r in rows if r["ok"] and not r["hold"])
+    verdict = f"통과 {passed}/{len(rows)}" + "".join(f" · {r['market']} 보류: {r['code'] or r['message'][:40]}" for r in rows if not (r["ok"] and not r["hold"]))
+    if not _wants_html():
+        return jsonify({"ok": True, **data, "verdict": verdict})
+    return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="prevalidate", d=data, verdict=verdict)
+
+
 @bp.get("/admin/diag/item/<market_no>")
 def admin_diag_item(market_no):
     """오너 11-25 ② — **읽기 전용**: 마켓 상품번호로 수집 행 → url·raw_url·수집 경로·images[] 원문과 실제 픽셀 크기. 관리자만."""
@@ -5760,6 +5857,15 @@ _PV_JOB_DEADLINE_SEC = float(os.getenv("PREVALIDATE_JOB_DEADLINE_SEC", "60") or 
 _PV_JOB_KEY = "prevalidate_job:"
 
 
+def _pv_dry() -> bool:
+    """오너 11-26 오후 ② — 관리자 읽기 전용 사전검증(`diag/prevalidate`)에서는 저장·줄 세우기를 하지 않는다."""
+    try:
+        from flask import g as _g
+        return bool(getattr(_g, "kgp_pv_dry", False))
+    except Exception:                                              # noqa: BLE001
+        return False
+
+
 def _pv_prepare(data: dict, product_data: dict):
     """등록이 보낼 이미지 배열·저장된 「그래도 등록」·번역을 얹은 검증 대상 — `(product_data, reach)`."""
     # S1(오너 2026-10-02): 등록이 보낼 **그 이미지 배열**로 재고, 마켓 관점 도달도 **여기서** 본다 —
@@ -5783,7 +5889,8 @@ def _pv_prepare(data: dict, product_data: dict):
             from src.collectors import option_leadtime as _olt
             if _olt.apply(_sx):
                 from . import collect_history_store as _chs
-                _chs.update(str(data["item_id"]), seller_ids=_seller_identities(), extra_json=json.dumps(_sx, ensure_ascii=False))
+                if not _pv_dry():
+                    _chs.update(str(data["item_id"]), seller_ids=_seller_identities(), extra_json=json.dumps(_sx, ensure_ascii=False))
                 product_data["options"], product_data["skus"] = _sx.get("options") or [], _sx.get("skus") or []
             _lts = [o.get("lead_time") for o in (_sx.get("options") or []) if isinstance(o, dict) and o.get("lead_time")]
             if _lts:
@@ -5822,8 +5929,9 @@ def _pv_prepare(data: dict, product_data: dict):
                 from src.services.coupang_image_check import auto_rep_pick as _arp
                 _arp_res = _arp(_sx, images_effective=product_data.get("images") or product_data.get("images_effective"), by=_seller_id())
                 if _arp_res.get("changed"):
-                    collect_history_store.update(str(data["item_id"]), seller_ids=_seller_identities(),
-                                                 extra_json=json.dumps(_sx, ensure_ascii=False))
+                    if not _pv_dry():
+                        collect_history_store.update(str(data["item_id"]), seller_ids=_seller_identities(),
+                                                     extra_json=json.dumps(_sx, ensure_ascii=False))
                     from src.services import image_translate_store as _its2
                     _eff2 = _its2.effective_images(_sx, item_id=str(data["item_id"]), originals=list(_sx.get("images") or []))
                     if _eff2:
@@ -5837,7 +5945,7 @@ def _pv_prepare(data: dict, product_data: dict):
             #   (OCR·그리기는 잡 스레드에서 — 사전검증은 기다리지 않는다). 해 봤으면 다시 넣지 않는다(결과는 보류 사유에)
             try:
                 from src.services.rep_auto_clean import needs_attempt as _rep_needs_attempt
-                if _rep_needs_attempt(_sx) or ("rep_need_change" in _sx and "rep_auto_clean" in _sx and False):
+                if (_rep_needs_attempt(_sx) or ("rep_need_change" in _sx and "rep_auto_clean" in _sx and False)) and not _pv_dry():
                     from src.services import oneshot_ops as _oo_rc
                     _oo_rc.enqueue({"op": "rep_clean", "item_id": str(data["item_id"]),
                                     "reason": "사전검증 — 대표 후보 전부 글자(자동 정리)"})
@@ -5954,7 +6062,7 @@ def _risk_scan_for(item_id: str, extra: dict, product_data: dict) -> dict:
         if _retexted:
             logger.info("[리스크] 호환 표기 사진 글자 고치기 다시 item=%s: %s", item_id, ", ".join(_retexted))
             _healed = list(_healed) + _retexted
-        if _rg.auto_apply(extra, by=_seller_id()) or _healed:
+        if (_rg.auto_apply(extra, by=_seller_id()) or _healed) and not _pv_dry():
             from . import collect_history_store as _chs
             _chs.update(item_id, seller_ids=_seller_identities(), extra_json=json.dumps(extra, ensure_ascii=False))
     except Exception as exc:                                     # noqa: BLE001

@@ -21,7 +21,7 @@ def _usable(imgs) -> int:
     return sum(1 for u in imgs or [] if isinstance(u, str) and usable_photo(u))
 
 
-def run(item_id: str, seller_ids: Optional[set] = None, *, fetch=None) -> Dict:
+def run(item_id: str, seller_ids: Optional[set] = None, *, fetch=None, fetch_html=None, fill_children: bool = True) -> Dict:
     from src.collectors.universal_scraper import UniversalScraper
     from src.seller_console import collect_history_store as chs
     item = chs.get(item_id, seller_ids=seller_ids) if seller_ids else chs.get(item_id)
@@ -64,6 +64,9 @@ def run(item_id: str, seller_ids: Optional[set] = None, *, fetch=None) -> Dict:
     desc = str(getattr(res, "description", "") or "").strip()
     if desc and not str(ex.get("description") or "").strip():
         ex["description"] = desc
+    var = ap.get("variants") if isinstance(ap.get("variants"), dict) else {}
+    if var.get("values_by_asin"):
+        ex["amazon_variants"] = var
     cur = [u for u in (ex.get("images") or []) if isinstance(u, str)]
     rec["after"] = {"images": len(cur), "usable": _usable(cur), "options": len(ex.get("options") or []),
                     "detail": len(ex.get("detail_images") or []), "source": ap.get("image_source", ""),
@@ -75,4 +78,38 @@ def run(item_id: str, seller_ids: Optional[set] = None, *, fetch=None) -> Dict:
     ok = bool(chs.update(item_id, seller_ids=seller_ids or {str(item.get("seller_id") or "")},
                          extra_json=json.dumps(ex, ensure_ascii=False), **row))
     logger.info("[아마존 다시 가져오기] item=%s ok=%s 전=%s 후=%s 저장=%s", item_id, rec["ok"], before, rec["after"], ok)
+    if ok and ex.get("amazon_variants") and fill_children:
+        rec["sku_fill"] = fill_skus(item_id, seller_ids, fetch_html=fetch_html)
     return {"ok": ok and rec["ok"], "saved": ok, **rec}
+
+
+def fill_skus(item_id: str, seller_ids: Optional[set] = None, *, fetch_html=None, gap: float = 1.2, sleep=None) -> Dict:
+    """오너 11-26 오후 ① — 옵션 조합마다 자식 ASIN 화면을 열어 가격을 읽고 **값이 있는 조합만** SKU로(지어내기 0).
+    못 읽은 조합은 `sku_missing`에 사유째 — 카드가 「가격 없음 n개 — 빼고 등록」을 한 번에 묻는다. 셀러가 고친 옵션·SKU는 덮지 않는다."""
+    from src.collectors.amazon_pdp import child_skus
+    from src.collectors.universal_scraper import _fetch_html
+    from src.seller_console import collect_history_store as chs
+    item = chs.get(item_id, seller_ids=seller_ids) if seller_ids else chs.get(item_id)
+    if not item:
+        return {"ok": False, "error": "상품을 찾지 못했어요."}
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    var = ex.get("amazon_variants") if isinstance(ex.get("amazon_variants"), dict) else {}
+    man = ex.get("manual_fields") if isinstance(ex.get("manual_fields"), dict) else {}
+    if not var.get("values_by_asin"):
+        return {"ok": False, "error": "옵션 조합 표가 없어요."}
+    if "sku" in man or "options" in man:
+        return {"ok": False, "error": "셀러가 옵션을 직접 고친 상품이라 덮지 않아요."}
+    r = child_skus(var, fetch_html or _fetch_html, gap=gap, sleep=sleep)
+    ex["skus"] = r["skus"]
+    ex["sku_missing"] = r["missing"]
+    ex.pop("sku_missing_ack", None)
+    ex["sku_fill"] = {"state": "done", "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                      "priced": len(r["skus"]), "missing": len(r["missing"]), "read": r["read"], "capped": r["capped"]}
+    ex.setdefault("field_sources", {})["sku"] = "amazon_child"
+    ok = bool(chs.update(item_id, seller_ids=seller_ids or {str(item.get("seller_id") or "")}, extra_json=json.dumps(ex, ensure_ascii=False)))
+    logger.info("[아마존 옵션별 가격] item=%s 가격 %d · 없음 %d · 읽음 %d · 상한 %d · 저장=%s",
+                item_id, len(r["skus"]), len(r["missing"]), r["read"], r["capped"], ok)
+    return {"ok": ok, **ex["sku_fill"]}
