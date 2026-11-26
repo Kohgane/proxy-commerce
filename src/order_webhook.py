@@ -1240,6 +1240,16 @@ _NAVER_TREE_BOOT = {"pid": None}
 
 
 @app.before_request
+def _app_hidden_gate():
+    """오너 11-26 감독 3e — 앱스토어 심사(3.1.1): 앱(웹뷰) 안에서는 결제·요금제 화면을 열지 않는다. 웹 요청은 그대로."""
+    from src.utils.app_shell import app_hidden, is_app_request
+    if not app_hidden(request.path) or not is_app_request(request):
+        return None
+    from flask import render_template as _rt
+    return _rt("app_hidden.html"), 200
+
+
+@app.before_request
 def _naver_tree_boot():
     """Z8: 네이버 카테고리 트리는 워커(포크 뒤 프로세스)마다 첫 요청 때 **백그라운드로** 받기 시작 — 요청은 안 기다린다."""
     if _NAVER_TREE_BOOT["pid"] == os.getpid():
@@ -2017,6 +2027,11 @@ def deep_health():
         data = body.get_json() or {}
         data["ticks"] = _deep_health_ticks()
         data["instance"] = _deep_health_instance()
+        try:                                                     # 오너 11-26 감독 1: 렌더 IP에서 짧은 링크 편 실측 한 줄
+            from .services.link_selfprobe import health_line as _lp
+            data["link_probe"] = _lp()
+        except Exception as _lexc:                               # noqa: BLE001
+            data["link_probe"] = {"measured": False, "error": type(_lexc).__name__}
         return jsonify(data), code
     except Exception as exc:                                     # noqa: BLE001 — 틱 기록이 헬스체크를 깨지 않는다
         logger.warning("Deep health: 틱 기록 첨부 실패: %s", exc)

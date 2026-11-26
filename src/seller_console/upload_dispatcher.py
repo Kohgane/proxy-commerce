@@ -2242,6 +2242,13 @@ class UploadDispatcher:
                     url or "(없음)",
                     [k for k in DRAFT_URL_KEYS if str(product_data.get(k) or "").strip()])
         result = DispatchResult(product_url=url)
+        from src.utils.test_accounts import REVIEW_BLOCK_MESSAGE, review_session
+        if review_session():                     # 오너 11-26 감독 3d: 심사 계정은 마켓으로 보내지 않는다(어느 입구로 와도)
+            for code in markets:
+                result.results.append(UploadResult(market=code, success=False, message=REVIEW_BLOCK_MESSAGE))
+            result.failed, result.total = len(markets), len(markets)
+            logger.warning("[등록] 심사 계정 — 마켓 전송 막음 markets=%s", markets)
+            return result
 
         for code in markets:
             if not _market_code_ok(code):

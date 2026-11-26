@@ -111,9 +111,9 @@
       </div>
       <p class="mb-0 small" style="color:var(--text-muted);">{{ plan_meta.desc }}</p>
     </div>
-    <a href="/seller/billing" class="btn {% if plan == 'free' %}btn-cta{% else %}btn-ghost{% endif %}">
+    {% if not is_app %}<a href="/seller/billing" class="btn {% if plan == 'free' %}btn-cta{% else %}btn-ghost{% endif %}" data-role="billing-link">
       {% if plan == 'free' %}<i class="bi bi-arrow-up-circle"></i> 업그레이드{% else %}요금제 관리{% endif %}
-    </a>
+    </a>{% endif %}
   </div>
 </div>
 
@@ -239,7 +239,7 @@
           <input class="form-check-input" type="checkbox" role="switch" id="advancedToggle" data-role="advanced-toggle" {% if advanced_pref %}checked{% endif %} style="width:3em;height:1.5em;">
           <label class="form-check-label small ms-1" for="advancedToggle">{% if advanced_pref %}켜짐{% else %}꺼짐{% endif %}</label>
         </div>
-        {% if plan == 'free' %}<a href="/seller/billing" class="btn btn-ghost btn-sm">Plus로 항상 열기</a>{% endif %}
+        {% if plan == 'free' and not is_app %}<a href="/seller/billing" class="btn btn-ghost btn-sm" data-role="billing-link">Plus로 항상 열기</a>{% endif %}
       {% endif %}
     </div>
   </div>
@@ -378,7 +378,7 @@
     <form method="post" action="/auth/logout" class="d-inline">
       <button type="submit" class="btn btn-ghost btn-sm"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
     </form>
-    <button class="btn btn-ghost btn-sm ms-2" onclick="confirmDeactivate()"><i class="bi bi-trash"></i> 탈퇴</button>
+    <a class="btn btn-ghost btn-sm ms-2" href="/seller/me/delete" data-role="account-delete-link"><i class="bi bi-person-x"></i> 계정 삭제</a>
   </div>
 </div>
 {% endif %}
@@ -390,7 +390,7 @@
     <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-ghost btn-sm" href="/terms">이용약관</a>
       <a class="btn btn-ghost btn-sm" href="/privacy">개인정보처리방침</a>
-      <a class="btn btn-ghost btn-sm" href="/pricing">플랜</a>
+      {% if not is_app %}<a class="btn btn-ghost btn-sm" href="/pricing" data-role="billing-link">플랜</a>{% endif %}
       <a class="btn btn-ghost btn-sm" href="/contact">문의</a>
     </div>
   </div>
