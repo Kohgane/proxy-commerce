@@ -5214,6 +5214,48 @@ def admin_taobao_reenrich():
     return jsonify({"ok": True, **data})
 
 
+@bp.route("/admin/smartstore-relist", methods=["GET", "POST"])
+def admin_smartstore_relist():
+    """오너 11-26 11:58 「셰고가 다시 켜라」 — 판매중지 전수 → 켤 것/뺄 것(사유) → 「N건 판매 재개」(오너 탭 · 두 번 확인).
+    GET = 화면(`?raw=1` JSON · `?csv=1` 내려받기 · `?progress=1` 진행) · POST `{action: build|run|stop}`. 관리자만.
+    목록 만들기는 읽기만(네이버 조회·사진 크기) · 실행은 `RUN_STORES`(셰고가)만 · 가격은 표시만."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from src.services import smartstore_relist as SR
+    from src.seller_console import smartstore_routing as R
+    store = str(request.values.get("store") or "chezgoga")
+    if store not in R.STORES:
+        return jsonify({"ok": False, "error": "그런 스토어가 없어요."}), 400
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        act = str(body.get("action") or "")
+        if act == "build":
+            from src.utils import bg_job
+            started, st = bg_job.start(f"smartstore-relist-build:{store}", lambda: SR.build(store))
+            return jsonify({"ok": bool(started), "started": bool(started),
+                            "error": "" if started else ("서버 메모리 여유가 없어요 — 잠시 뒤 다시." if st.get("busy_memory") else "이미 만드는 중이에요.")})
+        if act == "run":
+            out = SR.start(store, int(body.get("confirm") or -1), by=str(session.get("email") or session.get("user_id") or ""))
+            return jsonify(out), (200 if out.get("ok") else 409)
+        if act == "stop":
+            return jsonify({"ok": SR.stop(store)})
+        return jsonify({"ok": False, "error": "알 수 없는 요청이에요."}), 400
+    if str(request.args.get("progress") or "") == "1":
+        return jsonify({"ok": True, **SR.run_state(store)})
+    p = SR.plan(store)
+    if str(request.args.get("csv") or "") == "1":
+        return Response(SR.csv_text(p), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment; filename=relist_{store}_{str(p.get('at') or '')[:10]}.csv"})
+    data = {"store": store, "label": R.store_label(store), "can_run": store in SR.RUN_STORES,
+            "plan": {k: v for k, v in p.items() if k != "rows"}, "run": SR.run_state(store)}
+    if not _wants_html():
+        return jsonify({"ok": True, **data, "rows": (p.get("rows") or [])[:2000]})
+    rows = p.get("rows") or []
+    return render_template("admin_relist.html", d=data, stores=[(s, R.store_label(s)) for s in R.STORES], reason_ko=SR.REASON_KO,
+                           on_rows=[x for x in rows if x.get("action") == "on"][:40],
+                           skip_rows=[x for x in rows if x.get("action") != "on"][:40])
+
+
 @bp.get("/admin/diag/item/<market_no>")
 def admin_diag_item(market_no):
     """오너 11-25 ② — **읽기 전용**: 마켓 상품번호로 수집 행 → url·raw_url·수집 경로·images[] 원문과 실제 픽셀 크기. 관리자만."""
