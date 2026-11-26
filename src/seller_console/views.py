@@ -12802,6 +12802,15 @@ def _photo_fix_bundle(ids: set) -> dict:
     return out
 
 
+@bp.get("/collect/photo-fix-bundle")
+def collect_photo_fix_bundle():
+    """오너 11-26 저녁 ①: 목록 맨 위 「사진 고칠 상품 N건」 건수(읽기만 · 셀러별 2분 캐시) — 목록 첫 화면 쿼리에 얹지 않으려고 따로."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    b = _photo_fix_bundle(_seller_identities())
+    return jsonify({"ok": True, "n": b.get("n", 0), "ready": b.get("ready", 0), "small": b.get("small", 0)})
+
+
 @bp.get("/collect/history")
 def collect_history():
     """수집 이력 페이지 (Phase 135.2)."""
@@ -13046,7 +13055,8 @@ def collect_history():
                  "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page,
                  "hygiene": hygiene_f, "reg": reg_f, "attn": attn_f, "discarded": disc_f, "mk": mk_f, "mst": mst_f,
                  "rej": rej_f, "left": left_f, "photo": photo_f},
-        photo_fix=(_photo_fix_bundle(_seller_identities()) if fmt != "rows" else {"n": 0}),
+        # 목록 첫 화면 쿼리 예산(≤3)을 지킨다 — 묶음 건수는 화면이 따로 묻는다(`/collect/photo-fix-bundle`). 묶음만 보기일 때만 서버가 센다.
+        photo_fix=(_photo_fix_bundle(_seller_identities()) if photo_f else {"n": 0}),
         mk_label=(" · ".join(x for x in (next((f"{r[1]} {r[2]}" for r in _MKR if r[0] == mk_f), ""),
                                           {"sale": "판매중", "wait": "승인대기", "rejected": "반려"}.get(mst_f, "")) if x)
                   if mk_f else ""),

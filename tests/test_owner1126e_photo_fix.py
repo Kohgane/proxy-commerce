@@ -113,7 +113,9 @@ def test_list_bundle_and_filter(client):
     a = _row(_ex(title_ko="흐린 사진 상품", images=[TINY, TINY]))
     b = _row(_ex(title_ko="멀쩡한 상품"))
     h = client.get("/seller/collect/history").get_data(as_text=True)
-    assert 'data-role="photo-fix-bundle"' in h and "사진 고칠 상품" in h and "사진부터 다시 가져오기" in h
+    assert 'data-role="photo-fix-bundle"' in h and "/seller/collect/photo-fix-bundle" in h        # 건수는 따로(목록 쿼리 예산 ≤3)
+    d = client.get("/seller/collect/photo-fix-bundle").get_json()
+    assert d["ok"] and d["n"] == 1 and d["small"] == 1 and d["ready"] == 0
     h = client.get("/seller/collect/history?photo=1&days=365").get_data(as_text=True)
     assert a in h and b not in h
 
