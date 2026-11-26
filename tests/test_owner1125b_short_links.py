@@ -255,3 +255,14 @@ def test_ali_share_keeps_address_only_draft_when_page_is_blocked(net, monkeypatc
     assert row["title"] == "접이식 원목 수납 박스 대용량"
     assert json.loads(row["extra_json"])["raw_url"] == "https://a.aliexpress.com/_c1125"
     assert r["message"].startswith("주소만 담았어요") and "펴진 링크가 오지 않아" not in r["message"]
+
+
+def test_phone_expanded_final_url_is_used_without_network(net):
+    """오너 11-25 감독 1: 서버 IP가 막혀도 폰이 편 주소(`final_url`)가 그 마켓 상품 주소면 그대로 쓴다(네트워크 0)."""
+    from src.collectors.link_diag import resolve_with_hint
+    _table, calls = net
+    r = resolve_with_hint("https://a.co/d/00RG5ThB", "https://www.amazon.com/OKNIFE-Otacle/dp/B0C38WV1F6?th=1")
+    assert r["ok"] and r["reason"] == "ok_hint" and r["canonical_url"] == "https://www.amazon.com/dp/B0C38WV1F6"
+    assert calls == []
+    r2 = resolve_with_hint("https://a.aliexpress.com/_x", "https://ko.aliexpress.com/item/1005010273826796.html?spm=1")
+    assert r2["ok"] and r2["canonical_url"] == "https://www.aliexpress.com/item/1005010273826796.html" and calls == []

@@ -4137,6 +4137,82 @@ def collect_naver_resend_detail(item_id):
     return jsonify({"ok": True, "message": f"상세 본문을 다시 보냈어요 — 사진 {imgs}장", **summary})
 
 
+@bp.post("/collect/<item_id>/naver-resend-photos")
+def collect_naver_resend_photos(item_id):
+    """오너 11-25 감독 3 — 흐린 사진으로 올라간 네이버 상품의 **사진만 다시 보내기**(M6 팝업 · 오너가 누르고 한 번 더 확인).
+
+    사진은 등록과 **같은 재료**(서버 빌더 → `_outbound_images` — 등록이 보낼 그 배열) → 네이버 CDN 업로드 → `PUT origin-products`
+    (`update_images` — 다른 칸은 조회한 값 그대로). 사진이 **아직 전부 500px 미만**이면 보내지 않는다(다시 보내도 흐리다 — 사진부터).
+    `{market, confirm: true}`. 결과·장 수는 등록 기록(`photo_resent`)에 남긴다."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    if data.get("confirm") is not True:
+        return jsonify({"ok": False, "error": "확인이 필요해요."}), 400
+    market = str(data.get("market") or "").strip()
+    if not market.startswith("smartstore"):
+        return jsonify({"ok": False, "error": "네이버(스마트스토어) 등록 기록에서만 사진을 다시 보낼 수 있어요."}), 400
+    forbidden = _account_codes_forbidden([market])
+    if forbidden:
+        return forbidden
+    from . import listing_status as MS
+    try:
+        extra = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        extra = {}
+    rec = next((r for r in MS.records(extra) if r["market"] == market), None)
+    if not rec or not rec.get("product_id"):
+        return jsonify({"ok": False, "error": "이 스토어에 등록한 기록이 없어요."}), 404
+    from .product_builder import build_product as _build_product
+    from .upload_dispatcher import build_dispatch_payload as _build_payload, _for_market
+    from . import market_credentials as mc
+    pd = _build_payload(_build_product(item, edits={}, seller_id=_seller_id()), item)
+    pd, _w, _rc = _outbound_images(pd, item_id)
+    imgs = [u for u in (pd.get("images_effective") or pd.get("images") or []) if u][:10]
+    if not imgs:
+        return jsonify({"ok": False, "error": "보낼 사진이 없어요 — 사진을 먼저 넣어 주세요."}), 200
+    # 아직 전부 작으면 보내지 않는다(사전검증 「사진이 작아요」와 같은 잣대)
+    try:
+        from src.services import coupang_image_check as _cic
+        sizes = [int((_cic.size_of(u) or {}).get("long_side") or 0) for u in imgs[:8]]
+        if sizes and all(sizes) and max(sizes) < _cic.MIN_LONG_SIDE:
+            return jsonify({"ok": False, "small": True, "max": max(sizes),
+                            "error": f"사진이 아직 작아요(가장 큰 장 긴 변 {max(sizes)}px · 500px 미만) — 사진을 고친 뒤 다시 보내 주세요."}), 200
+    except Exception as exc:                                     # noqa: BLE001 — 크기를 못 재면 막지 않는다(사유는 로그)
+        logger.warning("[사진 다시 보내기] 크기 재기 실패: %s", exc)
+    try:
+        with mc.seller_market_env(_seller_id(), [market]):
+            _base, ctx = _for_market(market)
+            with ctx:
+                from src.channel_sync.smartstore_uploader import make_uploader
+                up = make_uploader()
+                upl = up.upload_images(imgs)
+                if not upl.get("ok"):
+                    return jsonify({"ok": False, "error": "네이버에 사진을 올리지 못했어요 — " + str(upl.get("reason") or "")[:300]}), 200
+                res = up.update_images(rec["product_id"], upl.get("urls") or [])
+    except Exception as exc:                                     # noqa: BLE001 — 원문 그대로
+        logger.warning("[사진 다시 보내기] item=%s market=%s 실패: %s", str(item_id)[:8], market, exc)
+        return jsonify({"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}), 200
+    logger.info("[사진 다시 보내기] item=%s market=%s 원상품=%s ok=%s %s→%s장 오류=%s", str(item_id)[:8], market, rec["product_id"],
+                res.get("success"), res.get("before_n"), res.get("after_n"), str(res.get("error") or "")[:200])
+    if not res.get("success"):
+        return jsonify({"ok": False, "error": res.get("error") or "수정 실패"}), 200
+    from . import collect_history_store as _chs
+    _at = datetime.now(timezone.utc).isoformat()
+
+    def _put(ex, _m=market):
+        for u in ex.get("uploaded") or []:
+            if isinstance(u, dict) and u.get("market") == _m:
+                u["photo_resent"] = {"at": _at, "before": res.get("before_n"), "after": res.get("after_n")}
+        return ex
+    _chs.merge_extra(str(item_id), _put, seller_ids=_seller_identities())
+    return jsonify({"ok": True, "message": f"사진을 다시 보냈어요 — {res.get('after_n')}장(전 {res.get('before_n')}장)",
+                    "before": res.get("before_n"), "after": res.get("after_n")})
+
+
 def _live_fix_target(item, up) -> dict:
     """U1b — 쿠팡 등록본을 **지금 우리 규칙으로** 다시 만든 상품명·검색어(등록과 같은 빌더를 지난다)."""
     from .product_builder import build_product as _build_product
@@ -4970,6 +5046,42 @@ def admin_diag_stores():
     from src.services.admin_diag import store_audit
     nos = [n.strip() for n in str(request.args.get("nos") or "").split(",") if n.strip().isdigit()][:5]
     return jsonify({"ok": True, **store_audit(nos)})
+
+
+@bp.route("/admin/taobao-reenrich", methods=["GET", "POST"])
+def admin_taobao_reenrich():
+    """오너 11-25 감독 2 — **보강이 한 번도 안 돈** 타오바오 공유 초안(사진 0 · `auto_enrich` 기록 없음 · 보강 시도 0)을 찾아
+    자동 보강 줄에 세운다. 관리자만. GET·`dry_run`(기본) = 목록만 · POST `{"run": true}` = 줄에 세움(10분 틱이 3건씩 · 켜져 있을 때).
+    마켓 전송 0 — 우리 수집 행만 채운다(오너 요청: 「그 23건 재보강」)."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from . import collect_history_store as _chs
+    from src.collectors.share_text import is_taobao_family
+    from src.services import taobao_auto as _ta
+    days = max(1, min(int(request.args.get("days") or 90), 180))
+    found = []
+    for it in _chs.list_items(days=days, lean=False):
+        url = str(it.get("url") or "")
+        if not is_taobao_family(url):
+            continue
+        try:
+            ex = json.loads(it.get("extra_json") or "{}") or {}
+        except Exception:
+            continue
+        if [u for u in (ex.get("images") or []) if u] or ex.get("auto_enrich") or int(ex.get("enrich_attempts") or 0):
+            continue
+        found.append({"item_id": str(it.get("id")), "seller_id": str(it.get("seller_id") or ""), "url": url[:120],
+                      "title": str(it.get("title") or "")[:60], "collected_at": str(it.get("collected_at") or "")})
+    body = request.get_json(silent=True) or {}
+    run = request.method == "POST" and body.get("run") is True
+    queued = 0
+    if run and _ta.enabled():
+        for f in found:
+            queued += int(_ta.enqueue(f["seller_id"], f["item_id"], why="reenrich"))
+    return jsonify({"ok": True, "enabled": _ta.enabled(), "route": _ta.effective_route(), "count": len(found),
+                    "queued": queued, "dry_run": not run, "rows": found[:100],
+                    "note": ("" if _ta.enabled() else
+                             "서버 자동 수집이 꺼져 있어요(TAOBAO_DETAIL_PROVIDER=onebound 또는 TAOBAO_MTOP_AUTO=1) — 켜기는 env 변경(오너)")})
 
 
 @bp.get("/admin/diag/item/<market_no>")

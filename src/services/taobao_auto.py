@@ -216,10 +216,85 @@ def _video_job(user_id: str, item_id: str, source_url: str) -> None:
     logger.info("[동영상] item=%s → %s %s", item_id, rec.get("state"), rec.get("why") or rec.get("mode") or "")
 
 
-def kick(user_id: str, item_id: str) -> bool:
-    """켜져 있으면 백그라운드로 한 건(응답은 기다리지 않는다). 켜졌는지 돌려준다."""
-    if not (enabled() and user_id and item_id):
+# ── 오너 11-25 감독 2(통과 기준 2번): 타오바오 공유 23건(09-28~10-28)이 사진 0·보강 시도 0·차단 사유 0으로 멈췄다 ──────────
+#   근원(코드): ① 자동 보강은 **메모리 스레드 하나**(잠금 뒤 줄 섬) — 배포·워커 재시작에 죽으면 기록도 사유도 안 남는다
+#   ② 공유 초안을 만드는 입구 셋 중 **`collect_input` 하나만** kick했다(공유 글 미리보기 · 맨 단축 링크 수집은 안 함)
+#   ③ 꺼져 있으면 `kick`이 조용히 False — 카드엔 아무 말이 없다.
+#   → 줄(`app_state taobao_auto:queue`)에 먼저 세우고 스레드는 덤으로 바로 시작 · 10분 틱이 남은 줄을 돌린다(3분 넘은 것) ·
+#     꺼져 있으면 `auto_enrich = {state: off, reason}`을 적는다(카드가 사실을 말한다).
+QUEUE_KEY = "taobao_auto:queue"
+QUEUE_MAX = 300
+
+
+def queue_rows() -> list:
+    from src.db import image_translate_queue_pg as st
+    return list((st.state_get(QUEUE_KEY) or {}).get("rows") or [])
+
+
+def _queue_save(rows: list) -> None:
+    from src.db import image_translate_queue_pg as st
+    st.state_set(QUEUE_KEY, {"rows": rows[-QUEUE_MAX:]})
+
+
+def enqueue(user_id: str, item_id: str, why: str = "share") -> bool:
+    try:
+        rows = [r for r in queue_rows() if r.get("item_id") != item_id]
+        rows.append({"user_id": str(user_id), "item_id": str(item_id), "at": datetime.now(timezone.utc).isoformat(), "why": why})
+        _queue_save(rows)
+        return True
+    except Exception as exc:                                    # noqa: BLE001 — 줄 세우기 실패가 수집을 막지 않는다
+        logger.warning("[Z3 자동] 줄 세우기 실패: %s", exc)
         return False
+
+
+def _dequeue(item_id: str) -> None:
+    try:
+        _queue_save([r for r in queue_rows() if r.get("item_id") != item_id])
+    except Exception as exc:                                    # noqa: BLE001
+        logger.warning("[Z3 자동] 줄 빼기 실패: %s", exc)
+
+
+def drain(budget: int = 3, min_age_sec: int = 180) -> dict:
+    """10분 틱 — 줄에서 `min_age_sec` 넘게 남은 것(스레드가 죽었거나 시작 못 한 것)을 최대 `budget`건 돌린다."""
+    out = {"ran": 0, "left": 0, "off": not enabled()}
+    if not enabled():
+        out["left"] = len(queue_rows())
+        return out
+    now = datetime.now(timezone.utc)
+    for r in list(queue_rows()):
+        if out["ran"] >= budget:
+            break
+        try:
+            age = (now - datetime.fromisoformat(str(r.get("at") or ""))).total_seconds()
+        except ValueError:
+            age = min_age_sec + 1
+        if age < min_age_sec:
+            continue
+        _safe_run(str(r.get("user_id") or ""), str(r.get("item_id") or ""))
+        out["ran"] += 1
+    out["left"] = len(queue_rows())
+    if out["ran"]:
+        logger.info("[Z3 자동] 줄 돌림 %s", out)
+    return out
+
+
+def mark_off(user_id: str, item_id: str) -> None:
+    """꺼져 있으면 그 사실을 카드에 남긴다(조용히 멈추지 않는다)."""
+    _mark(item_id, user_id, {"state": "off", "kind": "off", "at": datetime.now(timezone.utc).isoformat(),
+                             "reason": "서버 자동 수집이 꺼져 있어요 — PC 고가수집기로 열거나 「사진 추가」로 채워 주세요"})
+
+
+def kick(user_id: str, item_id: str) -> bool:
+    """줄에 세우고 바로 백그라운드로 한 건(응답은 기다리지 않는다). 꺼져 있으면 「꺼짐」을 적고 False."""
+    if not (user_id and item_id):
+        return False
+    if not enabled():
+        try:
+            mark_off(user_id, item_id)
+        except Exception as exc:                                # noqa: BLE001
+            logger.warning("[Z3 자동] 꺼짐 기록 실패: %s", exc)
+        return False
+    enqueue(user_id, item_id)
     threading.Thread(target=_safe_run, args=(user_id, item_id), daemon=True).start()
     return True
 
@@ -227,6 +302,7 @@ def kick(user_id: str, item_id: str) -> bool:
 def _safe_run(user_id: str, item_id: str) -> None:
     try:
         run(user_id, item_id)
+        _dequeue(item_id)                                       # 끝났으면(성공·수동 사유 기록) 줄에서 뺀다 — 죽었으면 틱이 다시
     except Exception as exc:                                    # noqa: BLE001 — 백그라운드는 죽지 않는다
         logger.warning("[Z3 자동] item=%s 실패: %s", item_id, exc)
         try:

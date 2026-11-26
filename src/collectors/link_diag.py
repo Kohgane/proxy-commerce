@@ -266,6 +266,18 @@ def _item_from_url(market: str, url: str) -> tuple:
     return "", ""
 
 
+def resolve_with_hint(url: str, final_url: str = "") -> dict:
+    """폰(앱 공유 확장·단축어)이 **이미 편 주소**(`final_url`)가 그 마켓 상품 주소면 네트워크 없이 그걸 쓴다 —
+    서버 IP가 막혀도 된다(오너 11-25 감독 1). 아니면 `resolve_share_link`."""
+    market = short_link_market(url)
+    if market in ("amazon", "aliexpress") and final_url:
+        iid, canon = _item_from_url(market, str(final_url))
+        if iid:
+            return {"ok": True, "market": market, "item_id": iid, "canonical_url": canon, "reason": "ok_hint",
+                    "hops": [], "elapsed_ms": 0}
+    return resolve_share_link(url)
+
+
 _RESOLVED: dict = {}          # 같은 요청 흐름(중복 확인 → 수집 → 사전검증)에서 두 번 나가지 않게 — 성공만 10분
 _RESOLVED_TTL = 600.0
 

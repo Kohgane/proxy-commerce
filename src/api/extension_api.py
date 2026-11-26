@@ -1911,9 +1911,9 @@ def share_collect_core(raw: str, *, url: str, seller_id: str, seller_ids, final_
     from src.collectors.share_text import parse_share_text
     # 오너 11-25 15:56: 아마존·알리 단축 주소는 먼저 펴서 **정본 주소로** 중복을 본다(같은 상품이 짧은 주소로 또 쌓이지 않게).
     try:
-        from src.collectors.link_diag import resolve_share_link, short_link_market
+        from src.collectors.link_diag import resolve_with_hint, short_link_market
         if short_link_market(url) in ("amazon", "aliexpress"):
-            _r = resolve_share_link(url)
+            _r = resolve_with_hint(url, final_url)
             if _r.get("ok") and _r.get("canonical_url"):
                 url = _r["canonical_url"]
     except Exception as exc:                       # noqa: BLE001 — 못 펴면 원래 주소로 간다
