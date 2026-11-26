@@ -107,3 +107,14 @@ def test_taobao_and_full_items_get_no_pc_fill(client):
     assert 'data-role="m5-pc-fill"' not in h and "保存图片" in h
     full = _ali_draft(images=["https://ae01.alicdn.com/kf/S1.jpg"], price="23900", currency="KRW", gate_ready=True)
     assert 'data-role="m5-pc-fill"' not in client.get(f"/seller/m/item/{full}").get_data(as_text=True)
+
+
+def test_ali_draft_never_claims_server_is_filling(client, monkeypatch):
+    """캡처에서 잡힘: 타오바오 자동 보강이 켜져 있으면 알리 초안에도 「서버가 사진·옵션을 채우는 중」이 떴다 — 서버는 알리를 안 채운다."""
+    from src.services import taobao_auto as TA
+    monkeypatch.setattr(TA, "enabled", lambda: True)
+    iid = _ali_draft()
+    h = client.get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    assert "서버가 사진·옵션을 채우는 중" not in h
+    from src.seller_console import views as V
+    assert V._m5_auto({"enrich_state": "pending"}, "x", "https://item.taobao.com/item.htm?id=1")["state"] == "running"

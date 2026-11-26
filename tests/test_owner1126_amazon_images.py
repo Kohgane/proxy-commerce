@@ -49,7 +49,7 @@ URL = "https://www.amazon.com/dp/B0D1TOMTOC"
 def test_images_come_from_page_data_not_img_tags():
     from src.collectors.universal_scraper import UniversalScraper
     r = UniversalScraper().parse_html(_page(), URL)
-    assert r.images == [M + "71Big._AC_SL1500_.jpg", M + "41Second._AC_.jpg"]            # hiRes → large · ID 중복 1회
+    assert r.images == [M + "71Big._AC_SL1500_.jpg", M + "41Second._AC_SX522_.jpg"]      # hiRes → main 최대판(→ large) · ID 중복 1회
     assert not any(x in " ".join(r.images) for x in ("_AC_US40_", ".svg", "/images/S/", "images-na", "_SS100_"))
     assert r.raw_meta["amazon_pdp"]["image_source"] == "colorImages"
 
@@ -209,3 +209,28 @@ def test_options_without_dimensions_display_use_korean_names():
     h = '"variationValues" : {"size_name": ["28L", "40L"], "color_name": ["Black", "Green-ripstop"]}, "x": 1'
     assert A.options(h) == [{"name": "사이즈", "values": ["28L", "40L"], "dim": "size_name"},
                             {"name": "색상", "values": ["Black", "Green-ripstop"], "dim": "color_name"}]
+
+
+def test_card_flags_mostly_junk_rows_like_b6809323(client):
+    """표본 b6809323: 14장 중 쓸 만한 판 1장(SX522) — 옛 수집기 행은 「수집이 덜 됐어요」로 다시 가져오게."""
+    sample = _SAMPLE_JUNK + [M + "71Big._AC_SX522_.jpg"]
+    iid = _row(images=sample)
+    h = client.get(f"/seller/m/item/{iid}").get_data(as_text=True)
+    assert 'data-code="no_photos"' in h and f"사진 {len(sample)}장 중 쓸 만한 건 1장이에요" in h
+    good = _row(images=[M + "71A._AC_SL1500_.jpg", M + "71B._AC_SL1500_.jpg", M + "31T._AC_US40_.jpg"])
+    assert 'data-code="no_photos"' not in client.get(f"/seller/m/item/{good}").get_data(as_text=True)
+
+
+
+def test_real_page_form_parsejson_string():
+    """실측(AMZIMG2 11-26): 실제 화면은 `'colorImages': { 'initial': A.$.parseJSON('[…]') }` — 배열이 JS 문자열 안에 있다.
+    hiRes(1070×1428~1500×1500 실측)를 고르고, hiRes가 없으면 main 최대판(679) — large(338~500)는 마지막."""
+    from src.collectors import amazon_pdp as A
+    arr = [{"hiRes": M + "81zKIbbQahL._AC_SL1500_.jpg", "thumb": M + "31g6QEu1v7L._AC_US40_.jpg", "large": M + "31g6QEu1v7L._AC_.jpg",
+            "main": {M + "81zKIbbQahL._AC_SX679_.jpg": [679, 906]}, "variant": "MAIN"},
+           {"hiRes": None, "thumb": M + "414tuquNi2L._AC_US40_.jpg", "large": M + "414tuquNi2L._AC_.jpg",
+            "main": {M + "414tuquNi2L._AC_SX679_.jpg": [679, 850]}, "variant": "PT01", "note": "it's"}]
+    raw = json.dumps(arr).replace("'", "\\'")
+    h = ("P.when('A').register(\"ImageBlockATF\", function(A){ var data = { 'isMediaBlock': true, "
+         "'colorImages': { 'initial': A.$.parseJSON('" + raw + "')}, 'colorToAsin': {} }; });")
+    assert A.gallery(h) == {"images": [M + "81zKIbbQahL._AC_SL1500_.jpg", M + "414tuquNi2L._AC_SX679_.jpg"], "source": "colorImages"}

@@ -10,7 +10,9 @@
   .dg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); margin-bottom: var(--space-3); }
   .dg-card h2 { font-size: 1rem; margin: 0 0 var(--space-2); }
   .dg-t { width: 100%; border-collapse: collapse; font-size: .9rem; }
-  .dg-t th, .dg-t td { padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .dg-t th, .dg-t td { padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top;
+                        word-break: keep-all; overflow-wrap: anywhere; }
+  .dg-t td:first-child, .dg-t th:first-child { min-width: 9em; }   /* 좁은 폰에서 첫 칸이 한 글자씩 세로로 쪼개지지 않게(캡처에서 잡힘) */
   .dg-t td.num, .dg-t th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .dg-url { word-break: break-all; font-size: .78rem; color: var(--text-muted, var(--muted)); }
   .dg-img { width: 44px; height: 44px; object-fit: cover; border-radius: var(--radius-sm); background: var(--bg); }
@@ -78,9 +80,9 @@
       </tbody></table>
     </section>
     <section class="dg-card"><h2>대상 {{ d.count }}건</h2>
-      <table class="dg-t"><thead><tr><th>상품</th><th>상품번호</th><th>구분</th></tr></thead><tbody>
+      <table class="dg-t"><thead><tr><th>상품</th><th>구분</th></tr></thead><tbody>
       {% for f in d.rows %}<tr class="{{ '' if f.eligible else 'dg-row-off' }}" data-role="dg-reenrich-row" data-eligible="{{ '1' if f.eligible else '0' }}">
-        <td>{{ f.title or '(제목 없음)' }}<div class="dg-url">{{ f.item_id }} · {{ f.collected_at[:10] }}</div></td><td>{{ f.taobao_id or '—' }}</td>
+        <td>{{ f.title or '(제목 없음)' }}<div class="dg-url">상품번호 {{ f.taobao_id or '—' }} · 행 {{ f.item_id }} · {{ f.collected_at[:10] }}</div></td>
         <td>{% if f.test %}<span class="pc-badge pc-badge-muted" data-role="dg-test">시험 계정</span>{% elif f.dup_of %}<span class="pc-badge pc-badge-off" data-role="dg-dup">중복(같은 상품번호 · {{ f.dup_of[:8] }})</span>{% else %}다시 가져옴{% endif %}</td></tr>{% endfor %}
       </tbody></table></section>
     <p class="small"><a href="?raw=1">원문(JSON)</a></p>

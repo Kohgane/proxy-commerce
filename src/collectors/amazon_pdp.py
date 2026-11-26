@@ -12,7 +12,8 @@
   · 가격: `priceAmount`(현재 판매가) → 없으면 가격 블록의 `a-offscreen`.
   · 상세(A+): `#aplus` 안 `aplus-media` 사진.
 옵션별 가격은 이 화면에 없다(고른 옵션 하나만 값이 있다) — 지어내지 않는다. 그러면 사전검증의 「수집이 덜 됐어요」(옵션은 있는데 SKU 0)가 말한다.
-크기 토큰(`._AC_US40_.`)을 떼서 「원본」을 만들지 않는다 — 뗀 주소가 원본인지는 실측(AMZIMG1126) 전엔 모른다.
+크기 토큰(`._AC_US40_.`)을 떼서 「원본」을 만들지 않는다 — 실측(AMZIMG2 11-26): 토큰 뗀 썸네일은 400×500·500×500(작은 판),
+같은 사진의 `hiRes`는 1070×1428~1500×1500이었다.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 _ID_RE = re.compile(r"/images/I/([A-Za-z0-9+\-%]+)\.")
-_COLOR_IMAGES_RE = re.compile(r"""['"]colorImages['"]\s*:\s*\{\s*['"]initial['"]\s*:\s*(?=\[)""")
+_COLOR_IMAGES_RE = re.compile(r"""['"]colorImages['"]\s*:\s*\{\s*['"]initial['"]\s*:\s*(?=\[|\s*(?:A\.\$|jQuery|\$)\.parseJSON)""")
 _DYN_RE = re.compile(r"""<img[^>]*\bid=["']landingImage["'][^>]*>""", re.S)
 _DYN_ATTR_RE = re.compile(r"""data-a-dynamic-image=["']([^"']+)["']""")
 _VAR_VALUES_RE = re.compile(r'"variationValues"\s*:\s*(?=\{)')
@@ -86,9 +87,35 @@ def _balanced(text: str, start: int) -> str:
     return ""
 
 
+_PARSEJSON_RE = re.compile(r"""\s*(?:A\.\$|jQuery|\$)\.parseJSON\(\s*(['"])""")
+
+
+def _js_string(text: str, start: int, quote: str) -> str:
+    """`text[start:]`부터 따옴표 `quote`로 닫히는 JS 문자열 내용(이스케이프 `\'`·`\"`·`\\` 풀어서)."""
+    out, i = [], start
+    while i < len(text) and i < start + 400_000:
+        c = text[i]
+        if c == "\\" and i + 1 < len(text):
+            n = text[i + 1]
+            out.append(n if n in (quote, "\\", "/") else "\\" + n)
+            i += 2
+            continue
+        if c == quote:
+            return "".join(out)
+        out.append(c)
+        i += 1
+    return ""
+
+
 def _block(rx, html: str):
+    """`키: [..]`·`키: {..}` 또는 실측 꼴 `키: A.$.parseJSON('[..]')`(11-26 AMZIMG2 — 아마존 ImageBlockATF)."""
     m = rx.search(html or "")
-    return _json(_balanced(html, m.end())) if m else None
+    if not m:
+        return None
+    pj = _PARSEJSON_RE.match(html, m.end())
+    if pj:
+        return _json(_js_string(html, pj.end(), pj.group(1)))
+    return _json(_balanced(html, m.end()))
 
 
 def _json(raw: str):
@@ -128,7 +155,8 @@ def gallery(html: str) -> Dict:
         for e in arr:
             if not isinstance(e, dict):
                 continue
-            _add(e.get("hiRes") or e.get("large") or _largest(e.get("main") or {}))
+            # 실측(AMZIMG2 11-26): hiRes 1070×1428~1500×1500 · main 최대판 679 · large 338~500 — 큰 것부터
+            _add(e.get("hiRes") or _largest(e.get("main") or {}) or e.get("large"))
         if out:
             return {"images": out, "source": "colorImages"}
     tag = _DYN_RE.search(html or "")

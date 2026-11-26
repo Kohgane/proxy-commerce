@@ -2236,8 +2236,12 @@ def _incomplete_reasons(item: dict, product: dict, has_price: bool) -> list:
     try:                                                         # 오너 11-26 진단 1: 아마존 — 썸네일·배지·추천 사진만 있으면 반쪽 수집
         from src.collectors.amazon_pdp import usable_photo as _usable
         _imgs = [u for u in ((product or {}).get("images") or []) if isinstance(u, str)]
-        if "amazon" in str((item or {}).get("url") or "").lower() and _imgs and not any(_usable(u) for u in _imgs):
-            out.append({"code": "no_photos", "line": f"쓸 만한 사진이 없어요(사진 {len(_imgs)}장 모두 썸네일·배지예요) — 다시 가져와 주세요."})
+        if "amazon" in str((item or {}).get("url") or "").lower() and _imgs:
+            _good = sum(1 for u in _imgs if _usable(u))
+            if not _good:
+                out.append({"code": "no_photos", "line": f"쓸 만한 사진이 없어요(사진 {len(_imgs)}장 모두 썸네일·배지예요) — 다시 가져와 주세요."})
+            elif len(_imgs) - _good > _good:     # 옛 수집기(img 태그 긁기)로 읽은 행 — 썸네일·배지·추천이 더 많다(표본 b6809323: 1/14)
+                out.append({"code": "no_photos", "line": f"사진 {len(_imgs)}장 중 쓸 만한 건 {_good}장이에요(나머지는 썸네일·배지·추천 상품) — 다시 가져와 주세요."})
     except Exception as exc:                                     # noqa: BLE001
         logger.warning("[M5] 사진 판정 실패: %s", exc)
     opts = [o for o in ((product or {}).get("options") or []) if isinstance(o, dict) and (o.get("values") or [])]
@@ -2446,7 +2450,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "market_chips": market_chips,
             "market_records": _market_records(ex),       # M8: 「마켓 등록본」 — 데스크톱과 같은 줄
             "product": product,
-            "risks": risks, "mixed_types": mixed, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or "")), **_m5_ship(product),
+            "risks": risks, "mixed_types": mixed, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or ""), str(item.get("url") or "")), **_m5_ship(product),
             **_m5_video(ex)}
 
 
@@ -2585,7 +2589,7 @@ def collect_brand_value_fix(item_id: str):
     return jsonify({"ok": True, "applied": applied, "left": ex["brand_value_fix"]["left"]})
 
 
-def _m5_auto(ex: dict, item_id: str = "") -> dict:
+def _m5_auto(ex: dict, item_id: str = "", url: str = "") -> dict:
     """Z3 자동 경로(오너 2026-10-05) — 서버 mtop 보강 상태 한 줄. 켜졌을 때만 「채우는 중」, 실패면 사유 + (c) 수동."""
     rec = ex.get("auto_enrich") if isinstance(ex.get("auto_enrich"), dict) else {}
     st = str(rec.get("state") or "")
@@ -2617,7 +2621,9 @@ def _m5_auto(ex: dict, item_id: str = "") -> dict:
                                          + (f" · 가격 기준 {rec['price_asof']}" if rec.get("price_asof") else "")}
     try:
         from src.services import taobao_auto as _ta
-        if _ta.enabled() and str(ex.get("enrich_state") or "") == "pending":
+        from src.collectors.share_text import is_taobao_family as _is_tb
+        # 오너 11-26 캡처에서 잡힘: 알리·아마존 초안에도 「서버가 채우는 중」이 떴다(서버 자동 보강은 타오바오만) — 주소로 가른다
+        if _ta.enabled() and str(ex.get("enrich_state") or "") == "pending" and (not url or _is_tb(url) or ex.get("item_id_taobao")):
             return {"state": "running", "line": "서버가 사진·옵션을 채우는 중이에요(몇 초 — 새로고침하면 보여요)."}
     except Exception:
         pass
@@ -5411,7 +5417,7 @@ def collect_auto_enrich_state(item_id):
         ex = json.loads(item.get("extra_json") or "{}") or {}
     except Exception:
         ex = {}
-    info = _m5_auto(ex, item_id) or {"state": "off", "line": ""}
+    info = _m5_auto(ex, item_id, str(item.get("url") or "")) or {"state": "off", "line": ""}
     if info.get("state") == "done":                     # Y8: 담았어요 카드엔 플러그 짧은 줄도(M5는 자기 줄이 따로 있다)
         try:
             from src.collectors.voltage_plug import plug_notice_needed as _pnn
