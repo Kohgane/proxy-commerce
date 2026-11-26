@@ -155,7 +155,7 @@ def test_reenrich_batch_needs_matching_count_then_runs_with_progress(admin, stat
         assert admin.post("/seller/admin/taobao-reenrich", json={"now": True, "confirm": n + 1}).status_code == 409
         assert calls == []
         d = admin.post("/seller/admin/taobao-reenrich", json={"now": True, "confirm": n}).get_json()
-        assert d["ok"] and jobs == ["taobao-reenrich-batch"] and len(calls) == n
+        assert d["ok"] and jobs == ["djob:taobao_reenrich:batch"] and len(calls) == n
         p = admin.get("/seller/admin/taobao-reenrich?progress=1").get_json()
         assert p["state"] == "finished" and len(p["done"]) == n and p["ok_count"] == (n + 1) // 2
         assert any((not x["ok"]) and x["reason"] == "로그인 벽" for x in p["done"])

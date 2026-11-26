@@ -2,6 +2,15 @@
    등록은 데스크톱과 같은 두 입구(/collect/prevalidate · /collect/upload)로 간다 — 등록 경로를 두 벌 만들지 않는다.
    390px 폭에서 가로 스크롤 0 · 토큰 색만 · 이모지 0. 못 읽은 칸은 비워 두고 「PC 확장에서 보강 필요」로 말한다. #}
 <section class="m5" data-role="m5" data-item="{{ m5.item_id }}" data-blocked="{{ '1' if m5.blocked else '0' }}">
+  {% set _rr = m5.refetch_result or {} %}
+  {% if _rr.can_refetch %}
+  {# 오너 11-27 02:07 ①: 서버가 다시 읽을 수 있는 소싱처(아마존 · 자동 경로 켜진 타오바오)면 카드 맨 위에 늘 「다시 가져오기」 —
+     덜 됐다는 판정이 없어도(OKNIFE). 누르면 이 자리에 진행 한 줄 → 끝나면 결과 한 줄(사진 n→m · 옵션가 k개). #}
+  <section class="m5-topbar" data-role="m5-top-refetch">
+    <button type="button" class="m5-fix" data-role="m5-incomplete-refetch" data-kind="{{ _rr.kind }}" data-before="{{ _rr.images }}">다시 가져오기</button>
+    <span class="m5-note" data-role="m5-top-refetch-state" aria-live="polite">{{ _rr.line or ('아마존 화면을 서버가 다시 읽어요' if _rr.kind == 'amazon' else '타오바오 상세를 서버가 다시 읽어요') }}</span>
+  </section>
+  {% endif %}
   <div class="m5-card" data-role="m5-card">
     {% if m5.thumb %}
     <img class="m5-thumb" src="{{ m5.thumb }}" alt="대표 이미지" referrerpolicy="no-referrer" loading="lazy">
@@ -162,7 +171,7 @@
     <div class="m5-incomplete-acts">
       {% set _sp = m5.incomplete|selectattr('code', 'equalto', 'sku_partial')|list %}
       {% if _sp %}<button type="button" class="m5-fix" data-role="m5-drop-unpriced">가격 없는 {{ _sp[0].n }}개 빼고 등록</button>{% endif %}
-      {% if not (m5.incomplete|selectattr('code', 'equalto', 'sku_filling')|list) %}<button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>{% endif %}
+      {% if not (m5.incomplete|selectattr('code', 'equalto', 'sku_filling')|list) and not (m5.refetch_result or {}).can_refetch %}<button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>{% endif %}
       {% if m5.incomplete|selectattr('code', 'equalto', 'no_source_url')|list %}
       <div class="m5-src"><input type="url" inputmode="url" class="form-control" data-role="m5-incomplete-url" placeholder="{{ m5.src_example }}" autocomplete="off">
         <button type="button" class="m5-fix" data-role="m5-incomplete-url-save">주소 넣기</button></div>
@@ -171,8 +180,7 @@
     <div class="m5-note" data-role="m5-incomplete-state" aria-live="polite"></div>
   </section>
   {% endif %}
-  {% set _rr = m5.refetch_result or {} %}
-  {% if _rr.line or _rr.resend or _rr.state %}
+  {% if (_rr.line and not _rr.can_refetch) or _rr.resend or _rr.state %}
   {# 오너 11-26 저녁 ①: 다시 가져오기 결과 한 줄 + 이미 스스에 올라간 상품이면 바뀐 사진을 그 자리에서 다시 보낸다(오너 탭 · 두 번) #}
   <section class="m5-refetch-result" data-role="m5-refetch-result">
     {% if _rr.line %}<div class="m5-refetch-line" data-role="m5-refetch-line"><b>다시 가져온 결과</b> — {{ _rr.line }}</div>{% endif %}
@@ -181,7 +189,6 @@
       {% for t in _rr.resend %}
       <button type="button" class="m5-fix" data-role="m5-photo-resend" data-market="{{ t.market }}">바뀐 사진을 {{ t.label }}에 다시 보내기</button>
       {% endfor %}
-      {% if _rr.state == 'small' and _rr.can_refetch and not m5.incomplete %}<button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>{% endif %}
     </div>
     <div class="m5-note" data-role="m5-refetch-state" aria-live="polite"></div>
   </section>
@@ -325,6 +332,9 @@
   .m5-incomplete-acts { display: flex; flex-direction: column; gap: var(--space-2); }
   .m5-refetch-result { margin: 0 0 var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-left: 3px solid var(--teal); border-radius: var(--radius); background: var(--surface); }
   .m5-refetch-line { margin-bottom: var(--space-2); line-height: 1.5; }
+  .m5-topbar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin: 0 0 var(--space-2); }
+  .m5-topbar .m5-fix { flex: none; min-height: 44px; }
+  .m5-topbar .m5-note { flex: 1 1 12em; }
   .m5-off-row { margin-top: 4px; }
   .m5-reject, .m5-left { margin: 0 0 var(--space-3); }
   .m5-reject-sum { font-weight: 600; margin: 4px 0; }
@@ -537,19 +547,20 @@
       var r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
       var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
       if (d.ok) { st.textContent = isUrl ? '원본 주소를 넣었어요 — 다시 그립니다' : (d.message || '다시 가져오기 줄에 넣었어요'); if (isUrl) setTimeout(function () { location.reload(); }, 700);
-        else if (d.server_refetch) kgpPollRefetch(st, _since); }
+        else if (d.server_refetch) kgpPollRefetch(st, _since, b.getAttribute('data-before')); }
       else st.textContent = (isUrl ? '' : '요청하지 못했어요 — ') + (d.error || '사유 없음');
     } catch (err) { st.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
     b.disabled = false;
   });
   // 오너 11-26 저녁 ①: 다시 가져오기가 끝날 때까지 4초마다 묻는다(읽기만 · 최대 3분) → 끝나면 결과 줄과 「다시 보내기」를 그린다
-  function kgpPollRefetch(st, since) {
+  function kgpPollRefetch(st, since, before) {
     var n = 0;
     (function tick() {
       n += 1;
-      fetch('/seller/collect/' + encodeURIComponent(itemId) + '/refetch-result?since=' + encodeURIComponent(since), {credentials: 'same-origin'})
+      fetch('/seller/collect/' + encodeURIComponent(itemId) + '/refetch-result?since=' + encodeURIComponent(since) + (before ? '&before=' + encodeURIComponent(before) : ''), {credentials: 'same-origin'})
         .then(function (r) { return r.json(); }).then(function (d) {
-          if (d && d.done) { st.textContent = '다시 가져왔어요 — ' + (d.line || '') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); return; }
+          if (d && d.done) { st.textContent = '다시 가져왔어요 — ' + (d.line || '') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 1200); return; }
+          st.textContent = '다시 읽는 중… ' + (n * 4) + '초';
           if (n >= 45) { st.textContent = '아직 읽는 중이에요 — 잠시 뒤 새로 고침해 주세요.'; return; }
           setTimeout(tick, 4000);
         }).catch(function () { if (n < 45) setTimeout(tick, 4000); });

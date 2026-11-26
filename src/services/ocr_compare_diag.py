@@ -381,24 +381,68 @@ def census(limit: int = 300) -> Dict:
     return {"at": datetime.now(timezone.utc).isoformat(), "count": cnt, "by_item": by_item, "hits": hits[:200]}
 
 
-def start_census() -> bool:
+CENSUS_JOB = "ocr:census:job"
+
+
+def start_census(by_uid: str = "") -> bool:
+    """오너 11-27 02:07 ③: 전수 재판정(최대 300장 · 장당 OCR 1회 — 5분을 넘길 수 있다)을 서버 줄(durable_job)에서 —
+    5장마다 저장하고 일꾼이 새로 떠도 틱이 이어서. 이미 돌면 False."""
     from src.db import image_translate_queue_pg as q
-    if not _RUNNING.acquire(blocking=False):
+    from src.services import durable_job as DJ
+    cur = DJ.status(CENSUS_JOB)
+    if cur.get("state") == "running":
+        if cur.get("stalled"):
+            DJ.resume(CENSUS_JOB)
         return False
-
-    def _go():
-        try:
-            q.state_set(CENSUS_KEY, {"running": True, "at": datetime.now(timezone.utc).isoformat()})
-            res = census()
-        except Exception as exc:                                 # noqa: BLE001
-            logger.exception("[OCR 전수 재판정] 실패")
-            res = {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
-        finally:
-            _RUNNING.release()
-        q.state_set(CENSUS_KEY, res)
-
-    threading.Thread(target=_go, daemon=True, name="ocr-recheck").start()
+    pages = [list(p) for p in ocr_skipped_pages(300)]
+    DJ.begin(CENSUS_JOB, "ocr_census", {"pages": pages, "i": 0, "by_item": {}, "hits": [],
+                                        "cnt": {"total": len(pages), "han": 0, "send": 0, "none": 0, "unknown": 0, "fetch_fail": 0}},
+             by_uid=by_uid)
+    q.state_set(CENSUS_KEY, {"running": True, "at": datetime.now(timezone.utc).isoformat(), "progress": f"0/{len(pages)}"})
     return True
+
+
+def _census_step(key: str, rec: Dict, deadline: float) -> Dict:
+    import time as _time
+    from src.db import image_translate_queue_pg as q
+    from src.services import detail_image_plan as dip
+    from src.services import image_text_precheck as P
+    from src.services import image_translate_tencent as tc
+    from src.services import durable_job as DJ
+    pages, cnt, by_item, hits = rec.get("pages") or [], rec["cnt"], rec.setdefault("by_item", {}), rec.setdefault("hits", [])
+    while _time.time() < deadline and int(rec.get("i") or 0) < len(pages):
+        iid, kind, i, url = pages[int(rec["i"])]
+        rec["i"] = int(rec["i"]) + 1
+        raw, _why = tc.fetch_image(dip.fix_url(url))
+        data = dip.prepare_for_tencent(raw)[0] if raw else None
+        if not data:
+            cnt["fetch_fail"] += 1
+        else:
+            has, seen = P.han_text(data)
+            k = "han" if has is True else ("none" if has is False else ("unknown" if not seen else "send"))
+            cnt[k] += 1
+            b = by_item.setdefault(iid, {"han": 0, "send": 0, "none": 0})
+            if k in b:
+                b[k] += 1
+            if k in ("han", "send") and len(hits) < 200:
+                hits.append({"item": iid, "kind": kind, "idx": i, "no": i + 1, "seen": str(seen or "")[:40], "how": k})
+        if rec["i"] % 5 == 0:
+            rec["progress"] = {"n": rec["i"], "total": len(pages), "label": f"재판정 {rec['i']}/{len(pages)}"}
+            DJ.save(key, rec)
+            q.state_set(CENSUS_KEY, {"running": True, "at": rec.get("started_at"), "progress": f"{rec['i']}/{len(pages)}"})
+    if int(rec.get("i") or 0) >= len(pages):
+        q.state_set(CENSUS_KEY, {"at": datetime.now(timezone.utc).isoformat(), "count": cnt, "by_item": by_item, "hits": hits[:200]})
+        rec.update(state="done", pages=[], push={"title": f"OCR 전수 재판정 완료 — 한자 {cnt['han']} · 번역으로 {cnt['send']} · 없음 {cnt['none']}",
+                                                "body": f"못 받은 장 {cnt['fetch_fail']}", "path": "/admin/diagnostics/ocr-compare"})
+    return rec
+
+
+def _register():
+    from src.services import durable_job as DJ
+    DJ.register("ocr_census", _census_step)
+
+
+_register()
 
 
 def last_census() -> Dict:

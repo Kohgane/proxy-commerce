@@ -501,6 +501,44 @@ def size_of(url: str) -> Dict[str, Any]:
     return res
 
 
+HEAD_BYTES = 65536
+
+
+def head_size(url: str, *, first: int = HEAD_BYTES, timeout: float = 8.0) -> Dict[str, Any]:
+    """오너 11-27 ②: **머리 바이트만** 읽어 긴 변을 잰다(Range 64KB → 못 읽으면 256KB 한 번) — 사진 한 장을 통째로 받지 않는다.
+    `{w, h, long_side, ok, read_bytes}` · 못 읽으면 `{why}`. 결과는 `size_of`와 같은 캐시에 둔다."""
+    key = str(url or "")
+    if not key:
+        return {"why": "주소 없음"}
+    with _LOCK:
+        if key in _SIZE:
+            return _SIZE[key]
+    from src.collectors.image_norm import abs_image_url, image_head
+    u = abs_image_url(key)
+    if not str(u or "").startswith(("http://", "https://")):
+        return {"why": "읽을 수 없는 주소예요"}
+    import requests
+    got = b""
+    for n in (first, first * 4):
+        try:
+            with requests.get(u, headers={"User-Agent": "gogabridj/1.0", "Range": f"bytes=0-{n - 1}"}, timeout=timeout,
+                              stream=True) as r:
+                if r.status_code not in (200, 206):
+                    return {"why": f"HTTP {r.status_code}"}
+                got = r.raw.read(n)                                # 서버가 Range를 무시해도 n 바이트에서 끊는다
+        except Exception as exc:                                   # noqa: BLE001
+            return {"why": f"{type(exc).__name__}"}
+        _fmt, w, h = image_head(got)
+        if w and h:
+            res = {"w": w, "h": h, "long_side": max(w, h), "ok": max(w, h) >= MIN_LONG_SIDE, "read_bytes": len(got)}
+            with _LOCK:
+                _SIZE[key] = res
+                while len(_SIZE) > _SIZE_MAX:
+                    _SIZE.popitem(last=False)
+            return res
+    return {"why": f"머리 {len(got)}바이트로 크기를 못 읽음"}
+
+
 def best_rep(cands: list) -> int:
     """500px 이상 장 중 쿠팡 대표로 가장 알맞은 장의 idx(없으면 -1) — 글자 없음 > 사람 없음(제품 단독 컷) > 정사각에 가까움 > 큰 장."""
     ok = [c for c in cands if c.get("ok") and not c.get("is_rep")]

@@ -2477,14 +2477,16 @@ def _m5_photo_fix(ex: dict, url: str = "") -> dict:
     사진이 작은 판으로 올라갔는데 아직 다시 안 가져왔으면 「다시 가져오기」 버튼(아마존만 서버가 바로 읽는다)."""
     try:
         from src.services import photo_fix as _pf
-        from src.collectors.amazon_pdp import is_amazon_page as _is_amz
         j = _pf.judge(ex) or {}
-        return {"refetch_result": {"line": _pf.refetch_line(ex), "resend": _pf.resend_targets(ex),
+        kind = _server_refetch_kind(url)
+        line = _pf.refetch_line(ex) if kind == "amazon" else (_pf.taobao_line(ex) if kind == "taobao" else "")
+        return {"refetch_result": {"line": line, "resend": _pf.resend_targets(ex),
                                    "state": j.get("state") or "", "fix_line": j.get("line") or "",
-                                   "can_refetch": bool(_is_amz(None, url))}}
+                                   "can_refetch": bool(kind), "kind": kind,
+                                   "images": len([u for u in (ex.get("images") or []) if isinstance(u, str) and u])}}
     except Exception as exc:                                     # noqa: BLE001 — 카드는 그대로 그린다
         logger.warning("[M5] 사진 고침 판정 실패: %s", exc)
-        return {"refetch_result": {"line": "", "resend": [], "state": "", "fix_line": "", "can_refetch": False}}
+        return {"refetch_result": {"line": "", "resend": [], "state": "", "fix_line": "", "can_refetch": False, "kind": "", "images": 0}}
 
 
 def _m5_video(ex: dict) -> dict:
@@ -5306,15 +5308,20 @@ def admin_taobao_reenrich():
     eligible = [f for f in found if f["eligible"]]
     est = _tb.estimate(len(eligible), _ta.effective_route() if _ta.enabled() else "")
     body = request.get_json(silent=True) or {}
+    from src.services import durable_job as _DJ
     if str(request.args.get("progress") or "") == "1":
-        return jsonify({"ok": True, **_tb.status()})
+        return jsonify({"ok": True, **_DJ.status(_tb.KEY)})
+    if request.method == "POST" and body.get("stop") is True:
+        return jsonify({"ok": _tb.stop()})
+    if request.method == "POST" and body.get("resume") is True:
+        return jsonify(_DJ.resume(_tb.KEY))
     if request.method == "POST" and body.get("now") is True:
         # 오너 탭(두 번 확인) — 화면이 본 건수와 서버가 지금 센 건수가 같아야 시작(그 사이 바뀌었으면 다시 보여 준다)
         if not _ta.enabled():
             return jsonify({"ok": False, "error": "서버 자동 수집이 꺼져 있어요 — 켜기는 env 변경(오너)."}), 400
         if int(body.get("confirm") or -1) != len(eligible):
             return jsonify({"ok": False, "error": f"건수가 바뀌었어요(지금 {len(eligible)}건) — 화면을 새로 고친 뒤 다시 눌러 주세요."}), 409
-        out = _tb.start(eligible, by=str(session.get("email") or session.get("user_id") or ""))
+        out = _tb.start(eligible, by=str(session.get("email") or session.get("user_id") or ""), by_uid=str(session.get("user_id") or ""))
         return jsonify(out), (200 if out.get("ok") else 409)
     run = request.method == "POST" and body.get("run") is True
     queued = 0
@@ -5322,7 +5329,7 @@ def admin_taobao_reenrich():
         for f in eligible:
             queued += int(_ta.enqueue(f["seller_id"], f["item_id"], why="reenrich"))
     data = {"enabled": _ta.enabled(), "route": _ta.effective_route(), "count": len(found), "eligible": len(eligible),
-            "estimate": est, "queued": queued, "dry_run": not run, "rows": found[:100], "batch": _tb.status(),
+            "estimate": est, "queued": queued, "dry_run": not run, "rows": found[:100], "batch": _DJ.status(_tb.KEY),
             "note": ("" if _ta.enabled() else
                      "서버 자동 수집이 꺼져 있어요(TAOBAO_DETAIL_PROVIDER=onebound 또는 TAOBAO_MTOP_AUTO=1) — 켜기는 env 변경(오너)")}
     if request.method == "GET" and _wants_html():
@@ -5347,31 +5354,57 @@ def admin_smartstore_relist():
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         act = str(body.get("action") or "")
+        _uid = str(session.get("user_id") or "")
         if act == "build":
-            from src.utils import bg_job
-            started, st = bg_job.start(f"smartstore-relist-build:{store}", lambda: SR.build(store))
-            return jsonify({"ok": bool(started), "started": bool(started),
-                            "error": "" if started else ("서버 메모리 여유가 없어요 — 잠시 뒤 다시." if st.get("busy_memory") else "이미 만드는 중이에요.")})
+            # 오너 11-27 02:07 ②: 줄에 세우고 바로 시작 — 일꾼이 새로 떠도 10분 틱·부팅이 저장한 쪽부터 잇는다(처음부터 다시 안 함)
+            out = SR.start_build(store, by_uid=_uid)
+            return jsonify(out)
         if act == "run":
-            out = SR.start(store, int(body.get("confirm") or -1), by=str(session.get("email") or session.get("user_id") or ""))
+            out = SR.start(store, int(body.get("confirm") or -1), by=str(session.get("email") or session.get("user_id") or ""), by_uid=_uid)
             return jsonify(out), (200 if out.get("ok") else 409)
         if act == "stop":
             return jsonify({"ok": SR.stop(store)})
+        if act in ("resume_build", "resume_run"):
+            from src.services import durable_job as _DJ
+            return jsonify(_DJ.resume((SR._BUILD_KEY if act == "resume_build" else SR._RUN_KEY).format(store)))
         return jsonify({"ok": False, "error": "알 수 없는 요청이에요."}), 400
     if str(request.args.get("progress") or "") == "1":
-        return jsonify({"ok": True, **SR.run_state(store)})
+        from src.services import durable_job as _DJ
+        return jsonify({"ok": True, **_DJ.status(SR._RUN_KEY.format(store)), "build": SR.build_state(store)})
     p = SR.plan(store)
     if str(request.args.get("csv") or "") == "1":
         return Response(SR.csv_text(p), mimetype="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f"attachment; filename=relist_{store}_{str(p.get('at') or '')[:10]}.csv"})
     data = {"store": store, "label": R.store_label(store), "can_run": store in SR.RUN_STORES,
-            "plan": {k: v for k, v in p.items() if k != "rows"}, "run": SR.run_state(store)}
+            "plan": {k: v for k, v in p.items() if k != "rows"}, "run": __import__("src.services.durable_job", fromlist=["status"]).status(SR._RUN_KEY.format(store)),
+            "build": SR.build_state(store)}
     if not _wants_html():
         return jsonify({"ok": True, **data, "rows": (p.get("rows") or [])[:2000]})
     rows = p.get("rows") or []
     return render_template("admin_relist.html", d=data, stores=[(s, R.store_label(s)) for s in R.STORES], reason_ko=SR.REASON_KO,
                            on_rows=[x for x in rows if x.get("action") == "on"][:40],
                            skip_rows=[x for x in rows if x.get("action") != "on"][:40])
+
+
+@bp.get("/admin/diag/restarts")
+def admin_diag_restarts():
+    """오너 11-27 02:07 ② — **읽기 전용**: 일꾼이 왜 새로 떴나(`rss:restart` 최근 60줄 원문). exit = 우리 메모리 상한이 내림(사유·MB·상한) ·
+    boot = 새 일꾼(직전 exit과 짝 → 걸린 초 / 짝 없으면 「배포·Render 재시작·강제 종료」) · quiet = 요청이 오래 안 끝남. 관리자만."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from src.utils import restart_log as _rl
+    from datetime import timedelta as _td
+    rows = list(reversed(_rl.rows() or []))
+    for r in rows:
+        try:
+            r["at_kst"] = (datetime.fromisoformat(str(r.get("at"))) + _td(hours=9)).strftime("%m-%d %H:%M:%S")
+        except Exception:                                        # noqa: BLE001
+            r["at_kst"] = str(r.get("at") or "")
+    boots = [r for r in rows if r.get("kind") == "boot"]
+    verdict = ("최근 새 일꾼: " + (boots[0]["at_kst"] + " — " + str(boots[0].get("reason") or "")) if boots else "기록된 재시작 없음")
+    if not _wants_html():
+        return jsonify({"ok": True, "rows": rows, "verdict": verdict})
+    return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="restarts", d={"rows": rows}, verdict=verdict)
 
 
 @bp.get("/admin/diag/sources")
@@ -12625,6 +12658,7 @@ def _shape_collect_items(items, current_lang):
         from .listing_status import rejected as _rej, left_markets as _lm, left_label as _ll
         it["rejected_n"] = len(_rej(ex))
         it["left_label"] = _ll(_lm(ex))
+        it["can_refetch"] = _server_refetch_kind(str(it.get("url") or ""))   # 오너 11-27 ①: 줄 ⋯ 「다시 가져오기」
         # Y12-A: 한 줄 = 썸네일 · 상품명 · 뱃지 4 · 마지막 동작(「10-17 14:10 쿠팡 상세 보냄」 KST)
         from .attention import last_action as _last_action, items as _attn_items
         it["last_action"] = _last_action(ex, it.get("collected_at") or "")
@@ -18391,6 +18425,23 @@ def glossary_candidates():
     return jsonify({"ok": True, "candidates": out, "glossary_lines": glossary_line_count()})
 
 
+def _server_refetch_kind(url: str) -> str:
+    """오너 11-27 02:07 ① — 서버가 바로 다시 읽을 수 있는 소싱처인가: `amazon`(서버가 화면을 읽음) · `taobao`(온바운드·mtop 자동 경로가
+    켜졌을 때 — 줄에 세우고 10분 틱이 이어서 돈다) · ''(PC 확장을 기다려야 함 — 카드 위 버튼을 안 보인다)."""
+    u = str(url or "")
+    try:
+        from src.collectors.amazon_pdp import is_amazon_page as _is_amz
+        if _is_amz(None, u):
+            return "amazon"
+        host = (urlparse(u).hostname or "").lower()
+        if ("taobao" in host or "tmall" in host or host.endswith("tb.cn")):
+            from src.services import taobao_auto as _ta
+            return "taobao" if _ta.enabled() else ""
+    except Exception:                                            # noqa: BLE001
+        return ""
+    return ""
+
+
 @bp.get("/collect/<item_id>/refetch-result")
 def collect_refetch_result(item_id):
     """오너 11-26 저녁 ①: 카드가 「다시 가져오기」 뒤 끝났는지 묻는다(읽기만). `since`(ISO) 뒤에 끝난 기록이 있으면 done.
@@ -18405,8 +18456,13 @@ def collect_refetch_result(item_id):
     except Exception:
         ex = {}
     from src.services import photo_fix as _pf
-    rec = ex.get("amazon_refetch") if isinstance(ex.get("amazon_refetch"), dict) else {}
     since = str(request.args.get("since") or "")
+    if _server_refetch_kind(str(item.get("url") or "")) == "taobao":
+        ae = ex.get("auto_enrich") if isinstance(ex.get("auto_enrich"), dict) else {}
+        done = bool(ae.get("at")) and str(ae.get("at")) >= since and ae.get("state") not in ("pending", "running", "queued")
+        _b = request.args.get("before", type=int)
+        return jsonify({"ok": True, "done": done, "line": _pf.taobao_line(ex, _b) if done else "", "resend": []})
+    rec = ex.get("amazon_refetch") if isinstance(ex.get("amazon_refetch"), dict) else {}
     sf = ex.get("sku_fill") if isinstance(ex.get("sku_fill"), dict) else {}
     done = bool(rec.get("at")) and str(rec.get("at")) >= since and sf.get("state") != "pending"
     return jsonify({"ok": True, "done": done, "line": _pf.refetch_line(ex) if rec.get("at") else "",
@@ -18445,9 +18501,19 @@ def collect_item_recollect(item_id: str):
         from src.utils import bg_job as _bg
         _sids = _seller_identities()
         _started, _st = _bg.start(f"amazon-refetch:{item_id}", lambda: _ar.run(item_id, _sids))
-        return jsonify({"ok": True, "item_id": item_id, "queued": False, "started": bool(_started), "server_refetch": True,
+        return jsonify({"ok": True, "item_id": item_id, "queued": False, "started": bool(_started), "server_refetch": True, "kind": "amazon",
                         "message": ("아마존 화면을 다시 읽고 있어요 — 30초쯤 뒤 새로 고침하면 사진·옵션이 바뀌어 있어요." if _started
                                     else "이미 다시 읽는 중이에요 — 잠시 뒤 새로 고침해 주세요.")})
+    if _queue and _server_refetch_kind(url) == "taobao":
+        # 오너 11-27 02:07 ①: 타오바오도 자동 경로(온바운드·mtop)가 켜져 있으면 서버가 읽는다 — 줄에 세우고 바로 한 건,
+        #   그 스레드가 죽어도 10분 틱(`taobao_auto.drain`)이 줄에서 이어 돈다. 마켓 전송 0.
+        from src.services import taobao_auto as _ta
+        _owner = str(item.get("seller_id") or _seller_id())
+        _ok = _ta.kick(_owner, str(item_id))
+        return jsonify({"ok": bool(_ok), "item_id": item_id, "queued": False, "server_refetch": bool(_ok), "kind": "taobao",
+                        "message": ("타오바오 상세를 다시 읽고 있어요 — 끝나면 이 자리에 결과가 떠요." if _ok
+                                    else "타오바오 자동 경로가 꺼져 있어요 — PC 확장으로 다시 가져와 주세요."),
+                        **({} if _ok else {"error": "타오바오 자동 경로가 꺼져 있어요"})})
     if _queue:
         # Y3(오너 2026-10-04): 폰엔 확장이 없다 — 「새 탭에서 고가수집기를 눌러 주세요」는 할 수 없는 일이다.
         #   **재보강 큐**에 넣는다(R1 백그라운드 보강 = 확장 폴러 `/api/v1/collect/enrich/pending`이 집는 그 큐).

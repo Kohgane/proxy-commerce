@@ -273,6 +273,12 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                     result["oneshot_kick"] = bool(_started)
             except Exception as exc:               # noqa: BLE001 — 일회성 작업 깨우기 실패가 번역 틱을 막지 않는다
                 logger.warning("일회성 작업 깨우기 실패(틱은 계속): %s", exc)
+            # 오너 11-27 02:07 ②③: 관리자 긴 작업(셰고가 목록·판매 재개·타오바오 재보강) — 하트비트가 멈춘 줄을 이어서(처음부터 아님)
+            try:
+                from src.services import durable_job as _dj
+                result["durable_jobs"] = _dj.tick()
+            except Exception as exc:               # noqa: BLE001 — 긴 작업 깨우기 실패가 번역 틱을 막지 않는다
+                logger.warning("긴 작업 이어하기 실패(틱은 계속): %s", exc)
             drain_sec = _t.monotonic() - t0
             pilot_budget = tick_budget - (_t.monotonic() - t0)
             if pilot_budget >= _PILOT_MIN_SEC:

@@ -116,6 +116,20 @@ def refetch_line(ex: Dict) -> str:
     return " · ".join(bits)
 
 
+def taobao_line(ex: Dict, before_images: Optional[int] = None) -> str:
+    """오너 11-27 ①: 타오바오 서버 다시 가져오기(`auto_enrich`) 결과 한 줄 — 지금 행에 들어 있는 것만 센다."""
+    ae = (ex or {}).get("auto_enrich")
+    if not isinstance(ae, dict) or not ae.get("at"):
+        return ""
+    if ae.get("state") != "done":
+        return "다시 가져오지 못했어요 — " + str(ae.get("reason") or ae.get("state") or "사유 없음")
+    imgs = len([u for u in (ex.get("images") or []) if isinstance(u, str) and u])
+    opts = sum(len(o.get("values") or []) for o in (ex.get("options") or []) if isinstance(o, dict))
+    skus = [k for k in (ex.get("skus") or []) if isinstance(k, dict) and str(k.get("price") or "").strip()]
+    head = f"사진 {before_images}→{imgs}장" if before_images is not None else f"사진 {imgs}장"
+    return f"{head} · 옵션 값 {opts}개 · 옵션가 {len(skus)}개"
+
+
 def _ss_records(ex: Dict) -> List[Dict]:
     from src.seller_console import listing_status as MS
     out = []
