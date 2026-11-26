@@ -5328,6 +5328,24 @@ def admin_smartstore_relist():
                            skip_rows=[x for x in rows if x.get("action") != "on"][:40])
 
 
+@bp.get("/admin/diag/sources")
+def admin_diag_sources():
+    """오너 11-26 저녁 ② — **읽기 전용**: 최근 N일(기본 90) 수집 행을 소싱처별로 「쓸 만한 사진 비율 · 옵션 있는데 SKU 0 ·
+    주소 짧은 링크」. `?days=90&measure=5`(소싱처마다 첫 사진 n장 실제로 재기 · 최대 10). 관리자만. 쓰기 0 · 마켓 호출 0."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from .collect_history_store import list_items as _li
+    from src.services import source_audit as _sa
+    days = max(1, min(365, request.args.get("days", 90, type=int) or 90))
+    measure = max(0, min(10, request.args.get("measure", 0, type=int) or 0))
+    rows = _li(days=days, extra_keys=_sa.KEYS) or []
+    data = {"days": days, "measure": measure, **_sa.audit(rows, measure=measure)}
+    verdict = _sa.verdict(data)
+    if not _wants_html():
+        return jsonify({"ok": True, **data, "verdict": verdict})
+    return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="sources", d=data, verdict=verdict)
+
+
 @bp.get("/admin/diag/prevalidate/<item_id>")
 def admin_diag_prevalidate(item_id):
     """오너 11-26 오후 ② — **읽기 전용** 사전검증: 등록과 같은 몸통·같은 사전검증(실제 마켓 API 조회까지)을 돌리되 행에 쓰지 않는다.

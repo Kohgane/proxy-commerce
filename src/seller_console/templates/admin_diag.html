@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% block title %}{{ {'stores': '스토어 진단', 'item': '상품 진단', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증 진단'}[mode] }}{% endblock %}
+{% block title %}{{ {'stores': '스토어 진단', 'item': '상품 진단', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증 진단', 'sources': '소싱처 진단'}[mode] }}{% endblock %}
 {% block content %}
 {# 오너 11-26 진단 3 — 관리자 진단을 사람이 읽게: 판정 한 줄 + 한글 표. 원문 JSON은 ?raw=1. 읽기만(재보강 실행은 오너 탭 두 번). #}
 <style>
@@ -22,8 +22,8 @@
 </style>
 <div class="dg-wrap" data-role="admin-diag" data-mode="{{ mode }}">
   <p class="pc-overline">관리자 진단 · 읽기만</p>
-  <h1 class="pc-h2">{{ {'stores': '스마트스토어 키·한도', 'item': '수집 행 사진', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증(읽기 전용)'}[mode] }}</h1>
-  <div class="dg-verdict {% if (mode == 'stores' and d.mismatch) %}is-bad{% endif %}" data-role="dg-verdict">{{ verdict }}</div>
+  <h1 class="pc-h2">{{ {'stores': '스마트스토어 키·한도', 'item': '수집 행 사진', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증(읽기 전용)', 'sources': '소싱처별 수집 상태'}[mode] }}</h1>
+  <div class="dg-verdict {% if (mode == 'stores' and d.mismatch) or (mode == 'sources' and verdict != '걸리는 소싱처 없음') %}is-bad{% endif %}" data-role="dg-verdict">{{ verdict }}</div>
 
   {% if mode == 'stores' %}
     {% for r in d.stores %}
@@ -82,6 +82,24 @@
     </section>
     {% endfor %}
     <p class="small"><a href="?raw=1&markets={{ d.markets|join(',') }}">원문(JSON)</a></p>
+
+  {% elif mode == 'sources' %}
+    {# 오너 11-26 저녁 ②: 최근 N일 수집 행 — 소싱처마다 사진·옵션·주소. 사진은 주소 크기 토큰으로만 판정(모르면 따로 셈) #}
+    <p class="small">최근 {{ d.days }}일 · {{ d.rows }}행 · <strong>읽기 전용</strong>(쓰기·마켓 호출 0){% if d.measure %} · 소싱처마다 첫 사진 {{ d.measure }}장 실제로 잼{% endif %}</p>
+    {% for a in d.sources %}
+    <section class="dg-card" data-role="dg-source" data-source="{{ a.source }}"><h2>{{ a.label }} — {{ a.rows }}행</h2>
+      <table class="dg-t"><tbody>
+        <tr><td>쓸 만한 사진</td><td class="num {{ 'dg-bad' if a.usable_pct is not none and a.usable_pct < 80 else '' }}" data-role="dg-src-usable">{% if a.usable_pct is none %}판정 못 함{% else %}{{ a.usable_pct }}%{% endif %}</td></tr>
+        <tr><td>사진(전체 · 작은 판 · 주소로는 모름)</td><td class="num">{{ a.images }} · {{ a.small }} · {{ a.unknown }}</td></tr>
+        <tr><td>사진 없는 행</td><td class="num {{ 'dg-bad' if a.no_images else '' }}">{{ a.no_images }}</td></tr>
+        <tr><td>옵션 있는데 SKU 0</td><td class="num {{ 'dg-bad' if a.opt_no_sku else '' }}" data-role="dg-src-optnosku">{{ a.opt_no_sku }} / 옵션 행 {{ a.opt_rows }}</td></tr>
+        <tr><td>주소가 짧은 링크</td><td class="num {{ 'dg-bad' if a.short else '' }}" data-role="dg-src-short">{{ a.short }}</td></tr>
+        {% if a.measured %}<tr><td>잰 첫 사진(긴 변)</td><td class="num">{{ a.measured.read }}/{{ a.measured.n }}장 · 500px 미만 {{ a.measured.under }}{% if a.measured.read %} · {{ a.measured.min }}~{{ a.measured.max }}px{% endif %}</td></tr>{% endif %}
+      </tbody></table>
+      {% for x in a.samples %}<div class="dg-url">짧은 링크 · {{ x.id[:8] }} · {{ x.url }}</div>{% endfor %}
+    </section>
+    {% endfor %}
+    <p class="small"><a href="?days={{ d.days }}&measure=5">첫 사진 5장씩 재 보기</a> · <a href="?raw=1&days={{ d.days }}">원문(JSON)</a></p>
 
   {% elif mode == 'reenrich' %}
     {% if d.note %}<div class="pc-status pc-status-warning">{{ d.note }}</div>{% endif %}
