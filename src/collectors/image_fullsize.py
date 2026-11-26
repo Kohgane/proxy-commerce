@@ -27,7 +27,7 @@ def _host(url: str) -> str:
 
 def to_fullsize(url: str) -> str:
     """Remove known CDN thumbnail size directives without guessing at unknown forms."""
-    if url is None or not isinstance(url, str) or not url:
+    if url is None or not isinstance(url, str) or not url.strip():
         return ""
 
     host = _host(url)
