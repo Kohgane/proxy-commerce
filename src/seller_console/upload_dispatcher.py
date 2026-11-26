@@ -975,6 +975,8 @@ class PrevalidationResult:
     # Y11-P — 네이버 옵션 가격 폭이 커서 한 상품에 못 담을 때 가격대별 분할 제안 `[{skus, names, base, min, max, suffix}]`.
     #   화면은 「나눠서 등록할까요?」 한 줄 + 오너 확인 버튼(누르기 전엔 나누지 않는다).
     naver_split: List[Dict[str, Any]] = field(default_factory=list)
+    # 오너 11-26 저녁 ③ — 쿠팡 보류를 카드 안에서 채울 입력칸 `[{kind: attr|attr_one|value|origin, name|names|orig, line}]`
+    cp_fields: List[Dict[str, Any]] = field(default_factory=list)
 
 
 #: 국내(원화·한국어) 마켓 — 옵션 값이 한국어로 옮겨져야 등록되는 곳.
@@ -2170,11 +2172,15 @@ class UploadDispatcher:
                     message=chk.get("unavailable_line") or "쿠팡 카테고리 메타 확인 못 함 — 다시 확인",
                     hint="쿠팡 응답을 받지 못했어요 — 통과도 보류도 아니에요. 잠시 뒤 다시 사전검증해 주세요.")
             if chk.get("ok") is False:
+                # 오너 11-26 저녁 ③: 보류 줄마다 고치는 길·입력칸(폰 카드가 그 자리에서 채운다 · 모르는 줄은 그대로)
+                from src.uploaders.coupang_hold_fix import parse as _cp_parse
+                _cpx, _cpf = _cp_parse(chk["holds"])
                 return PrevalidationResult(
                     market=market, ok=False, error_code="coupang_hold",
                     message=lines_message("등록하면 쿠팡이 거부할 것이라 여기서 멈췄습니다", chk["holds"]),
                     hint=" · ".join(chk.get("notes") or []),
-                    details=list(chk["holds"]), name_picks=list(chk.get("name_picks") or []))
+                    details=list(chk["holds"]), name_picks=list(chk.get("name_picks") or []),
+                    fixes=_cpx, cp_fields=_cpf)
             if chk.get("notes"):
                 # 참고 사항은 힌트 한 자리에만 — 목록에도 적으면 같은 말이 두 번 나온다.
                 return PrevalidationResult(market=market, ok=True, message="사전검증 통과",

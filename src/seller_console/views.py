@@ -4603,6 +4603,52 @@ def collect_manual_options(item_id):
                     "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
 
 
+@bp.post("/collect/<item_id>/coupang-fields")
+def collect_coupang_fields(item_id):
+    """오너 11-26 저녁 ③ — 쿠팡 사전검증 보류를 폰 카드에서 채운다(저장만 · 전송 0).
+    `{attributes: [{name, value}], value_overrides: {원문: 한국어}, origin}` — 넣은 칸만 합친다(빈 값은 무시 · 다른 칸 그대로).
+    필수 옵션 = 편집 화면 F48-c와 같은 자리(`coupang_attributes`) · 옵션 값 = `option_value_overrides` · 원산지 = `origin`."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    attrs = [{"attributeTypeName": str(a.get("name") or "").strip()[:40], "attributeValueName": str(a.get("value") or "").strip()[:60]}
+             for a in (data.get("attributes") or []) if isinstance(a, dict)]
+    attrs = [a for a in attrs if a["attributeTypeName"] and a["attributeValueName"]]
+    ovs = {str(k).strip()[:60]: str(v).strip()[:60] for k, v in (data.get("value_overrides") or {}).items()
+           if str(k).strip() and str(v).strip()} if isinstance(data.get("value_overrides"), dict) else {}
+    origin = str(data.get("origin") or "").strip()[:40]
+    if not (attrs or ovs or origin):
+        return jsonify({"ok": False, "error": "넣은 값이 없어요."}), 400
+    saved = []
+
+    def _put(ex):
+        if attrs:
+            names = {a["attributeTypeName"] for a in attrs}
+            keep = [a for a in (ex.get("coupang_attributes") or []) if isinstance(a, dict) and a.get("attributeTypeName") not in names]
+            ex["coupang_attributes"] = attrs + keep
+            saved.append(f"필수 옵션 {len(attrs)}칸")
+        if ovs:
+            ov = dict(ex.get("option_value_overrides") or {})
+            ov.update(ovs)
+            ex["option_value_overrides"] = ov
+            saved.append(f"옵션 값 {len(ovs)}개")
+        if origin:
+            ex["origin"] = origin
+            _mf = ex.get("manual_fields") if isinstance(ex.get("manual_fields"), dict) else {}
+            _mf["origin"] = True
+            ex["manual_fields"] = _mf
+            saved.append("원산지")
+        return ex
+    from . import collect_history_store as _chs
+    ok = _chs.merge_extra(str(item_id), _put, seller_ids=_seller_identities())
+    if not ok:
+        return jsonify({"ok": False, "error": "저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요."}), 502
+    return jsonify({"ok": True, "saved": saved, "message": "저장했어요 — " + " · ".join(saved) + ". 다시 사전검증해요."})
+
+
 @bp.post("/collect/<item_id>/drop-unpriced")
 def collect_drop_unpriced(item_id):
     """오너 11-26 오후 ① — 「가격 없음 n개 — 빼고 등록」: 가격을 못 읽은 옵션 조합을 등록에서 뺀다(가격 있는 SKU만 남김).
@@ -6173,6 +6219,8 @@ def _pv_dict(r, rc=None) -> dict:
         "cautions": list(getattr(r, "cautions", None) or []),
         # Y11-P — 네이버 가격대별 분할 제안(오너 확인 한 줄 · 누르기 전엔 나누지 않는다)
         "naver_split": list(getattr(r, "naver_split", None) or []),
+        # 오너 11-26 저녁 ③ — 쿠팡 보류를 카드 안에서 채울 입력칸
+        "cp_fields": list(getattr(r, "cp_fields", None) or []),
     }
     if r.error_code == "meta_unavailable":
         # Z9 — 쿠팡 메타를 못 받았다: 화면은 「검증 못 함 — 다시 시도」(통과도 막힘도 아님)
