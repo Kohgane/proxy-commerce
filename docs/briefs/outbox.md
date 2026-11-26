@@ -1742,3 +1742,131 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 - ★ 오너 탭: 배포 뒤 「목록 만들기」 → 요약·CSV 확인 → 「N건 판매 재개」 두 번. 고코스모스 실행은 말씀하실 때 `RUN_STORES`에 넣는다.
 
 **캡처(390)** `docs/screens/owner1126/o1126-{20,20b,21,22,23,24}-relist-*.png` — 네이버 API 흉내(판매중지 표본 24건 · 상태별 수는 오너 실측 395·5·3·1,679·0·1)로 실제 `build()`를 돌린 화면. before = main(404).
+
+## 2026-11-26 오후 감독 (1~6) — PR
+
+**① 아마존 옵션별 가격(등록을 막던 근원) — 실측(오라클 AMZSKU1126)**
+- 상품 화면의 옵션 조합 → 자식 ASIN 표(`dimensionValuesDisplayData`, 값 순서는 `dimensions`)를 읽고 자식 화면을 하나씩 열어(간격 1.2초 · 상한 40개 · 못 읽으면 사유) **값이 있는 조합만** SKU로 저장한다. 수집 요청은 붙잡지 않는다 — 저장 뒤 백그라운드. 「다시 가져오기」(아마존 서버 재수집)도 끝에 같은 일을 한다.
+- 다 못 읽으면 카드: 「옵션 조합 n개는 가격이 없어요 — (조합(사유) …). 빼고 등록하면 가격 있는 k개만 올라가요」 + 「가격 없는 n개 빼고 등록」 한 번(어느 SKU에도 안 남는 옵션 값은 옵션에서도 뺌 · 무엇을 뺐는지 기록). 하나도 못 읽었으면 「다시 가져와 주세요」. 셀러가 옵션·SKU를 직접 고친 상품은 덮지 않는다.
+- 실측 표(한국 배송지 화면 · KRW):
+
+  **tomtoc B0FF4XTJMK — 12조합 전부 읽음**
+  | 색상 / 사이즈 | 자식 ASIN | 가격 |
+  |---|---|---|
+  | Black-ripstop / 28L | B0FF4TFCW3 | 96,301.02 |
+  | Black / 40L | B097P4JVP7 | 92,689.23 |
+  | Green-ripstop / 28L | B0FF4S3TM1 | 96,301.02 |
+  | Moss Green-ripstop / 28L | B0H3NWD9BS | 133,756.62 |
+  | Green-ripstop / 40L | B0FF4XTJMK | 107,002.62 |
+  | Black-ripstop / 40L | B0FF4V5D2R | 133,756.62 |
+  | Coastal Blue-ripstop / 40L | B0H3NXG9K4 | 147,133.62 |
+  | Moss Green-ripstop / 40L | B0H3NZ4CN4 | 147,133.62 |
+  | Dark Blue-ripstop / 28L | B0H6D77ZHS | 120,379.62 |
+  | Silver Gray-ripstop / 40L | B0FF4ZP9MT | 107,002.62 |
+  | Dark Blue-ripstop / 40L | B0H6F1GTH1 | 133,756.62 |
+  | Silver Gray-ripstop / 28L | B0FF4TV1YS | 96,301.02 |
+
+  **OKNIFE B0C38WV1F6 — 5조합 전부 읽음**
+  | 색상 | 자식 ASIN | 가격 |
+  |---|---|---|
+  | Aluminum-grey | B0DCSLQT1M | 21,389.82 |
+  | Zombie Green | B0H32XYYWP | 29,951.10 |
+  | Mao Desert White | B0HMQPGZJK | 35,301.90 |
+  | Titanium-grey | B0C38WV1F6 | 36,372.06 |
+  | Cracked Brass | B0D45XSMB9 | 53,494.62 |
+  → 옵션마다 가격 차이가 크다(OKNIFE 21,390~53,495 · tomtoc 92,689~147,134). 「고른 옵션 가격 하나로 전부」였다면 싼 옵션은 비싸게, 비싼 옵션은 손해로 나갔다.
+- 2·3번 「없음」 사유는 실측에선 0건(19건 다 읽힘) — 캡처의 「일부 없음」 카드는 표본(고정)이다.
+
+**② OKNIFE 쿠팡 — 운영 읽기 전용 사전검증**
+- 이 세션은 운영 서버·DB에 못 닿는다 → 운영에서 **읽기 전용**으로 돌리는 관리자 화면을 넣었다: `/seller/admin/diag/prevalidate/<수집 행 id>?markets=coupang:gogane,coupang:woojoo`. 등록과 같은 몸통·같은 사전검증(쿠팡 API 조회 포함)을 돌리되 **행에 쓰지 않는다**(리드타임 정리·리스크 자동 적용·대표 자동 교체 저장·일회성 줄 세우기를 건너뜀). 마켓마다 통과/보류·코드·원문·고치는 길.
+- ★ 오너 탭: 배포 → OKNIFE 행에서 「다시 가져오기」(아마존 서버 재수집 → 사진 hiRes 8장 + 옵션별 가격 5개가 채워짐, 운영 DB 쓰기) → 위 진단 주소를 열어 남은 보류를 확인. 그 화면을 캡처해 주시면 남은 보류를 하나씩 수리한다. 전송은 그 뒤 오너 탭.
+- 이 세션에서 알 수 있는 것(코드상): 주소(짧은 링크 → 정본 #1037) · 사진(hiRes #1045) · 옵션가(이번) — 셋 다 막혔던 자리는 풀렸다. 쿠팡 API 쪽(카테고리 필수 속성·고시정보·출고지)은 운영 실측이 있어야 말할 수 있다.
+
+**③ 코파일럿 PR 정리**
+- 죽은 버튼 계약(#1044의 테스트): 그대로 돌리면 28개가 「죽음」으로 나왔는데 **전부 실제로는 살아 있다**(버튼 id로 잡음 `#m5Go` · `role === 'cpx-edit'` 비교 · `hasAttribute('data-view')` · 들여놓는 화면이 받음). 판정을 이 다섯 꼴로 넓혀 이 PR에 받았다 — 지금 진짜 죽은 버튼 0 · 일부러 만든 죽은 버튼은 잡는다(자기 점검 테스트).
+- `to_fullsize`: 오라클 실측 FULLSIZE1126·FULLSIZE2_1126(표본은 레포 실페이지 픽스처의 **진짜 주소** — 합성 주소 제외):
+  | 규칙 | 표본 | 변환 전 → 후(실제 픽셀) | 판정 |
+  |---|---|---|---|
+  | 알리 ae-pic `_480x480q75.jpg_.avif` 꼬리 | 3 | 480 썸네일 → 1601·1600·800 | 남김 |
+  | 테무 kwcdn `?imageView2/…` | 3 | → 1350·1350·800 | 남김 |
+  | 타오바오 img·gw.alicdn `_NxN…` 꼬리 | 3 | 174×106·80×80 → 같은 크기 | 이득 없음 — 삭제 |
+  | 1688 cbu01 | 0 | 표본 없음 | 삭제 |
+  | 라쿠텐 `/@0_mall/`·`_ex` | 2 | 270 → **404** | 깨짐 — 삭제 |
+  | 쇼피파이 `_크기`·`width` | 3 | 1000 → 1000 · 2000 → **404** ×2(날짜 꼬리를 크기로 오인) | 깨짐 — 삭제 |
+  | 아마존 토큰 떼기 | 5(AMZIMG2) | → 400×500·500×500(작은 판) | 삭제 |
+- #1042(같은 일의 앞선 초안)는 닫고, #1044에 코멘트로 수정 요청(아마존 규칙 삭제 · 실측 깨진 규칙 삭제 · 테스트 파일은 이 PR이 받았으니 빼기).
+
+**④ 애플 계정 삭제 시 토큰 폐기**
+- 애플 로그인 콜백이 받은 refresh token을 **암호화해서만**(마켓 키와 같은 Fernet) 사용자별로 보관 — 키가 없으면 저장 안 함(평문 0). 계정 삭제 실행(오너 탭)이 `POST appleid.apple.com/auth/revoke`를 부르고 결과를 단계 줄에 그대로(실패면 원문 · 토큰 안 지움 → 다시 시도 가능). 애플 로그인이 아니면 「토큰 없음」(실패 아님). 삭제 안내 문구에 「애플로 가입했으면 애플 쪽 연결도 끊어요」.
+- 남는 갭(정직): 이 배포 **전에** 애플로 가입한 계정은 토큰이 없다(애플 env가 아직 비어 있어 실제로는 0명일 것).
+
+**⑤ 심사 제출 자료** — 아래 별도 절.
+
+**⑥ 셰고가 「목록 만들기」 검수** — 오너가 운영에서 목록을 만든 뒤에만 할 수 있다(이 세션은 운영 app_state에 못 닿는다). 만든 뒤 「전체 목록 내려받기(CSV)」 파일을 주시면 뺄 사유별로 무작위 20건을 골라 과하게 걸린 것(예: 도검 낱말 오탐·브랜드 오탐·원가 미확인이 사실은 원가 있음)을 줄마다 판정해 보고한다.
+
+**캡처(390)** `docs/screens/owner1126/o1126p-{1..6}-*.png` — 옵션별 가격 읽는 중 · 일부 없음(표본) · 뺀 뒤 · 12조합(실측) · 읽기 전용 사전검증(쿠팡 응답 고정) · 계정 삭제 애플 줄.
+
+### ⑤ 앱스토어 심사 제출 자료 초안 — App Store Connect 칸별(입력·스크린샷 촬영은 오너·앱 세션)
+
+**앱 정보(App Information)**
+| 칸 | 한국어 | English |
+|---|---|---|
+| 이름(Name, 30자) | 고가브릿지 | gogabridj |
+| 부제(Subtitle, 30자) | 해외 상품 수집부터 마켓 등록까지 | From overseas finds to your store |
+| 카테고리 | 주: 비즈니스(Business) · 부: 생산성(Productivity) | — |
+| 연령 등급 | 4+ (질문 전부 「없음」) | — |
+| 개인정보처리방침 URL | https://kohganepercentiii.com/privacy | 같음 |
+| 지원 URL | https://kohganepercentiii.com/contact | 같음 |
+
+**설명(Description, 4,000자) — 한국어**
+> 해외 쇼핑몰에서 마음에 드는 상품을 보면 공유 버튼 한 번으로 담으세요. 고가브릿지가 사진·옵션·가격을 읽고 상품명과 설명을 한국어로 옮겨 둡니다.
+> 담은 상품은 쿠팡·스마트스토어 등 연결한 내 마켓에 올리기 전에 한 번 더 확인합니다. 사진이 흐린지, 옵션별 가격이 다 있는지, 금지 낱말이나 인증이 필요한 품목은 아닌지 먼저 알려 드리고, 통과한 마켓에만 올립니다.
+> · 공유로 담기: 아마존·알리익스프레스·타오바오 상품 링크를 앱으로 공유
+> · 한국어 정리: 상품명·옵션·상세 설명 번역, 쿠팡 상품명 규칙 맞춤
+> · 등록 전 점검: 사진 크기·옵션별 가격·금지 낱말·인증 품목·마진
+> · 주문 확인: 연결한 마켓의 새 주문을 한곳에서
+> 마켓 연결에는 각 마켓에서 발급한 판매자 API 키가 필요합니다. 고가브릿지는 판매자 전용 도구이며 일반 소비자용 쇼핑 앱이 아닙니다.
+
+**Description — English**
+> Saw something worth selling on an overseas store? Share the link and gogabridj reads the photos, options and price, and translates the title and description into Korean.
+> Before anything goes to your connected stores (Coupang, Naver Smart Store and more), gogabridj checks it: blurry photos, missing per-option prices, restricted words, items that need certification, and your margin. Only stores that pass get the listing.
+> · Collect by sharing links from Amazon, AliExpress and Taobao
+> · Korean titles, options and descriptions
+> · Pre-listing checks for photos, option prices, restricted words and margin
+> · New orders from your stores in one place
+> Connecting a store requires that store's seller API key. gogabridj is a tool for sellers, not a consumer shopping app.
+
+**키워드(Keywords, 100자 · 쉼표, 띄어쓰기 없이)**
+- 한국어: `구매대행,해외구매대행,상품수집,쿠팡,스마트스토어,상품등록,셀러,아마존,타오바오,알리익스프레스,번역`
+- English: `seller,dropshipping,listing,coupang,smartstore,amazon,taobao,aliexpress,import,translate`
+
+**심사 메모(App Review Information → Notes)**
+> gogabridj is a B2B tool for online sellers. Use the review account below to sign in.
+> 1) Tap 「수집」, paste any Amazon product link (e.g. https://www.amazon.com/dp/B0C38WV1F6) and tap 수집 — the product card opens.
+> 2) On the card, tap 「사전검증」 to see the pre-listing checks.
+> Sending listings to real marketplaces is disabled for this review account (it would publish real products); everything up to the checks works.
+> Account deletion: 더보기(More) › 계정 › 계정 삭제. Sign in with Apple is offered on the login screen.
+> The app does not sell anything in-app; there are no payments inside the app.
+- 연락처(이름·전화·이메일): 오너 기입 · 데모 계정 아이디·비밀번호: 오너가 만든 심사 계정(채팅 금지 — App Store Connect에만).
+
+**App Privacy(데이터 수집 답변용)**
+| 데이터 유형(Apple 분류) | 모으나 | 용도 | 사용자와 연결 | 추적 |
+|---|---|---|---|---|
+| 연락처 정보 › 이메일 주소 | 예(로그인) | 앱 기능 | 예 | 아니오 |
+| 연락처 정보 › 이름 | 예(소셜 로그인이 주면) | 앱 기능 | 예 | 아니오 |
+| 식별자 › 사용자 ID | 예(계정 번호) | 앱 기능 | 예 | 아니오 |
+| 사용자 콘텐츠 › 기타(담은 상품·사진·편집 내용) | 예 | 앱 기능 | 예 | 아니오 |
+| 사용자 콘텐츠 › 사진 | 예(직접 올린 상품 사진만 — 앨범 전체 아님) | 앱 기능 | 예 | 아니오 |
+| 진단 › 크래시·성능 | 서버 로그만(기기 SDK 없음) | 앱 기능 | 아니오 | 아니오 |
+| 구매 기록·결제 정보·위치·연락처 목록·건강·검색 기록 | 아니오 | — | — | — |
+- 「추적(Tracking)」 전부 아니오 · 광고 SDK 없음 → ATT 프롬프트 불필요.
+- 주문의 구매자 정보(마스킹)는 **셀러가 연결한 마켓의 주문**이다 — 앱 사용자 본인의 데이터가 아니라 Apple 분류상 따로 답하지 않는다(개인정보처리방침에는 이미 적혀 있음).
+
+**스크린샷 목록(앱 세션 촬영 · 6.7"(1290×2796) · 6.1"(1179×2556) 각 5장, 같은 순서)**
+1. 수집 탭 — 링크 붙여넣기 칸 + 「수집」(제목 「링크 하나면 담아요」)
+2. 상품 카드 — 사진·한국어 상품명·옵션별 가격 표(tomtoc처럼 옵션 많은 상품)
+3. 사전검증 결과 — 마켓별 통과/보류와 고치는 버튼(쿠팡·스마트스토어)
+4. 목록 — 썸네일·상태 칩(등록됨·반려·쿠팡 남음)
+5. 더보기 › 계정 — 약관·개인정보·문의·계정 삭제가 보이는 화면
+- 금지: 요금제·충전 화면(앱 안에서 안 열림) · 실제 구매자 이름/주소 · 다른 셀러 데이터 · 관리자 화면.
+- 캡션 문구(선택): 「공유 한 번으로 담기」「한국어로 정리」「올리기 전에 먼저 점검」「한눈에 보는 상품」「계정은 언제든 지울 수 있어요」.
