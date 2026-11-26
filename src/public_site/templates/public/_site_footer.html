@@ -2,7 +2,7 @@
 {% set _si = site_info or {} %}
 <div class="site-foot{{ ' is-dark' if foot_dark else '' }}" data-role="site-footer">
   {% if foot_links is not defined or foot_links %}<nav class="site-foot-links" aria-label="서비스 정보">
-    <a href="/pricing">플랜</a><a href="/terms">이용약관</a><a href="/privacy"><strong>개인정보처리방침</strong></a><a href="/contact">문의</a>
+    {% if not is_app %}<a href="/pricing">플랜</a>{% endif %}<a href="/terms">이용약관</a><a href="/privacy"><strong>개인정보처리방침</strong></a><a href="/contact">문의</a>
   </nav>{% endif %}
   <p class="site-foot-biz">
     <span>상호 {{ _si.name }}</span><span>대표 {{ _si.ceo }}</span><span data-role="biz-reg-no">사업자등록번호 {{ _si.reg_no }}</span>

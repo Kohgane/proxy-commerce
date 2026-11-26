@@ -61,10 +61,21 @@ def month_key(now: Optional[datetime] = None) -> str:
     return (now or datetime.now(timezone.utc)).astimezone(KST).strftime("%Y-%m")
 
 
+def _in_app() -> bool:
+    try:
+        from flask import has_request_context, request
+        from src.utils.app_shell import is_app_request
+        return bool(has_request_context() and is_app_request(request))
+    except Exception:                               # noqa: BLE001
+        return False
+
+
 def message(kind: str, plan: str, limit: int) -> str:
     from .billing_store import PLANS
     name, unit = _LABEL.get(kind, (kind, "회"))
     label = PLANS.get(plan, {}).get("label", plan)
+    if _in_app():                                   # 오너 11-26 감독 3e: 앱 안에서는 요금제로 유도하지 않는다
+        return f"이번 달 {name} 한도({limit}{unit})를 다 썼어요 — 다음 달 1일에 다시 열려요"
     up = "Pro로 올리거나" if plan == "plus" else "Plus로 올리거나"
     if kind == "translate":
         return f"{label} 무료 번역({limit}{unit})을 다 썼어요 — {up.replace('거나', '면')} 무제한이에요"

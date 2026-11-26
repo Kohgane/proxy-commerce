@@ -1002,6 +1002,13 @@ def oauth_callback(provider: str):
             user.role = role
             store.update(user)
 
+        if provider == "apple" and token_data.get("refresh_token"):
+            try:                                                   # 오너 11-26 오후 ④: 계정 삭제 때 애플 쪽 폐기용(암호화 보관)
+                from .apple_tokens import save as _save_apple
+                _save_apple(user.user_id, str(token_data["refresh_token"]))
+            except Exception as _aexc:                             # noqa: BLE001 — 로그인은 막지 않는다
+                logger.warning("[애플 토큰] 저장 실패: %s", _aexc)
+
         remember = bool(session.pop(f"oauth_remember_{provider}", False))
         if session.pop(f"oauth_app_{provider}", False):
             # 앱 모드: 이 창(ASWebAuthenticationSession)엔 세션을 열지 않는다 — 앱 웹뷰가 코드를 바꿔 연다.

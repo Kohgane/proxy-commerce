@@ -1,0 +1,40 @@
+{% extends "_base.html" %}
+{% block title %}계정 삭제 요청{% endblock %}
+{% block content %}
+{# 오너 11-26 감독 3a — 실제 삭제는 여기서 오너가 누를 때만(두 번 확인: 버튼 → 요청 번호 적기). #}
+<div class="container py-3" data-role="admin-account-deletes">
+  <p class="pc-overline">관리자</p>
+  <h1 class="pc-h2">계정 삭제 요청</h1>
+  <p class="small text-muted">지우는 것: 로그인 계정(비활성) · 토큰 · 마켓 키 · 수집한 상품. 남기는 것: 주문·정산 기록(5년). 마켓에 올린 상품은 건드리지 않아요.</p>
+  {% if not rows %}<div class="pc-status">요청이 없어요.</div>{% endif %}
+  <div class="vstack gap-2">
+  {% for r in rows %}
+    <div class="op-card border-0 shadow-sm p-3" data-role="ad-row" data-id="{{ r.id }}" data-state="{{ r.state }}">
+      <div class="d-flex justify-content-between flex-wrap gap-2">
+        <div><strong>{{ r.email or r.user_id }}</strong> <span class="pc-badge {{ 'pc-badge-danger' if r.state == 'requested' else 'pc-badge-muted' }}">{{ {'requested': '대기', 'cancelled': '거둠', 'done': '삭제됨', 'partial': '일부 실패'}.get(r.state, r.state) }}</span>
+          <div class="small text-muted">요청 {{ r.at }} · 번호 {{ r.id }}{% if r.reason %} · 사유: {{ r.reason }}{% endif %}</div>
+          {% if r.steps %}<div class="small">{% for k, v in r.steps.items() %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+        </div>
+        {% if r.state == 'requested' %}<div class="d-flex gap-2 align-items-center">
+          <input class="form-control form-control-sm" style="max-width:12rem" data-role="ad-confirm" placeholder="요청 번호 적기" autocomplete="off" aria-label="확인용 요청 번호">
+          <button type="button" class="btn btn-ghost btn-sm" data-role="ad-exec">삭제 실행</button></div>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+</div>
+<script>
+document.addEventListener('click', async function (e) {
+  var b = e.target.closest('[data-role=ad-exec]'); if (!b) return;
+  var row = b.closest('[data-role=ad-row]'), id = row.getAttribute('data-id');
+  var typed = (row.querySelector('[data-role=ad-confirm]') || {}).value || '';
+  if (typed.trim() !== id) { window.kgpNotice && window.kgpNotice('되돌릴 수 없어요 — 옆 칸에 요청 번호(' + id + ')를 그대로 적어 주세요.', 'warning'); return; }
+  b.disabled = true;
+  var r = await fetch('/seller/admin/account-deletes/' + encodeURIComponent(id) + '/execute', {method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({confirm: typed.trim()})});
+  var d = await r.json().catch(function () { return {ok: false, error: 'HTTP ' + r.status}; });
+  window.kgpNotice ? window.kgpNotice(d.ok ? '삭제했어요' : (d.error || '일부 실패 — 줄의 단계별 결과를 보세요'), d.ok ? 'success' : 'warning') : null;
+  setTimeout(function () { location.reload(); }, 900);
+});
+</script>
+{% endblock %}

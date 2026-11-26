@@ -23,6 +23,15 @@ def is_app_request(req) -> bool:
         return False
 
 
+# 오너 11-26 감독 3e — 앱스토어 심사(3.1.1): 앱 안에서는 결제·요금제·가격 유도 화면을 열지 않는다(웹은 그대로).
+APP_HIDDEN_PREFIXES = ("/seller/billing", "/pricing", "/billing")
+
+
+def app_hidden(path: str) -> bool:
+    p = str(path or "")
+    return any(p == x or p.startswith(x + "/") or p.startswith(x + "?") for x in APP_HIDDEN_PREFIXES)
+
+
 def remember_app(req, response):
     """`?app=1`로 들어온 요청은 쿠키를 남긴다(이후 링크엔 ?app=1이 없다). `?app=0`이면 지운다."""
     try:

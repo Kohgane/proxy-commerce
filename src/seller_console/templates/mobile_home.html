@@ -108,15 +108,20 @@
     <a href="/seller/about" class="m-card p-3 text-decoration-none text-dark"><i class="bi bi-info-circle"></i> 고가브릿지란?</a>
   </div>
   {% if session.get('user_id') %}
-  <form method="post" action="/auth/logout" class="mt-3">
-    <button type="submit" class="btn btn-ghost w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
-  </form>
+  {# 오너 11-26 감독 3a·3c: 더보기 › 계정 — 로그아웃 · 계정 삭제 · 약관·개인정보·문의(앱 안에서 연다) #}
+  <div class="m-legend small text-muted mt-3 mb-1" data-role="more-account">계정</div>
+  <div class="vstack gap-2">
+    <form method="post" action="/auth/logout">
+      <button type="submit" class="btn btn-ghost w-100"><i class="bi bi-box-arrow-right"></i> 로그아웃</button>
+    </form>
+    <a href="/seller/me/delete" class="m-card p-3 text-decoration-none text-dark" data-role="account-delete-link"><i class="bi bi-person-x"></i> 계정 삭제</a>
+  </div>
   {% endif %}
   <div class="m-card p-3 mt-3 small text-muted kgp-web-only">
     <i class="bi bi-phone"></i> <strong>홈 화면에 추가</strong>하면 앱처럼 쓸 수 있어요. iOS: 공유 → ‘홈 화면에 추가’, 안드로이드: 메뉴 → ‘앱 설치’.
     <br>대량 편집·마켓 설정 등 풀기능은 데스크톱에서 더 편해요.
   </div>
-  <p class="small text-muted mt-3 mb-0"><a href="/privacy" class="text-muted">개인정보처리방침</a> · <a href="/terms" class="text-muted">이용약관</a></p>
+  <p class="small text-muted mt-3 mb-0" data-role="more-legal"><a href="/privacy" class="text-muted">개인정보처리방침</a> · <a href="/terms" class="text-muted">이용약관</a> · <a href="/contact" class="text-muted">문의</a></p>
 </section>
 {% endif %}
 
@@ -170,7 +175,7 @@ if ('serviceWorker' in navigator) {
           location.href = d.next; return;
         }
         if (window.kgpJobLine) window.kgpJobLine.fail('수집하지 못했어요');
-        var act = d.limit_reached ? '<a class="btn btn-ghost w-100 mt-2" href="/seller/billing">요금제 보기</a>'
+        var act = d.limit_reached ? {% if is_app %}''{% else %}'<a class="btn btn-ghost w-100 mt-2" href="/seller/billing">요금제 보기</a>'{% endif %}
                                   : '<button type="button" class="btn btn-ghost w-100 mt-2" data-role="m-collect-retry">다시 수집</button>';
         say('<div class="pc-status pc-status-danger">' + esc(d.message || '수집하지 못했어요.') + '</div>' + act);
       })

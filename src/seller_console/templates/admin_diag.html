@@ -1,0 +1,140 @@
+{% extends "_base.html" %}
+{% block title %}{{ {'stores': '스토어 진단', 'item': '상품 진단', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증 진단'}[mode] }}{% endblock %}
+{% block content %}
+{# 오너 11-26 진단 3 — 관리자 진단을 사람이 읽게: 판정 한 줄 + 한글 표. 원문 JSON은 ?raw=1. 읽기만(재보강 실행은 오너 탭 두 번). #}
+<style>
+  .dg-wrap { max-width: var(--content-max); margin: 0 auto; padding: var(--space-3); }
+  .dg-verdict { font-family: var(--font-display); font-size: var(--h3, 1.15rem); padding: var(--space-3); border-left: 3px solid var(--teal);
+                background: var(--surface); border-radius: var(--radius); margin: var(--space-2) 0 var(--space-3); }
+  .dg-verdict.is-bad { border-left-color: var(--danger); }
+  .dg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); margin-bottom: var(--space-3); }
+  .dg-card h2 { font-size: 1rem; margin: 0 0 var(--space-2); }
+  .dg-t { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  .dg-t th, .dg-t td { padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top;
+                        word-break: keep-all; overflow-wrap: anywhere; }
+  .dg-t td:first-child, .dg-t th:first-child { min-width: 9em; }   /* 좁은 폰에서 첫 칸이 한 글자씩 세로로 쪼개지지 않게(캡처에서 잡힘) */
+  .dg-t td.num, .dg-t th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .dg-url { word-break: break-all; font-size: .78rem; color: var(--text-muted, var(--muted)); }
+  .dg-img { width: 44px; height: 44px; object-fit: cover; border-radius: var(--radius-sm); background: var(--bg); }
+  .dg-bad { color: var(--danger); } .dg-ok { color: var(--teal); }
+  .dg-btn { min-height: 44px; width: 100%; }
+  .dg-row-off td { color: var(--text-muted, var(--muted)); }
+</style>
+<div class="dg-wrap" data-role="admin-diag" data-mode="{{ mode }}">
+  <p class="pc-overline">관리자 진단 · 읽기만</p>
+  <h1 class="pc-h2">{{ {'stores': '스마트스토어 키·한도', 'item': '수집 행 사진', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증(읽기 전용)'}[mode] }}</h1>
+  <div class="dg-verdict {% if (mode == 'stores' and d.mismatch) %}is-bad{% endif %}" data-role="dg-verdict">{{ verdict }}</div>
+
+  {% if mode == 'stores' %}
+    {% for r in d.stores %}
+    <section class="dg-card" data-role="dg-store" data-store="{{ r.store }}">
+      <h2>{{ r.label }} <span class="small text-muted">({{ r.store }})</span></h2>
+      {% if not r.token %}<div class="dg-bad">토큰 없음 — {{ r.why or '키 없음' }}</div>{% else %}
+      <div class="{{ 'dg-ok' if r.key_match and r.key_match.state == 'ok' else ('dg-bad' if r.key_match and r.key_match.state == 'mismatch' else '') }}" data-role="dg-key">{{ r.key_match.line if r.key_match else '' }}</div>
+      <div class="small text-muted mb-2">채널: {{ r.channels|join(', ') or '—' }}</div>
+      <table class="dg-t"><thead><tr><th>상태</th><th class="num">상품 수</th></tr></thead><tbody>
+        {% for k, v in r.counts.items() %}<tr><td>{{ status_ko.get(k, k) if status_ko else k }}</td><td class="num">{{ '{:,}'.format(v) if v is not none else '—' }}</td></tr>{% endfor %}
+        <tr><td><strong>한도 집계(판매중+판매대기+품절)</strong></td><td class="num"><strong>{{ '{:,}'.format(r.limit_count) if r.limit_count is not none else '—' }}/1,000</strong></td></tr>
+      </tbody></table>
+      {% set our = (d.our_records or {}).get(r.store) %}
+      <div class="small mt-2" data-role="dg-our">우리 기록: {% if our %}등록 {{ our.registered }} · 우리가 내림 {{ our.taken_down_ok }}{% if our.taken_down_fail %} · 내리기 실패 {{ our.taken_down_fail }}{% endif %}{% else %}없음{% endif %}
+        {% if r.counts and r.counts.SUSPENSION is not none %} · 판매중지 {{ '{:,}'.format(r.counts.SUSPENSION) }} 중 {{ '{:,}'.format(r.counts.SUSPENSION - (our.taken_down_ok if our else 0)) }}건은 <strong>우리 기록에 없음</strong>{% endif %}</div>
+      {% endif %}
+    </section>
+    {% endfor %}
+    {% if d.products %}<section class="dg-card"><h2>상품번호가 어느 키로 읽히나</h2><table class="dg-t"><thead><tr><th>상품번호</th><th>스토어</th><th>결과</th></tr></thead><tbody>
+      {% for no, per in d.products.items() %}{% for st, p in per.items() %}<tr><td>{{ no }}</td><td>{{ st }}</td><td>{% if p.found %}{{ status_ko.get(p.status, p.status) if status_ko else p.status }} · 사진 {{ p.images }} · {{ p.name }}{% else %}<span class="text-muted">없음 — {{ p.why }}</span>{% endif %}</td></tr>{% endfor %}{% endfor %}
+    </tbody></table></section>{% endif %}
+    <p class="small"><a href="?raw=1{% if nos %}&nos={{ nos }}{% endif %}">원문(JSON)</a></p>
+
+  {% elif mode == 'item' %}
+    {% for r in d.rows %}
+    <section class="dg-card" data-role="dg-item-row">
+      <h2>{{ r.title or '(제목 없음)' }}</h2>
+      <table class="dg-t"><tbody>
+        <tr><th>행</th><td>{{ r.id }}</td></tr><tr><th>수집 경로</th><td>{{ r.source }} · {{ r.mode or '—' }} · 보강 {{ r.enrich_state or '—' }}</td></tr>
+        <tr><th>주소</th><td class="dg-url">{{ r.url }}{% if r.raw_url %}<br>공유: {{ r.raw_url }}{% endif %}</td></tr>
+        <tr><th>옵션 · SKU</th><td>{{ r.options|join(', ') or '없음' }} · SKU {{ r.skus }}</td></tr>
+        <tr><th>상세 사진 · 저장본</th><td>{{ r.detail_images }} · {{ r.images_stored }}</td></tr>
+      </tbody></table>
+      <table class="dg-t mt-2"><thead><tr><th></th><th>크기</th><th>판정</th></tr></thead><tbody>
+        {% for i in r.images %}{% set big = (i.w is number) and ([i.w, i.h or 0]|max) >= 500 %}
+        <tr data-role="dg-img" data-ok="{{ '1' if big else '0' }}"><td><img class="dg-img" src="{{ i.url }}" alt="" loading="lazy" referrerpolicy="no-referrer"></td>
+          <td class="dg-url">{{ i.w ~ '×' ~ i.h if i.w is number else ('못 잼 ' ~ (i.why or '')) }}<br>{{ i.url }}</td>
+          <td class="{{ 'dg-ok' if big else 'dg-bad' }}">{{ '쓸 만함' if big else '작음' }}</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+    {% else %}<div class="pc-status">이 상품번호로 수집 행을 못 찾았어요.</div>{% endfor %}
+    <p class="small"><a href="?raw=1">원문(JSON)</a></p>
+
+  {% elif mode == 'prevalidate' %}
+    <section class="dg-card" data-role="dg-pv-item"><h2>{{ d.title or '(제목 없음)' }}</h2>
+      <div class="dg-url">{{ d.item_id }} · {{ d.url }}</div>
+      <div class="small mt-1">옵션 {{ d.options|join(', ') or '없음' }} · SKU {{ d.skus }} · 사진 {{ d.images }} · {{ d.secs }}초 · <strong>읽기 전용</strong>(전송·저장 0)</div></section>
+    {% for r in d.rows %}
+    <section class="dg-card" data-role="dg-pv-row" data-ok="{{ '1' if r.ok and not r.hold else '0' }}">
+      <h2>{{ r.market }} — <span class="{{ 'dg-ok' if r.ok and not r.hold else 'dg-bad' }}">{{ '통과' if r.ok and not r.hold else ('보류' if r.hold else '막힘') }}</span></h2>
+      {% if r.code %}<div class="small">코드 {{ r.code }}</div>{% endif %}
+      {% if r.message %}<div>{{ r.message }}</div>{% endif %}
+      {% if r.hint %}<div class="small text-muted">{{ r.hint }}</div>{% endif %}
+      {% for x in r.details %}<div class="dg-url">· {{ x }}</div>{% endfor %}
+      {% if r.fixes %}<div class="small">고치는 길: {{ r.fixes|join(', ') }}</div>{% endif %}
+    </section>
+    {% endfor %}
+    <p class="small"><a href="?raw=1&markets={{ d.markets|join(',') }}">원문(JSON)</a></p>
+
+  {% elif mode == 'reenrich' %}
+    {% if d.note %}<div class="pc-status pc-status-warning">{{ d.note }}</div>{% endif %}
+    <section class="dg-card" data-role="dg-reenrich-run">
+      <p class="mb-2" data-role="dg-estimate">예상 비용: {{ d.estimate.line }}</p>
+      {% set b = d.batch or {} %}
+      <button type="button" class="btn btn-primary dg-btn" data-role="dg-reenrich-go" data-count="{{ d.eligible }}"
+              {% if not d.enabled or not d.eligible or b.state == 'running' %}disabled{% endif %}>{{ d.eligible }}건 다시 가져오기</button>
+      <div class="small mt-2" data-role="dg-reenrich-state" aria-live="polite">{% if b.state == 'running' %}진행 {{ (b.done or [])|length }}/{{ b.total }}{% elif b.state == 'finished' %}지난 실행: 성공 {{ b.ok_count }}/{{ b.total }} ({{ b.finished_at }}){% endif %}</div>
+      <table class="dg-t mt-2" data-role="dg-reenrich-result" {% if not b.done %}hidden{% endif %}><thead><tr><th>상품</th><th>결과</th></tr></thead><tbody>
+        {% for x in b.done or [] %}<tr><td>{{ x.title or x.item_id }}</td><td class="{{ 'dg-ok' if x.ok else 'dg-bad' }}">{{ '성공' if x.ok else ('실패 — ' ~ (x.reason or x.state)) }}</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+    <section class="dg-card"><h2>대상 {{ d.count }}건</h2>
+      <table class="dg-t"><thead><tr><th>상품</th><th>구분</th></tr></thead><tbody>
+      {% for f in d.rows %}<tr class="{{ '' if f.eligible else 'dg-row-off' }}" data-role="dg-reenrich-row" data-eligible="{{ '1' if f.eligible else '0' }}">
+        <td>{{ f.title or '(제목 없음)' }}<div class="dg-url">상품번호 {{ f.taobao_id or '—' }} · 행 {{ f.item_id }} · {{ f.collected_at[:10] }}</div></td>
+        <td>{% if f.test %}<span class="pc-badge pc-badge-muted" data-role="dg-test">시험 계정</span>{% elif f.dup_of %}<span class="pc-badge pc-badge-off" data-role="dg-dup">중복(같은 상품번호 · {{ f.dup_of[:8] }})</span>{% else %}다시 가져옴{% endif %}</td></tr>{% endfor %}
+      </tbody></table></section>
+    <p class="small"><a href="?raw=1">원문(JSON)</a></p>
+  {% endif %}
+</div>
+{% if mode == 'reenrich' %}
+<script>
+(function () {
+  var go = document.querySelector('[data-role=dg-reenrich-go]'), st = document.querySelector('[data-role=dg-reenrich-state]');
+  var tbl = document.querySelector('[data-role=dg-reenrich-result]'), armed = false, timer = null;
+  function esc(t) { return String(t || '').replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function draw(b) {
+    if (!b || !b.total) return;
+    st.textContent = b.state === 'running' ? '진행 ' + (b.done || []).length + '/' + b.total : (b.state === 'finished' ? '끝났어요 — 성공 ' + b.ok_count + '/' + b.total : (b.error || ''));
+    tbl.hidden = !(b.done || []).length;
+    tbl.querySelector('tbody').innerHTML = (b.done || []).map(function (x) {
+      return '<tr><td>' + esc(x.title || x.item_id) + '</td><td class="' + (x.ok ? 'dg-ok' : 'dg-bad') + '">' + (x.ok ? '성공' : '실패 — ' + esc(x.reason || x.state)) + '</td></tr>';
+    }).join('');
+    if (b.state !== 'running' && timer) { clearInterval(timer); timer = null; }
+  }
+  function poll() { fetch('?progress=1', {credentials: 'same-origin', headers: {Accept: 'application/json'}}).then(function (r) { return r.json(); }).then(draw).catch(function () {}); }
+  if (go) go.addEventListener('click', function () {
+    var n = Number(go.getAttribute('data-count'));
+    if (!armed) { armed = true; go.textContent = '한 번 더 누르면 ' + n + '건 시작'; st.textContent = '예상 비용을 확인하고 한 번 더 눌러 주세요.'; return; }
+    go.disabled = true; st.textContent = '시작하는 중…';
+    fetch(location.pathname, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+                              body: JSON.stringify({now: true, confirm: n})})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { st.textContent = d.error || '시작하지 못했어요.'; go.disabled = false; armed = false; go.textContent = n + '건 다시 가져오기'; return; }
+        st.textContent = '진행 0/' + d.total; timer = setInterval(poll, 4000);
+      })
+      .catch(function (e) { st.textContent = '네트워크 오류 — ' + ((e && e.message) || e); go.disabled = false; armed = false; });
+  });
+  {% if (d.batch or {}).state == 'running' %}timer = setInterval(poll, 4000);{% endif %}
+})();
+</script>
+{% endif %}
+{% endblock %}

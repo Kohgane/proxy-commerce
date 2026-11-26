@@ -36,7 +36,7 @@
 <nav class="pub-nav"><div class="in">
   <a class="brand" href="/"><img src="/seller/static/favicon.svg?v=183" alt="">{{ brand_name_ko|default('고가브릿지', true) }}</a>
   <div class="links">
-    <a href="/pricing" class="{{ 'on' if page == 'pricing' }}">플랜</a>
+    {% if not is_app %}<a href="/pricing" class="{{ 'on' if page == 'pricing' }}">플랜</a>{% endif %}
     <a href="/terms" class="{{ 'on' if page == 'terms' }}">약관</a>
     <a href="/privacy" class="{{ 'on' if page == 'privacy' }}">개인정보</a>
     <a href="/contact" class="{{ 'on' if page == 'contact' }}">문의</a>

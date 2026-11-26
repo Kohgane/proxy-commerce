@@ -2033,6 +2033,29 @@ def _dispatcher_collect():
         return UniversalScraper().fetch
 
 
+def _amazon_extra(result) -> dict:
+    """오너 11-26 진단 1 — 아마존 페이지 데이터에서 읽은 옵션·상세(A+)·설명·출처를 이력에 같이 남긴다(다른 사이트는 그대로)."""
+    rm = getattr(result, "raw_meta", None) or {}
+    ap = rm.get("amazon_pdp") if isinstance(rm, dict) else None
+    if not isinstance(ap, dict):
+        return {}
+    out = {"amazon_pdp": {"image_source": ap.get("image_source", ""), "price_source": ap.get("price_source", ""),
+                          "images": ap.get("images", 0)}}
+    opts = [{"name": o["name"], "values": o["values"]} for o in (ap.get("options") or []) if o.get("values")]
+    if opts:
+        out["options"] = opts
+    if ap.get("detail_images"):
+        out["detail_images"] = list(ap["detail_images"])
+    desc = str(getattr(result, "description", "") or "").strip()
+    if desc:
+        out["description"] = desc
+    var = ap.get("variants") if isinstance(ap.get("variants"), dict) else {}
+    if var.get("values_by_asin"):
+        out["amazon_variants"] = var                       # 옵션 조합 → 자식 ASIN(옵션별 가격은 뒤에서 읽는다)
+        out["sku_fill"] = {"state": "pending"}
+    return out
+
+
 def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk", raw_url: str = "") -> dict:
     """URL 1건 수집 → 이력 저장. **벌크와 단건(M1-1)이 공유하는 단일 코어**.
 
@@ -2108,12 +2131,20 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk", raw_
                 status="ok", seller_id=str(seller_id or ""),
                 extra={"title": title, "title_ko": title, "images": images,
                        "price": price, "currency": currency,
-                       **({"raw_url": raw_url} if raw_url and raw_url != url else {})},
+                       **({"raw_url": raw_url} if raw_url and raw_url != url else {}),
+                       **_amazon_extra(result)},
             )
         except _ULR as _lim:                                      # Y15: 이번 달 한도 — 항목별 정직 사유
             return {"url": url, "ok": False, "error": _lim.message, "limit_reached": True,
                     "billing_url": _lim.payload()["billing_url"]}
         item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
+        if item_id and durable and _amazon_extra(result).get("amazon_variants"):
+            try:                                           # 오너 11-26 오후 ①: 옵션별 가격은 뒤에서(자식 ASIN 화면 — 요청을 붙잡지 않는다)
+                from src.services import amazon_refetch as _ar
+                from src.utils import bg_job as _bg
+                _bg.start(f"amazon-skus:{item_id}", lambda _iid=item_id, _sid=str(seller_id or ""): _ar.fill_skus(_iid, {_sid}))
+            except Exception as _sexc:                     # noqa: BLE001
+                logger.warning("[아마존 옵션별 가격] 시작 실패: %s", _sexc)
         if not item_id or not durable:
             return {"url": url, "ok": False, "error": "저장 영속화 실패(재시도 필요)"}
         return {"url": url, "ok": True, "item_id": item_id, "title": title}
