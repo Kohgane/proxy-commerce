@@ -2947,3 +2947,10 @@ a.hb-tile:hover { border-color: var(--teal); }
 .auth-panel .divider::before, .auth-panel .divider::after { content: ''; flex: 1; border-top: 1px solid var(--auth-line-soft); }
 .auth-diag { border-top: 1px solid var(--auth-line-soft); }
 .auth-diag .auth-diag-row { border: 1px solid var(--auth-line-soft); border-radius: .5rem; padding: .5rem .6rem; margin-bottom: .5rem; }
+
+/* 오너 11-26 저녁 ①: 목록 맨 위 「사진 고칠 상품 N건」 묶음 — 한 줄 카드(청록 좌선 · 터치 44px) */
+.ch-photo-fix { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); min-height: 44px;
+  margin: 0 0 var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-left: 3px solid var(--teal);
+  border-radius: var(--radius); background: var(--surface); color: var(--text); text-decoration: none; }
+.ch-photo-fix span { color: var(--text-muted); font-size: var(--caption); }
+.ch-photo-fix.is-on { border-left-color: var(--ink); }

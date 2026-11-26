@@ -2469,7 +2469,22 @@ def mobile_list_ctx(item: dict) -> dict:
             "market_records": _market_records(ex),       # M8: 「마켓 등록본」 — 데스크톱과 같은 줄
             "product": product,
             "risks": risks, "mixed_types": mixed, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or ""), str(item.get("url") or "")), **_m5_ship(product),
-            **_m5_video(ex)}
+            **_m5_video(ex), **_m5_photo_fix(ex, str(item.get("url") or ""))}
+
+
+def _m5_photo_fix(ex: dict, url: str = "") -> dict:
+    """오너 11-26 저녁 ①: 「다시 가져오기」 결과 한 줄 + 이미 스스에 올라간 상품이면 「바뀐 사진을 스스에 다시 보내기」(오너 탭 · 두 번).
+    사진이 작은 판으로 올라갔는데 아직 다시 안 가져왔으면 「다시 가져오기」 버튼(아마존만 서버가 바로 읽는다)."""
+    try:
+        from src.services import photo_fix as _pf
+        from src.collectors.amazon_pdp import is_amazon_page as _is_amz
+        j = _pf.judge(ex) or {}
+        return {"refetch_result": {"line": _pf.refetch_line(ex), "resend": _pf.resend_targets(ex),
+                                   "state": j.get("state") or "", "fix_line": j.get("line") or "",
+                                   "can_refetch": bool(_is_amz(None, url))}}
+    except Exception as exc:                                     # noqa: BLE001 — 카드는 그대로 그린다
+        logger.warning("[M5] 사진 고침 판정 실패: %s", exc)
+        return {"refetch_result": {"line": "", "resend": [], "state": "", "fix_line": "", "can_refetch": False}}
 
 
 def _m5_video(ex: dict) -> dict:
@@ -12657,6 +12672,35 @@ def collect_link_diag_page():
     return render_template("collect_link_diag.html", asked=asked, result=result, share=None)
 
 
+_PHOTO_FIX_CACHE: dict = {}
+
+
+def _photo_fix_bundle(ids: set) -> dict:
+    """오너 11-26 저녁 ①: 목록 맨 위 「사진 고칠 상품 N건」 — 등록 기록 + 쓸 만한 사진 판정만(마켓에 묻지 않는다).
+    필요한 extra 칸만 끈다(1쿼리) · 셀러별 2분 캐시(목록을 열 때마다 다시 세지 않는다)."""
+    import time as _time
+    key = tuple(sorted(str(x) for x in ids if x))
+    hit = _PHOTO_FIX_CACHE.get(key)
+    if hit and _time.time() - hit[0] < 120:
+        return hit[1]
+    out = {"n": 0, "ready": 0, "small": 0, "ids": []}
+    try:
+        from .collect_history_store import list_items as _li
+        from src.services import photo_fix as _pf
+        rows = _li(days=365, seller_ids=set(ids), extra_keys=_pf.KEYS) or []
+
+        def _exo(it):
+            try:
+                return json.loads(it.get("extra_json") or "{}") or {}
+            except Exception:
+                return {}
+        out = _pf.bundle(rows, _exo)
+    except Exception as exc:                                     # noqa: BLE001 — 묶음은 못 세도 목록은 그린다
+        logger.warning("[사진 고칠 상품] 세기 실패: %s", exc)
+    _PHOTO_FIX_CACHE[key] = (_time.time(), out)
+    return out
+
+
 @bp.get("/collect/history")
 def collect_history():
     """수집 이력 페이지 (Phase 135.2)."""
@@ -12691,6 +12735,7 @@ def collect_history():
     disc_f = request.args.get("discarded", "").strip() == "1"      # Y12-D: 버린 상품만(기본은 숨김 — 드로어에서 되살리기)
     rej_f = request.args.get("rej", "").strip() == "1"             # 오너 11-25 15:56 ③: 쿠팡 등 실제 반려만
     left_f = request.args.get("left", "").strip() == "1"           # 오너 11-25 15:56 ③: 반쪽 등록(남은 마켓)만
+    photo_f = request.args.get("photo", "").strip() == "1"         # 오너 11-26 저녁 ①: 사진 고칠 상품만(스스에 흐린 사진으로 올라간 것)
     per_page = request.args.get("per_page", 50, type=int)
     if per_page not in (20, 50, 100):
         per_page = 50
@@ -12702,7 +12747,7 @@ def collect_history():
     # 속도: 기본 뷰(최신순·필터 없음)는 목록을 SQL LIMIT/OFFSET로 그 페이지만 가져온다
     #   (전체 스캔 회피 — 상품 많아도 첫 페이지 비용 고정). 필터/타 정렬은 기존 전체 로드 경로.
     _sql_page = (sort in ("newest", "action") and not q and not status_f and not group_f and not domain and not source
-                 and not hygiene_f and not reg_f and not mk_f and not rej_f and not left_f)
+                 and not hygiene_f and not reg_f and not mk_f and not rej_f and not left_f and not photo_f)
     _order = "action" if sort == "action" else "created"
 
     items = []
@@ -12799,6 +12844,9 @@ def collect_history():
                 items = [it for it in items if _rej(_ex_of(it))]
             if left_f:
                 items = [it for it in items if _lm(_ex_of(it))]
+        if photo_f:
+            _pfi = set(_photo_fix_bundle(_seller_identities()).get("ids") or [])
+            items = [it for it in items if str(it.get("id")) in _pfi]
 
         # 검색(제목/도메인/URL 부분일치)
         if q:
@@ -12896,7 +12944,8 @@ def collect_history():
         filters={"domain": domain, "source": source, "days": days,
                  "q": q, "status": status_f, "group": group_f, "sort": sort, "per_page": per_page,
                  "hygiene": hygiene_f, "reg": reg_f, "attn": attn_f, "discarded": disc_f, "mk": mk_f, "mst": mst_f,
-                 "rej": rej_f, "left": left_f},
+                 "rej": rej_f, "left": left_f, "photo": photo_f},
+        photo_fix=(_photo_fix_bundle(_seller_identities()) if fmt != "rows" else {"n": 0}),
         mk_label=(" · ".join(x for x in (next((f"{r[1]} {r[2]}" for r in _MKR if r[0] == mk_f), ""),
                                           {"sale": "판매중", "wait": "승인대기", "rejected": "반려"}.get(mst_f, "")) if x)
                   if mk_f else ""),
@@ -18274,6 +18323,28 @@ def glossary_candidates():
                             "item_id": row.get("id"), "in_glossary": bool(option_value_line(c["orig"]))})
     out.sort(key=lambda c: c["at"], reverse=True)
     return jsonify({"ok": True, "candidates": out, "glossary_lines": glossary_line_count()})
+
+
+@bp.get("/collect/<item_id>/refetch-result")
+def collect_refetch_result(item_id):
+    """오너 11-26 저녁 ①: 카드가 「다시 가져오기」 뒤 끝났는지 묻는다(읽기만). `since`(ISO) 뒤에 끝난 기록이 있으면 done.
+    옵션별 가격을 읽는 중이면 아직 done 아님(그 줄까지 같이 보이려고)."""
+    if not _check_auth():
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    item = _get_owned_item(item_id)
+    if item is None:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
+    try:
+        ex = json.loads(item.get("extra_json") or "{}") or {}
+    except Exception:
+        ex = {}
+    from src.services import photo_fix as _pf
+    rec = ex.get("amazon_refetch") if isinstance(ex.get("amazon_refetch"), dict) else {}
+    since = str(request.args.get("since") or "")
+    sf = ex.get("sku_fill") if isinstance(ex.get("sku_fill"), dict) else {}
+    done = bool(rec.get("at")) and str(rec.get("at")) >= since and sf.get("state") != "pending"
+    return jsonify({"ok": True, "done": done, "line": _pf.refetch_line(ex) if rec.get("at") else "",
+                    "resend": _pf.resend_targets(ex)})
 
 
 @bp.post("/collect/<item_id>/recollect")

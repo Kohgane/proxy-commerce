@@ -171,6 +171,21 @@
     <div class="m5-note" data-role="m5-incomplete-state" aria-live="polite"></div>
   </section>
   {% endif %}
+  {% set _rr = m5.refetch_result or {} %}
+  {% if _rr.line or _rr.resend or _rr.state %}
+  {# 오너 11-26 저녁 ①: 다시 가져오기 결과 한 줄 + 이미 스스에 올라간 상품이면 바뀐 사진을 그 자리에서 다시 보낸다(오너 탭 · 두 번) #}
+  <section class="m5-refetch-result" data-role="m5-refetch-result">
+    {% if _rr.line %}<div class="m5-refetch-line" data-role="m5-refetch-line"><b>다시 가져온 결과</b> — {{ _rr.line }}</div>{% endif %}
+    {% if _rr.fix_line and not _rr.resend %}<div class="m5-note" data-role="m5-photo-fix-line">{{ _rr.fix_line }}</div>{% endif %}
+    <div class="m5-incomplete-acts">
+      {% for t in _rr.resend %}
+      <button type="button" class="m5-fix" data-role="m5-photo-resend" data-market="{{ t.market }}">바뀐 사진을 {{ t.label }}에 다시 보내기</button>
+      {% endfor %}
+      {% if _rr.state == 'small' and _rr.can_refetch %}<button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>{% endif %}
+    </div>
+    <div class="m5-note" data-role="m5-refetch-state" aria-live="polite"></div>
+  </section>
+  {% endif %}
   {% if m5.rejected %}
   {# 오너 11-25 15:56 ③: 쿠팡이 **실제로** 반려한 마켓 — 사유 원문 그대로 + 사람 말 한 줄 + 「고쳐서 다시 올리기」(사전검증이 지난 반려 사유를
      자동으로 고치고(Y8) 고친 것 → 바뀐 값을 보인다 · 등록은 오너가 누를 때만) #}
@@ -308,6 +323,8 @@
   .m5-incomplete { margin: 0 0 var(--space-3); padding: var(--space-3); border: 1px solid var(--warn); border-radius: var(--radius); background: var(--surface); }
   .m5-incomplete ul { margin: 6px 0; padding-left: 1.1rem; }
   .m5-incomplete-acts { display: flex; flex-direction: column; gap: var(--space-2); }
+  .m5-refetch-result { margin: 0 0 var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-left: 3px solid var(--teal); border-radius: var(--radius); background: var(--surface); }
+  .m5-refetch-line { margin-bottom: var(--space-2); line-height: 1.5; }
   .m5-off-row { margin-top: 4px; }
   .m5-reject, .m5-left { margin: 0 0 var(--space-3); }
   .m5-reject-sum { font-weight: 600; margin: 4px 0; }
@@ -506,21 +523,58 @@
   root.addEventListener('click', async function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-incomplete-refetch],[data-role=m5-incomplete-url-save]') : null;
     if (!b) return;
-    var st = root.querySelector('[data-role=m5-incomplete-state]'), isUrl = b.getAttribute('data-role') === 'm5-incomplete-url-save';
+    var _sec = b.closest('section');
+    var st = (_sec && _sec.querySelector('[aria-live]')) || root.querySelector('[data-role=m5-incomplete-state]'), isUrl = b.getAttribute('data-role') === 'm5-incomplete-url-save';
     var body = {mode: 'queue'}, url = '/seller/collect/' + encodeURIComponent(itemId) + '/recollect';
     if (isUrl) {
       var u = (root.querySelector('[data-role=m5-incomplete-url]') || {}).value || '';
       if (!u.trim()) { st.textContent = '원본 상품 주소를 넣어 주세요.'; return; }
       url = '/seller/collect/' + encodeURIComponent(itemId) + '/source-url'; body = {url: u.trim()};
     }
+    var _since = new Date().toISOString().slice(0, 19);
     b.disabled = true; st.textContent = isUrl ? '확인하는 중…' : '요청하는 중…';
     try {
       var r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
       var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
-      if (d.ok) { st.textContent = isUrl ? '원본 주소를 넣었어요 — 다시 그립니다' : (d.message || '다시 가져오기 줄에 넣었어요'); if (isUrl) setTimeout(function () { location.reload(); }, 700); }
+      if (d.ok) { st.textContent = isUrl ? '원본 주소를 넣었어요 — 다시 그립니다' : (d.message || '다시 가져오기 줄에 넣었어요'); if (isUrl) setTimeout(function () { location.reload(); }, 700);
+        else if (d.server_refetch) kgpPollRefetch(st, _since); }
       else st.textContent = (isUrl ? '' : '요청하지 못했어요 — ') + (d.error || '사유 없음');
     } catch (err) { st.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
     b.disabled = false;
+  });
+  // 오너 11-26 저녁 ①: 다시 가져오기가 끝날 때까지 4초마다 묻는다(읽기만 · 최대 3분) → 끝나면 결과 줄과 「다시 보내기」를 그린다
+  function kgpPollRefetch(st, since) {
+    var n = 0;
+    (function tick() {
+      n += 1;
+      fetch('/seller/collect/' + encodeURIComponent(itemId) + '/refetch-result?since=' + encodeURIComponent(since), {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (d && d.done) { st.textContent = '다시 가져왔어요 — ' + (d.line || '') + ' · 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); return; }
+          if (n >= 45) { st.textContent = '아직 읽는 중이에요 — 잠시 뒤 새로 고침해 주세요.'; return; }
+          setTimeout(tick, 4000);
+        }).catch(function () { if (n < 45) setTimeout(tick, 4000); });
+    })();
+  }
+  // 오너 11-26 저녁 ①: 「바뀐 사진을 스스에 다시 보내기」 — 첫 탭은 확인 글, 두 번째 탭에 보낸다(마켓 전송 = 오너 탭)
+  root.addEventListener('click', async function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-photo-resend]') : null;
+    if (!b) return;
+    var st = root.querySelector('[data-role=m5-refetch-state]');
+    if (!b.hasAttribute('data-armed')) {
+      b.setAttribute('data-armed', '1'); b.setAttribute('data-label', b.textContent);
+      b.textContent = '한 번 더 누르면 스스 사진을 바꿔요';
+      if (st) st.textContent = '스스에 올라간 상품의 사진만 바꿔요 — 가격·옵션·본문은 그대로예요.';
+      return;
+    }
+    b.disabled = true; if (st) st.textContent = '보내는 중…';
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/naver-resend-photos', {method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({market: b.getAttribute('data-market'), confirm: true})});
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
+      if (st) st.textContent = d.ok ? (d.message || '보냈어요') : ('보내지 못했어요 — ' + (d.error || '사유 없음'));
+      if (d.ok) { b.textContent = '보냄'; return; }
+    } catch (err) { if (st) st.textContent = '네트워크 오류 — ' + ((err && err.message) || err); }
+    b.disabled = false; b.removeAttribute('data-armed'); b.textContent = b.getAttribute('data-label') || '다시 보내기';
   });
   // F: 옵션 값 상표 — 「제안대로 바꾸기」(서버가 같은 판정으로 다시 골라 적용) → 다시 그린다.
   var brandBtn = root.querySelector('[data-role=m5-brand-fix]'), brandSt = root.querySelector('[data-role=m5-brand-state]');

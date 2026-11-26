@@ -30,6 +30,14 @@
     <a class="mk-attn-toggle{% if filters.left %} is-on{% endif %}" data-role="left-filter"
        href="{{ '/seller/collect/history' if filters.left else '/seller/collect/history?left=1' }}"{% if filters.left %} aria-current="page"{% endif %}>남은 마켓</a>
   </div>
+  {# 오너 11-26 저녁 ①: 흐린 사진으로 스스에 올라간 상품을 서버가 찾아 한 묶음으로(등록 기록 + 쓸 만한 사진 판정) #}
+  {% if (photo_fix and photo_fix.n) or filters.photo %}
+  <a class="ch-photo-fix{% if filters.photo %} is-on{% endif %}" data-role="photo-fix-bundle"
+     href="{{ '/seller/collect/history' if filters.photo else '/seller/collect/history?photo=1&days=365' }}"{% if filters.photo %} aria-current="page"{% endif %}>
+    <b>사진 고칠 상품 {{ photo_fix.n or 0 }}건</b>
+    <span>{% if photo_fix.ready %}다시 보내기만 남음 {{ photo_fix.ready }}{% endif %}{% if photo_fix.ready and photo_fix.small %} · {% endif %}{% if photo_fix.small %}사진부터 다시 가져오기 {{ photo_fix.small }}{% endif %}{% if filters.photo %} — 전체 목록으로{% endif %}</span>
+  </a>
+  {% endif %}
   {# Y12-D(오너 2026-10-18): 「버리기」 한 상품은 목록에서 숨는다(DB 삭제 아님) — 여기서 모아 보고 드로어에서 되살린다 #}
   {% if filters.discarded %}
   <p class="pc-status pc-status-info small mb-2" data-role="discarded-banner">버린 상품만 보는 중 — 상품을 열어 「되살리기」를 누르면 목록으로 돌아와요.
