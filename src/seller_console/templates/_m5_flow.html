@@ -160,7 +160,9 @@
     <b>수집이 덜 됐어요</b>
     <ul>{% for r in m5.incomplete %}<li data-code="{{ r.code }}">{{ r.line }}</li>{% endfor %}</ul>
     <div class="m5-incomplete-acts">
-      <button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>
+      {% set _sp = m5.incomplete|selectattr('code', 'equalto', 'sku_partial')|list %}
+      {% if _sp %}<button type="button" class="m5-fix" data-role="m5-drop-unpriced">가격 없는 {{ _sp[0].n }}개 빼고 등록</button>{% endif %}
+      {% if not (m5.incomplete|selectattr('code', 'equalto', 'sku_filling')|list) %}<button type="button" class="m5-fix" data-role="m5-incomplete-refetch">다시 가져오기</button>{% endif %}
       {% if m5.incomplete|selectattr('code', 'equalto', 'no_source_url')|list %}
       <div class="m5-src"><input type="url" inputmode="url" class="form-control" data-role="m5-incomplete-url" placeholder="{{ m5.src_example }}" autocomplete="off">
         <button type="button" class="m5-fix" data-role="m5-incomplete-url-save">주소 넣기</button></div>
@@ -486,6 +488,19 @@
     function manual() { inp.focus(); inp.select(); st.textContent = '복사가 막혔어요 — 주소 칸을 길게 눌러 복사해 주세요.'; }
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(function () { st.textContent = '복사했어요 — PC로 보내 열어 주세요.'; }, manual);
     else manual();
+  });
+  // 오너 11-26 오후 ①: 「가격 없는 n개 빼고 등록」 — 가격 있는 옵션 조합만 남기고 다시 그린다(전송 0)
+  var dropBtn = root.querySelector('[data-role=m5-drop-unpriced]');
+  if (dropBtn) dropBtn.addEventListener('click', async function () {
+    var st = root.querySelector('[data-role=m5-incomplete-state]');
+    dropBtn.disabled = true; st.textContent = '빼는 중…';
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(itemId) + '/drop-unpriced', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
+      if (d.ok) { st.textContent = '가격 없는 ' + d.dropped + '개를 뺐어요 — 가격 있는 ' + d.kept + '개만 올라가요. 다시 그립니다'; setTimeout(function () { location.reload(); }, 900); return; }
+      st.textContent = d.error || '빼지 못했어요.';
+    } catch (e) { st.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
+    dropBtn.disabled = false;
   });
   // 오너 11-25 ③: 「수집이 덜 됐어요」 — 다시 가져오기(서버 재수집 줄) · 주소 넣기(원본 주소 저장 → 다시 그림)
   root.addEventListener('click', async function (e) {

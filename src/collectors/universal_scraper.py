@@ -1030,9 +1030,11 @@ class UniversalScraper:
                         result.currency = _ap["currency"]
                     if _ap["bullets"] and not (result.description or "").strip():
                         result.description = "\n".join(_ap["bullets"])
+                    from .amazon_pdp import variants as _amz_variants
                     result.raw_meta["amazon_pdp"] = {"image_source": _ap["image_source"], "price_source": _ap["price_source"],
                                                      "options": _ap["options"], "detail_images": _ap["detail_images"],
-                                                     "images": len(_ap["images"])}
+                                                     "images": len(_ap["images"]),
+                                                     "variants": _amz_variants(html) if _ap["options"] else {}}
                     result.raw_meta["gallery_images"] = list(_ap["images"])
                     result.raw_meta["detail_images"] = list(_ap["detail_images"])
                     return result

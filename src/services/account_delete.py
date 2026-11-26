@@ -20,7 +20,7 @@ KEY = "account_delete:requests"
 MAX_ROWS = 500
 CONFIRM_WORD = "삭제"
 
-SCOPE_DELETE = ("로그인 계정(이메일·소셜 연결)", "수집한 상품과 편집 내용", "연결한 마켓 API 키", "발급한 수집기 토큰")
+SCOPE_DELETE = ("로그인 계정(이메일·소셜 연결 — 애플로 가입했으면 애플 쪽 연결도 끊어요)", "수집한 상품과 편집 내용", "연결한 마켓 API 키", "발급한 수집기 토큰")
 SCOPE_KEEP = ("주문·정산 기록 — 전자상거래법에 따라 5년 보관한 뒤 지워요",
               "이미 마켓에 올린 상품 — 각 마켓 판매자센터에서 직접 내려 주세요")
 
@@ -107,6 +107,11 @@ def execute(req_id: str, by: str) -> Dict:
         steps["collected"] = f"삭제 {len(gone)}/{len(items)}"
     except Exception as exc:                                    # noqa: BLE001
         steps["collected"] = f"실패: {type(exc).__name__}: {str(exc)[:120]}"
+    try:                                                           # 오너 11-26 오후 ④: 애플 로그인 계정이면 애플 쪽 토큰도 폐기
+        from src.auth.apple_tokens import revoke as _apple_revoke
+        steps["apple"] = _apple_revoke(uid)["step"]
+    except Exception as exc:                                       # noqa: BLE001
+        steps["apple"] = f"실패: {type(exc).__name__}: {str(exc)[:120]}"
     try:
         from src.auth.user_store import get_store
         store = get_store()

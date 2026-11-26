@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% block title %}{{ {'stores': '스토어 진단', 'item': '상품 진단', 'reenrich': '타오바오 재보강'}[mode] }}{% endblock %}
+{% block title %}{{ {'stores': '스토어 진단', 'item': '상품 진단', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증 진단'}[mode] }}{% endblock %}
 {% block content %}
 {# 오너 11-26 진단 3 — 관리자 진단을 사람이 읽게: 판정 한 줄 + 한글 표. 원문 JSON은 ?raw=1. 읽기만(재보강 실행은 오너 탭 두 번). #}
 <style>
@@ -22,7 +22,7 @@
 </style>
 <div class="dg-wrap" data-role="admin-diag" data-mode="{{ mode }}">
   <p class="pc-overline">관리자 진단 · 읽기만</p>
-  <h1 class="pc-h2">{{ {'stores': '스마트스토어 키·한도', 'item': '수집 행 사진', 'reenrich': '타오바오 재보강'}[mode] }}</h1>
+  <h1 class="pc-h2">{{ {'stores': '스마트스토어 키·한도', 'item': '수집 행 사진', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증(읽기 전용)'}[mode] }}</h1>
   <div class="dg-verdict {% if (mode == 'stores' and d.mismatch) %}is-bad{% endif %}" data-role="dg-verdict">{{ verdict }}</div>
 
   {% if mode == 'stores' %}
@@ -66,6 +66,22 @@
     </section>
     {% else %}<div class="pc-status">이 상품번호로 수집 행을 못 찾았어요.</div>{% endfor %}
     <p class="small"><a href="?raw=1">원문(JSON)</a></p>
+
+  {% elif mode == 'prevalidate' %}
+    <section class="dg-card" data-role="dg-pv-item"><h2>{{ d.title or '(제목 없음)' }}</h2>
+      <div class="dg-url">{{ d.item_id }} · {{ d.url }}</div>
+      <div class="small mt-1">옵션 {{ d.options|join(', ') or '없음' }} · SKU {{ d.skus }} · 사진 {{ d.images }} · {{ d.secs }}초 · <strong>읽기 전용</strong>(전송·저장 0)</div></section>
+    {% for r in d.rows %}
+    <section class="dg-card" data-role="dg-pv-row" data-ok="{{ '1' if r.ok and not r.hold else '0' }}">
+      <h2>{{ r.market }} — <span class="{{ 'dg-ok' if r.ok and not r.hold else 'dg-bad' }}">{{ '통과' if r.ok and not r.hold else ('보류' if r.hold else '막힘') }}</span></h2>
+      {% if r.code %}<div class="small">코드 {{ r.code }}</div>{% endif %}
+      {% if r.message %}<div>{{ r.message }}</div>{% endif %}
+      {% if r.hint %}<div class="small text-muted">{{ r.hint }}</div>{% endif %}
+      {% for x in r.details %}<div class="dg-url">· {{ x }}</div>{% endfor %}
+      {% if r.fixes %}<div class="small">고치는 길: {{ r.fixes|join(', ') }}</div>{% endif %}
+    </section>
+    {% endfor %}
+    <p class="small"><a href="?raw=1&markets={{ d.markets|join(',') }}">원문(JSON)</a></p>
 
   {% elif mode == 'reenrich' %}
     {% if d.note %}<div class="pc-status pc-status-warning">{{ d.note }}</div>{% endif %}

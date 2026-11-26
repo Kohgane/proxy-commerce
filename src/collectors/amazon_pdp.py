@@ -271,3 +271,54 @@ def usable_photo(url: str) -> bool:
         return True
     nums = [int(n) for n in re.findall(r"(\d{2,4})", m.group(1))]
     return (not nums) or max(nums) >= 500            # `._AC_.`처럼 숫자 없는 토큰은 원본 판
+
+
+# ── 오너 11-26 오후 ① — 옵션별 가격(자식 ASIN) ────────────────────────────────
+#   상품 화면엔 「고른 옵션」 가격만 있다. 옵션 조합 → 자식 ASIN 표(`dimensionValuesDisplayData` = {ASIN: [값…]},
+#   값 순서는 `dimensions`)를 읽고, 자식 ASIN 화면을 하나씩 열어 그 가격을 읽는다. 못 읽은 조합은 사유를 남기고 SKU로 만들지 않는다.
+_DVD_RE = re.compile(r'"dimensionValuesDisplayData"\s*:\s*(?=\{)')
+_CUR_ASIN_RE = re.compile(r'"(?:currentAsin|parentAsin_unused|mediaAsin)"\s*:\s*"([A-Z0-9]{10})"')
+_ASIN_IN_URL_RE = re.compile(r"/dp/([A-Z0-9]{10})")
+MAX_CHILDREN = 40
+
+
+def variants(html: str) -> Dict:
+    """`{dims, values_by_asin, current}` — dims = 옵션 축 키 순서(`dimensions`), values_by_asin = {ASIN: [값…]}(dims 순서)."""
+    dvd = _block(_DVD_RE, html)
+    dims = _block(_DIMS_RE, html)
+    cur = _CUR_ASIN_RE.search(html or "")
+    out = {"dims": [d for d in (dims if isinstance(dims, list) else [])],
+           "values_by_asin": {}, "current": cur.group(1) if cur else ""}
+    if isinstance(dvd, dict):
+        for asin, vals in dvd.items():
+            if re.fullmatch(r"[A-Z0-9]{10}", str(asin)) and isinstance(vals, list):
+                out["values_by_asin"][str(asin)] = [str(v).strip() for v in vals]
+    return out
+
+
+def child_skus(variant_map: Dict, fetch_html, *, gap: float = 1.2, max_children: int = MAX_CHILDREN,
+               sleep=None) -> Dict:
+    """자식 ASIN마다 화면을 열어 가격을 읽는다 — `{skus:[{spec, price, currency, asin}], missing:[{spec, asin, why}], read, capped}`.
+    `fetch_html(url) -> str|None` · 간격 `gap`초 · 최대 `max_children`개(넘는 건 「상한」으로 남긴다) · 가격은 지어내지 않는다."""
+    import time as _t
+    sleep = sleep or _t.sleep
+    vba = variant_map.get("values_by_asin") or {}
+    skus, missing, read = [], [], 0
+    for i, (asin, spec) in enumerate(vba.items()):
+        if i >= max_children:
+            missing.append({"spec": spec, "asin": asin, "why": f"상한 {max_children}개 넘음 — 읽지 않음"})
+            continue
+        if i:
+            sleep(gap)
+        h = fetch_html(f"https://www.amazon.com/dp/{asin}?th=1&psc=1")
+        read += 1
+        if not h:
+            missing.append({"spec": spec, "asin": asin, "why": "화면을 못 읽음(막힘·빈 화면)"})
+            continue
+        p = price(h)
+        if not p["price"] or not p["currency"]:
+            why = "현재 구매 불가(가격 없음)" if re.search(r"Currently unavailable|outOfStock", h) else ("통화 모름" if p["price"] else "가격 없음")
+            missing.append({"spec": spec, "asin": asin, "why": why})
+            continue
+        skus.append({"spec": spec, "price": p["price"], "currency": p["currency"], "asin": asin, "source": "amazon_child"})
+    return {"skus": skus, "missing": missing, "read": read, "capped": max(0, len(vba) - max_children)}

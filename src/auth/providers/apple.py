@@ -90,6 +90,21 @@ class AppleProvider:
         except Exception as exc:
             return {"error": str(exc)}
 
+    _REVOKE_URL = "https://appleid.apple.com/auth/revoke"
+
+    def revoke(self, token: str, hint: str = "refresh_token") -> dict:
+        """오너 11-26 오후 ④ — 계정 삭제 때 애플 토큰 폐기. 200이면 ok. 실패는 응답 원문 그대로."""
+        if not self.is_configured:
+            return {"ok": False, "error": "애플 로그인 키가 설정돼 있지 않아요(APPLE_*)"}
+        try:
+            r = requests.post(self._REVOKE_URL, data={"client_id": self.client_id, "client_secret": self._build_client_secret(),
+                                                     "token": token, "token_type_hint": hint}, timeout=10)
+            if r.status_code == 200:
+                return {"ok": True}
+            return {"ok": False, "error": f"HTTP {r.status_code} {r.text[:200]}"}
+        except Exception as exc:                                    # noqa: BLE001
+            return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+
     def get_user_info(self, access_token: str) -> dict:
         """access_token == id_token(JWT) 디코드 → sub/email. (Apple 토큰엔드포인트가 발급한 토큰)"""
         try:

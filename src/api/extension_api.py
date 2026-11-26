@@ -2049,6 +2049,10 @@ def _amazon_extra(result) -> dict:
     desc = str(getattr(result, "description", "") or "").strip()
     if desc:
         out["description"] = desc
+    var = ap.get("variants") if isinstance(ap.get("variants"), dict) else {}
+    if var.get("values_by_asin"):
+        out["amazon_variants"] = var                       # 옵션 조합 → 자식 ASIN(옵션별 가격은 뒤에서 읽는다)
+        out["sku_fill"] = {"state": "pending"}
     return out
 
 
@@ -2134,6 +2138,13 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk", raw_
             return {"url": url, "ok": False, "error": _lim.message, "limit_reached": True,
                     "billing_url": _lim.payload()["billing_url"]}
         item_id, durable = _ret if (isinstance(_ret, tuple) and len(_ret) == 2) else (_ret, True)
+        if item_id and durable and _amazon_extra(result).get("amazon_variants"):
+            try:                                           # 오너 11-26 오후 ①: 옵션별 가격은 뒤에서(자식 ASIN 화면 — 요청을 붙잡지 않는다)
+                from src.services import amazon_refetch as _ar
+                from src.utils import bg_job as _bg
+                _bg.start(f"amazon-skus:{item_id}", lambda _iid=item_id, _sid=str(seller_id or ""): _ar.fill_skus(_iid, {_sid}))
+            except Exception as _sexc:                     # noqa: BLE001
+                logger.warning("[아마존 옵션별 가격] 시작 실패: %s", _sexc)
         if not item_id or not durable:
             return {"url": url, "ok": False, "error": "저장 영속화 실패(재시도 필요)"}
         return {"url": url, "ok": True, "item_id": item_id, "title": title}
