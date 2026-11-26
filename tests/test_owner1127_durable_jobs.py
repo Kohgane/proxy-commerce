@@ -229,3 +229,36 @@ def test_restarts_page_shows_raw_reason(client, monkeypatch):
     assert "일꾼이 왜 새로 떴나" in h and "11-26 18:10:02" in h and "내린 뒤 12.0초" in h and "워커 RSS 451MB" in h
     monkeypatch.setattr(V, "_is_admin_user", lambda: False)
     assert client.get("/seller/admin/diag/restarts").status_code == 403
+
+
+def test_old_thread_record_resumes_from_screen_button(client, state, monkeypatch):
+    """17:38에 1/26에서 멈춘 예전 스레드 기록(종류·목록 없음) — 화면 「이어서 하기」가 끝낸 1건 뒤부터 잇는다."""
+    import src.seller_console.views as V
+    from src.services import taobao_reenrich_batch as TB
+    from src.utils import bg_job
+    monkeypatch.setattr(V, "_is_admin_user", lambda: True)
+    state[TB.KEY] = {"state": "running", "total": 3, "rows": [{"item_id": f"i{n}", "seller_id": "s", "title": ""} for n in range(3)],
+                     "done": [{"item_id": "i0", "title": "", "state": "done", "ok": True, "reason": ""}]}
+    calls = []
+    TB._RUNNER_OVERRIDE["run"] = lambda uid, iid: (calls.append(iid), {"state": "done"})[1]
+    monkeypatch.setattr(bg_job, "start", lambda name, fn: (fn(), (True, {}))[1])
+    try:
+        d = client.post("/seller/admin/taobao-reenrich", json={"resume": True}).get_json()
+    finally:
+        TB._RUNNER_OVERRIDE.pop("run", None)
+    assert d["ok"] and calls == ["i1", "i2"] and TB.status()["state"] == "finished" and TB.status()["ok_count"] == 3
+
+
+def test_tick_adopts_legacy_stuck_record(state, monkeypatch):
+    from src.services import durable_job as DJ
+    from src.services import taobao_reenrich_batch as TB
+    from src.utils import bg_job
+    state[TB.KEY] = {"state": "running", "total": 2, "rows": [{"item_id": "a", "seller_id": "s", "title": ""}, {"item_id": "b", "seller_id": "s", "title": ""}],
+                     "done": [{"item_id": "a", "title": "", "state": "done", "ok": True, "reason": ""}]}
+    TB._RUNNER_OVERRIDE["run"] = lambda uid, iid: {"state": "done"}
+    monkeypatch.setattr(bg_job, "start", lambda name, fn: (fn(), (True, {}))[1])
+    try:
+        out = DJ.tick()
+    finally:
+        TB._RUNNER_OVERRIDE.pop("run", None)
+    assert TB.KEY in out["woke"] and TB.status()["state"] == "finished" and len(TB.status()["done"]) == 2

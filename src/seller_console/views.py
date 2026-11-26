@@ -5314,7 +5314,7 @@ def admin_taobao_reenrich():
     if request.method == "POST" and body.get("stop") is True:
         return jsonify({"ok": _tb.stop()})
     if request.method == "POST" and body.get("resume") is True:
-        return jsonify(_DJ.resume(_tb.KEY))
+        return jsonify(_DJ.resume(_tb.KEY, "taobao_reenrich"))
     if request.method == "POST" and body.get("now") is True:
         # 오너 탭(두 번 확인) — 화면이 본 건수와 서버가 지금 센 건수가 같아야 시작(그 사이 바뀌었으면 다시 보여 준다)
         if not _ta.enabled():
@@ -5366,7 +5366,8 @@ def admin_smartstore_relist():
             return jsonify({"ok": SR.stop(store)})
         if act in ("resume_build", "resume_run"):
             from src.services import durable_job as _DJ
-            return jsonify(_DJ.resume((SR._BUILD_KEY if act == "resume_build" else SR._RUN_KEY).format(store)))
+            return jsonify(_DJ.resume((SR._BUILD_KEY if act == "resume_build" else SR._RUN_KEY).format(store),
+                                      "relist_build" if act == "resume_build" else "relist_run"))
         return jsonify({"ok": False, "error": "알 수 없는 요청이에요."}), 400
     if str(request.args.get("progress") or "") == "1":
         from src.services import durable_job as _DJ

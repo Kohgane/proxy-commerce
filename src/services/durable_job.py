@@ -26,6 +26,9 @@ STALE_SEC = 180            # 하트비트가 이보다 오래 멈췄으면 다�
 STALL_SEC = 300            # 화면이 「멈췄어요」라고 말하는 문턱(오너: 5분 넘게 진전 없으면)
 STEP_SEC = 20.0            # 한 걸음 예산 — 걸음마다 저장
 INDEX_KEY = "djob:index"   # {key: kind} — 틱이 훑는 목록
+#: 이 모듈 전에 스레드로 돌다 끊긴 기록 — 틱이 처음 볼 때 종류를 달아 이어 돈다(오너 11-26 17:38 타오바오 1/26 등)
+_LEGACY = {"taobao_reenrich:batch": "taobao_reenrich", "smartstore_relist:run:chezgoga": "relist_run",
+           "smartstore_relist:run:gocosmos": "relist_run"}
 _KINDS: Dict[str, Callable] = {}
 #: 틱·부팅은 이 모듈만 부른다 — 작업 종류를 등록하는 모듈을 그때 불러온다(등록 전 「모르는 종류」로 실패하지 않게)
 _KIND_MODULES = {"relist_build": "src.services.smartstore_relist", "relist_run": "src.services.smartstore_relist",
@@ -167,11 +170,17 @@ def status(key: str) -> Dict:
     return rec
 
 
-def resume(key: str) -> Dict:
-    """「이어서 하기」 — 「running」인데 아무도 안 잡고 있거나 하트비트가 멈췄으면 이 일꾼이 이어 돈다(커서에서)."""
+def resume(key: str, kind: str = "") -> Dict:
+    """「이어서 하기」 — 「running」인데 아무도 안 잡고 있거나 하트비트가 멈췄으면 이 일꾼이 이어 돈다(커서에서).
+    `kind`를 주면 예전 스레드가 남긴 기록(종류·목록 등록 없음)도 받아서 잇는다."""
     rec = get(key)
     if rec.get("state") != "running":
         return {"ok": False, "error": "도는 작업이 없어요."}
+    if kind and not rec.get("kind"):
+        rec["kind"] = kind
+        save(key, rec)
+    if rec.get("kind"):
+        _index_add(key, str(rec["kind"]))
     if rec.get("holder") and rec.get("holder") != _ME and _age(rec.get("heartbeat_at")) < STALE_SEC:
         return {"ok": True, "started": False, "note": "다른 일꾼이 돌고 있어요 — 곧 진행이 움직여요."}
     rec["holder"] = ""
@@ -183,6 +192,16 @@ def resume(key: str) -> Dict:
 def tick() -> Dict:
     """10분 틱·부팅 — 하트비트가 멈춘 「running」 줄을 깨운다. 끝난 줄은 목록에서 뺀다."""
     idx = dict(_st().state_get(INDEX_KEY) or {})
+    for key, kind in _LEGACY.items():                              # 예전 스레드가 「running」으로 남긴 기록 — 종류를 달아 받는다
+        try:
+            rec = get(key)
+        except Exception:                                          # noqa: BLE001
+            continue
+        if rec.get("state") == "running" and not rec.get("kind"):
+            rec["kind"] = kind
+            save(key, rec)
+            idx[key] = kind
+            _st().state_set(INDEX_KEY, idx)
     woke, keep = [], {}
     for key, kind in idx.items():
         rec = get(key)

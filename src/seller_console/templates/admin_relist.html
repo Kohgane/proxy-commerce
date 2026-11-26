@@ -26,7 +26,7 @@
   <nav class="rl-tabs">{% for s, lab in stores %}<a href="?store={{ s }}" class="{{ 'on' if s == d.store }}">{{ lab }}</a>{% endfor %}</nav>
   {% set p = d.plan %}{% set r = d.run %}
   {% if not p.at %}
-    <div class="rl-verdict" data-role="rl-verdict">아직 목록을 안 만들었어요 — 아래 「목록 만들기」(읽기만 · 전송 0)</div>
+    <div class="rl-verdict" data-role="rl-verdict">{% if (d.build or {}).state == 'running' %}목록을 만드는 중이에요 — 진행은 아래에서 저절로 바뀌어요{% else %}아직 목록을 안 만들었어요 — 아래 「목록 만들기」(읽기만 · 전송 0){% endif %}</div>
   {% else %}
     <div class="rl-verdict" data-role="rl-verdict">켤 {{ p.on }}건 / 뺄 {{ p.skip }}건 · 빈자리 {{ p.room if p.room is not none else '모름' }}칸 (한도 {{ '{:,}'.format(p.limit) }} − 지금 {{ p.now_count if p.now_count is not none else '?' }})</div>
     <section class="rl-card" data-role="rl-summary">
