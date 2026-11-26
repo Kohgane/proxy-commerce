@@ -32,7 +32,7 @@ from difflib import SequenceMatcher
 
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, render_template_string, request, session, url_for, Response
 from src.utils.branding import get_brand_name, get_brand_name_ko
@@ -2258,6 +2258,27 @@ def _mark_not_ready(markets: list, product: dict) -> None:
             m["not_ready"] = why if admin else "이 마켓은 아직 준비 중"
 
 
+_PC_FILL_SITES = (("aliexpress.", "알리익스프레스", "알리 앱에서 사진을 길게 눌러 「사진 저장」"),
+                  ("amazon.", "아마존", "아마존 앱에서 사진을 길게 눌러 「이미지 저장」"))
+
+
+def _pc_fill_hint(item: dict, ex: dict, product: dict, taobao: bool, n_images: int) -> dict:
+    """오너 11-26 감독 2 — 공유로 **주소만** 담긴 초안(알리 등 서버가 상세를 못 읽는 곳)에 채우는 길 둘을 말한다.
+    ① PC 크롬 + 고가수집기로 그 주소를 열면 사진·옵션·가격이 채워진다 ② 폰에서 바로 — 사진 올리기 · 원가 · 옵션.
+    타오바오는 자동 보강 줄이 따로 있어 여기서 다루지 않는다. 다 채워진 상품엔 아무것도 안 띄운다."""
+    if taobao:
+        return {}
+    url = str((product or {}).get("url") or (item or {}).get("url") or "")
+    host = (urlparse(url).hostname or "").lower() if url else ""
+    site = next((s for s in _PC_FILL_SITES if s[0] in host), None)
+    if not site or str(ex.get("mode") or "") != "share":
+        return {}
+    has_price = str((product or {}).get("price") or "").strip() not in ("", "0", "0.0", "0.00")
+    if has_price and n_images >= 1:
+        return {}
+    return {"site": site[1], "url": url, "photo_help": site[2]}
+
+
 def mobile_list_ctx(item: dict) -> dict:
     """M5(오너 2026-09-30) — 폰에서 **미리보기 → 마켓 선택 → 사전검증 → 등록** 한 흐름의 재료.
 
@@ -2331,6 +2352,9 @@ def mobile_list_ctx(item: dict) -> dict:
         missing.append(f"사진(지금 {len(images)}장)")
     if taobao and not skus:
         missing.append("SKU(옵션별 가격)")
+    pc_fill = _pc_fill_hint(item, ex, product, taobao, len(images))   # 오너 11-26 감독 2: 알리 등 공유 초안 — 채우는 두 길
+    if pc_fill and not images:
+        missing.append("사진(지금 0장)")
     # T3: 위험 플래그(유통기한 임박·떨이 / 가구 레플리카 상표) — 카드에서 먼저 말한다. 사전검증이 같은 판정으로 보류.
     risks = []
     if isinstance(ex.get("risk_skip"), dict) and ex["risk_skip"].get("reason"):
@@ -2377,7 +2401,8 @@ def mobile_list_ctx(item: dict) -> dict:
         translit = []
     blocked = ""
     if ax["is_draft"] and not ax["gate_ready"]:
-        blocked = "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다."
+        blocked = ("가격이 없어 등록할 수 없어요 — 아래 「폰에서 사진·원가 넣기」에 원가를 적거나, PC에서 고가수집기로 이 상품을 열면 채워져요."
+                   if pc_fill else "가격이 없어 등록할 수 없어요 — PC에서 고가수집기로 이 상품을 열면 채워집니다.")
     incomplete = _incomplete_reasons(item, product, has_price)       # 오너 11-25 ③: 반쪽 수집은 등록 단계로 보내지 않는다
     if incomplete and not blocked:
         blocked = "수집이 덜 됐어요 — " + incomplete[0]["line"]
@@ -2407,7 +2432,7 @@ def mobile_list_ctx(item: dict) -> dict:
             "plug_note": plug_note, "excluded_count": excluded_count,
             "unresolved": sorted(unresolved),
             "brand_romanized": ex.get("brand_romanized") if isinstance(ex.get("brand_romanized"), dict) else None,
-            "needs_pc": bool(missing), "blocked": blocked, "markets": markets, "market_pick": market_pick, "incomplete": incomplete,
+            "needs_pc": bool(missing), "pc_fill": pc_fill, "currencies": MANUAL_CURRENCIES, "blocked": blocked, "markets": markets, "market_pick": market_pick, "incomplete": incomplete,
             "src_example": source_url_example(str(item.get("url") or "")),
             # 오너 11-25 15:56 ③: 쿠팡이 실제로 반려한 마켓(원문+한 줄) · 반쪽 등록으로 남은 마켓
             "rejected": _ls_rejected(ex), "left": _ls_left(ex), "left_label": _ls_left_label(_ls_left(ex)),
@@ -4336,6 +4361,7 @@ MANUAL_PHOTO_MAX = 20                       # 한 번에 올릴 장 수
 MANUAL_PHOTO_BYTES = 10 * 1024 * 1024       # 한 장 크기
 MANUAL_OPTION_AXES = 3
 MANUAL_SKU_MAX = 60
+MANUAL_CURRENCIES = ("KRW", "USD", "CNY", "JPY", "EUR")   # 오너 11-26 감독 2: 직접 넣는 원가의 통화(공유 초안엔 통화가 빈 경우가 있다)
 
 
 def _save_manual_extra(item_id: str, ex: dict, **row) -> bool:
@@ -4343,6 +4369,11 @@ def _save_manual_extra(item_id: str, ex: dict, **row) -> bool:
     from src.collectors.collect_status import still_uncollected as _stu
     if "uncollected" in ex:
         ex["uncollected"] = _stu(ex)
+    try:                                         # 오너 11-26 감독 2: 직접 넣은 원가가 있으면 등록 게이트를 연다(gate_ready = 가격 있음)
+        if float(str(ex.get("price") or "0").replace(",", "")) > 0:
+            ex["gate_ready"] = True
+    except (TypeError, ValueError):
+        pass
     return bool(_chs.update(item_id, seller_ids=_seller_identities(),
                             extra_json=json.dumps(ex, ensure_ascii=False), **row))
 
@@ -4460,11 +4491,36 @@ def collect_manual_options(item_id):
         ex = json.loads(item.get("extra_json") or "{}") or {}
     except Exception:
         ex = {}
-    if title_in and not opts and not errs:
-        # 상품명만(공유 링크엔 제목이 없다 — 쿠팡 상품명을 만들 재료). 「직접 수정」으로 적는다.
-        _manual_title(ex, title_in)
-        ok = _save_manual_extra(item_id, ex, title=title_in)
-        return jsonify({"ok": ok, "title": title_in, "sku_count": 0, "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
+    cur_in = str(data.get("currency") or "").strip().upper()
+    if cur_in and cur_in not in MANUAL_CURRENCIES:
+        return jsonify({"ok": False, "error": f"통화는 {'·'.join(MANUAL_CURRENCIES)} 중에서 골라 주세요."}), 400
+    if cur_in:
+        ex["currency"] = cur_in
+    price_only = str(data.get("price") or "").replace(",", "").strip()
+    if not opts and not errs and (title_in or price_only):
+        # 상품명·원가만(옵션 없는 상품 — 알리 공유 초안처럼 가격만 비었을 때). 「직접 수정」으로 적는다.
+        row = {}
+        if title_in:
+            _manual_title(ex, title_in)
+            row["title"] = title_in
+        if price_only:
+            try:
+                if float(price_only) <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "원가는 0보다 큰 숫자로 적어 주세요."}), 400
+            if not str(ex.get("currency") or item.get("currency") or "").strip():
+                return jsonify({"ok": False, "error": "통화를 골라 주세요 — 원가가 어느 돈인지 모르면 판매가를 낼 수 없어요."}), 400
+            ex["price"] = price_only
+            ex["price_source"] = "manual"
+            ex.setdefault("field_sources", {})["price"] = "manual"
+            man = dict(ex.get("manual_fields") or {}) if isinstance(ex.get("manual_fields"), dict) else {}
+            man["price"] = datetime.now(timezone.utc).isoformat()
+            ex["manual_fields"] = man
+            row.update(price=price_only, currency=str(ex.get("currency") or item.get("currency") or ""))
+        ok = _save_manual_extra(item_id, ex, **row)
+        return jsonify({"ok": ok, "title": title_in, "sku_count": 0, "price": price_only,
+                        "currency": str(ex.get("currency") or ""), "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
     if errs or not opts:
         return jsonify({"ok": False, "error": " · ".join(errs) or "옵션을 하나 이상 적어 주세요."}), 400
     if title_in:
@@ -4481,6 +4537,8 @@ def collect_manual_options(item_id):
     if len(combos) > MANUAL_SKU_MAX:
         return jsonify({"ok": False, "error": f"옵션 조합이 {len(combos)}개예요 — {MANUAL_SKU_MAX}개 이하로 줄여 주세요."}), 400
     cur = str(ex.get("currency") or item.get("currency") or "")
+    if not cur:
+        return jsonify({"ok": False, "error": "통화를 골라 주세요 — 원가가 어느 돈인지 모르면 판매가를 낼 수 없어요."}), 400
     ex["options"] = opts
     ex["skus"] = [{"spec": list(c), "price": price, "currency": cur, "source": "manual_same_price"} for c in combos]
     ex["sku_price_note"] = "직접 입력 — 모든 옵션 같은 가격"
@@ -4491,7 +4549,8 @@ def collect_manual_options(item_id):
     ex["manual_fields"] = man
     if price_in:
         ex["price"] = price_in
-    ok = _save_manual_extra(item_id, ex, **({"title": title_in} if title_in else {}))
+        ex["price_source"] = "manual"
+    ok = _save_manual_extra(item_id, ex, **({"title": title_in} if title_in else {}), **({"price": price_in, "currency": cur} if price_in else {}))
     logger.info("[폰 옵션 입력] item=%s 축=%d 조합=%d 저장=%s", item_id, len(opts), len(combos), ok)
     return jsonify({"ok": ok, "options": opts, "sku_count": len(combos), "price": price, "currency": cur,
                     "error": "" if ok else "저장하지 못했어요."}), (200 if ok else 502)
@@ -9519,6 +9578,82 @@ def deactivate_account():
     except Exception as exc:
         logger.warning("계정 비활성화 오류: %s", exc)
         return jsonify({"ok": False, "error": "계정 비활성화 중 오류가 발생했습니다."}), 500
+
+
+# 오너 11-26 감독 3d: 심사 계정이 마켓으로 보내는 입구(등록·일괄 등록·내리기·스스 다시 보내기·후보 발행)를 한 곳에서 막는다.
+_REVIEW_BLOCKED_POST = re.compile(r"^/seller/(collect/upload|collect/bulk-upload|collect/[^/]+/(take-down|naver-resend-detail|naver-resend-photos)"
+                                  r"|sourcing/candidates/[^/]+/publish)$")
+
+
+@bp.before_request
+def _review_account_gate():
+    if request.method != "POST" or not _REVIEW_BLOCKED_POST.match(request.path or ""):
+        return None
+    from src.utils.test_accounts import REVIEW_BLOCK_MESSAGE, review_session
+    if not review_session():
+        return None
+    logger.warning("[심사 계정] 마켓 전송 입구 막음 path=%s", request.path)
+    return jsonify({"ok": False, "error": REVIEW_BLOCK_MESSAGE, "review_account": True}), 403
+
+
+# ── 오너 11-26 감독 3a: 앱 안 「계정 삭제」 — 요청은 유저가, 실제 삭제는 오너가 관리자 화면에서 누를 때만 ──────────────
+@bp.get("/me/delete")
+def account_delete_page():
+    if not _check_auth():
+        return redirect(url_for("auth.login", next="/seller/me/delete"))
+    from src.services import account_delete as AD
+    uid = str(session.get("user_id") or "")
+    return render_template("me_delete.html", pending=AD.pending_for(uid) if uid else None,
+                           scope_delete=AD.SCOPE_DELETE, scope_keep=AD.SCOPE_KEEP, confirm_word=AD.CONFIRM_WORD,
+                           email=str(session.get("email") or ""))
+
+
+@bp.post("/me/delete")
+def account_delete_request():
+    from src.services import account_delete as AD
+    uid = str(session.get("user_id") or "")
+    if not uid:
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    if str(data.get("confirm") or "").strip() != AD.CONFIRM_WORD:
+        return jsonify({"ok": False, "error": f"확인 칸에 「{AD.CONFIRM_WORD}」를 적어 주세요."}), 400
+    try:
+        rec = AD.request(uid, str(session.get("email") or ""), str(data.get("reason") or ""))
+    except Exception as exc:                                     # noqa: BLE001 — 거짓 접수 금지
+        logger.warning("[계정 삭제] 요청 저장 실패: %s", exc)
+        return jsonify({"ok": False, "error": "요청을 저장하지 못했어요 — 잠시 뒤 다시 눌러 주세요."}), 502
+    session.clear()
+    return jsonify({"ok": True, "id": rec["id"], "message": "삭제 요청을 받았어요. 7일 안에 지우고, 그 전에 다시 로그인하면 요청을 거둘 수 있어요."})
+
+
+@bp.post("/me/delete/cancel")
+def account_delete_cancel():
+    from src.services import account_delete as AD
+    uid = str(session.get("user_id") or "")
+    if not uid:
+        return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
+    return jsonify({"ok": bool(AD.cancel(uid))})
+
+
+@bp.get("/admin/account-deletes")
+def admin_account_deletes():
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
+    from src.services import account_delete as AD
+    return render_template("admin_account_deletes.html", rows=list(reversed(AD.rows())))
+
+
+@bp.post("/admin/account-deletes/<req_id>/execute")
+def admin_account_delete_execute(req_id):
+    """오너 탭으로만 — 두 번째 확인으로 요청 번호를 그대로 받는다."""
+    if not _is_admin_user():
+        return jsonify({"ok": False, "error": "관리자만 실행할 수 있어요."}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    if str(data.get("confirm") or "") != req_id:
+        return jsonify({"ok": False, "error": "확인 값이 요청 번호와 달라요."}), 400
+    from src.services import account_delete as AD
+    out = AD.execute(req_id, by=str(session.get("email") or session.get("user_id") or ""))
+    return jsonify(out), (200 if out.get("ok") else (400 if "error" in out else 207))
 
 
 @bp.get("/pricing")

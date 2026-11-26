@@ -21,3 +21,29 @@ NOT_TEST_SQL = ("NOT (COALESCE(user_id, '') LIKE 'QA-TEST%%' OR COALESCE(user_id
 def is_test_account(user_id) -> bool:
     u = str(user_id or "")
     return u in TEST_ACCOUNT_IDS or any(u.startswith(p) for p in TEST_ACCOUNT_PREFIXES)
+
+
+# ── 오너 11-26 감독 3d: 앱스토어 **심사용 계정** — 둘러보기·수집·편집·사전검증은 되고, 마켓으로 보내는 일은 막는다 ──────────
+#   누가 심사 계정인지는 env(`REVIEW_ACCOUNT_EMAILS`·`REVIEW_ACCOUNT_IDS`, 쉼표) — 값 넣기는 오너(env 변경).
+REVIEW_BLOCK_MESSAGE = "심사용 둘러보기 계정이라 마켓으로 보내지 않아요 — 수집·편집·사전검증까지는 그대로 써 보실 수 있어요."
+
+
+def _env_set(name: str) -> set:
+    import os
+    return {x.strip().lower() for x in str(os.getenv(name, "") or "").split(",") if x.strip()}
+
+
+def is_review_account(user_id="", email="") -> bool:
+    ids, emails = _env_set("REVIEW_ACCOUNT_IDS"), _env_set("REVIEW_ACCOUNT_EMAILS")
+    return bool((user_id and str(user_id).strip().lower() in ids) or (email and str(email).strip().lower() in emails))
+
+
+def review_session() -> bool:
+    """지금 요청의 로그인 세션이 심사 계정인가(요청 밖이면 False)."""
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return False
+        return is_review_account(session.get("user_id") or "", session.get("email") or "")
+    except Exception:                                    # noqa: BLE001
+        return False

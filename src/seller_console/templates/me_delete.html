@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko"{% if is_app %} class="kgp-app"{% endif %}>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>계정 삭제 · 고가브릿지</title>
+  <link rel="icon" type="image/svg+xml" href="/seller/static/favicon.svg?v=183">
+  <meta name="theme-color" content="#1a1714">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ build_sha }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='m_shell.css') }}?v={{ build_sha }}">
+  <style>
+    /* 오너 11-26 감독 3a — 앱 안 계정 삭제(심사 5.1.1(v)). 토큰만. */
+    body { background: var(--pc-color-bg); color: var(--pc-color-text); }
+    .ad-pane { padding: var(--space-4); max-width: 640px; margin: 0 auto; }
+    .ad-card { background: var(--pc-color-surface); border: 1px solid var(--pc-color-border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); }
+    .ad-card h2 { font-family: var(--font-display); font-size: var(--h3, 1.15rem); margin: 0 0 var(--space-2); }
+    .ad-card ul { margin: 0; padding-left: 1.1rem; }
+    .ad-card li { margin: 4px 0; }
+    .ad-danger { border-color: var(--danger); }
+    .ad-step[hidden] { display: none !important; }
+    .ad-btn { min-height: 44px; width: 100%; }
+    .ad-word { font-size: 16px; min-height: 44px; }
+  </style>
+</head>
+{% import "partials/m_shell.html" as ms %}
+<body data-mshell="1">
+{{ ms.topbar('계정 삭제', back='/seller/m?tab=more') }}
+<main class="ad-pane" data-role="account-delete">
+  {% if pending %}
+  <section class="ad-card" data-role="ad-pending">
+    <h2>삭제 요청을 받았어요</h2>
+    <p class="mb-2">{{ pending.at[:10] }}에 요청하셨어요. 7일 안에 아래 내용을 지우고 가입 이메일로 알려 드려요.</p>
+    <p class="small text-muted mb-3">마음이 바뀌셨다면 지금 거두실 수 있어요 — 계정은 아직 그대로예요.</p>
+    <button type="button" class="btn btn-ghost ad-btn" data-role="ad-cancel">삭제 요청 거두기</button>
+    <div class="small mt-2" data-role="ad-state" aria-live="polite"></div>
+  </section>
+  {% else %}
+  <section class="ad-card ad-danger" data-role="ad-scope">
+    <h2>지워지는 것</h2>
+    <ul>{% for s in scope_delete %}<li>{{ s }}</li>{% endfor %}</ul>
+  </section>
+  <section class="ad-card" data-role="ad-keep">
+    <h2>남는 것</h2>
+    <ul>{% for s in scope_keep %}<li>{{ s }}</li>{% endfor %}</ul>
+    <p class="small text-muted mt-2 mb-0">지운 뒤에는 되돌릴 수 없어요. 같은 이메일로 다시 가입하면 빈 계정으로 시작해요.</p>
+  </section>
+
+  <section class="ad-card ad-step" data-role="ad-step1">
+    <label class="d-flex gap-2 align-items-start mb-3"><input type="checkbox" class="form-check-input mt-1" data-role="ad-ack">
+      <span>위 내용을 확인했어요{% if email %} — <strong>{{ email }}</strong> 계정{% endif %}</span></label>
+    <button type="button" class="btn btn-ghost ad-btn" data-role="ad-next" disabled>계정 삭제 계속하기</button>
+  </section>
+  <section class="ad-card ad-danger ad-step" data-role="ad-step2" hidden>
+    <h2>한 번 더 확인할게요</h2>
+    <p class="mb-2">확인 칸에 <strong>{{ confirm_word }}</strong>를 적고 눌러 주세요.</p>
+    <input class="form-control ad-word mb-2" data-role="ad-word" autocomplete="off" aria-label="확인 낱말">
+    <textarea class="form-control mb-3" rows="2" maxlength="300" data-role="ad-reason" placeholder="떠나시는 이유(선택)"></textarea>
+    <button type="button" class="btn btn-primary ad-btn" data-role="ad-submit">계정 삭제 요청</button>
+    <button type="button" class="btn btn-ghost ad-btn mt-2" data-role="ad-back">그만두기</button>
+    <div class="small mt-2" data-role="ad-state" aria-live="polite"></div>
+  </section>
+  {% endif %}
+  <p class="small text-muted"><a href="/privacy" class="text-muted">개인정보처리방침</a> · <a href="/terms" class="text-muted">이용약관</a> · <a href="/contact" class="text-muted">문의</a></p>
+</main>
+{{ ms.tabbar('more') }}
+<script>
+(function () {
+  var root = document.querySelector('[data-role=account-delete]');
+  function st(t) { var el = root.querySelector('[data-role=ad-state]:not([hidden])') || root.querySelector('[data-role=ad-state]'); var s2 = root.querySelector('[data-role=ad-step2] [data-role=ad-state]'); (s2 && !root.querySelector('[data-role=ad-step2]').hidden ? s2 : el).textContent = t; }
+  function post(url, body) {
+    return fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})})
+      .then(function (r) { return r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요 (HTTP ' + r.status + ')'}; }); })
+      .catch(function (e) { return {ok: false, error: '네트워크 오류 — ' + ((e && e.message) || e)}; });
+  }
+  var ack = root.querySelector('[data-role=ad-ack]'), next = root.querySelector('[data-role=ad-next]');
+  if (ack) ack.addEventListener('change', function () { next.disabled = !ack.checked; });
+  if (next) next.addEventListener('click', function () {
+    root.querySelector('[data-role=ad-step1]').hidden = true; root.querySelector('[data-role=ad-step2]').hidden = false;
+    root.querySelector('[data-role=ad-word]').focus();
+  });
+  var back = root.querySelector('[data-role=ad-back]');
+  if (back) back.addEventListener('click', function () {
+    root.querySelector('[data-role=ad-step2]').hidden = true; root.querySelector('[data-role=ad-step1]').hidden = false;
+  });
+  var sub = root.querySelector('[data-role=ad-submit]');
+  if (sub) sub.addEventListener('click', function () {
+    sub.disabled = true; st('보내는 중…');
+    post('/seller/me/delete', {confirm: root.querySelector('[data-role=ad-word]').value, reason: root.querySelector('[data-role=ad-reason]').value})
+      .then(function (d) {
+        if (d.ok) { st(d.message); setTimeout(function () { location.href = '/auth/login'; }, 2200); return; }
+        st(d.error || '요청하지 못했어요.'); sub.disabled = false;
+      });
+  });
+  var cancel = root.querySelector('[data-role=ad-cancel]');
+  if (cancel) cancel.addEventListener('click', function () {
+    cancel.disabled = true;
+    post('/seller/me/delete/cancel').then(function (d) { if (d.ok) { st('요청을 거뒀어요 — 계정은 그대로예요.'); setTimeout(function () { location.reload(); }, 900); } else { st(d.error || '거두지 못했어요.'); cancel.disabled = false; } });
+  });
+})();
+</script>
+</body>
+</html>

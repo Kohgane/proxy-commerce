@@ -212,7 +212,7 @@
       <li><a class="console-nav-link {% if _path.startswith('/seller/api/tokens') or _path.startswith('/seller/me/tokens') %}active{% endif %}" href="/seller/api/tokens"><i class="bi bi-shield-lock"></i><span>API 토큰</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/bookmarklet') %}active{% endif %}" href="/seller/bookmarklet"><i class="bi bi-bookmark"></i><span>북마클릿(고급)</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/discovery') %}active{% endif %}" href="/seller/discovery"><i class="bi bi-compass"></i><span>트렌드 발굴</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/billing') %}active{% endif %}" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>
+      {% if not is_app %}<li><a class="console-nav-link {% if _path.startswith('/seller/billing') %}active{% endif %}" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>{% endif %}
       {% if owner_pool_ok is not defined or owner_pool_ok %}
       <li><a class="console-nav-link {% if _path.startswith('/seller/subscriptions') %}active{% endif %}" href="/seller/subscriptions"><i class="bi bi-arrow-repeat"></i><span>정기구독 관리</span></a></li>
       {% endif %}
@@ -228,7 +228,7 @@
     {# 순찰 122b: 고급을 숨겨도 **누구나 써야 하는** 네 가지는 남긴다 — 연동·요금제·설정·알림. 나머지는 「고급 기능 켜기」 뒤로. #}
     <ul class="nav flex-column gap-1 mt-2" data-role="nav-basic-extras">
       <li><a class="console-nav-link {% if _path.startswith('/seller/markets/connect') %}active{% endif %}" href="/seller/markets/connect"><i class="bi bi-plug"></i><span>마켓 연동(API 키 입력)</span></a></li>
-      <li><a class="console-nav-link {% if _path.startswith('/seller/billing') %}active{% endif %}" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>
+      {% if not is_app %}<li><a class="console-nav-link {% if _path.startswith('/seller/billing') %}active{% endif %}" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금제·충전</span></a></li>{% endif %}
       <li><a class="console-nav-link {% if _path == '/seller/me' %}active{% endif %}" href="/seller/me"><i class="bi bi-gear"></i><span>내 정보·설정</span></a></li>
       <li><a class="console-nav-link {% if _path.startswith('/seller/notifications') %}active{% endif %}" href="/seller/notifications"><i class="bi bi-bell"></i><span>알림 설정</span></a></li>
       <li><a class="console-nav-link console-nav-adv-off" href="/seller/me#advancedCard" data-role="nav-advanced-off"><i class="bi bi-sliders2"></i><span>고급 기능 켜기</span></a></li>
@@ -239,7 +239,7 @@
     <ul class="nav flex-column gap-1">
       <li><a class="console-nav-link" href="/seller/about"><i class="bi bi-info-circle"></i><span>고가브릿지란?</span></a></li>
       <li><a class="console-nav-link" href="/seller/start"><i class="bi bi-play-circle"></i><span>시작하기(For Beginners)</span></a></li>
-      <li><a class="console-nav-link" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금 안내</span></a></li>
+      {% if not is_app %}<li><a class="console-nav-link" href="/seller/billing"><i class="bi bi-credit-card"></i><span>요금 안내</span></a></li>{% endif %}
       <li><a class="console-nav-link" href="/auth/login"><i class="bi bi-box-arrow-in-right"></i><span>로그인</span></a></li>
       <li><a class="console-nav-link" href="/auth/signup"><i class="bi bi-person-plus"></i><span>무료 시작</span></a></li>
     </ul>
