@@ -78,11 +78,22 @@ def test_health_deep_carries_link_probe(store, monkeypatch):
     assert d["link_probe"]["measured"] and "a.co 301" in d["link_probe"]["line"]
 
 
-def test_tick_kicks_probe_only_when_build_changed(store, monkeypatch):
+def test_kick_runs_once_per_build_off_the_job_slot(store, monkeypatch):
+    """무거운 잡 자리(bg_job)를 쓰지 않는다 — 틱의 다른 잡 계약(시작한 잡 목록)에 끼지 않게."""
     from src.services import link_selfprobe as P
     from src.utils import bg_job
-    started = []
+    started, ran = [], []
     monkeypatch.setattr(bg_job, "start", lambda name, fn: (started.append(name) or True, {}))
+    monkeypatch.setattr(P, "run", lambda b: ran.append(b))
+    P._running["build"] = ""
+    assert P.kick("b-x") is True and P.kick("b-x") is False
+    import time
+    time.sleep(0.2)
+    assert ran == ["b-x"] and started == []
+
+
+def test_tick_kicks_probe_only_when_build_changed(store, monkeypatch):
+    from src.services import link_selfprobe as P
     monkeypatch.setattr("src.utils.build_info.get_build_sha", lambda: "build-9")
     from tests._ast_probe import importers_of
     assert "src/pricing/cron.py" in importers_of("link_selfprobe")          # 틱이 실측을 깨운다(배선 — AST로)

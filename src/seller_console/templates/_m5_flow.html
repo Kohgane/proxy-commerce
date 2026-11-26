@@ -209,7 +209,9 @@
       <span class="m5-mk-body"><span>{{ m.label }}</span>
         {% if m.not_ready %}<span class="m5-mk-note" data-role="m5-market-not-ready">{{ m.not_ready }}</span>{% endif %}
         {% if m.note %}<span class="m5-mk-note" data-role="m5-market-note">{{ m.note }}</span>{% endif %}
-        {% if m.limit_text %}<span class="m5-mk-note" data-role="m5-market-limit">{{ m.limit_text }}</span>{% endif %}
+        {% if m.limit_text %}<span class="m5-mk-note" data-role="m5-market-limit">{{ m.limit_text }}{% if m.suspended_text %} ·
+          <button type="button" class="m5-limit-more" data-role="m5-limit-more" aria-expanded="false">{{ m.suspended_text }} <i class="bi bi-info-circle" aria-hidden="true"></i></button>
+          <span class="m5-limit-explain" data-role="m5-limit-explain" hidden>{{ m.limit_explain }}</span>{% endif %}</span>{% endif %}
         {% if m.registered %}<span class="mk-dup" data-role="mk-dup">{{ m.registered.line }}</span>{% endif %}</span>
       {% if not m.connected %}<span class="m5-off" data-role="m5-unconnected">{{ '키 없음' if m.group else '연동 안 됨' }}</span>{% endif %}
     </label>
@@ -295,6 +297,9 @@
   .m5-mk.is-pending { border-style: dashed; }
   .m5-mk.is-off { opacity: .55; }                                                        /* 오너 11-25 ④: 아직 준비 중인 마켓 — 고를 수 없음 */
   .m5-res.is-off { opacity: .6; border-style: dashed; }                                   /* ①a: 뺀 마켓 */
+  .m5-limit-more { border: 0; background: none; padding: 0; color: var(--teal); font: inherit; text-decoration: underline; min-height: 24px; }
+  .m5-limit-explain { display: block; margin-top: 4px; color: var(--text-muted, var(--muted)); }
+  .m5-limit-explain[hidden] { display: none; }
   .m5-pcfill-steps { margin: 6px 0; padding-left: 1.2rem; }
   .m5-price-row { display: flex; gap: var(--space-2); }
   .m5-price-row .m5-cur { flex: 0 0 auto; width: auto; min-height: 44px; }
@@ -466,6 +471,14 @@
     } catch (e) { optSt.textContent = '네트워크 오류 — ' + ((e && e.message) || e); }
     optSave.disabled = false;
   });
+  // 오너 11-26 진단 2: 「판매중지 n」 — 누르면 한 줄 설명(한도에 왜 안 들어가는지 · 숫자가 왜 바뀌는지). 마켓 칸 체크는 건드리지 않는다.
+  root.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=m5-limit-more]') : null;
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    var ex = b.parentNode.querySelector('[data-role=m5-limit-explain]');
+    if (ex) { ex.hidden = !ex.hidden; b.setAttribute('aria-expanded', ex.hidden ? 'false' : 'true'); }
+  }, true);
   // 오너 11-26 감독 2: 「PC 확장으로 채우기」 — 주소 복사(못 하면 칸을 골라 둔다 · 길게 눌러 복사)
   var pcCopy = root.querySelector('[data-role=m5-pc-fill-copy]');
   if (pcCopy) pcCopy.addEventListener('click', function () {

@@ -65,6 +65,11 @@ def store_label(store: str) -> str:
     return str(((rules().get("stores") or {}).get(store) or {}).get("label") or store)
 
 
+def store_channel_no(store: str) -> str:
+    """오너 11-26 진단 2 — 그 스토어의 **채널번호**(키-스토어 대조 기준). 이름은 마켓에서 바뀔 수 있다(고코스모스 → 실제 「나의코스모스」)."""
+    return str(((rules().get("stores") or {}).get(store) or {}).get("channel_no") or "")
+
+
 def _live_on() -> bool:
     return str(os.getenv("SMARTSTORE_LIVE_PROBE", "1")).strip().lower() not in ("0", "false", "no", "off")
 
@@ -217,7 +222,11 @@ def _issue(store: str) -> dict:
         return {"state": "fail", "raw": up.token_error or "사유 원문 없음", "count": None, "count_raw": "",
                 "via": via, "env": _env_names(up), "key_src": key_src}
     n = up.count_products(rules().get("limit_statuses") or None)
-    return {"state": "ok", "raw": "토큰 발급 OK", "count": n, "via": via, "env": _env_names(up), "key_src": key_src,
+    try:                                   # 오너 11-26 진단 2: 한도 옆에 판매중지 수도(97→403처럼 숫자가 왜 바뀌는지 보이게)
+        susp = up.count_products(["SUSPENSION"])
+    except Exception:                      # noqa: BLE001 — 못 세면 안 보인다(지어내지 않음)
+        susp = None
+    return {"state": "ok", "raw": "토큰 발급 OK", "count": n, "suspended": susp, "via": via, "env": _env_names(up), "key_src": key_src,
             "count_raw": "" if n is not None else (getattr(up, "count_error", "") or "응답에 totalElements 없음")}
 
 
@@ -372,7 +381,13 @@ def limit_state(store: str, *, fetch=None) -> dict:
     if n is None:
         why = (p.get("count_raw") if fetch is None else "") or "조회 실패"
         return {"count": None, "limit": limit, "full": False, "text": f"{store_label(store)} ?/{limit:,} — 조회 불가({why})"}
-    return {"count": n, "limit": limit, "full": n >= limit, "text": f"{store_label(store)} {n:,}/{limit:,}"}
+    susp = p.get("suspended") if fetch is None else None
+    out = {"count": n, "limit": limit, "full": n >= limit, "text": f"{store_label(store)} {n:,}/{limit:,}", "suspended": susp}
+    if isinstance(susp, int):
+        out["suspended_text"] = f"판매중지 {susp:,}"
+        out["explain"] = (f"{limit:,}은 판매중·판매대기·품절만 세요. 판매중지 {susp:,}건은 한도에 안 들어가요 — "
+                          "판매를 다시 켜면 그만큼 자리를 써서 숫자가 올라가요.")
+    return out
 
 
 # Y6-C 후속(오너 2026-10-07): 가족 화면에 「키 없음 — NAVER_CHEZGOGA_CLIENT_ID/… 를 설정하세요」 env 이름이 그대로 보였다.
@@ -403,6 +418,13 @@ def seller_why(why: str, state: str = "") -> str:
     return re.sub(r"\s{2,}", " ", _ENV_NAME.sub("(서버 설정)", why)).strip()
 
 
+def _limit_fields(st: str, ok: bool) -> dict:
+    if not ok:
+        return {"limit_text": "", "suspended_text": "", "limit_explain": ""}
+    ls = limit_state(st)
+    return {"limit_text": ls["text"], "suspended_text": ls.get("suspended_text", ""), "limit_explain": ls.get("explain", "")}
+
+
 def store_choices(product: Optional[dict] = None) -> list:
     """마켓 선택 줄 재료 — `[{code, store, label, business, ready, approved, assigned, note, limit_text}]`."""
     from src.uploaders.naver_uploader import NaverSmartStoreUploader
@@ -425,5 +447,5 @@ def store_choices(product: Optional[dict] = None) -> list:
                     "business": conf.get("business") or "", "ready": ready, "approved": ok,
                     "assigned": assigned.get("store") == st, "note": note,
                     "pending_head": why.split(" — ")[0] if why else "", "pending_why": why,
-                    "limit_text": limit_state(st)["text"] if ok else ""})
+                    **_limit_fields(st, ok)})
     return out

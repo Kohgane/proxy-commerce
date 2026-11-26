@@ -47,6 +47,26 @@ def run(build: str = "") -> dict:
     return rec
 
 
+_running = {"build": ""}
+
+
+def kick(build: str) -> bool:
+    """이 빌드에서 한 번 — 데몬 스레드로 `run`. 같은 프로세스에서 이미 돌고 있으면 다시 띄우지 않는다."""
+    import threading
+    if _running["build"] == build:
+        return False
+    _running["build"] = build
+
+    def _go():
+        try:
+            run(build)
+        except Exception as exc:                                # noqa: BLE001 — 실측 실패가 틱을 막지 않는다
+            logger.warning("[링크 자가 실측] 실패: %s", exc)
+            _running["build"] = ""
+    threading.Thread(target=_go, daemon=True, name="link-selfprobe").start()
+    return True
+
+
 def health_line() -> dict:
     """`/health/deep` 한 줄 — 안 쟀으면 `{measured: false}`."""
     rec = last()

@@ -2233,6 +2233,13 @@ def _incomplete_reasons(item: dict, product: dict, has_price: bool) -> list:
             out.append({"code": "no_source_url", "line": "원본 상품 주소가 없어요(공유용 짧은 링크만 있어요) — 주소를 넣거나 다시 가져와 주세요."})
     except Exception as exc:                                     # noqa: BLE001 — 판정 실패는 막는 사유가 아니다
         logger.warning("[M5] 원본 주소 판정 실패: %s", exc)
+    try:                                                         # 오너 11-26 진단 1: 아마존 — 썸네일·배지·추천 사진만 있으면 반쪽 수집
+        from src.collectors.amazon_pdp import usable_photo as _usable
+        _imgs = [u for u in ((product or {}).get("images") or []) if isinstance(u, str)]
+        if "amazon" in str((item or {}).get("url") or "").lower() and _imgs and not any(_usable(u) for u in _imgs):
+            out.append({"code": "no_photos", "line": f"쓸 만한 사진이 없어요(사진 {len(_imgs)}장 모두 썸네일·배지예요) — 다시 가져와 주세요."})
+    except Exception as exc:                                     # noqa: BLE001
+        logger.warning("[M5] 사진 판정 실패: %s", exc)
     opts = [o for o in ((product or {}).get("options") or []) if isinstance(o, dict) and (o.get("values") or [])]
     if opts and not ((product or {}).get("skus") or []):
         out.append({"code": "no_skus", "line": "옵션은 있는데 옵션별 가격·재고(SKU)를 못 가져왔어요 — 다시 가져와 주세요."})
@@ -3826,7 +3833,8 @@ def _with_coupang_accounts(markets: list, product: Optional[dict] = None) -> lis
                         "account": st["store"], "missing": [] if st["ready"] else ["스토어 키"],
                         "group": biz, "group_label": biz_label, "note": st["note"],
                         "pending": not st["approved"], "pending_head": st.get("pending_head") or "",
-                        "pending_why": st.get("pending_why") or "", "limit_text": st["limit_text"]})
+                        "pending_why": st.get("pending_why") or "", "limit_text": st["limit_text"],
+                        "suspended_text": st.get("suspended_text") or "", "limit_explain": st.get("limit_explain") or ""})
     out += [m for m in markets if m.get("code") not in ("coupang", "smartstore")
             or (m.get("code") == "coupang" and not cps) or (m.get("code") == "smartstore" and not sss)]
     return out
@@ -5102,9 +5110,25 @@ def admin_diag_stores():
     `?nos=13894618263,13894618371`. 쓰기·전송 0."""
     if not _is_admin_user():
         return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
-    from src.services.admin_diag import store_audit
+    from src.services.admin_diag import store_audit, store_verdict
     nos = [n.strip() for n in str(request.args.get("nos") or "").split(",") if n.strip().isdigit()][:5]
-    return jsonify({"ok": True, **store_audit(nos)})
+    data = store_audit(nos)
+    if not _wants_html():
+        return jsonify({"ok": True, **data})
+    return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="stores", d=data, verdict=store_verdict(data), nos=",".join(nos))
+
+
+def _diag_status_ko() -> dict:
+    from src.services.admin_diag import STATUS_KO
+    return STATUS_KO
+
+
+def _wants_html() -> bool:
+    """오너 11-26 진단 3 — 관리자 진단은 폰 브라우저에선 사람이 읽는 표로, `?raw=1`·스크립트(Accept 없음)는 JSON 그대로."""
+    if str(request.args.get("raw") or "") == "1":
+        return False
+    am = request.accept_mimetypes
+    return bool(am) and am.accept_html and am.best_match(["text/html", "application/json"]) == "text/html"
 
 
 @bp.route("/admin/taobao-reenrich", methods=["GET", "POST"])
@@ -5119,7 +5143,14 @@ def admin_taobao_reenrich():
     from src.services import taobao_auto as _ta
     days = max(1, min(int(request.args.get("days") or 90), 180))
     found = []
-    for it in _chs.list_items(days=days, lean=False):
+    from src.utils.test_accounts import TEST_ACCOUNT_IDS as _TIDS
+    _all = list(_chs.list_items(days=days, lean=False) or [])
+    try:                                                  # 오너 11-26 진단 4: 시험 계정 행도 보여 준다(전체 조회는 빼므로 따로 · 구분 표시)
+        _seen = {str(x.get("id")) for x in _all}
+        _all += [x for x in (_chs.list_items(seller_ids=set(_TIDS), days=days, lean=False) or []) if str(x.get("id")) not in _seen]
+    except Exception as exc:                              # noqa: BLE001
+        logger.warning("[재보강] 시험 계정 행 읽기 실패: %s", exc)
+    for it in _all:
         url = str(it.get("url") or "")
         if not is_taobao_family(url):
             continue
@@ -5129,18 +5160,52 @@ def admin_taobao_reenrich():
             continue
         if [u for u in (ex.get("images") or []) if u] or ex.get("auto_enrich") or int(ex.get("enrich_attempts") or 0):
             continue
+        try:
+            from src.collectors.share_text import extract_item_id as _xid
+            _tid = str(ex.get("item_id_taobao") or ex.get("site_item_id") or _xid(url) or "")
+        except Exception:                                    # noqa: BLE001
+            _tid = str(ex.get("item_id_taobao") or ex.get("site_item_id") or "")
         found.append({"item_id": str(it.get("id")), "seller_id": str(it.get("seller_id") or ""), "url": url[:120],
-                      "title": str(it.get("title") or "")[:60], "collected_at": str(it.get("collected_at") or "")})
+                      "title": str(it.get("title") or "")[:60], "collected_at": str(it.get("collected_at") or ""),
+                      "taobao_id": _tid})
+    # 오너 11-26 진단 4: 같은 상품번호(중복)·시험 계정 행은 구분 — 다시 가져오기 대상에서 뺀다(목록엔 남긴다)
+    from src.utils.test_accounts import is_test_account as _is_test
+    from src.services import taobao_reenrich_batch as _tb
+    seen_ids = {}
+    for f in found:
+        f["taobao_id"] = f.get("taobao_id") or ""
+        f["test"] = bool(_is_test(f["seller_id"]))
+        f["dup_of"] = seen_ids.get(f["taobao_id"], "") if f["taobao_id"] else ""
+        if f["taobao_id"] and not f["dup_of"]:
+            seen_ids[f["taobao_id"]] = f["item_id"]
+        f["eligible"] = not f["test"] and not f["dup_of"]
+    eligible = [f for f in found if f["eligible"]]
+    est = _tb.estimate(len(eligible), _ta.effective_route() if _ta.enabled() else "")
     body = request.get_json(silent=True) or {}
+    if str(request.args.get("progress") or "") == "1":
+        return jsonify({"ok": True, **_tb.status()})
+    if request.method == "POST" and body.get("now") is True:
+        # 오너 탭(두 번 확인) — 화면이 본 건수와 서버가 지금 센 건수가 같아야 시작(그 사이 바뀌었으면 다시 보여 준다)
+        if not _ta.enabled():
+            return jsonify({"ok": False, "error": "서버 자동 수집이 꺼져 있어요 — 켜기는 env 변경(오너)."}), 400
+        if int(body.get("confirm") or -1) != len(eligible):
+            return jsonify({"ok": False, "error": f"건수가 바뀌었어요(지금 {len(eligible)}건) — 화면을 새로 고친 뒤 다시 눌러 주세요."}), 409
+        out = _tb.start(eligible, by=str(session.get("email") or session.get("user_id") or ""))
+        return jsonify(out), (200 if out.get("ok") else 409)
     run = request.method == "POST" and body.get("run") is True
     queued = 0
     if run and _ta.enabled():
-        for f in found:
+        for f in eligible:
             queued += int(_ta.enqueue(f["seller_id"], f["item_id"], why="reenrich"))
-    return jsonify({"ok": True, "enabled": _ta.enabled(), "route": _ta.effective_route(), "count": len(found),
-                    "queued": queued, "dry_run": not run, "rows": found[:100],
-                    "note": ("" if _ta.enabled() else
-                             "서버 자동 수집이 꺼져 있어요(TAOBAO_DETAIL_PROVIDER=onebound 또는 TAOBAO_MTOP_AUTO=1) — 켜기는 env 변경(오너)")})
+    data = {"enabled": _ta.enabled(), "route": _ta.effective_route(), "count": len(found), "eligible": len(eligible),
+            "estimate": est, "queued": queued, "dry_run": not run, "rows": found[:100], "batch": _tb.status(),
+            "note": ("" if _ta.enabled() else
+                     "서버 자동 수집이 꺼져 있어요(TAOBAO_DETAIL_PROVIDER=onebound 또는 TAOBAO_MTOP_AUTO=1) — 켜기는 env 변경(오너)")}
+    if request.method == "GET" and _wants_html():
+        return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="reenrich", d=data,
+                               verdict=f"다시 가져올 {len(eligible)}건 · 중복 {sum(1 for f in found if f['dup_of'])} · 시험 계정 {sum(1 for f in found if f['test'])}"
+                                       + ("" if _ta.enabled() else " · 서버 자동 수집 꺼짐"))
+    return jsonify({"ok": True, **data})
 
 
 @bp.get("/admin/diag/item/<market_no>")
@@ -5148,8 +5213,11 @@ def admin_diag_item(market_no):
     """오너 11-25 ② — **읽기 전용**: 마켓 상품번호로 수집 행 → url·raw_url·수집 경로·images[] 원문과 실제 픽셀 크기. 관리자만."""
     if not _is_admin_user():
         return jsonify({"ok": False, "error": "관리자만 볼 수 있어요."}), 403
-    from src.services.admin_diag import item_audit
-    return jsonify({"ok": True, **item_audit(str(market_no)[:20])})
+    from src.services.admin_diag import item_audit, item_verdict
+    data = item_audit(str(market_no)[:20])
+    if not _wants_html():
+        return jsonify({"ok": True, **data})
+    return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="item", d=data, verdict=item_verdict(data))
 
 
 @bp.get("/collect/<item_id>/rep-candidates")
@@ -18077,6 +18145,16 @@ def collect_item_recollect(item_id: str):
     ex["recollect_requested_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
     _data = request.get_json(silent=True) or {}
     _queue = str(_data.get("mode") or request.args.get("mode") or "") == "queue"
+    from src.collectors.amazon_pdp import is_amazon_page as _is_amz
+    if _queue and _is_amz(None, url):
+        # 오너 11-26 진단 1: 아마존은 서버가 읽을 수 있다 — PC 확장을 기다리지 않고 지금 다시 읽는다(백그라운드 · 마켓 전송 0).
+        from src.services import amazon_refetch as _ar
+        from src.utils import bg_job as _bg
+        _sids = _seller_identities()
+        _started, _st = _bg.start(f"amazon-refetch:{item_id}", lambda: _ar.run(item_id, _sids))
+        return jsonify({"ok": True, "item_id": item_id, "queued": False, "started": bool(_started), "server_refetch": True,
+                        "message": ("아마존 화면을 다시 읽고 있어요 — 30초쯤 뒤 새로 고침하면 사진·옵션이 바뀌어 있어요." if _started
+                                    else "이미 다시 읽는 중이에요 — 잠시 뒤 새로 고침해 주세요.")})
     if _queue:
         # Y3(오너 2026-10-04): 폰엔 확장이 없다 — 「새 탭에서 고가수집기를 눌러 주세요」는 할 수 없는 일이다.
         #   **재보강 큐**에 넣는다(R1 백그라운드 보강 = 확장 폴러 `/api/v1/collect/enrich/pending`이 집는 그 큐).

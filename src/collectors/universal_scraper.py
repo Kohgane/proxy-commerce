@@ -32,6 +32,8 @@ _USER_AGENT = os.getenv(
     "SCRAPER_USER_AGENT", "KohganePercentiii/1.0 (+https://kohganepercentiii.com)"
 )
 _MAX_HTML_BYTES = 1_000_000  # 1MB
+# 오너 11-26 진단 1: 아마존 상품 화면은 1MB보다 길고 사진 데이터(colorImages)·옵션(twister)이 그 뒤에 있다 — 끊으면 못 본다.
+_MAX_HTML_BYTES_AMAZON = int(os.getenv("AMAZON_MAX_HTML_BYTES", str(4_000_000)))
 _TIMEOUT = int(os.getenv("SCRAPER_TIMEOUT_SEC", "15"))
 _DRY_RUN = os.getenv("ADAPTER_DRY_RUN", "0") == "1"
 
@@ -132,13 +134,19 @@ def _fetch_html(url: str, timeout: int = _TIMEOUT) -> Optional[str]:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8,ja;q=0.7",
         }
+        from .amazon_pdp import is_amazon_page as _is_amz
+        amazon = _is_amz(None, url)
+        if amazon:
+            # 오라클 실측(10-07, vault scripts/amz_http.py): Accept-Encoding까지 갖춘 요청은 70/70 열렸다 · en-US로 읽는다
+            headers.update({"Accept-Language": "en-US,en;q=0.9", "Accept-Encoding": "gzip, deflate"})
+        cap = _MAX_HTML_BYTES_AMAZON if amazon else _MAX_HTML_BYTES
         resp = requests.get(url, headers=headers, timeout=timeout, stream=True)
         resp.raise_for_status()
-        # 1MB 이상 다운로드 방지
+        # 상한 이상 다운로드 방지(아마존은 더 길게 — 사진 데이터가 뒤에 있다)
         content = b""
         for chunk in resp.iter_content(chunk_size=65536):
             content += chunk
-            if len(content) >= _MAX_HTML_BYTES:
+            if len(content) >= cap:
                 break
         return content.decode(resp.apparent_encoding or "utf-8", errors="replace")
     except Exception as exc:
@@ -1008,6 +1016,28 @@ class UniversalScraper:
                         result.specs = amz["specs"]
             except Exception:
                 pass
+            # 오너 11-26 진단 1: 아마존은 img 태그를 긁지 않는다 — 페이지의 사진 데이터(colorImages·dynamic-image)·
+            #   옵션(twister)·가격(priceAmount)·A+에서 읽는다. 사진 데이터를 못 찾으면 사진은 **비워 둔다**(썸네일·배지·추천으로 메우지 않음).
+            try:
+                from .amazon_pdp import is_amazon_page as _is_amz, parse as _amz_parse
+                if _is_amz(html, url):
+                    _ap = _amz_parse(html)
+                    result.images = list(_ap["images"])
+                    if _ap["options"]:
+                        result.options = [{"name": o["name"], "values": o["values"]} for o in _ap["options"]]
+                    if _ap["price"] and _ap["currency"]:        # 통화를 모르는 가격은 쓰지 않는다(USD로 지어내지 않음)
+                        result.price = _parse_price(_ap["price"]) or result.price
+                        result.currency = _ap["currency"]
+                    if _ap["bullets"] and not (result.description or "").strip():
+                        result.description = "\n".join(_ap["bullets"])
+                    result.raw_meta["amazon_pdp"] = {"image_source": _ap["image_source"], "price_source": _ap["price_source"],
+                                                     "options": _ap["options"], "detail_images": _ap["detail_images"],
+                                                     "images": len(_ap["images"])}
+                    result.raw_meta["gallery_images"] = list(_ap["images"])
+                    result.raw_meta["detail_images"] = list(_ap["detail_images"])
+                    return result
+            except Exception as _aexc:
+                logger.warning("아마존 페이지 데이터 읽기 실패(범용으로 계속): %s", _aexc)
             # v39-E2 #2: 갤러리(대표) vs 상세(본문) 이미지 버킷 분리 → raw_meta에 저장(호출부가 분리 표시).
             try:
                 buckets = collect_image_buckets(html, url)

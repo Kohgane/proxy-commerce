@@ -284,6 +284,7 @@ def test_store_audit_counts_and_mismatch(monkeypatch):
     from src.services import admin_diag
     monkeypatch.setattr(R, "STORES", ("shegoga",))
     monkeypatch.setattr(R, "store_label", lambda st: "셰고가")
+    monkeypatch.setattr(R, "store_channel_no", lambda st: "999")          # 오너 11-26 진단 2: 대조는 채널번호로
     monkeypatch.setattr(R, "identify_common_key", lambda force=False: {"state": "ok"})
 
     def init(self, account=None):

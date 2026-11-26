@@ -242,9 +242,8 @@ def _run_full_tick(app, limit: int, pilot_chunk: int, tick_budget: float) -> dic
                 from src.utils.build_info import get_build_sha as _gbs
                 _b = _gbs()
                 if _lsp.due(_b):
-                    from src.utils import bg_job as _bg
-                    _started, _st = _bg.start("link-selfprobe", lambda: _lsp.run(_b))
-                    result["link_selfprobe_kick"] = bool(_started)
+                    # 요청 한 번짜리(타임아웃 있음) — 무거운 잡 자리(bg_job)를 쓰지 않고 데몬 스레드 하나로(다른 잡 자리를 막지 않게)
+                    result["link_selfprobe_kick"] = _lsp.kick(_b)
             except Exception as exc:               # noqa: BLE001 — 실측 실패가 번역 틱을 막지 않는다
                 logger.warning("링크 자가 실측 깨우기 실패(틱은 계속): %s", exc)
             # 오너 11-25 감독 2: 타오바오 자동 보강 줄 — 스레드가 죽었거나 시작 못 한 초안을 틱이 마저 돌린다(최대 3건 · 켜져 있을 때만)
