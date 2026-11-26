@@ -116,3 +116,17 @@ def test_list_bundle_and_filter(client):
     assert 'data-role="photo-fix-bundle"' in h and "사진 고칠 상품" in h and "사진부터 다시 가져오기" in h
     h = client.get("/seller/collect/history?photo=1&days=365").get_data(as_text=True)
     assert a in h and b not in h
+
+
+def test_filter_funnel_uses_measured_fullsize_rules_only():
+    """⑤ 수집 깔때기(서버 수집기·확장 병합 공용)가 알리·테무 썸네일만 원본으로 바꾸고, 썸네일+원본 두 장은 한 장으로."""
+    from src.collectors.universal_scraper import filter_product_images
+    ali_t = "https://ae01.alicdn.com/kf/S12ab.jpg_480x480q75.jpg_.avif"
+    ali_f = "https://ae01.alicdn.com/kf/S12ab.jpg"
+    temu_t = "https://img.kwcdn.com/product/fancy/abc.jpg?imageView2/2/w/180/q/70/format/webp"
+    amz = "https://m.media-amazon.com/images/I/71abc._AC_US40_.jpg"
+    rak = "https://tshop.r10s.jp/shop/cabinet/x.jpg?fitin=270:270"
+    out = filter_product_images([ali_t, ali_f, temu_t, amz, rak])
+    assert out[0] == ali_f and ali_t not in out and out.count(ali_f) == 1
+    assert "https://img.kwcdn.com/product/fancy/abc.jpg" in out
+    assert amz in out and rak in out                                                   # 실측 근거 없는 소싱처는 그대로
