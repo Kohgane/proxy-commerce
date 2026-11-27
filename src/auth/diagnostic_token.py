@@ -163,8 +163,31 @@ def _notify_telegram_on_issue(ip: str | None, issued_at: str) -> None:
         logger.debug("diagnostic token 텔레그램 알림 스킵: %s", exc)
 
 
+def _client_ip() -> str:
+    return (request.headers.get("CF-Connecting-IP") or request.remote_addr or "").strip()
+
+
+def _issue_authorized() -> bool:
+    """발급은 이미 admin 세션이거나 ADMIN_BOOTSTRAP_TOKEN 값을 아는 사람만.
+
+    예전엔 누구나 GET 한 번으로 발급(+DIAGNOSTIC_REVEAL=1 이면 화면에 redeem URL 노출)
+    → 크롤러가 공개 페이지의 '비상 진입' 링크를 따라가 텔레그램 경보가 쏟아지고,
+    익명 방문자가 admin 세션을 얻을 수 있었다(2026-11-27).
+    """
+    if session.get("user_role") == "admin":
+        return True
+    expected = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
+    given = request.args.get("key") or request.headers.get("X-Admin-Bootstrap-Token", "")
+    return bool(expected) and bool(given) and hmac.compare_digest(
+        given.encode("utf-8"), expected.encode("utf-8")
+    )
+
+
 @bp.get("/auth/diagnostic-token/issue")
 def issue_token():
+    if not _issue_authorized():
+        logger.info("diagnostic token 발급 거부(무인증) ip=%s", _client_ip())
+        return jsonify({"error": "not found"}), 404
     if not _signing_key():
         return jsonify(
             {
@@ -192,10 +215,10 @@ def issue_token():
     logger.warning(_SEPARATOR)
     logger.warning("🆘 DIAGNOSTIC TOKEN 발급됨 (10분 유효, 1회용)")
     logger.warning("URL: %s", redeem_url)
-    logger.warning("발급 IP: %s", request.remote_addr)
+    logger.warning("발급 IP: %s", _client_ip())
     logger.warning(_SEPARATOR)
 
-    _notify_telegram_on_issue(ip=request.remote_addr, issued_at=issued_at)
+    _notify_telegram_on_issue(ip=_client_ip(), issued_at=issued_at)
 
     admin_emails_set = bool(os.getenv("ADMIN_EMAILS", "").strip())
     reveal_env = os.getenv("DIAGNOSTIC_REVEAL", "0") == "1"
@@ -207,7 +230,7 @@ def issue_token():
             "auth/diagnostic_token_issued.html",
             redeem_url=redeem_url,
             ttl_minutes=TTL_SECONDS // 60,
-            issuer_ip=request.remote_addr,
+            issuer_ip=_client_ip(),
             env=os.environ,
         )
 
