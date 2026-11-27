@@ -28,7 +28,10 @@ def _seed(uid="u-v413"):
                     price="10", currency="CNY", seller_id=uid)
     iid = iid[0] if isinstance(iid, tuple) else iid
     CH.update(iid, seller_ids={uid}, extra_json=json.dumps({
-        "uploaded": [{"market": "coupang:gogane", "account": "gogane", "success": True, "at": "2026-10-28T10:00:00+09:00", "url": "https://c.test/1"}]}))
+        # 오너 11-27: 날짜를 박아 두면 30일 창(기본 「할 일 순」 정렬의 마지막 동작)을 벗어나는 날 깨진다 — 지금 시각으로
+        "uploaded": [{"market": "coupang:gogane", "account": "gogane", "success": True,
+                      "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(timespec="seconds"),
+                      "url": "https://c.test/1"}]}))
     return iid
 
 

@@ -139,10 +139,13 @@ def test_register_button_is_live_before_check_and_hint_says_why():
 
 @pytest.mark.skipif(not os.path.exists("/opt/pw-browsers/chromium") and not os.environ.get("KGP_REQUIRE_BROWSER"),
                     reason="브라우저 없음")
-def test_family_tap_register_runs_prevalidate_then_enables(monkeypatch):
-    """실브라우저(390px): 가족 카드에서 「등록」을 먼저 누르면 → 사전검증 POST(등록 POST 0) → 통과 → 「통과한 1곳만 등록」 켜짐."""
+@pytest.mark.parametrize("auto", [False, True])
+def test_family_tap_register_runs_prevalidate_then_enables(monkeypatch, auto):
+    """실브라우저(390px): 가족 카드에서 「등록」을 먼저 누르면 → 사전검증 POST(등록 POST 0) → 통과 → 「통과한 1곳만 등록」 켜짐.
+    오너 11-27 감독 2ⓐ: 자동 사전검증이 켜져 있으면 **카드를 열기만 해도** 같은 검증이 돌아 첫 버튼이 「통과한 1곳만 등록」(탭 0)."""
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
+    monkeypatch.setenv("M5_AUTO_PREVALIDATE", "1" if auto else "0")
     monkeypatch.setenv("MARKET_COMMISSION_PCT_WOOCOMMERCE", "3")   # 11-25 ④: 수수료율이 정해진 마켓이라야 체크된다
     _client("owner").post("/seller/settings", data={"codes": ["woocommerce"]})
     iid, html = _card("fam", "fam-e")
@@ -171,8 +174,9 @@ def test_family_tap_register_runs_prevalidate_then_enables(monkeypatch):
                 route.fulfill(status=200, content_type="application/json", body="{}")
         pg.route("**/*", handle)
         pg.goto(f"http://kgp.test/seller/m/item/{iid}")
-        assert pg.evaluate("document.getElementById('m5Go').disabled") is False
-        pg.click("#m5Go")
+        if not auto:
+            assert pg.evaluate("document.getElementById('m5Go').disabled") is False
+            pg.click("#m5Go")
         for _ in range(60):
             if pg.inner_text("#m5Go").startswith("통과한 "):
                 break
