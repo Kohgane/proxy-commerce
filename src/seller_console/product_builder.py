@@ -131,6 +131,7 @@ def build_product(item: dict, edits: Optional[Dict[str, Any]] = None, *, seller_
         "rep_auto_clean_valid": _rep_clean_valid(ex),
         "child_product": str(ex.get("child_product") or "").strip(),     # Y15: 어린이제품 표시 → 등록 보류 「오너 확인」
         "coupang_attributes": list(ex.get("coupang_attributes") or []),
+        "origin": str(ex.get("origin") or "").strip(),             # 오너 11-26 저녁 ③: 폰 카드에서 넣은 원산지(쿠팡 고시정보)
         "coupang_option_pick": dict(ex.get("coupang_option_pick") or {}),
         "skus": ex.get("skus") if isinstance(ex.get("skus"), list) else [],
         "option_values_ko": _values_ko_map(options),

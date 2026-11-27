@@ -30,6 +30,31 @@
     <a class="mk-attn-toggle{% if filters.left %} is-on{% endif %}" data-role="left-filter"
        href="{{ '/seller/collect/history' if filters.left else '/seller/collect/history?left=1' }}"{% if filters.left %} aria-current="page"{% endif %}>남은 마켓</a>
   </div>
+  {# 오너 11-26 저녁 ①: 흐린 사진으로 스스에 올라간 상품을 서버가 찾아 한 묶음으로(등록 기록 + 쓸 만한 사진 판정) #}
+  <a class="ch-photo-fix{% if filters.photo %} is-on{% endif %}" data-role="photo-fix-bundle"
+     href="{{ '/seller/collect/history' if filters.photo else '/seller/collect/history?photo=1&days=365' }}"{% if filters.photo %} aria-current="page"{% endif %}
+     {% if not filters.photo %}hidden{% endif %}>
+    <b data-role="photo-fix-n">사진 고칠 상품 {{ photo_fix.n or 0 }}건</b>
+    <span data-role="photo-fix-sub">{% if photo_fix.ready %}다시 보내기만 남음 {{ photo_fix.ready }}{% endif %}{% if photo_fix.ready and photo_fix.small %} · {% endif %}{% if photo_fix.small %}사진부터 다시 가져오기 {{ photo_fix.small }}{% endif %}{% if filters.photo %} — 전체 목록으로{% endif %}</span>
+  </a>
+  {% if not filters.photo %}
+  <script>
+  /* 목록 첫 화면 쿼리 예산을 지키려고 건수는 따로 묻는다(읽기만) — 0건이면 안 보인다 */
+  (function () {
+    var a = document.querySelector('[data-role=photo-fix-bundle]');
+    if (!a) return;
+    fetch('/seller/collect/photo-fix-bundle', {credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.ok || !d.n) return;
+      a.querySelector('[data-role=photo-fix-n]').textContent = '사진 고칠 상품 ' + d.n + '건';
+      var bits = [];
+      if (d.ready) bits.push('다시 보내기만 남음 ' + d.ready);
+      if (d.small) bits.push('사진부터 다시 가져오기 ' + d.small);
+      a.querySelector('[data-role=photo-fix-sub]').textContent = bits.join(' · ');
+      a.hidden = false;
+    }).catch(function () {});
+  })();
+  </script>
+  {% endif %}
   {# Y12-D(오너 2026-10-18): 「버리기」 한 상품은 목록에서 숨는다(DB 삭제 아님) — 여기서 모아 보고 드로어에서 되살린다 #}
   {% if filters.discarded %}
   <p class="pc-status pc-status-info small mb-2" data-role="discarded-banner">버린 상품만 보는 중 — 상품을 열어 「되살리기」를 누르면 목록으로 돌아와요.
@@ -1448,4 +1473,73 @@ async function runBulkUpload() {
   })();
 </script>
 {% include "_market_status.html" %}
+<div class="ch-sheet" data-role="ch-row-sheet" role="dialog" aria-modal="true" aria-label="상품 동작" hidden>
+  <div class="ch-sheet-box">
+    <div class="ch-sheet-title" data-role="ch-sheet-title"></div>
+    <button type="button" class="btn btn-primary ch-sheet-btn" data-role="ch-sheet-refetch">다시 가져오기</button>
+    <div class="ch-sheet-note" data-role="ch-sheet-nosrv" hidden>이 소싱처는 서버가 다시 읽지 못해요 — PC 확장으로 다시 가져와요(카드에서).</div>
+    <a class="btn btn-ghost ch-sheet-btn" data-role="ch-sheet-open" href="/seller/collect/history">카드 열기</a>
+    <div class="ch-sheet-note" data-role="ch-sheet-state" aria-live="polite"></div>
+    <button type="button" class="btn btn-ghost ch-sheet-btn" data-role="ch-sheet-close">닫기</button>
+  </div>
+</div>
+<script>
+/* 오너 11-27 02:07 ①: 목록 줄 ⋯ · 길게 누르기(0.55초) → 「다시 가져오기」 — 카드와 같은 입구(recollect mode=queue) · 같은 결과 조회 */
+(function () {
+  var sheet = document.querySelector('[data-role=ch-row-sheet]');
+  if (!sheet) return;
+  var cur = null, timer = null, pollT = null;
+  function open(btn) {
+    cur = {id: btn.getAttribute('data-item'), kind: btn.getAttribute('data-kind') || '', title: btn.getAttribute('data-title') || ''};
+    sheet.querySelector('[data-role=ch-sheet-title]').textContent = cur.title;
+    sheet.querySelector('[data-role=ch-sheet-refetch]').hidden = !cur.kind;
+    sheet.querySelector('[data-role=ch-sheet-refetch]').disabled = false;
+    sheet.querySelector('[data-role=ch-sheet-nosrv]').hidden = !!cur.kind;
+    sheet.querySelector('[data-role=ch-sheet-open]').href = '/seller/m/item/' + encodeURIComponent(cur.id);
+    sheet.querySelector('[data-role=ch-sheet-state]').textContent = '';
+    sheet.hidden = false;
+  }
+  function close() { sheet.hidden = true; cur = null; if (pollT) { clearTimeout(pollT); pollT = null; } }
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-role=ch-row-more]') : null;
+    if (b) { e.preventDefault(); e.stopPropagation(); open(b); return; }
+    if (e.target === sheet || (e.target.closest && e.target.closest('[data-role=ch-sheet-close]'))) close();
+  });
+  // 길게 누르기 — 줄 어디든(체크박스·칩 제외) 0.55초 누르고 있으면 같은 시트
+  document.addEventListener('touchstart', function (e) {
+    var row = e.target && e.target.closest ? e.target.closest('tr.ch-row') : null;
+    if (!row || (e.target.closest && e.target.closest('input,button,[data-role=mk-chip]'))) return;
+    var btn = row.querySelector('[data-role=ch-row-more]');
+    if (!btn) return;
+    timer = setTimeout(function () { timer = null; open(btn); }, 550);
+  }, {passive: true});
+  ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) {
+    document.addEventListener(ev, function () { if (timer) { clearTimeout(timer); timer = null; } }, {passive: true});
+  });
+  sheet.querySelector('[data-role=ch-sheet-refetch]').addEventListener('click', async function () {
+    if (!cur) return;
+    var b = this, st = sheet.querySelector('[data-role=ch-sheet-state]'), id = cur.id;
+    var since = new Date().toISOString().slice(0, 19);
+    b.disabled = true; st.textContent = '요청하는 중…';
+    try {
+      var r = await fetch('/seller/collect/' + encodeURIComponent(id) + '/recollect', {method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: 'queue'})});
+      var d = await r.json().catch(function () { return {ok: false, error: '서버 응답을 읽지 못했어요'}; });
+      if (!d.ok) { st.textContent = '요청하지 못했어요 — ' + (d.error || '사유 없음'); b.disabled = false; return; }
+      st.textContent = d.message || '다시 읽는 중…';
+      var n = 0;
+      (function tick() {
+        n += 1;
+        fetch('/seller/collect/' + encodeURIComponent(id) + '/refetch-result?since=' + encodeURIComponent(since), {credentials: 'same-origin'})
+          .then(function (x) { return x.json(); }).then(function (q) {
+            if (q && q.done) { st.textContent = '다시 가져왔어요 — ' + (q.line || '') + ((q.resend || []).length ? ' · 카드에서 스스로 다시 보낼 수 있어요' : ''); return; }
+            if (n >= 45) { st.textContent = '아직 읽는 중이에요 — 잠시 뒤 카드에서 확인해 주세요.'; return; }
+            st.textContent = '다시 읽는 중… ' + (n * 4) + '초';
+            pollT = setTimeout(tick, 4000);
+          }).catch(function () { if (n < 45) pollT = setTimeout(tick, 4000); });
+      })();
+    } catch (err) { st.textContent = '네트워크 오류 — ' + ((err && err.message) || err); b.disabled = false; }
+  });
+})();
+</script>
 {% endblock %}

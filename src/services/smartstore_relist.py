@@ -233,104 +233,224 @@ def _photo_small(row: Dict, up, size_of) -> Optional[bool]:
     return True
 
 
-def build(store: str, *, up=None, size_of: Optional[Callable] = None, now_count: Optional[int] = None) -> Dict:
-    """판매중지 전수 → 줄마다 판정 → 켤 순서 → 빈자리만큼 「켤 것」. **읽기만**(마켓 전송 0). 결과는 `plan(store)`."""
+_BUILD_KEY = "smartstore_relist:build:{}"
+PHOTO_WORKERS = 2                          # 오너 11-27: 켤 후보만 · 동시 2 · 머리 바이트만
+PHOTO_SAVE_EVERY = 20
+
+
+_BRIEF_KEYS = ("state", "phase", "progress", "stalled", "idle_sec", "started_at", "heartbeat_at", "error", "rss_peak_mb",
+               "result", "finished_at", "steps")
+
+
+def build_state(store: str) -> Dict:
+    """화면용 요약 — 줄에는 판매중지 행 전부가 들어 있어(중간 단계) 그건 빼고 진행만."""
+    from src.services import durable_job as DJ
+    st = DJ.status(_BUILD_KEY.format(store))
+    return {k: st.get(k) for k in _BRIEF_KEYS if k in st}
+
+
+def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme) -> Dict:
+    """한 줄 판정(사진 빼고) — 사유·마진·켤 순서 단계. 사진은 켤 후보에만 따로 잰다."""
+    sold = (s["ss"] + s["cp"]) > 0
+    mg = _margin(r, o, sold)
+    why = []
+    if (k := _words_hit(r["name"], knife)):
+        why.append(("knife", k))
+    if (k := _words_hit(r["name"], LENS_WORDS)):
+        why.append(("lens", k))
+    if (k := _words_hit(r["name"], brands)):
+        why.append(("brand", k))
+    ex = (o or {}).get("ex") or {}
+    rej = [u for u in (ex.get("uploaded") or []) if isinstance(u, dict) and ((u.get("review") or {}).get("state") == "rejected")]
+    if ex.get("risk_skip") or rej or ex.get("takedowns"):
+        why.append(("ours_reject", (ex.get("risk_skip") or {}).get("reason") if isinstance(ex.get("risk_skip"), dict) else
+                    ("반려: " + str(((rej[0].get("review") or {}).get("comment")) or "")[:60] if rej else "「이 마켓에서 내리기」 기록")))
+    mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
+    if mon.get("in_stock") is False or str(mon.get("change") or "") in ("soldout", "gone", "removed"):
+        why.append(("src_soldout", str(mon.get("summary") or "품절")))
+    if not o or not str(o.get("url") or "").startswith("http"):
+        why.append(("no_source", "우리 수집 기록에 원본 주소가 없어요" if not o else "원본 주소 없음"))
+    if mg["cost"] is None:
+        if o:
+            why.append(("cost_unknown", ""))
+    elif mg["margin"] is None or mg["margin"] < mg["floor"]:
+        why.append(("margin_low", f"{mg['margin']}% < {mg['floor']:g}%"))
+    name_l = (r["name"] + " " + r["category"]).lower()
+    tier = 1 if sold else (3 if any(str(w).lower() in name_l for w in theme) else 4)
+    pp = mg["policy_price"]
+    try:
+        sp = int(float(r.get("sale_price") or 0))
+    except (TypeError, ValueError):
+        sp = 0
+    return {**r, "item_id": (o or {}).get("item_id", ""), "sold_ss": s["ss"], "sold_cp": s["cp"], "views": None,
+            "cost": mg["cost"], "currency": mg["currency"], "cost_src": mg["cost_src"], "margin": mg["margin"],
+            "floor": mg["floor"], "policy_price": pp,
+            "price_diff": (pp is not None and sp > 0 and abs(pp - sp) / sp >= 0.01),
+            "our_reason": "기록 없음" if not (ex.get("takedowns") or ex.get("risk_skip") or rej) else
+                          (dict(why).get("ours_reject") or "기록 있음"),
+            "photo_small": None, "tier": tier, "exclude": [k for k, _ in why], "exclude_detail": [d for _, d in why]}
+
+
+def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=None, save=None) -> Dict:
+    """목록 만들기 한 걸음 — 단계(fetch → judge → photos → final)와 커서를 rec에 적는다. `save(rec)`는 100건마다 부른다.
+    읽기만(마켓 전송 0). 끝나면 `plan(store)`에 결과 · rec.state=done."""
     from src.seller_console import smartstore_routing as R
-    from src.uploaders.naver_uploader import NaverSmartStoreUploader
-    if up is None:
-        up = NaverSmartStoreUploader(account=store)
-    if size_of is None:
-        from src.services.coupang_image_check import size_of as _so
-        size_of = _so
-    t0 = time.time()
-    got = fetch_suspended(up)
-    limit = int(R.rules().get("limit") or 1000)
-    if now_count is None:
-        now_count = up.count_products(["SALE", "WAIT", "OUTOFSTOCK"])
-    room = None if now_count is None else max(0, limit - int(now_count))
-    status_counts = {}
-    for _s in ("SALE", "WAIT", "OUTOFSTOCK", "SUSPENSION", "CLOSE", "PROHIBITION"):
-        try:
-            status_counts[_s] = up.count_products([_s])
-        except Exception:                                          # noqa: BLE001 — 못 세면 비움(지어내지 않음)
-            status_counts[_s] = None
-    ours = _ours_index(store)
-    sales = _sales_index(ours)
-    knife, brands = _rules()
-    theme = [str(w) for w in (((R.rules().get("stores") or {}).get(store) or {}).get("keywords") or [])]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        small = list(pool.map(lambda r: _photo_small(r, up, size_of), got["rows"]))
-    rows = []
-    for r, sm in zip(got["rows"], small):
-        o = ours.get(r["channel_no"])
-        s = sales.get(r["channel_no"], {"ss": 0, "cp": 0})
-        sold = (s["ss"] + s["cp"]) > 0
-        mg = _margin(r, o, sold)
-        why = []
-        if (k := _words_hit(r["name"], knife)):
-            why.append(("knife", k))
-        if (k := _words_hit(r["name"], LENS_WORDS)):
-            why.append(("lens", k))
-        if (k := _words_hit(r["name"], brands)):
-            why.append(("brand", k))
-        ex = (o or {}).get("ex") or {}
-        rej = [u for u in (ex.get("uploaded") or []) if isinstance(u, dict) and ((u.get("review") or {}).get("state") == "rejected")]
-        if ex.get("risk_skip") or rej or ex.get("takedowns"):
-            why.append(("ours_reject", (ex.get("risk_skip") or {}).get("reason") if isinstance(ex.get("risk_skip"), dict) else
-                        ("반려: " + str(((rej[0].get("review") or {}).get("comment")) or "")[:60] if rej else "「이 마켓에서 내리기」 기록")))
-        mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
-        if mon.get("in_stock") is False or str(mon.get("change") or "") in ("soldout", "gone", "removed"):
-            why.append(("src_soldout", str(mon.get("summary") or "품절")))
-        if not o or not str(o.get("url") or "").startswith("http"):
-            why.append(("no_source", "우리 수집 기록에 원본 주소가 없어요" if not o else "원본 주소 없음"))
-        if mg["cost"] is None:
-            if o:
-                why.append(("cost_unknown", ""))
-        elif mg["margin"] is None or mg["margin"] < mg["floor"]:
-            why.append(("margin_low", f"{mg['margin']}% < {mg['floor']:g}%"))
-        if sm is True:
-            why.append(("photos_small", ""))
-        name_l = (r["name"] + " " + r["category"]).lower()
-        tier = 1 if sold else (3 if any(str(w).lower() in name_l for w in theme) else 4)
-        pp = mg["policy_price"]
-        try:
-            sp = int(float(r.get("sale_price") or 0))
-        except (TypeError, ValueError):
-            sp = 0
-        rows.append({**r, "item_id": (o or {}).get("item_id", ""), "sold_ss": s["ss"], "sold_cp": s["cp"], "views": None,
-                     "cost": mg["cost"], "currency": mg["currency"], "cost_src": mg["cost_src"], "margin": mg["margin"],
-                     "floor": mg["floor"], "policy_price": pp,
-                     "price_diff": (pp is not None and sp > 0 and abs(pp - sp) / sp >= 0.01),
-                     "our_reason": "기록 없음" if not (ex.get("takedowns") or ex.get("risk_skip") or rej) else
-                                   (dict(why).get("ours_reject") or "기록 있음"),
-                     "photo_small": sm, "tier": tier, "exclude": [k for k, _ in why], "exclude_detail": [d for _, d in why]})
-    elig = [x for x in rows if not x["exclude"]]
-    # ① 팔린 것(많이 팔린 것 먼저) → ③ 주제 → ④ 나머지 — 같은 단계 안에서는 등록일 최신 먼저
-    elig.sort(key=lambda x: (x["tier"], -(x["sold_ss"] + x["sold_cp"]), _neg(x["reg"])))
-    n_on = len(elig) if room is None else min(len(elig), room)
-    on_ids = {x["channel_no"] for x in elig[:n_on]}
-    for x in elig[n_on:]:
-        x["exclude"] = ["no_room"]
-        x["exclude_detail"] = ["빈자리 없음 — 다음 차례"]
+    save = save or (lambda _r: None)
+    phase = rec.get("phase") or "fetch"
+    if phase == "fetch":
+        rows = rec.setdefault("fetched", [])
+        while time.time() < deadline:
+            page = int(rec.get("page_next") or 1)
+            if page > MAX_PAGES:
+                rec["phase"] = "judge"
+                break
+            res = up._api_request("POST", "/v1/products/search",
+                                  data={"productStatusTypes": ["SUSPENSION"], "page": page, "size": PAGE_SIZE})
+            if not isinstance(res, dict) or "error" in res:
+                rec["fetch_error"] = str((res or {}).get("error") if isinstance(res, dict) else res)[:300]
+                rec["phase"] = "judge"
+                break
+            rec["total"] = res.get("totalElements", rec.get("total"))
+            contents = res.get("contents") or []
+            for c in contents:
+                for ch in (c or {}).get("channelProducts") or []:
+                    if str(ch.get("statusType") or "SUSPENSION") != "SUSPENSION":
+                        continue
+                    rows.append({
+                        "origin_no": str((c or {}).get("originProductNo") or ch.get("originProductNo") or ""),
+                        "channel_no": str(ch.get("channelProductNo") or ""), "name": str(ch.get("name") or ""),
+                        "sale_price": ch.get("discountedPrice") or ch.get("salePrice"), "list_price": ch.get("salePrice"),
+                        "reg": str(ch.get("regDate") or ""), "modified": str(ch.get("modifiedDate") or ""),
+                        "rep_image": str(((ch.get("representativeImage") or {}).get("url")) or ""),
+                        "stock": ch.get("stockQuantity"), "category": str(ch.get("wholeCategoryName") or "")})
+            rec["page_next"] = page + 1
+            rec["progress"] = {"n": len(rows), "total": rec.get("total"), "label": f"판매중지 읽는 중 {len(rows):,}/{int(rec.get('total') or 0):,}"}
+            save(rec)                                              # 100건(한 쪽)마다 저장 — 재시작 뒤 이 쪽부터
+            if len(contents) < PAGE_SIZE:
+                rec["phase"] = "judge"
+                break
+        return rec
+    if phase == "judge":
+        limit = int(R.rules().get("limit") or 1000)
+        if now_count is None:
+            now_count = up.count_products(["SALE", "WAIT", "OUTOFSTOCK"])
+        room = None if now_count is None else max(0, limit - int(now_count))
+        status_counts = {}
+        for _s in ("SALE", "WAIT", "OUTOFSTOCK", "SUSPENSION", "CLOSE", "PROHIBITION"):
+            try:
+                status_counts[_s] = up.count_products([_s])
+            except Exception:                                      # noqa: BLE001 — 못 세면 비움(지어내지 않음)
+                status_counts[_s] = None
+        ours = _ours_index(store)
+        sales = _sales_index(ours)
+        knife, brands = _rules()
+        theme = [str(w) for w in (((R.rules().get("stores") or {}).get(store) or {}).get("keywords") or [])]
+        judged = [_judge_row(r, ours.get(r["channel_no"]), sales.get(r["channel_no"], {"ss": 0, "cp": 0}), knife, brands, theme)
+                  for r in rec.get("fetched") or []]
+        elig = [x for x in judged if not x["exclude"]]
+        elig.sort(key=lambda x: (x["tier"], -(x["sold_ss"] + x["sold_cp"]), _neg(x["reg"])))
+        rec.update(rows=judged, fetched=[], elig=[x["channel_no"] for x in elig], photo_i=0, on=[], limit=limit,
+                   now_count=now_count, room=room, status_counts=status_counts, phase="photos",
+                   complete=(not rec.get("fetch_error")) and rec.get("total") is not None and len(judged) >= int(rec["total"]))
+        rec["progress"] = {"n": 0, "total": len(elig) if room is None else min(len(elig), room),
+                           "label": f"판정 끝 — 켤 후보 사진 확인 0/{len(elig) if room is None else min(len(elig), room):,}"}
+        save(rec)
+        return rec
+    if phase == "photos":
+        by = {x["channel_no"]: x for x in rec.get("rows") or []}
+        elig, on, room = rec.get("elig") or [], rec.setdefault("on", []), rec.get("room")
+        want = len(elig) if room is None else min(len(elig), int(room))
+        with ThreadPoolExecutor(max_workers=PHOTO_WORKERS) as pool:
+            while time.time() < deadline and len(on) < want and int(rec.get("photo_i") or 0) < len(elig):
+                i = int(rec.get("photo_i") or 0)
+                need = want - len(on)
+                batch = [by[c] for c in elig[i:i + max(1, min(PHOTO_WORKERS, need))] if c in by]
+                res = list(pool.map(lambda r: _photo_small(r, up, size_of), batch))
+                for r, sm in zip(batch, res):
+                    r["photo_small"] = sm
+                    if sm is True:
+                        r["exclude"] = ["photos_small"]
+                        r["exclude_detail"] = [""]
+                    elif len(on) < want:
+                        on.append(r["channel_no"])
+                rec["photo_i"] = i + len(batch)
+                rec["progress"] = {"n": len(on), "total": want, "label": f"켤 후보 사진 확인 {len(on):,}/{want:,}(확인 {rec['photo_i']:,}건)"}
+                if rec["photo_i"] // PHOTO_SAVE_EVERY != i // PHOTO_SAVE_EVERY:
+                    save(rec)                                      # 줄이 1MB 안팎이라 20장마다만 저장(재시작 땐 최대 20장 다시 잼)
+        if len(on) >= want or int(rec.get("photo_i") or 0) >= len(elig):
+            rec["phase"] = "final"
+        return rec
+    # final — 예전 build()와 같은 모양의 결과
+    rows = rec.get("rows") or []
+    on_ids = set(rec.get("on") or [])
+    order = {c: i for i, c in enumerate(rec.get("elig") or [])}
     by_reason: Dict[str, int] = {}
     for x in rows:
         if x["channel_no"] in on_ids:
             x["action"] = "on"
             continue
         x["action"] = "skip"
+        if not x["exclude"]:
+            x["exclude"] = ["no_room"]
+            x["exclude_detail"] = ["빈자리 없음 — 다음 차례"]
         for k in x["exclude"]:
             by_reason[k] = by_reason.get(k, 0) + 1
-    order = {x["channel_no"]: i for i, x in enumerate(elig)}
     rows.sort(key=lambda x: (x["action"] != "on", order.get(x["channel_no"], 10 ** 6)))
-    out = {"store": store, "at": _now(), "secs": round(time.time() - t0, 1), "complete": got["complete"], "total": got["total"],
-           "read": len(got["rows"]), "error": got["error"], "limit": limit, "now_count": now_count, "room": room,
+    out = {"store": store, "at": _now(), "secs": round(time.time() - float(rec.get("t0") or time.time()), 1),
+           "complete": bool(rec.get("complete")), "total": rec.get("total"), "read": len(rows), "error": rec.get("fetch_error") or "",
+           "limit": rec.get("limit"), "now_count": rec.get("now_count"), "room": rec.get("room"),
            "on": len(on_ids), "skip": len(rows) - len(on_ids), "by_reason": by_reason,
            "tiers": {str(t): sum(1 for x in rows if x["action"] == "on" and x["tier"] == t) for t in (1, 3, 4)},
            "price_diff": sum(1 for x in rows if x["action"] == "on" and x["price_diff"]),
-           "views_note": VIEWS_NOTE, "status_counts": status_counts, "rows": rows}
+           "photos_checked": int(rec.get("photo_i") or 0), "rss_peak_mb": rec.get("rss_peak_mb"),
+           "views_note": VIEWS_NOTE, "status_counts": rec.get("status_counts") or {}, "rows": rows}
     _state_set(_PLAN_KEY.format(store), out)
-    logger.info("[셰고가 재개] 목록 %s — 판매중지 %s 읽음 · 켤 %d · 뺄 %d · 빈자리 %s · %s", store, len(rows), out["on"], out["skip"], room, by_reason)
-    return out
+    from src.seller_console import smartstore_routing as R2
+    rec.update(state="done", phase="done", rows=[], elig=[], on=[], result={k: v for k, v in out.items() if k != "rows"},
+               progress={"n": out["on"], "total": out["on"], "label": f"끝 — 켤 {out['on']:,} · 뺄 {out['skip']:,}"},
+               push={"title": f"{R2.store_label(store)} 목록 완료 — 켤 {out['on']:,} · 뺄 {out['skip']:,}",
+                     "body": "눌러서 켤 것·뺄 것(사유)을 확인해요.", "path": f"/seller/admin/smartstore-relist?store={store}"})
+    logger.info("[셰고가 재개] 목록 %s — 판매중지 %s 읽음 · 켤 %d · 뺄 %d · 빈자리 %s · 사진 확인 %s · %s", store, len(rows), out["on"],
+                out["skip"], rec.get("room"), out["photos_checked"], by_reason)
+    return rec
+
+
+def _build_step(key: str, rec: Dict, deadline: float) -> Dict:
+    """durable_job 걸음 — 운영 경로(네이버 키 · 머리 바이트 크기 재기)."""
+    from src.services import durable_job as DJ
+    from src.services.coupang_image_check import head_size
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader
+    store = str(rec.get("store") or "")
+    return _advance(store, rec, deadline, up=NaverSmartStoreUploader(account=store), size_of=head_size,
+                    save=lambda r: DJ.save(key, r))
+
+
+def start_build(store: str, by_uid: str = "") -> Dict:
+    """「목록 만들기」 — 줄에 세우고 바로 시작(재시작돼도 틱·부팅이 저장한 쪽부터 잇는다). 이미 돌면 그대로."""
+    from src.services import durable_job as DJ
+    key = _BUILD_KEY.format(store)
+    cur = DJ.status(key)
+    if cur.get("state") == "running":
+        if cur.get("stalled"):
+            r = DJ.resume(key)
+            return {"ok": True, "resumed": True, "started": r.get("started")}
+        return {"ok": True, "already": True}
+    r = DJ.begin(key, "relist_build", {"store": store, "phase": "fetch", "page_next": 1, "fetched": [], "t0": time.time(),
+                                       "progress": {"n": 0, "total": None, "label": "판매중지 읽는 중 0"}}, by_uid=by_uid)
+    return {"ok": True, "started": r["started"]}
+
+
+def build(store: str, *, up=None, size_of: Optional[Callable] = None, now_count: Optional[int] = None) -> Dict:
+    """한 번에 끝까지(시험·스크립트용) — 운영 화면은 `start_build`(줄·이어하기). 같은 걸음 함수를 쓴다."""
+    if up is None:
+        from src.uploaders.naver_uploader import NaverSmartStoreUploader
+        up = NaverSmartStoreUploader(account=store)
+    if size_of is None:
+        from src.services.coupang_image_check import head_size as size_of
+    rec = {"store": store, "phase": "fetch", "page_next": 1, "fetched": [], "t0": time.time(), "state": "running"}
+    while rec.get("state") == "running":
+        rec = _advance(store, rec, time.time() + 3600, up=up, size_of=size_of, now_count=now_count)
+    return plan(store)
 
 
 def _neg(s: str) -> str:
@@ -355,7 +475,11 @@ def csv_text(p: Dict) -> str:
 
 # ── 실행(오너 탭) ────────────────────────────────────────────────────────────
 
-def start(store: str, confirm: int, by: str, *, runner=None) -> Dict:
+_RUNNER_OVERRIDE: Dict[str, Callable] = {}                 # 시험만 — 줄에는 함수를 저장할 수 없다
+
+
+def start(store: str, confirm: int, by: str, *, runner=None, by_uid: str = "") -> Dict:
+    from src.services import durable_job as DJ
     if store not in RUN_STORES:
         return {"ok": False, "error": "이 스토어는 보기만 해요 — 실행은 오너가 말할 때 열어요."}
     p = plan(store)
@@ -364,20 +488,25 @@ def start(store: str, confirm: int, by: str, *, runner=None) -> Dict:
         return {"ok": False, "error": "켤 상품이 없어요 — 목록을 먼저 만들어 주세요."}
     if int(confirm) != len(targets):
         return {"ok": False, "error": f"건수가 바뀌었어요(지금 {len(targets)}건) — 화면을 새로 고친 뒤 다시 눌러 주세요."}
-    cur = run_state(store)
+    key = _RUN_KEY.format(store)
+    cur = DJ.status(key)
     if cur.get("state") == "running":
+        if cur.get("stalled") or not cur.get("kind"):
+            # 재시작에 끊긴 실행(예전 스레드 기록 포함) — 처음부터 다시 말고 끝낸 데서 잇는다
+            cur["kind"] = "relist_run"
+            DJ.save(key, cur)
+            r = DJ.resume(key)
+            return {"ok": True, "resumed": True, "total": cur.get("total"), "started": r.get("started")}
         return {"ok": False, "error": f"이미 도는 중이에요({len(cur.get('done') or [])}/{cur.get('total')})."}
-    rec = {"state": "running", "store": store, "total": len(targets), "by": str(by or "")[:200], "started_at": _now(),
-           "plan_at": p.get("at"), "targets": [{"origin_no": x["origin_no"], "channel_no": x["channel_no"], "name": x["name"][:60]} for x in targets],
+    if runner is not None:
+        _RUNNER_OVERRIDE[store] = runner
+    rec = {"store": store, "total": len(targets), "by": str(by or "")[:200], "plan_at": p.get("at"),
+           "targets": [{"origin_no": x["origin_no"], "channel_no": x["channel_no"], "name": x["name"][:60]} for x in targets],
            "done": [], "stop": False}
-    _state_set(_RUN_KEY.format(store), rec)
-    from src.utils import bg_job
-    started, st = bg_job.start(f"smartstore-relist:{store}", lambda: _run(store, runner))
-    if not started:
-        rec["state"] = "refused"
-        rec["error"] = "서버 메모리 여유가 없어 지금은 못 돌려요 — 잠시 뒤 다시 눌러 주세요." if st.get("busy_memory") else "다른 잡이 도는 중이에요."
-        _state_set(_RUN_KEY.format(store), rec)
-        return {"ok": False, "error": rec["error"]}
+    r = DJ.begin(key, "relist_run", rec, by_uid=by_uid)
+    if not r["started"]:
+        return {"ok": True, "total": rec["total"], "queued": True,
+                "note": "서버 메모리 여유가 없어 바로 못 시작했어요 — 줄에 세워 뒀고 10분 안에 저절로 시작해요."}
     return {"ok": True, "total": rec["total"]}
 
 
@@ -397,40 +526,69 @@ def _resume_one(up, origin_no: str) -> Dict:
     return {"ok": True, "raw": ""}
 
 
-def _run(store: str, runner=None) -> Dict:
-    from src.uploaders.naver_uploader import NaverSmartStoreUploader
-    up = NaverSmartStoreUploader(account=store)
-    runner = runner or (lambda o: _resume_one(up, o))
-    rec = run_state(store)
+def _run_step(key: str, rec: Dict, deadline: float, *, runner=None, up=None) -> Dict:
+    """판매 재개 한 걸음 — 끝낸 건 건너뛰고(재시작 뒤 이어서) 한 건씩 · 한 건마다 저장 · 멈춤 확인."""
+    store = str(rec.get("store") or "")
+    if up is None:
+        from src.uploaders.naver_uploader import NaverSmartStoreUploader
+        up = NaverSmartStoreUploader(account=store)
+    runner = runner or _RUNNER_OVERRIDE.get(store) or (lambda o: _resume_one(up, o))
     targets = rec.get("targets") or []
-    for i in range(0, len(targets), CHUNK):
-        for t in targets[i:i + CHUNK]:
-            if run_state(store).get("stop"):
-                rec = run_state(store)
-                rec["state"] = "stopped"
-                rec["stopped_at"] = _now()
-                _finish(store, rec, up)
-                return {"ok": True, "stopped": True}
-            try:
-                r = runner(t["origin_no"]) or {}
-            except Exception as exc:                               # noqa: BLE001 — 한 건 실패가 나머지를 막지 않는다
-                r = {"ok": False, "raw": f"{type(exc).__name__}: {str(exc)[:200]}"}
-            rec = run_state(store)
-            rec.setdefault("done", []).append({"channel_no": t["channel_no"], "name": t["name"], "ok": bool(r.get("ok")), "raw": r.get("raw", "")})
-            _state_set(_RUN_KEY.format(store), rec)
-        logger.info("[셰고가 재개] %s %d/%d", store, min(i + CHUNK, len(targets)), len(targets))
+    while time.time() < deadline:
+        cur = run_state(store)
+        if cur.get("stop"):
+            cur["state"] = "stopped"
+            cur["stopped_at"] = _now()
+            return _finish(store, cur, up)
+        done = cur.get("done") or []
+        if len(done) >= len(targets):
+            cur["state"] = "finished"
+            return _finish(store, cur, up)
+        t = targets[len(done)]
+        try:
+            r = runner(t["origin_no"]) or {}
+        except Exception as exc:                                   # noqa: BLE001 — 한 건 실패가 나머지를 막지 않는다
+            r = {"ok": False, "raw": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        cur = run_state(store)                                     # 보내는 사이 눌린 「멈춤」을 덮지 않게 다시 읽고 덧붙인다
+        cur.setdefault("done", []).append({"channel_no": t["channel_no"], "name": t["name"], "ok": bool(r.get("ok")), "raw": r.get("raw", "")})
+        cur["progress"] = {"n": len(cur["done"]), "total": len(targets), "label": f"판매 재개 {len(cur['done']):,}/{len(targets):,}"}
+        cur["heartbeat_at"] = _now()
+        _state_set(_RUN_KEY.format(store), cur)
+        rec = cur
+        if len(cur["done"]) % CHUNK == 0:
+            logger.info("[셰고가 재개] %s %d/%d", store, len(cur["done"]), len(targets))
+    return rec
+
+
+def _run(store: str, runner=None) -> Dict:
+    """한 번에 끝까지(시험용) — 운영은 durable_job 걸음."""
     rec = run_state(store)
-    rec["state"] = "finished"
-    _finish(store, rec, up)
-    return {"ok": True}
+    while rec.get("state") == "running":
+        rec = _run_step(_RUN_KEY.format(store), rec, time.time() + 3600, runner=runner)
+    return {"ok": True, "stopped": rec.get("state") == "stopped"}
 
 
-def _finish(store: str, rec: Dict, up) -> None:
+def _finish(store: str, rec: Dict, up) -> Dict:
     rec["finished_at"] = _now()
     rec["ok_count"] = sum(1 for d in rec.get("done") or [] if d.get("ok"))
     try:                                                           # 끝나면 상태별 수를 다시 읽는다
         rec["after_counts"] = {s: up.count_products([s]) for s in ("SALE", "WAIT", "OUTOFSTOCK", "SUSPENSION")}
     except Exception as exc:                                       # noqa: BLE001
         rec["after_counts"] = {"error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    from src.seller_console import smartstore_routing as R
+    word = "멈춤" if rec.get("state") == "stopped" else "완료"
+    rec["push"] = {"title": f"{R.store_label(store)} 판매 재개 {word} — 성공 {rec['ok_count']:,}/{rec.get('total')}",
+                   "body": f"실패 {len(rec.get('done') or []) - rec['ok_count']}건은 네이버 원문으로 남겼어요.",
+                   "path": f"/seller/admin/smartstore-relist?store={store}"}
     _state_set(_RUN_KEY.format(store), rec)
     logger.warning("[셰고가 재개] %s 끝 — 성공 %d/%d · 다시 읽은 수 %s", store, rec["ok_count"], rec.get("total"), rec["after_counts"])
+    return rec
+
+
+def _register():
+    from src.services import durable_job as DJ
+    DJ.register("relist_build", _build_step)
+    DJ.register("relist_run", lambda key, rec, deadline: _run_step(key, rec, deadline))
+
+
+_register()

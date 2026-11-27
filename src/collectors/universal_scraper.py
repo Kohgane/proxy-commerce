@@ -213,10 +213,16 @@ def is_product_image(url: str) -> bool:
 
 
 def filter_product_images(urls) -> list:
-    """이미지 URL 목록에서 무관 이미지를 제거하고 순서 유지·중복 제거(첫 번째=대표)."""
+    """이미지 URL 목록에서 무관 이미지를 제거하고 순서 유지·중복 제거(첫 번째=대표).
+
+    오너 11-26 저녁 ⑤: 썸네일 주소는 원본 주소로 바꾼 뒤 거른다 — **실측으로 커짐이 확인된 규칙만**(알리 `_480x480q75.jpg_.avif` 꼬리 ·
+    테무 `?imageView2` 질의, `image_fullsize.to_fullsize`). 다른 소싱처 주소는 그대로. 바꾼 뒤 중복을 거르므로 썸네일·원본 두 장이 한 장이 된다."""
+    from src.collectors.image_fullsize import to_fullsize
     out, seen = [], set()
     for u in (urls or []):
         s = str(u or "").strip()
+        if s:
+            s = to_fullsize(s) or s
         if not s or s in seen or not is_product_image(s):
             continue
         seen.add(s)

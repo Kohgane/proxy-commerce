@@ -55,6 +55,9 @@
     {% if it.last_action and it.last_action.line %}
     <span class="ch-when-time" data-role="last-action-time">{{ it.last_action.line[:11] }}</span><span class="ch-when-short">{{ it.last_action.short }}</span><span class="ch-when-text"> {{ it.last_action.text }}</span>
     {% endif %}
+    {# 오너 11-27 02:07 ①: 줄 ⋯(또는 길게 누르기) — 카드를 안 열고 「다시 가져오기」 #}
+    <button type="button" class="ch-more" data-role="ch-row-more" data-item="{{ it.id }}" data-kind="{{ it.can_refetch or '' }}"
+            data-title="{{ _t }}" aria-label="{{ _t }} 더보기" aria-haspopup="dialog"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
   </td>
 </tr>
 {% endfor %}

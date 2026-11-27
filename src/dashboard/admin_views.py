@@ -1765,7 +1765,7 @@ def diagnostics_ocr_compare():
         idx = None
     started, err = None, ""
     if _rq.method == "POST" and _rq.values.get("do") == "census":
-        started = D.start_census()
+        started = D.start_census(by_uid=str(session.get("user_id") or ""))
         if not started:
             err = "다른 OCR 판정이 도는 중이에요"
     elif _rq.method == "POST" and item:
@@ -2113,29 +2113,35 @@ def _ncat_table_titles(limit: int = 1000) -> list:
     return rows
 
 
-def _ncat_table_run() -> dict:
+def _ncat_prepare() -> None:
     from src.uploaders import naver_categories as NC, coupang_categories as CC
-    from src.uploaders.naver_uploader import NaverSmartStoreUploader as SS
-    from src.db import image_translate_queue_pg as st
     if not (NC.tree() or {}).get("leaves"):
         NC.tree(refresh=True)
     if not (CC.table() or {}).get("paths"):
         CC._fetch_and_store()
-    out = []
-    for title, n in _ncat_table_titles():
-        row = {"title": title[:120], "count": n, "dict": SS.match_category(title)}
-        try:
-            s = NC.compute_suggestion({"title_ko": title})
-        except Exception as exc:                                  # noqa: BLE001
-            s = {"why": f"{type(exc).__name__}: {str(exc)[:120]}"}
-        rule = (s.get("coupang_rule") or {}) if isinstance(s.get("coupang_rule"), dict) else {}
-        row.update(coupang_id=s.get("coupang_id", ""), coupang=s.get("coupang", ""), coupang_path=s.get("coupang_path", ""),
-                   coupang_rule=rule.get("why", ""), coupang_predicted=(rule.get("predicted") or {}).get("name", ""),
-                   mapped=bool(s.get("mapped")),
-                   result=("auto" if s.get("id") else "candidates" if s.get("candidates") else "unset"),
-                   naver=s.get("name", ""), naver_id=s.get("id", ""), score=s.get("score", 0.0),
-                   candidates=" | ".join(c["name"] for c in s.get("candidates") or []), why=s.get("why", ""))
-        out.append(row)
+
+
+def _ncat_row(title: str, n: int) -> dict:
+    from src.uploaders import naver_categories as NC
+    from src.uploaders.naver_uploader import NaverSmartStoreUploader as SS
+    row = {"title": title[:120], "count": n, "dict": SS.match_category(title)}
+    try:
+        s = NC.compute_suggestion({"title_ko": title})
+    except Exception as exc:                                  # noqa: BLE001
+        s = {"why": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    rule = (s.get("coupang_rule") or {}) if isinstance(s.get("coupang_rule"), dict) else {}
+    row.update(coupang_id=s.get("coupang_id", ""), coupang=s.get("coupang", ""), coupang_path=s.get("coupang_path", ""),
+               coupang_rule=rule.get("why", ""), coupang_predicted=(rule.get("predicted") or {}).get("name", ""),
+               mapped=bool(s.get("mapped")),
+               result=("auto" if s.get("id") else "candidates" if s.get("candidates") else "unset"),
+               naver=s.get("name", ""), naver_id=s.get("id", ""), score=s.get("score", 0.0),
+               candidates=" | ".join(c["name"] for c in s.get("candidates") or []), why=s.get("why", ""))
+    return row
+
+
+def _ncat_finish(out: list) -> dict:
+    from src.uploaders import naver_categories as NC, coupang_categories as CC
+    from src.db import image_translate_queue_pg as st
     # Y11O-1(오너): 쿠팡 예측 리프 빈도(건수 합) 상위 — 매핑표에 있나(없으면 haiku가 고르고 후보 2개)
     leaves: dict = {}
     fixed = NC.fixed_map()
@@ -2160,6 +2166,47 @@ def _ncat_table_run() -> dict:
     return {"ok": True, **summary}
 
 
+
+
+def _ncat_table_run() -> dict:
+    """한 번에 끝까지(시험·스크립트) — 관리자 화면 POST는 서버 줄(`_ncat_step` · 이어하기)."""
+    _ncat_prepare()
+    return _ncat_finish([_ncat_row(t, n) for t, n in _ncat_table_titles()])
+
+
+_NCAT_JOB = "ncat:table:job"
+
+
+def _ncat_step(key: str, rec: dict, deadline: float) -> dict:
+    """오너 11-27 02:07 ③: 상품명 최대 1,000개 × 쿠팡 예측 — 5분을 넘길 수 있다. 20개마다 저장 · 일꾼이 새로 떠도 틱이 이어서."""
+    import time as _time
+    from src.services import durable_job as DJ
+    if not rec.get("prepared"):
+        _ncat_prepare()
+        rec["prepared"] = True
+    titles, out = rec.get("titles") or [], rec.setdefault("out", [])
+    while _time.time() < deadline and len(out) < len(titles):
+        t, n = titles[len(out)]
+        out.append(_ncat_row(t, int(n)))
+        if len(out) % 20 == 0:
+            rec["progress"] = {"n": len(out), "total": len(titles), "label": f"상품명 {len(out)}/{len(titles)}"}
+            DJ.save(key, rec)
+    if len(out) >= len(titles):
+        summ = _ncat_finish(out)
+        rec.update(state="done", out=[], titles=[], result={k: v for k, v in summ.items() if k != "leaves_top"},
+                   push={"title": f"네이버 카테고리 표 완료 — 자동 {summ.get('auto')} · 후보 {summ.get('candidates')} · 미지정 {summ.get('unset')}",
+                         "body": f"상품명 {summ.get('titles')}개", "path": ""})
+    return rec
+
+
+def _ncat_register():
+    from src.services import durable_job as DJ
+    DJ.register("ncat_table", _ncat_step)
+
+
+_ncat_register()
+
+
 @admin_panel_bp.route("/diagnostics/naver-category-table", methods=["GET", "POST"])
 def diagnostics_naver_category_table():
     """운영 수집 상품명 → 쿠팡 예측 경로 → 네이버 자동 지정(자동·후보·미지정) 표. POST = 백그라운드로 다시 계산."""
@@ -2168,7 +2215,13 @@ def diagnostics_naver_category_table():
     from src.db import image_translate_queue_pg as st
     started = None
     if _rq.method == "POST":
-        started, _state = bg_job.start("naver-category-table", _ncat_table_run)
+        # 오너 11-27 02:07 ③: 서버 줄에서(재시작에도 이어서) — 스레드 이름은 예전 그대로(화면의 잡 상태 줄)
+        from src.services import durable_job as _DJ
+        if _DJ.status(_NCAT_JOB).get("state") == "running" and not _DJ.status(_NCAT_JOB).get("stalled"):
+            started = False
+        else:
+            started = _DJ.begin(_NCAT_JOB, "ncat_table", {"titles": [[t, n] for t, n in _ncat_table_titles()], "out": []},
+                                by_uid=str(session.get("user_id") or ""), bg_name="naver-category-table")["started"]
     data = st.state_get(_NCAT_TABLE_KEY) or {}
     if _rq.args.get("format") == "csv":
         import csv

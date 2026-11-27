@@ -135,6 +135,12 @@ def _boot_chores():
             _sd_rr.start_daemon(_rr.boot_sweep, "restart-recovery")
         except Exception as _rrexc:                              # noqa: BLE001
             logger.warning("재시작 회수 시작 실패(계속): %s", _rrexc)
+        # 오너 11-27 02:07 ②: 관리자 긴 작업 줄 — 새로 뜬 일꾼이 10분 틱을 기다리지 않고 멈춘 줄을 이어서
+        try:
+            from src.services import durable_job as _dj
+            _dj.boot_resume()
+        except Exception as _djexc:                              # noqa: BLE001
+            logger.warning("긴 작업 부팅 이어하기 시작 실패(계속): %s", _djexc)
 
 
 _BG_STARTED = {"pid": None}

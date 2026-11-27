@@ -1796,6 +1796,13 @@ def collect_bulk():
         "user_id": user.get("user_id"),
     }
     _bulk_jobs[job_id] = job
+    # 오너 11-27 02:07 ③: 1,000건까지 도는 일 — 줄(app_state)에 URL·커서를 두고 5건마다 저장(일꾼이 새로 떠도 틱이 이어서 ·
+    #   어느 일꾼에 물어도 진행이 보인다). 시작은 예전처럼 이 일꾼 스레드에서 바로.
+    try:
+        from src.services import durable_job as _DJ
+        _DJ.begin(_BULK_KEY.format(job_id), "bulk_collect", {**job, "urls": urls}, by_uid=str(user.get("user_id") or ""), start=False)
+    except Exception as exc:                                     # noqa: BLE001 — 줄을 못 세워도 예전처럼 이 일꾼에서는 돈다
+        logger.warning("[벌크 수집] 줄 저장 실패(이 일꾼에서만 돎): %s", exc)
 
     # 백그라운드 스레드에서 처리
     thread = threading.Thread(
@@ -2014,7 +2021,16 @@ def get_bulk_status(job_id: str):
 
     job = _bulk_jobs.get(job_id)
     if not job:
+        try:                                                     # 다른 일꾼이 시작했거나 재시작 뒤 — 줄에서 읽는다
+            from src.services import durable_job as _DJ
+            job = _DJ.status(_BULK_KEY.format(job_id)) or None
+            if job and str(job.get("user_id") or "") != str(user.get("user_id") or ""):
+                job = None
+        except Exception:                                        # noqa: BLE001
+            job = None
+    if not job:
         return jsonify({"ok": False, "error": "잡을 찾을 수 없습니다."}), 404
+    job = {k: v for k, v in job.items() if k not in ("urls", "holder", "kind", "push")}
 
     return jsonify({
         "ok": True,
@@ -2153,40 +2169,74 @@ def collect_one_url(url: str, *, seller_id: str = "", source: str = "bulk", raw_
         return {"url": url, "ok": False, "error": str(exc)[:100]}
 
 
-def _run_bulk_job(job_id: str, urls: list) -> None:
-    """벌크 수집 백그라운드 실행 (스레드 풀)."""
-    job = _bulk_jobs.get(job_id)
-    if not job:
-        return
+_BULK_KEY = "bulkcollect:{}"
+_BULK_KEEP_RESULTS = 200
 
-    seller_id_val = str(job.get("user_id") or "")
+
+def _run_bulk_job(job_id: str, urls: list) -> None:
+    """벌크 수집 — 줄(`bulkcollect:<id>`)을 끝까지 몬다(5건마다 저장). 줄이 없으면(저장 실패) 이 일꾼에서 메모리로만."""
+    from src.services import durable_job as _DJ
+    key = _BULK_KEY.format(job_id)
+    if _DJ.get(key).get("state") == "running":
+        _DJ.drive(key)
+        return
+    rec = dict(_bulk_jobs.get(job_id) or {})
+    if not rec:
+        return
+    rec.update(urls=urls, state="running")
+    while rec.get("state") == "running":
+        rec = _bulk_step("", rec, float("inf"))
+
+
+def _bulk_step(key: str, rec: dict, deadline: float) -> dict:
+    """한 걸음 — 커서(`processed`)부터 5건씩(동시 5) · 5건마다 저장 · 끝나면 완료 알림."""
+    import time as _time
+    from src.services import durable_job as _DJ
+    seller_id_val = str(rec.get("user_id") or "")
+    urls = list(rec.get("urls") or [])
 
     def process_url(url: str) -> dict:
         return collect_one_url(url, seller_id=seller_id_val, source="bulk")
 
     with ThreadPoolExecutor(max_workers=_BULK_MAX_WORKERS) as executor:
-        futures = {executor.submit(process_url, url): url for url in urls}
-        for future in futures:
-            try:
-                result = future.result(timeout=30)
-            except Exception as exc:
-                result = {"url": futures[future], "ok": False, "error": str(exc)[:100]}
+        while _time.time() < deadline and int(rec.get("processed") or 0) < len(urls):
+            i = int(rec.get("processed") or 0)
+            batch = urls[i:i + _BULK_MAX_WORKERS]
+            futures = {executor.submit(process_url, url): url for url in batch}
+            for future in futures:
+                try:
+                    result = future.result(timeout=30)
+                except Exception as exc:
+                    result = {"url": futures[future], "ok": False, "error": str(exc)[:100]}
+                rec["processed"] = int(rec.get("processed") or 0) + 1
+                if result.get("ok"):
+                    rec["success"] = int(rec.get("success") or 0) + 1
+                else:
+                    rec["failed"] = int(rec.get("failed") or 0) + 1
+                rec.setdefault("results", []).append(result)
+            rec["results"] = rec["results"][-_BULK_KEEP_RESULTS:]
+            rec["progress"] = {"n": rec["processed"], "total": len(urls), "label": f"수집 {rec['processed']}/{len(urls)}"}
+            if key:
+                _DJ.save(key, rec)
+            if rec.get("job_id"):
+                _bulk_jobs[str(rec["job_id"])] = {k: v for k, v in rec.items() if k != "urls"}
+    if int(rec.get("processed") or 0) >= len(urls):
+        rec["status"] = "completed"
+        rec["state"] = "finished"
+        rec["completed_at"] = datetime.now(timezone.utc).isoformat()
+        rec["push"] = {"title": f"벌크 수집 완료 — 성공 {rec.get('success', 0)}/{rec.get('total')}",
+                       "body": f"실패 {rec.get('failed', 0)}건은 사유와 함께 남겼어요.", "path": "/seller/collect/history"}
+        if rec.get("job_id"):
+            _bulk_jobs[str(rec["job_id"])] = {k: v for k, v in rec.items() if k != "urls"}
+        user_id = rec.get("user_id", "?")
+        _notify_telegram(f"📦 벌크 수집 완료: {rec.get('success', 0)}/{rec.get('total')} 성공 (by {user_id})")
+        logger.info("벌크 수집 완료: job_id=%s %s/%s", rec.get("job_id"), rec.get("success"), rec.get("total"))
+    return rec
 
-            job["processed"] += 1
-            if result.get("ok"):
-                job["success"] += 1
-            else:
-                job["failed"] += 1
-            job["results"].append(result)
 
-    job["status"] = "completed"
-    job["completed_at"] = datetime.now(timezone.utc).isoformat()
+def _register_bulk():
+    from src.services import durable_job as _DJ
+    _DJ.register("bulk_collect", _bulk_step)
 
-    # 완료 알림
-    user_id = job.get("user_id", "?")
-    msg = (
-        f"📦 벌크 수집 완료: {job['success']}/{job['total']} 성공 "
-        f"(by {user_id})"
-    )
-    _notify_telegram(msg)
-    logger.info("벌크 수집 완료: job_id=%s %s/%s", job_id, job["success"], job["total"])
+
+_register_bulk()

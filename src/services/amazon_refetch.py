@@ -21,7 +21,9 @@ def _usable(imgs) -> int:
     return sum(1 for u in imgs or [] if isinstance(u, str) and usable_photo(u))
 
 
-def run(item_id: str, seller_ids: Optional[set] = None, *, fetch=None, fetch_html=None, fill_children: bool = True) -> Dict:
+def run(item_id: str, seller_ids: Optional[set] = None, *, fetch=None, fetch_html=None, fill_children: bool = True,
+        measure=None) -> Dict:
+    """`measure`: 새 사진 긴 변 재기(기본 = `photo_fix.measure` · 시험에서 `fetch`만 넣으면 재지 않는다 — 네트워크 0)."""
     from src.collectors.universal_scraper import UniversalScraper
     from src.seller_console import collect_history_store as chs
     item = chs.get(item_id, seller_ids=seller_ids) if seller_ids else chs.get(item_id)
@@ -71,7 +73,17 @@ def run(item_id: str, seller_ids: Optional[set] = None, *, fetch=None, fetch_htm
     rec["after"] = {"images": len(cur), "usable": _usable(cur), "options": len(ex.get("options") or []),
                     "detail": len(ex.get("detail_images") or []), "source": ap.get("image_source", ""),
                     "price_source": ap.get("price_source", "")}
+    # 오너 11-26 저녁 ①: 카드 결과 한 줄 「잰 n장 전부 1000px 넘어요」 재료 — 새로 읽은 사진만 실제로 잰다(머리만 · 예산 20초)
+    if measure is None and fetch is None:
+        from src.services.photo_fix import measure as measure
+    if measure is not None and new and "images" not in man:
+        try:
+            rec["after"]["sizes"] = measure(cur)
+        except Exception as exc:                                 # noqa: BLE001 — 못 재도 다시 가져오기는 그대로
+            logger.warning("[아마존 다시 가져오기] 크기 재기 실패: %s", exc)
     ex["amazon_refetch"] = rec
+    if ex.get("amazon_variants") and fill_children and "sku" not in man and "options" not in man:
+        ex["sku_fill"] = {"state": "pending"}                    # 카드가 「옵션별 가격 읽는 중」을 보이게(끝나면 fill_skus가 덮음)
     if rec["ok"]:
         ex["enrich_state"] = "done"
         ex.pop("enrich_rerun", None)

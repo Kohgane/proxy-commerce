@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% block title %}{{ {'stores': '스토어 진단', 'item': '상품 진단', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증 진단'}[mode] }}{% endblock %}
+{% block title %}{{ {'stores': '스토어 진단', 'item': '상품 진단', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증 진단', 'sources': '소싱처 진단', 'restarts': '재시작 기록'}[mode] }}{% endblock %}
 {% block content %}
 {# 오너 11-26 진단 3 — 관리자 진단을 사람이 읽게: 판정 한 줄 + 한글 표. 원문 JSON은 ?raw=1. 읽기만(재보강 실행은 오너 탭 두 번). #}
 <style>
@@ -21,9 +21,9 @@
   .dg-row-off td { color: var(--text-muted, var(--muted)); }
 </style>
 <div class="dg-wrap" data-role="admin-diag" data-mode="{{ mode }}">
-  <p class="pc-overline">관리자 진단 · 읽기만</p>
-  <h1 class="pc-h2">{{ {'stores': '스마트스토어 키·한도', 'item': '수집 행 사진', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증(읽기 전용)'}[mode] }}</h1>
-  <div class="dg-verdict {% if (mode == 'stores' and d.mismatch) %}is-bad{% endif %}" data-role="dg-verdict">{{ verdict }}</div>
+  <p class="pc-overline">{{ '관리자 · 실행(두 번 눌러야 시작)' if mode == 'reenrich' else '관리자 진단 · 읽기만' }}</p>
+  <h1 class="pc-h2">{{ {'stores': '스마트스토어 키·한도', 'item': '수집 행 사진', 'reenrich': '타오바오 재보강', 'prevalidate': '사전검증(읽기 전용)', 'sources': '소싱처별 수집 상태', 'restarts': '일꾼이 왜 새로 떴나'}[mode] }}</h1>
+  <div class="dg-verdict {% if (mode == 'stores' and d.mismatch) or (mode == 'sources' and verdict != '걸리는 소싱처 없음') %}is-bad{% endif %}" data-role="dg-verdict">{{ verdict }}</div>
 
   {% if mode == 'stores' %}
     {% for r in d.stores %}
@@ -83,14 +83,49 @@
     {% endfor %}
     <p class="small"><a href="?raw=1&markets={{ d.markets|join(',') }}">원문(JSON)</a></p>
 
+  {% elif mode == 'sources' %}
+    {# 오너 11-26 저녁 ②: 최근 N일 수집 행 — 소싱처마다 사진·옵션·주소. 사진은 주소 크기 토큰으로만 판정(모르면 따로 셈) #}
+    <p class="small">최근 {{ d.days }}일 · {{ d.rows }}행 · <strong>읽기 전용</strong>(쓰기·마켓 호출 0){% if d.measure %} · 소싱처마다 첫 사진 {{ d.measure }}장 실제로 잼{% endif %}</p>
+    {% for a in d.sources %}
+    <section class="dg-card" data-role="dg-source" data-source="{{ a.source }}"><h2>{{ a.label }} — {{ a.rows }}행</h2>
+      <table class="dg-t"><tbody>
+        <tr><td>쓸 만한 사진</td><td class="num {{ 'dg-bad' if a.usable_pct is not none and a.usable_pct < 80 else '' }}" data-role="dg-src-usable">{% if a.usable_pct is none %}판정 못 함{% else %}{{ a.usable_pct }}%{% endif %}</td></tr>
+        <tr><td>사진(전체 · 작은 판 · 주소로는 모름)</td><td class="num">{{ a.images }} · {{ a.small }} · {{ a.unknown }}</td></tr>
+        <tr><td>사진 없는 행</td><td class="num {{ 'dg-bad' if a.no_images else '' }}">{{ a.no_images }}</td></tr>
+        <tr><td>옵션 있는데 SKU 0</td><td class="num {{ 'dg-bad' if a.opt_no_sku else '' }}" data-role="dg-src-optnosku">{{ a.opt_no_sku }} / 옵션 행 {{ a.opt_rows }}</td></tr>
+        <tr><td>주소가 짧은 링크</td><td class="num {{ 'dg-bad' if a.short else '' }}" data-role="dg-src-short">{{ a.short }}</td></tr>
+        {% if a.measured %}<tr><td>잰 첫 사진(긴 변)</td><td class="num">{{ a.measured.read }}/{{ a.measured.n }}장 · 500px 미만 {{ a.measured.under }}{% if a.measured.read %} · {{ a.measured.min }}~{{ a.measured.max }}px{% endif %}</td></tr>{% endif %}
+      </tbody></table>
+      {% for x in a.samples %}<div class="dg-url">짧은 링크 · {{ x.id[:8] }} · {{ x.url }}</div>{% endfor %}
+    </section>
+    {% endfor %}
+    <p class="small"><a href="?days={{ d.days }}&measure=5">첫 사진 5장씩 재 보기</a> · <a href="?raw=1&days={{ d.days }}">원문(JSON)</a></p>
+
+  {% elif mode == 'restarts' %}
+    {# 오너 11-27 02:07 ②: `rss:restart` 원문 — 시각은 KST. exit=우리 상한이 내림 · boot=새 일꾼(짝 없으면 배포·Render 재시작·강제 종료) #}
+    <section class="dg-card" data-role="dg-restarts"><table class="dg-t"><thead><tr><th>시각(KST)</th><th>무엇</th><th>원문</th></tr></thead><tbody>
+    {% for r in d.rows %}<tr data-role="dg-restart-row" data-kind="{{ r.kind }}">
+      <td>{{ r.at_kst }}</td>
+      <td class="{{ 'dg-bad' if r.kind == 'exit' else '' }}">{{ {'exit': '내림', 'boot': '새로 뜸', 'quiet': '요청 멈춤'}.get(r.kind, r.kind) }}</td>
+      <td class="dg-url">{% if r.kind == 'exit' %}사유 {{ r.reason }} · 일꾼 {{ r.worker_mb }}MB/상한 {{ r.worker_limit }} · 합계 {{ r.inst_mb }}MB/상한 {{ r.inst_limit }} · {{ r.up_min }}분 떠 있었음 · pid {{ r.pid }}
+        {% elif r.kind == 'boot' %}pid {{ r.pid }} · {{ r.mb }}MB · {{ r.reason }}{% if r.after_exit_sec is defined %} · 내린 뒤 {{ r.after_exit_sec }}초{% endif %}
+        {% else %}{{ r.idle_min }}분 요청 0 · 처리 중 {{ r.http_busy }}/{{ r.threads_cfg }}{% for a in (r.active or [])[:4] %} · {{ a.path }}({{ a.sec }}초){% endfor %}{% endif %}</td></tr>
+    {% else %}<tr><td colspan="3">기록 없음</td></tr>{% endfor %}
+    </tbody></table></section>
+    <p class="small"><a href="?raw=1">원문(JSON)</a></p>
+
   {% elif mode == 'reenrich' %}
     {% if d.note %}<div class="pc-status pc-status-warning">{{ d.note }}</div>{% endif %}
     <section class="dg-card" data-role="dg-reenrich-run">
       <p class="mb-2" data-role="dg-estimate">예상 비용: {{ d.estimate.line }}</p>
       {% set b = d.batch or {} %}
+      {# 오너 11-27 02:07 ④: 어디서 도는지 사실대로 — 서버 줄(durable_job). 창을 닫아도 · 서버가 다시 떠도 끝낸 데서 이어서 #}
+      <p class="small" data-role="dg-reenrich-where">서버에서 돌아요 — 창을 닫아도 계속되고, 서버가 다시 떠도 끝낸 데서 이어서 돌아요. 끝나면 푸시로 알려요.</p>
       <button type="button" class="btn btn-primary dg-btn" data-role="dg-reenrich-go" data-count="{{ d.eligible }}"
-              {% if not d.enabled or not d.eligible or b.state == 'running' %}disabled{% endif %}>{{ d.eligible }}건 다시 가져오기</button>
-      <div class="small mt-2" data-role="dg-reenrich-state" aria-live="polite">{% if b.state == 'running' %}진행 {{ (b.done or [])|length }}/{{ b.total }}{% elif b.state == 'finished' %}지난 실행: 성공 {{ b.ok_count }}/{{ b.total }} ({{ b.finished_at }}){% endif %}</div>
+              {% if not d.enabled or not d.eligible or b.state == 'running' %}disabled{% endif %}>{% if b.state == 'running' %}도는 중 {{ (b.done or [])|length }}/{{ b.total }}{% else %}{{ d.eligible }}건 다시 가져오기{% endif %}</button>
+      <button type="button" class="btn btn-ghost dg-btn mt-2" data-role="dg-reenrich-stop" {% if b.state != 'running' %}hidden{% endif %}>멈춤</button>
+      <button type="button" class="btn btn-primary dg-btn mt-2" data-role="dg-reenrich-resume" {% if not (b.state == 'running' and b.stalled) %}hidden{% endif %}>멈췄어요 — 이어서 하기</button>
+      <div class="small mt-2" data-role="dg-reenrich-state" aria-live="polite">{% if b.state == 'running' %}진행 {{ (b.done or [])|length }}/{{ b.total }}{% if b.stalled %} · 멈췄어요({{ ((b.idle_sec or 0) // 60) }}분째 진전 없음){% endif %}{% elif b.state in ('finished', 'stopped') %}지난 실행({{ '멈춤' if b.state == 'stopped' else '끝' }}): 성공 {{ b.ok_count }}/{{ b.total }} ({{ b.finished_at }}){% endif %}</div>
       <table class="dg-t mt-2" data-role="dg-reenrich-result" {% if not b.done %}hidden{% endif %}><thead><tr><th>상품</th><th>결과</th></tr></thead><tbody>
         {% for x in b.done or [] %}<tr><td>{{ x.title or x.item_id }}</td><td class="{{ 'dg-ok' if x.ok else 'dg-bad' }}">{{ '성공' if x.ok else ('실패 — ' ~ (x.reason or x.state)) }}</td></tr>{% endfor %}
       </tbody></table>
@@ -110,9 +145,21 @@
   var go = document.querySelector('[data-role=dg-reenrich-go]'), st = document.querySelector('[data-role=dg-reenrich-state]');
   var tbl = document.querySelector('[data-role=dg-reenrich-result]'), armed = false, timer = null;
   function esc(t) { return String(t || '').replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  var stopB = document.querySelector('[data-role=dg-reenrich-stop]'), resB = document.querySelector('[data-role=dg-reenrich-resume]');
+  function post(body) {
+    return fetch(location.pathname, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+                                     body: JSON.stringify(body)}).then(function (r) { return r.json(); }).catch(function () { return {ok: false}; });
+  }
+  if (stopB) stopB.addEventListener('click', function () { stopB.disabled = true; post({stop: true}).then(function () { st.textContent = '멈추는 중 — 지금 하던 한 건까지 끝내요.'; }); });
+  if (resB) resB.addEventListener('click', function () { resB.disabled = true; post({resume: true}).then(function (d) { resB.disabled = false; st.textContent = d.ok ? '이어서 도는 중…' : (d.error || '이어 하지 못했어요'); if (!timer) timer = setInterval(poll, 4000); }); });
   function draw(b) {
     if (!b || !b.total) return;
-    st.textContent = b.state === 'running' ? '진행 ' + (b.done || []).length + '/' + b.total : (b.state === 'finished' ? '끝났어요 — 성공 ' + b.ok_count + '/' + b.total : (b.error || ''));
+    var n = (b.done || []).length;
+    st.textContent = b.state === 'running' ? '진행 ' + n + '/' + b.total + (b.stalled ? ' · 멈췄어요(' + Math.floor((b.idle_sec || 0) / 60) + '분째 진전 없음)' : '')
+                   : ((b.state === 'finished' || b.state === 'stopped') ? (b.state === 'stopped' ? '멈췄어요' : '끝났어요') + ' — 성공 ' + b.ok_count + '/' + b.total : (b.error || ''));
+    if (go) go.textContent = b.state === 'running' ? '도는 중 ' + n + '/' + b.total : go.textContent;
+    if (stopB) stopB.hidden = b.state !== 'running';
+    if (resB) resB.hidden = !(b.state === 'running' && b.stalled);
     tbl.hidden = !(b.done || []).length;
     tbl.querySelector('tbody').innerHTML = (b.done || []).map(function (x) {
       return '<tr><td>' + esc(x.title || x.item_id) + '</td><td class="' + (x.ok ? 'dg-ok' : 'dg-bad') + '">' + (x.ok ? '성공' : '실패 — ' + esc(x.reason || x.state)) + '</td></tr>';
@@ -129,7 +176,8 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok) { st.textContent = d.error || '시작하지 못했어요.'; go.disabled = false; armed = false; go.textContent = n + '건 다시 가져오기'; return; }
-        st.textContent = '진행 0/' + d.total; timer = setInterval(poll, 4000);
+        st.textContent = d.resumed ? '멈춘 데서 이어서 도는 중…' : (d.queued ? (d.note || '줄에 세웠어요') : '진행 0/' + d.total);
+        if (stopB) stopB.hidden = false; timer = setInterval(poll, 4000); poll();
       })
       .catch(function (e) { st.textContent = '네트워크 오류 — ' + ((e && e.message) || e); go.disabled = false; armed = false; });
   });
