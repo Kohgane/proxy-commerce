@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 SNAP_PREFIX = "diag:snap:"
-NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs")
+NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs", "blacklist")
 MAX_BYTES = 400_000
 
 #: 이름째 지우는 칸(대소문자 무시 · 부분 일치) — 주문·배송·개인 연락처
@@ -100,7 +100,7 @@ def _relist(arg: str) -> Dict:
     skip20 = [{f: x.get(f) for f in keep2} for x in rnd.sample(skips, min(20, len(skips)))]
     from src.services import risk_gate as RG
     try:
-        _bl = [b for b in RG._blacklist() if str(b).strip().lower() not in SR.BRAND_EXCEPT]
+        _bl = [b for b in RG.active_blacklist() if str(b).strip().lower() not in SR.BRAND_EXCEPT]
     except Exception:                                              # noqa: BLE001
         _bl = []
     brand_rows = []
@@ -114,7 +114,23 @@ def _relist(arg: str) -> Dict:
     kinds = Counter(("CP" if norm_code(x.get("seller_code")).startswith("CP-") else ("빈칸" if not x.get("seller_code") else "품번"))
                     for x in rows)
     mods = Counter(str(x.get("modified") or "")[:10] for x in rows).most_common(12)
+    # 오너 11-27 오후 ①: 마진 손계산 대조용 — 운영 입력값(환율·배대지·국제배송·관부가세·수수료·국내배송)과 켤 후보 표본 20(원가·출처·판매가·마진·사진)
+    mi = {}
+    try:
+        import os as _os
+        from src import price as P
+        fx = P._build_fx_rates()
+        mi = {"fx": {k: float(v) for k, v in (fx or {}).items() if isinstance(v, (int, float)) or hasattr(v, "as_tuple")},
+              "forwarder_fee_jpy": _os.getenv("FORWARDER_FEE_JPY", "300"), "shipping_fee_krw": _os.getenv("SHIPPING_FEE_DEFAULT", "12000"),
+              "customs_rate": _os.getenv("CUSTOMS_RATE_DEFAULT", "0.20"), "customs_threshold_krw": _os.getenv("CUSTOMS_THRESHOLD_KRW", "150000"),
+              "commission_pct": float(P.commission_pct("smartstore")[0] or 0), "domestic_shipping_krw": float(P.domestic_shipping_krw("smartstore"))}
+    except Exception as exc:                                       # noqa: BLE001
+        mi = {"error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    keep3 = keep + ("cost_src", "policy_price", "seller_code", "vault_reason", "src_url", "owner_ok")
+    ons = [x for x in rows if x.get("action") == "on"]
+    on20 = [{f: x.get(f) for f in keep3} for x in rnd.sample(ons, min(20, len(ons)))]
     return {"store": store, "plan": {k: v for k, v in p.items() if k != "rows"}, "samples": samples,
+            "margin_inputs": mi, "on20": on20,
             "skip20": skip20, "brand_rows": brand_rows, "code_kinds": dict(kinds), "modified_top": mods,
             "why_zero": SR.why_zero(p),
             "on_head": [{f: x.get(f) for f in keep} for x in rows if x.get("action") == "on"][:20],
@@ -168,8 +184,17 @@ def _jobs(arg: str) -> Dict:
     return {"jobs": out}
 
 
+def _blacklist_diag(arg: str) -> Dict:
+    """오너 11-27 15:18 0-2 — 운영 금지 브랜드 목록 원문(env COUPANG_BLACKLIST85) · 브랜드 낱말로 거른 것 · 허용 목록 · 지금 막는 것(읽기만)."""
+    from src.pipeline.coupang_replicate import load_blacklist85
+    from src.services import risk_gate as RG
+    raw = load_blacklist85()
+    return {"source": raw.get("source"), "count": raw.get("count"), "terms": list(raw.get("terms") or []),
+            "brand_terms": RG._blacklist(), "allow": sorted(RG.allowlist()), "active": RG.active_blacklist()}
+
+
 _BUILDERS = {"restarts": _restarts, "sources": _sources, "relist": _relist, "reenrich": _reenrich, "stores": _stores,
-             "item": _item, "prevalidate": _prevalidate, "jobs": _jobs}
+             "item": _item, "prevalidate": _prevalidate, "jobs": _jobs, "blacklist": _blacklist_diag}
 
 
 def build(name: str, arg: str = "") -> Dict:

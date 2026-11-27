@@ -76,6 +76,6 @@ def test_risk_card_says_claims_are_fixed_automatically():
 
 def test_blacklist_hold_stays_and_names_the_matched_words(monkeypatch):
     from src.services import risk_gate as R
-    monkeypatch.setattr(R, "_blacklist", lambda: ["Supreme"])
-    h = next(x for x in R.scan({"title_ko": "SUPREME 스타일 후드"})["hits"] if x["key"] == "blacklist")
-    assert h["grade"] == "hold" and "「SUPREME」" in h["why"]                  # 원문 그대로(목록 표기 아님)
+    monkeypatch.setattr(R, "_blacklist", lambda: ["CASETiFY"])               # 오너 11-27 0-2: Supreme은 상품 단위로 내려가 브랜드 단위 예로 바꿈
+    h = next(x for x in R.scan({"title_ko": "CASETIFY 스타일 케이스"})["hits"] if x["key"] == "blacklist")
+    assert h["grade"] == "hold" and "「CASETIFY」" in h["why"]                  # 원문 그대로(목록 표기 아님)

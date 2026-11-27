@@ -15,7 +15,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs")
+NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs", "blacklist")
 DB = "gogadb"
 _SAFE_ARG = re.compile(r"^[A-Za-z0-9_.,|:\-]{0,120}$")
 _PII = [re.compile(p) for p in (r"[\w.+-]+@[\w-]+\.[\w.-]+", r"(?<!\d)01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}(?!\d)",

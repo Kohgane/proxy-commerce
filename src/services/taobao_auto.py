@@ -118,6 +118,14 @@ def run(user_id: str, item_id: str, *, via: str = "", src: str = "auto") -> dict
             iid, _how = T.item_id_from(url, T.resolver_session("direct" if via == "onebound" else via))  # 단축 링크는 직결
         except T.NoProxy:
             iid = ""
+    if not iid and url:
+        # 오너 11-27 오후 ③: 직결로 안 열리는 단축 링크(e.tb.cn)는 서울 릴레이로 한 번 더(읽기만)
+        try:
+            from src.market_relay import api_relay_enabled
+            if api_relay_enabled():
+                iid, _how = T.item_id_via_relay(url)
+        except Exception:                                          # noqa: BLE001
+            iid = iid or ""
     if not iid:
         rec = {"state": "manual", "route": via, "at": now, "kind": "error",
                "reason": ("상품번호 해석 실패" if via == "onebound" else "상품번호를 못 찾았어요(단축 링크를 펴지 못함)")}

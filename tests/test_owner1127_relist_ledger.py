@@ -219,6 +219,8 @@ def test_registration_scan_uses_same_compat_rule(monkeypatch, title, hit):
     from src.services import risk_gate as RG
     monkeypatch.setattr(RG, "_blacklist", lambda: ["apple", "애플", "samsung", "garmin", "supreme"])
     monkeypatch.setattr(RG, "allowlist", lambda: set())
+    _t = RG.tokens()
+    monkeypatch.setattr(RG, "tokens", lambda: {**_t, "product_level": []})          # 호환 규칙만 본다(상품 단위 브랜드 목록과 별개)
     got = RG.scan({"title_ko": title, "coupang_name": title})
     assert any(h.get("key") == "blacklist" or str(h.get("label") or "").startswith("브랜드 블랙") for h in got["hits"]) is hit
 
@@ -253,10 +255,12 @@ def test_last_part_rebuilds_list(state, monkeypatch):
     from src.services import oneshot_ops as O
     from src.services import smartstore_relist as SR
     seen = []
-    monkeypatch.setattr(SR, "start_build", lambda store, by_uid="": (seen.append(store), {"ok": True, "started": True})[1])
+    monkeypatch.setattr(SR, "start_build", lambda store, by_uid="": (seen.append((store, by_uid)), {"ok": True, "started": True})[1])
+    from src.auth import identity as _idn
+    monkeypatch.setattr(_idn, "OWNER_USER_ID", "owner-uid-1")
     out = O._run({"op": "relist_ledger_load", "item_id": "chezgoga:cost_pin:1:t", "store": "chezgoga", "part": 1, "parts": 1,
                   "src": "cost_pin", "rows": [{"code": "CP-15000000001", "cost": 30, "currency": "USD"}], "rebuild": True})
-    assert out["ok"] and seen == ["chezgoga"] and out["rebuild"]["started"]
+    assert out["ok"] and seen == [("chezgoga", "owner-uid-1")] and out["rebuild"]["started"]      # 끝나면 오너에게 푸시
 
 
 @pytest.mark.parametrize("title,word,hit", [
@@ -270,3 +274,131 @@ def test_brand_word_inside_other_word_is_not_brand(title, word, hit):
     """11-27 운영 표본: 「보스턴」·「Ping Pong」은 금지 브랜드 아님(판매 재개·등록 같은 함수) · 진짜 브랜드 상품은 그대로."""
     from src.services import risk_gate as RG
     assert bool(RG.blacklist_words(title, [word])) is hit
+
+
+@pytest.mark.parametrize("text,iid", [
+    ("var url = 'https://item.taobao.com/item.htm?ut_sk=1.x&amp;id=789012345678&amp;sourceType=item'", "789012345678"),
+    ("https://m.tb.cn/h.x?tk=a&url=https%3A%2F%2Fa.m.taobao.com%2Fi654321098765.htm%3Fp%3D1", "654321098765"),
+    ("location.href='https://detail.tmall.com/item.htm?spm=a&id=612345678901'", "612345678901"),
+    ('{"itemId":"698765432109","title":"x"}', "698765432109"),
+    ("redirect=https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fft%3Dt%26id%3D723456789012", "723456789012"),
+    ("https://e.tb.cn/h.8qaTtW938JXlfnK?tk=otdQT7DEulq", ""),
+])
+def test_taobao_share_page_id_forms(text, iid):
+    """오너 11-27 오후 ③: e.tb.cn → m.tb.cn 본문의 상품 주소 꼴(`&amp;id=`·`%26id%3D`·`/i<번호>.htm`·`itemId`) — 「상품번호 해석 실패」 수리."""
+    from src.collectors.taobao_mtop import id_in_text
+    assert id_in_text(text) == iid
+
+
+def test_short_link_resolves_through_relay_location_hops():
+    """직결로 안 열리는 e.tb.cn → 릴레이가 돌려준 Location을 따라가 상품번호(읽기만)."""
+    from src.collectors.taobao_mtop import item_id_via_relay
+
+    class R:
+        def __init__(self, status, text="", loc=""):
+            self.status_code, self.text, self.headers = status, text, ({"Location": loc} if loc else {})
+    hops = {"https://e.tb.cn/h.x?tk=1": R(302, loc="https://m.tb.cn/h.x?tk=1"),
+            "https://m.tb.cn/h.x?tk=1": R(200, "<script>var url='https://item.taobao.com/item.htm?ut=1&amp;id=1060535477134'</script>")}
+    seen = []
+    iid, how = item_id_via_relay("https://e.tb.cn/h.x?tk=1", send=lambda m, u, h, j, d, t: (seen.append((m, u)), hops[u])[1])
+    assert iid == "1060535477134" and "릴레이" in how and all(m == "GET" for m, _u in seen)
+    iid, how = item_id_via_relay("https://e.tb.cn/h.y", send=lambda *a: R(200, "<html>로그인</html>"))
+    assert iid == "" and "못 찾음" in how
+
+
+def test_allowlisted_brands_pass_in_relist_and_registration(monkeypatch):
+    """오너 11-27 15:18 0-1: Apotheke Fragrance · Imaginary Authors 허용 — 판매 재개·등록 사전검증 같은 목록(대소문자 무관)."""
+    from src.services import risk_gate as RG
+    monkeypatch.setattr(RG, "_blacklist", lambda: ["Apotheke Fragrance", "Imaginary Authors", "supreme"])
+    _t = RG.tokens()
+    monkeypatch.setattr(RG, "tokens", lambda: {**_t, "product_level": []})
+    assert {"Apotheke Fragrance", "아포테케", "Imaginary Authors", "이매지너리오써스"} <= {a for a in RG.allowlist()}
+    assert RG.active_blacklist() == ["supreme"]
+    assert RG.blacklist_words("[해외직구] Apotheke Fragrance 아포테케 프래그런스 오일버너 BRASS") == []
+    assert RG.blacklist_words("Supreme 백팩") == ["supreme"]
+    got = RG.scan({"title_ko": "[해외직구] Imaginary Authors 이매지너리 오서스 A City On Fire 오 드 퍼퓸 50ml"})
+    assert not any(h.get("key") == "blacklist" for h in got["hits"])
+    from src.services import smartstore_relist as SR
+    assert "Apotheke Fragrance" not in SR._rules()[1]
+
+
+def test_rejected_product_blocks_that_product_only(state, monkeypatch, tmp_path):
+    """오너 11-27 15:18 0-2: 반려·소명 났던 그 상품만 막는다 — 같은 브랜드 다른 상품은 통과 · 판매 재개는 「반려 이력(날짜·사유)」로 뺌(못 고름)."""
+    import json
+    from src.services import risk_gate as RG
+    f = tmp_path / "rej.json"
+    f.write_text(json.dumps({"rows": [{"brand": "Imaginary Authors", "market": "쿠팡", "date": "2026-10-02", "reason": "상표권 침해 신고",
+                                       "seller_code": "CP-15000000001", "url": "https://imaginaryauthors.com/products/a-city-on-fire"}]}),
+                 encoding="utf-8")
+    monkeypatch.setattr(RG, "_REJ_FILE", f)
+    RG._rej_cache.update(at=0.0, rows=None)
+    monkeypatch.setattr(RG, "_blacklist", lambda: [])
+    hit = RG.scan({"title_ko": "Imaginary Authors A City On Fire 50ml", "url": "https://imaginaryauthors.com/products/a-city-on-fire?v=1"})
+    assert any(h["key"] == "rejected_product" and h["grade"] == "block" for h in hit["hits"])
+    other = RG.scan({"title_ko": "Imaginary Authors Bull's Blood 50ml", "url": "https://imaginaryauthors.com/products/bulls-blood"})
+    assert not any(h["key"] == "rejected_product" for h in other["hits"])
+    SR = _env(monkeypatch)
+    up = _mirrors(monkeypatch, [("Imaginary Authors A City On Fire", "CP15000000001"), ("Imaginary Authors Bull's Blood", "CP-15000000002")])
+    p = SR.build("chezgoga", up=up, size_of=_size)
+    by = {x["channel_no"]: x for x in p["rows"]}
+    assert "rejected_hist" in by["30000"]["exclude"] and "2026-10-02" in " ".join(by["30000"]["exclude_detail"])
+    assert "rejected_hist" not in by["30001"]["exclude"]
+    assert SR.owner_pick("chezgoga", ["30000"])["locked"][0]["channel_no"] == "30000"
+    RG._rej_cache.update(at=0.0, rows=None)
+
+
+def test_live_source_price_wins_and_soldout_skips(state, monkeypatch):
+    """오너 11-27 15:18 0-3: 소싱처 현재가(실측)가 옛 장부 원가보다 먼저 · 출처 「소싱처 실측(날짜)」 · 품절이면 사유로 뺌."""
+    SR = _env(monkeypatch)
+    from src.services import relist_ledger as RL
+    RL.load_part("chezgoga", 1, 1, "sourcing_map", [{"code": "CP-15000000001", "cost": "400", "currency": "USD"},
+                                                    {"code": "CP-15000000002", "cost": "40", "currency": "USD"}])
+    RL.load_part("chezgoga", 1, 1, "source_live", [
+        {"code": "CP-15000000001", "cost": "42", "currency": "USD", "updated": "2026-11-27", "src_state": "ok", "via": "shopify .js"},
+        {"code": "CP-15000000002", "cost": "39", "currency": "USD", "updated": "2026-11-27", "src_state": "soldout"}])
+    up = _mirrors(monkeypatch, [("지갑", "CP-15000000001"), ("램프", "CP-15000000002")])
+    p = SR.build("chezgoga", up=up, size_of=_size)
+    by = {x["channel_no"]: x for x in p["rows"]}
+    assert by["30000"]["cost"] == 42.0 and by["30000"]["cost_src"] == "소싱처 실측(11-27)" and by["30000"]["action"] == "on"
+    assert "src_soldout" in by["30001"]["exclude"] and "품절" in " ".join(by["30001"]["exclude_detail"])
+
+
+def test_src_live_job_only_appends_queue_and_reads_shopify_js(monkeypatch):
+    """SRCLIVE1127(오라클): 쓰기는 큐 덧붙이기 하나 · Shopify `.js`(가격 센트·재고)+`/cart.js`(통화) · 아마존은 실측 못 함(지어내지 않음)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("src_live_1127", "ops/oracle_a1/src_live_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    up = m.SQL.upper()
+    assert up.count("UPDATE APP_STATE") == 1 and "'ops:oneshot:queue'" in m.SQL
+    for bad in ("DELETE", "DROP", "TRUNCATE", "ALTER", "COLLECT_HISTORY", "ORDERS"):
+        assert bad not in up
+
+    class R:
+        def __init__(self, status, data=None, ctype="application/json"):
+            self.status_code, self._d, self.headers, self.ok, self.text = status, data, {"Content-Type": ctype}, status < 400, ""
+
+        def json(self):
+            return self._d
+    pages = {"https://shop.example.com/products/a.js": R(200, {"variants": [{"price": 4200, "available": True}, {"price": 3900, "available": False}]}),
+             "https://shop.example.com/cart.js": R(200, {"currency": "USD"}),
+             "https://shop.example.com/products/gone.js": R(404)}
+    monkeypatch.setattr(m.S, "get", lambda u, timeout=20: pages[u])
+    monkeypatch.setattr(m, "_pace", lambda host, gap=0.8: None)
+    assert m.read("https://shop.example.com/products/a?variant=1") == {"cost": 42.0, "currency": "USD", "state": "ok", "via": "shopify .js"}
+    assert m.read("https://shop.example.com/products/gone")["state"] == "gone"
+    assert m.read("https://www.amazon.com/dp/B0X")["state"] == "unknown"
+
+
+def test_product_level_brands_leave_blacklist_but_their_rejected_products_stay_blocked(monkeypatch):
+    """오너 11-27 15:18 0-2: 근거가 특정 상품이면 브랜드 줄을 빼고 그 상품만 — 브랜드 단위 근거(CASETiFY 등)는 그대로."""
+    from src.services import risk_gate as RG
+    RG._rej_cache.update(at=0.0, rows=None)
+    monkeypatch.setattr(RG, "_blacklist", lambda: ["Patagonia", "Nike", "CASETiFY", "Peter Millar"])
+    assert RG.active_blacklist() == ["CASETiFY", "Peter Millar"]
+    assert RG.blacklist_words("Patagonia Nano Puff Jacket") == []
+    assert RG.blacklist_words("CASETiFY 아이폰 케이스") == ["CASETiFY"]
+    hit = RG.scan({"title_ko": "Patagonia Better Sweater", "uploaded": [{"market": "coupang:gogane", "product_id": "16302192201"}]})
+    assert any(h["key"] == "rejected_product" for h in hit["hits"])                    # 반려 났던 그 상품은 막힘
+    other = RG.scan({"title_ko": "Patagonia Nano Puff", "uploaded": [{"market": "coupang:gogane", "product_id": "16399999999"}]})
+    assert not any(h["key"] in ("rejected_product", "blacklist") for h in other["hits"])   # 같은 브랜드 다른 상품은 통과

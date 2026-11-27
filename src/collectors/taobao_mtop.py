@@ -209,9 +209,52 @@ def item_id_from(arg: str, s=None) -> tuple:
         body = r.text[:200000]
     except Exception as exc:                                    # noqa: BLE001
         return "", f"{pre}단축 링크 열기 실패 {type(exc).__name__}"
-    m = re.search(r"[?&]id=(\d{6,15})", r.url) or re.search(r"[?&]id=(\d{6,15})", body) \
-        or re.search(r"item[_.]?id[\"'=:\s]+(\d{6,15})", body, re.I)
-    return (m.group(1) if m else ""), f"{pre}HTTP {r.status_code} · 최종 주소 {r.url[:80]} · 본문 {len(body)}자"
+    got = id_in_text(r.url) or id_in_text(body)
+    return got, f"{pre}HTTP {r.status_code} · 최종 주소 {r.url[:80]} · 본문 {len(body)}자"
+
+
+#: 오너 11-27 오후 ③: 공유 단축 링크(e.tb.cn → m.tb.cn) 본문은 HTML·JS라 상품 주소가 `&amp;id=`·`%26id%3D`·`/i<번호>.htm`·
+#:   `"itemId":"…"`처럼 적힌다 — `[?&]id=`만 찾으면 놓쳐 「상품번호 해석 실패」가 났다.
+_ID_PATTERNS = (
+    r"(?:[?&]|&amp;|%26|%3F)(?:id|itemId|item_id)(?:=|%3D)(\d{6,15})",
+    r"(?:item|detail)\.(?:taobao|tmall)\.com/(?:item\.htm)?[^\s\"'<>]*?(?:[?&]|&amp;|%26)id(?:=|%3D)(\d{6,15})",
+    r"\.(?:taobao|tmall)\.com(?:/|%2F)i(\d{6,15})\.htm",
+    r"[\"']?(?:itemId|item_id|itemid|num_iid)[\"']?\s*[:=]\s*[\"']?(\d{6,15})",
+)
+
+
+def item_id_via_relay(url: str, hops: int = 3, send=None) -> tuple:
+    """오너 11-27 오후 ③: 단축 링크가 직결로 안 열리면(실측: 오라클·이 세션 모두 e.tb.cn 연결 시간 초과) 서울 릴레이로 연다.
+    릴레이는 리디렉트를 따라가지 않고 `Location`을 돌려준다 — 그 주소·본문에서 상품번호를 찾으며 최대 `hops`번 따라간다(읽기만)."""
+    from urllib.parse import urljoin
+    if send is None:
+        from src.market_relay import _api_relay_send as send
+    cur, trail = str(url or ""), []
+    for _ in range(max(1, hops)):
+        try:
+            r = send("GET", cur, {"User-Agent": UA, "Accept": "text/html,*/*"}, None, None, 20)
+        except Exception as exc:                                   # noqa: BLE001
+            return "", f"릴레이 열기 실패 {type(exc).__name__}: {str(exc)[:80]}"
+        loc = (getattr(r, "headers", None) or {}).get("Location") or ""
+        loc = loc[0] if isinstance(loc, list) and loc else str(loc or "")
+        got = id_in_text(cur) or id_in_text(loc) or id_in_text(getattr(r, "text", "") or "")
+        trail.append(f"HTTP {getattr(r, 'status_code', '?')}")
+        if got:
+            return got, "릴레이 경유 · " + " → ".join(trail)
+        if not loc:
+            break
+        cur = urljoin(cur, loc)
+    return "", "릴레이로도 상품번호를 못 찾음 · " + " → ".join(trail)
+
+
+def id_in_text(text: str) -> str:
+    """주소·본문에서 타오바오 상품번호 — 위 꼴 중 처음 맞는 것. 못 찾으면 ""."""
+    t = str(text or "")
+    for p in _ID_PATTERNS:
+        m = re.search(p, t, re.I)
+        if m:
+            return m.group(1)
+    return ""
 
 
 class RelaySession:
