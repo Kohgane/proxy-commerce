@@ -23,7 +23,10 @@ import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
-import requests
+try:
+    import requests
+except ImportError:                                                    # 블루호스트엔 requests가 없을 수 있다 — urllib로 같은 꼴
+    requests = None
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 PER = 400
@@ -37,11 +40,39 @@ SQL = ("BEGIN; INSERT INTO app_state (key, value, updated_at) VALUES ('ops:onesh
        "SELECT 1 FROM jsonb_array_elements(COALESCE(value->'rows', '[]'::jsonb)) r "
        "WHERE r->>'op' = 'relist_ledger_load' AND r->>'item_id' = %(item)s); COMMIT;")
 
-S = requests.Session()
-S.headers.update({"User-Agent": UA, "Accept": "application/json,text/html,*/*", "Accept-Language": "en-US,en;q=0.8"})
+HDR = {"User-Agent": UA, "Accept": "application/json,text/html,*/*", "Accept-Language": "en-US,en;q=0.8"}
+
+
+class _UResp:
+    def __init__(self, code, body, headers):
+        self.status_code, self.headers, self.ok = code, headers, code < 400
+        self.text = body.decode("utf-8", "replace")
+
+    def json(self):
+        return json.loads(self.text)
+
+
+class _USession:
+    """requests 없는 곳(블루호스트)용 — get(url, timeout)만."""
+    def get(self, url, timeout=25):
+        import urllib.request as U
+        import urllib.error as UE
+        try:
+            with U.urlopen(U.Request(url, headers=HDR), timeout=timeout) as r:
+                return _UResp(r.status, r.read(), {k.title(): v for k, v in r.headers.items()})
+        except UE.HTTPError as e:
+            return _UResp(e.code, e.read() or b"", {k.title(): v for k, v in (e.headers or {}).items()})
+
+
+if requests is not None:
+    S = requests.Session()
+    S.headers.update(HDR)
+else:
+    S = _USession()
 GAP = [2.5]
 _LAST = [0.0]
-STATS = {"요청": 0, "429": 0}
+STATS = {"요청": 0, "429": 0, "429로 포기": 0}
+BLOCKED = [0]                                                          # 429가 끝까지 안 풀린 가게 수 — 2곳이면 이 IP는 Shopify가 막은 것
 
 
 def _lit(s):
@@ -64,7 +95,10 @@ def _get(url, timeout=25):
         _LAST[0] = time.time()
         STATS["요청"] += 1
         r = S.get(url, timeout=timeout)
-        if r.status_code != 429 or k == 3:
+        if r.status_code != 429:
+            return r
+        if k == 3:
+            STATS["429로 포기"] += 1
             return r
         STATS["429"] += 1
         try:
@@ -165,6 +199,14 @@ def read_jsonld(url):
     return {"state": "unknown", "why": "가격 표기(JSON-LD) 없음"}
 
 
+def _bh_write(kg, store, done):
+    """블루호스트 모드: 읽은 결과를 볼트 srv_snap/apply_out/srclive2_data_<store>.txt(내용 JSON)에 — 러너가 늘 올리는 폴더 · DB 쓰기 0."""
+    dst = os.path.join(kg, "vault", "srv_snap", "apply_out", f"srclive2_data_{store}.txt")
+    keep = {k: v for k, v in done.items() if v.get("state") in ("ok", "soldout", "gone")}
+    json.dump({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "day": TODAY, "rows": keep}, open(dst + ".tmp", "w"), ensure_ascii=False)
+    os.replace(dst + ".tmp", dst)
+
+
 def rowkey(r):
     return str(r.get("channel_no") or r.get("origin_no") or r.get("code") or "")
 
@@ -209,6 +251,17 @@ def main(argv):
     if ck.get("day") != TODAY:
         ck = {"day": TODAY, "rows": {}}
     done = ck["rows"]
+    for k in [k for k, v in done.items() if "429" in str(v.get("why") or "")]:
+        del done[k]                                                    # 429로 못 읽은 줄은 다음 실행(다른 IP 포함)이 다시 읽는다
+    if "--from-file" in argv:                                          # 블루호스트(다른 IP)가 읽은 결과 — 볼트 srv_snap/apply_out/srclive2_data_<store>.txt
+        fp = argv[argv.index("--from-file") + 1]
+        got = json.load(open(fp))
+        n = 0
+        for k, v in (got.get("rows") or {}).items():
+            if isinstance(v, dict) and v.get("state") in ("ok", "soldout", "gone") and done.get(k, {}).get("state") not in ("ok", "soldout", "gone"):
+                done[k] = v
+                n += 1
+        print("다른 IP 결과 합침", n, "줄 ·", fp, "·", got.get("at"))
     todo = load_rows(store)
     by_host = {}
     for r in todo:
@@ -229,8 +282,20 @@ def main(argv):
         try:
             shop = [r for r in left if "/products/" in r["url"]]
             other = [r for r in left if "/products/" not in r["url"]]
+            if shop and BLOCKED[0] >= 2:
+                for r in shop:
+                    done.setdefault(rowkey(r), {"state": "unknown", "why": "Shopify 429 — 이 IP 막힘(건너뜀)"})
+                print(f"  {host}: {len(shop)}줄 건너뜀(이 IP가 Shopify에 막힘)")
+                shop = []
             if shop:
                 cat, cur, complete, why = shop_catalog(host)
+                if cat is None and "429" in why:                       # 목록부터 429로 막힘 → 상품마다 다시 두드리지 않는다
+                    BLOCKED[0] += 1
+                    for r in shop:
+                        done.setdefault(rowkey(r), {"state": "unknown", "why": "Shopify 429 — 이 IP 막힘"})
+                    print(f"  {host}: {len(shop)}줄 — 목록 429(막힘 {BLOCKED[0]}곳째)")
+                    shop = []
+                    cat = {}
                 miss = []
                 for r in shop:
                     h = handle_of(r["url"])
@@ -243,7 +308,8 @@ def main(argv):
                     done[rowkey(r)] = read_js(r["url"], cur) if cur or cat is None else {"state": "unknown", "why": "가게 통화 못 읽음"}
                     if done[rowkey(r)].get("state") == "unknown" and cat is None:
                         done[rowkey(r)] = read_jsonld(r["url"])
-                print(f"  {host}: {len(shop)}줄 · 목록 {len(cat or {})}개{'(완주)' if complete else ''} {why} · 따로 읽음 {len(miss)} · 통화 {cur or '?'}")
+                if shop:
+                    print(f"  {host}: {len(shop)}줄 · 목록 {len(cat or {})}개{'(완주)' if complete else ''} {why} · 따로 읽음 {len(miss)} · 통화 {cur or '?'}")
             for r in other:
                 done[rowkey(r)] = read_jsonld(r["url"])
             if other:
@@ -254,6 +320,8 @@ def main(argv):
                 done.setdefault(rowkey(r), {"state": "unknown", "why": f"열기 실패 {type(e).__name__}"})
         json.dump(ck, open(ck_path + ".tmp", "w"), ensure_ascii=False)
         os.replace(ck_path + ".tmp", ck_path)
+        if "--bh" in argv:
+            _bh_write(kg, store, done)
     tally, why = {}, {}
     out = []
     for r in todo:
@@ -281,6 +349,10 @@ def main(argv):
     print("못 읽은 이유", dict(sorted(why.items(), key=lambda kv: -kv[1])))
     for x in out[:12]:
         print("  예", json.dumps(x, ensure_ascii=False)[:220])
+    if "--bh" in argv:
+        _bh_write(kg, store, done)
+        print("📌 결과: SRCLIVE2 블루호스트 — 읽은 결과", sum(1 for v in done.values() if v.get("state") in ("ok", "soldout", "gone")), "줄을 볼트 파일에(DB 쓰기 0)")
+        return 0
     if dry or not out:
         print("📌 결과: SRCLIVE2", "(드라이 — 중간 저장만, 다음 실행이 이어씀)" if dry else "(넣을 줄 없음)", len(out))
         return 0

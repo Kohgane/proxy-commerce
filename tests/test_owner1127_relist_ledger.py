@@ -505,3 +505,58 @@ def test_src_live2_reads_whole_shop_catalog_checkpoints_and_only_appends_queue(m
     assert m.main(["chezgoga"]) == 0 and len(calls) == n               # 이어쓰기 — 오늘 읽은 줄은 다시 안 읽음
     assert len(pushed) == 1 and "relist_ledger_load" in pushed[0] and '"src": "source_live"' in pushed[0] and '"rebuild": true' in pushed[0]
     assert "B0X" not in pushed[0]                                      # 아마존(실측 못 함)은 넣지 않음
+
+
+def test_src_live2_stops_hammering_blocked_ip_and_merges_other_ip_results(monkeypatch, tmp_path):
+    """11-27 23:50 실측: 오라클 IP가 Shopify에 막혀 첫 가게부터 429만 26번 → 2판은 가게 목록이 429로 끝까지 막히면 상품마다 다시 두드리지 않고,
+    두 곳째부터는 남은 Shopify 가게를 건너뛴다(429로 못 읽은 줄은 다음 실행이 다시 읽음). 블루호스트(`--bh`)는 DB에 안 쓰고 볼트 파일에만,
+    오라클(`--from-file`)이 그 결과를 합쳐 넣는다."""
+    import importlib.util
+    import json as _j
+
+    def load():
+        spec = importlib.util.spec_from_file_location("src_live2_1127", "ops/oracle_a1/src_live2_1127.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        monkeypatch.setattr(m.time, "sleep", lambda s: None)
+        return m
+
+    class R:
+        def __init__(self, status, data=None, ctype="application/json"):
+            self.status_code, self._d, self.headers, self.ok, self.text = status, data, {"Content-Type": ctype}, status < 400, ""
+
+        def json(self):
+            return self._d
+    (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)
+    (tmp_path / "vault" / "srv_snap" / "apply_out" / "relistledger_data_chezgoga.txt").write_text(_j.dumps({"parts": {"sourcing_map": [
+        {"channel_no": str(i), "url": f"https://s{i}.com/products/p{i}"} for i in range(1, 5)]}}))
+    monkeypatch.setenv("KG_HOME", str(tmp_path))
+    m = load()
+    calls = []
+    monkeypatch.setattr(m.S, "get", lambda u, timeout=25: calls.append(u) or R(429), raising=False)
+    pushed = []
+    monkeypatch.setattr(m, "psql", lambda sql: pushed.append(sql) or "")
+    assert m.main(["chezgoga"]) == 0
+    assert not any("p1.js" in u or "p2.js" in u for u in calls)          # 목록이 막히면 상품마다 안 두드림
+    assert not any("s3.com" in u or "s4.com" in u for u in calls)        # 두 곳 막히면 나머지 Shopify 가게는 건너뜀
+    assert pushed == [] and m.STATS["429로 포기"] == 2
+
+    m2 = load()                                                          # 블루호스트 — 다른 IP
+    monkeypatch.setattr(m2.S, "get", lambda u, timeout=25: R(200, {"currency": "USD"}) if u.endswith("cart.js") else
+                        R(200, {"products": [{"handle": f"p{i}", "variants": [{"price": "9.50", "available": i != 2}]} for i in range(1, 5)]}),
+                        raising=False)
+    monkeypatch.setattr(m2, "psql", lambda sql: (_ for _ in ()).throw(AssertionError("블루호스트는 DB에 안 쓴다")))
+    (tmp_path / "ora_state").rename(tmp_path / "ora_state_oracle")
+    assert m2.main(["chezgoga", "--bh"]) == 0
+    f = tmp_path / "vault" / "srv_snap" / "apply_out" / "srclive2_data_chezgoga.txt"
+    rows = _j.loads(f.read_text())["rows"]
+    assert rows["1"]["cost"] == 9.5 and rows["2"]["state"] == "soldout" and len(rows) == 4
+
+    (tmp_path / "ora_state").rename(tmp_path / "ora_state_bh")
+    (tmp_path / "ora_state_oracle").rename(tmp_path / "ora_state")
+    m3 = load()
+    monkeypatch.setattr(m3.S, "get", lambda u, timeout=25: (_ for _ in ()).throw(AssertionError("합친 줄은 다시 안 읽음 " + u)), raising=False)
+    pushed3 = []
+    monkeypatch.setattr(m3, "psql", lambda sql: pushed3.append(sql) or "")
+    assert m3.main(["chezgoga", "--from-file", str(f)]) == 0
+    assert len(pushed3) == 1 and '"src": "source_live"' in pushed3[0] and '"rebuild": true' in pushed3[0] and '"cost": 9.5' in pushed3[0]
