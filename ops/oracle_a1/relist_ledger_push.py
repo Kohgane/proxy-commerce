@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""RELISTPUSH — 오너 11-27 11:51: 볼트 장부 요약(srv_snap/relist/<store>_ledger.json · 블루호스트 RELISTLEDGER1127이 만든 것)을
+"""RELISTPUSH — 오너 11-27 11:51: 볼트 장부 요약(srv_snap/relist/<store>_ledger.txt · 블루호스트 RELISTLEDGER1127이 만든 것 · `.txt`, 내용은 JSON)을
 운영 앱에 넘긴다. 오라클 kg-a1 = 운영 DB가 같은 기계 · 비밀값 옮기지 않음.
 
 하는 쓰기는 **하나뿐**: `ops:oneshot:queue`에 `{op: relist_ledger_load, store, part, parts, src, rows}`를 덧붙인다
@@ -75,9 +75,12 @@ def main(argv):
         print(psql(READ % {"key": _lit("relist:ledger:" + store)}))
         return 0
     kg = os.environ.get("KG_HOME") or "/home1/ikymximy"
-    path = os.path.join(kg, "vault", "srv_snap", "relist", f"{store}_ledger.json")
-    if not os.path.exists(path):
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "srv_snap", "relist", f"{store}_ledger.json")
+    path = ""
+    for base in (os.path.join(kg, "vault"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")):
+        for ext in ("txt", "json"):                                     # 블루호스트 볼트는 .json 을 안 올려 .txt(내용은 JSON)
+            cand = os.path.join(base, "srv_snap", "relist", f"{store}_ledger.{ext}")
+            if not path and os.path.exists(cand):
+                path = cand
     try:
         doc = json.load(open(path))
     except Exception as e:                                             # noqa: BLE001
