@@ -7,7 +7,7 @@
   · 그 밖 → 페이지의 JSON-LD Offer(price·priceCurrency·availability).
   · 아마존 → 서버에서 막힘(봇 차단) — 「실측 못 함(아마존)」으로만 센다(지어내지 않음).
 쓰기: `ops:oneshot:queue`에 `relist_ledger_load`(src=source_live) 덧붙이기 **하나뿐**(허용된 운영 DB 쓰기) · 마지막 조각이 목록 다시 만들기(읽기만).
-사용: src_live_1127.py chezgoga [--dry] [--limit N]
+사용: src_live_1127.py chezgoga [--dry] [--limit N] [--no-rebuild]
 """
 import json
 import os
@@ -208,7 +208,7 @@ def main(argv):
         chunk = out[p * PER:(p + 1) * PER]
         item = f"{store}:source_live:{p + 1}:{at}"
         row = {"op": "relist_ledger_load", "item_id": item, "store": store, "part": p + 1, "parts": parts, "src": "source_live",
-               "rows": chunk, "rebuild": p == parts - 1, "why": "SRCLIVE1127 소싱처 실측",
+               "rows": chunk, "rebuild": p == parts - 1 and "--no-rebuild" not in argv, "why": "SRCLIVE1127 소싱처 실측",
                "queued_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         res = psql(SQL % {"row": _lit(json.dumps(row, ensure_ascii=False)), "item": _lit(item)})
         print("  조각", p + 1, "/", parts, len(chunk), "줄 →", "줄에 넣음" if not res.startswith("ERR") else res)
