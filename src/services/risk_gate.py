@@ -310,9 +310,15 @@ _COMPAT_DEVICE = (r"(?:워치|watch|아이폰|iphone|에어팟|airpods?|아이�
 _COMPAT_ACC = (r"(?:밴드|스트랩|줄|시계줄|케이스|커버|필름|보호|충전|케이블|거치대|홀더|스탠드|파우치|키링|그립|독|도크|링|버클|"
                r"band|strap|case|cover|film|protector|charger|cable|holder|stand|mount|pouch|dock|loop|bracelet)")
 _COMPAT_AFTER = re.compile(r"^[\s\-]*(?:[^\s]{0,14}[\s\-]+){0,2}[^\s]{0,14}?(?:용|호환|전용)(?=[\s,/·)\]]|$)"
-                           r"|^[\s\-]*(?:[^\s]{0,14}[\s\-]+){0,2}compatible\b", re.I)
+                           r"|^[\s\-]*(?:[^\s]{0,14}[\s\-]+){0,2}compatible\b"
+                           r"|^[\s\-]*(?:액세서리|악세서리|악세사리|accessor(?:y|ies))", re.I)   # 「애플 액세서리」(트웰브사우스 충전기 · 11-27 운영 표본)
 _COMPAT_DEV_ACC = re.compile(r"^[\s\-]*" + _COMPAT_DEVICE + r"[\w\s\-]{0,24}?" + _COMPAT_ACC, re.I)
 _COMPAT_BEFORE = re.compile(r"(?:\bfor|호환|compatible with)\s*$", re.I)
+#: 브랜드 바로 뒤가 기기 이름이고(「–Samsung Watch Ultra」) 상품명 어딘가에 액세서리 낱말 — 다른 브랜드의 그 기기용 액세서리(11-27 운영 표본)
+_COMPAT_DEV_FOLLOW = re.compile(r"^[\s\-]*(?:galaxy\s+|갤럭시\s*)?" + _COMPAT_DEVICE + r"\b", re.I)
+_COMPAT_ACC_ANY = re.compile(_COMPAT_ACC, re.I)
+#: 브랜드 낱말이 다른 낱말의 일부로만 나오는 자리(11-27 운영 표본: 「버켄스탁 **보스**턴 클로그」·「**Ping** Pong Ball」) — 그 브랜드 아님
+_WORD_SENSE = {"보스": re.compile(r"보스턴|보스톤"), "ping": re.compile(r"\bping[\s\-]?pong\b", re.I)}
 #: 맨 앞이 다른 브랜드 + 영문 모델명 바로 뒤 영문 액세서리 낱말(「Garmin Fenix 7 Band」) — 한글 품목(「골프 드라이버 커버」)은 아니다
 _COMPAT_NEAR_ACC = re.compile(r"^\s+[A-Za-z][\w\-]*(?:\s+[A-Za-z0-9][\w\-]{0,8}){0,2}\s+"
                               r"(?:band|strap|case|cover|film|protector|charger|cable|holder|stand|mount|dock|loop|bracelet)\b", re.I)
@@ -332,17 +338,31 @@ def compat_accessory(text: str, term: str) -> bool:
         after, before = t[m.end():m.end() + 40], t[max(0, m.start() - 16):m.start()]
         near = _COMPAT_NEAR_ACC.search(after)
         near = bool(near) and "정품" not in near.group(0) and "genuine" not in near.group(0).lower()
-        if not (_COMPAT_AFTER.search(after) or _COMPAT_DEV_ACC.search(after) or _COMPAT_BEFORE.search(before) or near):
+        dev_follow = bool(_COMPAT_DEV_FOLLOW.search(after)) and bool(_COMPAT_ACC_ANY.search(t[:m.start()] + " " + after))
+        if not (_COMPAT_AFTER.search(after) or _COMPAT_DEV_ACC.search(after) or _COMPAT_BEFORE.search(before) or near or dev_follow):
             return False                                           # 한 번이라도 호환 자리가 아니면 그 브랜드 상품일 수 있다
     return seen
 
 
+def word_sense_only(text: str, term: str) -> bool:
+    """`term`이 이 글에서 다른 낱말의 일부(「보스턴」·「ping pong」)로만 나오나."""
+    rx = _WORD_SENSE.get(str(term or "").strip().lower())
+    if not rx or not rx.search(str(text or "")):
+        return False
+    return not _pat(term, False).search(rx.sub(" ", str(text or "")))
+
+
+def not_brand_here(text: str, term: str) -> bool:
+    """금지 브랜드 낱말이 이 글에선 그 브랜드가 아니다 — 호환 액세서리 자리 · 다른 낱말의 일부. 등록 사전검증·판매 재개 공용."""
+    return word_sense_only(text, term) or compat_accessory(text, term)
+
+
 def blacklist_words(text: str, words=None) -> List[str]:
-    """글 속 금지 브랜드 낱말(호환 액세서리 자리는 뺌) — 등록 사전검증·판매 재개 공용."""
+    """글 속 금지 브랜드 낱말(호환 액세서리 자리·다른 낱말의 일부는 뺌) — 등록 사전검증·판매 재개 공용."""
     words = list(words) if words is not None else _blacklist()
     out = []
     for w in words:
-        if _pat(w, False).search(str(text or "")) and not compat_accessory(text, w):
+        if _pat(w, False).search(str(text or "")) and not not_brand_here(text, w):
             out.append(w)
     return out
 
@@ -462,7 +482,7 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None, pending_eta_sec: i
             hits.append(h)
     bl = [t for t in _blacklist() if t not in allow]
     _ttl = where_text.get("상품명") or ""
-    bl = [t for t in bl if not compat_accessory(_ttl, t)]           # 오너 11-27: 호환 액세서리 자리는 금지 브랜드 아님(판매 재개와 같은 규칙)
+    bl = [t for t in bl if not not_brand_here(_ttl, t)]           # 오너 11-27: 호환 액세서리 자리는 금지 브랜드 아님(판매 재개와 같은 규칙)
     if bl:
         h = _hit("blacklist", "브랜드 블랙리스트", "브랜드 블랙리스트", "hold", bl, False, where_text, imgs,
                  "등록 금지 브랜드 목록에 있는 이름")
