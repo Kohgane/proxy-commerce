@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 SNAP_PREFIX = "diag:snap:"
-NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs", "blacklist")
+NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs", "blacklist", "taobao")
 MAX_BYTES = 400_000
 
 #: 이름째 지우는 칸(대소문자 무시 · 부분 일치) — 주문·배송·개인 연락처
@@ -193,8 +193,34 @@ def _blacklist_diag(arg: str) -> Dict:
             "brand_terms": RG._blacklist(), "allow": sorted(RG.allowlist()), "active": RG.active_blacklist()}
 
 
+def _taobao_diag(arg: str) -> Dict:
+    """오너 11-27 오후 ③ — 온바운드 「5000: data error」 상품번호를 다른 길(mtop)로 읽어 건별 판정(읽기만 · 행 쓰기 0).
+    arg = 상품번호 쉼표(최대 10). 경로는 앱 자동 경로(`taobao_auto.effective_route`)와 같다."""
+    from src.collectors import taobao_mtop as T
+    try:
+        from src.services.taobao_auto import effective_route
+        via = effective_route() or "relay"
+    except Exception:                                              # noqa: BLE001
+        via = "relay"
+    if via == "onebound":
+        via = "relay"
+    out = []
+    for iid in [x.strip() for x in str(arg or "").split(",") if x.strip().isdigit()][:10]:
+        try:
+            r = T.probe(iid, via=via)
+            d = r.get("detail") or {}
+            txt = f"{r.get('reason') or ''} {r.get('kind') or ''}"
+            gone = any(w in txt for w in ("下架", "不存在", "已删除", "ITEM_NOT_FOUND", "NOT_EXIST", "宝贝不存在", "delisted", "not found"))
+            out.append({"item_id": iid, "via": r.get("via"), "state": r.get("state"), "kind": r.get("kind"), "reason": str(r.get("reason") or "")[:200],
+                        "title": str(d.get("title") or "")[:80], "price": d.get("price"), "skus": len(d.get("skus") or []) if isinstance(d.get("skus"), list) else d.get("skus"),
+                        "desc_images": r.get("desc_images"), "verdict": ("소싱처에서 내려감" if gone else ("읽힘" if r.get("state") == "ok" else "못 읽음(막힘·오류)"))})
+        except Exception as exc:                                   # noqa: BLE001
+            out.append({"item_id": iid, "verdict": "못 읽음", "reason": f"{type(exc).__name__}: {str(exc)[:160]}"})
+    return {"via": via, "rows": out}
+
+
 _BUILDERS = {"restarts": _restarts, "sources": _sources, "relist": _relist, "reenrich": _reenrich, "stores": _stores,
-             "item": _item, "prevalidate": _prevalidate, "jobs": _jobs, "blacklist": _blacklist_diag}
+             "item": _item, "prevalidate": _prevalidate, "jobs": _jobs, "blacklist": _blacklist_diag, "taobao": _taobao_diag}
 
 
 def build(name: str, arg: str = "") -> Dict:
