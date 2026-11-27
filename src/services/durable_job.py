@@ -118,6 +118,7 @@ def drive(key: str, budget: Optional[float] = None) -> Dict:
             return rec
         rec.update(holder=_ME, heartbeat_at=_now())
         save(key, rec)
+        fp0 = _progress_fp(rec)
         try:
             rec = step(key, rec, time.time() + STEP_SEC) or rec
         except Exception as exc:                                   # noqa: BLE001 — 한 걸음 실패는 사유째 멈춤(조용히 사라지지 않게)
@@ -126,7 +127,9 @@ def drive(key: str, budget: Optional[float] = None) -> Dict:
             rec.update(state="failed", error=f"{type(exc).__name__}: {str(exc)[:240]}", finished_at=_now())
         rec["steps"] = int(rec.get("steps") or 0) + 1
         rec["heartbeat_at"] = _now()
-        rec["progress_at"] = rec["heartbeat_at"]
+        # 오너 11-27 11:51 ④: 「진행 숫자가 0에서 안 움직이면」 멈춤 — 걸음이 돌아도 진행(숫자·단계)이 그대로면 진전으로 치지 않는다
+        if _progress_fp(rec) != fp0 or not rec.get("progress_at"):
+            rec["progress_at"] = rec["heartbeat_at"]
         try:
             from src.utils.rss import read_mb
             cur, _peak = read_mb()
@@ -147,6 +150,13 @@ def drive(key: str, budget: Optional[float] = None) -> Dict:
             rec["holder"] = ""
             save(key, rec)
             return rec
+
+
+def _progress_fp(rec: Dict) -> str:
+    """진전 지문 — 진행 칸(숫자·글)·단계·커서. 같으면 그 걸음은 진전이 없었다."""
+    import json as _json
+    return _json.dumps([rec.get("progress"), rec.get("phase"), rec.get("page_next"), rec.get("photo_i"),
+                        len(rec.get("done") or []), rec.get("cursor")], sort_keys=True, default=str, ensure_ascii=False)
 
 
 def _notify(rec: Dict) -> None:

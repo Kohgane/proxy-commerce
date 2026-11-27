@@ -302,6 +302,51 @@ def _item_cautions() -> List[dict]:
         return []
 
 
+# 오너 11-27 11:51: 금지 브랜드 오탐 — 「빕준 애플워치 밴드」「갤럭시워치 호환 스트랩」은 다른 브랜드가 만든 **호환 액세서리**다.
+#   블랙리스트 낱말이 「기기 + 액세서리」·「…용/호환/전용」·「for …」 자리에 있고 상품명 맨 앞 브랜드가 아니면 금지 브랜드로 치지 않는다.
+#   (낱말 자체는 호환 표기 규칙 `compat_replace`가 「스마트워치」 등으로 바꿔 등록한다.) 등록 사전검증·판매 재개가 이 한 곳을 쓴다.
+_COMPAT_DEVICE = (r"(?:워치|watch|아이폰|iphone|에어팟|airpods?|아이패드|ipad|맥북|macbook|갤럭시|galaxy|버즈|buds|스위치|switch|"
+                  r"펜슬|pencil|핏|fit|밴드|band|탭|tab|폰|phone)")
+_COMPAT_ACC = (r"(?:밴드|스트랩|줄|시계줄|케이스|커버|필름|보호|충전|케이블|거치대|홀더|스탠드|파우치|키링|그립|독|도크|링|버클|"
+               r"band|strap|case|cover|film|protector|charger|cable|holder|stand|mount|pouch|dock|loop|bracelet)")
+_COMPAT_AFTER = re.compile(r"^[\s\-]*(?:[^\s]{0,14}[\s\-]+){0,2}[^\s]{0,14}?(?:용|호환|전용)(?=[\s,/·)\]]|$)"
+                           r"|^[\s\-]*(?:[^\s]{0,14}[\s\-]+){0,2}compatible\b", re.I)
+_COMPAT_DEV_ACC = re.compile(r"^[\s\-]*" + _COMPAT_DEVICE + r"[\w\s\-]{0,24}?" + _COMPAT_ACC, re.I)
+_COMPAT_BEFORE = re.compile(r"(?:\bfor|호환|compatible with)\s*$", re.I)
+#: 맨 앞이 다른 브랜드 + 영문 모델명 바로 뒤 영문 액세서리 낱말(「Garmin Fenix 7 Band」) — 한글 품목(「골프 드라이버 커버」)은 아니다
+_COMPAT_NEAR_ACC = re.compile(r"^\s+[A-Za-z][\w\-]*(?:\s+[A-Za-z0-9][\w\-]{0,8}){0,2}\s+"
+                              r"(?:band|strap|case|cover|film|protector|charger|cable|holder|stand|mount|dock|loop|bracelet)\b", re.I)
+
+
+def compat_accessory(text: str, term: str) -> bool:
+    """`term`(블랙리스트 브랜드)이 이 글에서 **호환 대상**으로만 나오나(다른 브랜드의 액세서리). 맨 앞 브랜드면 False."""
+    t, w = str(text or ""), str(term or "").strip()
+    if not t or not w:
+        return False
+    lead = re.sub(r"^[\[\(【][^\]\)】]*[\]\)】]\s*", "", t.strip()).split()
+    if lead and w.lower() in lead[0].lower():
+        return False                                               # 상품명 맨 앞이 그 브랜드 — 그 브랜드 상품
+    seen = False
+    for m in re.finditer(re.escape(w), t, re.I):
+        seen = True
+        after, before = t[m.end():m.end() + 40], t[max(0, m.start() - 16):m.start()]
+        near = _COMPAT_NEAR_ACC.search(after)
+        near = bool(near) and "정품" not in near.group(0) and "genuine" not in near.group(0).lower()
+        if not (_COMPAT_AFTER.search(after) or _COMPAT_DEV_ACC.search(after) or _COMPAT_BEFORE.search(before) or near):
+            return False                                           # 한 번이라도 호환 자리가 아니면 그 브랜드 상품일 수 있다
+    return seen
+
+
+def blacklist_words(text: str, words=None) -> List[str]:
+    """글 속 금지 브랜드 낱말(호환 액세서리 자리는 뺌) — 등록 사전검증·판매 재개 공용."""
+    words = list(words) if words is not None else _blacklist()
+    out = []
+    for w in words:
+        if _pat(w, False).search(str(text or "")) and not compat_accessory(text, w):
+            out.append(w)
+    return out
+
+
 def _blacklist() -> List[str]:
     """등록 금지 브랜드(COUPANG_BLACKLIST85 — 소싱 판정과 같은 로더) 중 브랜드 낱말만(`brand_token`)."""
     try:
@@ -416,6 +461,8 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None, pending_eta_sec: i
             h["to"] = str(c.get("to") or "")
             hits.append(h)
     bl = [t for t in _blacklist() if t not in allow]
+    _ttl = where_text.get("상품명") or ""
+    bl = [t for t in bl if not compat_accessory(_ttl, t)]           # 오너 11-27: 호환 액세서리 자리는 금지 브랜드 아님(판매 재개와 같은 규칙)
     if bl:
         h = _hit("blacklist", "브랜드 블랙리스트", "브랜드 블랙리스트", "hold", bl, False, where_text, imgs,
                  "등록 금지 브랜드 목록에 있는 이름")

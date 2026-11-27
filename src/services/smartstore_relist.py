@@ -46,7 +46,11 @@ REASON_KO = {
     "margin_low": "마진 하한 미만", "cost_unknown": "원가 미확인", "knife": "도검(허가 필요)", "lens": "도수 안경렌즈",
     "brand": "금지 브랜드", "ours_reject": "반려·소명·상표로 내림(우리 기록)", "src_soldout": "소싱처 품절·단종",
     "no_source": "원본 주소 없음", "photos_small": "사진 전부 500px 미만", "no_room": "빈자리 없음(대기)",
+    "mirror": "원가 미확인 · 쿠팡 미러",
+    "vault_hard": "볼트 기록: 반려·상표·KC·카테고리 오매칭으로 내림",
 }
+#: 오너 11-27 11:51 ③: 오너가 「켤 목록으로」 골라도 못 옮기는 사유(도검·렌즈·금지 브랜드 · 볼트에 반려·상표로 내린 기록)
+LOCKED = ("knife", "lens", "brand", "vault_hard")
 
 
 def _now() -> str:
@@ -178,6 +182,11 @@ def _words_hit(text: str, words) -> str:
     return ""
 
 
+def _is_mirror(x: Dict) -> bool:
+    from src.services.relist_ledger import norm_code
+    return norm_code(x.get("seller_code")).startswith("CP-")
+
+
 def _rules():
     from src.services import risk_gate as RG
     knife = []
@@ -188,17 +197,20 @@ def _rules():
     return knife, brands
 
 
-def _margin(row: Dict, ours: Optional[Dict], sold: bool) -> Dict:
-    """지금 원가로 그 판매가의 실수령 마진(%) — 원가가 없으면 None. 소싱처 재확인가(monitor)가 있으면 그것."""
+def _margin(row: Dict, ours: Optional[Dict], sold: bool, ledger: Optional[Dict] = None) -> Dict:
+    """지금 원가로 그 판매가의 실수령 마진(%) — 원가가 없으면 None. 소싱처 재확인가(monitor)가 있으면 그것.
+    오너 11-27 11:51 ①: 우리 수집 기록에 원가가 없으면 볼트 장부(오너 입력 먼저)의 원가 — 출처를 그 장부 이름으로 적는다."""
     from src.price import calc_sell_price, landed_cost_krw, net_margin_pct, target_margin_pct
     floor = SOLD_FLOOR_PCT if sold else float(target_margin_pct((ours or {}).get("ex")))
     out = {"cost": None, "currency": "", "cost_src": "", "margin": None, "floor": floor, "policy_price": None}
-    if not ours:
-        return out
-    ex = ours["ex"]
+    ex = (ours or {}).get("ex") or {}
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
     cost, src = (mon.get("current_price"), "소싱처 재확인") if mon.get("current_price") else (ex.get("price"), "수집 때")
     cur = str(ex.get("currency") or "")
+    if ledger and ledger.get("cost") and (ledger.get("src") == "오너 입력" or not (cost and cur)):
+        cost, cur, src = ledger["cost"], str(ledger.get("currency") or ""), str(ledger.get("src") or "볼트 장부")
+    if not (cost and cur):
+        return out
     try:
         c = Decimal(str(cost).replace(",", ""))
         if c <= 0 or not cur:
@@ -249,26 +261,41 @@ def build_state(store: str) -> Dict:
     return {k: st.get(k) for k in _BRIEF_KEYS if k in st}
 
 
-def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme) -> Dict:
-    """한 줄 판정(사진 빼고) — 사유·마진·켤 순서 단계. 사진은 켤 후보에만 따로 잰다."""
+def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Optional[Dict] = None) -> Dict:
+    """한 줄 판정(사진 빼고) — 사유·마진·켤 순서 단계. 사진은 켤 후보에만 따로 잰다.
+    `L` = 볼트 장부 줄(오너 11-27 11:51 — 원가·소싱처·볼트 사유·쿠팡 판매 건수)."""
+    from src.services import relist_ledger as RL
+    s = {"ss": int(s.get("ss") or 0), "cp": max(int(s.get("cp") or 0), int((L or {}).get("cp_sold") or 0))}
     sold = (s["ss"] + s["cp"]) > 0
-    mg = _margin(r, o, sold)
+    mg = _margin(r, o, sold, L)
     why = []
     if (k := _words_hit(r["name"], knife)):
         why.append(("knife", k))
     if (k := _words_hit(r["name"], LENS_WORDS)):
         why.append(("lens", k))
-    if (k := _words_hit(r["name"], brands)):
-        why.append(("brand", k))
+    from src.services.risk_gate import blacklist_words as _bl_words   # 등록 사전검증과 같은 규칙(호환 액세서리 자리는 빼고)
+    _bw = [w for w in _bl_words(r["name"], brands) if _words_hit(r["name"], [w])]
+    if _bw:
+        why.append(("brand", _bw[0]))
     ex = (o or {}).get("ex") or {}
     rej = [u for u in (ex.get("uploaded") or []) if isinstance(u, dict) and ((u.get("review") or {}).get("state") == "rejected")]
     if ex.get("risk_skip") or rej or ex.get("takedowns"):
         why.append(("ours_reject", (ex.get("risk_skip") or {}).get("reason") if isinstance(ex.get("risk_skip"), dict) else
                     ("반려: " + str(((rej[0].get("review") or {}).get("comment")) or "")[:60] if rej else "「이 마켓에서 내리기」 기록")))
+    if (hv := RL.hard_vault_reason(L)):
+        why.append(("vault_hard", f"{hv}{(' · ' + L['vault_job']) if L.get('vault_job') else ''}"))
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
     if mon.get("in_stock") is False or str(mon.get("change") or "") in ("soldout", "gone", "removed"):
         why.append(("src_soldout", str(mon.get("summary") or "품절")))
-    if not o or not str(o.get("url") or "").startswith("http"):
+    code = RL.norm_code(r.get("seller_code"))
+    has_url = bool(str((o or {}).get("url") or "").startswith("http") or (L or {}).get("url"))
+    if mg["cost"] is not None and not o:
+        pass                                                       # 볼트 장부에서 원가를 찾았다 — 원본 기록 없음·미러는 사유가 아니다
+    elif not o and code.startswith("CP-"):
+        # 오너 11-27 ⑤ 표본 검수: 1,679건 전부 「원본 주소 없음」이었다 — 대부분 오라클이 쿠팡에서 옮겨 깐 미러라 우리 수집 기록에 없다.
+        #   원본이 없는 게 아니라 **앱이 못 읽는 장부**에 있다 — 사유를 그렇게 말한다(원가 미확인이라 켜지 않는 건 그대로).
+        why.append(("mirror", f"쿠팡 {code} 미러 — 원가가 우리 기록·볼트 장부에 없어요(「원가 넣기」로 이 줄만 다시 판정)"))
+    elif not o or not has_url:
         why.append(("no_source", "우리 수집 기록에 원본 주소가 없어요" if not o else "원본 주소 없음"))
     if mg["cost"] is None:
         if o:
@@ -284,6 +311,9 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme) -> Dic
         sp = 0
     return {**r, "item_id": (o or {}).get("item_id", ""), "sold_ss": s["ss"], "sold_cp": s["cp"], "views": None,
             "cost": mg["cost"], "currency": mg["currency"], "cost_src": mg["cost_src"], "margin": mg["margin"],
+            "vault_reason": str((L or {}).get("vault_reason") or ""), "vault_job": str((L or {}).get("vault_job") or ""),
+            "src_url": str((o or {}).get("url") or (L or {}).get("url") or "")[:300],
+            "owner_ok": bool(r.get("owner_ok")),
             "floor": mg["floor"], "policy_price": pp,
             "price_diff": (pp is not None and sp > 0 and abs(pp - sp) / sp >= 0.01),
             "our_reason": "기록 없음" if not (ex.get("takedowns") or ex.get("risk_skip") or rej) else
@@ -322,7 +352,9 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
                         "sale_price": ch.get("discountedPrice") or ch.get("salePrice"), "list_price": ch.get("salePrice"),
                         "reg": str(ch.get("regDate") or ""), "modified": str(ch.get("modifiedDate") or ""),
                         "rep_image": str(((ch.get("representativeImage") or {}).get("url")) or ""),
-                        "stock": ch.get("stockQuantity"), "category": str(ch.get("wholeCategoryName") or "")})
+                        "stock": ch.get("stockQuantity"), "category": str(ch.get("wholeCategoryName") or ""),
+                        # 오너 11-27 ⑤: 오라클 미러(쿠팡→스스)는 판매자 관리 코드 `CP-<쿠팡 상품번호>`를 남긴다 — 원본·원가는 쿠팡 장부
+                        "seller_code": str(ch.get("sellerManagementCode") or (c or {}).get("sellerManagementCode") or "")})
             rec["page_next"] = page + 1
             rec["progress"] = {"n": len(rows), "total": rec.get("total"), "label": f"판매중지 읽는 중 {len(rows):,}/{int(rec.get('total') or 0):,}"}
             save(rec)                                              # 100건(한 쪽)마다 저장 — 재시작 뒤 이 쪽부터
@@ -345,8 +377,11 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
         sales = _sales_index(ours)
         knife, brands = _rules()
         theme = [str(w) for w in (((R.rules().get("stores") or {}).get(store) or {}).get("keywords") or [])]
-        judged = [_judge_row(r, ours.get(r["channel_no"]), sales.get(r["channel_no"], {"ss": 0, "cp": 0}), knife, brands, theme)
-                  for r in rec.get("fetched") or []]
+        from src.services import relist_ledger as RL
+        led = RL.index(store)
+        judged = [_judge_row(r, ours.get(r["channel_no"]), sales.get(r["channel_no"], {"ss": 0, "cp": 0}), knife, brands, theme,
+                             RL.find(led, r)) for r in rec.get("fetched") or []]
+        rec["ledger"] = RL.summary(store)
         elig = [x for x in judged if not x["exclude"]]
         elig.sort(key=lambda x: (x["tier"], -(x["sold_ss"] + x["sold_cp"]), _neg(x["reg"])))
         rec.update(rows=judged, fetched=[], elig=[x["channel_no"] for x in elig], photo_i=0, on=[], limit=limit,
@@ -403,7 +438,12 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
            "tiers": {str(t): sum(1 for x in rows if x["action"] == "on" and x["tier"] == t) for t in (1, 3, 4)},
            "price_diff": sum(1 for x in rows if x["action"] == "on" and x["price_diff"]),
            "photos_checked": int(rec.get("photo_i") or 0), "rss_peak_mb": rec.get("rss_peak_mb"),
+           "mirrors": sum(1 for x in rows if _is_mirror(x)),
+           "ours": sum(1 for x in rows if x.get("item_id")),
+           "ledger_hit": sum(1 for x in rows if not x.get("item_id") and x.get("cost") is not None),
+           "ledger": rec.get("ledger") or {},
            "views_note": VIEWS_NOTE, "status_counts": rec.get("status_counts") or {}, "rows": rows}
+    out["owner_ok"] = 0
     _state_set(_PLAN_KEY.format(store), out)
     from src.seller_console import smartstore_routing as R2
     rec.update(state="done", phase="done", rows=[], elig=[], on=[], result={k: v for k, v in out.items() if k != "rows"},
@@ -462,15 +502,167 @@ def csv_text(p: Dict) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["판정", "켤순서단계", "상품번호", "원상품번호", "상품명", "판매가", "정책가", "가격다름", "우리원가", "통화", "원가출처", "마진%", "하한%",
-                "마지막수정", "등록일", "우리기록사유", "판매_스스", "판매_쿠팡", "조회수", "사진전부500미만", "뺄사유"])
+                "마지막수정", "등록일", "우리기록사유", "판매_스스", "판매_쿠팡", "조회수", "사진전부500미만", "뺄사유",
+                "관리코드", "볼트사유", "볼트작업", "소싱처주소", "오너확인"])
     for x in p.get("rows") or []:
         w.writerow(["켤 것" if x.get("action") == "on" else "뺌", x.get("tier"), x.get("channel_no"), x.get("origin_no"), x.get("name"),
                     x.get("sale_price"), x.get("policy_price") or "", "예" if x.get("price_diff") else "", x.get("cost") or "", x.get("currency"),
                     x.get("cost_src"), "" if x.get("margin") is None else x.get("margin"), x.get("floor"), x.get("modified"), x.get("reg"),
                     x.get("our_reason"), x.get("sold_ss"), x.get("sold_cp"), "모름(API 없음)",
                     {True: "예", False: "아니오"}.get(x.get("photo_small"), "못 잼"),
-                    " · ".join(f"{REASON_KO.get(k, k)}{(' — ' + d) if d else ''}" for k, d in zip(x.get("exclude") or [], x.get("exclude_detail") or []))])
+                    " · ".join(f"{REASON_KO.get(k, k)}{(' — ' + d) if d else ''}" for k, d in zip(x.get("exclude") or [], x.get("exclude_detail") or [])),
+                    x.get("seller_code") or "", x.get("vault_reason") or "", x.get("vault_job") or "", x.get("src_url") or "",
+                    "예" if x.get("owner_ok") else ""])
     return "﻿" + buf.getvalue()
+
+
+# ── 오너 11-27 11:51 ②③①: 왜 0인지 · 골라 켜기 · 원가 넣기 ─────────────────────────
+
+def recount(p: Dict) -> Dict:
+    """줄을 고친 뒤 요약 숫자를 다시 센다(켤·뺄·사유별·단계·가격 다름·오너 확인)."""
+    rows = p.get("rows") or []
+    by: Dict[str, int] = {}
+    for x in rows:
+        if x.get("action") == "on":
+            continue
+        for k in x.get("exclude") or []:
+            by[k] = by.get(k, 0) + 1
+    on = [x for x in rows if x.get("action") == "on"]
+    p.update(on=len(on), skip=len(rows) - len(on), by_reason=by,
+             tiers={str(t): sum(1 for x in on if x.get("tier") == t) for t in (1, 3, 4)},
+             price_diff=sum(1 for x in on if x.get("price_diff")), owner_ok=sum(1 for x in on if x.get("owner_ok")),
+             ledger_hit=sum(1 for x in rows if not x.get("item_id") and x.get("cost") is not None))
+    return p
+
+
+def why_zero(p: Dict) -> str:
+    """켤 것이 0일 때 한 줄 — 가장 큰 사유를 숫자로(「1,679건 중 1,600건이 우리 기록에 없어요」)."""
+    rows = p.get("rows") or []
+    if not rows or int(p.get("on") or 0) > 0:
+        return ""
+    n = len(rows)
+    no_cost = [x for x in rows if x.get("cost") is None and not x.get("item_id")]
+    if len(no_cost) * 2 >= n:
+        mir = sum(1 for x in no_cost if _is_mirror(x))
+        return (f"{n:,}건 중 {len(no_cost):,}건이 우리 기록·볼트 장부에 원가가 없어요"
+                f"(쿠팡 미러 {mir:,} · 그 밖 {len(no_cost) - mir:,}) — 원가를 모르면 켜지 않아요. "
+                "줄마다 「원가 넣기」로 넣거나, 아는 상품은 골라 「켤 목록으로」.")
+    by = dict(p.get("by_reason") or {})
+    if not by:
+        return f"{n:,}건 모두 켤 조건을 못 채웠어요."
+    k, c = max(by.items(), key=lambda kv: kv[1])
+    return f"{n:,}건 중 {c:,}건이 「{REASON_KO.get(k, k)}」 — 가장 큰 사유예요."
+
+
+def _busy(store: str) -> str:
+    from src.services import durable_job as DJ
+    if DJ.status(_BUILD_KEY.format(store)).get("state") == "running":
+        return "목록을 새로 만드는 중이에요 — 끝난 뒤에 고쳐 주세요(만든 목록이 덮어써요)."
+    if DJ.status(_RUN_KEY.format(store)).get("state") == "running":
+        return "판매 재개가 도는 중이에요 — 끝난 뒤에 고쳐 주세요."
+    return ""
+
+
+def owner_pick(store: str, channel_nos, by: str = "") -> Dict:
+    """뺄 줄을 골라 켤 목록으로 — 사유 「오너 확인」. 도검·렌즈·금지 브랜드·볼트 반려 기록은 못 옮긴다.
+    빈자리보다 많이 고르면 하나도 안 옮긴다(네이버 1,000칸 한도). 마켓에는 아무것도 안 보낸다(목록만 고침)."""
+    if (b := _busy(store)):
+        return {"ok": False, "error": b}
+    p = plan(store)
+    want = {str(c) for c in (channel_nos or []) if str(c).strip()}
+    if not want:
+        return {"ok": False, "error": "고른 상품이 없어요."}
+    by_no = {str(x.get("channel_no")): x for x in p.get("rows") or []}
+    locked, moved, missing = [], [], []
+    for c in sorted(want):
+        x = by_no.get(c)
+        if not x:
+            missing.append(c)
+        elif x.get("action") == "on":
+            continue
+        elif set(x.get("exclude") or []) & set(LOCKED):
+            locked.append({"channel_no": c, "name": str(x.get("name") or "")[:60],
+                           "why": REASON_KO.get(next(k for k in x["exclude"] if k in LOCKED), "")})
+        else:
+            moved.append(x)
+    room = p.get("room")
+    on_now = sum(1 for x in p.get("rows") or [] if x.get("action") == "on")
+    if room is not None and on_now + len(moved) > int(room):
+        return {"ok": False, "error": f"빈자리 {int(room):,}칸인데 켤 것이 {on_now + len(moved):,}건이 돼요 — {on_now + len(moved) - int(room):,}건 덜 골라 주세요.",
+                "locked": locked}
+    at = _now()
+    for x in moved:
+        x["owner_prev"] = {"exclude": list(x.get("exclude") or []), "exclude_detail": list(x.get("exclude_detail") or []),
+                           "our_reason": x.get("our_reason")}
+        x.update(action="on", owner_ok=True, owner_at=at, owner_by=str(by or "")[:120], exclude=[], exclude_detail=[],
+                 our_reason="오너 확인")
+    recount(p)
+    _state_set(_PLAN_KEY.format(store), p)
+    logger.info("[셰고가 재개] %s 오너 확인 %d건 켤 목록으로 · 못 옮김 %d", store, len(moved), len(locked))
+    return {"ok": True, "moved": len(moved), "locked": locked, "missing": missing, "on": p["on"], "skip": p["skip"]}
+
+
+def owner_unpick(store: str, channel_nos) -> Dict:
+    """오너가 옮긴 줄을 뺄 목록으로 되돌린다(원래 사유 그대로)."""
+    if (b := _busy(store)):
+        return {"ok": False, "error": b}
+    p = plan(store)
+    want = {str(c) for c in (channel_nos or [])}
+    n = 0
+    for x in p.get("rows") or []:
+        if str(x.get("channel_no")) in want and x.get("owner_ok"):
+            prev = x.pop("owner_prev", None) or {}
+            x.update(action="skip", owner_ok=False, exclude=prev.get("exclude") or ["no_room"],
+                     exclude_detail=prev.get("exclude_detail") or [""], our_reason=prev.get("our_reason") or "기록 없음")
+            n += 1
+    recount(p)
+    _state_set(_PLAN_KEY.format(store), p)
+    return {"ok": True, "back": n, "on": p["on"], "skip": p["skip"]}
+
+
+def set_cost(store: str, channel_no: str, cost, currency: str, url: str = "", *, up=None, size_of=None) -> Dict:
+    """「원가 넣기」 — 그 줄 하나만 다시 판정(마진·정책가·사진). 통과하고 빈자리가 있으면 켤 목록으로.
+    원가는 장부(`relist:ledger`)에 출처 「오너 입력」으로 남아 다음 목록 만들기에도 쓰인다. 네이버에는 읽기만."""
+    from src.services import relist_ledger as RL
+    from src.seller_console import smartstore_routing as R
+    if (b := _busy(store)):
+        return {"ok": False, "error": b}
+    p = plan(store)
+    rows = p.get("rows") or []
+    x = next((r for r in rows if str(r.get("channel_no")) == str(channel_no)), None)
+    if not x:
+        return {"ok": False, "error": "그 상품이 목록에 없어요 — 목록을 새로 만든 뒤 다시."}
+    saved = RL.set_owner_cost(store, str(channel_no), cost, currency, url)
+    if not saved.get("ok"):
+        return saved
+    o = _ours_index(store).get(str(channel_no)) if x.get("item_id") else None
+    knife, brands = _rules()
+    theme = [str(w) for w in (((R.rules().get("stores") or {}).get(store) or {}).get("keywords") or [])]
+    base = {k: v for k, v in x.items() if k not in ("exclude", "exclude_detail", "owner_prev")}
+    j = _judge_row(base, o, {"ss": x.get("sold_ss") or 0, "cp": x.get("sold_cp") or 0}, knife, brands, theme,
+                   RL.find(RL.index(store), x))
+    if not j["exclude"]:
+        if up is None:
+            from src.uploaders.naver_uploader import NaverSmartStoreUploader
+            up = NaverSmartStoreUploader(account=store)
+        if size_of is None:
+            from src.services.coupang_image_check import head_size as size_of
+        j["photo_small"] = _photo_small(j, up, size_of)
+        if j["photo_small"] is True:
+            j["exclude"], j["exclude_detail"] = ["photos_small"], [""]
+    on_now = sum(1 for r in rows if r.get("action") == "on" and r is not x)
+    room = p.get("room")
+    if not j["exclude"] and room is not None and on_now >= int(room):
+        j["exclude"], j["exclude_detail"] = ["no_room"], ["빈자리 없음 — 다음 차례"]
+    j["action"] = "on" if not j["exclude"] else "skip"
+    rows[rows.index(x)] = j
+    recount(p)
+    _state_set(_PLAN_KEY.format(store), p)
+    verdict = ("켤 목록으로 옮겼어요" if j["action"] == "on" else
+               "아직 뺄 것 — " + " · ".join(f"{REASON_KO.get(k, k)}{(' ' + d) if d else ''}" for k, d in zip(j["exclude"], j["exclude_detail"])))
+    return {"ok": True, "row": {k: j.get(k) for k in ("channel_no", "name", "action", "cost", "currency", "cost_src", "margin",
+                                                      "floor", "policy_price", "exclude", "exclude_detail")},
+            "verdict": verdict, "on": p["on"], "skip": p["skip"]}
 
 
 # ── 실행(오너 탭) ────────────────────────────────────────────────────────────

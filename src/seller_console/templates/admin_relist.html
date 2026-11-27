@@ -15,10 +15,30 @@
   .rl-t { width: 100%; border-collapse: collapse; font-size: .88rem; }
   .rl-t th, .rl-t td { padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; word-break: keep-all; overflow-wrap: anywhere; }
   .rl-t td:first-child { min-width: 10em; }
+  [data-role=rl-on] .rl-t td:last-child { min-width: 7.5em; word-break: keep-all; overflow-wrap: normal; }
   .rl-t tbody th { white-space: nowrap; padding-right: var(--space-2); }   /* 요약 표 이름 칸이 한 글자씩 세로로 쪼개지지 않게(캡처에서 잡힘) */
   .rl-sub { font-size: .78rem; color: var(--text-muted, var(--muted)); }
   .rl-btn { min-height: 44px; width: 100%; margin-top: var(--space-2); }
   .rl-bad { color: var(--danger); } .rl-ok { color: var(--teal); }
+  .rl-why { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: 0 0 var(--space-3); }
+  .rl-why a { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0 var(--space-2); border-radius: var(--radius-pill);
+              border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; font-size: .85rem; }
+  .rl-why a.on { border-color: var(--ink); background: var(--ink); color: var(--cream, #F5EFE3); }
+  .rl-why b { font-family: var(--font-display); }
+  .rl-zero { padding: var(--space-2) var(--space-3); border-left: 3px solid var(--orange); background: var(--surface); border-radius: var(--radius);
+             margin: 0 0 var(--space-3); font-size: .92rem; }
+  .rl-prev { font-size: .8rem; color: var(--text-muted, var(--muted)); border: 1px dashed var(--border); border-radius: var(--radius);
+             padding: 6px var(--space-2); margin: 0 0 var(--space-2); }
+  .rl-pick { width: 22px; height: 22px; flex: 0 0 22px; margin-top: 1px; }
+  .rl-pickl { display: flex; gap: var(--space-2); align-items: flex-start; min-height: 44px; margin: 0; cursor: pointer; }
+  [data-role=rl-skip] .rl-t td:first-child { min-width: 0; width: 58%; }
+  .rl-cost-row td { border-bottom: 1px solid var(--border); padding-top: 0; }
+  .rl-t tr:has(+ .rl-cost-row) td { border-bottom: 0; }
+  .rl-cost { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .rl-cost input, .rl-cost select { min-height: 44px; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 8px; font-size: .9rem; }
+  .rl-cost input[name=cost] { width: 7.5em; } .rl-cost input[name=url] { flex: 1 1 100%; min-width: 0; }
+  .rl-cost button { min-height: 44px; }
+  .rl-sticky { position: sticky; bottom: 0; background: var(--surface); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
 </style>
 <div class="rl-wrap" data-role="relist" data-store="{{ d.store }}">
   <p class="pc-overline">관리자 · 판매 재개</p>
@@ -28,12 +48,20 @@
   {% if not p.at %}
     <div class="rl-verdict" data-role="rl-verdict">{% if (d.build or {}).state == 'running' %}목록을 만드는 중이에요 — 진행은 아래에서 저절로 바뀌어요{% else %}아직 목록을 안 만들었어요 — 아래 「목록 만들기」(읽기만 · 전송 0){% endif %}</div>
   {% else %}
+    {% if (d.build or {}).state == 'running' %}<p class="rl-prev" data-role="rl-prev">이전 목록({{ p.at[:16]|replace('T', ' ') }} UTC) — 새 목록을 만드는 중이라 아래 숫자는 그 전 것이에요. 다 만들면 저절로 바뀌어요.</p>{% endif %}
+    <nav class="rl-why" data-role="rl-why" aria-label="사유별 개수">
+      <a href="?store={{ d.store }}#rl-on" class="{{ 'on' if not why }}">켤 <b>{{ '{:,}'.format(p.on or 0) }}</b></a>
+      {% for k, n in (p.by_reason or {}).items()|sort(attribute=1, reverse=True) %}<a href="?store={{ d.store }}&why={{ k }}#rl-skip" class="{{ 'on' if why == k }}" data-role="rl-why-{{ k }}">{{ reason_ko.get(k, k) }} <b>{{ '{:,}'.format(n) }}</b></a>{% endfor %}
+    </nav>
+    {% if d.why_zero %}<p class="rl-zero" data-role="rl-zero">{{ d.why_zero }}</p>{% endif %}
     <div class="rl-verdict" data-role="rl-verdict">켤 {{ p.on }}건 / 뺄 {{ p.skip }}건 · 빈자리 {{ p.room if p.room is not none else '모름' }}칸 (한도 {{ '{:,}'.format(p.limit) }} − 지금 {{ p.now_count if p.now_count is not none else '?' }})</div>
     <section class="rl-card" data-role="rl-summary">
-      <h2>요약 <span class="rl-sub">{{ p.at }} · 판매중지 {{ p.read }}{% if p.total is not none %}/{{ p.total }}{% endif %}건 읽음{% if not p.complete %} · <span class="rl-bad">다 못 읽음 {{ p.error }}</span>{% endif %}</span></h2>
+      <h2>요약 <span class="rl-sub">{{ p.at[:16]|replace('T', ' ') }} UTC · 판매중지 {{ p.read }}{% if p.total is not none %}/{{ p.total }}{% endif %}건 읽음{% if not p.complete %} · <span class="rl-bad">다 못 읽음 {{ p.error }}</span>{% endif %}</span></h2>
       <table class="rl-t"><tbody>
         <tr><th>상태별 수</th><td data-role="rl-counts">{% set ko = {'SALE': '판매중', 'WAIT': '판매대기', 'OUTOFSTOCK': '품절', 'SUSPENSION': '판매중지', 'CLOSE': '판매종료', 'PROHIBITION': '판매금지'} %}{% for k, v in (p.status_counts or {}).items() %}{{ ko.get(k, k) }} {{ '{:,}'.format(v) if v is not none else '?' }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
         <tr><th>켤 순서</th><td>① 팔린 적 있음 {{ (p.tiers or {}).get('1', 0) }} · ② 조회 많은데 안 팔림 — 건너뜀(아래) · ③ {{ d.label }} 주제 {{ (p.tiers or {}).get('3', 0) }} · ④ 나머지 최신 순 {{ (p.tiers or {}).get('4', 0) }}</td></tr>
+        {% if p.mirrors is defined %}<tr><th>원본 기록</th><td data-role="rl-origin">우리 수집 기록 있음 {{ p.ours }} · 볼트 장부에서 원가 찾음 {{ p.ledger_hit or 0 }} · 쿠팡 미러 {{ p.mirrors }}(그중 원가 못 찾음 {{ (p.by_reason or {}).get('mirror', 0) }}) · 기록 없음 {{ (p.by_reason or {}).get('no_source', 0) }}</td></tr>{% endif %}
+        <tr><th>볼트 장부</th><td data-role="rl-ledger">{% if d.ledger.rows %}{{ '{:,}'.format(d.ledger.rows) }}줄(원가 있음 {{ '{:,}'.format(d.ledger.with_cost) }}) · {% for k, n in d.ledger.by_src.items() %}{{ k }} {{ n }}{% if not loop.last %} · {% endif %}{% endfor %} · 받은 때 {{ (d.ledger.at or '')[:16]|replace('T', ' ') }}{% else %}아직 못 받았어요 — 볼트 오라클 작업이 보내면 다음 목록 만들기부터 써요{% endif %}{% if p.owner_ok %} · 오너 확인으로 켠 것 {{ p.owner_ok }}{% endif %}</td></tr>
         <tr><th>뺄 사유</th><td data-role="rl-reasons">{% for k, n in p.by_reason.items() %}{{ reason_ko.get(k, k) }} {{ n }}{% if not loop.last %} · {% endif %}{% else %}없음{% endfor %}</td></tr>
         <tr><th>가격</th><td>켤 것 중 정책가와 다른 {{ p.price_diff }}건 — <strong>표시만</strong>(재개와 함께 바꾸지 않아요 · 가격 변경은 따로 확인)</td></tr>
         <tr><th>조회수</th><td class="rl-sub">{{ p.views_note }}</td></tr>
@@ -63,19 +91,33 @@
   </section>
 
   {% if on_rows %}
-  <section class="rl-card" data-role="rl-on"><h2>켤 것 — 앞 {{ on_rows|length }}건(순서대로)</h2>
+  <section class="rl-card" data-role="rl-on" id="rl-on"><h2>켤 것 — 앞 {{ on_rows|length }}건(순서대로)</h2>
     <table class="rl-t"><thead><tr><th>상품</th><th>판매·마진</th></tr></thead><tbody>
-    {% for x in on_rows %}<tr data-role="rl-on-row"><td>{{ x.name }}<div class="rl-sub">{{ x.channel_no }} · {{ {1: '① 팔림', 3: '③ 주제', 4: '④ 최신'}[x.tier] }} · 수정 {{ x.modified[:10] }} · 우리 기록: {{ x.our_reason }}</div></td>
+    {% for x in on_rows %}<tr data-role="rl-on-row"><td>{{ x.name }}<div class="rl-sub">{{ x.channel_no }} · {{ {1: '① 팔림', 3: '③ 주제', 4: '④ 최신'}[x.tier] }} · 수정 {{ x.modified[:10] }} · 우리 기록: {{ x.our_reason }}{% if x.cost_src %} · 원가 출처: {{ x.cost_src }}{% endif %}{% if x.vault_reason %} · 볼트 사유: {{ x.vault_reason }}{% endif %}</div>
+      {% if x.owner_ok %}<button type="button" class="btn btn-ghost btn-sm" data-role="rl-unpick" data-no="{{ x.channel_no }}">뺄 목록으로 되돌리기</button>{% endif %}</td>
       <td>{{ '{:,}'.format(x.sale_price|int) if x.sale_price else '—' }}원{% if x.price_diff %}<div class="rl-sub">정책가 {{ '{:,}'.format(x.policy_price) }}원(표시만)</div>{% endif %}
         <div class="rl-sub">마진 {{ x.margin if x.margin is not none else '—' }}% · 판매 스스 {{ x.sold_ss }}·쿠팡 {{ x.sold_cp }}</div></td></tr>{% endfor %}
     </tbody></table></section>
   {% endif %}
   {% if skip_rows %}
-  <section class="rl-card" data-role="rl-skip"><h2>뺄 것 — 앞 {{ skip_rows|length }}건(사유)</h2>
+  <section class="rl-card" data-role="rl-skip" id="rl-skip"><h2>뺄 것{% if why %} — {{ reason_ko.get(why, why) }}{% endif %} · 앞 {{ skip_rows|length }}/{{ '{:,}'.format(skip_total) }}건</h2>
+    <p class="rl-sub">아는 상품은 골라 「켤 목록으로」(사유 「오너 확인」). 도검·렌즈·금지 브랜드·볼트 반려 기록은 고를 수 없어요. 원가를 몰라서 뺀 줄은 「원가 넣기」로 그 줄만 다시 판정해요. 둘 다 목록만 고치고 네이버에는 보내지 않아요.</p>
     <table class="rl-t"><thead><tr><th>상품</th><th>사유</th></tr></thead><tbody>
-    {% for x in skip_rows %}<tr data-role="rl-skip-row"><td>{{ x.name }}<div class="rl-sub">{{ x.channel_no }} · {{ '{:,}'.format(x.sale_price|int) if x.sale_price else '—' }}원</div></td>
-      <td>{% for k in x.exclude %}<div>{{ reason_ko.get(k, k) }}{% if x.exclude_detail[loop.index0] %} <span class="rl-sub">— {{ x.exclude_detail[loop.index0] }}</span>{% endif %}</div>{% endfor %}</td></tr>{% endfor %}
-    </tbody></table></section>
+    {% for x in skip_rows %}{% set lk = (x.exclude or [])|select('in', locked)|list %}<tr data-role="rl-skip-row" data-no="{{ x.channel_no }}">
+      <td><label class="rl-pickl"><input type="checkbox" class="rl-pick" data-role="rl-pick" value="{{ x.channel_no }}" aria-label="{{ x.name[:30] }} 고르기" {% if lk %}disabled title="{{ reason_ko.get(lk[0], lk[0]) }} — 고를 수 없어요"{% endif %}><span>{{ x.name }}</span></label><div class="rl-sub">{{ x.channel_no }} · {{ '{:,}'.format(x.sale_price|int) if x.sale_price else '—' }}원{% if x.seller_code %} · 관리 코드 {{ x.seller_code }}{% endif %}{% if x.cost_src %} · 원가 출처: {{ x.cost_src }}{% endif %}{% if x.vault_reason %} · 볼트 사유: {{ x.vault_reason }}{% endif %}</div></td>
+      <td>{% for k in x.exclude %}<div>{{ reason_ko.get(k, k) }}{% if x.exclude_detail[loop.index0] %} <span class="rl-sub">— {{ x.exclude_detail[loop.index0] }}</span>{% endif %}</div>{% endfor %}{% if lk %}<div class="rl-sub">고를 수 없어요</div>{% endif %}</td></tr>
+        {% if not lk and ((x.exclude or [])|select('in', ['mirror', 'no_source', 'cost_unknown'])|list) %}
+        <tr class="rl-cost-row"><td colspan="2"><form class="rl-cost" data-role="rl-cost" data-no="{{ x.channel_no }}">
+          <input name="cost" inputmode="decimal" placeholder="원가" aria-label="원가" required>
+          <select name="currency" aria-label="통화">{% for c in ['USD', 'JPY', 'CNY', 'EUR', 'GBP', 'KRW'] %}<option>{{ c }}</option>{% endfor %}</select>
+          <input name="url" inputmode="url" placeholder="소싱처 주소(있으면)" aria-label="소싱처 주소">
+          <button type="submit" class="btn btn-ghost btn-sm">원가 넣기</button>
+          <span class="rl-sub" data-role="rl-cost-out" aria-live="polite"></span>
+        </form></td></tr>{% endif %}{% endfor %}
+    </tbody></table>
+    <div class="rl-sticky"><button type="button" class="btn btn-primary rl-btn" data-role="rl-pick-go" disabled>고른 0건 켤 목록으로</button>
+      <div class="rl-sub" data-role="rl-pick-out" aria-live="polite"></div></div>
+  </section>
   {% endif %}
   <p class="small"><a href="?store={{ d.store }}&raw=1">원문(JSON)</a></p>
 </div>
@@ -138,6 +180,32 @@
     });
   });
   if (stopB) stopB.addEventListener('click', function () { stopB.disabled = true; post({action: 'stop'}).then(function () { st.textContent = '멈추는 중 — 지금 보내던 한 건까지 끝내요.'; }); });
+  // 오너 11-27 11:51 ③: 뺄 줄 골라 켤 목록으로(오너 확인) · ①: 줄 하나 원가 넣기 — 목록만 고친다(네이버 전송 0)
+  var pickGo = document.querySelector('[data-role=rl-pick-go]'), pickOut = document.querySelector('[data-role=rl-pick-out]');
+  function picked() { return Array.prototype.slice.call(document.querySelectorAll('[data-role=rl-pick]:checked')).map(function (c) { return c.value; }); }
+  document.querySelectorAll('[data-role=rl-pick]').forEach(function (c) { c.addEventListener('change', function () {
+    var n = picked().length; pickGo.disabled = !n; pickGo.textContent = '고른 ' + n + '건 켤 목록으로'; }); });
+  if (pickGo) pickGo.addEventListener('click', function () {
+    var ids = picked(); if (!ids.length) return; pickGo.disabled = true; pickOut.textContent = '옮기는 중…';
+    post({action: 'pick', channel_nos: ids}).then(function (d) {
+      if (!d.ok) { pickOut.textContent = d.error || '옮기지 못했어요.'; pickGo.disabled = false; return; }
+      pickOut.textContent = d.moved + '건 켤 목록으로 옮겼어요(오너 확인)' + ((d.locked || []).length ? ' · 못 옮김 ' + d.locked.length + '건' : '') + ' — 다시 그립니다';
+      setTimeout(function () { location.reload(); }, 900);
+    });
+  });
+  document.querySelectorAll('[data-role=rl-unpick]').forEach(function (b) { b.addEventListener('click', function () {
+    b.disabled = true; post({action: 'unpick', channel_nos: [b.getAttribute('data-no')]}).then(function (d) {
+      if (!d.ok) { b.disabled = false; b.textContent = d.error || '되돌리지 못했어요'; return; } location.reload(); }); }); });
+  document.querySelectorAll('[data-role=rl-cost]').forEach(function (f) { f.addEventListener('submit', function (ev) {
+    ev.preventDefault(); var out = f.querySelector('[data-role=rl-cost-out]'), btn = f.querySelector('button');
+    btn.disabled = true; out.textContent = '그 줄만 다시 판정하는 중…';
+    post({action: 'cost', channel_no: f.getAttribute('data-no'), cost: f.cost.value, currency: f.currency.value, url: f.url.value}).then(function (d) {
+      btn.disabled = false;
+      if (!d.ok) { out.textContent = d.error || '넣지 못했어요.'; return; }
+      out.textContent = d.verdict + (d.row && d.row.margin != null ? ' · 마진 ' + d.row.margin + '%' : '');
+      if (d.row && d.row.action === 'on') setTimeout(function () { location.reload(); }, 1200);
+    });
+  }); });
   if (watchingBuild || watchingRun) watch();
 })();
 </script>
