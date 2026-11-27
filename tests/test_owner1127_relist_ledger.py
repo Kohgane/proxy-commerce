@@ -210,10 +210,14 @@ def test_screen_counts_zero_line_checkboxes_cost_form_and_previous_label(state, 
     ("빕준 Garmin Forerunner 265 band 교체 스트랩", False),
     ("Apple 정품 MagSafe 충전기", True),
     ("Supreme 백팩", True),
+    # 11-27 운영 표본(diag relist:chezgoga) — 지금 규칙으로 남았던 오탐 4 · 진짜 브랜드 상품은 그대로
+    ("빕준 애플워치 밴드 스트랩 가죽 Airfoil Leather Band –Samsung Watch Ultra 해외직구 정품", False),
+    ("충전기 트웰브사우스 TWELVE SOUTH ButterFly 2-in-1 MagSafe Charger 애플 액세서리 해외직구", False),
+    ("Samsung Galaxy Watch 7 정품 스트랩 포함", True),
 ])
 def test_registration_scan_uses_same_compat_rule(monkeypatch, title, hit):
     from src.services import risk_gate as RG
-    monkeypatch.setattr(RG, "_blacklist", lambda: ["apple", "samsung", "garmin", "supreme"])
+    monkeypatch.setattr(RG, "_blacklist", lambda: ["apple", "애플", "samsung", "garmin", "supreme"])
     monkeypatch.setattr(RG, "allowlist", lambda: set())
     got = RG.scan({"title_ko": title, "coupang_name": title})
     assert any(h.get("key") == "blacklist" or str(h.get("label") or "").startswith("브랜드 블랙") for h in got["hits"]) is hit
@@ -253,3 +257,16 @@ def test_last_part_rebuilds_list(state, monkeypatch):
     out = O._run({"op": "relist_ledger_load", "item_id": "chezgoga:cost_pin:1:t", "store": "chezgoga", "part": 1, "parts": 1,
                   "src": "cost_pin", "rows": [{"code": "CP-15000000001", "cost": 30, "currency": "USD"}], "rebuild": True})
     assert out["ok"] and seen == ["chezgoga"] and out["rebuild"]["started"]
+
+
+@pytest.mark.parametrize("title,word,hit", [
+    ("버켄스탁 보스턴 슈퍼그립 클로그 프로페셔널 논슬립 정품", "보스", False),
+    ("보스 QuietComfort 울트라 헤드폰", "보스", True),
+    ("[해외직구] Mungo & Maud 멍고앤마우드 Ping Pong Ball Cat Toy 영국 럭셔리 애견용품", "ping", False),
+    ("PING G430 드라이버 헤드커버", "ping", True),
+    ("[해외직구] 포터 PORTER HELLO KITTY x PORTER SACKPACK 386-26903", "hello kitty", True),
+])
+def test_brand_word_inside_other_word_is_not_brand(title, word, hit):
+    """11-27 운영 표본: 「보스턴」·「Ping Pong」은 금지 브랜드 아님(판매 재개·등록 같은 함수) · 진짜 브랜드 상품은 그대로."""
+    from src.services import risk_gate as RG
+    assert bool(RG.blacklist_words(title, [word])) is hit
