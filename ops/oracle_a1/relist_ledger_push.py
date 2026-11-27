@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 DB = "gogadb"
 PER = 400
 STORES = ("chezgoga", "gocosmos", "gogane")
-KEEP = ("channel_no", "origin_no", "code", "cost", "currency", "url", "updated", "vault_reason", "vault_job", "cp_sold")
+KEEP = ("channel_no", "origin_no", "code", "cost", "currency", "url", "updated", "vault_reason", "vault_job", "cp_sold", "src_state", "via")
 SQL = ("BEGIN; INSERT INTO app_state (key, value, updated_at) VALUES ('ops:oneshot:queue', '{}'::jsonb, now()) "
        "ON CONFLICT (key) DO NOTHING; "
        "SELECT 1 FROM app_state WHERE key='ops:oneshot:queue' FOR UPDATE; "

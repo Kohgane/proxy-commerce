@@ -26,7 +26,10 @@ MAX_ROWS_PER_PART = 400
 OWNER_SRC = "오너 입력"
 #: 출처 이름 — 볼트 장부 이름을 화면 말로(모르는 이름은 받은 그대로 40자)
 SRC_KO = {"sourcing_map": "볼트 소싱맵", "sourcing_map_name": "볼트 소싱맵(이름으로 찾음)", "cost_pin": "원가표",
-          "catalog": "등록 체인 카탈로그", "coupang_mirror": "쿠팡 미러 장부", "vault_log": "볼트 작업 기록", "owner": OWNER_SRC}
+          "catalog": "등록 체인 카탈로그", "coupang_mirror": "쿠팡 미러 장부", "vault_log": "볼트 작업 기록", "owner": OWNER_SRC,
+          "source_live": "소싱처 실측", "name_match": "이름 일치(확인 필요)"}
+#: 오너 11-27 15:18 0-3: 원가가 여럿이면 오너 입력 → 소싱처 실측(오늘 가격) → 그 밖 장부 순
+_SRC_RANK = {OWNER_SRC: 0, "소싱처 실측": 1}
 _CUR = re.compile(r"^[A-Z]{3}$")
 _NO = re.compile(r"^\d{5,15}$")
 _SKU = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{1,39}$")
@@ -97,7 +100,10 @@ def clean_row(raw) -> Optional[Dict]:
     url = str(raw.get("url") or raw.get("source_url") or "").strip()
     if url.startswith("http") and len(url) <= 1000 and " " not in url:
         out["url"] = url
-    for k, n in (("updated", 32), ("vault_reason", 80), ("vault_job", 60)):
+    st = str(raw.get("src_state") or "").strip().lower()
+    if st in ("ok", "soldout", "gone"):
+        out["src_state"] = st
+    for k, n in (("updated", 32), ("vault_reason", 80), ("vault_job", 60), ("via", 60)):
         v = str(raw.get(k) or "").strip()
         if v:
             out[k] = v[:n]
@@ -107,7 +113,7 @@ def clean_row(raw) -> Optional[Dict]:
             out["cp_sold"] = min(n, 100000)
     except (TypeError, ValueError):
         pass
-    if not any(k in out for k in ("cost", "url", "vault_reason", "cp_sold")):     # 번호만 있고 쓸 게 없는 줄
+    if not any(k in out for k in ("cost", "url", "vault_reason", "cp_sold", "src_state")):     # 번호만 있고 쓸 게 없는 줄
         return None
     return out
 
@@ -187,13 +193,26 @@ def find(idx: Dict[str, Dict], row: Dict) -> Optional[Dict]:
     hits = [r for k in keys for r in (idx.get(k) or {}).values() if isinstance(r, dict)]
     if not hits:
         return None
-    hits.sort(key=lambda v: (v.get("src") != OWNER_SRC, not v.get("cost")))
+    hits.sort(key=lambda v: (_SRC_RANK.get(_base_src(v.get("src")), 5), not v.get("cost")))
     best = dict(hits[0])
     for h in hits[1:]:                                              # 원가 줄에 없는 칸(주소·볼트 사유·쿠팡 판매)은 다른 장부에서 채운다
-        for k in ("url", "vault_reason", "vault_job", "cp_sold"):
+        for k in ("url", "vault_reason", "vault_job", "cp_sold", "src_state", "updated"):
             if not best.get(k) and h.get(k):
                 best[k] = h[k]
     return best
+
+
+def _base_src(src) -> str:
+    return str(src or "").split("(")[0].strip()
+
+
+def src_label(entry: Optional[Dict]) -> str:
+    """화면 출처 — 소싱처 실측은 날짜까지(「소싱처 실측(11-27)」)."""
+    e = entry or {}
+    src = str(e.get("src") or "")
+    if src == "소싱처 실측" and e.get("updated"):
+        return f"소싱처 실측({str(e['updated'])[5:10]})"
+    return src
 
 
 def hard_vault_reason(entry: Optional[Dict]) -> str:

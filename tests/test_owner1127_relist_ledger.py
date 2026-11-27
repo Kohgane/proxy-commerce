@@ -339,3 +339,46 @@ def test_rejected_product_blocks_that_product_only(state, monkeypatch, tmp_path)
     assert "rejected_hist" not in by["30001"]["exclude"]
     assert SR.owner_pick("chezgoga", ["30000"])["locked"][0]["channel_no"] == "30000"
     RG._rej_cache.update(at=0.0, rows=None)
+
+
+def test_live_source_price_wins_and_soldout_skips(state, monkeypatch):
+    """오너 11-27 15:18 0-3: 소싱처 현재가(실측)가 옛 장부 원가보다 먼저 · 출처 「소싱처 실측(날짜)」 · 품절이면 사유로 뺌."""
+    SR = _env(monkeypatch)
+    from src.services import relist_ledger as RL
+    RL.load_part("chezgoga", 1, 1, "sourcing_map", [{"code": "CP-15000000001", "cost": "400", "currency": "USD"},
+                                                    {"code": "CP-15000000002", "cost": "40", "currency": "USD"}])
+    RL.load_part("chezgoga", 1, 1, "source_live", [
+        {"code": "CP-15000000001", "cost": "42", "currency": "USD", "updated": "2026-11-27", "src_state": "ok", "via": "shopify .js"},
+        {"code": "CP-15000000002", "cost": "39", "currency": "USD", "updated": "2026-11-27", "src_state": "soldout"}])
+    up = _mirrors(monkeypatch, [("지갑", "CP-15000000001"), ("램프", "CP-15000000002")])
+    p = SR.build("chezgoga", up=up, size_of=_size)
+    by = {x["channel_no"]: x for x in p["rows"]}
+    assert by["30000"]["cost"] == 42.0 and by["30000"]["cost_src"] == "소싱처 실측(11-27)" and by["30000"]["action"] == "on"
+    assert "src_soldout" in by["30001"]["exclude"] and "품절" in " ".join(by["30001"]["exclude_detail"])
+
+
+def test_src_live_job_only_appends_queue_and_reads_shopify_js(monkeypatch):
+    """SRCLIVE1127(오라클): 쓰기는 큐 덧붙이기 하나 · Shopify `.js`(가격 센트·재고)+`/cart.js`(통화) · 아마존은 실측 못 함(지어내지 않음)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("src_live_1127", "ops/oracle_a1/src_live_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    up = m.SQL.upper()
+    assert up.count("UPDATE APP_STATE") == 1 and "'ops:oneshot:queue'" in m.SQL
+    for bad in ("DELETE", "DROP", "TRUNCATE", "ALTER", "COLLECT_HISTORY", "ORDERS"):
+        assert bad not in up
+
+    class R:
+        def __init__(self, status, data=None, ctype="application/json"):
+            self.status_code, self._d, self.headers, self.ok, self.text = status, data, {"Content-Type": ctype}, status < 400, ""
+
+        def json(self):
+            return self._d
+    pages = {"https://shop.example.com/products/a.js": R(200, {"variants": [{"price": 4200, "available": True}, {"price": 3900, "available": False}]}),
+             "https://shop.example.com/cart.js": R(200, {"currency": "USD"}),
+             "https://shop.example.com/products/gone.js": R(404)}
+    monkeypatch.setattr(m.S, "get", lambda u, timeout=20: pages[u])
+    monkeypatch.setattr(m, "_pace", lambda host, gap=0.8: None)
+    assert m.read("https://shop.example.com/products/a?variant=1") == {"cost": 42.0, "currency": "USD", "state": "ok", "via": "shopify .js"}
+    assert m.read("https://shop.example.com/products/gone")["state"] == "gone"
+    assert m.read("https://www.amazon.com/dp/B0X")["state"] == "unknown"

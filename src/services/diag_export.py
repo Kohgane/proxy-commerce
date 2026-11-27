@@ -114,7 +114,23 @@ def _relist(arg: str) -> Dict:
     kinds = Counter(("CP" if norm_code(x.get("seller_code")).startswith("CP-") else ("빈칸" if not x.get("seller_code") else "품번"))
                     for x in rows)
     mods = Counter(str(x.get("modified") or "")[:10] for x in rows).most_common(12)
+    # 오너 11-27 오후 ①: 마진 손계산 대조용 — 운영 입력값(환율·배대지·국제배송·관부가세·수수료·국내배송)과 켤 후보 표본 20(원가·출처·판매가·마진·사진)
+    mi = {}
+    try:
+        import os as _os
+        from src import price as P
+        fx = P._build_fx_rates()
+        mi = {"fx": {k: float(v) for k, v in (fx or {}).items() if isinstance(v, (int, float)) or hasattr(v, "as_tuple")},
+              "forwarder_fee_jpy": _os.getenv("FORWARDER_FEE_JPY", "300"), "shipping_fee_krw": _os.getenv("SHIPPING_FEE_DEFAULT", "12000"),
+              "customs_rate": _os.getenv("CUSTOMS_RATE_DEFAULT", "0.20"), "customs_threshold_krw": _os.getenv("CUSTOMS_THRESHOLD_KRW", "150000"),
+              "commission_pct": float(P.commission_pct("smartstore")[0] or 0), "domestic_shipping_krw": float(P.domestic_shipping_krw("smartstore"))}
+    except Exception as exc:                                       # noqa: BLE001
+        mi = {"error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    keep3 = keep + ("cost_src", "policy_price", "seller_code", "vault_reason", "src_url", "owner_ok")
+    ons = [x for x in rows if x.get("action") == "on"]
+    on20 = [{f: x.get(f) for f in keep3} for x in rnd.sample(ons, min(20, len(ons)))]
     return {"store": store, "plan": {k: v for k, v in p.items() if k != "rows"}, "samples": samples,
+            "margin_inputs": mi, "on20": on20,
             "skip20": skip20, "brand_rows": brand_rows, "code_kinds": dict(kinds), "modified_top": mods,
             "why_zero": SR.why_zero(p),
             "on_head": [{f: x.get(f) for f in keep} for x in rows if x.get("action") == "on"][:20],

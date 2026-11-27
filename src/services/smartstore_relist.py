@@ -208,8 +208,9 @@ def _margin(row: Dict, ours: Optional[Dict], sold: bool, ledger: Optional[Dict] 
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
     cost, src = (mon.get("current_price"), "소싱처 재확인") if mon.get("current_price") else (ex.get("price"), "수집 때")
     cur = str(ex.get("currency") or "")
-    if ledger and ledger.get("cost") and (ledger.get("src") == "오너 입력" or not (cost and cur)):
-        cost, cur, src = ledger["cost"], str(ledger.get("currency") or ""), str(ledger.get("src") or "볼트 장부")
+    if ledger and ledger.get("cost") and (ledger.get("src") in ("오너 입력", "소싱처 실측") or not (cost and cur)):
+        from src.services.relist_ledger import src_label
+        cost, cur, src = ledger["cost"], str(ledger.get("currency") or ""), src_label(ledger) or "볼트 장부"
     if not (cost and cur):
         return out
     try:
@@ -290,6 +291,8 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Opt
         why.append(("rejected_hist", rejected_line(_rj) or "반려·소명 이력"))
     if (hv := RL.hard_vault_reason(L)):
         why.append(("vault_hard", f"{hv}{(' · ' + L['vault_job']) if L.get('vault_job') else ''}"))
+    if (L or {}).get("src_state") in ("soldout", "gone"):          # 오너 11-27 15:18 0-3: 소싱처 현재가 확인에서 품절·단종
+        why.append(("src_soldout", f"소싱처 실측 {'품절' if L['src_state'] == 'soldout' else '내려감'}({str(L.get('updated') or '')[5:10]})"))
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
     if mon.get("in_stock") is False or str(mon.get("change") or "") in ("soldout", "gone", "removed"):
         why.append(("src_soldout", str(mon.get("summary") or "품절")))
