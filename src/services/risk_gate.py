@@ -26,7 +26,7 @@ import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -357,9 +357,70 @@ def not_brand_here(text: str, term: str) -> bool:
     return word_sense_only(text, term) or compat_accessory(text, term)
 
 
+_REJ_FILE = Path(__file__).resolve().parents[1] / "uploaders" / "rejected_products.json"
+_rej_cache: Dict[str, Any] = {"at": 0.0, "rows": None}
+
+
+def rejected_products() -> List[dict]:
+    """반려·소명 이력 상품 목록(`rejected_products.json`) — 오너 11-27 15:18 0-2."""
+    now = time.monotonic()
+    if _rej_cache["rows"] is not None and now - _rej_cache["at"] < 60:
+        return _rej_cache["rows"]
+    try:
+        rows = [r for r in (json.loads(_REJ_FILE.read_text(encoding="utf-8")).get("rows") or []) if isinstance(r, dict)]
+    except Exception:                                              # noqa: BLE001 — 못 읽으면 빈 목록(막는 줄이 사라지는 쪽이라 로그)
+        logger.warning("[리스크] 반려 상품 목록을 못 읽음 — %s", _REJ_FILE)
+        rows = []
+    _rej_cache.update(at=now, rows=rows)
+    return rows
+
+
+def _norm_code(v) -> str:
+    t = str(v or "").strip().upper()
+    m = re.match(r"^CP-?(\d{5,15})$", t)
+    return ("CP-" + m.group(1)) if m else t
+
+
+def rejected_match(url: str = "", codes=()) -> Optional[dict]:
+    """이 상품이 반려·소명 이력 상품인가 — 소싱처 주소(상품 키로 정규화)·상품번호·관리 코드 중 하나라도 맞으면 그 줄."""
+    rows = rejected_products()
+    if not rows:
+        return None
+    want = {_norm_code(c) for c in codes or [] if str(c or "").strip()}
+    key = ""
+    if url:
+        try:
+            from src.collectors.product_key import normalize_product_key
+            key = normalize_product_key(url) or ""
+        except Exception:                                          # noqa: BLE001
+            key = ""
+    for r in rows:
+        mine = {_norm_code(r.get(k)) for k in ("product_no", "seller_code", "channel_no", "origin_no", "code") if r.get(k)}
+        if want & mine:
+            return r
+        if key and r.get("url"):
+            try:
+                from src.collectors.product_key import normalize_product_key
+                if normalize_product_key(r["url"]) == key:
+                    return r
+            except Exception:                                      # noqa: BLE001
+                pass
+    return None
+
+
+def rejected_line(r: dict) -> str:
+    return " · ".join(x for x in (str(r.get("date") or "")[:10], str(r.get("market") or ""), str(r.get("reason") or "")[:80]) if x)
+
+
+def active_blacklist() -> List[str]:
+    """지금 막는 금지 브랜드 — 블랙리스트 브랜드 낱말에서 허용 목록(대소문자 무관)을 뺀 것. 등록 사전검증·판매 재개 공용(오너 11-27 15:18 0-1)."""
+    allow = {str(a).strip().lower() for a in allowlist() if str(a).strip()}
+    return [t for t in _blacklist() if str(t).strip().lower() not in allow]
+
+
 def blacklist_words(text: str, words=None) -> List[str]:
     """글 속 금지 브랜드 낱말(호환 액세서리 자리·다른 낱말의 일부는 뺌) — 등록 사전검증·판매 재개 공용."""
-    words = list(words) if words is not None else _blacklist()
+    words = list(words) if words is not None else active_blacklist()
     out = []
     for w in words:
         if _pat(w, False).search(str(text or "")) and not not_brand_here(text, w):
@@ -480,7 +541,7 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None, pending_eta_sec: i
         if h:
             h["to"] = str(c.get("to") or "")
             hits.append(h)
-    bl = [t for t in _blacklist() if t not in allow]
+    bl = active_blacklist()
     _ttl = where_text.get("상품명") or ""
     bl = [t for t in bl if not not_brand_here(_ttl, t)]           # 오너 11-27: 호환 액세서리 자리는 금지 브랜드 아님(판매 재개와 같은 규칙)
     if bl:
@@ -548,6 +609,18 @@ def scan(extra: dict, *, pending_images: int = 0, owner=None, pending_eta_sec: i
             hits.append({"key": "claim", "cat": "표시광고", "label": "과장·금칙 표현", "grade": "caution", "names": [],
                          "found": list(dict.fromkeys(claim))[:6], "where": {}, "images": [], "auto_fix": True,
                          "why": " · ".join(how)})
+    except Exception:                                              # noqa: BLE001
+        pass
+    # 오너 11-27 15:18 0-2: 반려·소명 이력 상품 — 그 상품만 차단(브랜드 전체 아님)
+    try:
+        _codes = [ex.get(k) for k in ("asin", "item_id_taobao", "site_item_id", "seller_code")]
+        _codes += [u.get(k) for u in (ex.get("uploaded") or []) if isinstance(u, dict)
+                   for k in ("product_id", "channel_product_no", "seller_product_id")]
+        _rj = rejected_match(str(ex.get("url") or ex.get("source_url") or ex.get("canonical_url") or ""), _codes)
+        if _rj:
+            hits.append({"key": "rejected_product", "cat": "반려 이력", "label": "반려·소명 났던 상품", "grade": "block", "names": [],
+                         "found": [rejected_line(_rj) or "반려 이력"], "where": {}, "images": [],
+                         "why": "이 상품은 " + (rejected_line(_rj) or "반려·소명 이력") + " — 같은 상품은 다시 올리지 않아요(같은 브랜드 다른 상품은 통과)"})
     except Exception:                                              # noqa: BLE001
         pass
     dec = (ex.get("risk_decisions") or {}) if isinstance(ex.get("risk_decisions"), dict) else {}

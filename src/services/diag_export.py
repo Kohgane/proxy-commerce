@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 SNAP_PREFIX = "diag:snap:"
-NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs")
+NAMES = ("restarts", "sources", "relist", "reenrich", "stores", "item", "prevalidate", "jobs", "blacklist")
 MAX_BYTES = 400_000
 
 #: 이름째 지우는 칸(대소문자 무시 · 부분 일치) — 주문·배송·개인 연락처
@@ -100,7 +100,7 @@ def _relist(arg: str) -> Dict:
     skip20 = [{f: x.get(f) for f in keep2} for x in rnd.sample(skips, min(20, len(skips)))]
     from src.services import risk_gate as RG
     try:
-        _bl = [b for b in RG._blacklist() if str(b).strip().lower() not in SR.BRAND_EXCEPT]
+        _bl = [b for b in RG.active_blacklist() if str(b).strip().lower() not in SR.BRAND_EXCEPT]
     except Exception:                                              # noqa: BLE001
         _bl = []
     brand_rows = []
@@ -168,8 +168,17 @@ def _jobs(arg: str) -> Dict:
     return {"jobs": out}
 
 
+def _blacklist_diag(arg: str) -> Dict:
+    """오너 11-27 15:18 0-2 — 운영 금지 브랜드 목록 원문(env COUPANG_BLACKLIST85) · 브랜드 낱말로 거른 것 · 허용 목록 · 지금 막는 것(읽기만)."""
+    from src.pipeline.coupang_replicate import load_blacklist85
+    from src.services import risk_gate as RG
+    raw = load_blacklist85()
+    return {"source": raw.get("source"), "count": raw.get("count"), "terms": list(raw.get("terms") or []),
+            "brand_terms": RG._blacklist(), "allow": sorted(RG.allowlist()), "active": RG.active_blacklist()}
+
+
 _BUILDERS = {"restarts": _restarts, "sources": _sources, "relist": _relist, "reenrich": _reenrich, "stores": _stores,
-             "item": _item, "prevalidate": _prevalidate, "jobs": _jobs}
+             "item": _item, "prevalidate": _prevalidate, "jobs": _jobs, "blacklist": _blacklist_diag}
 
 
 def build(name: str, arg: str = "") -> Dict:

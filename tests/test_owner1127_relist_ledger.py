@@ -284,3 +284,58 @@ def test_taobao_share_page_id_forms(text, iid):
     """오너 11-27 오후 ③: e.tb.cn → m.tb.cn 본문의 상품 주소 꼴(`&amp;id=`·`%26id%3D`·`/i<번호>.htm`·`itemId`) — 「상품번호 해석 실패」 수리."""
     from src.collectors.taobao_mtop import id_in_text
     assert id_in_text(text) == iid
+
+
+def test_short_link_resolves_through_relay_location_hops():
+    """직결로 안 열리는 e.tb.cn → 릴레이가 돌려준 Location을 따라가 상품번호(읽기만)."""
+    from src.collectors.taobao_mtop import item_id_via_relay
+
+    class R:
+        def __init__(self, status, text="", loc=""):
+            self.status_code, self.text, self.headers = status, text, ({"Location": loc} if loc else {})
+    hops = {"https://e.tb.cn/h.x?tk=1": R(302, loc="https://m.tb.cn/h.x?tk=1"),
+            "https://m.tb.cn/h.x?tk=1": R(200, "<script>var url='https://item.taobao.com/item.htm?ut=1&amp;id=1060535477134'</script>")}
+    seen = []
+    iid, how = item_id_via_relay("https://e.tb.cn/h.x?tk=1", send=lambda m, u, h, j, d, t: (seen.append((m, u)), hops[u])[1])
+    assert iid == "1060535477134" and "릴레이" in how and all(m == "GET" for m, _u in seen)
+    iid, how = item_id_via_relay("https://e.tb.cn/h.y", send=lambda *a: R(200, "<html>로그인</html>"))
+    assert iid == "" and "못 찾음" in how
+
+
+def test_allowlisted_brands_pass_in_relist_and_registration(monkeypatch):
+    """오너 11-27 15:18 0-1: Apotheke Fragrance · Imaginary Authors 허용 — 판매 재개·등록 사전검증 같은 목록(대소문자 무관)."""
+    from src.services import risk_gate as RG
+    monkeypatch.setattr(RG, "_blacklist", lambda: ["Apotheke Fragrance", "Imaginary Authors", "supreme"])
+    assert {"Apotheke Fragrance", "Imaginary Authors"} <= {a for a in RG.allowlist()}
+    assert RG.active_blacklist() == ["supreme"]
+    assert RG.blacklist_words("[해외직구] Apotheke Fragrance 아포테케 프래그런스 오일버너 BRASS") == []
+    assert RG.blacklist_words("Supreme 백팩") == ["supreme"]
+    got = RG.scan({"title_ko": "[해외직구] Imaginary Authors 이매지너리 오서스 A City On Fire 오 드 퍼퓸 50ml"})
+    assert not any(h.get("key") == "blacklist" for h in got["hits"])
+    from src.services import smartstore_relist as SR
+    assert "Apotheke Fragrance" not in SR._rules()[1]
+
+
+def test_rejected_product_blocks_that_product_only(state, monkeypatch, tmp_path):
+    """오너 11-27 15:18 0-2: 반려·소명 났던 그 상품만 막는다 — 같은 브랜드 다른 상품은 통과 · 판매 재개는 「반려 이력(날짜·사유)」로 뺌(못 고름)."""
+    import json
+    from src.services import risk_gate as RG
+    f = tmp_path / "rej.json"
+    f.write_text(json.dumps({"rows": [{"brand": "Imaginary Authors", "market": "쿠팡", "date": "2026-10-02", "reason": "상표권 침해 신고",
+                                       "seller_code": "CP-15000000001", "url": "https://imaginaryauthors.com/products/a-city-on-fire"}]}),
+                 encoding="utf-8")
+    monkeypatch.setattr(RG, "_REJ_FILE", f)
+    RG._rej_cache.update(at=0.0, rows=None)
+    monkeypatch.setattr(RG, "_blacklist", lambda: [])
+    hit = RG.scan({"title_ko": "Imaginary Authors A City On Fire 50ml", "url": "https://imaginaryauthors.com/products/a-city-on-fire?v=1"})
+    assert any(h["key"] == "rejected_product" and h["grade"] == "block" for h in hit["hits"])
+    other = RG.scan({"title_ko": "Imaginary Authors Bull's Blood 50ml", "url": "https://imaginaryauthors.com/products/bulls-blood"})
+    assert not any(h["key"] == "rejected_product" for h in other["hits"])
+    SR = _env(monkeypatch)
+    up = _mirrors(monkeypatch, [("Imaginary Authors A City On Fire", "CP15000000001"), ("Imaginary Authors Bull's Blood", "CP-15000000002")])
+    p = SR.build("chezgoga", up=up, size_of=_size)
+    by = {x["channel_no"]: x for x in p["rows"]}
+    assert "rejected_hist" in by["30000"]["exclude"] and "2026-10-02" in " ".join(by["30000"]["exclude_detail"])
+    assert "rejected_hist" not in by["30001"]["exclude"]
+    assert SR.owner_pick("chezgoga", ["30000"])["locked"][0]["channel_no"] == "30000"
+    RG._rej_cache.update(at=0.0, rows=None)

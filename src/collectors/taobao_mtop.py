@@ -223,6 +223,30 @@ _ID_PATTERNS = (
 )
 
 
+def item_id_via_relay(url: str, hops: int = 3, send=None) -> tuple:
+    """오너 11-27 오후 ③: 단축 링크가 직결로 안 열리면(실측: 오라클·이 세션 모두 e.tb.cn 연결 시간 초과) 서울 릴레이로 연다.
+    릴레이는 리디렉트를 따라가지 않고 `Location`을 돌려준다 — 그 주소·본문에서 상품번호를 찾으며 최대 `hops`번 따라간다(읽기만)."""
+    from urllib.parse import urljoin
+    if send is None:
+        from src.market_relay import _api_relay_send as send
+    cur, trail = str(url or ""), []
+    for _ in range(max(1, hops)):
+        try:
+            r = send("GET", cur, {"User-Agent": UA, "Accept": "text/html,*/*"}, None, None, 20)
+        except Exception as exc:                                   # noqa: BLE001
+            return "", f"릴레이 열기 실패 {type(exc).__name__}: {str(exc)[:80]}"
+        loc = (getattr(r, "headers", None) or {}).get("Location") or ""
+        loc = loc[0] if isinstance(loc, list) and loc else str(loc or "")
+        got = id_in_text(cur) or id_in_text(loc) or id_in_text(getattr(r, "text", "") or "")
+        trail.append(f"HTTP {getattr(r, 'status_code', '?')}")
+        if got:
+            return got, "릴레이 경유 · " + " → ".join(trail)
+        if not loc:
+            break
+        cur = urljoin(cur, loc)
+    return "", "릴레이로도 상품번호를 못 찾음 · " + " → ".join(trail)
+
+
 def id_in_text(text: str) -> str:
     """주소·본문에서 타오바오 상품번호 — 위 꼴 중 처음 맞는 것. 못 찾으면 ""."""
     t = str(text or "")

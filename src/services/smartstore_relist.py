@@ -48,9 +48,10 @@ REASON_KO = {
     "no_source": "원본 주소 없음", "photos_small": "사진 전부 500px 미만", "no_room": "빈자리 없음(대기)",
     "mirror": "원가 미확인 · 쿠팡 미러",
     "vault_hard": "볼트 기록: 반려·상표·KC·카테고리 오매칭으로 내림",
+    "rejected_hist": "반려 이력",
 }
 #: 오너 11-27 11:51 ③: 오너가 「켤 목록으로」 골라도 못 옮기는 사유(도검·렌즈·금지 브랜드 · 볼트에 반려·상표로 내린 기록)
-LOCKED = ("knife", "lens", "brand", "vault_hard")
+LOCKED = ("knife", "lens", "brand", "vault_hard", "rejected_hist")
 
 
 def _now() -> str:
@@ -193,7 +194,7 @@ def _rules():
     for c in (RG.tokens().get("cert") or []):
         if isinstance(c, dict) and c.get("key") == "knife":
             knife = list(c.get("names") or [])
-    brands = [b for b in RG._blacklist() if str(b).strip().lower() not in BRAND_EXCEPT]
+    brands = [b for b in RG.active_blacklist() if str(b).strip().lower() not in BRAND_EXCEPT]   # 허용 목록 반영(등록과 같은 목록)
     return knife, brands
 
 
@@ -282,6 +283,11 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Opt
     if ex.get("risk_skip") or rej or ex.get("takedowns"):
         why.append(("ours_reject", (ex.get("risk_skip") or {}).get("reason") if isinstance(ex.get("risk_skip"), dict) else
                     ("반려: " + str(((rej[0].get("review") or {}).get("comment")) or "")[:60] if rej else "「이 마켓에서 내리기」 기록")))
+    from src.services.risk_gate import rejected_match, rejected_line
+    _rj = rejected_match(str((o or {}).get("url") or (L or {}).get("url") or ""),
+                         [r.get("channel_no"), r.get("origin_no"), r.get("seller_code")])
+    if _rj:                                                        # 오너 11-27 15:18 0-2: 반려·소명 났던 그 상품만 — 「반려 이력(날짜·사유)」
+        why.append(("rejected_hist", rejected_line(_rj) or "반려·소명 이력"))
     if (hv := RL.hard_vault_reason(L)):
         why.append(("vault_hard", f"{hv}{(' · ' + L['vault_job']) if L.get('vault_job') else ''}"))
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
