@@ -450,3 +450,58 @@ def test_brand_search_job_only_appends_queue_and_needs_real_overlap(monkeypatch)
     assert got is None and why == "비슷한 상품 없음"                                          # 틀린 상품의 원가를 붙이지 않는다
     from src.services import relist_ledger as RL
     assert RL.SRC_KO["name_match"] == "이름 일치(확인 필요)"
+
+
+def test_src_live2_reads_whole_shop_catalog_checkpoints_and_only_appends_queue(monkeypatch, tmp_path):
+    """SRCLIVE2(오라클 · 1판이 기록 0줄로 끝나 결과를 잃은 뒤): 쓰기는 큐 덧붙이기 하나 · Shopify는 가게 전체 `products.json`
+    (소수 문자열 가격·available)로 핸들 맞춤 · 목록에 없는 것만 `.js`(404=내려감) · 아마존은 실측 못 함 · 가게마다 중간 저장 →
+    다시 띄우면 오늘 읽은 줄은 다시 안 읽음 · `--dry`는 큐를 안 건드림."""
+    import importlib.util
+    import json as _j
+    spec = importlib.util.spec_from_file_location("src_live2_1127", "ops/oracle_a1/src_live2_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    up = m.SQL.upper()
+    assert up.count("UPDATE APP_STATE") == 1 and "'ops:oneshot:queue'" in m.SQL
+    for bad in ("DELETE", "DROP", "TRUNCATE", "ALTER", "COLLECT_HISTORY", "ORDERS"):
+        assert bad not in up
+
+    class R:
+        def __init__(self, status, data=None, ctype="application/json", text=""):
+            self.status_code, self._d, self.headers, self.ok, self.text = status, data, {"Content-Type": ctype}, status < 400, text
+
+        def json(self):
+            return self._d
+    calls = []
+
+    def fake(url, timeout=25):
+        calls.append(url)
+        if "products.json" in url:
+            return R(200, {"products": [{"handle": "Dog-Leash", "variants": [{"price": "38.25", "available": True},
+                                                                          {"price": "30.00", "available": False}]}]}
+                     if "page=1" in url else {"products": []})
+        if url.endswith("/cart.js"):
+            return R(200, {"currency": "EUR"})
+        if url.endswith("missing.js"):
+            return R(404)
+        return R(200, None, "text/html", '<script type="application/ld+json">{"offers":{"price":"12.5","priceCurrency":"usd",'
+                                          '"availability":"https://schema.org/OutOfStock"}}</script>')
+    monkeypatch.setattr(m, "_get", fake)
+    (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)
+    (tmp_path / "vault" / "srv_snap" / "apply_out" / "relistledger_data_chezgoga.txt").write_text(_j.dumps({"parts": {"sourcing_map": [
+        {"channel_no": "1", "url": "https://x.de/products/dog-leash?variant=9"},
+        {"channel_no": "2", "url": "https://x.de/products/missing"},
+        {"channel_no": "3", "url": "https://www.amazon.com/dp/B0X"},
+        {"channel_no": "4", "url": "https://y.com/item/1"}]}}))
+    monkeypatch.setenv("KG_HOME", str(tmp_path))
+    pushed = []
+    monkeypatch.setattr(m, "psql", lambda sql: pushed.append(sql) or "")
+    assert m.main(["chezgoga", "--dry"]) == 0 and pushed == []
+    rows = _j.loads((tmp_path / "ora_state" / "srclive2_chezgoga.json").read_text())["rows"]
+    assert rows["1"] == {"cost": 38.25, "currency": "EUR", "state": "ok", "via": "shopify products.json"}
+    assert rows["2"]["state"] == "gone" and rows["3"]["state"] == "unknown" and rows["4"]["state"] == "soldout"
+    assert not any("dog-leash.js" in u for u in calls)                 # 목록에 있으면 상품마다 안 읽음
+    n = len(calls)
+    assert m.main(["chezgoga"]) == 0 and len(calls) == n               # 이어쓰기 — 오늘 읽은 줄은 다시 안 읽음
+    assert len(pushed) == 1 and "relist_ledger_load" in pushed[0] and '"src": "source_live"' in pushed[0] and '"rebuild": true' in pushed[0]
+    assert "B0X" not in pushed[0]                                      # 아마존(실측 못 함)은 넣지 않음
