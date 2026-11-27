@@ -420,3 +420,33 @@ def test_name_only_cost_does_not_turn_on_but_owner_can_pick(state, monkeypatch):
     assert by["30000"]["exclude"] == ["cost_name_only"] and "이름으로 찾음" in by["30000"]["exclude_detail"][0]
     assert by["30001"]["action"] == "on"
     assert SR.owner_pick("chezgoga", ["30000"])["moved"] == 1                               # 잠금 아님 — 확인하고 켤 수 있다
+
+
+def test_brand_search_job_only_appends_queue_and_needs_real_overlap(monkeypatch):
+    """BRANDSEARCH1127(오라클): 공식몰 이름 검색 — 쓰기는 큐 덧붙이기 하나 · 가게 상품 제목의 70% 이상이 우리 이름에(겹친 낱말 3개+) · 결과는 「이름 일치(확인 필요)」."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("brand_search_1127", "ops/oracle_a1/brand_search_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    up = m.SQL.upper()
+    assert up.count("UPDATE APP_STATE") == 1 and "'ops:oneshot:queue'" in m.SQL and "DELETE" not in up
+
+    class R:
+        def __init__(self, data, status=200):
+            self.status_code, self._d, self.ok, self.headers = status, data, status < 400, {}
+
+        def json(self):
+            return self._d
+    sugg = {"resources": {"results": {"products": [{"title": "Red, White & Blue Cotton Dog & Cat Harness", "url": "/products/rwb-harness?x=1"},
+                                                    {"title": "Navy Waxed Canvas Leash", "url": "/products/leash"}]}}}
+    pages = {"https://foundmyanimal.com/products/rwb-harness.js": R({"variants": [{"price": 6800, "available": True}]}),
+             "https://foundmyanimal.com/cart.js": R({"currency": "USD"})}
+    monkeypatch.setattr(m, "_get", lambda u, timeout=20: sugg_r if "suggest.json" in u else pages[u])
+    sugg_r = R(sugg)
+    got, why = m.search("foundmyanimal.com", "[해외직구] Found My Animal 파운드마이애니멀 Red, White &amp; Blue Cotton Dog &amp; Cat Harness – Adjustable")
+    assert why == "" and got["cost"] == 68.0 and got["currency"] == "USD" and got["url"].endswith("/products/rwb-harness")
+    sugg_r = R({"resources": {"results": {"products": [{"title": "Completely Different Bowl", "url": "/products/bowl"}]}}})
+    got, why = m.search("foundmyanimal.com", "Found My Animal Red White Blue Harness")
+    assert got is None and why == "비슷한 상품 없음"                                          # 틀린 상품의 원가를 붙이지 않는다
+    from src.services import relist_ledger as RL
+    assert RL.SRC_KO["name_match"] == "이름 일치(확인 필요)"
