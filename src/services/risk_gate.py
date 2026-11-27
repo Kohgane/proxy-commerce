@@ -415,6 +415,7 @@ def rejected_line(r: dict) -> str:
 def active_blacklist() -> List[str]:
     """지금 막는 금지 브랜드 — 블랙리스트 브랜드 낱말에서 허용 목록(대소문자 무관)을 뺀 것. 등록 사전검증·판매 재개 공용(오너 11-27 15:18 0-1)."""
     allow = {str(a).strip().lower() for a in allowlist() if str(a).strip()}
+    allow |= {str(a).strip().lower() for a in (tokens().get("product_level") or []) if str(a).strip()}   # 0-2: 그 상품만 막는 브랜드
     return [t for t in _blacklist() if str(t).strip().lower() not in allow]
 
 

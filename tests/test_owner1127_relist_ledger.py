@@ -219,6 +219,8 @@ def test_registration_scan_uses_same_compat_rule(monkeypatch, title, hit):
     from src.services import risk_gate as RG
     monkeypatch.setattr(RG, "_blacklist", lambda: ["apple", "애플", "samsung", "garmin", "supreme"])
     monkeypatch.setattr(RG, "allowlist", lambda: set())
+    _t = RG.tokens()
+    monkeypatch.setattr(RG, "tokens", lambda: {**_t, "product_level": []})          # 호환 규칙만 본다(상품 단위 브랜드 목록과 별개)
     got = RG.scan({"title_ko": title, "coupang_name": title})
     assert any(h.get("key") == "blacklist" or str(h.get("label") or "").startswith("브랜드 블랙") for h in got["hits"]) is hit
 
@@ -308,6 +310,8 @@ def test_allowlisted_brands_pass_in_relist_and_registration(monkeypatch):
     """오너 11-27 15:18 0-1: Apotheke Fragrance · Imaginary Authors 허용 — 판매 재개·등록 사전검증 같은 목록(대소문자 무관)."""
     from src.services import risk_gate as RG
     monkeypatch.setattr(RG, "_blacklist", lambda: ["Apotheke Fragrance", "Imaginary Authors", "supreme"])
+    _t = RG.tokens()
+    monkeypatch.setattr(RG, "tokens", lambda: {**_t, "product_level": []})
     assert {"Apotheke Fragrance", "Imaginary Authors"} <= {a for a in RG.allowlist()}
     assert RG.active_blacklist() == ["supreme"]
     assert RG.blacklist_words("[해외직구] Apotheke Fragrance 아포테케 프래그런스 오일버너 BRASS") == []
@@ -384,3 +388,17 @@ def test_src_live_job_only_appends_queue_and_reads_shopify_js(monkeypatch):
     assert m.read("https://shop.example.com/products/a?variant=1") == {"cost": 42.0, "currency": "USD", "state": "ok", "via": "shopify .js"}
     assert m.read("https://shop.example.com/products/gone")["state"] == "gone"
     assert m.read("https://www.amazon.com/dp/B0X")["state"] == "unknown"
+
+
+def test_product_level_brands_leave_blacklist_but_their_rejected_products_stay_blocked(monkeypatch):
+    """오너 11-27 15:18 0-2: 근거가 특정 상품이면 브랜드 줄을 빼고 그 상품만 — 브랜드 단위 근거(CASETiFY 등)는 그대로."""
+    from src.services import risk_gate as RG
+    RG._rej_cache.update(at=0.0, rows=None)
+    monkeypatch.setattr(RG, "_blacklist", lambda: ["Patagonia", "Nike", "CASETiFY", "Peter Millar"])
+    assert RG.active_blacklist() == ["CASETiFY", "Peter Millar"]
+    assert RG.blacklist_words("Patagonia Nano Puff Jacket") == []
+    assert RG.blacklist_words("CASETiFY 아이폰 케이스") == ["CASETiFY"]
+    hit = RG.scan({"title_ko": "Patagonia Better Sweater", "uploaded": [{"market": "coupang:gogane", "product_id": "16302192201"}]})
+    assert any(h["key"] == "rejected_product" for h in hit["hits"])                    # 반려 났던 그 상품은 막힘
+    other = RG.scan({"title_ko": "Patagonia Nano Puff", "uploaded": [{"market": "coupang:gogane", "product_id": "16399999999"}]})
+    assert not any(h["key"] in ("rejected_product", "blacklist") for h in other["hits"])   # 같은 브랜드 다른 상품은 통과

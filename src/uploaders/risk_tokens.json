@@ -480,5 +480,25 @@
     "Apotheke Fragrance",
     "Imaginary Authors"
   ],
-  "allow_doc": "오너 11-27 15:18 결정 0-1 — 금지 브랜드에서 푼 브랜드(판매 재개 판정·등록 사전검증 같이). 대소문자 무관 일치."
+  "allow_doc": "오너 11-27 15:18 결정 0-1 — 금지 브랜드에서 푼 브랜드(판매 재개 판정·등록 사전검증 같이). 대소문자 무관 일치.",
+  "product_level": [
+    "patagonia",
+    "파타고니아",
+    "nike",
+    "나이키",
+    "apple",
+    "애플",
+    "samsung",
+    "삼성",
+    "supreme",
+    "슈프림",
+    "dyson",
+    "다이슨",
+    "jacques marie mage",
+    "자크마리마쥬",
+    "자크마리마지",
+    "le creuset",
+    "르크루제"
+  ],
+  "product_level_doc": "오너 11-27 15:18 0-2 — 근거가 「특정 상품 반려·소명」인 브랜드: 브랜드 줄을 빼고 그 상품만 막는다(rejected_products.json). 근거 = 볼트·메일 출처 조사(outbox 11-27 0-2 표). 브랜드 단위 근거(CASETiFY·NOVIUM/HOVERPEN·Peter Millar·Ariat·Spigen·MEMO Paris)·명품 정책·라이선스 협업·도검·렌즈·「근거 없음」 줄은 여기 넣지 않는다(근거 없음 줄을 빼는 건 오너 확인 뒤)."
 }

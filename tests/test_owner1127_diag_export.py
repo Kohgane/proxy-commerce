@@ -142,9 +142,9 @@ def test_oracle_reader_writes_only_one_queue_append_and_reads_only_snaps():
 def test_blacklist_diag_lists_terms_allow_and_active(state, monkeypatch):
     """오너 11-27 15:18 0-2: 운영 금지 브랜드 목록을 CC가 직접 읽는다(읽기만) — 원문 · 허용 · 지금 막는 것."""
     from src.services import diag_export as DX
-    monkeypatch.setenv("COUPANG_BLACKLIST85", "Apotheke Fragrance,Supreme,향수")
+    monkeypatch.setenv("COUPANG_BLACKLIST85", "Apotheke Fragrance,CASETiFY,향수")
     out = DX.snapshot("blacklist", "")
     assert out["ok"], out
     d = state[DX.key_for("blacklist", "")]["data"]
-    assert d["terms"] == ["Apotheke Fragrance", "Supreme", "향수"] and "Apotheke Fragrance" in d["allow"]
-    assert "Apotheke Fragrance" not in d["active"] and "Supreme" in d["active"]
+    assert d["terms"] == ["Apotheke Fragrance", "CASETiFY", "향수"] and "Apotheke Fragrance" in d["allow"]
+    assert "Apotheke Fragrance" not in d["active"] and "CASETiFY" in d["active"]
