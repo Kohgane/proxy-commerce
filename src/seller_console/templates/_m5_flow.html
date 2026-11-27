@@ -1,7 +1,7 @@
 {# M5(오너 2026-09-30) — 폰에서 담은 상품: 미리보기 카드 → 마켓 선택(쿠팡 기본·여럿 가능) → 사전검증 → 등록.
    등록은 데스크톱과 같은 두 입구(/collect/prevalidate · /collect/upload)로 간다 — 등록 경로를 두 벌 만들지 않는다.
    390px 폭에서 가로 스크롤 0 · 토큰 색만 · 이모지 0. 못 읽은 칸은 비워 두고 「PC 확장에서 보강 필요」로 말한다. #}
-<section class="m5" data-role="m5" data-item="{{ m5.item_id }}" data-blocked="{{ '1' if m5.blocked else '0' }}">
+<section class="m5" data-role="m5" data-item="{{ m5.item_id }}" data-blocked="{{ '1' if m5.blocked else '0' }}" data-autopv="{{ '1' if m5.auto_pv else '0' }}">
   {% set _rr = m5.refetch_result or {} %}
   {% if _rr.can_refetch %}
   {# 오너 11-27 02:07 ①: 서버가 다시 읽을 수 있는 소싱처(아마존 · 자동 경로 켜진 타오바오)면 카드 맨 위에 늘 「다시 가져오기」 —
@@ -1193,6 +1193,16 @@
     if (!markets.length) { checksEl.innerHTML = '<div class="m5-res is-bad">등록할 마켓을 하나 이상 골라 주세요.</div>'; return; }
     resetGo(); runCheck(markets, false);
   });
+  // 오너 11-27 ② ⓐ: 카드가 열리면 기억된 마켓으로 사전검증을 저절로(읽기 · 전송 0) → 첫 버튼이 곧 「통과한 n곳만 등록」.
+  //   이미 그 마켓에 올라간 상품·막힌 카드·덜 된 카드는 서버가 data-autopv=0으로 막는다. 등록은 여전히 오너가 누를 때만.
+  if (root.getAttribute('data-autopv') === '1' && !blocked) {
+    var _am = picked().filter(function (m) { var bx = root.querySelector('input[name=m5-market][value="' + m + '"]'); return bx && !bx.hasAttribute('data-registered') && !bx.disabled; });
+    if (_am.length) {
+      var _hint = document.getElementById('m5GoHint');
+      if (_hint) _hint.textContent = '고른 마켓으로 미리 확인하는 중이에요(마켓에 보내지 않아요) — 끝나면 이 버튼이 「통과한 곳만 등록」이 돼요.';
+      resetGo(); runCheck(_am, false);
+    }
+  }
   checksEl.addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('button') : null;
     if (!b) return;

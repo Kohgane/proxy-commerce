@@ -40,6 +40,8 @@ P0-운영(오너 2026-10-23): 꺼낸 줄은 `ops:oneshot:inflight:<인스턴스:
   유형별 자동 조치(승인 재요청·사진 교체 재제출·사전검증 재큐) 1회 — 같은 사유 재반려면 멈추고 보고. `review_status`가 반려를 보면 스스로 넣는다
 - `rep_clean` {item_id} — 순찰 148 H-rep: 「대표 사진 바꾸기 필요」(쿠팡 대표 후보 전부 글자) — 후보를 다시 재고 0상자 장이 없으면
   최소 상자 장 글자를 지워 다시 잰다(0상자면 대표 · 쿠팡 대표 자리에만 정리본). 사전검증이 스스로 넣는다(상품마다 한 번)
+- `diag_snapshot` {item_id: "<name>:<arg>"} — 오너 11-27 감독 1: 운영 진단을 CC가 직접 읽는 길(`diag_export` — 읽기 전용 ·
+  개인정보 지움 · `app_state diag:snap:*`에만 적는다). 볼트 오라클 작업이 이 줄을 덧붙이고 다음 틱 뒤 그 키를 읽는다
 - `thumb_probe` {item_id} — Y12-D(오너 15:32 리브러쉬·BLACKHOLES 썸네일 빈칸): 목록 대표 사진 주소를 **서버에서** 한 번 받아 본다
   (리퍼러 없이 = 목록 `<img referrerpolicy=no-referrer>`와 같은 조건). 상태 코드·형식·크기만 남긴다 — 기록은 바꾸지 않는다
 """
@@ -57,7 +59,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 PER_TICK = 5
 #: 사전검증 잡을 띄우는 줄 — 한 틱에 `HEAVY_PER_TICK`개만(잡이 겹치면 메모리 상한에 걸린다 · Y14 10-21)
-HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item", "rep_clean")
+HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item", "rep_clean", "diag_snapshot")
 HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 #: 순찰 62 — 끝난 줄 최근 기록(덮어쓰지 않고 덧붙임 · `LOG_MAX`줄) · 한 줄이 `LOG_ROW_MAX`자를 넘으면 마켓별 성공·사유만
@@ -68,12 +70,12 @@ INFLIGHT_PREFIX = "ops:oneshot:inflight:"
 INTERRUPTED_KEY = "ops:oneshot:interrupted"
 #: 도중에 끊겨도 다시 돌려도 되는 줄(조회·사전검증만 — 마켓에 쓰지 않는다). 등록·전송·결정 적용은 다시 넣지 않는다(중복 등록 방지).
 REQUEUE_SAFE_OPS = ("prevalidate", "check_item", "dims_fetch", "review_status", "image_probe", "thumb_probe", "coupang_inspect",
-                    "naver_find")
+                    "naver_find", "diag_snapshot")
 _CURRENT_ROW: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar("oneshot_row", default=None)
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
        "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard",
-       "naver_find", "naver_split_ok", "reject_route", "rep_clean")
+       "naver_find", "naver_split_ok", "reject_route", "rep_clean", "diag_snapshot")
 
 
 def _now() -> str:
@@ -125,6 +127,14 @@ def _run(row: dict) -> Dict:
     item_id = str(row.get("item_id") or "")
     if op not in OPS:
         return {"ok": False, "why": f"모르는 작업({op[:30]})"}
+    if op == "diag_snapshot":
+        # 오너 11-27 감독 1: 운영 진단 스냅숏(읽기 전용 · 개인정보 지움 · `diag:snap:*`에만 적음) — 줄 칸은 `item_id` = "<name>:<arg>"
+        from src.services import diag_export as _dx
+        if row.get("name"):
+            _nm, _ag = str(row["name"]), str(row.get("arg") or "")
+        else:
+            _nm, _, _ag = item_id.partition(":")
+        return _dx.snapshot(_nm, _ag)
     if op == "attn_backfill":
         return _attn_backfill()
     if op == "review_status":

@@ -2469,7 +2469,17 @@ def mobile_list_ctx(item: dict) -> dict:
             "market_records": _market_records(ex),       # M8: 「마켓 등록본」 — 데스크톱과 같은 줄
             "product": product,
             "risks": risks, "mixed_types": mixed, "brand_values": brand_values, "translit": translit, "auto_enrich": _m5_auto(ex, str(item.get("id") or ""), str(item.get("url") or "")), **_m5_ship(product),
-            **_m5_video(ex), **_m5_photo_fix(ex, str(item.get("url") or ""))}
+            **_m5_video(ex), **_m5_photo_fix(ex, str(item.get("url") or "")),
+            # 오너 11-27 ② ⓐ: 카드가 열리면 기억된 마켓으로 사전검증을 저절로(읽기 · 전송 0) — 덜 됐거나 막혔으면 안 돈다
+            "auto_pv": _m5_auto_pv(markets, blocked, incomplete)}
+
+
+def _m5_auto_pv(markets: list, blocked, incomplete) -> bool:
+    if os.getenv("M5_AUTO_PREVALIDATE", "1").strip().lower() in ("0", "false", "no", "off"):
+        return False
+    if blocked or incomplete:
+        return False
+    return any(m.get("checked") and m.get("connected") and not m.get("registered") and not m.get("not_ready") for m in markets or [])
 
 
 def _m5_photo_fix(ex: dict, url: str = "") -> dict:
@@ -5439,6 +5449,19 @@ def admin_diag_prevalidate(item_id):
     if not item:
         return jsonify({"ok": False, "error": "그 상품을 못 찾았어요(내 상품만)."}), 404
     markets = [m.strip() for m in str(request.args.get("markets") or "coupang:gogane,coupang:woojoo").split(",") if m.strip()][:6]
+    data, verdict = diag_prevalidate_data(item, markets)
+    if not _wants_html():
+        return jsonify({"ok": True, **data, "verdict": verdict})
+    return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="prevalidate", d=data, verdict=verdict)
+
+
+def diag_prevalidate_data(item: dict, markets: list) -> tuple:
+    """읽기 전용 사전검증(등록과 같은 몸통 · 같은 판정 · 저장 0) — 관리자 화면과 운영 진단 스냅숏(`diag_export`)이 같이 쓴다.
+    요청 문맥 안에서 불러야 한다(드라이 표시 `g.kgp_pv_dry`). `(data, verdict)`."""
+    from flask import g as _g
+    from .product_builder import build_product
+    from .upload_dispatcher import UploadDispatcher
+    item_id = str(item.get("id") or "")
     import time as _time
     _g.kgp_pv_dry = True
     t0 = _time.time()
@@ -5461,9 +5484,7 @@ def admin_diag_prevalidate(item_id):
             "images": len(pd.get("images") or [])}
     passed = sum(1 for r in rows if r["ok"] and not r["hold"])
     verdict = f"통과 {passed}/{len(rows)}" + "".join(f" · {r['market']} 보류: {r['code'] or r['message'][:40]}" for r in rows if not (r["ok"] and not r["hold"]))
-    if not _wants_html():
-        return jsonify({"ok": True, **data, "verdict": verdict})
-    return render_template("admin_diag.html", status_ko=_diag_status_ko(), mode="prevalidate", d=data, verdict=verdict)
+    return data, verdict
 
 
 @bp.get("/admin/diag/item/<market_no>")

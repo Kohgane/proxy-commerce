@@ -574,3 +574,15 @@ def _naver_store_less_addresses(request, monkeypatch):
         for k, v in (("NAVER_SHIP_ADDRESS_ID", "1"), ("NAVER_RETURN_ADDRESS_ID", "2")):
             if not os.getenv(k):
                 monkeypatch.setenv(k, v)
+
+
+@pytest.fixture(autouse=True)
+def _clear_coupang_shared_cache():
+    """오너 11-27 ②: 쿠팡 카테고리 예측·메타 프로세스 캐시(6시간)가 시험 사이로 새지 않게 — 시험마다 비운다."""
+    try:
+        from src.uploaders import coupang_uploader as _cu
+        with _cu._SHARED_LOCK:
+            _cu._SHARED.clear()
+    except Exception:
+        pass
+    yield

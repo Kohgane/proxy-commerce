@@ -42,6 +42,40 @@ def tag_meta_absent(line: str, cat: str, src: str, pwhy: str = '') -> str:
     return f'{line} (쿠팡 카테고리 {cat} · {how})'
 
 
+# 오너 11-27 ②: 카드가 열릴 때 사전검증을 저절로 돌리면 같은 상품·같은 카테고리를 거듭 묻게 된다 — 업로더는 요청마다 새로 만들어
+#   인스턴스 캐시가 비어 있으므로, **성공한** 카테고리 예측·메타만 프로세스 안에 6시간 둔다(실패는 굳히지 않는다 — 다음에 다시 묻는다).
+import threading as _threading
+import time as _time_mod
+_SHARED_TTL = int(os.getenv("COUPANG_META_CACHE_SEC", "21600") or 21600)
+_SHARED_MAX = 2000
+_SHARED: dict = {}
+_SHARED_LOCK = _threading.Lock()
+_SHARED_STATS = {"hit": 0, "miss": 0}
+
+
+def _shared_get(key):
+    with _SHARED_LOCK:
+        v = _SHARED.get(key)
+        if v and _time_mod.time() - v[0] < _SHARED_TTL:
+            _SHARED_STATS["hit"] += 1
+            return v[1]
+        _SHARED_STATS["miss"] += 1
+        return None
+
+
+def _shared_put(key, val) -> None:
+    with _SHARED_LOCK:
+        _SHARED[key] = (_time_mod.time(), val)
+        if len(_SHARED) > _SHARED_MAX:
+            for k in sorted(_SHARED, key=lambda k: _SHARED[k][0])[: len(_SHARED) - _SHARED_MAX]:
+                _SHARED.pop(k, None)
+
+
+def shared_cache_stats() -> dict:
+    with _SHARED_LOCK:
+        return {"size": len(_SHARED), **_SHARED_STATS}
+
+
 class CoupangUploader(BaseUploader):
     """Coupang Wing API를 통한 상품 업로더."""
 
@@ -983,6 +1017,10 @@ class CoupangUploader(BaseUploader):
         key = (name, desc)
         if key in self._predict_cache:
             return dict(self._predict_cache[key])
+        hit = _shared_get(('predict', self.account or '', self.vendor_id or '', name, desc))
+        if hit is not None:
+            self._predict_cache[key] = dict(hit)
+            return dict(hit)
         out = self._predict_once({'productName': name, 'productDescription': desc} if desc else {'productName': name})
         if not out['id'] and desc:
             plain = self._predict_once({'productName': name})
@@ -990,6 +1028,8 @@ class CoupangUploader(BaseUploader):
                 logger.info('쿠팡 카테고리 예측 — 설명 포함 요청은 못 냄(%s), 상품명만으로 %s', out['why'][:80], plain['id'])
                 out = plain
         self._predict_cache[key] = dict(out)
+        if out.get('id'):
+            _shared_put(('predict', self.account or '', self.vendor_id or '', name, desc), dict(out))
         return out
 
     def _predict_once(self, body: dict) -> dict:
@@ -1261,6 +1301,10 @@ class CoupangUploader(BaseUploader):
             return {}
         if code in self._meta_cache:
             return self._meta_cache[code]
+        hit = _shared_get(('meta', self.account or '', self.vendor_id or '', code))
+        if hit is not None:
+            self._meta_cache[code] = hit
+            return hit
         data = {}
         raw = ''
         try:
@@ -1282,6 +1326,7 @@ class CoupangUploader(BaseUploader):
             _record_meta_probe(self.account or '', self.vendor_id, code, False, raw)
             return data                             # Z9: 실패는 굳히지 않는다 — 다음 확인에서 다시 묻는다
         self._meta_cache[code] = data
+        _shared_put(('meta', self.account or '', self.vendor_id or '', code), data)
         return data
 
     def meta_error(self, display_category_code: str) -> str:
