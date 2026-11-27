@@ -30,5 +30,5 @@ def test_diagnostics_banner_when_reveal_on(client, monkeypatch):
 
 def test_diagnostic_issue_page_banner_when_reveal_on(client, monkeypatch):
     monkeypatch.setenv("DIAGNOSTIC_REVEAL", "1")
-    html = client.get("/auth/diagnostic-token/issue?format=html").get_data(as_text=True)
+    html = client.get("/auth/diagnostic-token/issue?key=bootstrap-secret&format=html").get_data(as_text=True)
     assert "비상 진입 모드 ON" in html

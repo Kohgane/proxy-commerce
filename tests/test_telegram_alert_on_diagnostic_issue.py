@@ -34,6 +34,6 @@ def test_issue_triggers_telegram_alert(client, monkeypatch):
         return True
 
     monkeypatch.setattr("src.notifications.telegram.send_telegram", _fake_send_telegram)
-    client.get("/auth/diagnostic-token/issue?format=json")
+    client.get("/auth/diagnostic-token/issue?key=bootstrap-secret&format=json")
     assert "Diagnostic Token 발급됨" in captured["message"]
     assert captured["urgency"] == "warning"

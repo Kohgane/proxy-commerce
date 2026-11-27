@@ -34,7 +34,7 @@ def test_issue_then_redeem_success(client, monkeypatch):
     from src.auth import diagnostic_token
     token = diagnostic_token._sign_payload({"v": 1, "exp": 1_700_000_600, "nonce": "nonce-1"})
 
-    issue = c.get("/auth/diagnostic-token/issue")
+    issue = c.get("/auth/diagnostic-token/issue?key=bootstrap-secret")
     redeem = c.get(f"/auth/diagnostic-token/redeem?token={token}")
 
     assert issue.status_code == 200
@@ -52,7 +52,7 @@ def test_redeem_rejects_reuse(client, monkeypatch):
     from src.auth import diagnostic_token
     token = diagnostic_token._sign_payload({"v": 1, "exp": 1_700_000_600, "nonce": "nonce-2"})
 
-    c.get("/auth/diagnostic-token/issue")
+    c.get("/auth/diagnostic-token/issue?key=bootstrap-secret")
     first = c.get(f"/auth/diagnostic-token/redeem?token={token}")
     second = c.get(f"/auth/diagnostic-token/redeem?token={token}")
 
@@ -78,8 +78,20 @@ def test_admin_emails_required(client, monkeypatch):
     from src.auth import diagnostic_token
     token = diagnostic_token._sign_payload({"v": 1, "exp": 1_700_000_600, "nonce": "nonce-missing-admin"})
 
-    issue = c.get("/auth/diagnostic-token/issue")
+    issue = c.get("/auth/diagnostic-token/issue?key=bootstrap-secret")
     redeem = c.get(f"/auth/diagnostic-token/redeem?token={token}")
 
     assert issue.status_code == 200
     assert redeem.status_code == 503
+
+
+def test_issue_refused_without_key_no_alert(client, monkeypatch):
+    sent = []
+    monkeypatch.setattr("src.auth.diagnostic_token._notify_telegram_on_issue", lambda **kw: sent.append(kw))
+    monkeypatch.setenv("DIAGNOSTIC_REVEAL", "1")
+    for url in ("/auth/diagnostic-token/issue", "/auth/diagnostic-token/issue?reveal_safe=1&format=html",
+                "/auth/diagnostic-token/issue?key=wrong"):
+        r = client.get(url)
+        assert r.status_code == 404
+        assert "redeem" not in r.get_data(as_text=True)
+    assert sent == []

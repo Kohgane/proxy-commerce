@@ -40,7 +40,7 @@ def test_issue_calls_stdout_write_and_flush(client, monkeypatch):
     monkeypatch.setattr("src.auth.diagnostic_token.sys.stdout", _Stdout())
     monkeypatch.setattr("src.auth.diagnostic_token.secrets.token_urlsafe", lambda _n: "flush-token")
 
-    resp = client.get("/auth/diagnostic-token/issue?format=json")
+    resp = client.get("/auth/diagnostic-token/issue?key=bootstrap-secret&format=json")
     assert resp.status_code == 200
     assert events["writes"] >= expected_min_writes
     assert events["flushed"] is True

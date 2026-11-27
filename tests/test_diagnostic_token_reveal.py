@@ -28,7 +28,7 @@ def client(monkeypatch):
 def test_reveal_html_when_env_enabled(client, monkeypatch):
     monkeypatch.setenv("DIAGNOSTIC_REVEAL", "1")
     monkeypatch.setattr("src.auth.diagnostic_token.secrets.token_urlsafe", lambda _n: "reveal-nonce")
-    resp = client.get("/auth/diagnostic-token/issue?format=html")
+    resp = client.get("/auth/diagnostic-token/issue?key=bootstrap-secret&format=html")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "Admin 세션 시작" in html
@@ -38,7 +38,7 @@ def test_reveal_html_when_env_enabled(client, monkeypatch):
 def test_json_only_when_reveal_disabled(client, monkeypatch):
     monkeypatch.setenv("DIAGNOSTIC_REVEAL", "0")
     monkeypatch.setattr("src.auth.diagnostic_token.secrets.token_urlsafe", lambda _n: "json-token")
-    resp = client.get("/auth/diagnostic-token/issue?format=json")
+    resp = client.get("/auth/diagnostic-token/issue?key=bootstrap-secret&format=json")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["ok"] is True
@@ -50,7 +50,7 @@ def test_reveal_safe_without_admin_emails_does_not_reveal_url(client, monkeypatc
     monkeypatch.setenv("DIAGNOSTIC_REVEAL", "0")
     monkeypatch.delenv("ADMIN_EMAILS", raising=False)
     monkeypatch.setattr("src.auth.diagnostic_token.secrets.token_urlsafe", lambda _n: "safe-token")
-    resp = client.get("/auth/diagnostic-token/issue?reveal_safe=1&format=html")
+    resp = client.get("/auth/diagnostic-token/issue?key=bootstrap-secret&reveal_safe=1&format=html")
     assert resp.status_code == 200
     assert resp.is_json
     assert "safe-token" not in resp.get_data(as_text=True)

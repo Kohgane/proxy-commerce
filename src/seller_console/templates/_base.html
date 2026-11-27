@@ -369,7 +369,7 @@
           <a href="/auth/login" class="btn btn-ghost btn-sm">OAuth 로그인</a>
           <a href="/auth/magic-link" class="btn btn-ghost btn-sm">이메일 로그인</a>
           {% if diagnostic_reveal_enabled %}
-          <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" class="btn btn-warning btn-sm"><i class="bi bi-life-preserver"></i> 비상 진입 (운영자)</a>
+          <a href="/auth/diagnostic-token/issue?reveal_safe=1&format=html" rel="nofollow" class="btn btn-warning btn-sm"><i class="bi bi-life-preserver"></i> 비상 진입 (운영자)</a>
           {% endif %}
         </div>
         {% endif %}
