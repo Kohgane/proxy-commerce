@@ -118,8 +118,9 @@ def test_proxy_only_on_mtop_sessions(monkeypatch):
     # 프록시 세션을 만드는 모듈(taobao_mtop)을 들여오는 곳 = 진단 화면·자동 경로뿐 — 마켓 업로더·릴레이는 안 들여온다
     from tests._ast_probe import importers_of
     # Z3-P: 이미지 내려받기(텐센트)는 SCOPE 판정(image_proxies)만 묻는다 — 기본 mtop이면 직결
-    assert importers_of("taobao_mtop") == ["src/dashboard/admin_views.py", "src/services/image_translate_tencent.py",
-                                           "src/services/taobao_auto.py"]
+    # 오너 11-27 오후 ③: 운영 진단(diag_export `taobao` — mtop 읽기만)도 진단 화면과 같은 쪽
+    assert importers_of("taobao_mtop") == ["src/dashboard/admin_views.py", "src/services/diag_export.py",
+                                           "src/services/image_translate_tencent.py", "src/services/taobao_auto.py"]
 
 
 def test_diag_page_has_proxy_radio_and_never_prints_credentials(monkeypatch):

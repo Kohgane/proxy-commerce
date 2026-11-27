@@ -49,6 +49,7 @@ REASON_KO = {
     "mirror": "원가 미확인 · 쿠팡 미러",
     "vault_hard": "볼트 기록: 반려·상표·KC·카테고리 오매칭으로 내림",
     "rejected_hist": "반려 이력",
+    "cost_name_only": "원가 이름 일치 — 확인 필요",
 }
 #: 오너 11-27 11:51 ③: 오너가 「켤 목록으로」 골라도 못 옮기는 사유(도검·렌즈·금지 브랜드 · 볼트에 반려·상표로 내린 기록)
 LOCKED = ("knife", "lens", "brand", "vault_hard", "rejected_hist")
@@ -306,6 +307,9 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Opt
         why.append(("mirror", f"쿠팡 {code} 미러 — 원가가 우리 기록·볼트 장부에 없어요(「원가 넣기」로 이 줄만 다시 판정)"))
     elif not o or not has_url:
         why.append(("no_source", "우리 수집 기록에 원본 주소가 없어요" if not o else "원본 주소 없음"))
+    if mg["cost"] is not None and not o and "이름" in str(mg.get("cost_src") or ""):
+        # 오너 11-27 15:18 0-3: 이름만으로 맞춘 원가는 따로 — 틀린 상품의 원가로 켜지 않는다(오너가 확인하고 골라 켤 수 있음)
+        why.append(("cost_name_only", f"{mg['cost_src']} · {mg['cost']:g} {mg['currency']}"))
     if mg["cost"] is None:
         if o:
             why.append(("cost_unknown", ""))

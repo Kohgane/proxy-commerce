@@ -81,3 +81,26 @@ def test_coupang_predict_and_meta_are_cached_across_uploaders(monkeypatch):
         up.get_category_meta("78293")
     assert len([c for c in calls if "predict" in c]) == 1 and len([c for c in calls if "meta" in c]) == 1
     assert CU.shared_cache_stats()["hit"] >= 4
+
+
+def test_overseas_outbound_found_automatically_when_exactly_one(monkeypatch):
+    """오너 11-27 오후 ② OKNIFE: 「구매대행 출고지 (해외)」가 비어 보류 — 쿠팡 출고지 목록(읽기만)에 해외가 하나면 그걸 쓴다.
+    여럿이면 고르라고 · 없으면 예전 안내 그대로 · 저장(설정 쓰기) 0."""
+    from src.uploaders import coupang_uploader as CU
+    monkeypatch.setenv("COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE", "")
+    monkeypatch.setenv("COUPANG_GOGANE_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE", "")
+    rows = {"one": [{"outboundShippingPlaceCode": 25099966, "addressType": "DOMESTIC", "usable": True},
+                    {"outboundShippingPlaceCode": 31234567, "addressType": "OVERSEA", "usable": True},
+                    {"outboundShippingPlaceCode": 39999999, "addressType": "OVERSEA", "usable": False}],
+            "two": [{"outboundShippingPlaceCode": 31234567, "addressType": "OVERSEA"}, {"outboundShippingPlaceCode": 31234568, "addressType": "OVERSEA"}],
+            "none": [{"outboundShippingPlaceCode": 25099966, "addressType": "DOMESTIC"}]}
+    for case, want in (("one", ("31234567", "")), ("two", ("", "2곳")), ("none", ("", "비어 있습니다"))):
+        CU._SHARED.clear()
+        calls = []
+        monkeypatch.setattr(CU.CoupangUploader, "_api_request",
+                            lambda self, m, path, data=None, **k: (calls.append((m, path)), {"code": "SUCCESS", "data": {"content": rows[case]}})[1])
+        up = CU.CoupangUploader(account="gogane", vendor_id="A01381223")
+        up.delivery_method = "AGENT_BUY"
+        code, why = up.outbound_for_delivery()
+        assert code == want[0] and (want[1] in why if want[1] else why == ""), (case, code, why)
+        assert all(m == "GET" for m, _p in calls)                                          # 읽기만

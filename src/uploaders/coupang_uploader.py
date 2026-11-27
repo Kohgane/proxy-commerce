@@ -1063,6 +1063,16 @@ class CoupangUploader(BaseUploader):
         if self.is_agent_buy():
             code = str(self.overseas_outbound_place_code or '').strip()
             if not code:
+                # 오너 11-27 오후 ②(OKNIFE 실측: 두 계정 다 이 칸이 비어 보류) — 쿠팡에 등록된 출고지를 읽어(읽기만) 해외(OVERSEA)가
+                #   **딱 하나**면 그걸 쓴다. 저장하지 않는다(설정 쓰기 0) · 여럿이면 고르게 · 없으면 윙 등록 안내.
+                auto, n_over = self.auto_overseas_outbound()
+                if auto:
+                    self.overseas_outbound_place_code = auto
+                    return auto, ''
+                if n_over > 1:
+                    return '', ((f'{who} ' if who else '') + f'쿠팡에 해외(OVERSEA) 출고지가 {n_over}곳 있어 하나를 골라야 합니다 — '
+                                '마켓 연동 › 쿠팡 › ' + (f'{who} 카드 ' if who else '') + '「불러오기」에서 「구매대행 출고지 (해외)」를 고르세요.')
+            if not code:
                 # 화면에 나가는 문장이다 — env 이름·마크다운 기호를 넣지 않는다(F48 캡처 자기비평).
                 #   칸 이름은 연동 화면의 라벨 그대로 쓴다. X0: 출고지 번호 옆에 **어느 계정 것인지**.
                 dom = str(self.outbound_place_code or '').strip()
@@ -1074,6 +1084,37 @@ class CoupangUploader(BaseUploader):
             return code, ''
         code = str(self.outbound_place_code or '').strip()
         return code, ('' if code else (f'{who} ' if who else '') + '출고지 코드가 비어 있습니다')
+
+    def auto_overseas_outbound(self) -> tuple:
+        """쿠팡에 등록된 출고지 중 해외(OVERSEA)·사용 가능한 것 — `(코드, 해외 출고지 수)`. 하나일 때만 코드(여럿·없음·못 읽음은 '').
+        불러오기와 **같은 경로·같은 행 읽기**(`coupang_shipping_lookup`) · 성공만 6시간 공유 캐시(계정·업체코드별)."""
+        key = ('oversea', self.account or '', str(self.vendor_id or ''))
+        hit = _shared_get(key)
+        if hit is not None:
+            return hit
+        try:
+            from src.seller_console.coupang_shipping_lookup import (ADDRESS_TYPE_KEYS, OUTBOUND_PLACES_PATH,
+                                                                    OUTBOUND_PLACES_QUERY, _flatten, _pick, _rows)
+            payload = self._api_request('GET', OUTBOUND_PLACES_PATH + OUTBOUND_PLACES_QUERY)
+            if not isinstance(payload, dict) or payload.get('error'):
+                return '', 0
+            codes = []
+            for row in _rows(payload):
+                flat = _flatten(row)
+                at = next((str(v).strip() for k, v in flat.items()
+                           if (k in ADDRESS_TYPE_KEYS or any(k.endswith('.' + t) for t in ADDRESS_TYPE_KEYS)) and str(v or '').strip()), '')
+                usable = str(flat.get('usable', '')).strip().lower()
+                if at.upper() != 'OVERSEA' or usable in ('false', '0', 'n'):
+                    continue
+                c = _pick(row, ('outboundShippingPlaceCode', 'shippingPlaceCode', 'placeCode'))
+                if c and c not in codes:
+                    codes.append(c)
+            out = (codes[0] if len(codes) == 1 else '', len(codes))
+            _shared_put(key, out)
+            return out
+        except Exception as exc:                                   # noqa: BLE001 — 못 읽으면 예전처럼 보류(지어내지 않음)
+            logger.warning('쿠팡 해외 출고지 자동 찾기 실패: %s', exc)
+            return '', 0
 
     _ACCOUNT_LABELS = {'gogane': '고가네', 'woojoo': '우주대행'}
 

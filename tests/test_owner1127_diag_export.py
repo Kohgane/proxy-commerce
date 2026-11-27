@@ -148,3 +148,16 @@ def test_blacklist_diag_lists_terms_allow_and_active(state, monkeypatch):
     d = state[DX.key_for("blacklist", "")]["data"]
     assert d["terms"] == ["Apotheke Fragrance", "CASETiFY", "향수"] and "Apotheke Fragrance" in d["allow"]
     assert "Apotheke Fragrance" not in d["active"] and "CASETiFY" in d["active"]
+
+
+def test_taobao_diag_probes_read_only_and_judges_each(state, no_writes, monkeypatch):
+    """오너 11-27 오후 ③: 5000 data error 상품번호를 mtop으로 건별 판정 — 읽기만(행 쓰기 0) · 내려감/읽힘/못 읽음."""
+    from src.services import diag_export as DX
+    from src.collectors import taobao_mtop as T
+    answers = {"1076939744197": {"state": "error", "kind": "blocked", "reason": "ERRCODE_QUERY_DETAIL_FAIL::宝贝不存在"},
+               "1080611844301": {"state": "ok", "kind": "ok", "reason": "", "detail": {"title": "수납 선반", "price": "129", "skus": [1, 2]}}}
+    monkeypatch.setattr(T, "probe", lambda iid, via="direct": {"via": via, **answers[iid]})
+    out = DX.snapshot("taobao", "1076939744197,1080611844301,abc")
+    assert out["ok"], out
+    rows = state[DX.key_for("taobao", "1076939744197,1080611844301,abc")]["data"]["rows"]
+    assert [r["verdict"] for r in rows] == ["소싱처에서 내려감", "읽힘"] and rows[1]["skus"] == 2

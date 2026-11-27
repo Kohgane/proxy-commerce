@@ -82,6 +82,8 @@ def _no_post(up, meta, address_type="OVERSEA"):
             posts.append(data)
             return {"code": "SUCCESS", "data": 123}
         if "shipping-place/outbound" in path:
+            if "placeCodes=" not in path:
+                return {"data": []}          # 오너 11-27 ②: 출고지 목록(해외 자동 찾기) — 이 계정엔 해외 출고지가 없다
             # 물어본 코드를 그대로 돌려준다 — 조회는 **그 코드의** 주소 유형을 본다.
             asked = path.split("placeCodes=")[-1]
             return {"data": [{"outboundShippingPlaceCode": asked, "addressType": address_type}]}
