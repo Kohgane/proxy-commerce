@@ -155,6 +155,10 @@ def read(url):
 
 
 def main(argv):
+    try:
+        sys.stdout.reconfigure(line_buffering=True)                   # bg 기록에 진행 줄이 바로 보이게(11-27: 4시간 동안 첫 줄뿐)
+    except Exception:                                                  # noqa: BLE001
+        pass
     if not argv:
         print(__doc__)
         return 2
