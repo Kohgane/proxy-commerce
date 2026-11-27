@@ -77,8 +77,9 @@ def main(argv):
     kg = os.environ.get("KG_HOME") or "/home1/ikymximy"
     path = ""
     for base in (os.path.join(kg, "vault"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")):
-        for ext in ("txt", "json"):                                     # 블루호스트 볼트는 .json 을 안 올려 .txt(내용은 JSON)
-            cand = os.path.join(base, "srv_snap", "relist", f"{store}_ledger.{ext}")
+        for cand in (os.path.join(base, "srv_snap", "apply_out", f"relistledger_data_{store}.txt"),   # 러너가 늘 올리는 폴더(11-27)
+                     os.path.join(base, "srv_snap", "relist", f"{store}_ledger.txt"),
+                     os.path.join(base, "srv_snap", "relist", f"{store}_ledger.json")):
             if not path and os.path.exists(cand):
                 path = cand
     try:
