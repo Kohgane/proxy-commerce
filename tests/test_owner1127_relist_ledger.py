@@ -270,3 +270,17 @@ def test_brand_word_inside_other_word_is_not_brand(title, word, hit):
     """11-27 운영 표본: 「보스턴」·「Ping Pong」은 금지 브랜드 아님(판매 재개·등록 같은 함수) · 진짜 브랜드 상품은 그대로."""
     from src.services import risk_gate as RG
     assert bool(RG.blacklist_words(title, [word])) is hit
+
+
+@pytest.mark.parametrize("text,iid", [
+    ("var url = 'https://item.taobao.com/item.htm?ut_sk=1.x&amp;id=789012345678&amp;sourceType=item'", "789012345678"),
+    ("https://m.tb.cn/h.x?tk=a&url=https%3A%2F%2Fa.m.taobao.com%2Fi654321098765.htm%3Fp%3D1", "654321098765"),
+    ("location.href='https://detail.tmall.com/item.htm?spm=a&id=612345678901'", "612345678901"),
+    ('{"itemId":"698765432109","title":"x"}', "698765432109"),
+    ("redirect=https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fft%3Dt%26id%3D723456789012", "723456789012"),
+    ("https://e.tb.cn/h.8qaTtW938JXlfnK?tk=otdQT7DEulq", ""),
+])
+def test_taobao_share_page_id_forms(text, iid):
+    """오너 11-27 오후 ③: e.tb.cn → m.tb.cn 본문의 상품 주소 꼴(`&amp;id=`·`%26id%3D`·`/i<번호>.htm`·`itemId`) — 「상품번호 해석 실패」 수리."""
+    from src.collectors.taobao_mtop import id_in_text
+    assert id_in_text(text) == iid

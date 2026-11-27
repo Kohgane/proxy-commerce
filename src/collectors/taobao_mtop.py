@@ -209,9 +209,28 @@ def item_id_from(arg: str, s=None) -> tuple:
         body = r.text[:200000]
     except Exception as exc:                                    # noqa: BLE001
         return "", f"{pre}단축 링크 열기 실패 {type(exc).__name__}"
-    m = re.search(r"[?&]id=(\d{6,15})", r.url) or re.search(r"[?&]id=(\d{6,15})", body) \
-        or re.search(r"item[_.]?id[\"'=:\s]+(\d{6,15})", body, re.I)
-    return (m.group(1) if m else ""), f"{pre}HTTP {r.status_code} · 최종 주소 {r.url[:80]} · 본문 {len(body)}자"
+    got = id_in_text(r.url) or id_in_text(body)
+    return got, f"{pre}HTTP {r.status_code} · 최종 주소 {r.url[:80]} · 본문 {len(body)}자"
+
+
+#: 오너 11-27 오후 ③: 공유 단축 링크(e.tb.cn → m.tb.cn) 본문은 HTML·JS라 상품 주소가 `&amp;id=`·`%26id%3D`·`/i<번호>.htm`·
+#:   `"itemId":"…"`처럼 적힌다 — `[?&]id=`만 찾으면 놓쳐 「상품번호 해석 실패」가 났다.
+_ID_PATTERNS = (
+    r"(?:[?&]|&amp;|%26|%3F)(?:id|itemId|item_id)(?:=|%3D)(\d{6,15})",
+    r"(?:item|detail)\.(?:taobao|tmall)\.com/(?:item\.htm)?[^\s\"'<>]*?(?:[?&]|&amp;|%26)id(?:=|%3D)(\d{6,15})",
+    r"\.(?:taobao|tmall)\.com(?:/|%2F)i(\d{6,15})\.htm",
+    r"[\"']?(?:itemId|item_id|itemid|num_iid)[\"']?\s*[:=]\s*[\"']?(\d{6,15})",
+)
+
+
+def id_in_text(text: str) -> str:
+    """주소·본문에서 타오바오 상품번호 — 위 꼴 중 처음 맞는 것. 못 찾으면 ""."""
+    t = str(text or "")
+    for p in _ID_PATTERNS:
+        m = re.search(p, t, re.I)
+        if m:
+            return m.group(1)
+    return ""
 
 
 class RelaySession:
