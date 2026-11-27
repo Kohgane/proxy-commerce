@@ -5374,6 +5374,17 @@ def admin_smartstore_relist():
             return jsonify(out), (200 if out.get("ok") else 409)
         if act == "stop":
             return jsonify({"ok": SR.stop(store)})
+        # 오너 11-27 11:51 ③①: 뺄 줄 골라 켤 목록으로(오너 확인) · 되돌리기 · 줄 하나 원가 넣기 — 목록만 고친다(마켓 전송 0)
+        if act == "pick":
+            out = SR.owner_pick(store, body.get("channel_nos") or [], by=str(session.get("email") or session.get("user_id") or ""))
+            return jsonify(out), (200 if out.get("ok") else 409)
+        if act == "unpick":
+            out = SR.owner_unpick(store, body.get("channel_nos") or [])
+            return jsonify(out), (200 if out.get("ok") else 409)
+        if act == "cost":
+            out = SR.set_cost(store, str(body.get("channel_no") or ""), body.get("cost"), str(body.get("currency") or ""),
+                              str(body.get("url") or ""))
+            return jsonify(out), (200 if out.get("ok") else 400)
         if act in ("resume_build", "resume_run"):
             from src.services import durable_job as _DJ
             return jsonify(_DJ.resume((SR._BUILD_KEY if act == "resume_build" else SR._RUN_KEY).format(store),
@@ -5388,13 +5399,17 @@ def admin_smartstore_relist():
                         headers={"Content-Disposition": f"attachment; filename=relist_{store}_{str(p.get('at') or '')[:10]}.csv"})
     data = {"store": store, "label": R.store_label(store), "can_run": store in SR.RUN_STORES,
             "plan": {k: v for k, v in p.items() if k != "rows"}, "run": __import__("src.services.durable_job", fromlist=["status"]).status(SR._RUN_KEY.format(store)),
-            "build": SR.build_state(store)}
+            "build": SR.build_state(store), "why_zero": SR.why_zero(p),
+            "ledger": __import__("src.services.relist_ledger", fromlist=["summary"]).summary(store)}
     if not _wants_html():
         return jsonify({"ok": True, **data, "rows": (p.get("rows") or [])[:2000]})
     rows = p.get("rows") or []
+    _why = str(request.args.get("why") or "")
+    _skips = [x for x in rows if x.get("action") != "on" and (not _why or _why in (x.get("exclude") or []))]
     return render_template("admin_relist.html", d=data, stores=[(s, R.store_label(s)) for s in R.STORES], reason_ko=SR.REASON_KO,
+                           locked=SR.LOCKED, why=_why, skip_total=len(_skips),
                            on_rows=[x for x in rows if x.get("action") == "on"][:40],
-                           skip_rows=[x for x in rows if x.get("action") != "on"][:40])
+                           skip_rows=_skips[:60])
 
 
 @bp.get("/admin/diag/restarts")

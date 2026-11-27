@@ -94,7 +94,29 @@ def _relist(arg: str) -> Dict:
     keep = ("channel_no", "name", "sale_price", "cost", "currency", "margin", "floor", "sold_ss", "sold_cp", "exclude",
             "exclude_detail", "our_reason", "photo_small", "tier", "category", "modified")
     samples = {k: [{f: x.get(f) for f in keep} for x in rnd.sample(xs, min(5, len(xs)))] for k, xs in by.items()}
+    # 오너 11-27 11:51 ⑤: 뺄 것 표본 20 · 금지 브랜드 줄 전부를 지금 규칙(호환 액세서리 자리 빼기)으로 다시 판정 · 관리 코드 꼴 · 마지막 수정일
+    skips = [x for x in rows if x.get("action") != "on"]
+    keep2 = keep + ("seller_code", "vault_reason", "cost_src")
+    skip20 = [{f: x.get(f) for f in keep2} for x in rnd.sample(skips, min(20, len(skips)))]
+    from src.services import risk_gate as RG
+    try:
+        _bl = [b for b in RG._blacklist() if str(b).strip().lower() not in SR.BRAND_EXCEPT]
+    except Exception:                                              # noqa: BLE001
+        _bl = []
+    brand_rows = []
+    for x in [x for x in skips if "brand" in (x.get("exclude") or [])][:400]:
+        word = (x.get("exclude_detail") or [""])[(x.get("exclude") or []).index("brand")]
+        now = [w for w in RG.blacklist_words(x.get("name") or "", _bl) if SR._words_hit(x.get("name") or "", [w])]
+        brand_rows.append({"channel_no": x.get("channel_no"), "name": str(x.get("name") or "")[:80], "word": word,
+                           "now": ("그대로 금지 — " + now[0]) if now else "호환 액세서리 — 금지 아님(지금 규칙)"})
+    from collections import Counter
+    from src.services.relist_ledger import norm_code
+    kinds = Counter(("CP" if norm_code(x.get("seller_code")).startswith("CP-") else ("빈칸" if not x.get("seller_code") else "품번"))
+                    for x in rows)
+    mods = Counter(str(x.get("modified") or "")[:10] for x in rows).most_common(12)
     return {"store": store, "plan": {k: v for k, v in p.items() if k != "rows"}, "samples": samples,
+            "skip20": skip20, "brand_rows": brand_rows, "code_kinds": dict(kinds), "modified_top": mods,
+            "why_zero": SR.why_zero(p),
             "on_head": [{f: x.get(f) for f in keep} for x in rows if x.get("action") == "on"][:20],
             "build": SR.build_state(store), "run": {k: v for k, v in DJ.status(SR._RUN_KEY.format(store)).items() if k != "targets"}}
 
