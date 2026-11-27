@@ -34,6 +34,7 @@
       <table class="rl-t"><tbody>
         <tr><th>상태별 수</th><td data-role="rl-counts">{% set ko = {'SALE': '판매중', 'WAIT': '판매대기', 'OUTOFSTOCK': '품절', 'SUSPENSION': '판매중지', 'CLOSE': '판매종료', 'PROHIBITION': '판매금지'} %}{% for k, v in (p.status_counts or {}).items() %}{{ ko.get(k, k) }} {{ '{:,}'.format(v) if v is not none else '?' }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
         <tr><th>켤 순서</th><td>① 팔린 적 있음 {{ (p.tiers or {}).get('1', 0) }} · ② 조회 많은데 안 팔림 — 건너뜀(아래) · ③ {{ d.label }} 주제 {{ (p.tiers or {}).get('3', 0) }} · ④ 나머지 최신 순 {{ (p.tiers or {}).get('4', 0) }}</td></tr>
+        {% if p.mirrors is defined %}<tr><th>원본 기록</th><td data-role="rl-origin">우리 수집 기록 있음 {{ p.ours }} · 쿠팡 미러(원가는 쿠팡 장부) {{ p.mirrors }} · 기록 없음 {{ p.read - p.ours - p.mirrors }}</td></tr>{% endif %}
         <tr><th>뺄 사유</th><td data-role="rl-reasons">{% for k, n in p.by_reason.items() %}{{ reason_ko.get(k, k) }} {{ n }}{% if not loop.last %} · {% endif %}{% else %}없음{% endfor %}</td></tr>
         <tr><th>가격</th><td>켤 것 중 정책가와 다른 {{ p.price_diff }}건 — <strong>표시만</strong>(재개와 함께 바꾸지 않아요 · 가격 변경은 따로 확인)</td></tr>
         <tr><th>조회수</th><td class="rl-sub">{{ p.views_note }}</td></tr>

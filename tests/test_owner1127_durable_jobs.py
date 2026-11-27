@@ -262,3 +262,24 @@ def test_tick_adopts_legacy_stuck_record(state, monkeypatch):
     finally:
         TB._RUNNER_OVERRIDE.pop("run", None)
     assert TB.KEY in out["woke"] and TB.status()["state"] == "finished" and len(TB.status()["done"]) == 2
+
+
+def test_mirror_products_say_coupang_ledger_not_no_source(state, monkeypatch):
+    """⑤ 표본 검수: 셰고가 1,679건 전부 「원본 주소 없음」 — 대부분 오라클 미러(판매자 코드 `CP-<쿠팡번호>`)였다."""
+    SR = _env(monkeypatch)
+    up = FakeUp(_many(3), {"SALE": 400})
+    real = up._api_request
+
+    def api(method, path, data=None):
+        res = real(method, path, data)
+        if path == "/v1/products/search":
+            for c in res["contents"]:
+                if c["originProductNo"] != "o20002":
+                    c["channelProducts"][0]["sellerManagementCode"] = "CP-1500" + c["originProductNo"][-1]
+        return res
+    up._api_request = api
+    p = SR.build("chezgoga", up=up, size_of=_size)
+    by = {x["channel_no"]: x for x in p["rows"]}
+    assert by["20000"]["exclude"] == ["mirror"] and "CP-15000 미러" in by["20000"]["exclude_detail"][0]
+    assert by["20002"]["exclude"] == ["no_source"]
+    assert p["mirrors"] == 2 and p["ours"] == 0 and p["by_reason"] == {"mirror": 2, "no_source": 1}

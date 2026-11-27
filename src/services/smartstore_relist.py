@@ -46,6 +46,7 @@ REASON_KO = {
     "margin_low": "마진 하한 미만", "cost_unknown": "원가 미확인", "knife": "도검(허가 필요)", "lens": "도수 안경렌즈",
     "brand": "금지 브랜드", "ours_reject": "반려·소명·상표로 내림(우리 기록)", "src_soldout": "소싱처 품절·단종",
     "no_source": "원본 주소 없음", "photos_small": "사진 전부 500px 미만", "no_room": "빈자리 없음(대기)",
+    "mirror": "쿠팡 미러 — 원가는 쿠팡 장부에(앱이 아직 못 읽음)",
 }
 
 
@@ -268,7 +269,11 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme) -> Dic
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
     if mon.get("in_stock") is False or str(mon.get("change") or "") in ("soldout", "gone", "removed"):
         why.append(("src_soldout", str(mon.get("summary") or "품절")))
-    if not o or not str(o.get("url") or "").startswith("http"):
+    if not o and str(r.get("seller_code") or "").upper().startswith("CP-"):
+        # 오너 11-27 ⑤ 표본 검수: 1,679건 전부 「원본 주소 없음」이었다 — 대부분 오라클이 쿠팡에서 옮겨 깐 미러라 우리 수집 기록에 없다.
+        #   원본이 없는 게 아니라 **앱이 못 읽는 장부**에 있다 — 사유를 그렇게 말한다(원가 미확인이라 켜지 않는 건 그대로).
+        why.append(("mirror", f"쿠팡 {r['seller_code']} 미러 — 원가·원본은 쿠팡 장부(오라클)에 있어요"))
+    elif not o or not str(o.get("url") or "").startswith("http"):
         why.append(("no_source", "우리 수집 기록에 원본 주소가 없어요" if not o else "원본 주소 없음"))
     if mg["cost"] is None:
         if o:
@@ -322,7 +327,9 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
                         "sale_price": ch.get("discountedPrice") or ch.get("salePrice"), "list_price": ch.get("salePrice"),
                         "reg": str(ch.get("regDate") or ""), "modified": str(ch.get("modifiedDate") or ""),
                         "rep_image": str(((ch.get("representativeImage") or {}).get("url")) or ""),
-                        "stock": ch.get("stockQuantity"), "category": str(ch.get("wholeCategoryName") or "")})
+                        "stock": ch.get("stockQuantity"), "category": str(ch.get("wholeCategoryName") or ""),
+                        # 오너 11-27 ⑤: 오라클 미러(쿠팡→스스)는 판매자 관리 코드 `CP-<쿠팡 상품번호>`를 남긴다 — 원본·원가는 쿠팡 장부
+                        "seller_code": str(ch.get("sellerManagementCode") or (c or {}).get("sellerManagementCode") or "")})
             rec["page_next"] = page + 1
             rec["progress"] = {"n": len(rows), "total": rec.get("total"), "label": f"판매중지 읽는 중 {len(rows):,}/{int(rec.get('total') or 0):,}"}
             save(rec)                                              # 100건(한 쪽)마다 저장 — 재시작 뒤 이 쪽부터
@@ -403,6 +410,8 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
            "tiers": {str(t): sum(1 for x in rows if x["action"] == "on" and x["tier"] == t) for t in (1, 3, 4)},
            "price_diff": sum(1 for x in rows if x["action"] == "on" and x["price_diff"]),
            "photos_checked": int(rec.get("photo_i") or 0), "rss_peak_mb": rec.get("rss_peak_mb"),
+           "mirrors": sum(1 for x in rows if str(x.get("seller_code") or "").upper().startswith("CP-")),
+           "ours": sum(1 for x in rows if x.get("item_id")),
            "views_note": VIEWS_NOTE, "status_counts": rec.get("status_counts") or {}, "rows": rows}
     _state_set(_PLAN_KEY.format(store), out)
     from src.seller_console import smartstore_routing as R2
