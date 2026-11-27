@@ -2075,7 +2075,7 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 
   | 낱말 | 줄 | 판정 | 근거(표본) |
   |---|---|---|---|
-  | apple·애플·samsung | 47 | **46 오탐 → 수리** · 1 진짜 아님도 수리 | 전부 빕준 Apple Watch/Galaxy Watch 「용」 밴드·스트랩. 「–Samsung Watch Ultra」(대시 뒤 기기) 1줄이 남아 → 이번 커밋에서 「브랜드 뒤 기기 이름 + 상품명에 액세서리 낱말」로 풀림 |
+  | apple·애플·samsung(밴드) | 45 | **오탐 → 수리** | 빕준 Apple Watch/Galaxy Watch 「용」 밴드·스트랩. 44줄은 #1048 규칙으로 풀림 · 「–Samsung Watch Ultra」(대시 뒤 기기) 1줄은 이번 커밋(「브랜드 뒤 기기 이름 + 상품명에 액세서리 낱말」) |
   | garmin | 9 | **9 오탐 → 수리** | 전부 빕준 「For Garmin Fenix」 밴드 |
   | 애플(트웰브사우스) | 1 | **오탐 → 수리(이번 커밋)** | 「TWELVE SOUTH MagSafe Charger 애플 액세서리」 — 「~ 액세서리」 자리 |
   | 보스 | 1 | **오탐 → 수리(이번 커밋)** | 「버켄스탁 **보스턴** 클로그」 — 다른 낱말의 일부 |
@@ -2087,5 +2087,5 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
   | apotheke fragrance | 102 | **진짜(그 브랜드 상품) — 그대로** | 블랙리스트에 브랜드째 있음. 정식 권한이 있으면 오너가 허용 목록에 |
   | imaginary authors | 21 | **진짜 — 그대로** | 같은 이유 |
   | pleuvoir | 1 | **진짜 — 그대로** | stacked Pleuvoir EDP |
-  → 오탐 **59줄**(밴드 56 · 트웰브사우스 1 · 보스턴 1 · 핑퐁 1)을 같은 규칙 한 곳(`risk_gate.not_brand_here` — 등록 사전검증도 이 함수)에서 수리. 그대로 막는 것 130줄 중 오탐은 사과 장난감 1줄뿐.
+  → 오탐 **57줄**(밴드 54 = apple·애플·samsung 45 + garmin 9 · 트웰브사우스 1 · 보스턴 1 · 핑퐁 1)을 같은 규칙 한 곳(`risk_gate.not_brand_here` — 등록 사전검증도 이 함수)에서 수리. 그대로 막는 132줄 중 오탐은 사과 장난감 1줄뿐(나머지 131 = Apotheke 102 · Imaginary Authors 21 · Hello Kitty 5 · Nintendo · Disney · Pleuvoir 각 1).
 - **소싱처 90일(`diagro read sources:90`):** 아마존 4행 · 사진 66장 중 쓸 만한 것 4(6.1%) · **짧은 링크 4/4**(`a.co/d/…`) / 타오바오·티몰 115행 · 사진 474장(크기 못 잼 — 서버가 타오바오 이미지 서버에 못 닿음) · 옵션 있는 93행 중 SKU 0 3 · 사진 0 14 · 짧은 링크 1. → 다음 수리: 아마존 짧은 링크 풀기(4) · 타오바오 사진 0(14).
