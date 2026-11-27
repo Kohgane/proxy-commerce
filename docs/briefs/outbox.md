@@ -2089,3 +2089,42 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
   | pleuvoir | 1 | **진짜 — 그대로** | stacked Pleuvoir EDP |
   → 오탐 **57줄**(밴드 54 = apple·애플·samsung 45 + garmin 9 · 트웰브사우스 1 · 보스턴 1 · 핑퐁 1)을 같은 규칙 한 곳(`risk_gate.not_brand_here` — 등록 사전검증도 이 함수)에서 수리. 그대로 막는 132줄 중 오탐은 사과 장난감 1줄뿐(나머지 131 = Apotheke 102 · Imaginary Authors 21 · Hello Kitty 5 · Nintendo · Disney · Pleuvoir 각 1).
 - **소싱처 90일(`diagro read sources:90`):** 아마존 4행 · 사진 66장 중 쓸 만한 것 4(6.1%) · **짧은 링크 4/4**(`a.co/d/…`) / 타오바오·티몰 115행 · 사진 474장(크기 못 잼 — 서버가 타오바오 이미지 서버에 못 닿음) · 옵션 있는 93행 중 SKU 0 3 · 사진 0 14 · 짧은 링크 1. → 다음 수리: 아마존 짧은 링크 풀기(4) · 타오바오 사진 0(14).
+
+## 2026-11-27 오후 감독 + 오너 15:18 결정(0번 교체) — 같은 PR
+
+**0-1 허용 목록** — Apotheke Fragrance · Imaginary Authors를 `risk_tokens.json` `allow`에. 판매 재개 판정과 등록 사전검증이 **같은 함수**(`risk_gate.active_blacklist` = 블랙리스트 − 허용 − 상품 단위)를 본다. 예전엔 판매 재개 쪽이 허용 목록을 안 봤다(같이 고침). 셰고가 123줄(Apotheke 102 · Imaginary Authors 21)이 금지 브랜드에서 풀린다.
+
+### 0-2 금지 브랜드 근거 표(바꾸기 전 → 바꾼 뒤) — 볼트·메일 출처 조사
+- 운영 목록 원문(env `COUPANG_BLACKLIST85` 151개 · 08-19)은 볼트·레포에 사본이 없다 → 볼트 사본 두 개(서버 `brand_blacklist.json` 93개 · `radar/edc/brand_blacklist.json` 146개)와 `결정/취급 금지 카테고리.md`로 **76줄 재구성**(한글 표기 52개 중 약 10개만 이름이 남음). 배포 뒤 새 진단 `diagro read blacklist`로 운영 원문 151개를 읽어 빈 줄을 채운다.
+- 분류 결과: 브랜드 단위 5 · 상품 단위 13 · 근거 없음 53 · 범위 밖 5. Apotheke Fragrance·Imaginary Authors는 근거 없음(우리 니치 향수 규칙) — 0-1로 허용.
+
+| 브랜드 | 들어간 날 | 분류 | 근거(마켓·상품번호·사유) | 출처 | 바꾼 뒤 |
+|---|---|---|---|---|---|
+|  CASETiFY (casetify, 케이스티파이) | — | brand | Naver smartstore; Au · smartstore 13175654680 (+4) 2026-04-21 네이버 권리보호센터: 지식재산권(저작권) 침해 판단 → 상품 조치 (접수 260414S41; Auction F491263413, F507197175, F5071926 2026-04-23 Marq Vision for Casetagram Ltd: 무단 재판매/위조 간주 — 정식 | mail icloud 2026-04-23 'Casetagram Limited · 지식재산권 무단 사용 중단에 대한 협조 요청' | **브랜드 줄 유지**  |
+|  NOVIUM / HOVERPEN (노비움·호버펜) | 2026-10-05 | brand | Coupang (고가네·우주대행),  · 9 products / 21 options (10-05); 12 Coup 2026-10-05 노비움코리아(KT Solution Tech, 국내 독점총판) 카톡: 상표 40-175459; 16213409975 2026-10-05 W.vedo.M 제품인데 제목에 '호버펜' — 상표 낱말 사용으로 같이 걸림 | 결정/취급 금지 카테고리.md §노비움/호버펜 (2026-10-05) + table row (2026-11-25) | **브랜드 줄 유지**  |
+|  Peter Millar (peter millar, petermillar, | 2026-08-22 | brand | Coupang (고가네) · 488 rejected/deleted (08), 541 IPR rejec 2026-09-07 쿠팡 IPR 반려 — brand-wide (국내 총판, 게이팅 시 상표권자 거래내역서 요구 | 결정/취급 금지 카테고리.md table '국내 총판 있는 글로벌 브랜드' + §Peter Millar (2026-09-07) | **브랜드 줄 유지**  |
+|  Ariat (아리아트·아리앗·애리엇) | 2026-11-04 | brand | Coupang (고가네) · 16438231710, 16438231593 (wallets, sales 2026-11-04 Marq Vision for Ariat International: 지식재산권 사용 허가 증 | mail gmail 2026-11-04 'Ariat International, Inc.지식재산권 사용에 대한 확인 협조 요청' | **브랜드 줄 유지**  |
+|  Spigen (스피겐) | 2026-10-21 | brand | Coupang (우주 3·고가네 6) · 9 listings sales stopped (numbers not in 2026-10-21 Marq Vision for Spigen Korea: 지식재산권 사용 허가 확인 요청 | mail icloud 2026-10-21 'Spigen Korea Co.,Ltd. 지식재산권 사용에 대한 확인 협조 요청' | **브랜드 줄 유지**  |
+|  MEMO Paris (memo paris, memoparis, 메모파리) | 2026-08-19 or earlier | product | Coupang (우주대행) · 122 listings in Coupang CSV (A01504840_판 2026-08-07 쿠팡 Seller Fraud Appeal: 위조 의심(가품) 판매중지, 'MEMO 정품 유; 48 listings both accounts sales stopped 2026-11-04 메모파리 두 계정 48개 중지+블랙리스트 | mail gmail 2026-08-07 fwd 'Notification on sales suspension and reques | 브랜드 줄 유지(전 리스팅 위조 의심 중지 — 경계, 오너 판단)  |
+|  Patagonia (파타고니아) | 2026-08-21 | product | Coupang (고가네) · 16302192201 2026-08-21 쿠팡 브랜드 증빙 서류 제출 요청 (심사번호 597842422) — 서류 없음, 판매 승인 | mail gmail2 2026-08-21 'RE: [쿠팡] 브랜드 증빙 서류 제출 요청_A01381223 — 서류 제출 불가에 | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Nike (nike, 나이키) | 2026-08-21 | product | Coupang (고가네) · 16308655669 2026-08-21 쿠팡 브랜드 증빙 서류 제출 요청 (심사번호 597839573) — 철회 | mail gmail2 2026-08-21 (same as Patagonia) | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Le Creuset (le creuset, 르크루제) | 2026-08-22 | product | Coupang (우주대행) · gating 605142931 2026-09-02 쿠팡 유통경로 확인 요청 → 2026-09-28 심사기간 초과 종료 | 결정/취급 금지 카테고리.md §국내 총판 브랜드 (added preemptively 08-22) + §blacklist 잔존 | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Apple (apple, 애플) | 2026-08-19 or earlier | product | Coupang (우주대행·고가네) · 16429545032, 16429545058, 16429545095 (S 2026-10-28 쿠팡 유통경로 확인 (gating 626346736) → 11-16 임시 반려: 호환 상품; gating 626346239 (고가네) 2026-11-08 유통경로 확인 — 회신 | mail gmail2 2026-11-16 '(심사번호: 626346736 - 심사중) ..._A01504840_애플' | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Samsung (samsung) | 2026-08-19 or earlier | product | Coupang · 16439947198 (Anker Nano Car Charger) 2026-11-04 셀러게이팅 삼성 629665505 — brand misclassification, 소명; gating 630179862 (우주대행) 2026-11-05 유통경로 확인 → 11-13 심사종료 | mail gmail2 2026-11-04 'Re: (심사번호: 629665505 - 심사중) ..._A01381223_삼성' | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Supreme (supreme) | 2026-08-19 or earlier | product | Coupang (고가네·우주대행) · 16476166272 (gogane) / 16476151567 (wooj 2026-11-25 유통경로 확인 슈프림 (638150124 / 638152983) — 'Suprême' in | mail gmail2 2026-11-25 'Re: (심사번호: 638150124 - 심사중) ..._A01504840_슈프림' | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Dyson (dyson) | 2026-08-19 or earlier | product | Coupang (우주대행) · gating 626347497 2026-10-27 유통경로 확인 → 2026-11-16 승인 | mail gmail2 2026-11-16 '(심사번호:626347497-심사종료) ..._다이슨' | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Jacques Marie Mage (jacques marie mage,  | 2026-08-19 or earlier | product | Coupang (우주대행·고가네) · gating 632197741 2026-11-18 심사기간 초과 종료; gating 636135563 (고가네) 2026-11-26 진짜 브랜드 — 반려=해당 상품만 | mail gmail2 2026-11-18 '(심사번호: 632197741 - 심사종료) 심사기간 초과로 인한 심사 종료_자크마 | **브랜드 줄 뺌 → 반려 상품만**  |
+|  Laser pointer / laser module (레이저포인터·레이저 | 2026-08-22 | product | Coupang · CheerDots wireless mouse 'with Laser Poi 2026-08-22 청소년 유해물건 분류 반려 (취급 주의 품목 8) | 지뢰/레이저 청소년유해 지뢰.md | 그대로(우리 정책 차단 — 명품·안전·리콜 · 오너 판단)  |
+|  Tiffany (tiffany & co) | 2026-10-10 | product | Coupang (고가네) · exposure 9783540321 (Vipzoon watch band  2026-11-19 쿠팡 지재권 판매중지 cm112 4JMWG4-DL9Z3L — 'TIFFANY BLUE' 상 | mail gmail 2026-11-19 '[쿠팡] 상품 소명 요청 및 판매중지 안내 - A01381223 고가네 (반복 위반  | 그대로(우리 정책 차단 — 명품·안전·리콜 · 오너 판단)  |
+|  Chanel (chanel, 샤넬) | 2026-10-10 | product | Coupang · 16348964172 (torras Interlace) 2026-08-21 유통경로 확인 샤넬 598923132 — 브랜드 오분류 소명; 16408208523 (Jeweller's Rouge), Labbvenn 2026-10..2026-11 repeated gating misclassification (633858773, 6338 | mail gmail2 2026-08-21 'RE: [쿠팡] 유통경로 확인 요청 안내_A01381223_샤넬 — 브랜드 오분류  | 그대로(우리 정책 차단 — 명품·안전·리콜 · 오너 판단)  |
+|  Chambord / Caffettiera (샹보르, '케냐 커피 메이커' | 2026-11-04 | product | Coupang (고가네 10·우주 1 · 26 listings (Bodum glass French press) 2026-11-04 쿠팡 리콜 (CPSC Bodum) — safety, not IP | 00_다음세션.md:590 | 그대로(우리 정책 차단 — 명품·안전·리콜 · 오너 판단)  |
+|  Hello Kitty / Sanrio | 2026-08-19 or earlier | out_of_scope |  · — | srv_snap/apply_out/trend_path_peek.txt (server brand_blacklist.json 93 | 그대로(범위 밖)  |
+|  Nintendo / Pokemon | 2026-08-19 or earlier | out_of_scope |  · — | srv_snap/apply_out/trend_path_peek.txt (server brand_blacklist.json 93 | 그대로(범위 밖)  |
+|  Disney / Marvel | 2026-08-19 or earlier | out_of_scope |  · — | srv_snap/apply_out/trend_path_peek.txt (server brand_blacklist.json 93 | 그대로(범위 밖)  |
+|  Knives | — | out_of_scope |  · — | srv_snap/apply_out/trend_path_peek.txt (server brand_blacklist.json 93 | 그대로(범위 밖)  |
+|  Prescription lenses | — | out_of_scope |  · — | srv_snap/apply_out/trend_path_peek.txt (server brand_blacklist.json 93 | 그대로(범위 밖)  |
+
+**근거 없음 53줄(그대로 막음 — 빼는 건 오너 확인 뒤):** Apotheke Fragrance · Imaginary Authors · Mendittorosa · Nonfiction · Orto Parisi · Xerjoff · Pleuvoir · Boy Smells · Garmin · Bose · Ping · Callaway · Titleist · TaylorMade · Srixon · Cobra · Lizard Skins · Supacaz · fizik · Selle Italia · Brooks England · adidas · Arc'teryx · ASICS · CamelBak · Canada Goose · Columbia · Deuter · GoPro · HOKA · Hydro Flask · KEEN · Lodge · lululemon · Merrell · Mizuno · Moncler · MSR · Nathan · New Balance · The North Face · Osprey · Salomon · Snow Peak · Sony · Stanley · Staub · Suunto · Under Armour · Weber · YETI · Category seeds: 니치향수·향수·캔들·향초·토치라이터·화장품·건강기능식품·건기식·상표권 · Luxury block
+
+- **반려 상품 목록 9건**(`src/uploaders/rejected_products.json` — 등록 사전검증·판매 재개 같은 목록): Patagonia 16302192201 · Nike 16308655669 · Apple 호환 렌즈 16429545032/058/095(「호환」 표기 요구) · Samsung 오분류 16439947198 · Supreme 오분류 16476166272·16476151567 · Tiffany Blue 옵션 9783540321. Dyson(승인)·Jacques Marie Mage·Le Creuset(심사 기간 초과)는 반려 상품번호가 없어 브랜드 줄만 뺌.
+- 판매 재개: 반려 목록에 맞는 셰고가·고코스모스 판매중지 줄은 사유 **「반려 이력(날짜·사유)」**로 빼고 체크 칸도 꺼진다.
