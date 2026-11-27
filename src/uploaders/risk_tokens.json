@@ -478,7 +478,9 @@
   ],
   "allow": [
     "Apotheke Fragrance",
-    "Imaginary Authors"
+    "아포테케",
+    "Imaginary Authors",
+    "이매지너리오써스"
   ],
   "allow_doc": "오너 11-27 15:18 결정 0-1 — 금지 브랜드에서 푼 브랜드(판매 재개 판정·등록 사전검증 같이). 대소문자 무관 일치.",
   "product_level": [

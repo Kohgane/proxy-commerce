@@ -312,7 +312,7 @@ def test_allowlisted_brands_pass_in_relist_and_registration(monkeypatch):
     monkeypatch.setattr(RG, "_blacklist", lambda: ["Apotheke Fragrance", "Imaginary Authors", "supreme"])
     _t = RG.tokens()
     monkeypatch.setattr(RG, "tokens", lambda: {**_t, "product_level": []})
-    assert {"Apotheke Fragrance", "Imaginary Authors"} <= {a for a in RG.allowlist()}
+    assert {"Apotheke Fragrance", "아포테케", "Imaginary Authors", "이매지너리오써스"} <= {a for a in RG.allowlist()}
     assert RG.active_blacklist() == ["supreme"]
     assert RG.blacklist_words("[해외직구] Apotheke Fragrance 아포테케 프래그런스 오일버너 BRASS") == []
     assert RG.blacklist_words("Supreme 백팩") == ["supreme"]

@@ -2092,10 +2092,10 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 
 ## 2026-11-27 오후 감독 + 오너 15:18 결정(0번 교체) — 같은 PR
 
-**0-1 허용 목록** — Apotheke Fragrance · Imaginary Authors를 `risk_tokens.json` `allow`에. 판매 재개 판정과 등록 사전검증이 **같은 함수**(`risk_gate.active_blacklist` = 블랙리스트 − 허용 − 상품 단위)를 본다. 예전엔 판매 재개 쪽이 허용 목록을 안 봤다(같이 고침). 셰고가 123줄(Apotheke 102 · Imaginary Authors 21)이 금지 브랜드에서 풀린다.
+**0-1 허용 목록** — Apotheke Fragrance·아포테케 · Imaginary Authors·이매지너리오써스(운영 목록의 한글 표기까지)를 `risk_tokens.json` `allow`에. 판매 재개 판정과 등록 사전검증이 **같은 함수**(`risk_gate.active_blacklist` = 블랙리스트 − 허용 − 상품 단위)를 본다. 예전엔 판매 재개 쪽이 허용 목록을 안 봤다(같이 고침). 셰고가 123줄(Apotheke 102 · Imaginary Authors 21)이 금지 브랜드에서 풀린다.
 
 ### 0-2 금지 브랜드 근거 표(바꾸기 전 → 바꾼 뒤) — 볼트·메일 출처 조사
-- 운영 목록 원문(env `COUPANG_BLACKLIST85` 151개 · 08-19)은 볼트·레포에 사본이 없다 → 볼트 사본 두 개(서버 `brand_blacklist.json` 93개 · `radar/edc/brand_blacklist.json` 146개)와 `결정/취급 금지 카테고리.md`로 **76줄 재구성**(한글 표기 52개 중 약 10개만 이름이 남음). 배포 뒤 새 진단 `diagro read blacklist`로 운영 원문 151개를 읽어 빈 줄을 채운다.
+- **운영 목록 원문 151개 확인됨** — 레포 시험 자료 `tests/fixtures/y11o_vrsuk_risk.json`(10-15 운영 「빼고 등록」 결정에 저장된 env 목록 그대로)에 있었다. 영문 76 + 한글 표기 75(그중 보통명사 10: 니치향수·향수·캔들·향초·토치라이터·화장품·건강기능식품·건기식·상표권 등 — 이미 브랜드 검사에서 빠짐). **Ariat·Spigen·NOVIUM/HOVERPEN·명품 53·Chambord는 앱 목록에 없다**(블루호스트 등록 체인의 `brand_blacklist.json`에만) → 앱 쪽 표는 아래 줄 중 앱 목록에 있는 것만 바뀐다. 아래 조사(출처)는 볼트 사본 볼트 사본 두 개(서버 `brand_blacklist.json` 93개 · `radar/edc/brand_blacklist.json` 146개)와 `결정/취급 금지 카테고리.md`로 **76줄 재구성**(한글 표기 52개 중 약 10개만 이름이 남음). 배포 뒤 새 진단 `diagro read blacklist`로 운영 원문 151개를 읽어 빈 줄을 채운다.
 - 분류 결과: 브랜드 단위 5 · 상품 단위 13 · 근거 없음 53 · 범위 밖 5. Apotheke Fragrance·Imaginary Authors는 근거 없음(우리 니치 향수 규칙) — 0-1로 허용.
 
 | 브랜드 | 들어간 날 | 분류 | 근거(마켓·상품번호·사유) | 출처 | 바꾼 뒤 |
