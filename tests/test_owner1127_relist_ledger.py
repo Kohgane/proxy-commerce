@@ -108,7 +108,10 @@ def test_owner_pick_moves_unlocked_rows_and_refuses_brand_and_room(state, monkey
     a = next(x for x in p["rows"] if x["channel_no"] == "30000")
     assert a["action"] == "on" and a["owner_ok"] and a["our_reason"] == "오너 확인" and a["owner_prev"]["exclude"] == ["mirror"]
     assert p["on"] == 1 and p["owner_ok"] == 1 and "mirror" in p["by_reason"]
-    assert SR.start("chezgoga", 1, by="t", runner=lambda o: {"ok": True})["total"] == 1   # 실행 대상에 들어간다(오너 탭 그대로)
+    try:
+        assert SR.start("chezgoga", 1, by="t", runner=lambda o: {"ok": True})["total"] == 1   # 실행 대상에 들어간다(오너 탭 그대로)
+    finally:
+        SR._RUNNER_OVERRIDE.pop("chezgoga", None)                                          # 다른 시험에 흉내 실행기가 남지 않게
     from src.services import durable_job as DJ
     DJ.save(SR._RUN_KEY.format("chezgoga"), {"state": "finished"})
     state[SR._PLAN_KEY.format("chezgoga")]["room"] = 1
@@ -403,3 +406,17 @@ def test_product_level_brands_leave_blacklist_but_their_rejected_products_stay_b
     assert any(h["key"] == "rejected_product" for h in hit["hits"])                    # 반려 났던 그 상품은 막힘
     other = RG.scan({"title_ko": "Patagonia Nano Puff", "uploaded": [{"market": "coupang:gogane", "product_id": "16399999999"}]})
     assert not any(h["key"] in ("rejected_product", "blacklist") for h in other["hits"])   # 같은 브랜드 다른 상품은 통과
+
+
+def test_name_only_cost_does_not_turn_on_but_owner_can_pick(state, monkeypatch):
+    """오너 11-27 15:18 0-3: 이름만으로 맞춘 원가는 「원가 이름 일치 — 확인 필요」 — 저절로 켜지 않고, 오너가 골라 켤 수 있다."""
+    SR = _env(monkeypatch)
+    from src.services import relist_ledger as RL
+    RL.load_part("chezgoga", 1, 1, "sourcing_map_name", [{"code": "CP-15000000001", "cost": "40", "currency": "USD"}])
+    RL.load_part("chezgoga", 1, 1, "sourcing_map", [{"code": "CP-15000000002", "cost": "40", "currency": "USD"}])
+    up = _mirrors(monkeypatch, [("이름으로 찾은 지갑", "CP-15000000001"), ("품번으로 찾은 지갑", "CP-15000000002")])
+    p = SR.build("chezgoga", up=up, size_of=_size)
+    by = {x["channel_no"]: x for x in p["rows"]}
+    assert by["30000"]["exclude"] == ["cost_name_only"] and "이름으로 찾음" in by["30000"]["exclude_detail"][0]
+    assert by["30001"]["action"] == "on"
+    assert SR.owner_pick("chezgoga", ["30000"])["moved"] == 1                               # 잠금 아님 — 확인하고 켤 수 있다
