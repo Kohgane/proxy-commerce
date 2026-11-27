@@ -384,6 +384,7 @@ def test_src_live_job_only_appends_queue_and_reads_shopify_js(monkeypatch):
              "https://shop.example.com/cart.js": R(200, {"currency": "USD"}),
              "https://shop.example.com/products/gone.js": R(404)}
     monkeypatch.setattr(m.S, "get", lambda u, timeout=20: pages[u])
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
     monkeypatch.setattr(m, "_pace", lambda host, gap=0.8: None)
     assert m.read("https://shop.example.com/products/a?variant=1") == {"cost": 42.0, "currency": "USD", "state": "ok", "via": "shopify .js"}
     assert m.read("https://shop.example.com/products/gone")["state"] == "gone"

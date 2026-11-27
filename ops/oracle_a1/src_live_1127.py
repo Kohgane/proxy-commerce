@@ -48,7 +48,7 @@ _CUR = {}
 _LAST = {}
 
 
-def _pace(host, gap=0.8):
+def _pace(host, gap=2.5):
     t = _LAST.get(host, 0)
     w = gap - (time.time() - t)
     if w > 0:
@@ -56,13 +56,29 @@ def _pace(host, gap=0.8):
     _LAST[host] = time.time()
 
 
+def _get(url, timeout=20):
+    """가게마다 2.5초 간격 · 429면 Retry-After(없으면 20·40·60초)만큼 쉬고 최대 3번 다시(11-27 드라이: 1,008 중 699가 429)."""
+    host = urlparse(url).hostname or ""
+    for k in range(4):
+        _pace(host)
+        r = S.get(url, timeout=timeout)
+        if r.status_code != 429 or k == 3:
+            return r
+        try:
+            w = min(120, int(r.headers.get("Retry-After") or 0)) or 20 * (k + 1)
+        except ValueError:
+            w = 20 * (k + 1)
+        time.sleep(w)
+        _LAST[host] = time.time()
+    return r
+
+
 def shop_currency(host):
     if host in _CUR:
         return _CUR[host]
     cur = ""
     try:
-        _pace(host)
-        r = S.get(f"https://{host}/cart.js", timeout=15)
+        r = _get(f"https://{host}/cart.js", timeout=15)
         if r.ok:
             cur = str((r.json() or {}).get("currency") or "")
     except Exception:                                                  # noqa: BLE001
@@ -74,8 +90,7 @@ def shop_currency(host):
 def read_shopify(url):
     base = url.split("?")[0].split("#")[0].rstrip("/")
     host = urlparse(base).hostname or ""
-    _pace(host)
-    r = S.get(base + ".js", timeout=20)
+    r = _get(base + ".js", timeout=20)
     if r.status_code == 404:
         return {"state": "gone", "why": "상품 페이지 404"}
     if not r.ok or "json" not in (r.headers.get("Content-Type") or ""):
@@ -94,9 +109,7 @@ def read_shopify(url):
 
 
 def read_jsonld(url):
-    host = urlparse(url).hostname or ""
-    _pace(host)
-    r = S.get(url, timeout=20)
+    r = _get(url, timeout=20)
     if r.status_code in (404, 410):
         return {"state": "gone", "why": f"HTTP {r.status_code}"}
     if not r.ok:

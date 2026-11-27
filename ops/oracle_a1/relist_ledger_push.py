@@ -9,6 +9,7 @@
 사용: relist_ledger_push.py chezgoga            — 줄에 넣기
       relist_ledger_push.py chezgoga --dry      — 무엇을 넣을지 세기만
       relist_ledger_push.py chezgoga --read     — 앱 캐시 요약 읽기(READ ONLY)
+      relist_ledger_push.py chezgoga --no-rebuild — 마지막 조각이 목록 다시 만들기를 걸지 않음(뒤에 소싱처 실측이 걸 때)
 """
 import json
 import os
@@ -20,7 +21,7 @@ from datetime import datetime, timezone
 DB = "gogadb"
 PER = 400
 STORES = ("chezgoga", "gocosmos", "gogane")
-KEEP = ("channel_no", "origin_no", "code", "cost", "currency", "url", "updated", "vault_reason", "vault_job", "cp_sold", "src_state", "via")
+KEEP = ("channel_no", "origin_no", "code", "cost", "currency", "url", "updated", "vault_reason", "vault_job", "cp_sold")
 SQL = ("BEGIN; INSERT INTO app_state (key, value, updated_at) VALUES ('ops:oneshot:queue', '{}'::jsonb, now()) "
        "ON CONFLICT (key) DO NOTHING; "
        "SELECT 1 FROM app_state WHERE key='ops:oneshot:queue' FOR UPDATE; "
@@ -93,7 +94,7 @@ def main(argv):
     if "--dry" in argv:
         return 0
     for i, ch in enumerate(cs):
-        out = psql(queue_sql(store, at, ch, i == len(cs) - 1))
+        out = psql(queue_sql(store, at, ch, i == len(cs) - 1 and "--no-rebuild" not in argv))
         print(" ", ch[0], f"{ch[1]}/{ch[2]}", len(ch[3]), "줄 →", "줄에 넣음(같은 조각이면 그대로)" if not out.startswith("ERR") else out)
     print("📌 결과: RELISTPUSH", store, len(cs), "조각 — 앱 10분 틱이 합치고 목록을 다시 만들어요(읽기만)")
     return 0
