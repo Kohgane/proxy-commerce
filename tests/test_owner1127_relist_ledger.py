@@ -253,10 +253,12 @@ def test_last_part_rebuilds_list(state, monkeypatch):
     from src.services import oneshot_ops as O
     from src.services import smartstore_relist as SR
     seen = []
-    monkeypatch.setattr(SR, "start_build", lambda store, by_uid="": (seen.append(store), {"ok": True, "started": True})[1])
+    monkeypatch.setattr(SR, "start_build", lambda store, by_uid="": (seen.append((store, by_uid)), {"ok": True, "started": True})[1])
+    from src.auth import identity as _idn
+    monkeypatch.setattr(_idn, "OWNER_USER_ID", "owner-uid-1")
     out = O._run({"op": "relist_ledger_load", "item_id": "chezgoga:cost_pin:1:t", "store": "chezgoga", "part": 1, "parts": 1,
                   "src": "cost_pin", "rows": [{"code": "CP-15000000001", "cost": 30, "currency": "USD"}], "rebuild": True})
-    assert out["ok"] and seen == ["chezgoga"] and out["rebuild"]["started"]
+    assert out["ok"] and seen == [("chezgoga", "owner-uid-1")] and out["rebuild"]["started"]      # 끝나면 오너에게 푸시
 
 
 @pytest.mark.parametrize("title,word,hit", [

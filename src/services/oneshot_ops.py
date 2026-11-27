@@ -146,7 +146,11 @@ def _run(row: dict) -> Dict:
         if out.get("ok") and row.get("rebuild"):                     # 마지막 조각 — 목록 다시 만들기(읽기만 · 도는 중이면 그대로)
             from src.services import smartstore_relist as _sr
             if not _sr._busy(out["store"]):
-                out["rebuild"] = _sr.start_build(out["store"])
+                try:                                               # 오너 11-27 오후 ①: 끝나면 오너에게 푸시 한 통(「N건 판매 재개」만 누르면 되게)
+                    from src.auth.identity import OWNER_USER_ID as _own
+                except Exception:                                  # noqa: BLE001
+                    _own = ""
+                out["rebuild"] = _sr.start_build(out["store"], by_uid=str(_own or ""))
             else:
                 out["rebuild"] = {"ok": False, "why": "목록 만들기·판매 재개가 도는 중 — 다음에 「목록 다시 만들기」"}
         return out
