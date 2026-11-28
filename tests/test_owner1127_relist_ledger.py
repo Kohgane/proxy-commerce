@@ -498,7 +498,7 @@ def test_src_live2_reads_whole_shop_catalog_checkpoints_and_only_appends_queue(m
     monkeypatch.setattr(m, "psql", lambda sql: pushed.append(sql) or "")
     assert m.main(["chezgoga", "--dry"]) == 0 and pushed == []
     rows = _j.loads((tmp_path / "ora_state" / "srclive2_chezgoga.json").read_text())["rows"]
-    assert rows["1"] == {"cost": 38.25, "currency": "EUR", "state": "ok", "via": "shopify products.json"}
+    assert rows["1"] == {"cost": 38.25, "currency": "EUR", "state": "ok", "via": "shopify products.json(시장 가게 기본)"}
     assert rows["2"]["state"] == "gone" and rows["3"]["state"] == "unknown" and rows["4"]["state"] == "soldout"
     assert not any("dog-leash.js" in u for u in calls)                 # 목록에 있으면 상품마다 안 읽음
     n = len(calls)
@@ -533,7 +533,7 @@ def test_src_live2_stops_hammering_blocked_ip_and_merges_other_ip_results(monkey
     monkeypatch.setenv("KG_HOME", str(tmp_path))
     m = load()
     calls = []
-    monkeypatch.setattr(m.S, "get", lambda u, timeout=25: calls.append(u) or R(429), raising=False)
+    monkeypatch.setattr(m.S, "get", lambda u, timeout=25, headers=None: calls.append(u) or R(429), raising=False)
     pushed = []
     monkeypatch.setattr(m, "psql", lambda sql: pushed.append(sql) or "")
     assert m.main(["chezgoga"]) == 0
@@ -542,7 +542,7 @@ def test_src_live2_stops_hammering_blocked_ip_and_merges_other_ip_results(monkey
     assert pushed == [] and m.STATS["429로 포기"] == 2
 
     m2 = load()                                                          # 블루호스트 — 다른 IP
-    monkeypatch.setattr(m2.S, "get", lambda u, timeout=25: R(200, {"currency": "USD"}) if u.endswith("cart.js") else
+    monkeypatch.setattr(m2.S, "get", lambda u, timeout=25, headers=None: R(200, {"currency": "USD"}) if u.endswith("cart.js") else
                         R(200, {"products": [{"handle": f"p{i}", "variants": [{"price": "9.50", "available": i != 2}]} for i in range(1, 5)]}),
                         raising=False)
     monkeypatch.setattr(m2, "psql", lambda sql: (_ for _ in ()).throw(AssertionError("블루호스트는 DB에 안 쓴다")))
@@ -555,8 +555,48 @@ def test_src_live2_stops_hammering_blocked_ip_and_merges_other_ip_results(monkey
     (tmp_path / "ora_state").rename(tmp_path / "ora_state_bh")
     (tmp_path / "ora_state_oracle").rename(tmp_path / "ora_state")
     m3 = load()
-    monkeypatch.setattr(m3.S, "get", lambda u, timeout=25: (_ for _ in ()).throw(AssertionError("합친 줄은 다시 안 읽음 " + u)), raising=False)
+    monkeypatch.setattr(m3.S, "get", lambda u, timeout=25, headers=None: (_ for _ in ()).throw(AssertionError("합친 줄은 다시 안 읽음 " + u)), raising=False)
     pushed3 = []
     monkeypatch.setattr(m3, "psql", lambda sql: pushed3.append(sql) or "")
     assert m3.main(["chezgoga", "--from-file", str(f)]) == 0
     assert len(pushed3) == 1 and '"src": "source_live"' in pushed3[0] and '"rebuild": true' in pushed3[0] and '"cost": 9.5' in pushed3[0]
+
+
+def test_src_live2_reads_each_shop_in_the_market_of_its_ledger_currency(monkeypatch, tmp_path):
+    """11-28 블루호스트 실측: 쿠키 없으면 가게가 그 IP 나라 시장(EUR 등)으로 값을 보인다 → 장부 원가 통화의 시장(`localization=US` 등)으로 읽는다.
+    EUR처럼 나라 하나로 못 정하면 가게 기본 · `--market none`이면 쿠키 없음 · 어느 시장으로 읽었는지 줄에 남긴다."""
+    import importlib.util
+    import json as _j
+    spec = importlib.util.spec_from_file_location("src_live2_1127", "ops/oracle_a1/src_live2_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+
+    class R:
+        def __init__(self, data):
+            self.status_code, self._d, self.headers, self.ok, self.text = 200, data, {"Content-Type": "application/json"}, True, ""
+
+        def json(self):
+            return self._d
+    seen = {}
+
+    def get(u, timeout=25, headers=None):
+        host = u.split("/")[2]
+        seen.setdefault(host, set()).add((headers or {}).get("Cookie", ""))
+        if u.endswith("cart.js"):
+            return R({"currency": "USD" if "US" in (headers or {}).get("Cookie", "") else "EUR"})
+        return R({"products": [{"handle": "p", "variants": [{"price": "39.95", "available": True}]}]})
+    monkeypatch.setattr(m.S, "get", get, raising=False)
+    (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)
+    (tmp_path / "vault" / "srv_snap" / "apply_out" / "relistledger_data_chezgoga.txt").write_text(_j.dumps({"parts": {"sourcing_map": [
+        {"channel_no": "1", "url": "https://us.example.com/products/p", "cost": 34.95, "currency": "USD"},
+        {"channel_no": "2", "url": "https://eu.example.com/products/p", "cost": 30, "currency": "EUR"}]}}))
+    monkeypatch.setenv("KG_HOME", str(tmp_path))
+    monkeypatch.setattr(m, "psql", lambda sql: "")
+    assert m.main(["chezgoga", "--dry"]) == 0
+    assert seen["us.example.com"] == {"localization=US"} and seen["eu.example.com"] == {""}
+    rows = _j.loads((tmp_path / "ora_state" / "srclive2_chezgoga.json").read_text())["rows"]
+    assert rows["1"]["currency"] == "USD" and "시장 US" in rows["1"]["via"] and "가게 기본" in rows["2"]["via"]
+    seen.clear()
+    assert m.main(["chezgoga", "--dry", "--fresh", "--market", "none"]) == 0      # --fresh = 오늘 읽은 줄도 다시
+    assert seen["us.example.com"] == {""}

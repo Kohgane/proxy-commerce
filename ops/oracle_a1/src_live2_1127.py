@@ -54,11 +54,11 @@ class _UResp:
 
 class _USession:
     """requests 없는 곳(블루호스트)용 — get(url, timeout)만."""
-    def get(self, url, timeout=25):
+    def get(self, url, timeout=25, headers=None):
         import urllib.request as U
         import urllib.error as UE
         try:
-            with U.urlopen(U.Request(url, headers=HDR), timeout=timeout) as r:
+            with U.urlopen(U.Request(url, headers={**HDR, **(headers or {})}), timeout=timeout) as r:
                 return _UResp(r.status, r.read(), {k.title(): v for k, v in r.headers.items()})
         except UE.HTTPError as e:
             return _UResp(e.code, e.read() or b"", {k.title(): v for k, v in (e.headers or {}).items()})
@@ -72,7 +72,14 @@ else:
 GAP = [2.5]
 _LAST = [0.0]
 STATS = {"요청": 0, "429": 0, "429로 포기": 0}
-BLOCKED = [0]                                                          # 429가 끝까지 안 풀린 가게 수 — 2곳이면 이 IP는 Shopify가 막은 것
+BLOCKED = [0]
+#: 11-28 블루호스트 실측: 쿠키 없으면 가게가 그 IP의 나라 시장(유럽 EUR 등)으로 값을 보인다 — `localization=<나라>` 쿠키로 시장을 고른다.
+#   장부 원가가 그 통화로 적혀 있던 시장(대부분 미국 USD)으로 읽어야 옛 원가와 견줄 수 있고, 관부가세·배송비는 마진 계산이 따로 더한다
+#   (한국 시장 값은 관부가세가 들어간 값일 수 있어 두 번 더해진다). EUR은 나라 하나로 못 정해 가게 기본값.
+CUR2CC = {"USD": "US", "JPY": "JP", "GBP": "GB", "SGD": "SG", "SEK": "SE", "TWD": "TW", "CAD": "CA", "AUD": "AU",
+          "CNY": "CN", "HKD": "HK", "CHF": "CH", "DKK": "DK", "NOK": "NO", "KRW": "KR"}
+COOKIE = [""]
+MKT = [""]                                                          # 429가 끝까지 안 풀린 가게 수 — 2곳이면 이 IP는 Shopify가 막은 것
 
 
 def _lit(s):
@@ -94,7 +101,7 @@ def _get(url, timeout=25):
             time.sleep(w)
         _LAST[0] = time.time()
         STATS["요청"] += 1
-        r = S.get(url, timeout=timeout)
+        r = S.get(url, timeout=timeout, headers=({"Cookie": COOKIE[0]} if COOKIE[0] else None))
         if r.status_code != 429:
             return r
         if k == 3:
@@ -162,7 +169,7 @@ def read_js(url, cur):
     ps = [int(v.get("price") or 0) for v in (av or vs) if int(v.get("price") or 0) > 0]
     if not ps or not cur:
         return {"state": "unknown", "why": "가격·통화 못 읽음"}
-    return {"cost": round(min(ps) / 100.0, 2), "currency": cur, "state": "ok" if av else "soldout", "via": "shopify .js"}
+    return {"cost": round(min(ps) / 100.0, 2), "currency": cur, "state": "ok" if av else "soldout", "via": f"shopify .js(시장 {MKT[0] or '가게 기본'})"}
 
 
 def read_jsonld(url):
@@ -248,7 +255,7 @@ def main(argv):
         ck = json.load(open(ck_path))
     except Exception:                                                  # noqa: BLE001
         ck = {}
-    if ck.get("day") != TODAY:
+    if ck.get("day") != TODAY or "--fresh" in argv:
         ck = {"day": TODAY, "rows": {}}
     done = ck["rows"]
     for k in [k for k, v in done.items() if "429" in str(v.get("why") or "")]:
@@ -268,7 +275,19 @@ def main(argv):
         by_host.setdefault((urlparse(r["url"]).hostname or "").lower(), []).append(r)
     print(store, "소싱처 주소 줄", len(todo), "· 가게", len(by_host), "· 오늘 이미 읽은 줄", len(done), "· 시작", TODAY)
     stopped = ""
+    market = argv[argv.index("--market") + 1] if "--market" in argv else "auto"
     for hi, (host, rs) in enumerate(sorted(by_host.items(), key=lambda kv: -len(kv[1]))):
+        cc = ""
+        if market == "auto":
+            curs = {}
+            for r in rs:
+                if r.get("currency"):
+                    curs[str(r["currency"]).upper()] = curs.get(str(r["currency"]).upper(), 0) + 1
+            cc = CUR2CC.get(max(curs, key=curs.get), "") if curs else ""
+        elif market not in ("none", ""):
+            cc = market.upper()
+        COOKIE[0] = f"localization={cc}" if cc else ""
+        MKT[0] = cc
         left = [r for r in rs if rowkey(r) not in done]
         if not left:
             continue
@@ -301,7 +320,8 @@ def main(argv):
                     h = handle_of(r["url"])
                     if cat is not None and h in cat and cur:
                         price, av = cat[h]
-                        done[rowkey(r)] = {"cost": price, "currency": cur, "state": "ok" if av else "soldout", "via": "shopify products.json"}
+                        done[rowkey(r)] = {"cost": price, "currency": cur, "state": "ok" if av else "soldout",
+                                           "via": f"shopify products.json(시장 {MKT[0] or '가게 기본'})"}
                     else:
                         miss.append(r)
                 for r in miss:                                         # 목록에 없거나 목록 못 읽음 → 그 상품만 한 번
@@ -309,7 +329,7 @@ def main(argv):
                     if done[rowkey(r)].get("state") == "unknown" and cat is None:
                         done[rowkey(r)] = read_jsonld(r["url"])
                 if shop:
-                    print(f"  {host}: {len(shop)}줄 · 목록 {len(cat or {})}개{'(완주)' if complete else ''} {why} · 따로 읽음 {len(miss)} · 통화 {cur or '?'}")
+                    print(f"  {host}: {len(shop)}줄 · 목록 {len(cat or {})}개{'(완주)' if complete else ''} {why} · 따로 읽음 {len(miss)} · 통화 {cur or '?'} · 시장 {MKT[0] or '가게 기본'}")
             for r in other:
                 done[rowkey(r)] = read_jsonld(r["url"])
             if other:
