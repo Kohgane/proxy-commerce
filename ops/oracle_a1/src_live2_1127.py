@@ -79,6 +79,7 @@ BLOCKED = [0]
 CUR2CC = {"USD": "US", "JPY": "JP", "GBP": "GB", "SGD": "SG", "SEK": "SE", "TWD": "TW", "CAD": "CA", "AUD": "AU",
           "CNY": "CN", "HKD": "HK", "CHF": "CH", "DKK": "DK", "NOK": "NO", "KRW": "KR"}
 COOKIE = [""]
+APP_CUR = {"USD", "EUR", "JPY", "CNY", "KRW"}                         # src/price.py DEFAULT_FX_RATES — 앱이 원화로 바꿀 수 있는 통화
 MKT = [""]                                                          # 429가 끝까지 안 풀린 가게 수 — 2곳이면 이 IP는 Shopify가 막은 것
 
 
@@ -406,7 +407,12 @@ def main(argv):
             continue
         row = {k: r[k] for k in ("channel_no", "origin_no", "code") if r.get(k)}
         row.update(url=r["url"], updated=TODAY, src_state=st, via=got.get("via") or got.get("why") or "")
-        if got.get("cost"):
+        if got.get("cost") and str(got.get("currency") or "").upper() not in APP_CUR:
+            # 11-28: 앱 마진 계산이 아는 통화(USD·EUR·JPY·CNY·KRW)만 원가로 — 그 밖(SGD·HKD·TWD·SEK·GBP…)은 원가를 싣지 않고
+            #   재고 상태만(품절·내려감은 그대로 뺌) · 원가는 옛 장부 값(「현재가 미확인」)으로 남는다.
+            tally["통화 앱 밖(원가 안 실음)"] = tally.get("통화 앱 밖(원가 안 실음)", 0) + 1
+            row["via"] = f"{row['via']} · 현재가 {got['cost']:g} {got['currency']}(앱 환율 없음 — 원가로 안 씀)"
+        elif got.get("cost"):
             row.update(cost=got["cost"], currency=got["currency"])
             old = r.get("cost")
             try:

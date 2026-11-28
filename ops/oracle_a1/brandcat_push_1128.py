@@ -32,9 +32,14 @@ def main(argv):
         f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "srv_snap", "apply_out", f"brandcat_data_{store}.txt")
     doc = json.load(open(f))
     groups = {"code_match": [], "name_match": []}
+    app_cur = {"USD", "EUR", "JPY", "CNY", "KRW"}                     # 앱 마진 계산이 아는 통화만(11-28)
+    skipped = 0
     for r in doc.get("rows") or []:
+        if str(r.get("currency") or "").upper() not in app_cur:
+            skipped += 1
+            continue
         groups["code_match" if r.get("kind") == "code" else "name_match"].append({k: r[k] for k in KEEP if k in r})
-    print(store, "블루호스트 결과", doc.get("at"), {k: len(v) for k, v in groups.items()})
+    print(store, "블루호스트 결과", doc.get("at"), {k: len(v) for k, v in groups.items()}, "· 앱 통화 밖이라 뺌", skipped)
     if "--dry" in argv:
         return 0
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")

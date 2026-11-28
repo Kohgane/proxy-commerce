@@ -337,3 +337,40 @@ def test_src_live2_trusts_cart_currency_only_when_it_echoes_the_requested_one(mo
     m.COOKIE[0] = ""                                                    # 쿠키 없음(가게 기본) → cart.js 안 믿고 JSON-LD 대조만
     cart["cur"] = "USD"
     assert m.shop_catalog("creative.lighting")[1] == ""
+
+
+def test_costless_live_row_does_not_hide_ledger_cost_and_unsupported_currency_is_not_a_cost(state, monkeypatch, tmp_path):
+    """11-28: ① 소싱처 실측 줄에 원가가 없으면(품절·내려감 · 앱이 못 바꾸는 통화) 다른 장부의 원가를 가리지 않는다 — 원가는 옛 장부(현재가 미확인),
+    품절·내려감 상태는 그대로 실린다. ② 실측이 앱 환율 밖 통화(SGD 등)면 원가로 싣지 않고 재고 상태만."""
+    from src.services import relist_ledger as RL
+    RL.load_part("chezgoga", 1, 1, "sourcing_map", [{"code": "CP-15000000001", "cost": "83.95", "currency": "USD", "updated": "2026-11-18"},
+                                                    {"code": "CP-15000000002", "cost": "40", "currency": "USD"}])
+    RL.load_part("chezgoga", 1, 1, "source_live", [{"code": "CP-15000000001", "updated": "2026-11-28", "src_state": "ok", "via": "SGD"},
+                                                   {"code": "CP-15000000002", "updated": "2026-11-28", "src_state": "soldout"}])
+    idx = RL.index("chezgoga")
+    a = RL.find(idx, {"seller_code": "CP-15000000001"})
+    assert a["cost"] == 83.95 and a["currency"] == "USD" and a["src"] == "볼트 소싱맵"
+    b = RL.find(idx, {"seller_code": "CP-15000000002"})
+    assert b["cost"] == 40 and b["src_state"] == "soldout"                # 품절은 그대로 → 판매 재개는 「소싱처 품절」로 뺀다
+
+    import importlib.util
+    import json as _j
+    spec = importlib.util.spec_from_file_location("src_live2_1127", "ops/oracle_a1/src_live2_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)
+    (tmp_path / "vault" / "srv_snap" / "apply_out" / "relistledger_data_chezgoga.txt").write_text(_j.dumps({"parts": {"sourcing_map": [
+        {"channel_no": "1", "url": "https://stackedstore.com/products/rug", "cost": 83.95, "currency": "USD"},
+        {"channel_no": "2", "url": "https://us.example.com/products/p", "cost": 30, "currency": "USD"}]}}))
+    (tmp_path / "vault" / "srv_snap" / "apply_out" / "srclive2_data_chezgoga.txt").write_text(_j.dumps({"rows": {
+        "1": {"cost": 138.04, "currency": "SGD", "state": "ok", "via": "shopify products.json"},
+        "2": {"cost": 39.95, "currency": "USD", "state": "ok", "via": "shopify products.json"}}}))
+    monkeypatch.setenv("KG_HOME", str(tmp_path))
+    pushed = []
+    monkeypatch.setattr(m, "psql", lambda sql: pushed.append(sql) or "")
+    monkeypatch.setattr(m, "_get", lambda url, timeout=25: (_ for _ in ()).throw(AssertionError("합친 줄은 다시 안 읽음")))
+    assert m.main(["chezgoga", "--from-file", str(tmp_path / "vault" / "srv_snap" / "apply_out" / "srclive2_data_chezgoga.txt"),
+                   "--no-rebuild"]) == 0
+    body = pushed[0]
+    assert '"cost": 39.95' in body and '"currency": "SGD"' not in body and '138.04' in body   # SGD 값은 via 설명에만
+    assert "앱 환율 없음" in body                                          # 원가로 안 쓴 까닭을 줄에 남김
