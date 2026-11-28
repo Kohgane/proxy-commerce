@@ -481,7 +481,9 @@ def test_src_live2_reads_whole_shop_catalog_checkpoints_and_only_appends_queue(m
                                                                           {"price": "30.00", "available": False}]}]}
                      if "page=1" in url else {"products": []})
         if url.endswith("/cart.js"):
-            return R(200, {"currency": "EUR"})
+            return R(200, {"currency": "USD"})                            # 11-28: cart.js 통화는 믿지 않는다 — 상품 페이지 JSON-LD로 확인
+        if url.endswith("/products/Dog-Leash"):
+            return R(200, None, "text/html", '<script type="application/ld+json">{"offers":{"price":"38.25","priceCurrency":"EUR"}}</script>')
         if url.endswith("missing.js"):
             return R(404)
         return R(200, None, "text/html", '<script type="application/ld+json">{"offers":{"price":"12.5","priceCurrency":"usd",'
@@ -523,7 +525,8 @@ def test_src_live2_stops_hammering_blocked_ip_and_merges_other_ip_results(monkey
 
     class R:
         def __init__(self, status, data=None, ctype="application/json"):
-            self.status_code, self._d, self.headers, self.ok, self.text = status, data, {"Content-Type": ctype}, status < 400, ""
+            self.status_code, self._d, self.headers, self.ok = status, data, {"Content-Type": ctype}, status < 400
+            self.text = data if isinstance(data, str) else ""
 
         def json(self):
             return self._d
@@ -543,6 +546,8 @@ def test_src_live2_stops_hammering_blocked_ip_and_merges_other_ip_results(monkey
 
     m2 = load()                                                          # 블루호스트 — 다른 IP
     monkeypatch.setattr(m2.S, "get", lambda u, timeout=25, headers=None: R(200, {"currency": "USD"}) if u.endswith("cart.js") else
+                        R(200, '<script type="application/ld+json">{"offers":{"price":"9.50","priceCurrency":"USD"}}</script>', "text/html")
+                        if "/products/p" in u and "products.json" not in u else
                         R(200, {"products": [{"handle": f"p{i}", "variants": [{"price": "9.50", "available": i != 2}]} for i in range(1, 5)]}),
                         raising=False)
     monkeypatch.setattr(m2, "psql", lambda sql: (_ for _ in ()).throw(AssertionError("블루호스트는 DB에 안 쓴다")))
@@ -573,8 +578,8 @@ def test_src_live2_reads_each_shop_in_the_market_of_its_ledger_currency(monkeypa
     monkeypatch.setattr(m.time, "sleep", lambda s: None)
 
     class R:
-        def __init__(self, data):
-            self.status_code, self._d, self.headers, self.ok, self.text = 200, data, {"Content-Type": "application/json"}, True, ""
+        def __init__(self, data, text=""):
+            self.status_code, self._d, self.headers, self.ok, self.text = 200, data, {"Content-Type": "application/json"}, True, text
 
         def json(self):
             return self._d
@@ -584,7 +589,10 @@ def test_src_live2_reads_each_shop_in_the_market_of_its_ledger_currency(monkeypa
         host = u.split("/")[2]
         seen.setdefault(host, set()).add((headers or {}).get("Cookie", ""))
         if u.endswith("cart.js"):
-            return R({"currency": "USD" if "US" in (headers or {}).get("Cookie", "") else "EUR"})
+            return R({"currency": "EUR"})                                   # cart.js는 IP 나라 통화일 수 있다 — 안 쓴다
+        if u.endswith("/products/p"):                                       # 같은 쿠키의 상품 페이지가 목록 가격과 같은 통화를 말한다
+            us = "US" in (headers or {}).get("Cookie", "")
+            return R(None, '<script type="application/ld+json">{"offers":{"price":"39.95","priceCurrency":"%s"}}</script>' % ("USD" if us else "EUR"))
         return R({"products": [{"handle": "p", "variants": [{"price": "39.95", "available": True}]}]})
     monkeypatch.setattr(m.S, "get", get, raising=False)
     (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)

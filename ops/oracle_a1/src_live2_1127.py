@@ -125,7 +125,7 @@ def handle_of(url):
 
 def shop_catalog(host):
     """{handle: (최저가(재고 있는 것 우선), 재고 있음?)} · 통화 · 목록 완주했나. JSON이 아니면 None."""
-    cat, done = {}, False
+    cat, done, allp = {}, False, {}
     for page in range(1, MAX_PAGES + 1):
         r = _get(f"https://{host}/products.json?limit=250&page={page}")
         if not r.ok or "json" not in (r.headers.get("Content-Type") or ""):
@@ -143,17 +143,52 @@ def shop_catalog(host):
             prices = [x for x in prices if x > 0]
             if p.get("handle") and prices:
                 cat[str(p["handle"]).lower()] = (round(min(prices), 2), bool(av))
+                allp[str(p["handle"])] = {round(x, 2) for x in prices}
         if len(prods) < 250:
             done = True
             break
-    cur = ""
-    try:
-        c = _get(f"https://{host}/cart.js", timeout=15)
-        if c.ok:
-            cur = str((c.json() or {}).get("currency") or "")
-    except Exception:                                                  # noqa: BLE001
-        cur = ""
-    return cat, cur, done, ""
+    cur, why = verified_currency(host, allp)
+    return cat, cur, done, why
+
+
+def verified_currency(host, allp, tries=3):
+    """가게 통화를 **목록 가격과 같은 맥락에서** 확인한다(11-28 실측: cart.js 통화가 목록 가격과 어긋났다 — harvestlabel 「18,700 EUR」).
+    같은 쿠키로 상품 페이지 하나를 열어 JSON-LD Offer 가격이 그 상품의 목록(products.json) 가격 중 하나와 **같을 때만** 그 priceCurrency를 쓴다.
+    최대 `tries`개 상품을 본다. 못 맞추면 '' — 그 가게 줄은 「통화 확인 불가」(지어내지 않음)."""
+    for h, prices in list(allp.items())[:tries]:
+        try:
+            r = _get(f"https://{host}/products/{h}", timeout=20)
+        except Exception:                                              # noqa: BLE001
+            continue
+        if not r.ok:
+            continue
+        for blob in re.findall(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', r.text or "", re.S | re.I):
+            try:
+                data = json.loads(blob.strip())
+            except Exception:                                          # noqa: BLE001
+                continue
+            stack = data if isinstance(data, list) else [data]
+            while stack:
+                x = stack.pop()
+                if isinstance(x, list):
+                    stack += x
+                    continue
+                if not isinstance(x, dict):
+                    continue
+                if "@graph" in x:
+                    stack += x["@graph"] if isinstance(x["@graph"], list) else [x["@graph"]]
+                offers = x.get("offers")
+                for o in (offers if isinstance(offers, list) else [offers] if offers else []):
+                    if not isinstance(o, dict) or not o.get("priceCurrency"):
+                        continue
+                    for k in ("price", "lowPrice", "highPrice"):
+                        try:
+                            v = round(float(str(o.get(k) or "").replace(",", "")), 2)
+                        except ValueError:
+                            continue
+                        if v > 0 and any(abs(v - q) < 0.011 for q in prices):
+                            return str(o["priceCurrency"]).upper(), ""
+    return "", "통화 확인 불가(상품 페이지 가격이 목록 가격과 안 맞음)"
 
 
 def read_js(url, cur):
@@ -325,7 +360,7 @@ def main(argv):
                     else:
                         miss.append(r)
                 for r in miss:                                         # 목록에 없거나 목록 못 읽음 → 그 상품만 한 번
-                    done[rowkey(r)] = read_js(r["url"], cur) if cur or cat is None else {"state": "unknown", "why": "가게 통화 못 읽음"}
+                    done[rowkey(r)] = read_js(r["url"], cur) if cur or cat is None else {"state": "unknown", "why": why or "가게 통화 못 읽음"}
                     if done[rowkey(r)].get("state") == "unknown" and cat is None:
                         done[rowkey(r)] = read_jsonld(r["url"])
                 if shop:

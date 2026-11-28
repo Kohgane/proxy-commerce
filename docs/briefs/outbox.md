@@ -2277,3 +2277,68 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 - 레포의 `render.yaml`(Render 블루프린트)에 옛 무료 서비스 `proxy-commerce`(region virginia · branch main)가 그대로 있고 자동 배포가 켜져 있었다 → **main에 머지할 때마다 그 서비스도 배포·부팅**(11-27 ⑤ 「배포 때마다 부팅」 · 부팅 뒤 Render 헬스체크 `/health`).
   → `autoDeploy: false`로 끊음(이 PR). 레포 안에 그 주소를 부르는 크론·모니터·자기 핑은 없음(전수 grep · GitHub 크론 4개는 시트·마켓 동기화라 그 서비스를 안 부름).
   남는 `/` 요청은 밖(크롤러·옛 링크)이라 여기서 못 본다 — **서비스 정지(Suspend)는 오너가 Render에서**(대기함 그대로).
+
+
+### 11-28 결과(배포 뒤 · 02:10~03:00 UTC 운영 원문)
+- **배포 확인:** `diag blacklist`(02:10) 운영 목록 151 · 허용 4 · **지금 막는 브랜드 86**(골프 Callaway 등·고가 의류·애매 adidas 등은 남고 Sony 등 「그 밖」은 빠짐) — 새 코드.
+- **블루호스트 `~/brand_blacklist.json`(BRANDBL1128b · 18:08→19:08 서버시각):** 01:08 잘못 줄었던 91 → **126**(원래 149에서 「그 밖」 23낱말만 뺌 · 골프·고가 의류·애매 되살림 · 그 사이 더해진 낱말 없음 · 되돌리기 파일 `.bak_1128` 그대로). 그 사이(01:08~) 돈 우주 소싱 배치 7건에 골프·고가 의류 상품 0(「ping」 1건은 「shipping」 낱말).
+```
+원래(.bak_1128) 149 개: Apotheke Fragrance · Imaginary Authors · Memo Paris · Mendittorosa · Nonfiction · Orto Parisi · adidas · apple · arc teryx · arcteryx · asics · bose · boy smells · brooks england · callaway · camelbak · canada goose · casetify · cobra · columbia · deuter · disney · dyson · fizik · garmin · gopro · hello kitty · hoka · hydro flask · jacques marie mage · keen · laser module · laser pointer · le creuset · lizard skins · lodge · lululemon · marvel · memoparis · merrell · mizuno · moncler · msr · nathan · new balance · nike · nintendo · north face · osprey · patagonia · peter millar · petermillar · ping · pleuvoir · pokemon · salomon · samsung · sanrio · selle italia · snow peak · snowpeak · sony · srixon · stanley · staub · supacaz · supreme · suunto · taylormade · the north face · titleist · under armour · weber · xerjoff · yeti · 논픽션 · 레이저모듈 · 레이저포인터 · 메모파리 · 멘디토로사 · 보이스멜스 · 아포테케 · 오르토파리지 · 이매지너리오써스 · 자크마리마쥬 · 제르조프 · 케이스티파이 · 플뢰부아 · 피터밀러 · NOVIUM · HOVERPEN · 노비움 · 호버펜 · chanel · louis vuitton · gucci · hermes · hermès · dior · prada · rolex · cartier · balenciaga · bottega veneta · saint laurent · ysl · burberry · fendi · givenchy · versace · tiffany & co · celine · montblanc · miu miu · goyard · louboutin · bvlgari · bulgari · van cleef · patek philippe · audemars piguet · valentino garavani · 샤넬 · 루이비통 · 구찌 · 에르메스 · 디올 · 프라다 · 롤렉스 · 까르띠에 · 발렌시아가 · 보테가 · 생로랑 · 버버리 · 펜디 · 지방시 · 베르사체 · 셀린느 · 몽블랑 · 미우미우 · 고야드 · 루부탱 · 반클리프 · 파텍필립 · 오데마피게 · 로에베 · Spigen · 슈피겐 · 스피겐
+뺌(그 밖) 23 개: Mendittorosa · Nonfiction · Orto Parisi · bose · boy smells · garmin · gopro · hydro flask · lodge · pleuvoir · sony · stanley · staub · suunto · weber · xerjoff · yeti · 논픽션 · 멘디토로사 · 보이스멜스 · 오르토파리지 · 제르조프 · 플뢰부아
+되살림(골프·고가 의류·애매) adidas · arc teryx · arcteryx · asics · brooks england · callaway · camelbak · canada goose · cobra · columbia · deuter · fizik · hoka · keen · lizard skins · lululemon · merrell · mizuno · moncler · msr · nathan · new balance · north face · osprey · ping · salomon · selle italia · snow peak · snowpeak · srixon · supacaz · taylormade · the north face · titleist · under armour
+바꾼 뒤 126 개: Apotheke Fragrance · Imaginary Authors · Memo Paris · adidas · apple · arc teryx · arcteryx · asics · brooks england · callaway · camelbak · canada goose · casetify · cobra · columbia · deuter · disney · dyson · fizik · hello kitty · hoka · jacques marie mage · keen · laser module · laser pointer · le creuset · lizard skins · lululemon · marvel · memoparis · merrell · mizuno · moncler · msr · nathan · new balance · nike · nintendo · north face · osprey · patagonia · peter millar · petermillar · ping · pokemon · salomon · samsung · sanrio · selle italia · snow peak · snowpeak · srixon · supacaz · supreme · taylormade · the north face · titleist · under armour · 레이저모듈 · 레이저포인터 · 메모파리 · 아포테케 · 이매지너리오써스 · 자크마리마쥬 · 케이스티파이 · 피터밀러 · NOVIUM · HOVERPEN · 노비움 · 호버펜 · chanel · louis vuitton · gucci · hermes · hermès · dior · prada · rolex · cartier · balenciaga · bottega veneta · saint laurent · ysl · burberry · fendi · givenchy · versace · tiffany & co · celine · montblanc · miu miu · goyard · louboutin · bvlgari · bulgari · van cleef · patek philippe · audemars piguet · valentino garavani · 샤넬 · 루이비통 · 구찌 · 에르메스 · 디올 · 프라다 · 롤렉스 · 까르띠에 · 발렌시아가 · 보테가 · 생로랑 · 버버리 · 펜디 · 지방시 · 베르사체 · 셀린느 · 몽블랑 · 미우미우 · 고야드 · 루부탱 · 반클리프 · 파텍필립 · 오데마피게 · 로에베 · Spigen · 슈피겐 · 스피겐
+```
+- **셰고가 목록 다시 만들기:** 볼트 장부 조각 다시 넣음(02:40~02:50 앱 장부 · 1,254줄 · 소싱맵·작업 기록·카탈로그·이름으로 찾은 소싱맵 + 어제 공식몰 이름 일치 3) → 마지막 조각이 다시 만들기 · 끝나면 오너 푸시. 켤 N·뺄 사유별·표본은 끝나면 아래에.
+- **아마존 짧은 링크 4행:** 큐에 넣음(02:31 · b22f4104 · b6809323 · ffd60193 · eed2f683) — 결과는 아래에.
+
+### ⚠ 셰고가 판매 재개 — 지금 누르면 또 0건(네이버 「해외상품 판매권한」 없음)
+- **어제 오너가 누른 「410건 판매 재개」(11-27 09:28~09:39 UTC) = 성공 0/410.** 실패 사유가 전부 같은 한 줄(원문 · 읽힌 252건 모두):
+  `deliveryInfo.claimDeliveryInfo.shippingAddressId · NotValid.address.overseas.salesAuthority · 「해외상품 판매권한을 신청하셔야 해외 출고지 및 반품/교환지를 설정할 수 있습니다.」`
+  → 상품 문제가 아니라 **셰고가 스토어에 네이버 해외상품 판매권한이 없다** — 해외 반품/교환지가 걸린 상품은 다시 켤 수 없다. 판매중지 1,679건(SUSPENSION)도 이 권한과 이어져 있을 수 있다(확인 필요 · 지어내지 않음).
+  **오너 할 일:** 네이버 커머스센터에서 셰고가 「해외상품 판매권한」 신청(승인 뒤 같은 목록으로 다시 누르면 됨). 권한 승인 전엔 「판매 재개」를 누르지 않기.
+
+### 11-28 결과 2 — 셰고가 목록 다시 만들기(02:50~02:52 UTC · 운영 원문 `diag relist`)
+- **켤 410**(③ 셰고가 주제 136 · ④ 나머지 최신 274 · ① 팔린 적 0) · **뺄 1,269** · 빈자리 597(한도 1,000 − 판매중 403) → 잘림 없음(켤 후보 410 < 597).
+  - 켤 것 **410건 전부 「원가: 장부(날짜) · 현재가 미확인」**(블루호스트 현재가는 아직 줄 뒤 — 실측 들어오면 다시 만들기).
+  - 정책가와 다른 줄 405(표시만 · 재개와 함께 안 바꿈).
+- **뺄 사유별:** 마진 미달 622 · 원가 없음(원본 주소 없음) 597 · 원가 이름 일치(확인 필요) 28 · 미러 18 · 사진 작음 16 · 금지 브랜드 7 · **브랜드 차단(골프) 1** · 브랜드 차단(고가 의류) 0.
+- 장부: 1,254줄(볼트 소싱맵 954 · 작업 기록 183 · 등록 체인 카탈로그 89 · 소싱맵 이름으로 찾음 25 · 공식몰 이름 일치 3) · 원가 있는 줄 1,071 · 장부에서 원가 찾음 1,064.
+- **켤 후보 표본 20**(원가 · 출처 · 마진/하한):
+
+| # | 상품 | 원가 | 출처 | 마진 | 판매가 |
+|---|---|---|---|---|---|
+| 1 | 크레이그힐 서밋 카드 케이스 | 89.9 USD | 볼트 소싱맵(11-18) 현재가 미확인 | 38.3% / 25 | 297,600 |
+| 2 | Mungo & Maud Clara Check Dog Collar | 46.4 USD | 소싱맵(11-09) | 56.8% | 284,600 |
+| 3 | 로프리 Hades POM 스위치 | 59.0 USD | 소싱맵(11-18) | 29.1% | 174,000 |
+| 4 | 오리마우스 Racing Amber | 65.95 USD | 소싱맵(11-18) | 28.5% | 188,800 |
+| 5 | Property Of Nick Keyhanger | 35.33 USD | 소싱맵(11-18) | 40.1% | 145,500 |
+| 6 | Cloud7 Collar Mauerpark Zigzag | 55.0 USD | 소싱맵(11-18) | 33.9% | 180,000 |
+| 7 | MiaCara Pasto | 29.95 USD | 소싱맵(11-18) | 33.9% | 113,800 |
+| 8 | MiaCara Nodo | 14.95 USD | 소싱맵(11-18) | 36.5% | 78,100 |
+| 9 | Cloud7 French Bulldog Coat Brooklyn | 120.0 USD | 소싱맵(11-09) | 33.1% | 414,300 |
+| 10 | 오리마우스 Popu Canvas | 67.95 USD | 소싱맵(11-18) | 27.9% | 191,500 |
+| 11 | Cloud7 Sighthound Collar Regent Park | 55.0 USD | 소싱맵(11-18) | 48.3% | 250,400 |
+| 12 | Red Light Therapy 램프 | 59.99 USD | 소싱맵(11-18) | 49.4% | 277,500 |
+| 13 | Pleuvoir Hinoki Leather EDP 50ml | 40.95 USD | 소싱맵(11-18) | 43.8% | 177,000 |
+| 14 | Cloud7 L-2 Jogging-Leash AKTIV | 45.0 USD | 소싱맵(11-09) | 28.4% | 138,600 |
+| 15 | HOTO Air Pump Pro | 83.95 USD | 소싱맵(11-18) | 26.9% | 225,700 |
+| 16 | 리우드 AMAYA Cuddle Teddy | 18.5 USD | 소싱맵(11-18) | 61.3% | 180,300 |
+| 17 | RovyVon Aurora A8 키체인 라이트 | 48.95 USD | 소싱맵(11-18) | 33.1% | 161,300 |
+| 18 | Found My Animal Red, White & Blue | 39.99 USD | 소싱맵(11-18) | 30.3% | 131,000 |
+| 19 | Mito Red Light MitoMIN 2.0 | 249.0 USD | 소싱맵(11-06) | 29.0% | 756,800 |
+| 20 | TRAYVAX Link Lanyard | 54.99 USD | 소싱맵(11-18) | 32.9% | 176,500 |
+
+- **마진 손계산 3건**(운영 입력 원문: USDKRW 1,350 · 배대지 300 JPY×9 = 2,700 · 국제배송 12,000 · 관부가세 20%(원가 KRW > 150,000일 때) · 수수료 15% · 국내배송 3,000):
+  - ①크레이그힐 89.9 USD → 121,365원(면세) · 랜딩 (121,365+2,700+12,000)=136,065 · 순익 297,600−44,640−136,065−3,000 = **113,895 → 38.27%** (앱 38.3 ✓)
+  - ⑨Cloud7 코트 120 USD → 162,000원(과세) · 랜딩 (162,000+2,700+12,000)×1.2 = 212,040 · 순익 414,300−62,145−212,040−3,000 = **137,115 → 33.10%** (앱 33.1 ✓)
+  - ⑲Mito Red Light 249 USD → 336,150원(과세) · 랜딩 (336,150+14,700)×1.2 = 421,020 · 순익 756,800−113,520−421,020−3,000 = **219,260 → 28.97%** (앱 29.0 ✓)
+  → 관부가세·배송비 둘 다 들어감. ※ 「현재가 미확인」 — 장부 원가가 11-06~11-18 기록이라 오늘 가격과 다를 수 있음.
+
+### 11-28 결과 3 — 아마존 짧은 링크 4행(02:40~03:10 UTC · 운영 원문)
+| 행 | 원래(raw_url 보존) | 정본 |
+|---|---|---|
+| b22f4104 OKNIFE | a.co/d/00RG5ThB | amazon.com/dp/B0C38WV1F6 |
+| b6809323 | a.co/d/00NkaQHC | amazon.com/dp/B0FF4XTJMK |
+| ffd60193 | a.co/d/0jbhoY9u | amazon.com/dp/B0F95QGFQ5 |
+| eed2f683 | a.co/d/0eq8Bq2D | amazon.com/dp/B0F962GTDW |
+- 4/4 주소 고침. **이어서 한 서버 「다시 가져오기」는 4건 다 실패**(사유 칸을 결과에 안 실어 사유는 진단 item으로 확인 중 · 결과 요약에 사유 싣기는 다음 PR) — 그래서 스스 「사진 다시 보내기」 누를 대상 0(바뀐 사진 없음). 카드의 「다시 가져오기」 버튼(정본 주소라 이제 아마존으로 인식)으로 다시 시도 가능.
