@@ -18,6 +18,7 @@
   [data-role=rl-on] .rl-t td:last-child { min-width: 7.5em; word-break: keep-all; overflow-wrap: normal; }
   .rl-t tbody th { white-space: nowrap; padding-right: var(--space-2); }   /* 요약 표 이름 칸이 한 글자씩 세로로 쪼개지지 않게(캡처에서 잡힘) */
   .rl-sub { font-size: .78rem; color: var(--text-muted, var(--muted)); }
+  .rl-warn { color: var(--warn); font-weight: 600; }
   .rl-btn { min-height: 44px; width: 100%; margin-top: var(--space-2); }
   .rl-bad { color: var(--danger); } .rl-ok { color: var(--teal); }
   .rl-why { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: 0 0 var(--space-3); }
@@ -63,6 +64,7 @@
         {% if p.mirrors is defined %}<tr><th>원본 기록</th><td data-role="rl-origin">우리 수집 기록 있음 {{ p.ours }} · 볼트 장부에서 원가 찾음 {{ p.ledger_hit or 0 }} · 쿠팡 미러 {{ p.mirrors }}(그중 원가 못 찾음 {{ (p.by_reason or {}).get('mirror', 0) }}) · 기록 없음 {{ (p.by_reason or {}).get('no_source', 0) }}</td></tr>{% endif %}
         <tr><th>볼트 장부</th><td data-role="rl-ledger">{% if d.ledger.rows %}{{ '{:,}'.format(d.ledger.rows) }}줄(원가 있음 {{ '{:,}'.format(d.ledger.with_cost) }}) · {% for k, n in d.ledger.by_src.items() %}{{ k }} {{ n }}{% if not loop.last %} · {% endif %}{% endfor %} · 받은 때 {{ (d.ledger.at or '')[:16]|replace('T', ' ') }}{% else %}아직 못 받았어요 — 볼트 오라클 작업이 보내면 다음 목록 만들기부터 써요{% endif %}{% if p.owner_ok %} · 오너 확인으로 켠 것 {{ p.owner_ok }}{% endif %}</td></tr>
         <tr><th>뺄 사유</th><td data-role="rl-reasons">{% for k, n in p.by_reason.items() %}{{ reason_ko.get(k, k) }} {{ n }}{% if not loop.last %} · {% endif %}{% else %}없음{% endfor %}</td></tr>
+        {% if p.on_unmeasured %}<tr><th>원가</th><td>켤 것 중 <strong>{{ p.on_unmeasured }}건은 현재가 미확인</strong> — 장부 원가(날짜)로 판정했어요 · 줄마다 「현재가 미확인」 표시 · 5~6월 등록분은 잰 줄부터 앞에</td></tr>{% endif %}
         <tr><th>가격</th><td>켤 것 중 정책가와 다른 {{ p.price_diff }}건 — <strong>표시만</strong>(재개와 함께 바꾸지 않아요 · 가격 변경은 따로 확인)</td></tr>
         <tr><th>조회수</th><td class="rl-sub">{{ p.views_note }}</td></tr>
       </tbody></table>
@@ -93,7 +95,7 @@
   {% if on_rows %}
   <section class="rl-card" data-role="rl-on" id="rl-on"><h2>켤 것 — 앞 {{ on_rows|length }}건(순서대로)</h2>
     <table class="rl-t"><thead><tr><th>상품</th><th>판매·마진</th></tr></thead><tbody>
-    {% for x in on_rows %}<tr data-role="rl-on-row"><td>{{ x.name }}<div class="rl-sub">{{ x.channel_no }} · {{ {1: '① 팔림', 3: '③ 주제', 4: '④ 최신'}[x.tier] }} · 수정 {{ x.modified[:10] }} · 우리 기록: {{ x.our_reason }}{% if x.cost_src %} · 원가 출처: {{ x.cost_src }}{% endif %}{% if x.vault_reason %} · 볼트 사유: {{ x.vault_reason }}{% endif %}</div>
+    {% for x in on_rows %}<tr data-role="rl-on-row"><td>{{ x.name }}<div class="rl-sub">{{ x.channel_no }} · {{ {1: '① 팔림', 3: '③ 주제', 4: '④ 최신'}[x.tier] }} · 수정 {{ x.modified[:10] }} · 우리 기록: {{ x.our_reason }}{% if x.cost_note %} · <span class="rl-warn" data-role="rl-cost-note">{{ x.cost_note }}</span>{% elif x.cost_src %} · 원가 출처: {{ x.cost_src }}{% endif %}{% if x.vault_reason %} · 볼트 사유: {{ x.vault_reason }}{% endif %}</div>
       {% if x.owner_ok %}<button type="button" class="btn btn-ghost btn-sm" data-role="rl-unpick" data-no="{{ x.channel_no }}">뺄 목록으로 되돌리기</button>{% endif %}</td>
       <td>{{ '{:,}'.format(x.sale_price|int) if x.sale_price else '—' }}원{% if x.price_diff %}<div class="rl-sub">정책가 {{ '{:,}'.format(x.policy_price) }}원(표시만)</div>{% endif %}
         <div class="rl-sub">마진 {{ x.margin if x.margin is not none else '—' }}% · 판매 스스 {{ x.sold_ss }}·쿠팡 {{ x.sold_cp }}</div></td></tr>{% endfor %}
@@ -104,7 +106,7 @@
     <p class="rl-sub">아는 상품은 골라 「켤 목록으로」(사유 「오너 확인」). 도검·렌즈·금지 브랜드·볼트 반려 기록은 고를 수 없어요. 원가를 몰라서 뺀 줄은 「원가 넣기」로 그 줄만 다시 판정해요. 둘 다 목록만 고치고 네이버에는 보내지 않아요.</p>
     <table class="rl-t"><thead><tr><th>상품</th><th>사유</th></tr></thead><tbody>
     {% for x in skip_rows %}{% set lk = (x.exclude or [])|select('in', locked)|list %}<tr data-role="rl-skip-row" data-no="{{ x.channel_no }}">
-      <td><label class="rl-pickl"><input type="checkbox" class="rl-pick" data-role="rl-pick" value="{{ x.channel_no }}" aria-label="{{ x.name[:30] }} 고르기" {% if lk %}disabled title="{{ reason_ko.get(lk[0], lk[0]) }} — 고를 수 없어요"{% endif %}><span>{{ x.name }}</span></label><div class="rl-sub">{{ x.channel_no }} · {{ '{:,}'.format(x.sale_price|int) if x.sale_price else '—' }}원{% if x.seller_code %} · 관리 코드 {{ x.seller_code }}{% endif %}{% if x.cost_src %} · 원가 출처: {{ x.cost_src }}{% endif %}{% if x.vault_reason %} · 볼트 사유: {{ x.vault_reason }}{% endif %}</div></td>
+      <td><label class="rl-pickl"><input type="checkbox" class="rl-pick" data-role="rl-pick" value="{{ x.channel_no }}" aria-label="{{ x.name[:30] }} 고르기" {% if lk %}disabled title="{{ reason_ko.get(lk[0], lk[0]) }} — 고를 수 없어요"{% endif %}><span>{{ x.name }}</span></label><div class="rl-sub">{{ x.channel_no }} · {{ '{:,}'.format(x.sale_price|int) if x.sale_price else '—' }}원{% if x.seller_code %} · 관리 코드 {{ x.seller_code }}{% endif %}{% if x.cost_note %} · <span class="rl-warn" data-role="rl-cost-note">{{ x.cost_note }}</span>{% elif x.cost_src %} · 원가 출처: {{ x.cost_src }}{% endif %}{% if x.vault_reason %} · 볼트 사유: {{ x.vault_reason }}{% endif %}</div></td>
       <td>{% for k in x.exclude %}<div>{{ reason_ko.get(k, k) }}{% if x.exclude_detail[loop.index0] %} <span class="rl-sub">— {{ x.exclude_detail[loop.index0] }}</span>{% endif %}</div>{% endfor %}{% if lk %}<div class="rl-sub">고를 수 없어요</div>{% endif %}</td></tr>
         {% if not lk and ((x.exclude or [])|select('in', ['mirror', 'no_source', 'cost_unknown'])|list) %}
         <tr class="rl-cost-row"><td colspan="2"><form class="rl-cost" data-role="rl-cost" data-no="{{ x.channel_no }}">

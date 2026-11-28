@@ -221,6 +221,12 @@ def _margin(row: Dict, ours: Optional[Dict], sold: bool, ledger: Optional[Dict] 
     except Exception:                                              # noqa: BLE001
         return out
     out.update(cost=float(c), currency=cur, cost_src=src)
+    # 오너 11-28 감독 2: 현재가를 아직 못 잰 원가는 그렇다고 적는다 — 「원가: 장부(날짜) · 현재가 미확인」
+    live = src in ("소싱처 재확인", "오너 입력") or str(src).startswith("소싱처 실측")
+    out["cost_live"] = live
+    if not live:
+        when = str((ledger or {}).get("updated") or "")[:10] if ledger and ledger.get("cost") and src != "수집 때" else ""
+        out["cost_note"] = f"원가: {src}({when or '날짜 없음'}) · 현재가 미확인"
     try:
         landed = landed_cost_krw(c, cur)
         m = net_margin_pct(Decimal(str(row.get("sale_price") or 0)), landed, "smartstore")
@@ -262,6 +268,15 @@ def build_state(store: str) -> Dict:
     from src.services import durable_job as DJ
     st = DJ.status(_BUILD_KEY.format(store))
     return {k: st.get(k) for k in _BRIEF_KEYS if k in st}
+
+
+STALE_REG_MONTHS = ("05", "06")
+
+
+def _stale_unmeasured(x: Dict) -> int:
+    """5~6월 등록분인데 현재가를 아직 못 잰 줄이면 1(같은 단계 안에서 뒤로) — 오너 11-28 감독 2."""
+    reg = str(x.get("reg") or "")
+    return 1 if (reg[5:7] in STALE_REG_MONTHS and not x.get("cost_live")) else 0
 
 
 def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Optional[Dict] = None) -> Dict:
@@ -324,6 +339,7 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Opt
         sp = 0
     return {**r, "item_id": (o or {}).get("item_id", ""), "sold_ss": s["ss"], "sold_cp": s["cp"], "views": None,
             "cost": mg["cost"], "currency": mg["currency"], "cost_src": mg["cost_src"], "margin": mg["margin"],
+            "cost_live": bool(mg.get("cost_live")), "cost_note": str(mg.get("cost_note") or ""),
             "vault_reason": str((L or {}).get("vault_reason") or ""), "vault_job": str((L or {}).get("vault_job") or ""),
             "src_url": str((o or {}).get("url") or (L or {}).get("url") or "")[:300],
             "owner_ok": bool(r.get("owner_ok")),
@@ -396,7 +412,8 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
                              RL.find(led, r)) for r in rec.get("fetched") or []]
         rec["ledger"] = RL.summary(store)
         elig = [x for x in judged if not x["exclude"]]
-        elig.sort(key=lambda x: (x["tier"], -(x["sold_ss"] + x["sold_cp"]), _neg(x["reg"])))
+        # 오너 11-28 감독 2: 5~6월 등록분은 원가가 오래됐다 — 같은 단계 안에서 현재가를 잰 줄을 앞에(못 잰 줄은 뒤로)
+        elig.sort(key=lambda x: (x["tier"], _stale_unmeasured(x), -(x["sold_ss"] + x["sold_cp"]), _neg(x["reg"])))
         rec.update(rows=judged, fetched=[], elig=[x["channel_no"] for x in elig], photo_i=0, on=[], limit=limit,
                    now_count=now_count, room=room, status_counts=status_counts, phase="photos",
                    complete=(not rec.get("fetch_error")) and rec.get("total") is not None and len(judged) >= int(rec["total"]))
@@ -450,6 +467,7 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
            "on": len(on_ids), "skip": len(rows) - len(on_ids), "by_reason": by_reason,
            "tiers": {str(t): sum(1 for x in rows if x["action"] == "on" and x["tier"] == t) for t in (1, 3, 4)},
            "price_diff": sum(1 for x in rows if x["action"] == "on" and x["price_diff"]),
+           "on_unmeasured": sum(1 for x in rows if x["action"] == "on" and not x.get("cost_live")),   # 11-28 감독 2: 현재가 미확인으로 켜는 줄
            "photos_checked": int(rec.get("photo_i") or 0), "rss_peak_mb": rec.get("rss_peak_mb"),
            "mirrors": sum(1 for x in rows if _is_mirror(x)),
            "ours": sum(1 for x in rows if x.get("item_id")),

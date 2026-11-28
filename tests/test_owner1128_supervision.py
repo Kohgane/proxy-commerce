@@ -94,3 +94,35 @@ def test_record_rejected_needs_a_product_pointer(state):
     assert RG.record_rejected(market="쿠팡(gogane)", reason="상표권")["ok"] is False
     assert RG.record_rejected(market="쿠팡(gogane)", product_no="16500000009", reason="상표권")["ok"] is True
     assert RG.rejected_match(codes=["16500000009"])["product_no"] == "16500000009"
+
+
+def test_relist_marks_unmeasured_ledger_cost_and_puts_measured_may_june_rows_first(state, monkeypatch):
+    """오너 11-28 감독 2: 원가 찾은 줄로 바로 목록 — 현재가를 못 잰 줄은 「원가: 장부(날짜) · 현재가 미확인」,
+    5~6월 등록분은 같은 단계 안에서 잰 것(소싱처 실측)부터 앞에. 화면·진단 둘 다 같은 표시."""
+    from tests.test_owner1126_relist import FakeUp, _env, _size
+    from src.services import relist_ledger as RL
+    SR = _env(monkeypatch)
+    prods = [{"ch": "30000", "origin": "40000", "name": "램프 A", "price": 200000, "reg": "2026-05-10T00:00:00"},
+             {"ch": "30001", "origin": "40001", "name": "램프 B", "price": 200000, "reg": "2026-06-02T00:00:00"},
+             {"ch": "30002", "origin": "40002", "name": "램프 C", "price": 200000, "reg": "2026-10-01T00:00:00"}]
+    up = FakeUp(prods, {"SALE": 400})
+    real = up._api_request
+
+    def api(method, path, data=None):
+        res = real(method, path, data)
+        if path == "/v1/products/search":
+            for i, c in enumerate(res["contents"]):
+                c["channelProducts"][0]["sellerManagementCode"] = f"CP-1500000000{i}"
+        return res
+    up._api_request = api
+    RL.load_part("chezgoga", 1, 1, "sourcing_map", [{"code": f"CP-1500000000{i}", "cost": "40", "currency": "USD", "updated": "2026-05-20"}
+                                                    for i in range(3)])
+    RL.load_part("chezgoga", 1, 1, "source_live", [{"code": "CP-15000000001", "cost": "40", "currency": "USD", "updated": "2026-11-28",
+                                                    "src_state": "ok", "via": "shopify products.json"}])
+    p = SR.build("chezgoga", up=up, size_of=_size)
+    by = {x["channel_no"]: x for x in p["rows"]}
+    assert by["30000"]["cost_note"] == "원가: 볼트 소싱맵(2026-05-20) · 현재가 미확인" and not by["30000"]["cost_live"]
+    assert by["30001"]["cost_note"] == "" and by["30001"]["cost_live"] and by["30001"]["cost_src"] == "소싱처 실측(11-28)"
+    on = [x["channel_no"] for x in p["rows"] if x["action"] == "on"]
+    assert on.index("30001") < on.index("30000")                       # 5~6월분: 잰 줄이 못 잰 줄보다 앞
+    assert p["on_unmeasured"] == sum(1 for x in p["rows"] if x["action"] == "on" and not x["cost_live"]) >= 1
