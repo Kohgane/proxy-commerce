@@ -26,7 +26,7 @@ TODAY = (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y-%m-%d")
 BRANDS = {"CL7": "cloud7.de", "FMA": "foundmyanimal.com", "ROVYVON": "rovyvon.com", "AURORA": "rovyvon.com"}
 STOP = {"the", "and", "for", "with", "of", "a", "an", "in", "x", "by", "edp", "ml", "eau", "de", "parfum", "new", "amp"}
 _LAST = [0.0]
-COOKIE = "localization=US"
+COOKIE = "localization=US; cart_currency=USD"   # 11-28: localization만이면 products.json이 가게 기본 통화로 남는다
 
 
 def get(url, timeout=25):

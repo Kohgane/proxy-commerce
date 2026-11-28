@@ -321,7 +321,10 @@ def main(argv):
             cc = CUR2CC.get(max(curs, key=curs.get), "") if curs else ""
         elif market not in ("none", ""):
             cc = market.upper()
-        COOKIE[0] = f"localization={cc}" if cc else ""
+        # 11-28 2차 실측: localization만 주면 상품 페이지는 그 시장 값, products.json은 가게 기본 통화 값이라 둘이 어긋났다
+        #   (SHOPMKT1128 탐침은 cart_currency까지 줄 때 둘이 맞았다) → 그 시장 통화도 같이 준다.
+        CC2CUR = {v: k for k, v in CUR2CC.items()}
+        COOKIE[0] = (f"localization={cc}" + (f"; cart_currency={CC2CUR[cc]}" if cc in CC2CUR else "")) if cc else ""
         MKT[0] = cc
         left = [r for r in rs if rowkey(r) not in done]
         if not left:
