@@ -147,6 +147,18 @@ def shop_catalog(host):
         if len(prods) < 250:
             done = True
             break
+    # 11-28 3차: 상품 페이지 JSON-LD는 테마가 가게 기본 통화로 찍는 곳이 많아(506줄 확인 불가) 그것만으론 못 쓴다.
+    #   SHOPMKT1128 탐침(가게 6곳): 쿠키에 localization+cart_currency를 **둘 다** 주면 cart.js 통화와 products.json 값이 늘 같은 맥락이었다.
+    #   → 요청한 cart_currency를 cart.js가 **그대로** 돌려줄 때만 그 통화를 쓴다. 아니면 JSON-LD 대조로 · 그것도 안 맞으면 확인 불가.
+    want = (re.search(r"cart_currency=([A-Z]{3})", COOKIE[0] or "") or [None, ""])[1]
+    if want:
+        try:
+            c = _get(f"https://{host}/cart.js", timeout=15)
+            got = str((c.json() or {}).get("currency") or "") if c.ok else ""
+        except Exception:                                              # noqa: BLE001
+            got = ""
+        if got == want:
+            return cat, want, done, ""
     cur, why = verified_currency(host, allp)
     return cat, cur, done, why
 

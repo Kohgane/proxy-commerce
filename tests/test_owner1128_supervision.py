@@ -301,3 +301,39 @@ def test_src_live2_uses_currency_only_when_product_page_price_matches_catalog(mo
     assert m.main(["chezgoga"]) == 0 and pushed == []                     # 통화 못 확인한 줄은 넣지 않는다
     rows = _j.loads((tmp_path / "ora_state" / "srclive2_chezgoga.json").read_text())["rows"]
     assert rows["1"]["state"] == "unknown" and "통화 확인 불가" in rows["1"]["why"]
+
+
+def test_src_live2_trusts_cart_currency_only_when_it_echoes_the_requested_one(monkeypatch):
+    """11-28 3차 실측: 상품 페이지 JSON-LD가 가게 기본 통화로 찍히는 테마가 많아 506줄이 「통화 확인 불가」 → 쿠키에 준 cart_currency를
+    cart.js가 **그대로** 돌려주면 그 통화(탐침: 둘 다 줄 때 cart.js와 products.json이 같은 맥락) · 다른 통화를 돌려주면 JSON-LD 대조로 · 그것도 안 맞으면 확인 불가."""
+    import importlib.util
+    import json as _j
+    spec = importlib.util.spec_from_file_location("src_live2_1127", "ops/oracle_a1/src_live2_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    class R:
+        def __init__(self, code, body, ct="application/json"):
+            self.status_code, self._b, self.headers, self.ok = code, body, {"Content-Type": ct}, code < 400
+            self.text = body if isinstance(body, str) else _j.dumps(body)
+
+        def json(self):
+            return self._b
+    cart = {"cur": "USD"}
+
+    def fake(url, timeout=25):
+        if "products.json" in url:
+            return R(200, {"products": [{"handle": "tree", "variants": [{"price": "39.95", "available": True}]}]} if "page=1" in url
+                     else {"products": []})
+        if url.endswith("cart.js"):
+            return R(200, {"currency": cart["cur"]})
+        return R(200, '<script type="application/ld+json">{"offers":{"price":"29.95","priceCurrency":"EUR"}}</script>', "text/html")
+    monkeypatch.setattr(m, "_get", fake)
+    m.COOKIE[0] = "localization=US; cart_currency=USD"
+    assert m.shop_catalog("creative.lighting")[1] == "USD"               # cart.js가 준 그대로 → 목록 39.95는 USD
+    cart["cur"] = "EUR"                                                  # 요청과 다른 통화 → JSON-LD(29.95 EUR)도 목록(39.95)과 안 맞음
+    cat, cur, _d, why = m.shop_catalog("creative.lighting")
+    assert cur == "" and "통화 확인 불가" in why
+    m.COOKIE[0] = ""                                                    # 쿠키 없음(가게 기본) → cart.js 안 믿고 JSON-LD 대조만
+    cart["cur"] = "USD"
+    assert m.shop_catalog("creative.lighting")[1] == ""
