@@ -972,7 +972,7 @@ def url_canon(item_id: str, *, refetch: bool = True) -> Dict:
         try:
             from src.services import amazon_refetch as _ar
             got = _ar.run(iid, {sid} if sid else None)
-            out["refetch"] = {k: got.get(k) for k in ("ok", "error", "line", "images", "skus", "options") if k in got}
+            out["refetch"] = {k: got.get(k) for k in ("ok", "error", "reason", "saved", "after") if k in got}   # 11-28: 실패 사유(reason)를 결과에 — 처음엔 빠져 4건 사유를 진단으로 다시 봐야 했다
         except Exception as exc:                                   # noqa: BLE001 — 주소는 고쳤다(다시 가져오기만 실패)
             out["refetch"] = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
     try:

@@ -175,6 +175,12 @@ def test_url_canon_rewrites_short_link_keeps_raw_url_and_refetches(monkeypatch):
         assert row["url"] == "https://www.amazon.com/dp/B0CXYZ1234" and row["domain"] == "www.amazon.com"
         assert _j.loads(row["extra_json"])["raw_url"] == "https://a.co/d/00RG5ThB"
         assert calls == [(iid, {"u-1128"})] and out["refetch"]["ok"] and out["resend"] == []
+        monkeypatch.setattr(AR, "run", lambda i, sids=None, **k: {"ok": False, "saved": True, "reason": "아마존 화면을 읽지 못했어요(막힘·빈 화면)"})
+        iid2 = chs.append(source="extension", url="https://a.co/d/11ABC", title="tomtoc", seller_id="u-1128", extra={"images": []})
+        iid2 = iid2[0] if isinstance(iid2, tuple) else iid2
+        out2 = O._run({"op": "url_canon", "item_id": iid2})
+        assert out2["changed"] and out2["refetch"]["reason"].startswith("아마존 화면을 읽지 못했어요")   # 실패 사유가 결과에 실린다
+        chs.delete([iid2], seller_id="u-1128")
         again = O._run({"op": "url_canon", "item_id": iid})
         assert again["ok"] and again["changed"] is False and len(calls) == 1          # 이미 정본 — 다시 안 고침·다시 안 가져옴
     finally:
