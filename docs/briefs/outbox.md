@@ -2171,3 +2171,53 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 - 소싱처 실측 1판(SRCLIVE1127) — **기록 0줄로 끝남, 결과 잃음.** 12시간 돌던 잡이 끝날 때 출력이 버퍼에 갇혀 있었고 큐에도 안 들어감(앱 장부 출처에 「소싱처 실측」 없음 확인).
   → **2판(SRCLIVE2)** 띄움: Shopify 가게는 상품마다 `.js` 대신 가게 전체 목록 `products.json`(250개씩)으로 — 1,008번 → 수십 번.
   가게마다 중간 저장(다시 띄우면 이어씀) · 줄 단위 출력 · 120분 넘으면 읽은 만큼만. 드라이로 숫자 먼저 보고 → 실제 넣기(마지막 조각이 목록 다시 만들기 + 오너 푸시).
+
+## 2026-11-28 감독 — 1~7 (PR 하나 · 전체 스위트 + CI 5/5 뒤 머지)
+
+### 1. 근거 없는 금지 브랜드 줄 뺌 — 「반려 났던 제품만 · 핀포인트」
+- 뺀 것 = 11-27 0-2 표의 「근거 없음」 53줄 중 브랜드 51줄(Apotheke·Imaginary Authors는 어제 이미 허용) — 영문 52 + 한글 표기 46 낱말(`risk_tokens.json` `no_evidence` · 운영 목록에 있는 낱말만 · 계약이 대조).
+  **그대로 둔 것:** 「카테고리 낱말」(니치향수·향수·캔들·향초·토치라이터·화장품·건강기능식품·건기식·상표권 — 안전·규제 · 브랜드 검사에선 원래 빠짐) · 「명품 위조 묶음」(블루호스트 목록 명품 53) — 둘 다 우리 정책 차단.
+  브랜드 단위 근거 5(CASETiFY·노비움/호버펜·Peter Millar·Ariat·Spigen) · MEMO Paris(오너 판단) · 레이저·Tiffany·Chanel·Chambord · 범위 밖(헬로키티·산리오·닌텐도·포켓몬·디즈니·마블·도검·렌즈)도 그대로.
+- **앱(등록 사전검증·판매 재개 공용 `active_blacklist`) — 운영 목록 원문 151개 기준:**
+  - 바꾸기 전(지금 막던 것) **120개**: Memo Paris · Mendittorosa · Nonfiction · Orto Parisi · adidas · arc teryx · arcteryx · asics · bose · boy smells · brooks england · callaway · camelbak · canada goose · casetify · cobra · columbia · deuter · disney · fizik · garmin · gopro · hello kitty · hoka · hydro flask · keen · laser module · laser pointer · lizard skins · lodge · lululemon · marvel · memoparis · merrell · mizuno · moncler · msr · nathan · new balance · nintendo · north face · osprey · peter millar · petermillar · ping · pleuvoir · pokemon · salomon · sanrio · selle italia · snow peak · snowpeak · sony · srixon · stanley · staub · supacaz · suunto · taylormade · the north face · titleist · under armour · weber · xerjoff · yeti + 한글 표기 55
+  - 바꾼 뒤 **22개**: Memo Paris · memoparis · 메모파리 · casetify · 케이스티파이 · peter millar · petermillar · 피터밀러 · laser module · laser pointer · disney · 디즈니 · marvel · 마블 · hello kitty · 헬로키티 · sanrio · 산리오 · nintendo · 닌텐도 · pokemon · 포켓몬
+  - (노비움·호버펜·Ariat·Spigen·명품 묶음·Chambord는 원래 앱 목록에 없고 블루호스트 등록 체인 목록에만 있다 — 아래.)
+- **블루호스트 등록 체인 `~/brand_blacklist.json`** — 같은 낱말로 맞춤(BRANDBL1128 · 먼저 `.bak_1128`로 복사 · 전후 목록 출력 → 아래 결과 칸). 볼트 사본 `radar/edc/brand_blacklist.json` **146 → 88**.
+  `ipr_stop.py`(권리자 신고 때 상표 낱말을 넣는 도구)는 그대로 — 권리자가 브랜드 전체를 문제 삼은 경우라 「브랜드 단위 근거」에 맞다.
+- **뺀 뒤 반려·소명이 오면 그 상품만:** 반려 감시(2시간 회전)가 **상표권(담당자 검토) 반려**를 보면 그 상품(쿠팡 상품번호 + 소싱처 주소)을 반려 상품 목록 `risk:rejected_products:auto`에 넣는다 → 등록 사전검증(「반려 상품」 차단)·판매 재개(「반려 이력」)가 같은 목록을 본다. 같은 브랜드 다른 상품은 통과 · 같은 상품 재반려는 덮어씀 · dry-run은 안 넣음.
+
+### 2. 셰고가 — 원가 찾은 줄로 바로 목록(현재가 재측정 안 기다림)
+- 켤 후보 중 현재가를 못 잰 줄은 줄마다 **「원가: 볼트 소싱맵(2026-05-20) · 현재가 미확인」** 표시(장부 이름·날짜 그대로) · 요약에 「켤 것 중 N건은 현재가 미확인」.
+- 5~6월 등록분은 같은 단계(①팔림 ③주제 ④최신) 안에서 **잰 줄(소싱처 실측·품번 일치)부터 앞에**.
+- 배포 뒤 목록 다시 만들기 → 결과(켤 N · 뺄 M 사유별 · 표본 20 · 손계산 3) → 오너 푸시. **결과는 아래 「결과」 칸.** (1번으로 금지 브랜드 줄이 빠져 켤 후보가 늘어난다.)
+
+### 3. 소싱처 현재가 — 한 IP로 몰지 않는다
+- **오라클 IP = Shopify가 막음**(어제 23:26 2판 드라이: 첫 가게부터 429만 26번 → 멈춤). 2판에 끊개: 가게 목록이 429로 끝까지 막히면 상품마다 다시 두드리지 않고, 두 곳 막히면 남은 Shopify 가게는 건너뛴다(429 줄은 다음 실행이 다시 읽음).
+- **블루호스트 IP = 잘 읽힘**: 1조각(11분)에 1,008줄 중 716줄 · 429 0번 · 가게마다 `/products.json` 한 번(250개씩)으로 여러 상품.
+  단 **쿠키 없으면 가게가 그 IP 나라 시장(유럽 EUR 등)으로 값을 보인다**(SHOPMKT1128 실측: creative.lighting 쿠키 없음 €29.95 · `localization=US` $39.95 · `localization=KR` ₩45,000).
+  → 2판이 가게마다 **장부 통화의 시장**(대부분 US)으로 읽는다(한국 시장 값은 관부가세가 들어간 값일 수 있어 마진 계산이 두 번 더함). 어제 EUR 줄은 버리고 새로 3조각(:08·:38).
+- **서울 릴레이는 못 씀** — 릴레이는 쿠팡·네이버·타오바오 API 주소만 허용(열린 프록시가 안 되게 한 안전장치) · 가게 페이지를 거기로 돌리면 그 장치를 푸는 일이라 안 함.
+- 결과는 가게 하나 끝날 때마다 중간 저장(끊겨도 남음) · 줄 단위 출력.
+- **원가 미확인 436줄 앞머리 — 공식몰 품번:** CL7(cloud7.de 54) · FMA(foundmyanimal.com 44) · ROVYVON·AURORA(rovyvon.com) → 블루호스트가 가게 **전체 목록**을 받아 품번이 정확히 하나로 맞으면 「품번 일치(공식몰)」(실측처럼 봄) · 이름만 맞으면 「이름 일치(확인 필요)」(저절로 안 켬) · 품번이 여럿에 맞으면 못 정함.
+  포터 94(요시다카반 — Shopify 아님 · 블루호스트 403) → 오라클 IP에서 열리는지 YOSHI1128 확인 중. To Summer 47 — 공식몰 주소를 못 찾음(장부·이름 어디에도 도메인 없음) → 대기함.
+
+### 4. 고가네 쿠팡 해외 출고지 2곳 — 카드에 이름·주소
+- 사전검증 보류 문장이 이제 「해외 출고지 2곳 — ① 이름(코드) 주소 [나라] · ② …」로 둘을 그대로 보여 준다(쿠팡 출고지 목록 읽기만 · 응답에 있는 칸만). 오너가 고르면 OKNIFE 고가네 사전검증을 다시 읽어 통과 원문을 붙인다.
+
+### 5. 아마존 짧은 링크 4행 — 정본 주소(오너 확인됨)
+- 새 줄 `url_canon`: 짧은 링크를 펴서(a.co → amazon.com/dp/ASIN) 주소를 고쳐 쓰고 **원래 주소는 raw_url 열·extra.raw_url에 보존**(되돌리기 = raw_url로) · 상품 키·도메인 같이 · 같은 상품이 이미 다른 행에 있으면 안 바꿈 · 이어서 서버 「다시 가져오기」(사진·옵션가) · 끝에 「사진 다시 보내기」 누를 수 있는 스스 등록 목록을 돌려준다(전송은 오너 탭).
+- 대상 4행: b22f4104(OKNIFE) · b6809323 · ffd60193 · eed2f683(tomtoc·핫휠 2) — 배포 뒤 큐에 넣고 결과를 아래에.
+
+### 6. 타오바오 못 읽는 9건 — 온바운드(Andy) 문의문(보내는 건 오너)
+> 您好 Andy，
+> 我们通过 OneBound 淘宝商品详情接口（item_get）查询以下 9 个商品时，一直返回「5000: data error」，用其他方式匿名访问也需要登录，无法确认商品是否已下架。
+> 商品ID：1076939744197、1080611844301、1069099385336、992185039912、1012568886505、1013975503036、980628001552、800335637049、1057785355022
+> 想请您帮忙确认：① 这些商品是否已下架或被删除？② 如果商品仍在售，「5000: data error」是什么原因，有没有办法正常获取（例如换接口参数或重试）？
+> 如需我们的请求时间或 key 信息，请告诉我们。谢谢！
+- (한국어 뜻: 원바운드 item_get으로 9개 상품을 조회하면 계속 「5000: data error」 · 다른 길은 로그인 요구라 내려갔는지 확인 불가 · ① 내려갔나 ② 판매 중이면 5000의 원인과 정상 조회 방법 · 요청 시각·키 정보가 필요하면 알려 달라.)
+- 시험용 행(cd7429ff id=123456789 — 시험 계정)은 타오바오 다시 가져오기 목록과 소싱처 진단 집계에서 뺐다(행은 안 지움).
+
+### 7. 옛 proxy-commerce(버지니아)를 깨우는 것
+- 레포의 `render.yaml`(Render 블루프린트)에 옛 무료 서비스 `proxy-commerce`(region virginia · branch main)가 그대로 있고 자동 배포가 켜져 있었다 → **main에 머지할 때마다 그 서비스도 배포·부팅**(11-27 ⑤ 「배포 때마다 부팅」 · 부팅 뒤 Render 헬스체크 `/health`).
+  → `autoDeploy: false`로 끊음(이 PR). 레포 안에 그 주소를 부르는 크론·모니터·자기 핑은 없음(전수 grep · GitHub 크론 4개는 시트·마켓 동기화라 그 서비스를 안 부름).
+  남는 `/` 요청은 밖(크롤러·옛 링크)이라 여기서 못 본다 — **서비스 정지(Suspend)는 오너가 Render에서**(대기함 그대로).
