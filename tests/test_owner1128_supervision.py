@@ -230,9 +230,10 @@ def test_brand_catalog_matches_exact_product_number_once_and_labels_name_matches
 
     def get(url, timeout=25):
         if url.endswith("cart.js"):
-            return 200, {"currency": "USD"}
+            return 200, {"currency": "EUR"}                                 # 11-28: cart.js 통화는 안 쓴다
         return 200, (cat if "page=1" in url else {"products": []})
     monkeypatch.setattr(m, "get", get)
+    monkeypatch.setattr(m, "get_text", lambda url, timeout=25: (200, '<script type="application/ld+json">{"offers":{"priceCurrency":"USD","price":"68.00"}}</script>'))
     (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)
     (tmp_path / "vault" / "srv_snap" / "apply_out" / "relistledger_data_chezgoga.txt").write_text(_j.dumps({"unmatched": [
         {"channel_no": "1", "code": "FMA-FOUNDMYANI-0007", "name": "[해외직구] Found My Animal 파운드마이애니멀 Light Prismatic Cotton Rope Dog Leash by"},
@@ -256,3 +257,47 @@ def test_brand_catalog_matches_exact_product_number_once_and_labels_name_matches
     assert up.count("UPDATE APP_STATE") == 1 and "'ops:oneshot:queue'" in p.SQL and "DELETE" not in up
     from src.services import relist_ledger as RL
     assert RL.SRC_KO["code_match"] == "품번 일치(공식몰)" and RL.src_label({"src": "품번 일치(공식몰)", "updated": "2026-11-28"}) == "품번 일치(공식몰 11-28)"
+
+
+def test_src_live2_uses_currency_only_when_product_page_price_matches_catalog(monkeypatch, tmp_path):
+    """11-28 블루호스트 실측: harvestlabel 목록 가격 18,700(엔)에 cart.js가 EUR을 말해 「18,700 EUR」이 됐다 → 통화는 **같은 쿠키의 상품 페이지 JSON-LD 가격이
+    목록 가격과 같을 때만** 쓴다. 안 맞으면 그 가게 줄은 「통화 확인 불가」(넣지 않음)."""
+    import importlib.util
+    import json as _j
+    spec = importlib.util.spec_from_file_location("src_live2_1127", "ops/oracle_a1/src_live2_1127.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    class R:
+        def __init__(self, code, body, ct="application/json"):
+            self.status_code, self._b, self.headers, self.ok = code, body, {"Content-Type": ct}, code < 400
+            self.text = body if isinstance(body, str) else _j.dumps(body)
+
+        def json(self):
+            return self._b
+    page = {"cur": "JPY", "price": "18700"}
+
+    def fake(url, timeout=25):
+        if "products.json" in url:
+            return R(200, {"products": [{"handle": "hjr-0001", "variants": [{"price": "18700", "available": True}]}]} if "page=1" in url
+                     else {"products": []})
+        if url.endswith("cart.js"):
+            return R(200, {"currency": "EUR"})
+        if url.endswith("/products/hjr-0001"):
+            return R(200, '<script type="application/ld+json">{"offers":{"price":"%s","priceCurrency":"%s"}}</script>' % (page["price"], page["cur"]),
+                     "text/html")
+        return R(404, {})
+    monkeypatch.setattr(m, "_get", fake)
+    assert m.shop_catalog("www.harvestlabel.jp")[1] == "JPY"
+    page.update(cur="EUR", price="114.95")                               # 페이지가 다른 시장 값 — 목록과 안 맞음
+    cat, cur, _done, why = m.shop_catalog("www.harvestlabel.jp")
+    assert cur == "" and "통화 확인 불가" in why
+    (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)
+    (tmp_path / "vault" / "srv_snap" / "apply_out" / "relistledger_data_chezgoga.txt").write_text(_j.dumps({"parts": {"sourcing_map": [
+        {"channel_no": "1", "url": "https://www.harvestlabel.jp/products/hjr-0001", "cost": 18700, "currency": "JPY"}]}}))
+    monkeypatch.setenv("KG_HOME", str(tmp_path))
+    pushed = []
+    monkeypatch.setattr(m, "psql", lambda sql: pushed.append(sql) or "")
+    assert m.main(["chezgoga"]) == 0 and pushed == []                     # 통화 못 확인한 줄은 넣지 않는다
+    rows = _j.loads((tmp_path / "ora_state" / "srclive2_chezgoga.json").read_text())["rows"]
+    assert rows["1"]["state"] == "unknown" and "통화 확인 불가" in rows["1"]["why"]

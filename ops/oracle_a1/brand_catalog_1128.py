@@ -43,6 +43,39 @@ def get(url, timeout=25):
         return type(e).__name__, None
 
 
+def get_text(url, timeout=25):
+    w = 2.5 - (time.time() - _LAST[0])
+    if w > 0:
+        time.sleep(w)
+    _LAST[0] = time.time()
+    try:
+        with U.urlopen(U.Request(url, headers={"User-Agent": UA, "Accept": "text/html", "Cookie": COOKIE}), timeout=timeout) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except UE.HTTPError as e:
+        return e.code, ""
+    except Exception as e:                                             # noqa: BLE001
+        return type(e).__name__, ""
+
+
+def verified_currency(dom, idx, tries=3):
+    """11-28 실측: cart.js 통화가 목록 가격과 어긋났다(harvestlabel 「18,700 EUR」) — 같은 쿠키로 상품 페이지를 열어
+    JSON-LD 가격이 목록 가격과 **같을 때만** 그 통화. 못 맞추면 ''(그 가게는 통화 확인 불가)."""
+    for p in idx[:tries]:
+        st, html = get_text(f"https://{dom}/products/{p['handle']}")
+        if st != 200:
+            continue
+        for blob in re.findall(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', html, re.S | re.I):
+            for m in re.finditer(r'"(?:price|lowPrice)"\s*:\s*"?([\d.,]+)"?[^{}]*?"priceCurrency"\s*:\s*"([A-Z]{3})"|"priceCurrency"\s*:\s*"([A-Z]{3})"[^{}]*?"(?:price|lowPrice)"\s*:\s*"?([\d.,]+)', blob):
+                v, c = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+                try:
+                    v = round(float(v.replace(",", "")), 2)
+                except ValueError:
+                    continue
+                if any(abs(v - q) < 0.011 for q in p["all"]):
+                    return c
+    return ""
+
+
 def words(name):
     t = re.sub(r"\[[^\]]*\]", " ", _h.unescape(_h.unescape(str(name or ""))))
     return [w for w in re.findall(r"[A-Za-z][A-Za-z0-9'’\-]{1,}", t) if w.lower() not in STOP]
@@ -105,12 +138,6 @@ def main(argv):
             why["시간(다음 회차)"] = why.get("시간(다음 회차)", 0) + len(rs)
             continue
         prods, err = catalog(dom)
-        st, cart = get(f"https://{dom}/cart.js")
-        cur = str((cart or {}).get("currency") or "") if st == 200 else ""
-        if not prods or not cur:
-            why[f"목록·통화 못 읽음({err or 'cart'})"] = why.get(f"목록·통화 못 읽음({err or 'cart'})", 0) + len(rs)
-            print(f"  {dom}: {len(rs)}줄 — 목록 {len(prods)} · 통화 {cur or '?'} {err}")
-            continue
         idx = []
         for p in prods:
             vs = [v for v in p.get("variants") or [] if isinstance(v, dict)]
@@ -121,7 +148,12 @@ def main(argv):
                 continue
             blob = " ".join([str(p.get("title") or ""), str(p.get("handle") or "")] + [str(v.get("sku") or "") for v in vs]).upper()
             idx.append({"title": str(p.get("title") or ""), "handle": str(p.get("handle") or ""), "blob": blob,
-                        "price": round(min(pr), 2), "av": bool(av), "w": words(p.get("title"))})
+                        "price": round(min(pr), 2), "av": bool(av), "w": words(p.get("title")), "all": {round(x, 2) for x in pr}})
+        cur = verified_currency(dom, idx) if idx else ""
+        if not prods or not cur:
+            why[f"목록·통화 확인 불가({err or '상품 페이지 가격≠목록'})"] = why.get(f"목록·통화 확인 불가({err or '상품 페이지 가격≠목록'})", 0) + len(rs)
+            print(f"  {dom}: {len(rs)}줄 — 목록 {len(prods)} · 통화 {cur or '?'} {err}")
+            continue
         n_code = n_name = 0
         for r in rs:
             cs = codes_in(r.get("name"), r.get("code"))
