@@ -503,7 +503,7 @@ def _next_status(row) -> str:
 
 def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
                      notify_fn=None, limit: int = 50, time_budget_sec: float = 0,
-                     monotonic_fn=None, dry_run: bool = False) -> dict:
+                     monotonic_fn=None, dry_run: bool = False, rejected_fn=None) -> dict:
     """**자동 감시 1회전** — 등록 대장에서 감시 대상을 꺼내 조회·분류하고 결과를 되쓴다.
 
     등록 파이프 관통 후의 P4 몫: 오너가 sid를 손으로 넣지 않아도 서버가 **무엇을 등록했는지 알고**
@@ -566,6 +566,20 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
             except Exception:
                 pass                                       # 기록 실패는 감시 자체를 죽이지 않음(집계에 미포함)
 
+    # 오너 11-28 감독 1: 근거 없는 브랜드 줄을 뺀 대신 **상표권(담당자 검토) 반려가 오면 그 상품만** 반려 상품 목록에 넣는다
+    #   (`rejected_fn(row, item)` — 등록 사전검증·판매 재개가 같은 목록을 본다). 확정(판매중·승인)·조회 실패 줄은 안 넣는다.
+    rejected_added = 0
+    if rejected_fn:
+        by_sid = {str((it or {}).get("sid") or ""): it for it in done}
+        for r in scan["rows"]:
+            if (r.get("kind") == "trademark" and r.get("comment") and not r.get("error")
+                    and r.get("wing_state") not in ("selling", "approved")):
+                try:
+                    if (rejected_fn(r, by_sid.get(str(r.get("sid")), {})) or {}).get("ok"):
+                        rejected_added += 1
+                except Exception:                          # noqa: BLE001 — 목록 기록 실패가 감시를 죽이지 않는다
+                    pass
+
     notified, notify_error = False, ""
     # 졸업하는 건의 옛 comment는 **지금 문제가 아니다** — 판매중이 된 건을 두고
     #   "반려 1건"을 덧붙이면 해결된 일을 미해결로 읽히게 만든다(가짜 경보 0).
@@ -596,7 +610,7 @@ def watch_registered(*, queue_fn, history_fn, classify_fn=None, record_fn=None,
             notify_error = f"알림 발송 실패: {exc}"        # 감시는 성공, 알림만 실패(정직 분리)
     from src.db.market_registrations_pg import _WATCH_STATUSES as _WS
     return {**scan, "ok": True, "recorded": recorded, "notified": notified,
-            "wrote": wrote,
+            "wrote": wrote, "rejected_added": rejected_added,
             "stayed": sum(n for st, n in wrote.items() if st in _WS),
             "graduated": sum(n for st, n in wrote.items() if st not in _WS),
             "notify_error": notify_error, "budget_exhausted": budget_exhausted,
