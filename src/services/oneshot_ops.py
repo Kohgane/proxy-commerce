@@ -61,7 +61,8 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "ops:oneshot:queue"
 PER_TICK = 5
 #: 사전검증 잡을 띄우는 줄 — 한 틱에 `HEAVY_PER_TICK`개만(잡이 겹치면 메모리 상한에 걸린다 · Y14 10-21)
-HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item", "rep_clean", "diag_snapshot")
+HEAVY_OPS = ("prevalidate", "owner_decision", "register", "coupang_relist", "dims_fetch", "check_item", "rep_clean", "diag_snapshot",
+             "url_canon")
 HEAVY_PER_TICK = 1
 LAST_KEY = "ops:oneshot:last"
 #: 순찰 62 — 끝난 줄 최근 기록(덮어쓰지 않고 덧붙임 · `LOG_MAX`줄) · 한 줄이 `LOG_ROW_MAX`자를 넘으면 마켓별 성공·사유만
@@ -77,7 +78,7 @@ _CURRENT_ROW: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
 OPS = ("polish_page", "ocr_recheck", "attn_backfill", "review_status", "prevalidate", "image_probe", "carry_requeue",
        "retranslate", "owner_decision", "register", "relist_fix", "coupang_refresh", "naver_resend", "coupang_inspect",
        "thumb_probe", "coupang_relist", "register_report", "discard", "dims_fetch", "check_item", "option_retry", "undiscard",
-       "naver_find", "naver_split_ok", "reject_route", "rep_clean", "diag_snapshot", "relist_ledger_load")
+       "naver_find", "naver_split_ok", "reject_route", "rep_clean", "diag_snapshot", "relist_ledger_load", "url_canon")
 
 
 def _now() -> str:
@@ -177,6 +178,8 @@ def _run(row: dict) -> Dict:
                                relist_only=[str(m) for m in (row.get("relist_only") or []) if m][:4],
                                option_overrides=(row.get("option_overrides")
                                                  if isinstance(row.get("option_overrides"), dict) else None))
+    if op == "url_canon":
+        return url_canon(item_id, refetch=row.get("refetch", True) is not False)
     if op == "discard":
         return _discard(item_id, str(row.get("why") or ""))
     if op == "option_retry":
@@ -937,6 +940,49 @@ def _undiscard(item_id: str, why: str) -> Dict:
         return True
     ok = bool(store.merge_extra(str(item.get("id") or item_id), _fn, seller_ids={uid} if uid else None))
     return {"ok": ok, "why": "" if ok else "버린 기록이 없거나 저장하지 못했어요", "was": prev}
+
+
+def url_canon(item_id: str, *, refetch: bool = True) -> Dict:
+    """오너 11-28 감독 5(오너 확인됨): 짧은 링크(a.co 등)로 저장된 소싱처 주소를 정본 주소로 고쳐 쓴다 — 원래 주소는 `raw_url`에 보존(되돌릴 수 있게).
+    `refetch`면 이어서 서버 「다시 가져오기」(아마존 — 사진·옵션가). 마켓 전송 0(스스 「사진 다시 보내기」는 오너 탭 그대로).
+    `item_id`는 앞 8자리만 줘도 최근 365일에서 하나로 맞으면 그 행."""
+    from src.seller_console import collect_history_store as chs
+    from src.collectors.link_diag import resolve_share_link, short_link_market
+    iid = str(item_id or "").strip()
+    it = chs.get(iid) if len(iid) >= 32 else None
+    if it is None and 6 <= len(iid) < 32:
+        hits = [x for x in (chs.list_items(days=365, lean=True) or []) if str(x.get("id") or "").startswith(iid)]
+        if len(hits) != 1:
+            return {"ok": False, "item_id": iid, "error": f"앞자리 {iid}로 맞는 행 {len(hits)}개 — 전체 번호를 주세요"}
+        it = chs.get(str(hits[0]["id"]))
+    if not it:
+        return {"ok": False, "item_id": iid, "error": "그 수집 행이 없어요"}
+    iid, old, sid = str(it["id"]), str(it.get("url") or ""), str(it.get("seller_id") or "")
+    if not short_link_market(old):
+        return {"ok": True, "item_id": iid, "changed": False, "url": old[:200], "why": "이미 정본 주소(짧은 링크 아님)"}
+    r = resolve_share_link(old)
+    new = str(r.get("canonical_url") or "")
+    if not (r.get("ok") and new.startswith("http")):
+        return {"ok": False, "item_id": iid, "changed": False, "error": f"짧은 링크를 못 폈어요 — {r.get('reason') or '?'}"}
+    w = chs.set_source_url(iid, new, raw_url=old, seller_ids={sid} if sid else None)
+    if not w.get("ok"):
+        return {"ok": False, "item_id": iid, "changed": False, "error": w.get("why") or "주소를 못 고쳐 썼어요", "canonical": new}
+    out = {"ok": True, "item_id": iid, "changed": True, "raw_url": old[:200], "url": new[:200], "item": r.get("item_id", "")}
+    if refetch and r.get("market") == "amazon":
+        try:
+            from src.services import amazon_refetch as _ar
+            got = _ar.run(iid, {sid} if sid else None)
+            out["refetch"] = {k: got.get(k) for k in ("ok", "error", "line", "images", "skus", "options") if k in got}
+        except Exception as exc:                                   # noqa: BLE001 — 주소는 고쳤다(다시 가져오기만 실패)
+            out["refetch"] = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    try:
+        it2 = chs.get(iid) or {}
+        ex = json.loads(it2.get("extra_json") or "{}") or {}
+        from src.services import photo_fix as _pf
+        out["resend"] = _pf.resend_targets(ex)                     # 「사진 다시 보내기」 누를 수 있는 마켓(전송은 오너 탭)
+    except Exception:                                              # noqa: BLE001
+        pass
+    return out
 
 
 def _discard(item_id: str, why: str) -> Dict:

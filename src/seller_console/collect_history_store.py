@@ -481,6 +481,26 @@ def update(item_id: str, *, seller_id: Optional[str] = None,
     return False
 
 
+def set_source_url(item_id: str, url: str, *, raw_url: str = "", seller_id: Optional[str] = None,
+                   seller_ids: Optional[set] = None) -> dict:
+    """소싱처 주소를 정본으로 고쳐 쓴다(오너 11-28 감독 5 — 아마존 짧은 링크) · 원래 주소는 raw_url에 보존."""
+    _b = _pg_backend()
+    if _b:
+        return _b.set_source_url(item_id, url, raw_url=raw_url, seller_id=seller_id, seller_ids=seller_ids)
+    for row in _in_memory:
+        if row.get("id") == item_id and (seller_ids is None or str(row.get("seller_id") or "") in seller_ids) \
+                and (seller_id is None or str(row.get("seller_id") or "") == str(seller_id)):
+            row["raw_url"] = row.get("raw_url") or raw_url
+            try:
+                ex = json.loads(row.get("extra_json") or "{}") or {}
+            except Exception:
+                ex = {}
+            ex["raw_url"] = ex.get("raw_url") or raw_url
+            row.update(url=url, domain=(urlparse(url).hostname or "").lower(), extra_json=json.dumps(ex, ensure_ascii=False))
+            return {"ok": True}
+    return {"ok": False}
+
+
 def existing_ids(item_ids, *, seller_id: Optional[str] = None, seller_ids: Optional[set] = None) -> set:
     """write-then-verify: 주어진 id 중 아직 저장소에 남아있는 것(본인 스코프)을 재읽기로 반환."""
     _b = _pg_backend()

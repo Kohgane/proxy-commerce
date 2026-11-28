@@ -74,7 +74,9 @@ def _sources(arg: str) -> Dict:
     from src.seller_console.collect_history_store import list_items
     from src.services import source_audit as SA
     days = max(1, min(365, int(arg or 90))) if str(arg or "").isdigit() else 90
-    data = {"days": days, **SA.audit(list_items(days=days, extra_keys=SA.KEYS) or [])}
+    from src.utils.test_accounts import is_test_account
+    rows = [r for r in (list_items(days=days, extra_keys=SA.KEYS) or []) if not is_test_account(r.get("seller_id"))]   # 11-28 감독 6: 시험용 행 뺌
+    data = {"days": days, **SA.audit(rows)}
     return {**data, "verdict": SA.verdict(data)}
 
 

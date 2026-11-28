@@ -5279,13 +5279,9 @@ def admin_taobao_reenrich():
     from src.services import taobao_auto as _ta
     days = max(1, min(int(request.args.get("days") or 90), 180))
     found = []
-    from src.utils.test_accounts import TEST_ACCOUNT_IDS as _TIDS
-    _all = list(_chs.list_items(days=days, lean=False) or [])
-    try:                                                  # 오너 11-26 진단 4: 시험 계정 행도 보여 준다(전체 조회는 빼므로 따로 · 구분 표시)
-        _seen = {str(x.get("id")) for x in _all}
-        _all += [x for x in (_chs.list_items(seller_ids=set(_TIDS), days=days, lean=False) or []) if str(x.get("id")) not in _seen]
-    except Exception as exc:                              # noqa: BLE001
-        logger.warning("[재보강] 시험 계정 행 읽기 실패: %s", exc)
+    # 오너 11-28 감독 6: 시험용 행(시험 계정 — cd7429ff id=123456789 등)은 목록·집계에서 뺀다(11-26엔 구분 표시로 보였다 · 행은 안 지움)
+    from src.utils.test_accounts import is_test_account as _is_test0
+    _all = [x for x in (_chs.list_items(days=days, lean=False) or []) if not _is_test0(x.get("seller_id"))]
     for it in _all:
         url = str(it.get("url") or "")
         if not is_taobao_family(url):

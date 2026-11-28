@@ -126,3 +126,31 @@ def test_relist_marks_unmeasured_ledger_cost_and_puts_measured_may_june_rows_fir
     on = [x["channel_no"] for x in p["rows"] if x["action"] == "on"]
     assert on.index("30001") < on.index("30000")                       # 5~6월분: 잰 줄이 못 잰 줄보다 앞
     assert p["on_unmeasured"] == sum(1 for x in p["rows"] if x["action"] == "on" and not x["cost_live"]) >= 1
+
+
+def test_url_canon_rewrites_short_link_keeps_raw_url_and_refetches(monkeypatch):
+    """오너 11-28 감독 5(오너 확인됨): 아마존 짧은 링크로 저장된 행 → 정본 주소 · 원래 주소는 raw_url(되돌릴 수 있게) ·
+    이어서 서버 「다시 가져오기」 · 이미 정본이면 그대로 · 마켓 전송 0(「사진 다시 보내기」는 누를 수 있는 마켓만 알려 줌)."""
+    import json as _j
+    from src.seller_console import collect_history_store as chs
+    from src.services import oneshot_ops as O
+    import src.collectors.link_diag as LD
+    assert "url_canon" in O.OPS and "url_canon" in O.HEAVY_OPS and "url_canon" not in O.REQUEUE_SAFE_OPS
+    iid = chs.append(source="extension", url="https://a.co/d/00RG5ThB", title="OKNIFE 접이식 칼 거치대", seller_id="u-1128", extra={"images": []})
+    iid = iid[0] if isinstance(iid, tuple) else iid
+    calls = []
+    monkeypatch.setattr(LD, "resolve_share_link", lambda u, timeout=8: {"ok": True, "market": "amazon", "item_id": "B0CXYZ1234",
+                                                                          "canonical_url": "https://www.amazon.com/dp/B0CXYZ1234"})
+    import src.services.amazon_refetch as AR
+    monkeypatch.setattr(AR, "run", lambda i, sids=None, **k: calls.append((i, sids)) or {"ok": True, "line": "사진 7장 · 옵션가 3"})
+    try:
+        out = O._run({"op": "url_canon", "item_id": iid[:8]})
+        assert out["ok"] and out["changed"] and out["url"] == "https://www.amazon.com/dp/B0CXYZ1234" and out["raw_url"] == "https://a.co/d/00RG5ThB"
+        row = chs.get(iid)
+        assert row["url"] == "https://www.amazon.com/dp/B0CXYZ1234" and row["domain"] == "www.amazon.com"
+        assert _j.loads(row["extra_json"])["raw_url"] == "https://a.co/d/00RG5ThB"
+        assert calls == [(iid, {"u-1128"})] and out["refetch"]["ok"] and out["resend"] == []
+        again = O._run({"op": "url_canon", "item_id": iid})
+        assert again["ok"] and again["changed"] is False and len(calls) == 1          # 이미 정본 — 다시 안 고침·다시 안 가져옴
+    finally:
+        chs.delete([iid], seller_id="u-1128")
