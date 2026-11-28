@@ -154,3 +154,25 @@ def test_url_canon_rewrites_short_link_keeps_raw_url_and_refetches(monkeypatch):
         assert again["ok"] and again["changed"] is False and len(calls) == 1          # 이미 정본 — 다시 안 고침·다시 안 가져옴
     finally:
         chs.delete([iid], seller_id="u-1128")
+
+
+def test_two_overseas_outbound_places_show_name_and_address_to_pick(monkeypatch):
+    """오너 11-28 감독 4: 고가네 쿠팡 해외 출고지 2곳 — 보류 문장(카드)에 둘의 이름·주소·코드를 그대로 보여 고르기 쉽게(읽기만 · 저장 0)."""
+    from src.uploaders import coupang_uploader as CU
+    monkeypatch.setenv("COUPANG_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE", "")
+    monkeypatch.setenv("COUPANG_GOGANE_OVERSEAS_OUTBOUND_SHIPPING_PLACE_CODE", "")
+    rows = [{"outboundShippingPlaceCode": 31234567, "shippingPlaceName": "오리건 배대지", "addressType": "OVERSEA", "usable": True,
+             "placeAddresses": [{"returnAddress": "12345 SW Example Rd", "returnAddressDetail": "Suite 9", "countryCode": "US"}]},
+            {"outboundShippingPlaceCode": 31234568, "shippingPlaceName": "도쿄 창고", "addressType": "OVERSEA", "usable": True,
+             "placeAddresses": [{"returnAddress": "1-2-3 Minato", "countryCode": "JP"}]}]
+    CU._SHARED.clear()
+    calls = []
+    monkeypatch.setattr(CU.CoupangUploader, "_api_request",
+                        lambda self, m, path, data=None, **k: (calls.append(m), {"code": "SUCCESS", "data": {"content": rows}})[1])
+    up = CU.CoupangUploader(account="gogane", vendor_id="A01381223")
+    up.delivery_method = "AGENT_BUY"
+    code, why = up.outbound_for_delivery()
+    assert code == "" and "2곳" in why
+    assert "① 오리건 배대지(31234567) 12345 SW Example Rd Suite 9 [US]" in why and "② 도쿄 창고(31234568) 1-2-3 Minato [JP]" in why
+    assert set(calls) == {"GET"}
+    CU._SHARED.clear()
