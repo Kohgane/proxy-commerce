@@ -2174,17 +2174,72 @@ PR #955 — 전체 스위트 **16,550 passed · 0 failed · 17 skipped**(HEAD 1a
 
 ## 2026-11-28 감독 — 1~7 (PR 하나 · 전체 스위트 + CI 5/5 뒤 머지)
 
-### 1. 근거 없는 금지 브랜드 줄 뺌 — 「반려 났던 제품만 · 핀포인트」
-- 뺀 것 = 11-27 0-2 표의 「근거 없음」 53줄 중 브랜드 51줄(Apotheke·Imaginary Authors는 어제 이미 허용) — 영문 52 + 한글 표기 46 낱말(`risk_tokens.json` `no_evidence` · 운영 목록에 있는 낱말만 · 계약이 대조).
-  **그대로 둔 것:** 「카테고리 낱말」(니치향수·향수·캔들·향초·토치라이터·화장품·건강기능식품·건기식·상표권 — 안전·규제 · 브랜드 검사에선 원래 빠짐) · 「명품 위조 묶음」(블루호스트 목록 명품 53) — 둘 다 우리 정책 차단.
-  브랜드 단위 근거 5(CASETiFY·노비움/호버펜·Peter Millar·Ariat·Spigen) · MEMO Paris(오너 판단) · 레이저·Tiffany·Chanel·Chambord · 범위 밖(헬로키티·산리오·닌텐도·포켓몬·디즈니·마블·도검·렌즈)도 그대로.
-- **앱(등록 사전검증·판매 재개 공용 `active_blacklist`) — 운영 목록 원문 151개 기준:**
-  - 바꾸기 전(지금 막던 것) **120개**: Memo Paris · Mendittorosa · Nonfiction · Orto Parisi · adidas · arc teryx · arcteryx · asics · bose · boy smells · brooks england · callaway · camelbak · canada goose · casetify · cobra · columbia · deuter · disney · fizik · garmin · gopro · hello kitty · hoka · hydro flask · keen · laser module · laser pointer · lizard skins · lodge · lululemon · marvel · memoparis · merrell · mizuno · moncler · msr · nathan · new balance · nintendo · north face · osprey · peter millar · petermillar · ping · pleuvoir · pokemon · salomon · sanrio · selle italia · snow peak · snowpeak · sony · srixon · stanley · staub · supacaz · suunto · taylormade · the north face · titleist · under armour · weber · xerjoff · yeti + 한글 표기 55
-  - 바꾼 뒤 **22개**: Memo Paris · memoparis · 메모파리 · casetify · 케이스티파이 · peter millar · petermillar · 피터밀러 · laser module · laser pointer · disney · 디즈니 · marvel · 마블 · hello kitty · 헬로키티 · sanrio · 산리오 · nintendo · 닌텐도 · pokemon · 포켓몬
-  - (노비움·호버펜·Ariat·Spigen·명품 묶음·Chambord는 원래 앱 목록에 없고 블루호스트 등록 체인 목록에만 있다 — 아래.)
-- **블루호스트 등록 체인 `~/brand_blacklist.json`** — 같은 낱말로 맞춤(BRANDBL1128 · 먼저 `.bak_1128`로 복사 · 전후 목록 출력 → 아래 결과 칸). 볼트 사본 `radar/edc/brand_blacklist.json` **146 → 88**.
+### 1. 근거 없는 금지 브랜드 줄 — 오너 11-28 08:34 결정대로 나눔
+**「근거 없음」 53줄 분류표**(골프 / 고가 의류 / 애매 — 오너 확인 필요 / 그 밖 / 이미 정해진 것):
+
+| # | 브랜드(운영 목록 낱말) | 분류 | 처리 |
+|---|---|---|---|
+| 1 | Ping | 골프 | 브랜드째 계속 막음 |
+| 2 | Callaway · 캘러웨이 | 골프 | 브랜드째 계속 막음 |
+| 3 | Titleist · 타이틀리스트 | 골프 | 브랜드째 계속 막음 |
+| 4 | TaylorMade · 테일러메이드 | 골프 | 브랜드째 계속 막음 |
+| 5 | Srixon · 스릭슨 | 골프 | 브랜드째 계속 막음 |
+| 6 | Cobra · 코브라 | 골프 | 브랜드째 계속 막음 |
+| 7 | Mizuno · 미즈노 | 골프(오너 지목) | 브랜드째 계속 막음 |
+| 8 | Moncler · 몽클레르 | 고가 의류 | 브랜드째 계속 막음 |
+| 9 | Canada Goose · 캐나다구스 | 고가 의류 | 브랜드째 계속 막음 |
+| 10 | Arc'teryx(arc teryx·arcteryx) · 아크테릭스 | 고가 의류(아웃도어) | 브랜드째 계속 막음 |
+| 11 | lululemon · 룰루레몬 | 고가 의류 | 브랜드째 계속 막음 |
+| 12 | The North Face(north face) · 노스페이스 | 고가 의류(아웃도어) | 브랜드째 계속 막음 |
+| 13 | Columbia · 컬럼비아 | 아웃도어 의류 | 브랜드째 계속 막음 |
+| 14 | adidas · 아디다스 | **애매(운동화·스포츠 의류)** | 오너 답까지 그대로 막음 |
+| 15 | ASICS · 아식스 | **애매(운동화)** | 〃 |
+| 16 | HOKA · 호카 | **애매(운동화)** | 〃 |
+| 17 | New Balance · 뉴발란스 | **애매(운동화·의류)** | 〃 |
+| 18 | KEEN | **애매(아웃도어 신발)** | 〃 |
+| 19 | Merrell · 메렐 | **애매(아웃도어 신발)** | 〃 |
+| 20 | Salomon · 살로몬 | **애매(아웃도어 신발·의류)** | 〃 |
+| 21 | Under Armour · 언더아머 | **애매(스포츠 의류 — 고가 의류인지)** | 〃 |
+| 22 | Snow Peak(snowpeak) · 스노우피크 | **애매(캠핑 용품 + 의류 라인)** | 〃 |
+| 23 | Lizard Skins · 리자드스킨 | **애매(골프·자전거·야구 그립)** | 〃 |
+| 24 | Nathan · 네이선 | **애매(러닝 용품)** | 〃 |
+| 25 | Supacaz · 수파카즈 | **애매(자전거 용품)** | 〃 |
+| 26 | fizik · 피직 | **애매(자전거 안장·신발)** | 〃 |
+| 27 | Selle Italia · 셀레이탈리아 | **애매(자전거 안장)** | 〃 |
+| 28 | Brooks England · 브룩스잉글랜드 | **애매(자전거 안장·가방)** | 〃 |
+| 29 | Deuter · 도이터 | **애매(아웃도어 배낭)** | 〃 |
+| 30 | Osprey · 오스프리 | **애매(아웃도어 배낭)** | 〃 |
+| 31 | MSR | **애매(캠핑 용품)** | 〃 |
+| 32 | CamelBak · 카멜백 | **애매(수분 배낭·물병)** | 〃 |
+| 33 | Mendittorosa · 멘디토로사 | 그 밖(니치 향수) | **브랜드 줄에서 뺌** |
+| 34 | Nonfiction · 논픽션 | 그 밖(향수·바디) | 뺌 |
+| 35 | Orto Parisi · 오르토파리지 | 그 밖(니치 향수) | 뺌 |
+| 36 | Xerjoff · 제르조프 | 그 밖(니치 향수) | 뺌 |
+| 37 | Pleuvoir · 플뢰부아 | 그 밖(니치 향수) | 뺌 |
+| 38 | Boy Smells · 보이스멜스 | 그 밖(캔들) | 뺌 |
+| 39 | Garmin · 가민 | 그 밖(전자기기) | 뺌 |
+| 40 | Bose · 보스 | 그 밖(음향) | 뺌 |
+| 41 | Sony · 소니 | 그 밖(전자기기) | 뺌 |
+| 42 | GoPro · 고프로 | 그 밖(카메라) | 뺌 |
+| 43 | Suunto · 순토 | 그 밖(시계) | 뺌 |
+| 44 | Hydro Flask · 하이드로플라스크 | 그 밖(물병) | 뺌 |
+| 45 | Stanley · 스탠리 | 그 밖(텀블러) | 뺌 |
+| 46 | YETI · 예티 | 그 밖(쿨러·텀블러) | 뺌 |
+| 47 | Lodge · 롯지 | 그 밖(주방) | 뺌 |
+| 48 | Staub · 스타우브 | 그 밖(주방) | 뺌 |
+| 49 | Weber · 웨버 | 그 밖(그릴) | 뺌 |
+| 50 | Apotheke Fragrance · 아포테케 | 11-27 0-1 허용 | 이미 허용 |
+| 51 | Imaginary Authors · 이매지너리오써스 | 11-27 0-1 허용 | 이미 허용 |
+| 52 | 카테고리 낱말(니치향수·향수·캔들·향초·토치라이터·화장품·건강기능식품·건기식·상표권) | 우리 정책 차단(안전·규제) | 그대로 |
+| 53 | 명품 묶음(블루호스트 목록 명품 53) | 우리 정책 차단(명품 위조) | 그대로 |
+
+- **오너께 묻는 것 — 애매 19개(14~32):** 운동화(adidas·ASICS·HOKA·New Balance·KEEN·Merrell·Salomon) · 스포츠 의류(Under Armour) · 아웃도어·캠핑 용품(Snow Peak·Deuter·Osprey·MSR·CamelBak) · 자전거·러닝·그립(Supacaz·fizik·Selle Italia·Brooks England·Nathan·Lizard Skins). 각각 골프/고가 의류처럼 브랜드째 막을지, 그 밖처럼 뺄지 — 답 올 때까지 **지금처럼 막음**.
+- 브랜드 단위 근거 5(CASETiFY·노비움/호버펜·Peter Millar·Ariat·Spigen) · MEMO Paris · 레이저·Tiffany·Chanel·Chambord · 범위 밖(헬로키티·산리오·닌텐도·포켓몬·디즈니·마블·도검·렌즈)은 그대로.
+- **앱(등록 사전검증·판매 재개 공용 `active_blacklist`) — 운영 목록 원문 151개 기준:** 지금 막던 120개 → **86개**(그 밖 17브랜드 34낱말만 빠짐).
+- **판매 재개:** 골프·고가 의류 브랜드 줄은 사유 **「브랜드 차단(골프)」 · 「브랜드 차단(고가 의류)」**로 빼고 오너도 못 고름(애매 묶음은 「금지 브랜드」 그대로).
+- **뺀 「그 밖」 브랜드에 반려·소명이 오면 그 상품만:** 반려 감시(2시간 회전)가 상표권(담당자 검토) 반려를 보면 그 상품(쿠팡 상품번호 + 소싱처 주소)을 `risk:rejected_products:auto`에 넣는다 → 등록 사전검증·판매 재개가 같은 목록을 본다(같은 브랜드 다른 상품은 통과 · 재반려는 덮어씀 · dry-run은 안 넣음).
+- **블루호스트 등록 체인 `~/brand_blacklist.json`:** ⚠ 01:08에 고치기 전 기준(근거 없음 전부 뺌)으로 한 번 돌아 149 → 91이 됐다 → **오너 결정 뒤 BRANDBL1128b가 되돌리기 파일 `.bak_1128`(원래 149)에서 다시 만든다**(골프·고가 의류·애매 되살리고 그 밖만 뺌 · 그 사이 더해진 낱말은 살림 · 전후 목록 → 아래 결과 칸). 볼트 사본 `radar/edc/brand_blacklist.json` 146 → **123**.
   `ipr_stop.py`(권리자 신고 때 상표 낱말을 넣는 도구)는 그대로 — 권리자가 브랜드 전체를 문제 삼은 경우라 「브랜드 단위 근거」에 맞다.
-- **뺀 뒤 반려·소명이 오면 그 상품만:** 반려 감시(2시간 회전)가 **상표권(담당자 검토) 반려**를 보면 그 상품(쿠팡 상품번호 + 소싱처 주소)을 반려 상품 목록 `risk:rejected_products:auto`에 넣는다 → 등록 사전검증(「반려 상품」 차단)·판매 재개(「반려 이력」)가 같은 목록을 본다. 같은 브랜드 다른 상품은 통과 · 같은 상품 재반려는 덮어씀 · dry-run은 안 넣음.
 
 ### 2. 셰고가 — 원가 찾은 줄로 바로 목록(현재가 재측정 안 기다림)
 - 켤 후보 중 현재가를 못 잰 줄은 줄마다 **「원가: 볼트 소싱맵(2026-05-20) · 현재가 미확인」** 표시(장부 이름·날짜 그대로) · 요약에 「켤 것 중 N건은 현재가 미확인」.

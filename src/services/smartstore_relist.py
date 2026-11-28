@@ -44,7 +44,7 @@ VIEWS_NOTE = "조회수는 네이버 커머스 API로 읽을 수 없어요 — �
 
 REASON_KO = {
     "margin_low": "마진 하한 미만", "cost_unknown": "원가 미확인", "knife": "도검(허가 필요)", "lens": "도수 안경렌즈",
-    "brand": "금지 브랜드", "ours_reject": "반려·소명·상표로 내림(우리 기록)", "src_soldout": "소싱처 품절·단종",
+    "brand": "금지 브랜드", "brand_golf": "브랜드 차단(골프)", "brand_apparel": "브랜드 차단(고가 의류)", "ours_reject": "반려·소명·상표로 내림(우리 기록)", "src_soldout": "소싱처 품절·단종",
     "no_source": "원본 주소 없음", "photos_small": "사진 전부 500px 미만", "no_room": "빈자리 없음(대기)",
     "mirror": "원가 미확인 · 쿠팡 미러",
     "vault_hard": "볼트 기록: 반려·상표·KC·카테고리 오매칭으로 내림",
@@ -52,7 +52,7 @@ REASON_KO = {
     "cost_name_only": "원가 이름 일치 — 확인 필요",
 }
 #: 오너 11-27 11:51 ③: 오너가 「켤 목록으로」 골라도 못 옮기는 사유(도검·렌즈·금지 브랜드 · 볼트에 반려·상표로 내린 기록)
-LOCKED = ("knife", "lens", "brand", "vault_hard", "rejected_hist")
+LOCKED = ("knife", "lens", "brand", "brand_golf", "brand_apparel", "vault_hard", "rejected_hist")
 
 
 def _now() -> str:
@@ -294,7 +294,10 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Opt
     from src.services.risk_gate import blacklist_words as _bl_words   # 등록 사전검증과 같은 규칙(호환 액세서리 자리는 빼고)
     _bw = [w for w in _bl_words(r["name"], brands) if _words_hit(r["name"], [w])]
     if _bw:
-        why.append(("brand", _bw[0]))
+        # 오너 11-28 08:34: 골프·고가 의류 브랜드는 브랜드째 막고 사유를 따로(「브랜드 차단(골프/고가 의류)」)
+        from src.services.risk_gate import brand_group as _bgroup
+        _g = _bgroup(_bw[0])
+        why.append(({"golf": "brand_golf", "apparel": "brand_apparel"}.get(_g, "brand"), _bw[0]))
     ex = (o or {}).get("ex") or {}
     rej = [u for u in (ex.get("uploaded") or []) if isinstance(u, dict) and ((u.get("review") or {}).get("state") == "rejected")]
     if ex.get("risk_skip") or rej or ex.get("takedowns"):

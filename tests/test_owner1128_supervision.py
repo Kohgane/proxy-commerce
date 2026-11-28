@@ -32,9 +32,15 @@ def test_no_evidence_brands_leave_the_list_but_evidence_policy_and_out_of_scope_
     from src.services import risk_gate as RG
     monkeypatch.setattr(RG, "_blacklist", lambda: RG.brand_filter(PROD))
     act = {t.lower() for t in RG.active_blacklist()}
-    for gone in ("adidas", "아디다스", "sony", "소니", "garmin", "가민", "yeti", "예티", "moncler", "몽클레르", "the north face",
-                 "노스페이스", "xerjoff", "제르조프", "ping", "keen", "msr", "stanley", "스탠리"):
+    for gone in ("sony", "소니", "garmin", "가민", "yeti", "예티", "xerjoff", "제르조프", "stanley", "스탠리", "staub", "bose"):   # 「그 밖」만 뺌
         assert gone not in act, gone
+    # 오너 11-28 08:34: 골프·고가 의류는 브랜드째 계속 막고, 애매한 것(운동화·스포츠·아웃도어 용품)은 오너 답까지 그대로
+    for stay in ("ping", "callaway", "titleist", "taylormade", "srixon", "cobra", "mizuno", "캘러웨이", "미즈노",
+                 "moncler", "canada goose", "arcteryx", "lululemon", "the north face", "columbia", "몽클레르", "노스페이스",
+                 "adidas", "아디다스", "new balance", "hoka", "salomon", "keen", "msr", "osprey", "fizik"):
+        assert stay in act, stay
+    assert RG.brand_group("Callaway") == "golf" and RG.brand_group("몽클레르") == "apparel" and RG.brand_group("adidas") == "ask"
+    assert RG.brand_group("sony") == "" and RG.brand_group("casetify") == ""
     for stay in ("casetify", "케이스티파이", "peter millar", "피터밀러", "memo paris", "메모파리",                 # 브랜드 단위 근거 · 오너 판단
                  "laser pointer",                                                                             # 우리 정책 차단(청소년유해)
                  "hello kitty", "sanrio", "nintendo", "pokemon", "disney", "marvel", "포켓몬", "디즈니"):          # 범위 밖
@@ -44,6 +50,25 @@ def test_no_evidence_brands_leave_the_list_but_evidence_policy_and_out_of_scope_
     toks = RG.tokens()
     assert set(t.lower() for t in toks["no_evidence"]) <= {t.lower() for t in PROD}       # 운영 목록에 있는 낱말만 뺀다(오타로 엉뚱한 낱말 0)
     assert not set(t.lower() for t in toks["no_evidence"]) & {"casetify", "peter millar", "memo paris", "hello kitty", "laser pointer"}
+    groups = {t.lower() for ws in toks["brand_groups"].values() for t in ws}
+    assert not groups & {t.lower() for t in toks["no_evidence"]}                       # 막는 묶음과 뺄 줄이 겹치지 않음
+    assert groups <= {t.lower() for t in PROD}
+
+
+def test_relist_skips_golf_and_apparel_brand_rows_with_their_own_locked_reason(monkeypatch):
+    """오너 11-28 08:34: 셰고가·고코스모스 판매중지분 중 골프·고가 의류 브랜드 줄은 켤 후보에서 빼고 사유 「브랜드 차단(골프/고가 의류)」 — 오너도 못 고름."""
+    from src.services import risk_gate as RG
+    from src.services import smartstore_relist as SR
+    monkeypatch.setattr(RG, "_blacklist", lambda: RG.brand_filter(PROD))
+    brands = RG.active_blacklist()
+    base = {"channel_no": "1", "origin_no": "2", "name": "", "sale_price": 100000, "category": "스포츠", "seller_code": ""}
+    for name, want in (("Callaway 골프 장갑 남성", "brand_golf"), ("[해외직구] 몽클레르 패딩 조끼", "brand_apparel"),
+                       ("adidas 러닝화", "brand"), ("Sony 이어폰 케이스", None)):
+        j = SR._judge_row({**base, "name": name}, None, {"ss": 0, "cp": 0}, [], brands, [])
+        got = [k for k in j["exclude"] if k.startswith("brand")]
+        assert (got[0] if got else None) == want, (name, j["exclude"])
+    assert SR.REASON_KO["brand_golf"] == "브랜드 차단(골프)" and SR.REASON_KO["brand_apparel"] == "브랜드 차단(고가 의류)"
+    assert {"brand_golf", "brand_apparel"} <= set(SR.LOCKED)
 
 
 def test_trademark_rejection_blocks_that_product_only_and_other_kinds_do_not(state, monkeypatch):

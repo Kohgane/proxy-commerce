@@ -457,6 +457,15 @@ def rejected_line(r: dict) -> str:
     return " · ".join(x for x in (str(r.get("date") or "")[:10], str(r.get("market") or ""), str(r.get("reason") or "")[:80]) if x)
 
 
+def brand_group(word: str) -> str:
+    """금지 브랜드 낱말의 묶음 — golf · apparel · ask(오너에게 묻는 중) · ''(그 밖·묶음 없음). 오너 11-28 08:34."""
+    w = str(word or "").strip().lower()
+    for g, ws in (tokens().get("brand_groups") or {}).items():
+        if w in {str(x).strip().lower() for x in ws or []}:
+            return g
+    return ""
+
+
 def active_blacklist() -> List[str]:
     """지금 막는 금지 브랜드 — 블랙리스트 브랜드 낱말에서 허용 목록(대소문자 무관)을 뺀 것. 등록 사전검증·판매 재개 공용(오너 11-27 15:18 0-1)."""
     allow = {str(a).strip().lower() for a in allowlist() if str(a).strip()}
