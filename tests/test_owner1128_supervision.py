@@ -176,3 +176,52 @@ def test_two_overseas_outbound_places_show_name_and_address_to_pick(monkeypatch)
     assert "① 오리건 배대지(31234567) 12345 SW Example Rd Suite 9 [US]" in why and "② 도쿄 창고(31234568) 1-2-3 Minato [JP]" in why
     assert set(calls) == {"GET"}
     CU._SHARED.clear()
+
+
+def test_brand_catalog_matches_exact_product_number_once_and_labels_name_matches(monkeypatch, tmp_path):
+    """오너 11-28 감독 3: 원가 못 찾은 줄 → 브랜드 공식몰 **전체 목록**(블루호스트 · DB 쓰기 0)에서 품번이 정확히 하나로 맞으면 `code`,
+    아니면 가게 제목 70%·3낱말 이름 일치 `name` · 품번이 여럿에 맞으면 못 정함. 오라클 넣기는 큐 덧붙이기 하나 · 품번 일치는 「품번 일치(공식몰)」(실측처럼),
+    이름 일치는 「이름 일치(확인 필요)」."""
+    import importlib.util
+    import json as _j
+    spec = importlib.util.spec_from_file_location("brand_catalog_1128", "ops/oracle_a1/brand_catalog_1128.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    assert m.codes_in("[해외직구] 포터 PORTER POTR / DISSECTION SHOULDER BAG 994-25002", "PT-994-25002") == {"994-25002"}
+    assert m.codes_in("To Summer OSMANTHUS REED DIFFUSER 200ML", "TOSU-OSMANTHUSREEDDIF-47") == set()
+    cat = {"products": [{"title": "Light Prismatic Cotton Rope Dog Leash", "handle": "light-prismatic-leash",
+                         "variants": [{"price": "68.00", "available": True, "sku": "FMA-LP-01"}]},
+                        {"title": "Wisteria Cotton Rope Dog Leash", "handle": "wisteria-leash", "variants": [{"price": "68.00", "available": False}]},
+                        {"title": "Dissection Shoulder Bag 994-25002", "handle": "dissection-994-25002", "variants": [{"price": "300.00", "available": True}]},
+                        {"title": "Tanker 622-19859 black", "handle": "tanker-a", "variants": [{"price": "200.00", "available": True}]},
+                        {"title": "Tanker 622-19859 olive", "handle": "tanker-b", "variants": [{"price": "200.00", "available": True}]}]}
+
+    def get(url, timeout=25):
+        if url.endswith("cart.js"):
+            return 200, {"currency": "USD"}
+        return 200, (cat if "page=1" in url else {"products": []})
+    monkeypatch.setattr(m, "get", get)
+    (tmp_path / "vault" / "srv_snap" / "apply_out").mkdir(parents=True)
+    (tmp_path / "vault" / "srv_snap" / "apply_out" / "relistledger_data_chezgoga.txt").write_text(_j.dumps({"unmatched": [
+        {"channel_no": "1", "code": "FMA-FOUNDMYANI-0007", "name": "[해외직구] Found My Animal 파운드마이애니멀 Light Prismatic Cotton Rope Dog Leash by"},
+        {"channel_no": "2", "code": "FMA-FOUNDMYANI-0012", "name": "[해외직구] Found My Animal Wisteria Cotton Rope Dog Leash | Bolt Snaps"},
+        {"channel_no": "3", "code": "XX-1", "name": "PORTER DISSECTION SHOULDER BAG 994-25002", "domain": "shop.example.com"},
+        {"channel_no": "4", "code": "XX-2", "name": "PORTER TANKER 622-19859", "domain": "shop.example.com"},
+        {"channel_no": "5", "code": "PT-994-1", "name": "PORTER X 994-11111", "domain": "www.yoshidakaban.com"}],
+        "prefix_domain": {"FMA": "foundmyanimal.com"}}))
+    monkeypatch.setattr(m, "H", str(tmp_path))
+    assert m.main(["chezgoga"]) == 0
+    rows = {r["channel_no"]: r for r in _j.loads((tmp_path / "vault" / "srv_snap" / "apply_out" / "brandcat_data_chezgoga.txt").read_text())["rows"]}
+    assert rows["1"]["kind"] == "name" and rows["1"]["cost"] == 68.0 and rows["1"]["currency"] == "USD"
+    assert rows["2"]["src_state"] == "soldout"
+    assert rows["3"]["kind"] == "code" and rows["3"]["url"].endswith("/dissection-994-25002") and "994-25002" in rows["3"]["via"]
+    assert "4" not in rows                                              # 품번이 두 상품에 맞음 — 못 정함(틀린 원가 0)
+    assert "5" not in rows                                              # 요시다카반은 Shopify 아님 — 오라클 따로
+    spec2 = importlib.util.spec_from_file_location("brandcat_push_1128", "ops/oracle_a1/brandcat_push_1128.py")
+    p = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(p)
+    up = p.SQL.upper()
+    assert up.count("UPDATE APP_STATE") == 1 and "'ops:oneshot:queue'" in p.SQL and "DELETE" not in up
+    from src.services import relist_ledger as RL
+    assert RL.SRC_KO["code_match"] == "품번 일치(공식몰)" and RL.src_label({"src": "품번 일치(공식몰)", "updated": "2026-11-28"}) == "품번 일치(공식몰 11-28)"

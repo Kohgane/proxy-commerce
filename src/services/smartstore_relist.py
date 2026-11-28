@@ -209,7 +209,7 @@ def _margin(row: Dict, ours: Optional[Dict], sold: bool, ledger: Optional[Dict] 
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
     cost, src = (mon.get("current_price"), "소싱처 재확인") if mon.get("current_price") else (ex.get("price"), "수집 때")
     cur = str(ex.get("currency") or "")
-    if ledger and ledger.get("cost") and (ledger.get("src") in ("오너 입력", "소싱처 실측") or not (cost and cur)):
+    if ledger and ledger.get("cost") and (ledger.get("src") in ("오너 입력", "소싱처 실측", "품번 일치(공식몰)") or not (cost and cur)):
         from src.services.relist_ledger import src_label
         cost, cur, src = ledger["cost"], str(ledger.get("currency") or ""), src_label(ledger) or "볼트 장부"
     if not (cost and cur):
@@ -222,7 +222,7 @@ def _margin(row: Dict, ours: Optional[Dict], sold: bool, ledger: Optional[Dict] 
         return out
     out.update(cost=float(c), currency=cur, cost_src=src)
     # 오너 11-28 감독 2: 현재가를 아직 못 잰 원가는 그렇다고 적는다 — 「원가: 장부(날짜) · 현재가 미확인」
-    live = src in ("소싱처 재확인", "오너 입력") or str(src).startswith("소싱처 실측")
+    live = src in ("소싱처 재확인", "오너 입력") or str(src).startswith(("소싱처 실측", "품번 일치"))
     out["cost_live"] = live
     if not live:
         when = str((ledger or {}).get("updated") or "")[:10] if ledger and ledger.get("cost") and src != "수집 때" else ""
