@@ -26,7 +26,7 @@ TODAY = (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y-%m-%d")
 BRANDS = {"CL7": "cloud7.de", "FMA": "foundmyanimal.com", "ROVYVON": "rovyvon.com", "AURORA": "rovyvon.com"}
 STOP = {"the", "and", "for", "with", "of", "a", "an", "in", "x", "by", "edp", "ml", "eau", "de", "parfum", "new", "amp"}
 _LAST = [0.0]
-COOKIE = "localization=US"
+COOKIE = "localization=US; cart_currency=USD"   # 11-28: localization만이면 products.json이 가게 기본 통화로 남는다
 
 
 def get(url, timeout=25):
@@ -149,7 +149,9 @@ def main(argv):
             blob = " ".join([str(p.get("title") or ""), str(p.get("handle") or "")] + [str(v.get("sku") or "") for v in vs]).upper()
             idx.append({"title": str(p.get("title") or ""), "handle": str(p.get("handle") or ""), "blob": blob,
                         "price": round(min(pr), 2), "av": bool(av), "w": words(p.get("title")), "all": {round(x, 2) for x in pr}})
-        cur = verified_currency(dom, idx) if idx else ""
+        # 11-28 3차: 쿠키(localization=US; cart_currency=USD)를 cart.js가 그대로 돌려주면 그 통화 · 아니면 JSON-LD 대조
+        st_c, cart = get(f"https://{dom}/cart.js")
+        cur = "USD" if (st_c == 200 and str((cart or {}).get("currency") or "") == "USD") else (verified_currency(dom, idx) if idx else "")
         if not prods or not cur:
             why[f"목록·통화 확인 불가({err or '상품 페이지 가격≠목록'})"] = why.get(f"목록·통화 확인 불가({err or '상품 페이지 가격≠목록'})", 0) + len(rs)
             print(f"  {dom}: {len(rs)}줄 — 목록 {len(prods)} · 통화 {cur or '?'} {err}")

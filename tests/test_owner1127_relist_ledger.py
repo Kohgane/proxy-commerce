@@ -602,7 +602,7 @@ def test_src_live2_reads_each_shop_in_the_market_of_its_ledger_currency(monkeypa
     monkeypatch.setenv("KG_HOME", str(tmp_path))
     monkeypatch.setattr(m, "psql", lambda sql: "")
     assert m.main(["chezgoga", "--dry"]) == 0
-    assert seen["us.example.com"] == {"localization=US"} and seen["eu.example.com"] == {""}
+    assert seen["us.example.com"] == {"localization=US; cart_currency=USD"} and seen["eu.example.com"] == {""}   # 11-28: 통화까지 줘야 목록 값이 그 시장 값
     rows = _j.loads((tmp_path / "ora_state" / "srclive2_chezgoga.json").read_text())["rows"]
     assert rows["1"]["currency"] == "USD" and "시장 US" in rows["1"]["via"] and "가게 기본" in rows["2"]["via"]
     seen.clear()

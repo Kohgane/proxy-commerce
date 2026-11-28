@@ -147,6 +147,18 @@ def shop_catalog(host):
         if len(prods) < 250:
             done = True
             break
+    # 11-28 3차: 상품 페이지 JSON-LD는 테마가 가게 기본 통화로 찍는 곳이 많아(506줄 확인 불가) 그것만으론 못 쓴다.
+    #   SHOPMKT1128 탐침(가게 6곳): 쿠키에 localization+cart_currency를 **둘 다** 주면 cart.js 통화와 products.json 값이 늘 같은 맥락이었다.
+    #   → 요청한 cart_currency를 cart.js가 **그대로** 돌려줄 때만 그 통화를 쓴다. 아니면 JSON-LD 대조로 · 그것도 안 맞으면 확인 불가.
+    want = (re.search(r"cart_currency=([A-Z]{3})", COOKIE[0] or "") or [None, ""])[1]
+    if want:
+        try:
+            c = _get(f"https://{host}/cart.js", timeout=15)
+            got = str((c.json() or {}).get("currency") or "") if c.ok else ""
+        except Exception:                                              # noqa: BLE001
+            got = ""
+        if got == want:
+            return cat, want, done, ""
     cur, why = verified_currency(host, allp)
     return cat, cur, done, why
 
@@ -321,7 +333,10 @@ def main(argv):
             cc = CUR2CC.get(max(curs, key=curs.get), "") if curs else ""
         elif market not in ("none", ""):
             cc = market.upper()
-        COOKIE[0] = f"localization={cc}" if cc else ""
+        # 11-28 2차 실측: localization만 주면 상품 페이지는 그 시장 값, products.json은 가게 기본 통화 값이라 둘이 어긋났다
+        #   (SHOPMKT1128 탐침은 cart_currency까지 줄 때 둘이 맞았다) → 그 시장 통화도 같이 준다.
+        CC2CUR = {v: k for k, v in CUR2CC.items()}
+        COOKIE[0] = (f"localization={cc}" + (f"; cart_currency={CC2CUR[cc]}" if cc in CC2CUR else "")) if cc else ""
         MKT[0] = cc
         left = [r for r in rs if rowkey(r) not in done]
         if not left:
