@@ -195,7 +195,9 @@ def find(idx: Dict[str, Dict], row: Dict) -> Optional[Dict]:
     hits = [r for k in keys for r in (idx.get(k) or {}).values() if isinstance(r, dict)]
     if not hits:
         return None
-    hits.sort(key=lambda v: (_SRC_RANK.get(_base_src(v.get("src")), 5), not v.get("cost")))
+    # 11-28: 원가 없는 줄(소싱처 실측 품절·내려감 · 통화 못 쓰는 실측)이 순위만으로 다른 장부의 원가를 가리지 않게 — 원가 있는 줄 먼저,
+    #   그 안에서 오너 입력 → 소싱처 실측 → 품번 일치 → 그 밖. 원가 없는 줄의 품절·내려감(src_state)은 아래에서 채워 넣는다.
+    hits.sort(key=lambda v: (not v.get("cost"), _SRC_RANK.get(_base_src(v.get("src")), 5)))
     best = dict(hits[0])
     for h in hits[1:]:                                              # 원가 줄에 없는 칸(주소·볼트 사유·쿠팡 판매)은 다른 장부에서 채운다
         for k in ("url", "vault_reason", "vault_job", "cp_sold", "src_state", "updated"):
