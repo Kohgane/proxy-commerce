@@ -361,8 +361,12 @@ _REJ_FILE = Path(__file__).resolve().parents[1] / "uploaders" / "rejected_produc
 _rej_cache: Dict[str, Any] = {"at": 0.0, "rows": None}
 
 
+REJ_AUTO_KEY = "risk:rejected_products:auto"
+
+
 def rejected_products() -> List[dict]:
-    """반려·소명 이력 상품 목록(`rejected_products.json`) — 오너 11-27 15:18 0-2."""
+    """반려·소명 이력 상품 목록 — 손으로 적은 `rejected_products.json`(오너 11-27 15:18 0-2) + 반려 감시가 넣은 줄
+    (`risk:rejected_products:auto` · 오너 11-28 감독 1: 근거 없는 브랜드 줄을 뺀 대신, 반려·소명이 오면 그 상품만 막는다)."""
     now = time.monotonic()
     if _rej_cache["rows"] is not None and now - _rej_cache["at"] < 60:
         return _rej_cache["rows"]
@@ -371,8 +375,49 @@ def rejected_products() -> List[dict]:
     except Exception:                                              # noqa: BLE001 — 못 읽으면 빈 목록(막는 줄이 사라지는 쪽이라 로그)
         logger.warning("[리스크] 반려 상품 목록을 못 읽음 — %s", _REJ_FILE)
         rows = []
+    rows = rows + _auto_rejected()
     _rej_cache.update(at=now, rows=rows)
     return rows
+
+
+def _auto_rejected() -> List[dict]:
+    try:
+        from src.db import image_translate_queue_pg as st
+        return [r for r in ((st.state_get(REJ_AUTO_KEY) or {}).get("rows") or []) if isinstance(r, dict)]
+    except Exception:                                              # noqa: BLE001 — 못 읽으면 손 목록만(로그)
+        logger.warning("[리스크] 자동 반려 상품 목록을 못 읽음 — %s", REJ_AUTO_KEY)
+        return []
+
+
+def record_rejected(*, market: str, product_no: str = "", url: str = "", title: str = "", reason: str = "",
+                    kind: str = "", evidence: str = "", date: str = "") -> Dict[str, Any]:
+    """반려 감시가 본 반려·소명 한 건을 반려 상품 목록에 넣는다(같은 마켓·상품번호면 덮어씀) — 그 상품만 막는다.
+    등록 사전검증(scan)·판매 재개가 `rejected_match`로 같은 목록을 본다. 브랜드 줄은 건드리지 않는다."""
+    pno, url = str(product_no or "").strip(), str(url or "").strip()
+    if not (pno or url):
+        return {"ok": False, "why": "상품번호·소싱처 주소가 둘 다 없어요"}
+    from datetime import datetime, timezone
+    row = {"brand": "", "market": str(market or "")[:40], "product_no": pno, "url": url[:500], "title": str(title or "")[:120],
+           "date": str(date or datetime.now(timezone.utc).date().isoformat())[:10], "reason": str(reason or "")[:200],
+           "kind": str(kind or "")[:30], "evidence": str(evidence or "반려 감시(쿠팡 /histories comment)")[:200], "auto": True}
+    try:
+        from src.db import image_translate_queue_pg as st
+
+        def _fn(cur):
+            keep = [r for r in ((cur or {}).get("rows") or []) if isinstance(r, dict)
+                    and not (r.get("market") == row["market"] and pno and r.get("product_no") == pno)]
+            return {"rows": (keep + [row])[-2000:], "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        upd = getattr(st, "state_update", None)
+        if callable(upd):
+            upd(REJ_AUTO_KEY, _fn)
+        else:
+            st.state_set(REJ_AUTO_KEY, _fn(st.state_get(REJ_AUTO_KEY) or {}))
+    except Exception as exc:                                       # noqa: BLE001
+        logger.warning("[리스크] 자동 반려 상품 기록 실패 — %s", exc)
+        return {"ok": False, "why": f"기록 실패 {type(exc).__name__}"}
+    _rej_cache.update(at=0.0, rows=None)
+    logger.info("[리스크] 반려 상품 목록에 넣음 — %s %s %s", row["market"], pno or url[:60], row["reason"][:60])
+    return {"ok": True, "row": row}
 
 
 def _norm_code(v) -> str:
@@ -412,10 +457,20 @@ def rejected_line(r: dict) -> str:
     return " · ".join(x for x in (str(r.get("date") or "")[:10], str(r.get("market") or ""), str(r.get("reason") or "")[:80]) if x)
 
 
+def brand_group(word: str) -> str:
+    """금지 브랜드 낱말의 묶음 — golf · apparel · ask(오너에게 묻는 중) · ''(그 밖·묶음 없음). 오너 11-28 08:34."""
+    w = str(word or "").strip().lower()
+    for g, ws in (tokens().get("brand_groups") or {}).items():
+        if w in {str(x).strip().lower() for x in ws or []}:
+            return g
+    return ""
+
+
 def active_blacklist() -> List[str]:
     """지금 막는 금지 브랜드 — 블랙리스트 브랜드 낱말에서 허용 목록(대소문자 무관)을 뺀 것. 등록 사전검증·판매 재개 공용(오너 11-27 15:18 0-1)."""
     allow = {str(a).strip().lower() for a in allowlist() if str(a).strip()}
     allow |= {str(a).strip().lower() for a in (tokens().get("product_level") or []) if str(a).strip()}   # 0-2: 그 상품만 막는 브랜드
+    allow |= {str(a).strip().lower() for a in (tokens().get("no_evidence") or []) if str(a).strip()}    # 11-28 감독 1: 근거 없는 브랜드 줄
     return [t for t in _blacklist() if str(t).strip().lower() not in allow]
 
 

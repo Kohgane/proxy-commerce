@@ -126,12 +126,13 @@ def test_reenrich_page_marks_dup_and_test_and_shows_cost(admin, state, monkeypat
     try:
         d = admin.get("/seller/admin/taobao-reenrich").get_json()
         mine = [r for r in d["rows"] if r["item_id"] in {i for _, i in made}]
-        assert len(mine) == 4
-        assert sum(1 for r in mine if r["dup_of"]) == 1 and sum(1 for r in mine if r["test"]) == 1
+        # 오너 11-28 감독 6: 시험용 행은 목록·집계에서 뺀다(11-26엔 「시험」 표시로 보였다) — 4행 중 시험 계정 1행이 빠진다
+        assert len(mine) == 3
+        assert sum(1 for r in mine if r["dup_of"]) == 1 and sum(1 for r in mine if r["test"]) == 0
         elig = [r for r in mine if r["eligible"]]
         assert len(elig) == 2 and "0.023元" in d["estimate"]["line"]
         h = admin.get("/seller/admin/taobao-reenrich", headers=HTML).get_data(as_text=True)
-        assert f'{d["eligible"]}건 다시 가져오기' in h and 'data-role="dg-dup"' in h and 'data-role="dg-test"' in h and "예상 비용" in h
+        assert f'{d["eligible"]}건 다시 가져오기' in h and 'data-role="dg-dup"' in h and "예상 비용" in h
         assert "한 번 더 누르면" in h                                              # 두 번 눌러 확인
     finally:
         from src.seller_console import collect_history_store as S

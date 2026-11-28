@@ -464,7 +464,9 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
                     record_fn=lambda sid, **kw: REG.mark_checked(sid, **kw),
                     # dry-run은 알림도 보내지 않는다 — 세어 보는 것만으로 사람을 깨우지 않는다.
                     notify_fn=(None if dry_run else _reject_notify_fn(account)),
-                    limit=limit, time_budget_sec=budget, dry_run=dry_run)
+                    limit=limit, time_budget_sec=budget, dry_run=dry_run,
+                    # 오너 11-28 감독 1: 상표권 반려 → 그 상품만 반려 상품 목록에(브랜드 줄은 그대로)
+                    rejected_fn=(None if dry_run else _rejected_recorder(account)))
             total = _t.monotonic() - t0
             out["total_sec"] = round(total, 1)
             # ★ 회수용 검색어 통일(오너 2026-09-07): 한 회전의 **모든 결말**을 「반려감시 상태」로 시작한다.
@@ -511,6 +513,16 @@ def _run_reject_watch(app, account: str, limit: int, budget: float, dry_run: boo
             except RuntimeError:
                 pass
     return out
+
+
+def _rejected_recorder(account: str):
+    """반려 감시 → 반려 상품 목록(`risk_gate.record_rejected`) — 상표권 반려 상품만(오너 11-28 감독 1)."""
+    def _rec(row, item):
+        from src.services import risk_gate as RG
+        return RG.record_rejected(market=f"쿠팡({account})", product_no=str(row.get("sid") or ""),
+                                  url=str((item or {}).get("source_url") or ""), title=str(row.get("title") or ""),
+                                  reason=str(row.get("comment") or ""), kind=str(row.get("kind") or ""))
+    return _rec
 
 
 def _reject_notify_fn(account: str):

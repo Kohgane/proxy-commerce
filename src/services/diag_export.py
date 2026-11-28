@@ -74,7 +74,9 @@ def _sources(arg: str) -> Dict:
     from src.seller_console.collect_history_store import list_items
     from src.services import source_audit as SA
     days = max(1, min(365, int(arg or 90))) if str(arg or "").isdigit() else 90
-    data = {"days": days, **SA.audit(list_items(days=days, extra_keys=SA.KEYS) or [])}
+    from src.utils.test_accounts import is_test_account
+    rows = [r for r in (list_items(days=days, extra_keys=SA.KEYS) or []) if not is_test_account(r.get("seller_id"))]   # 11-28 감독 6: 시험용 행 뺌
+    data = {"days": days, **SA.audit(rows)}
     return {**data, "verdict": SA.verdict(data)}
 
 
@@ -96,7 +98,7 @@ def _relist(arg: str) -> Dict:
     samples = {k: [{f: x.get(f) for f in keep} for x in rnd.sample(xs, min(5, len(xs)))] for k, xs in by.items()}
     # 오너 11-27 11:51 ⑤: 뺄 것 표본 20 · 금지 브랜드 줄 전부를 지금 규칙(호환 액세서리 자리 빼기)으로 다시 판정 · 관리 코드 꼴 · 마지막 수정일
     skips = [x for x in rows if x.get("action") != "on"]
-    keep2 = keep + ("seller_code", "vault_reason", "cost_src")
+    keep2 = keep + ("seller_code", "vault_reason", "cost_src", "cost_note")
     skip20 = [{f: x.get(f) for f in keep2} for x in rnd.sample(skips, min(20, len(skips)))]
     from src.services import risk_gate as RG
     try:
@@ -126,7 +128,7 @@ def _relist(arg: str) -> Dict:
               "commission_pct": float(P.commission_pct("smartstore")[0] or 0), "domestic_shipping_krw": float(P.domestic_shipping_krw("smartstore"))}
     except Exception as exc:                                       # noqa: BLE001
         mi = {"error": f"{type(exc).__name__}: {str(exc)[:120]}"}
-    keep3 = keep + ("cost_src", "policy_price", "seller_code", "vault_reason", "src_url", "owner_ok")
+    keep3 = keep + ("cost_src", "cost_note", "policy_price", "seller_code", "vault_reason", "src_url", "owner_ok")
     ons = [x for x in rows if x.get("action") == "on"]
     on20 = [{f: x.get(f) for f in keep3} for x in rnd.sample(ons, min(20, len(ons)))]
     return {"store": store, "plan": {k: v for k, v in p.items() if k != "rows"}, "samples": samples,

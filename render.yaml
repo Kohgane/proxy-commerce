@@ -12,6 +12,9 @@ services:
     plan: free
     region: virginia
     branch: main
+    # 오너 11-28 감독 7: 옛 버지니아 무료 서비스 — 운영은 오라클 kg-a1로 옮겼다. main에 머지할 때마다 이 서비스도 배포·부팅돼
+    #   옛 Supabase에 부팅 기록(rss:restart 등)을 남겼다(11-27 ⑤ 실측 「배포 때마다 부팅」). 자동 배포를 끈다 — 정지(Suspend)는 오너가 Render에서.
+    autoDeploy: false
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:

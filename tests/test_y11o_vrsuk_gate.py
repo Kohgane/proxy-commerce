@@ -163,13 +163,14 @@ def test_coupon_photo_4_is_not_scanned_and_perfume_no_longer_hits():
     d4 = next(e for e in ex["detail_images_ko"] if e["idx"] == 3)
     assert d4["exclude"].startswith("판촉·스토어 문구")                         # 등록 제외된 쿠폰 사진
     assert not any(i[2] == "상세 4" for i in RG._images(ex))
-    # 오너 11-27 15:18 0-2: nike는 상품 단위로 내려갔다(반려 상품만 막음) — 브랜드 단위로 남은 adidas로 같은 계약을 본다
-    d4["source_text"] += " adidas"                                            # 영문 브랜드라도 안 나가는 사진엔 보류를 걸지 않는다
+    # 오너 11-27 15:18 0-2: nike는 상품 단위로 내려갔고, 11-28 감독 1: 근거 없는 adidas도 브랜드 줄에서 빠졌다
+    #   — 브랜드 단위 근거(권리자 통보)가 있는 casetify로 같은 계약을 본다
+    d4["source_text"] += " casetify"                                          # 영문 브랜드라도 안 나가는 사진엔 보류를 걸지 않는다
     assert not any(h["key"] == "blacklist" for h in RG.scan(ex)["hits"])
     ex["title_ko"] += " 향수"                                                  # 보통명사는 상품명에 있어도 브랜드 보류 아님
     assert not any(h["key"] == "blacklist" for h in RG.scan(ex)["hits"])
-    ex["title_ko"] += " adidas"
-    assert any(h["key"] == "blacklist" and h["found"] == ["adidas"] for h in RG.scan(ex)["hits"])
+    ex["title_ko"] += " casetify"
+    assert any(h["key"] == "blacklist" and h["found"] == ["casetify"] for h in RG.scan(ex)["hits"])
 
 
 def test_enforce_does_not_strip_common_noun_from_saved_blacklist_decision():

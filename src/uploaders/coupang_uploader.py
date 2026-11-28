@@ -1070,7 +1070,12 @@ class CoupangUploader(BaseUploader):
                     self.overseas_outbound_place_code = auto
                     return auto, ''
                 if n_over > 1:
-                    return '', ((f'{who} ' if who else '') + f'쿠팡에 해외(OVERSEA) 출고지가 {n_over}곳 있어 하나를 골라야 합니다 — '
+                    pl = _shared_get(('oversea_places', self.account or '', str(self.vendor_id or ''))) or []
+                    lines = ' · '.join(f"{'①②③④⑤⑥⑦⑧⑨'[i] if i < 9 else i + 1} {p.get('name') or '이름 없음'}({p.get('code')})"
+                                       + (f" {p['address']}" if p.get('address') else '') + (f" [{p['country']}]" if p.get('country') else '')
+                                       for i, p in enumerate(pl[:9]))
+                    return '', ((f'{who} ' if who else '') + f'쿠팡에 해외(OVERSEA) 출고지가 {n_over}곳 있어 하나를 골라야 합니다'
+                                + (f' — {lines}' if lines else '') + ' — '
                                 '마켓 연동 › 쿠팡 › ' + (f'{who} 카드 ' if who else '') + '「불러오기」에서 「구매대행 출고지 (해외)」를 고르세요.')
             if not code:
                 # 화면에 나가는 문장이다 — env 이름·마크다운 기호를 넣지 않는다(F48 캡처 자기비평).
@@ -1098,7 +1103,7 @@ class CoupangUploader(BaseUploader):
             payload = self._api_request('GET', OUTBOUND_PLACES_PATH + OUTBOUND_PLACES_QUERY)
             if not isinstance(payload, dict) or payload.get('error'):
                 return '', 0
-            codes = []
+            codes, places = [], []
             for row in _rows(payload):
                 flat = _flatten(row)
                 at = next((str(v).strip() for k, v in flat.items()
@@ -1109,8 +1114,15 @@ class CoupangUploader(BaseUploader):
                 c = _pick(row, ('outboundShippingPlaceCode', 'shippingPlaceCode', 'placeCode'))
                 if c and c not in codes:
                     codes.append(c)
+                    # 오너 11-28 감독 4: 여럿이면 고르기 쉽게 — 이름·주소를 카드에 그대로(응답에 있는 키만 · 지어내지 않음)
+                    places.append({'code': c,
+                                   'name': _pick(row, ('shippingPlaceName', 'placeName', 'outboundShippingPlaceName', 'name')),
+                                   'address': ' '.join(x for x in (_pick(row, ('returnAddress', 'address', 'roadAddress', 'addressLine1')),
+                                                                     _pick(row, ('returnAddressDetail', 'addressDetail', 'addressLine2'))) if x)[:120],
+                                   'country': _pick(row, ('countryCode', 'country'))})
             out = (codes[0] if len(codes) == 1 else '', len(codes))
             _shared_put(key, out)
+            _shared_put(('oversea_places',) + key[1:], places)
             return out
         except Exception as exc:                                   # noqa: BLE001 — 못 읽으면 예전처럼 보류(지어내지 않음)
             logger.warning('쿠팡 해외 출고지 자동 찾기 실패: %s', exc)

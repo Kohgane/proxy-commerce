@@ -518,6 +518,25 @@ def update(item_id: str, *, seller_id=None, seller_ids=None, **fields) -> bool:
         return cur.fetchone() is not None
 
 
+def set_source_url(item_id: str, url: str, *, raw_url: str = "", seller_id=None, seller_ids=None) -> dict:
+    """오너 11-28 감독 5: 소싱처 주소를 정본으로 고쳐 쓴다 — 원래 주소는 `raw_url` 열(비어 있을 때만)·`extra_json.raw_url`에 보존(되돌릴 수 있게).
+    상품 키(중복 막는 키)·도메인도 같이 바꾼다. 같은 상품이 이미 다른 행에 있으면(키 겹침) 안 바꾸고 그 사실을 돌려준다."""
+    import psycopg
+    sc, params = _scope(seller_id, seller_ids)
+    dom = (urlparse(url).hostname or "").lower()
+    try:
+        with _wtx() as cur:
+            cur.execute(
+                "UPDATE collect_history SET url=%s, domain=%s, product_key=%s, "
+                "raw_url=CASE WHEN raw_url='' THEN %s ELSE raw_url END, "
+                "extra_json=jsonb_set(COALESCE(extra_json,'{}'::jsonb), '{raw_url}', to_jsonb(COALESCE(NULLIF(extra_json->>'raw_url',''), %s::text)), true) "
+                f"WHERE id::text=%s AND deleted_at IS NULL AND {sc} RETURNING id",
+                [url, dom, _product_key(url), raw_url, raw_url, str(item_id)] + params)
+            return {"ok": cur.fetchone() is not None}
+    except psycopg.errors.UniqueViolation:
+        return {"ok": False, "why": "같은 상품이 이미 다른 수집 행에 있어요(상품 키 겹침) — 안 바꿈"}
+
+
 def summary(days: int = 30, seller_id=None, seller_ids=None) -> dict:
     # 속도: 전체 행을 파이썬으로 가져와 세지 않고 SQL 집계(count/FILTER) 1회로 — 스캔 대신 인덱스 count.
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)

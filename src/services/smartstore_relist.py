@@ -44,7 +44,7 @@ VIEWS_NOTE = "조회수는 네이버 커머스 API로 읽을 수 없어요 — �
 
 REASON_KO = {
     "margin_low": "마진 하한 미만", "cost_unknown": "원가 미확인", "knife": "도검(허가 필요)", "lens": "도수 안경렌즈",
-    "brand": "금지 브랜드", "ours_reject": "반려·소명·상표로 내림(우리 기록)", "src_soldout": "소싱처 품절·단종",
+    "brand": "금지 브랜드", "brand_golf": "브랜드 차단(골프)", "brand_apparel": "브랜드 차단(고가 의류)", "ours_reject": "반려·소명·상표로 내림(우리 기록)", "src_soldout": "소싱처 품절·단종",
     "no_source": "원본 주소 없음", "photos_small": "사진 전부 500px 미만", "no_room": "빈자리 없음(대기)",
     "mirror": "원가 미확인 · 쿠팡 미러",
     "vault_hard": "볼트 기록: 반려·상표·KC·카테고리 오매칭으로 내림",
@@ -52,7 +52,7 @@ REASON_KO = {
     "cost_name_only": "원가 이름 일치 — 확인 필요",
 }
 #: 오너 11-27 11:51 ③: 오너가 「켤 목록으로」 골라도 못 옮기는 사유(도검·렌즈·금지 브랜드 · 볼트에 반려·상표로 내린 기록)
-LOCKED = ("knife", "lens", "brand", "vault_hard", "rejected_hist")
+LOCKED = ("knife", "lens", "brand", "brand_golf", "brand_apparel", "vault_hard", "rejected_hist")
 
 
 def _now() -> str:
@@ -209,7 +209,7 @@ def _margin(row: Dict, ours: Optional[Dict], sold: bool, ledger: Optional[Dict] 
     mon = ex.get("monitor") if isinstance(ex.get("monitor"), dict) else {}
     cost, src = (mon.get("current_price"), "소싱처 재확인") if mon.get("current_price") else (ex.get("price"), "수집 때")
     cur = str(ex.get("currency") or "")
-    if ledger and ledger.get("cost") and (ledger.get("src") in ("오너 입력", "소싱처 실측") or not (cost and cur)):
+    if ledger and ledger.get("cost") and (ledger.get("src") in ("오너 입력", "소싱처 실측", "품번 일치(공식몰)") or not (cost and cur)):
         from src.services.relist_ledger import src_label
         cost, cur, src = ledger["cost"], str(ledger.get("currency") or ""), src_label(ledger) or "볼트 장부"
     if not (cost and cur):
@@ -221,6 +221,12 @@ def _margin(row: Dict, ours: Optional[Dict], sold: bool, ledger: Optional[Dict] 
     except Exception:                                              # noqa: BLE001
         return out
     out.update(cost=float(c), currency=cur, cost_src=src)
+    # 오너 11-28 감독 2: 현재가를 아직 못 잰 원가는 그렇다고 적는다 — 「원가: 장부(날짜) · 현재가 미확인」
+    live = src in ("소싱처 재확인", "오너 입력") or str(src).startswith(("소싱처 실측", "품번 일치"))
+    out["cost_live"] = live
+    if not live:
+        when = str((ledger or {}).get("updated") or "")[:10] if ledger and ledger.get("cost") and src != "수집 때" else ""
+        out["cost_note"] = f"원가: {src}({when or '날짜 없음'}) · 현재가 미확인"
     try:
         landed = landed_cost_krw(c, cur)
         m = net_margin_pct(Decimal(str(row.get("sale_price") or 0)), landed, "smartstore")
@@ -264,6 +270,15 @@ def build_state(store: str) -> Dict:
     return {k: st.get(k) for k in _BRIEF_KEYS if k in st}
 
 
+STALE_REG_MONTHS = ("05", "06")
+
+
+def _stale_unmeasured(x: Dict) -> int:
+    """5~6월 등록분인데 현재가를 아직 못 잰 줄이면 1(같은 단계 안에서 뒤로) — 오너 11-28 감독 2."""
+    reg = str(x.get("reg") or "")
+    return 1 if (reg[5:7] in STALE_REG_MONTHS and not x.get("cost_live")) else 0
+
+
 def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Optional[Dict] = None) -> Dict:
     """한 줄 판정(사진 빼고) — 사유·마진·켤 순서 단계. 사진은 켤 후보에만 따로 잰다.
     `L` = 볼트 장부 줄(오너 11-27 11:51 — 원가·소싱처·볼트 사유·쿠팡 판매 건수)."""
@@ -279,7 +294,10 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Opt
     from src.services.risk_gate import blacklist_words as _bl_words   # 등록 사전검증과 같은 규칙(호환 액세서리 자리는 빼고)
     _bw = [w for w in _bl_words(r["name"], brands) if _words_hit(r["name"], [w])]
     if _bw:
-        why.append(("brand", _bw[0]))
+        # 오너 11-28 08:34: 골프·고가 의류 브랜드는 브랜드째 막고 사유를 따로(「브랜드 차단(골프/고가 의류)」)
+        from src.services.risk_gate import brand_group as _bgroup
+        _g = _bgroup(_bw[0])
+        why.append(({"golf": "brand_golf", "apparel": "brand_apparel"}.get(_g, "brand"), _bw[0]))
     ex = (o or {}).get("ex") or {}
     rej = [u for u in (ex.get("uploaded") or []) if isinstance(u, dict) and ((u.get("review") or {}).get("state") == "rejected")]
     if ex.get("risk_skip") or rej or ex.get("takedowns"):
@@ -324,6 +342,7 @@ def _judge_row(r: Dict, o: Optional[Dict], s: Dict, knife, brands, theme, L: Opt
         sp = 0
     return {**r, "item_id": (o or {}).get("item_id", ""), "sold_ss": s["ss"], "sold_cp": s["cp"], "views": None,
             "cost": mg["cost"], "currency": mg["currency"], "cost_src": mg["cost_src"], "margin": mg["margin"],
+            "cost_live": bool(mg.get("cost_live")), "cost_note": str(mg.get("cost_note") or ""),
             "vault_reason": str((L or {}).get("vault_reason") or ""), "vault_job": str((L or {}).get("vault_job") or ""),
             "src_url": str((o or {}).get("url") or (L or {}).get("url") or "")[:300],
             "owner_ok": bool(r.get("owner_ok")),
@@ -396,7 +415,8 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
                              RL.find(led, r)) for r in rec.get("fetched") or []]
         rec["ledger"] = RL.summary(store)
         elig = [x for x in judged if not x["exclude"]]
-        elig.sort(key=lambda x: (x["tier"], -(x["sold_ss"] + x["sold_cp"]), _neg(x["reg"])))
+        # 오너 11-28 감독 2: 5~6월 등록분은 원가가 오래됐다 — 같은 단계 안에서 현재가를 잰 줄을 앞에(못 잰 줄은 뒤로)
+        elig.sort(key=lambda x: (x["tier"], _stale_unmeasured(x), -(x["sold_ss"] + x["sold_cp"]), _neg(x["reg"])))
         rec.update(rows=judged, fetched=[], elig=[x["channel_no"] for x in elig], photo_i=0, on=[], limit=limit,
                    now_count=now_count, room=room, status_counts=status_counts, phase="photos",
                    complete=(not rec.get("fetch_error")) and rec.get("total") is not None and len(judged) >= int(rec["total"]))
@@ -450,6 +470,7 @@ def _advance(store: str, rec: Dict, deadline: float, *, up, size_of, now_count=N
            "on": len(on_ids), "skip": len(rows) - len(on_ids), "by_reason": by_reason,
            "tiers": {str(t): sum(1 for x in rows if x["action"] == "on" and x["tier"] == t) for t in (1, 3, 4)},
            "price_diff": sum(1 for x in rows if x["action"] == "on" and x["price_diff"]),
+           "on_unmeasured": sum(1 for x in rows if x["action"] == "on" and not x.get("cost_live")),   # 11-28 감독 2: 현재가 미확인으로 켜는 줄
            "photos_checked": int(rec.get("photo_i") or 0), "rss_peak_mb": rec.get("rss_peak_mb"),
            "mirrors": sum(1 for x in rows if _is_mirror(x)),
            "ours": sum(1 for x in rows if x.get("item_id")),
